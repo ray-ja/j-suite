@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J-Suite</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee;
+    --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b;
+  }
+  body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;padding-bottom:72px}
+  header{background:var(--brand);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px}
+  .logo{font-weight:800;font-size:18px;letter-spacing:.5px;line-height:1}
+  .logo .ac{color:var(--accent)}
+  .bizsel{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:600}
+  .wrap{max-width:780px;margin:0 auto;padding:14px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 4px 8px}
+  h2:first-child{margin-top:4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .row{display:flex;align-items:center;gap:10px}
+  .grow{flex:1;min-width:0}
+  .nm{font-weight:700;font-size:16px}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .s-Lead{background:#eef2ff;color:#3b46c4}.s-Contacted{background:#fff4e5;color:#b26a00}
+  .s-Quoted{background:#e7f0ff;color:#1f5fbf}.s-Won{background:#e7f7ea;color:#1d8a3a}.s-Lost{background:#fdecec;color:#c0392b}
+  button{font-family:inherit;cursor:pointer}
+  .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;width:100%}
+  .btn.acc{background:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:transparent;color:var(--brand);border:1.5px solid var(--brand)}
+  .btn.sm{width:auto;padding:9px 13px;font-size:14px}
+  .btn.danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger)}
+  input,select,textarea{font-family:inherit;font-size:16px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 2px 4px}
+  textarea{min-height:70px;resize:vertical}
+  .search{margin-bottom:10px}
+  nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:30}
+  nav button{flex:1;background:none;border:none;padding:9px 0 8px;color:var(--muted);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
+  nav button.on{color:var(--brand)}
+  nav .ic{font-size:20px;line-height:1}
+  .fab{position:fixed;right:16px;bottom:84px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:none;font-size:30px;font-weight:700;box-shadow:0 6px 16px rgba(0,0,0,.22);z-index:25;display:flex;align-items:center;justify-content:center}
+  .overlay{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:40;display:none;align-items:flex-end;justify-content:center}
+  .overlay.show{display:flex}
+  .sheet{background:#fff;width:100%;max-width:780px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 16px 26px;position:relative}
+  .shead{display:flex;align-items:center;margin-bottom:6px}
+  .shead h3{font-size:18px}
+  .shead .cl{margin-left:auto;background:none;border:none;font-size:24px;color:var(--muted);padding:0 4px}
+  .muted{color:var(--muted);font-size:13px}
+  .empty{text-align:center;color:var(--muted);padding:36px 16px;font-size:15px}
+  .empty .big{font-size:40px;margin-bottom:8px}
+  .li{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .li:last-child{border-bottom:none}
+  .note{background:#f7f9fb;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:14px}
+  .note .t{color:var(--muted);font-size:11px;margin-bottom:2px}
+  .qline{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .qline select{flex:1}
+  .qline input.q{width:64px;text-align:center}
+  .qline input.pr{width:84px;text-align:right}
+  .qline .rm{background:none;border:none;color:var(--danger);font-size:20px;padding:0 4px}
+  .totbar{position:sticky;bottom:0;background:#fff;border-top:2px solid var(--accent);padding:12px 2px;margin-top:8px;display:flex;align-items:center}
+  .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:22px;font-weight:800;color:var(--brand)}
+  .toggle{display:flex;align-items:center;gap:10px;background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+  .toggle input{width:auto}
+  .secthd{display:flex;align-items:center;margin:18px 4px 6px}
+  .secthd h2{margin:0}
+  .secthd .ct{margin-left:auto;color:var(--muted);font-size:13px}
+  .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none}
+  .grid2{display:grid;grid-template-columns:1fr;gap:0}
+  /* ---------- DESKTOP ---------- */
+  @media(min-width:900px){
+    body{font-size:17px;padding-bottom:0}
+    header{padding:15px 26px}
+    .logo{font-size:22px}
+    nav{top:55px;bottom:0;left:0;right:auto;width:224px;flex-direction:column;border-top:none;border-right:1px solid var(--line);padding-top:10px}
+    nav button{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:14px;padding:15px 24px;font-size:15px;width:100%}
+    nav button.on{color:var(--brand);background:rgba(0,0,0,.035);box-shadow:inset 4px 0 0 var(--brand)}
+    nav .ic{font-size:20px}
+    .wrap{margin-left:224px;max-width:1180px;padding:26px 40px}
+    h2{font-size:14px}
+    .nm{font-size:17px}.sub{font-size:14px}
+    .card{padding:18px 22px;margin-bottom:12px}
+    .li{padding:13px 0}
+    .fab{right:34px;bottom:34px;width:60px;height:60px}
+    .overlay{align-items:center}
+    .sheet{max-width:620px;max-height:88vh;border-radius:16px;padding:24px}
+    .grid2{grid-template-columns:1fr 1fr;gap:0 28px}
+    .empty{padding:60px 16px}
+  }
+  @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:1fr 1fr 1fr} }
+</style>
+</head>
+<body data-biz="obx">
+<header>
+  <div class="logo" id="logo"></div>
+  <button class="syncpill" id="syncbtn" onclick="syncNow()" title="Sync now"></button>
+  <select class="bizsel" id="bizsel">
+    <option value="obx">OBX Lot Solutions</option>
+    <option value="jam">Jamieson Automation</option>
+  </select>
+</header>
+
+<div class="wrap" id="view"></div>
+<button class="fab" id="fab" title="Add">+</button>
+
+<nav>
+  <button data-tab="today" class="on"><span class="ic">📋</span>Today</button>
+  <button data-tab="customers"><span class="ic">👥</span>Customers</button>
+  <button data-tab="quotes"><span class="ic">🧾</span>Quotes</button>
+  <button data-tab="schedule"><span class="ic">📅</span>Schedule</button>
+  <button data-tab="data"><span class="ic">⚙️</span>Data</button>
+</nav>
+
+<div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
+
+<script>
+"use strict";
+/* ---------- service catalogs ---------- */
+const CATALOG = {
+  obx: [
+    {id:"p1",cat:"Cleanup",name:"Parking-lot cleanup (from)",price:79,unit:"flat"},
+    {id:"p2",cat:"Cleanup",name:"Storefront & walkway cleanup (from)",price:59,unit:"flat"},
+    {id:"p3",cat:"Cleanup",name:"Dumpster-area cleanup",price:59,unit:"flat"},
+    {id:"p4",cat:"Cleanup",name:"Roadside cleanup (from)",price:129,unit:"flat"},
+    {id:"p5",cat:"Cleanup",name:"Junk removal (quote)",price:0,unit:"quote"},
+    {id:"p6",cat:"Cleanup",name:"Event cleanup (quote)",price:0,unit:"quote"},
+    {id:"pw1",cat:"Power Washing",name:"Driveway — small (1-car)",price:99,unit:"flat"},
+    {id:"pw2",cat:"Power Washing",name:"Driveway — medium (2-car)",price:149,unit:"flat"},
+    {id:"pw3",cat:"Power Washing",name:"Driveway — large (3-car)",price:199,unit:"flat"},
+    {id:"pw4",cat:"Power Washing",name:"House wash — 1-story ≤1500 sqft",price:299,unit:"flat"},
+    {id:"pw5",cat:"Power Washing",name:"House wash — ≤2500 sqft",price:399,unit:"flat"},
+    {id:"pw6",cat:"Power Washing",name:"House wash — 2-story 2500–3500",price:549,unit:"flat"},
+    {id:"pw7",cat:"Power Washing",name:"Deck / patio wash (from)",price:129,unit:"flat"},
+    {id:"pw8",cat:"Power Washing",name:"Dumpster pad wash",price:79,unit:"flat"},
+    {id:"pw9",cat:"Power Washing",name:"Storefront / sidewalk wash (from)",price:99,unit:"flat"},
+    {id:"w1",cat:"Windows",name:"Windows — exterior (per window)",price:12,unit:"each"},
+    {id:"w2",cat:"Windows",name:"Windows — int + ext (per window)",price:18,unit:"each"},
+    {id:"w3",cat:"Windows",name:"Storefront / commercial (from)",price:99,unit:"flat"},
+    {id:"w4",cat:"Windows",name:"2nd-floor add (per window)",price:4,unit:"each"}
+  ],
+  jam: [
+    {id:"j1",cat:"Flat-rate installs",name:"Starlink — standard",price:299,unit:"flat"},
+    {id:"j2",cat:"Flat-rate installs",name:"Starlink — roof/pole mount",price:449,unit:"flat"},
+    {id:"j3",cat:"Flat-rate installs",name:"Starlink — complex (quote)",price:0,unit:"quote"},
+    {id:"j4",cat:"Flat-rate installs",name:"Mesh WiFi / network (≤3 nodes)",price:249,unit:"flat"},
+    {id:"j5",cat:"Flat-rate installs",name:"WiFi — extra node (each)",price:75,unit:"each"},
+    {id:"j6",cat:"Flat-rate installs",name:'TV mount ≤55"',price:149,unit:"flat"},
+    {id:"j7",cat:"Flat-rate installs",name:'TV mount 56–75"',price:199,unit:"flat"},
+    {id:"j8",cat:"Flat-rate installs",name:'TV mount 75"+ / fireplace',price:279,unit:"flat"},
+    {id:"j9",cat:"Flat-rate installs",name:"Cord concealment",price:79,unit:"flat"},
+    {id:"j10",cat:"Flat-rate installs",name:"Soundbar / basic A/V (from)",price:149,unit:"flat"},
+    {id:"j11",cat:"Flat-rate installs",name:"Smart lock (each)",price:129,unit:"each"},
+    {id:"j12",cat:"Flat-rate installs",name:"Smart thermostat",price:149,unit:"flat"},
+    {id:"j13",cat:"Flat-rate installs",name:"Smart camera / doorbell (1st)",price:129,unit:"flat"},
+    {id:"j14",cat:"Flat-rate installs",name:"Smart-home starter bundle (from)",price:499,unit:"flat"},
+    {id:"jc1",cat:"Custom (quote)",name:"Home automation (quote)",price:0,unit:"quote"},
+    {id:"jc2",cat:"Custom (quote)",name:"Whole-house A/V & sound (quote)",price:0,unit:"quote"},
+    {id:"jc3",cat:"Custom (quote)",name:"Commercial sound system (quote)",price:0,unit:"quote"},
+    {id:"jc4",cat:"Custom (quote)",name:"Control systems / PLC (quote)",price:0,unit:"quote"},
+    {id:"jc5",cat:"Custom (quote)",name:"Commercial network design (quote)",price:0,unit:"quote"},
+    {id:"jc6",cat:"Custom (quote)",name:"Structured wiring (quote)",price:0,unit:"quote"}
+  ]
+};
+const BIZ={obx:{name:'OBX LOT <span class="ac">SOLUTIONS</span>',recurring:true,phone:"(252) 564-8717"},
+           jam:{name:'JAMIESON <span class="ac">AUTOMATION</span>',recurring:false,phone:""}};
+const STATUSES=["Lead","Contacted","Quoted","Won","Lost"];
+const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscaper (partner)","Other"];
+
+/* ---------- state ---------- */
+const KEY="jra_app_v1";
+let S;
+function blank(){return {customers:[],quotes:[],jobs:[]}}
+function now(){return Date.now()}
+function load(){
+  try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
+  if(!S||!S.obx)S={biz:"obx",obx:blank(),jam:blank()};
+  if(!S.jam)S.jam=blank();
+  if(!S.sync)S.sync={url:"",token:"",last:0,auto:true};
+  // migrate: ensure updatedAt on every record
+  ["obx","jam"].forEach(b=>["customers","quotes","jobs"].forEach(col=>{
+    (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
+  }));
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(S))}
+function D(){return S[S.biz]}
+function cat(){return CATALOG[S.biz]}
+function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
+function money(n){return "$"+(Math.round(n)).toLocaleString()}
+function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function fmtDate(d){if(!d)return"";const p=d.split("-");return `${p[1]}/${p[2]}/${p[0].slice(2)}`}
+/* active (non-deleted) accessors */
+function actC(){return D().customers.filter(c=>!c.deleted)}
+function actQ(){return D().quotes.filter(q=>!q.deleted)}
+function actJ(){return D().jobs.filter(j=>!j.deleted)}
+function custName(id){const c=D().customers.find(x=>x.id===id);return c?(c.name||c.company||"—"):"—"}
+function touch(r){r.updatedAt=now();return r}
+
+/* ---------- routing ---------- */
+let TAB="today";
+const view=document.getElementById("view");
+function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
+  document.getElementById("logo").innerHTML=BIZ[b].name;
+  document.getElementById("bizsel").value=b;render()}
+function render(){
+  document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
+  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,data:rData}[TAB])();
+  renderSyncPill();
+}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;render()});
+document.getElementById("bizsel").onchange=e=>setBiz(e.target.value);
+document.getElementById("fab").onclick=()=>{
+  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else openCustomer();
+};
+
+/* ---------- modal ---------- */
+const overlay=document.getElementById("overlay"),sheet=document.getElementById("sheet");
+function modal(title,html){
+  sheet.innerHTML=`<div class="shead"><h3>${title}</h3><button class="cl" onclick="closeModal()">×</button></div>`+html;
+  overlay.classList.add("show");
+}
+function closeModal(){overlay.classList.remove("show")}
+overlay.onclick=e=>{if(e.target===overlay)closeModal()};
+window.closeModal=closeModal;
+
+/* ---------- TODAY ---------- */
+function rToday(){
+  const t=today();
+  const calls=actC().filter(c=>["Lead","Contacted"].includes(c.status)||(c.next&&c.next<=t))
+     .sort((a,b)=>(a.next||"9999")<(b.next||"9999")?-1:1);
+  const jobs=actJ().filter(j=>!j.done&&j.date===t);
+  const won=actC().filter(c=>c.status==="Won").length;
+  let h=`<h2>Today · ${fmtDate(t)}</h2>
+    <div class="card row"><div class="grow"><div class="nm">${actC().length} customers · ${actQ().length} quotes · ${won} won</div>
+    <div class="sub">${BIZ[S.biz].phone||"Jamieson Automation"}</div></div></div>`;
+  h+=`<div class="secthd"><h2>To call / visit</h2><span class="ct">${calls.length}</span></div>`;
+  h+= calls.length?`<div class="card">`+calls.slice(0,30).map(liCustomer).join("")+`</div>`
+     :`<div class="empty">Nothing pending. Add customers or set follow-up dates.</div>`;
+  h+=`<div class="secthd"><h2>Today's jobs</h2><span class="ct">${jobs.length}</span></div>`;
+  h+= jobs.length?`<div class="card">`+jobs.map(liJob).join("")+`</div>`:`<div class="empty">No jobs scheduled today.</div>`;
+  view.innerHTML=h;
+}
+
+/* ---------- CUSTOMERS ---------- */
+let CSEARCH="";
+function rCustomers(){
+  let list=actC().slice().sort((a,b)=>(a.name||a.company||"").localeCompare(b.name||b.company||""));
+  if(CSEARCH){const q=CSEARCH.toLowerCase();
+    list=list.filter(c=>((c.name||"")+(c.company||"")+(c.town||"")+(c.phone||"")).toLowerCase().includes(q));}
+  let h=`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
+  if(!actC().length)h+=`<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
+  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
+  else h+=`<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
+  view.innerHTML=h;
+  const s=document.getElementById("csearch");
+  if(s)s.oninput=e=>{CSEARCH=e.target.value;const p=s.selectionStart;rCustomers();const n=document.getElementById("csearch");n.focus();n.setSelectionRange(p,p);};
+}
+function liCustomer(c){
+  return `<div class="li" onclick="openCustomer('${c.id}')">
+    <div class="grow"><div class="nm">${esc(c.name||c.company||"Unnamed")}</div>
+    <div class="sub">${esc([c.company&&c.name?c.company:"",c.town,c.phone].filter(Boolean).join(" · "))||"&nbsp;"}</div></div>
+    <span class="badge s-${c.status||"Lead"}">${c.status||"Lead"}</span></div>`;
+}
+window.openCustomer=function(id){
+  const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};
+  const isNew=!id;const f=k=>`value="${esc(c[k]||"")}"`;
+  let notesH=(c.notes||[]).slice().reverse().map(n=>`<div class="note"><div class="t">${esc(n.t)}</div>${esc(n.text)}</div>`).join("")||`<div class="muted">No notes yet.</div>`;
+  modal(isNew?"New customer":"Customer",`
+    <label>Name</label><input id="f_name" ${f("name")} placeholder="Contact name">
+    <label>Company</label><input id="f_company" ${f("company")} placeholder="Company / property">
+    <div class="row" style="gap:8px"><div class="grow"><label>Phone</label><input id="f_phone" ${f("phone")} inputmode="tel"></div>
+    <div class="grow"><label>Town</label><input id="f_town" ${f("town")}></div></div>
+    <label>Email</label><input id="f_email" ${f("email")} inputmode="email">
+    <label>Address / property</label><input id="f_address" ${f("address")}>
+    <div class="row" style="gap:8px"><div class="grow"><label>Type</label><select id="f_type">${TYPES.map(t=>`<option ${c.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div class="grow"><label>Status</label><select id="f_status">${STATUSES.map(s=>`<option ${(c.status||"Lead")===s?"selected":""}>${s}</option>`).join("")}</select></div></div>
+    <label>Next follow-up date</label><input id="f_next" type="date" value="${c.next||""}">
+    <button class="btn acc" style="margin-top:14px" onclick="saveCustomer('${c.id}',${isNew})">Save</button>
+    ${!isNew?`<div class="row" style="gap:8px;margin-top:10px">
+       <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
+       <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button></div>
+      <label>Add note</label><textarea id="f_note" placeholder="Call outcome, details…"></textarea>
+      <button class="btn sm" style="margin-top:6px" onclick="addNote('${c.id}')">Add note</button>
+      <h2 style="margin-top:16px">Notes</h2>${notesH}
+      <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`:""}
+  `);
+};
+window.saveCustomer=function(id,isNew){
+  const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);
+  ["name","company","phone","town","email","address"].forEach(k=>c[k]=val("f_"+k));
+  c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");touch(c);
+  if(isNew)d.customers.push(c);
+  save();closeModal();render();
+};
+window.addNote=function(id){const txt=val("f_note");if(!txt)return;
+  const c=D().customers.find(x=>x.id===id);c.notes=c.notes||[];
+  c.notes.push({t:new Date().toLocaleString(),text:txt});touch(c);save();openCustomer(id);};
+window.delCustomer=function(id){if(!confirm("Delete this customer?"))return;
+  const c=D().customers.find(x=>x.id===id);c.deleted=true;touch(c);save();closeModal();render();};
+
+/* ---------- QUOTES ---------- */
+function rQuotes(){
+  let h=`<h2>Quotes</h2>`;const list=actQ();
+  if(!list.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Tap + to build one.</div>`;
+  else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
+    <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
+    <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
+    <div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)${q.recurring?" · recurring":""}</div></div>
+    <div style="font-weight:800;color:var(--brand)">${money(q.total)}</div></div>`).join("")+`</div>`;
+  view.innerHTML=h;
+}
+let QITEMS=[];
+window.openQuote=function(id,customerId){
+  const d=D();const q=id?d.quotes.find(x=>x.id===id):null;
+  QITEMS=q?JSON.parse(JSON.stringify(q.items)):[];
+  const custDefault=q?q.customerId:(customerId||"");const custFree=q?q.cust:"";
+  const opts=`<option value="">— pick customer —</option>`+actC().map(c=>`<option value="${c.id}" ${custDefault===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
+  modal(id?"Quote":"New quote",`
+    <label>Customer</label><select id="q_cust">${opts}</select>
+    <input id="q_custfree" style="margin-top:6px" placeholder="…or type a name" value="${esc(custFree)}">
+    <h2 style="margin-top:14px">Line items</h2><div id="qlines"></div>
+    <button class="btn ghost sm" style="margin-top:6px" onclick="addLine()">+ Add line</button>
+    ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="q_rec" ${q&&q.recurring?"checked":""} onchange="renderTot()"><label style="margin:0">Recurring service — 20% off</label></div>`:""}
+    <div class="totbar"><span class="lab">Total</span><span class="amt" id="q_tot">$0</span></div>
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="btn acc grow" onclick="saveQuote('${q?q.id:""}')">Save quote</button>
+      <button class="btn ghost grow" onclick="copyQuote()">Copy as text</button></div>
+    ${id?`<button class="btn danger" style="margin-top:10px" onclick="delQuote('${id}')">Delete quote</button>`:""}
+  `);
+  renderLines();
+};
+function renderLines(){
+  const c=cat();
+  document.getElementById("qlines").innerHTML=QITEMS.map((it,i)=>{
+    const opts=c.map(s=>`<option value="${s.id}" ${it.serviceId===s.id?"selected":""}>${s.name}</option>`).join("");
+    const isQuote=it.unit==="quote";
+    return `<div class="qline">
+      <select onchange="lineSvc(${i},this.value)"><option value="">— service —</option>${opts}</select>
+      <input class="q" type="number" min="1" value="${it.qty}" oninput="lineQty(${i},this.value)" title="qty">
+      <input class="pr" type="number" value="${it.price}" ${isQuote?"":"readonly"} oninput="linePrice(${i},this.value)" title="price">
+      <button class="rm" onclick="rmLine(${i})">×</button></div>`;
+  }).join("")||`<div class="muted">No items yet — add one.</div>`;
+  renderTot();
+}
+window.addLine=function(){QITEMS.push({serviceId:"",name:"",unit:"flat",price:0,qty:1});renderLines();};
+window.rmLine=function(i){QITEMS.splice(i,1);renderLines();};
+window.lineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s)return;
+  QITEMS[i]={serviceId:s.id,name:s.name,unit:s.unit,price:s.price,qty:QITEMS[i].qty||1};renderLines();};
+window.lineQty=function(i,v){QITEMS[i].qty=Math.max(1,parseInt(v)||1);renderTot();};
+window.linePrice=function(i,v){QITEMS[i].price=parseFloat(v)||0;renderTot();};
+function quoteCalc(){let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));
+  const rec=document.getElementById("q_rec")&&document.getElementById("q_rec").checked;
+  const disc=rec?sub*0.2:0;return{sub,disc,total:sub-disc,rec};}
+window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);};
+window.saveQuote=function(id){
+  const t=quoteCalc();const d=D();
+  const obj={id:id||uid(),customerId:val("q_cust"),cust:val("q_custfree")||(val("q_cust")?custName(val("q_cust")):""),
+    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,total:t.total};
+  if(!obj.items.length){alert("Add at least one line item.");return;}
+  touch(obj);
+  if(id){const i=d.quotes.findIndex(x=>x.id===id);d.quotes[i]=obj;}else d.quotes.push(obj);
+  if(obj.customerId){const c=d.customers.find(x=>x.id===obj.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
+  save();closeModal();render();
+};
+window.delQuote=function(id){if(!confirm("Delete this quote?"))return;
+  const q=D().quotes.find(x=>x.id===id);q.deleted=true;touch(q);save();closeModal();render();};
+window.copyQuote=function(){
+  const t=quoteCalc();
+  let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
+  let txt=`${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"} — Quote\n`+
+    ((val("q_custfree")||val("q_cust"))?`For: ${val("q_custfree")||custName(val("q_cust"))}\n`:"")+
+    "\n"+lines.join("\n")+(t.disc?`\nRecurring discount (20%): -${money(t.disc)}`:"")+`\n\nTotal: ${money(t.total)}`+
+    (BIZ[S.biz].phone?`\n\n${BIZ[S.biz].phone}`:"");
+  if(navigator.clipboard)navigator.clipboard.writeText(txt);
+  alert("Quote copied — paste it into a text or email:\n\n"+txt);
+};
+
+/* ---------- SCHEDULE ---------- */
+function rSchedule(){
+  const t=today();const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
+  const groups={Today:[],Upcoming:[],Done:[]};
+  jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
+  let h=`<h2>Schedule</h2>`;
+  if(!jobs.length){view.innerHTML=h+`<div class="empty"><div class="big">📅</div>No jobs scheduled.<br>Tap + to add one.</div>`;return;}
+  ["Today","Upcoming","Done"].forEach(g=>{if(!groups[g].length)return;
+    h+=`<div class="secthd"><h2>${g}</h2><span class="ct">${groups[g].length}</span></div><div class="card">`+groups[g].map(liJob).join("")+`</div>`;});
+  view.innerHTML=h;
+}
+function liJob(j){
+  return `<div class="li"><div class="grow" onclick="openJob('${j.id}')">
+    <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
+    <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div>
+    <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
+}
+window.openJob=function(id,customerId){
+  const d=D();const j=id?d.jobs.find(x=>x.id===id):{id:uid(),date:today(),customerId:customerId||""};
+  const isNew=!id;
+  const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
+  const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
+  modal(isNew?"Schedule job":"Job",`
+    <label>Job / service</label><input id="j_title" value="${esc(j.title||"")}" placeholder="e.g. Power wash — driveway">
+    <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
+    <label>Customer</label><select id="j_cust">${opts}</select>
+    <div class="row" style="gap:8px"><div class="grow"><label>Date</label><input id="j_date" type="date" value="${j.date||today()}"></div>
+    <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
+    <label>Notes</label><textarea id="j_notes">${esc(j.notes||"")}</textarea>
+    <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
+    ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
+  `);
+};
+window.saveJob=function(id,isNew){
+  const d=D();let j=isNew?{id}:d.jobs.find(x=>x.id===id);
+  j.title=val("j_title");j.customerId=val("j_cust");j.date=val("j_date");j.time=val("j_time");j.notes=val("j_notes");
+  if(!j.title){alert("Give the job a name.");return;}
+  if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
+  save();closeModal();render();
+};
+window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done;touch(j);save();render();};
+window.delJob=function(id){if(!confirm("Delete this job?"))return;
+  const j=D().jobs.find(x=>x.id===id);j.deleted=true;touch(j);save();closeModal();render();};
+
+/* ---------- DATA + SYNC ---------- */
+function rData(){
+  const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
+  const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
+  view.innerHTML=`<h2>Sync</h2>
+    <div class="card">
+      <label>Sync server URL</label><input id="sy_url" value="${esc(S.sync.url)}" placeholder="http://your-server:4000">
+      <label>Access token (shared secret)</label><input id="sy_token" value="${esc(S.sync.token)}" placeholder="set this same on the server">
+      <div class="toggle"><input type="checkbox" id="sy_auto" ${S.sync.auto?"checked":""}><label style="margin:0">Auto-sync when the app opens</label></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn grow" onclick="saveSync()">Save settings</button>
+        <button class="btn acc grow" onclick="syncNow()">Sync now</button></div>
+      <p class="muted" style="margin-top:8px">Last synced: ${last}. <span id="sy_msg"></span></p>
+    </div>
+    <h2>This device</h2>
+    <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
+    <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
+    <h2>Backup</h2>
+    <div class="card">
+      <p class="muted" style="margin-bottom:10px">Data lives on this device. Export a backup any time; import to restore or move it manually.</p>
+      <button class="btn ghost" onclick="exportData()">Export backup (.json)</button>
+      <label>Import backup</label><input type="file" accept="application/json" id="impfile" onchange="importData(this)">
+    </div>
+    <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
+}
+window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
+  S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();};
+function syMsg(t){const e=document.getElementById("sy_msg");if(e)e.textContent=t;}
+function renderSyncPill(){const b=document.getElementById("syncbtn");
+  if(!S.sync.url){b.style.display="none";return;}
+  b.style.display="";b.textContent="⟳ Sync";}
+window.syncNow=async function(){
+  if(!S.sync.url){if(TAB==="data")syMsg("Set a server URL first.");else{TAB="data";render();}return;}
+  syMsg("Syncing…");const btn=document.getElementById("syncbtn");if(btn)btn.textContent="⟳ …";
+  try{
+    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam}})});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const data=await res.json();
+    if(!data||!data.state||!data.state.obx)throw new Error("bad response");
+    S.obx=data.state.obx;S.jam=data.state.jam;S.sync.last=now();save();
+    render();syMsg("Synced ✓");
+  }catch(e){syMsg("Sync failed: "+e.message);if(btn)btn.textContent="⟳ Sync";}
+};
+window.exportData=function(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="business-app-backup-"+today()+".json";a.click();
+};
+window.importData=function(inp){
+  const file=inp.files[0];if(!file)return;const r=new FileReader();
+  r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.obx||!o.jam)throw 0;
+    if(!confirm("Replace all current data with this backup?"))return;
+    o.sync=o.sync||S.sync;S=o;S.biz=S.biz||"obx";save();setBiz(S.biz);alert("Imported.");}
+    catch(e){alert("That doesn't look like a valid backup file.")}};
+  r.readAsText(file);
+};
+
+/* ---------- helpers ---------- */
+function val(id){const e=document.getElementById(id);return e?e.value.trim():""}
+function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]))}
+
+/* ---------- boot ---------- */
+load();setBiz(S.biz);
+if(S.sync.url&&S.sync.auto)syncNow();
+/* v2 */
+</script>
+</body>
+</html>

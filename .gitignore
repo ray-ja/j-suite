@@ -1,0 +1,21 @@
+# --- Live data (never commit business/customer data) ---
+data.json
+business-app-backup-*.json
+
+# --- Office lock & temp files ---
+~$*
+.~lock.*#
+*.tmp
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+
+# --- Editor ---
+.vscode/
+.idea/
