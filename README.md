@@ -14,6 +14,10 @@ Working repo for two businesses: **Jamieson Automation** (skilled automation / A
 | `OBX Lot Solutions - Quote Sheet.xlsx` | On-the-spot quote calculator. |
 | `OBX Lot Solutions - Flyer (leave-behind).pdf` | Branded leave-behind flyer. |
 | `Jamieson Automation - website.html` | One-page marketing site for Jamieson Automation (navy/blue brand, JA logo, two service tiers, request-a-quote). |
+| `Jamieson — Product & Install Guide.md` | Quoting reference: smart locks (protocols/brands/install), Starlink, cameras, networking, lighting — what to sell and what's included. |
+| `OBX Lot Solutions — Service Guide.md` | Quoting reference: washing/house-watch/junk specs, what's included, sizing, $/hour. |
+| `Market Research & Strategy.md`, `Opportunity Analysis — Is It Worth It.md`, `Opportunity & Pricing Model.xlsx` | Overnight research + the income model vs current wages. |
+| `Marketing Channel Plan.md` | Every marketing channel ranked by cost & payback (free → big-spend), with cost/eyes/leads per channel, per business. |
 | `Brand assets/` | Logos (SVG) for both businesses. |
 | `assets/` | App-optimized logos + PWA icons. |
 | `manifest.webmanifest`, `sw.js` | PWA manifest + offline service worker (served by sync-server.js). |
@@ -55,8 +59,9 @@ To turn it on:
 
 ## Roadmap
 
-- **Done:** desktop scaling, multi-device sync, month calendar, quote Print/Save-PDF, server-served app + auto-filled sync URL, real logos in-app, installable PWA, invoicing, Today dashboard, customer history, Jamieson Automation website, per-business To-Do page, QuickBooks Online bridge scaffold, **dark theme**, **user accounts (username/password, no email) + to-do assignment**, **Plan tab (business one-pager, marketing strategy + campaign tracker, market research) — prefilled & editable per business**
-- Next: get Intuit keys → wire QuickBooks live (push invoices / pull AR); online booking + card payments; HTTPS for phone PWA install; business phone line; publish the Jamieson site to a domain
+- **Done:** desktop scaling, multi-device sync, month calendar, quote Print/Save-PDF, server-served app + auto-filled sync URL, real logos in-app, installable PWA, invoicing, Today dashboard, customer history, Jamieson Automation website, per-business To-Do page, QuickBooks Online bridge scaffold, dark theme, user accounts + to-do assignment, Plan tab (one-pager/marketing/research), **deep categorized quoting catalogs (grouped dropdown) for both businesses + product/install knowledge guides**, **Map tab: satellite view, draw-a-lot parking-space estimator → one-click quote, tap-to-count mode, saveable lead pins (synced)**
+- **Guided Quote wizard** (both businesses): step-by-step flow (customer w/ required name+phone+address → pick services via tiles → per-service calculator with help text, tooltips & sanity warnings → recurring + discount → review → save & present). Powered by a **configurable sliding-scale rate engine** (bigger jobs cost less per unit; rates editable in Settings → Pricing rates). The quick manual builder is still there.
+- Next: get Intuit keys → wire QuickBooks live (push invoices / pull AR); online booking + card payments; HTTPS for phone PWA install; business phone line; publish the Jamieson site to a domain; friendlier (non-JSON) rates editor UI
 
 ### Notes on accounts
 Accounts are lightweight identity for to-do assignment, **not** hardened security — data lives in your local/synced store. Passwords are hashed (SHA-256) but a determined person with device access can read the data. Fine for a trusted 2–3 person crew; don't treat it as a security wall. Users sync across devices; the signed-in user is per-device.

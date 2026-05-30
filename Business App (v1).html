@@ -8,6 +8,8 @@
 <meta name="theme-color" content="#1B2A4E">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee; --soft:#f7f9fb;
@@ -39,6 +41,9 @@
   .subbtn{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600}
   .subbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
   .m-Planned{background:#eef2ff;color:#3b46c4}.m-Active{background:#e7f7ea;color:#1d8a3a}.m-Paused{background:#fff4e5;color:#b26a00}.m-Done{background:#eceff3;color:#5b6677}
+  .maptop{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  #map{height:60vh;min-height:320px;border-radius:12px;border:1px solid var(--line);z-index:1}
+  .leaflet-container{font:inherit}
   button{font-family:inherit;cursor:pointer}
   .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;width:100%}
   .btn.acc{background:var(--accent);color:var(--accent-ink)}
@@ -135,6 +140,7 @@
   <button data-tab="customers"><span class="ic">👥</span>Customers</button>
   <button data-tab="quotes"><span class="ic">🧾</span>Quotes</button>
   <button data-tab="schedule"><span class="ic">📅</span>Schedule</button>
+  <button data-tab="map"><span class="ic">🗺️</span>Map</button>
   <button data-tab="todo"><span class="ic">✅</span>To-Do</button>
   <button data-tab="plan"><span class="ic">📈</span>Plan</button>
   <button data-tab="data"><span class="ic">⚙️</span>Data</button>
@@ -165,7 +171,25 @@ const CATALOG = {
     {id:"w1",cat:"Windows",name:"Windows — exterior (per window)",price:12,unit:"each"},
     {id:"w2",cat:"Windows",name:"Windows — int + ext (per window)",price:18,unit:"each"},
     {id:"w3",cat:"Windows",name:"Storefront / commercial (from)",price:99,unit:"flat"},
-    {id:"w4",cat:"Windows",name:"2nd-floor add (per window)",price:4,unit:"each"}
+    {id:"w4",cat:"Windows",name:"2nd-floor add (per window)",price:4,unit:"each"},
+    {id:"pw10",cat:"Power Washing",name:"Roof soft wash (from)",price:399,unit:"flat"},
+    {id:"pw11",cat:"Power Washing",name:"Deck/fence — clean + seal (from)",price:349,unit:"flat"},
+    {id:"pw12",cat:"Power Washing",name:"Fence wash (per linear ft)",price:3,unit:"each"},
+    {id:"pw13",cat:"Power Washing",name:"Dock / pier wash (from)",price:149,unit:"flat"},
+    {id:"g1",cat:"Gutters",name:"Gutter cleaning (from)",price:149,unit:"flat"},
+    {id:"g2",cat:"Gutters",name:"Gutter cleaning (per linear ft)",price:1.5,unit:"each"},
+    {id:"g3",cat:"Gutters",name:"Gutter guard install (quote)",price:0,unit:"quote"},
+    {id:"hw1",cat:"House-Watch (recurring)",name:"House-watch — monthly visit",price:50,unit:"flat"},
+    {id:"hw2",cat:"House-Watch (recurring)",name:"House-watch — bi-weekly (per visit)",price:45,unit:"each"},
+    {id:"hw3",cat:"House-Watch (recurring)",name:"House-watch — weekly (per visit)",price:40,unit:"each"},
+    {id:"hw4",cat:"House-Watch (recurring)",name:"House check — one-off",price:75,unit:"flat"},
+    {id:"hw5",cat:"House-Watch (recurring)",name:"Storm check / prep visit",price:95,unit:"flat"},
+    {id:"ad1",cat:"Add-ons",name:"Dryer vent cleaning",price:130,unit:"flat"},
+    {id:"ad2",cat:"Add-ons",name:"Trash bin cleaning (per bin)",price:15,unit:"each"},
+    {id:"ad3",cat:"Add-ons",name:"HVAC / mini-split coil cleaning",price:120,unit:"flat"},
+    {id:"ad4",cat:"Add-ons",name:"Pool / hot-tub turnover (quote)",price:0,unit:"quote"},
+    {id:"ad5",cat:"Add-ons",name:"Storm prep / board-up (quote)",price:0,unit:"quote"},
+    {id:"ad6",cat:"Add-ons",name:"Handyman / property maintenance (per hour)",price:75,unit:"each"}
   ],
   jam: [
     {id:"j1",cat:"Flat-rate installs",name:"Starlink — standard",price:299,unit:"flat"},
@@ -187,7 +211,41 @@ const CATALOG = {
     {id:"jc3",cat:"Custom (quote)",name:"Commercial sound system (quote)",price:0,unit:"quote"},
     {id:"jc4",cat:"Custom (quote)",name:"Control systems / PLC (quote)",price:0,unit:"quote"},
     {id:"jc5",cat:"Custom (quote)",name:"Commercial network design (quote)",price:0,unit:"quote"},
-    {id:"jc6",cat:"Custom (quote)",name:"Structured wiring (quote)",price:0,unit:"quote"}
+    {id:"jc6",cat:"Custom (quote)",name:"Structured wiring (quote)",price:0,unit:"quote"},
+    {id:"jl1",cat:"Smart Locks",name:"Smart lock — WiFi deadbolt (Yale/Schlage), supply + install",price:379,unit:"flat"},
+    {id:"jl2",cat:"Smart Locks",name:"Smart lock — retrofit (August, keeps key), supply + install",price:279,unit:"flat"},
+    {id:"jl3",cat:"Smart Locks",name:"Smart lock — budget (Ultraloq/Wyze), supply + install",price:249,unit:"flat"},
+    {id:"jl4",cat:"Smart Locks",name:"Smart lock — install only (customer-supplied), each",price:129,unit:"each"},
+    {id:"jl5",cat:"Smart Locks",name:"Z-Wave/Zigbee hub or bridge, supply + install",price:149,unit:"flat"},
+    {id:"jl6",cat:"Smart Locks",name:"Lock PIN / PMS code setup (per lock)",price:39,unit:"each"},
+    {id:"cam1",cat:"Cameras & Security",name:"PoE camera system — 4-cam 4K NVR kit, supply + install",price:1299,unit:"flat"},
+    {id:"cam2",cat:"Cameras & Security",name:"PoE camera — additional, supply + install (each)",price:249,unit:"each"},
+    {id:"cam3",cat:"Cameras & Security",name:"Camera — install only (customer-supplied), each",price:129,unit:"each"},
+    {id:"cam4",cat:"Cameras & Security",name:"NVR / recorder setup",price:149,unit:"flat"},
+    {id:"cam5",cat:"Cameras & Security",name:"WiFi camera (Reolink/Wyze) install + setup (each)",price:99,unit:"each"},
+    {id:"cam6",cat:"Cameras & Security",name:"Video doorbell — supply + install",price:229,unit:"flat"},
+    {id:"cam7",cat:"Cameras & Security",name:"Cat6 camera run (per run, up to 75 ft)",price:89,unit:"each"},
+    {id:"net1",cat:"Networking & WiFi",name:"Mesh WiFi — up to 3 nodes, supply + install",price:499,unit:"flat"},
+    {id:"net2",cat:"Networking & WiFi",name:"WiFi access point (UniFi), supply + install (each)",price:279,unit:"each"},
+    {id:"net3",cat:"Networking & WiFi",name:"Network switch (8-port PoE), supply + install",price:249,unit:"flat"},
+    {id:"net4",cat:"Networking & WiFi",name:"Router / gateway (UniFi), supply + install",price:349,unit:"flat"},
+    {id:"net5",cat:"Networking & WiFi",name:"Cat6 data drop (per run, up to 75 ft)",price:89,unit:"each"},
+    {id:"net6",cat:"Networking & WiFi",name:"Network design + configuration",price:149,unit:"flat"},
+    {id:"sl1",cat:"Starlink",name:"Starlink — standard install (eave/ground)",price:299,unit:"flat"},
+    {id:"sl2",cat:"Starlink",name:"Starlink — roof pivot mount + clean cable run",price:449,unit:"flat"},
+    {id:"sl3",cat:"Starlink",name:"Starlink — pole / mast mount",price:499,unit:"flat"},
+    {id:"sl4",cat:"Starlink",name:"Starlink mount (pivot/pole), supply",price:79,unit:"flat"},
+    {id:"sl5",cat:"Starlink",name:"Cable extension run (per 50 ft)",price:59,unit:"each"},
+    {id:"sh1",cat:"Smart Home & Climate",name:"Smart thermostat — supply + install",price:279,unit:"flat"},
+    {id:"sh2",cat:"Smart Home & Climate",name:"Smart thermostat — install only",price:149,unit:"flat"},
+    {id:"sh3",cat:"Smart Home & Climate",name:"Smart switch/dimmer — install, low-voltage (each)",price:89,unit:"each"},
+    {id:"sh4",cat:"Smart Home & Climate",name:"Smart-home hub (Home Assistant/SmartThings) setup",price:199,unit:"flat"},
+    {id:"lt1",cat:"Outdoor Lighting",name:"Permanent LED lighting (per linear ft, installed)",price:25,unit:"each"},
+    {id:"lt2",cat:"Outdoor Lighting",name:"Permanent lighting controller + setup",price:650,unit:"flat"},
+    {id:"lt3",cat:"Outdoor Lighting",name:"Permanent lighting — starter (up to 100 ft)",price:2200,unit:"flat"},
+    {id:"lt4",cat:"Outdoor Lighting",name:"Holiday lighting (seasonal, quote)",price:0,unit:"quote"},
+    {id:"lab1",cat:"Labor",name:"Tech labor (per hour)",price:125,unit:"each"},
+    {id:"lab2",cat:"Labor",name:"Site assessment / consult",price:75,unit:"flat"}
   ]
 };
 const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 564-8717"},
@@ -198,7 +256,7 @@ const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscape
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -210,12 +268,25 @@ function load(){
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
     if(!S[b].docs)S[b].docs=[];
-    ["customers","quotes","jobs","todos","mktTracker","docs"].forEach(col=>{
+    if(!S[b].places)S[b].places=[];
+    ["customers","quotes","jobs","todos","mktTracker","docs","places"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
   });
   if(!S.seeded){seedTodos();seedDocs();S.seeded=true;save();}
   if(!S.researchV2){setResearchDocs();S.researchV2=true;save();}
+  if(!S.researchV3){appendOpportunity();S.researchV3=true;save();}
+  if(!S.marketingV2){appendMarketing();S.marketingV2=true;save();}
+}
+function appendMarketing(){
+  const add=(biz,text)=>{let dc=S[biz].docs.find(x=>x.id==="marketing");if(dc&&dc.text.indexOf("CHANNEL PLAN")<0){dc.text=dc.text+"\n\n"+text;dc.updatedAt=now();}};
+  add("obx","CHANNEL PLAN (cost · eyes · leads) — broke-friendly order\nRULE: spend sweat before dollars; spend first dollars only where you pay per RESULT (a lead), not per impression.\n\nTIER 0 — FREE, do now:\n- Google Business Profile + reviews — $0, the #1 free asset; ranks you for 'pressure washing near me'. Ask every customer for a review.\n- Direct PM outreach (the call list) — $0, your #1 channel; one PM = many doors.\n- Referrals + review asks — $0, highest close rate.\n- Nextdoor + local FB groups — $0, post before/after photos.\n- Door hangers — ~$0.12 each, brothers distribute free; 1-3% response = 5-15 calls per 500.\n- Truck magnets + shirts + yard signs — ~$100-200 once, cheap rolling visibility.\n\nTIER 1 — first ~$250/mo:\n- Google Local Services Ads (LSA) — $12-30/lead, pay-per-lead, 'Google Guaranteed'. $250/mo ~ 12 leads, 30-40% close = 4-5 jobs/mo. BEST first paid dollar. Move the $10/day Google Search into LSA.\n\nTIER 2 — ~$300-1,500/mo when cash flows:\n- Meta ads (before/after) — $300-800/mo, CPL ~$18-22 = ~18-22 leads/mo.\n- Vehicle wrap — $2,500-5,000 once, 30-70k impressions/day, $0.36 CPM (cheapest ad there is), recoup 3-6 mo.\n- EDDM direct mail — $0.30-0.60/piece, target second-home/rental zips for house-watch.\n\nTIER 3 — later: full local SEO (durable, compounding), retargeting, sponsorships.\n\nAVOID: Angi/Thumbtack — shared leads, ~$100-2,500 CAC, bad ROI. Skip while broke.\nFull detail: 'Marketing Channel Plan.md'.");
+  add("jam","CHANNEL PLAN (cost · eyes · leads) — premium/relationship-driven\nJamieson wins on trust + search-intent, not impressions.\n\nTIER 0 — FREE, do now:\n- Google Business Profile + reviews — $0; rank for 'OBX Starlink installer', 'home automation OBX'.\n- Publish the website (already built) — your SEO foundation.\n- Outreach to vacation-rental managers — $0; sell Starlink/wifi/locks per door (cross-sell from OBX Lot Solutions PM relationships).\n- Referrals — $0; every clean install = a referral, so ask.\n- Nextdoor + local FB groups — $0, portfolio photos.\n\nTIER 1 — first ~$200/mo:\n- Small Google Search budget on high-intent terms ('OBX Starlink install', 'smart lock installer OBX') — buyers there are ready to hire. Use LSA where home-tech/security categories apply.\n\nTIER 2 — ~$300-1,000/mo when cash flows:\n- Targeted Meta ads for high-ticket installs (Starlink, permanent lighting) with strong before/after creative.\n- Vehicle wrap (shared with the work truck) — cheap impressions.\n\nTIER 3 — later: local SEO build-out, retargeting.\n\nAVOID: Angi/Thumbtack (bad ROI, shared leads).\nFull detail: 'Marketing Channel Plan.md'.");
+}
+function appendOpportunity(){
+  const add=(biz,text)=>{let dc=S[biz].docs.find(x=>x.id==="research");if(dc&&dc.text.indexOf("MONEY ON THE TABLE")<0){dc.text=dc.text+"\n\n"+text;dc.updatedAt=now();}};
+  add("obx","MONEY ON THE TABLE (vs Pierce $15/hr, Chase $18/hr)\nThe point isn't a great hourly wage — it's that you keep the OWNER MARGIN above labor, which scales with the crew. Paying the brothers $18/hr, each job still nets the business: soft wash ~$248 ($71/clock-hr), pressure wash ~$126, house-watch ~$35 ($46/hr, recurring), junk ~$268 ($134/hr), windows ~$168, holiday lighting ~$856 ($214/hr). Every line beats the brothers' current wage AFTER paying them — so they get a raise and the business still profits.\n\nSCENARIOS (Ray owns 1/3): conservative ~$52k/yr business margin (Ray ~$17k), moderate ~$115k (Ray ~$38k), aggressive yr-2 two-crew ~$253k (Ray ~$84k).\n\nONE-STOP FRONT DOOR: OBX Lot Solutions is the single number a property manager calls for anything; Jamieson is the tech subcontractor; add more trades over time. MONEY RULE: when a job includes tech, Jamieson invoices that portion (Ray owns 100% of Jamieson vs 1/3 of OBX) — keep cleanup money in OBX, tech money in Jamieson.\n\nMORE SERVICES TO ADD: dryer vent ($100-187), deck/fence staining, trash-bin cleaning (subscription), pool/hot-tub service, dock/boat-bottom washing, HVAC coil cleaning, handyman/property maintenance, storm prep, golf-cart repair.\n\nFull detail: 'Opportunity Analysis — Is It Worth It.md' + 'Opportunity & Pricing Model.xlsx'.");
+  add("jam","MONEY ON THE TABLE (vs Ray's $55/hr, ~$40k last year)\nEvery Jamieson hour is worth multiples of the escape room: Starlink install ~$135/Ray-hr (2.4x), rental tech package ~$175 (3.2x), permanent lighting ~$150 (2.7x), commercial AV/Q-Sys ~$206 (3.7x). Ray owns 100% of this.\n\nSCENARIOS (to Ray directly): part-time ~$63k/yr, half-time ~$115k, lean-in ~$200k.\n\nCOMBINED PATH: today ~$40k -> conservative OBX + part-time Jamieson ~$81k (2x) -> moderate + half-time ~$154k (3.8x) -> aggressive + lean-in $250k+.\n\nTHE PLAY: run OBX on the brothers (earns without you) so your scarce hours go to high-margin Jamieson work. Start with Starlink packages.\n\nFull detail: 'Opportunity Analysis — Is It Worth It.md' + 'Opportunity & Pricing Model.xlsx'.");
 }
 function setResearchDocs(){
   const set=(biz,text)=>{let dc=S[biz].docs.find(x=>x.id==="research");if(dc){dc.text=text;dc.deleted=false;dc.updatedAt=now();}else S[biz].docs.push({id:"research",text:text,updatedAt:now()});};
@@ -281,13 +352,13 @@ function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   document.getElementById("bizsel").value=b;render()}
 function render(){
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
-  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,todo:rTodos,plan:rPlan,data:rData}[TAB])();
+  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,map:rMap,todo:rTodos,plan:rPlan,data:rData}[TAB])();
   renderSyncPill();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;render()});
 document.getElementById("bizsel").onchange=e=>setBiz(e.target.value);
 document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="data")return;else openCustomer();
+  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="map"||TAB==="data")return;else openCustomer();
 };
 
 /* ---------- modal ---------- */
@@ -396,8 +467,11 @@ window.delCustomer=function(id){if(!confirm("Delete this customer?"))return;
 
 /* ---------- QUOTES ---------- */
 function rQuotes(){
-  let h=`<h2>Quotes</h2>`;const list=actQ();
-  if(!list.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Tap + to build one.</div>`;
+  if(WZON)return wizRender();
+  let h=`<h2>Quotes</h2>
+    <button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>`;
+  const list=actQ();
+  if(!list.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
     <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
     <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
@@ -406,9 +480,9 @@ function rQuotes(){
   view.innerHTML=h;
 }
 let QITEMS=[];let CURQ=null;
-window.openQuote=function(id,customerId){
+window.openQuote=function(id,customerId,preset){
   const d=D();const q=id?d.quotes.find(x=>x.id===id):null;CURQ=q;
-  QITEMS=q?JSON.parse(JSON.stringify(q.items)):[];
+  QITEMS=q?JSON.parse(JSON.stringify(q.items)):(preset?JSON.parse(JSON.stringify(preset)):[]);
   const custDefault=q?q.customerId:(customerId||"");const custFree=q?q.cust:"";
   const opts=`<option value="">— pick customer —</option>`+actC().map(c=>`<option value="${c.id}" ${custDefault===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   modal(id?"Quote":"New quote",`
@@ -432,7 +506,8 @@ window.openQuote=function(id,customerId){
 function renderLines(){
   const c=cat();
   document.getElementById("qlines").innerHTML=QITEMS.map((it,i)=>{
-    const opts=c.map(s=>`<option value="${s.id}" ${it.serviceId===s.id?"selected":""}>${s.name}</option>`).join("");
+    const groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
+    const opts=groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${it.serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
     const isQuote=it.unit==="quote";
     return `<div class="qline">
       <select onchange="lineSvc(${i},this.value)"><option value="">— service —</option>${opts}</select>
@@ -452,6 +527,7 @@ function quoteCalc(){let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1)
   const rec=document.getElementById("q_rec")&&document.getElementById("q_rec").checked;
   const disc=rec?sub*0.2:0;return{sub,disc,total:sub-disc,rec};}
 window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);};
+function quoteFigures(){if(!document.getElementById("q_rec")&&CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal,disc:CURQ.discount,total:CURQ.total};return quoteCalc();}
 window.saveQuote=function(id){
   const t=quoteCalc();const d=D();
   const obj={id:id||uid(),customerId:val("q_cust"),cust:val("q_custfree")||(val("q_cust")?custName(val("q_cust")):""),
@@ -467,21 +543,21 @@ window.delQuote=function(id){if(!confirm("Delete this quote?"))return;
 window.toggleInvoiced=function(id){const q=D().quotes.find(x=>x.id===id);q.invoiced=!q.invoiced;touch(q);save();openQuote(id);};
 window.togglePaid=function(id){const q=D().quotes.find(x=>x.id===id);q.paid=!q.paid;if(q.paid)q.invoiced=true;touch(q);save();openQuote(id);};
 window.copyQuote=function(){
-  const t=quoteCalc();
+  const t=quoteFigures();const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
   let txt=`${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"} — Quote\n`+
-    ((val("q_custfree")||val("q_cust"))?`For: ${val("q_custfree")||custName(val("q_cust"))}\n`:"")+
+    (who?`For: ${who}\n`:"")+
     "\n"+lines.join("\n")+(t.disc?`\nRecurring discount (20%): -${money(t.disc)}`:"")+`\n\nTotal: ${money(t.total)}`+
     (BIZ[S.biz].phone?`\n\n${BIZ[S.biz].phone}`:"");
   if(navigator.clipboard)navigator.clipboard.writeText(txt);
   alert("Quote copied — paste it into a text or email:\n\n"+txt);
 };
 window.printQuote=function(){
-  const t=quoteCalc();const biz=S.biz;const isObx=biz==="obx";
+  const t=quoteFigures();const biz=S.biz;const isObx=biz==="obx";
   const brand=isObx?"#1B2A4E":"#002052";const acc=isObx?"#8BC34A":"#0099E5";
   const name=isObx?"OBX Lot Solutions":"Jamieson Automation";
   const phone=BIZ[biz].phone||"";
-  const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"");
+  const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   const rows=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`<tr><td>${esc(it.name)}</td><td style="text-align:center">${it.qty||1}</td><td style="text-align:right">${money((it.price||0)*(it.qty||1))}</td></tr>`).join("");
   const nameHtml=name.replace(/ ([^ ]+)$/,' <span style="color:'+acc+'">$1</span>');
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Quote - ${esc(name)}</title>
@@ -685,7 +761,279 @@ window.saveMkt=function(id,isNew){
 window.delMkt=function(id){if(!confirm("Delete this campaign?"))return;
   const m=D().mktTracker.find(x=>x.id===id);m.deleted=true;m.updatedAt=now();save();closeModal();render();};
 
+/* ---------- MAP (satellite lot estimator + lead pins) ---------- */
+let MAP=null,MAP_MODE="draw",MPOLY=[],MCOUNT=[],MSQFT=325,MPOLYL=null,MCOUNTL=null,MPINL=null;
+function rMap(){
+  view.innerHTML=`<div class="secthd"><h2>Map · quote &amp; leads</h2></div>
+    <div class="maptop"><input id="map_search" placeholder="Search an address…" style="flex:1;min-width:140px" onkeydown="if(event.key==='Enter')mapSearch()"><button class="btn ghost sm" onclick="mapSearch()">Go</button></div>
+    <div class="maptop">
+      <button class="subbtn on" id="mb_draw" onclick="setMapMode('draw')">▱ Draw lot</button>
+      <button class="subbtn" id="mb_count" onclick="setMapMode('count')">• Count spaces</button>
+      <button class="subbtn" id="mb_pin" onclick="setMapMode('pin')">📍 Drop pin</button>
+      <button class="btn ghost sm" onclick="mapClear()">Clear</button>
+    </div>
+    <div class="maptop"><label style="margin:0">Sq ft / space</label><input id="map_sqft" type="number" value="${MSQFT}" style="width:80px" onchange="MSQFT=parseFloat(this.value)||325;mapRecalc()"><span class="muted">~325 incl. drive aisles</span></div>
+    <div id="map"></div>
+    <div class="card" id="map_res" style="margin-top:10px"><span class="muted">Pick "Draw lot", then tap the corners of a parking lot on the satellite view — it estimates the number of spaces and quotes it. Or drop pins to map leads.</span></div>
+    <p class="muted" style="margin-top:8px">Ownership lookup: <a href="https://gis.darenc.com/" target="_blank" rel="noopener">Dare County GIS</a> · <a href="https://www.maps.arcgis.com/" target="_blank" rel="noopener">Currituck GIS</a>. The map needs an internet connection.</p>`;
+  setTimeout(initMap,40);
+}
+function initMap(){
+  const el=document.getElementById("map");if(!el)return;
+  if(typeof L==="undefined"){el.innerHTML='<div class="muted" style="padding:24px">Map library didn\'t load — you need an internet connection for the map.</div>';return;}
+  MAP=L.map("map").setView([36.07,-75.70],11);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:20,attribution:"Imagery © Esri"}).addTo(MAP);
+  MPINL=L.layerGroup().addTo(MAP);MPOLYL=L.layerGroup().addTo(MAP);MCOUNTL=L.layerGroup().addTo(MAP);
+  MPOLY=[];MCOUNT=[];
+  renderPlaces();setMapMode(MAP_MODE);
+  MAP.on("click",mapClick);
+}
+window.setMapMode=function(m){MAP_MODE=m;["draw","count","pin"].forEach(x=>{const b=document.getElementById("mb_"+x);if(b)b.classList.toggle("on",x===m);});};
+function mapClick(e){
+  if(MAP_MODE==="draw"){MPOLY.push(e.latlng);drawPoly();mapRecalc();}
+  else if(MAP_MODE==="count"){MCOUNT.push(e.latlng);drawCount();mapRecalc();}
+  else if(MAP_MODE==="pin"){addPlacePrompt(e.latlng);}
+}
+function drawPoly(){MPOLYL.clearLayers();
+  MPOLY.forEach(p=>L.circleMarker(p,{radius:4,color:"#8BC34A",fillColor:"#8BC34A",fillOpacity:1}).addTo(MPOLYL));
+  if(MPOLY.length>=2)L.polygon(MPOLY,{color:"#8BC34A",weight:2,fillOpacity:0.15}).addTo(MPOLYL);}
+function drawCount(){MCOUNTL.clearLayers();
+  MCOUNT.forEach((p,i)=>L.marker(p,{icon:L.divIcon({className:"",iconSize:[20,20],html:'<div style="background:#1B2A4E;color:#fff;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:700;text-align:center;line-height:20px">'+(i+1)+'</div>'})}).addTo(MCOUNTL));}
+function polyAreaSqft(){
+  if(MPOLY.length<3)return 0;
+  const lat0=MPOLY[0].lat*Math.PI/180, mx=p=>p.lng*111320*Math.cos(lat0), my=p=>p.lat*110540;
+  let a=0;for(let i=0;i<MPOLY.length;i++){const j=(i+1)%MPOLY.length;a+=mx(MPOLY[i])*my(MPOLY[j])-mx(MPOLY[j])*my(MPOLY[i]);}
+  return Math.abs(a/2)*10.7639;
+}
+window.mapRecalc=function(){
+  const res=document.getElementById("map_res");if(!res)return;
+  if(MAP_MODE==="count"||MCOUNT.length){res.innerHTML=`<div class="nm">${MCOUNT.length} spaces counted</div><div class="sub">Tap each space to count; tap "Quote" when done.</div><button class="btn acc sm" style="margin-top:8px" onclick="quoteLot(${MCOUNT.length})">Quote parking-lot cleanup</button>`;return;}
+  const sqft=polyAreaSqft();
+  if(sqft<50){res.innerHTML=`<span class="muted">Tap the corners of the lot to estimate spaces.</span>`;return;}
+  const spaces=Math.round(sqft/MSQFT);
+  res.innerHTML=`<div class="nm">~${Math.round(sqft).toLocaleString()} sq ft → ~${spaces} parking spaces</div><div class="sub">at ${MSQFT} sq ft/space (incl. drive aisles)</div><button class="btn acc sm" style="margin-top:8px" onclick="quoteLot(${spaces})">Quote parking-lot cleanup (${spaces} spaces)</button>`;
+};
+window.mapClear=function(){MPOLY=[];MCOUNT=[];if(MPOLYL)MPOLYL.clearLayers();if(MCOUNTL)MCOUNTL.clearLayers();mapRecalc();};
+window.mapSearch=function(){
+  const q=(document.getElementById("map_search")||{}).value;if(!q)return;
+  fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(q))
+    .then(r=>r.json()).then(d=>{if(d&&d[0])MAP.setView([+d[0].lat,+d[0].lon],19);else alert("Address not found.");})
+    .catch(()=>alert("Search failed — need an internet connection."));
+};
+window.quoteLot=function(spaces){
+  const price=spaces<=25?79:spaces<=50?129:spaces<=100?199:spaces<=200?349:spaces<=300?499:spaces<=500?799:Math.round(spaces*1.6);
+  TAB="quotes";render();
+  openQuote(null,"",[{serviceId:"",name:"Parking-lot cleanup — "+spaces+" spaces",unit:"quote",price:price,qty:1}]);
+};
+function renderPlaces(){if(!MPINL)return;MPINL.clearLayers();(D().places||[]).filter(p=>!p.deleted).forEach(addPlaceMarker);}
+function addPlaceMarker(p){
+  L.marker([p.lat,p.lng]).addTo(MPINL).bindPopup("<b>"+esc(p.name)+"</b>"+(p.owner?"<br>"+esc(p.owner):"")+(p.notes?"<br>"+esc(p.notes):"")+'<br><a href="#" onclick="delPlace(\''+p.id+'\');return false">remove</a>');
+}
+function addPlacePrompt(latlng){
+  const name=prompt("Property / lead name:");if(!name)return;
+  const owner=prompt("Owner or property manager (optional):")||"";
+  const p={id:uid(),name:name,type:"lead",owner:owner,notes:"",lat:latlng.lat,lng:latlng.lng,updatedAt:now()};
+  D().places=D().places||[];D().places.push(p);save();addPlaceMarker(p);
+}
+window.delPlace=function(id){const p=D().places.find(x=>x.id===id);if(p){p.deleted=true;p.updatedAt=now();save();renderPlaces();if(MAP)MAP.closePopup();}};
+
+/* ---------- QUOTE WIZARD: configurable sliding-scale rate engine ---------- */
+const RATES_DEFAULT={
+ obx:{
+  softwash:{label:"House soft wash (siding)",unit:"sq ft",hint:"Exterior wall area = footprint perimeter × wall height. Soft wash uses low pressure + solution — safe for siding.",tiers:[[1500,0.18],[3000,0.15],[1e9,0.12]],min:199,stories2:1.25,stories3:1.5,heavy:1.2},
+  roofwash:{label:"Roof soft wash",unit:"sq ft",hint:"Roof surface area. ALWAYS soft-wash a roof — high pressure strips shingle granules.",tiers:[[2000,0.30],[1e9,0.25]],min:299,steep:1.3,heavy:1.2},
+  pressure:{label:"Pressure wash — concrete/driveway",unit:"sq ft",hint:"Flat concrete area = length × width. High pressure is fine on concrete.",tiers:[[600,0.30],[2000,0.22],[1e9,0.18]],min:99,oil:1.25},
+  deck:{label:"Deck / patio wash",unit:"sq ft",hint:"Deck or patio surface area.",tiers:[[300,0.45],[1e9,0.35]],min:129},
+  windows:{label:"Window cleaning",unit:"panes",hint:"Number of window panes. Interior + exterior costs more (≈1.5×).",tiers:[[20,14],[40,11],[1e9,9]],min:99,intext:1.5,upperAdd:4},
+  gutters:{label:"Gutter cleaning",unit:"linear ft",hint:"Total linear feet of gutter — roughly the home's perimeter.",tiers:[[150,1.5],[1e9,1.2]],min:149,stories2:1.3},
+  parking:{label:"Parking-lot cleanup",unit:"spaces",hint:"Number of parking spaces — use the Map tool to estimate from satellite.",tiers:[[25,3.2],[100,2.6],[300,2.0],[1e9,1.6]],min:79,freq:{"one-time":1,weekly:0.8,daily:0.7}},
+  housewatch:{label:"House-watch (per visit)",unit:"visit",hint:"Recurring property checks for absentee owners — photo report each visit.",base:50,size:{small:0,medium:10,large:25},freq:{monthly:1,"bi-weekly":0.9,weekly:0.8}},
+  junk:{label:"Junk removal",unit:"load",hint:"Estimate the fraction of a truck bed it fills.",base:120,perEighth:90,dumpFee:60}
+ },
+ jam:{
+  lock:{label:"Smart lock(s)",hint:"Lock + install. Wi-Fi suits most rentals; add a hub for Z-Wave or many doors.",hardware:{wifi:280,retrofit:200,budget:160,"customer-supplied":0},install:129,addl:99,hub:149,code:39},
+  camera:{label:"PoE camera system",hint:"Wired cameras to an NVR (no monthly fee). Each camera needs a Cat6 run.",nvr:430,perCam:180,install1:200,addl:120,run:89},
+  network:{label:"Networking / WiFi",hint:"Coverage that keeps locks, cameras, and Starlink reliable.",base:249,perAp:279,perDrop:89,design:149},
+  starlink:{label:"Starlink install",hint:"Kit is customer-supplied ($349). You're pricing the mount + clean cable run.",mount:{eave:299,roof:449,pole:499},perExt:59},
+  labor:{label:"Tech labor",hint:"Hourly for custom or uncatalogued work.",rate:125}
+ }
+};
+function getRates(){try{const d=D().docs.find(x=>x.id==="rates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz]));}
+function setRates(obj){let d=D().docs.find(x=>x.id==="rates");if(d){d.text=JSON.stringify(obj);d.updatedAt=now();}else D().docs.push({id:"rates",text:JSON.stringify(obj),updatedAt:now()});save();}
+function tierPrice(qty,tiers){let rem=qty,prev=0,sum=0;for(let k=0;k<tiers.length;k++){const cap=tiers[k][0],rate=tiers[k][1];const span=Math.min(rem,cap-prev);if(span>0){sum+=span*rate;rem-=span;}prev=cap;if(rem<=0)break;}return sum;}
+function rnd5(n){return Math.round(n/5)*5;}
+/* each calculator returns {name, price, notes:[]} */
+function calcQuote(key,inp){
+  const R=getRates(),r=R[key];if(!r)return null;
+  let price=0,notes=[],name=r.label,qty=inp.qty||0;
+  if(key==="softwash"||key==="roofwash"||key==="pressure"||key==="deck"){
+    price=tierPrice(qty,r.tiers);
+    if(inp.stories>=3&&r.stories3)price*=r.stories3;else if(inp.stories>=2&&r.stories2)price*=r.stories2;
+    if(inp.steep&&r.steep)price*=r.steep;
+    if(inp.heavy&&r.heavy){price*=r.heavy;notes.push("Heavy soiling/algae — extra solution & dwell time.");}
+    if(inp.oil&&r.oil)price*=r.oil;
+    price=Math.max(price,r.min);name=r.label+" — "+qty+" "+r.unit;
+  } else if(key==="windows"){
+    price=tierPrice(qty,r.tiers); if(inp.intext)price*=r.intext; if(inp.upper)price+=r.upperAdd*inp.upper;
+    price=Math.max(price,r.min);name=r.label+" — "+qty+" panes"+(inp.intext?" (in+out)":"");
+  } else if(key==="gutters"){
+    price=tierPrice(qty,r.tiers); if(inp.stories>=2)price*=r.stories2; price=Math.max(price,r.min);
+    name=r.label+" — "+qty+" ft";
+  } else if(key==="parking"){
+    price=tierPrice(qty,r.tiers)*(r.freq[inp.freq]||1); price=Math.max(price,r.min);
+    name=r.label+" — "+qty+" spaces ("+(inp.freq||"one-time")+")";
+    if((inp.freq||"one-time")!=="one-time")notes.push("Recurring route — price is per service.");
+  } else if(key==="housewatch"){
+    price=(r.base+(r.size[inp.size]||0))*(r.freq[inp.freq]||1);
+    name=r.label+" — "+(inp.size||"medium")+" home, "+(inp.freq||"monthly")+" (per visit)";
+    notes.push("Recurring — bill per visit on the chosen frequency.");
+  } else if(key==="junk"){
+    price=r.base+r.perEighth*(inp.eighths||1)+r.dumpFee; name=r.label+" — ~"+(inp.eighths||1)+"/8 truck";
+    notes.push("Includes ~$"+r.dumpFee+" dump fee estimate; confirm on site.");
+  } else if(key==="lock"){
+    const n=Math.max(1,inp.count||1),hw=r.hardware[inp.type]||0;
+    price=hw*n+r.install+r.addl*(n-1)+(inp.hub?r.hub:0)+(inp.code?r.code*n:0);
+    name=r.label+" — "+n+"× "+(inp.type||"wifi");
+    if(inp.weakwifi)notes.push("Weak Wi-Fi at the door — add a mesh node / access point or it'll drop.");
+  } else if(key==="camera"){
+    const n=Math.max(1,inp.count||1);
+    price=r.nvr+r.perCam*n+r.install1+r.addl*(n-1)+r.run*(inp.runs||n);
+    name=r.label+" — "+n+" cameras";
+  } else if(key==="network"){
+    price=r.base+r.perAp*(inp.aps||0)+r.perDrop*(inp.drops||0)+(inp.design?r.design:0);
+    name=r.label+" — "+(inp.aps||0)+" AP / "+(inp.drops||0)+" drops";
+  } else if(key==="starlink"){
+    price=(r.mount[inp.mount]||r.mount.eave)+r.perExt*(inp.ext||0); name=r.label+" — "+(inp.mount||"eave")+" mount";
+  } else if(key==="labor"){
+    price=r.rate*(inp.hours||1); name=r.label+" — "+(inp.hours||1)+" hr";
+  }
+  return {name:name,price:rnd5(price),notes:notes};
+}
+
+/* ---------- GUIDED QUOTE WIZARD ---------- */
+let WZON=false,WZ=null;
+const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["custom","✏️ Custom line"]],
+  jam:[["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]]};
+const WZ_FIELDS={
+ softwash:[{k:"qty",t:"num",label:"Wall area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"],["3","3 stories"]]},{k:"heavy",t:"chk",label:"Heavy algae / soiling"}],
+ roofwash:[{k:"qty",t:"num",label:"Roof area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"steep",t:"chk",label:"Steep or hard access"},{k:"heavy",t:"chk",label:"Heavy soiling"}],
+ pressure:[{k:"qty",t:"num",label:"Concrete area (sq ft)",ph:"e.g. 600",warn:6000},{k:"oil",t:"chk",label:"Oil / rust stains"}],
+ deck:[{k:"qty",t:"num",label:"Deck area (sq ft)",ph:"e.g. 300",warn:2000}],
+ windows:[{k:"qty",t:"num",label:"Number of panes",ph:"e.g. 24",warn:120},{k:"intext",t:"chk",label:"Interior + exterior"},{k:"upper",t:"num",label:"Upper-floor panes",ph:"0"}],
+ gutters:[{k:"qty",t:"num",label:"Linear feet of gutter",ph:"e.g. 160",warn:600},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"]]}],
+ parking:[{k:"qty",t:"num",label:"Number of spaces",ph:"e.g. 80",warn:800},{k:"freq",t:"sel",label:"Frequency",opts:[["one-time","One-time"],["weekly","Weekly"],["daily","Daily"]]}],
+ housewatch:[{k:"size",t:"sel",label:"Home size",opts:[["small","Small"],["medium","Medium"],["large","Large"]]},{k:"freq",t:"sel",label:"Frequency",opts:[["monthly","Monthly"],["bi-weekly","Bi-weekly"],["weekly","Weekly"]]}],
+ junk:[{k:"eighths",t:"num",label:"Truck fraction (1–8 eighths)",ph:"e.g. 4",warn:8}],
+ lock:[{k:"count",t:"num",label:"How many locks?",ph:"1",warn:30},{k:"type",t:"sel",label:"Lock type",opts:[["wifi","Wi-Fi deadbolt (Yale/Schlage)"],["retrofit","Retrofit (August — keeps key)"],["budget","Budget (Ultraloq/Wyze)"],["customer-supplied","Customer-supplied (install only)"]]},{k:"hub",t:"chk",label:"Z-Wave/Zigbee hub needed"},{k:"code",t:"chk",label:"PIN / PMS code setup"},{k:"weakwifi",t:"chk",label:"Weak Wi-Fi at the door"}],
+ camera:[{k:"count",t:"num",label:"How many cameras?",ph:"4",warn:32},{k:"runs",t:"num",label:"Cable runs (blank = same as cameras)",ph:""}],
+ network:[{k:"aps",t:"num",label:"WiFi access points",ph:"0"},{k:"drops",t:"num",label:"Cat6 data drops",ph:"0"},{k:"design",t:"chk",label:"Network design + config"}],
+ starlink:[{k:"mount",t:"sel",label:"Mount type",opts:[["eave","Eave / ground (simple)"],["roof","Roof pivot mount"],["pole","Pole / mast"]]},{k:"ext",t:"num",label:"50-ft cable extensions",ph:"0"}],
+ labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
+ custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
+};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:""},items:[],recurring:false,disc:0,svc:null,inp:{}};WZON=true;TAB="quotes";render();};
+window.exitWizard=function(){WZON=false;render();};
+function wizHead(n,total,title){return `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Step ${n} of ${total}</div><div class="nm" style="font-size:18px">${title}</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;}
+function wizRender(){const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
+function wizCust(){const c=WZ.cust;
+  return wizHead(1,5,"Who's the quote for?")+`<div class="card">
+    <label>Name *</label><input id="wc_name" value="${esc(c.name)}" placeholder="Customer or property name">
+    <label>Phone *</label><input id="wc_phone" value="${esc(c.phone)}" inputmode="tel" placeholder="(252) ___-____">
+    <label>Property address *</label><input id="wc_address" value="${esc(c.address)}" placeholder="Street, town">
+    <label>How'd they find us?</label><select id="wc_source">${["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"].map(o=>`<option ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
+    <label>Notes (gate code, pets, access…)</label><textarea id="wc_notes">${esc(c.notes)}</textarea>
+    <p class="muted" id="wc_err" style="margin-top:8px"></p>
+    <button class="btn acc" style="margin-top:6px" onclick="wizCustNext()">Next: pick services →</button>
+  </div>`;}
+window.wizCustNext=function(){
+  WZ.cust={name:val("wc_name"),phone:val("wc_phone"),address:val("wc_address"),source:val("wc_source"),notes:val("wc_notes"),id:WZ.cust.id};
+  const miss=[];if(!WZ.cust.name)miss.push("name");if(!WZ.cust.phone)miss.push("phone");if(!WZ.cust.address)miss.push("address");
+  if(miss.length){document.getElementById("wc_err").innerHTML='<span style="color:var(--danger)">Please fill in: '+miss.join(", ")+" (required).</span>";return;}
+  WZ.step="pick";render();
+};
+function wizPick(){const list=WZ_SVC[S.biz];
+  return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
+    <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
+    ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
+window.wizSetSvc=function(k){WZ.svc=k;WZ.inp={};render2calc();};
+function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
+function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
+  const hint=(r&&r.hint)?`<p class="muted" style="margin-bottom:8px">${esc(r.hint)}</p>`:"";
+  const f=fields.map(fl=>{
+    const v=WZ.inp[fl.k]!=null?WZ.inp[fl.k]:"";
+    if(fl.t==="num"||fl.t==="txt")return `<label>${fl.label}</label><input id="wf_${fl.k}" ${fl.t==="num"?'type="number" inputmode="decimal"':""} value="${esc(v)}" placeholder="${fl.ph||""}" oninput="wizLive()">`;
+    if(fl.t==="sel")return `<label>${fl.label}</label><select id="wf_${fl.k}" onchange="wizLive()">${fl.opts.map(o=>`<option value="${o[0]}" ${v===o[0]?"selected":""}>${o[1]}</option>`).join("")}</select>`;
+    if(fl.t==="chk")return `<div class="toggle"><input type="checkbox" id="wf_${fl.k}" ${v?"checked":""} onchange="wizLive()"><label style="margin:0">${fl.label}</label></div>`;
+    return "";
+  }).join("");
+  return wizHead(3,5,(r?r.label:"Custom line"))+`<div class="card">${hint}${f}
+    <div class="totbar" style="border-top-color:var(--accent)"><span class="lab">This line</span><span class="amt" id="wz_live">$0</span></div>
+    <div id="wz_note" class="muted" style="font-size:13px"></div>
+    <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddItem()">Add to quote</button></div>
+  </div>`;}
+function wizReadInp(){const fields=WZ_FIELDS[WZ.svc];const o={};fields.forEach(fl=>{const e=document.getElementById("wf_"+fl.k);if(!e)return;o[fl.k]=fl.t==="chk"?e.checked:(fl.t==="num"?parseFloat(e.value)||0:e.value);});WZ.inp=o;return o;}
+window.wizLive=function(){const inp=wizReadInp();let res;
+  if(WZ.svc==="custom")res={name:inp.name||"Custom line",price:rnd5(inp.price||0),notes:[]};
+  else res=calcQuote(WZ.svc,inp)||{price:0,notes:[]};
+  const el=document.getElementById("wz_live");if(el)el.textContent=money(res.price);
+  const nb=document.getElementById("wz_note");if(nb){let notes=(res.notes||[]).slice();
+    const fl=WZ_FIELDS[WZ.svc].find(x=>x.warn);if(fl&&(inp[fl.k]||0)>fl.warn)notes.unshift("⚠ That's a big number ("+inp[fl.k]+") — double-check before quoting.");
+    nb.innerHTML=notes.map(n=>"• "+esc(n)).join("<br>");}
+};
+window.wizAddItem=function(){const inp=wizReadInp();let res;
+  if(WZ.svc==="custom"){if(!inp.name||!inp.price){alert("Add a description and price.");return;}res={name:inp.name,price:rnd5(inp.price),notes:[]};}
+  else{if(!inp.qty&&!inp.count&&!inp.hours&&WZ.svc!=="housewatch"&&WZ.svc!=="starlink"&&WZ.svc!=="network"){alert("Enter the amount of work first.");return;}res=calcQuote(WZ.svc,inp);}
+  WZ.items.push({name:res.name,price:res.price,notes:res.notes||[],qty:1,unit:"quote",serviceId:""});
+  WZ.step="review";render();
+};
+window.wizRemItem=function(i){WZ.items.splice(i,1);render();};
+function wizReview(){
+  let sub=0;WZ.items.forEach(it=>sub+=it.price);
+  const rec=WZ.recurring&&BIZ[S.biz].recurring; const recDisc=rec?sub*0.2:0;
+  const total=Math.max(0,sub-recDisc-(WZ.disc||0));
+  const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
+  return wizHead(4,5,"Review the quote")+`<div class="card">
+    ${WZ.items.map((it,i)=>`<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(it.name)}</div></div><div style="font-weight:700">${money(it.price)}</div><button class="rm" onclick="wizRemItem(${i})">×</button></div>`).join("")||'<div class="muted">No items yet.</div>'}
+    <button class="btn ghost sm" style="margin-top:8px" onclick="WZ.step='pick';render()">+ Add another service</button>
+    ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;render()"><label style="margin:0">Recurring plan — 20% off</label></div>`:""}
+    <label>Extra discount ($, optional)</label><input type="number" id="wz_disc" value="${WZ.disc||0}" onchange="WZ.disc=parseFloat(this.value)||0;render()">
+    <div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc):""}</div>
+    <div class="totbar"><span class="lab">Total to present</span><span class="amt">${money(total)}</span></div>
+    ${notes.length?`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`:""}
+    <button class="btn acc" style="margin-top:12px" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>Save &amp; present →</button>
+  </div>`;}
+window.wizFinish=function(){
+  const d=D();let sub=0;WZ.items.forEach(it=>sub+=it.price);
+  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const disc=recDisc+(WZ.disc||0);const total=Math.max(0,sub-disc);
+  // create/find customer
+  let cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
+  if(!cust){cust={id:uid(),name:WZ.cust.name,phone:WZ.cust.phone,address:WZ.cust.address,town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,notes:[],next:""};
+    if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});
+    touch(cust);d.customers.push(cust);}
+  else{cust.phone=cust.phone||WZ.cust.phone;cust.address=cust.address||WZ.cust.address;if(cust.status==="Lead")cust.status="Quoted";touch(cust);}
+  const q={id:uid(),customerId:cust.id,cust:cust.name,date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
+  touch(q);d.quotes.push(q);save();
+  CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
+};
+function wizDone(){
+  return `<div class="card" style="text-align:center;padding:30px 18px">
+    <div style="font-size:40px">✅</div>
+    <div class="nm" style="font-size:22px;margin:6px 0">Quote ready</div>
+    <div style="font-size:34px;font-weight:800;color:var(--brand)">${money(WZ.savedTotal)}</div>
+    <div class="muted">for ${esc(WZ.cust.name)}</div>
+    <div class="row" style="gap:8px;margin-top:18px"><button class="btn acc grow" onclick="printQuote()">🖨 Print / share</button><button class="btn ghost grow" onclick="copyQuote()">Copy text</button></div>
+    <button class="btn ghost" style="margin-top:8px" onclick="startWizard()">+ New guided quote</button>
+    <button class="btn" style="margin-top:8px" onclick="exitWizard()">Done</button>
+    <p class="muted" style="margin-top:10px">Saved to ${esc(WZ.cust.name)}'s record — follow up from the Customers tab.</p>
+  </div>`;}
+
 /* ---------- DATA + SYNC ---------- */
+window.openRatesEditor=function(){modal("Pricing rates",`<p class="muted" style="margin-bottom:8px">Advanced — edit the numbers, keep the format. Tiers are [up-to-amount, price-per-unit]; multipliers like 1.25 add 25%.</p>
+  <textarea id="rates_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getRates(),null,2))}</textarea>
+  <p id="rates_err" class="muted"></p>
+  <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveRatesEditor()">Save</button><button class="btn ghost grow" onclick="resetRates()">Reset to defaults</button></div>`);};
+window.saveRatesEditor=function(){try{const o=JSON.parse(document.getElementById("rates_json").value);setRates(o);closeModal();alert("Pricing rates saved.");}catch(e){const el=document.getElementById("rates_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
+window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
 function rData(){
   const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
   const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
@@ -708,6 +1056,9 @@ function rData(){
       ${users().length?`<div style="margin-top:8px">`+users().map(u=>`<div class="li"><div class="grow">${esc(u.username)}${curUser()&&curUser().id===u.id?" · you":""}</div><button class="btn danger sm" onclick="delUser('${u.id}')">Remove</button></div>`).join("")+`</div>`:`<div class="muted" style="margin-top:8px">No accounts yet.</div>`}
       <button class="btn ghost" style="margin-top:10px" onclick="openCreateAccount()">+ Add account</button>
     </div>
+    <h2>Pricing rates</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">These drive the Guided Quote prices. Tune them any time.</p>
+      <button class="btn ghost" onclick="openRatesEditor()">Edit pricing rates</button></div>
     <h2>This device</h2>
     <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
     <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
