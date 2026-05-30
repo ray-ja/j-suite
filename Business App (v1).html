@@ -141,7 +141,7 @@
 
 <nav>
   <button data-tab="today" class="on"><span class="ic">📋</span>Today</button>
-  <button data-tab="customers"><span class="ic">👥</span>Customers</button>
+  <button data-tab="accounts"><span class="ic">👥</span>Accounts</button>
   <button data-tab="quotes"><span class="ic">🧾</span>Quotes</button>
   <button data-tab="schedule"><span class="ic">📅</span>Schedule</button>
   <button data-tab="map"><span class="ic">🗺️</span>Map</button>
@@ -260,7 +260,7 @@ const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscape
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -273,11 +273,15 @@ function load(){
     if(!S[b].mktTracker)S[b].mktTracker=[];
     if(!S[b].docs)S[b].docs=[];
     if(!S[b].places)S[b].places=[];
-    ["customers","quotes","jobs","todos","mktTracker","docs","places"].forEach(col=>{
+    if(!S[b].properties)S[b].properties=[];
+    ["customers","quotes","jobs","todos","mktTracker","docs","places","properties"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
-    (S[b].customers||[]).forEach(c=>{if(!c.properties)c.properties=[{id:uid(),label:"Main",address:c.address||""}];});
   });
+  if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
+    const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);
+    emb.forEach(ep=>{S[b].properties.push({id:ep.id||uid(),label:ep.label||"Main",address:ep.address||"",accessNotes:"",lat:null,lng:null,customerIds:[c.id],updatedAt:now()});});
+    if(c.properties)delete c.properties;});});S.propsV2=true;save();}
   if(!S.seeded){seedTodos();seedDocs();S.seeded=true;save();}
   if(!S.researchV2){setResearchDocs();S.researchV2=true;save();}
   if(!S.researchV3){appendOpportunity();S.researchV3=true;save();}
@@ -346,6 +350,10 @@ function actC(){return D().customers.filter(c=>!c.deleted)}
 function actQ(){return D().quotes.filter(q=>!q.deleted)}
 function actJ(){return D().jobs.filter(j=>!j.deleted)}
 function actTodo(){return D().todos.filter(t=>!t.deleted)}
+function actProps(){return (D().properties||[]).filter(p=>!p.deleted)}
+function propsForCust(cid){return actProps().filter(p=>(p.customerIds||[]).indexOf(cid)>=0)}
+function custsForProp(p){return (p.customerIds||[]).map(id=>D().customers.find(c=>c.id===id&&!c.deleted)).filter(Boolean)}
+function propLabel(id){const p=(D().properties||[]).find(x=>x.id===id);return p?((p.label?p.label+" — ":"")+(p.address||"")):""}
 function custName(id){const c=D().customers.find(x=>x.id===id);return c?(c.name||c.company||"—"):"—"}
 function touch(r){r.updatedAt=now();return r}
 
@@ -357,13 +365,13 @@ function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   document.getElementById("bizsel").value=b;render()}
 function render(){
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
-  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,map:rMap,todo:rTodos,plan:rPlan,data:rData}[TAB])();
+  ({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,map:rMap,todo:rTodos,plan:rPlan,data:rData}[TAB])();
   renderSyncPill();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;render()});
 document.getElementById("bizsel").onchange=e=>setBiz(e.target.value);
 document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="map"||TAB==="data")return;else openCustomer();
+  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="map"||TAB==="data")return;else openCustomer();
 };
 
 /* ---------- modal ---------- */
@@ -407,12 +415,15 @@ function rToday(){
 }
 
 /* ---------- CUSTOMERS ---------- */
-let CSEARCH="";
+let CSEARCH="",PSEARCH="",ACCTSUB="customers";
+function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button></div>`;}
+window.switchAcct=function(s){ACCTSUB=s;render();};
+function rAccounts(){if(ACCTSUB==="properties")return rProperties();return rCustomers();}
 function rCustomers(){
   let list=actC().slice().sort((a,b)=>(a.name||a.company||"").localeCompare(b.name||b.company||""));
   if(CSEARCH){const q=CSEARCH.toLowerCase();
-    list=list.filter(c=>((c.name||"")+(c.company||"")+(c.town||"")+(c.phone||"")).toLowerCase().includes(q));}
-  let h=`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
+    list=list.filter(c=>((c.name||"")+(c.company||"")+(c.phone||"")).toLowerCase().includes(q));}
+  let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
   if(!actC().length)h+=`<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
   else if(!list.length)h+=`<div class="empty">No matches.</div>`;
   else h+=`<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
@@ -420,6 +431,18 @@ function rCustomers(){
   const s=document.getElementById("csearch");
   if(s)s.oninput=e=>{CSEARCH=e.target.value;const p=s.selectionStart;rCustomers();const n=document.getElementById("csearch");n.focus();n.setSelectionRange(p,p);};
 }
+function rProperties(){
+  let list=actProps().slice().sort((a,b)=>(a.label||a.address||"").localeCompare(b.label||b.address||""));
+  if(PSEARCH){const q=PSEARCH.toLowerCase();list=list.filter(p=>((p.label||"")+(p.address||"")).toLowerCase().includes(q));}
+  let h=acctSubnav()+`<input class="search" id="psearch" placeholder="Search properties…" value="${esc(PSEARCH)}">`;
+  if(!actProps().length)h+=`<div class="empty"><div class="big">📍</div>No properties yet.<br>Add one, or they're created when you quote.</div>`;
+  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
+  else h+=`<div class="card grid2">`+list.map(liProp).join("")+`</div>`;
+  view.innerHTML=h;
+  const s=document.getElementById("psearch");
+  if(s)s.oninput=e=>{PSEARCH=e.target.value;const p=s.selectionStart;rProperties();const n=document.getElementById("psearch");n.focus();n.setSelectionRange(p,p);};
+}
+function liProp(p){const cs=custsForProp(p);return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub">${esc(p.address||"no address")}${cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):""}</div></div></div>`;}
 function liCustomer(c){
   return `<div class="li" onclick="openCustomer('${c.id}')">
     <div class="grow"><div class="nm">${esc(c.name||c.company||"Unnamed")}</div>
@@ -431,13 +454,13 @@ let CPROPS=[];
 window.openCustomer=function(id){
   const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};
   const isNew=!id;const f=k=>`value="${esc(c[k]||"")}"`;
-  CPROPS=JSON.parse(JSON.stringify(c.properties&&c.properties.length?c.properties:[{id:uid(),label:"Main",address:c.address||""}]));
   const uopts=sel=>`<option value="">— none —</option>`+users().map(u=>`<option value="${u.id}" ${sel===u.id?"selected":""}>${esc(u.username)}</option>`).join("");
   let notesH=(c.notes||[]).slice().reverse().map(n=>`<div class="note"><div class="t">${esc(n.t)}</div>${esc(n.text)}</div>`).join("")||`<div class="muted">No notes yet.</div>`;
-  let histH="";
+  let propsH="",histH="";
   if(!isNew){
-    const myQ=actQ().filter(q=>q.customerId===c.id);
-    const myJ=actJ().filter(j=>j.customerId===c.id);
+    propsH=`<h2 style="margin-top:14px">Properties</h2>`+(propsForCust(c.id).map(p=>`<div class="li" onclick="closeModal();openProperty('${p.id}')"><div class="grow"><div class="nm" style="font-size:15px">${esc(p.label||p.address||"Property")}</div><div class="sub">${esc(p.address||"")}</div></div></div>`).join("")||`<div class="muted">No properties yet.</div>`)
+      +`<button class="btn ghost sm" style="margin-top:6px" onclick="saveCustomer('${c.id}',false);openProperty(null,'${c.id}')">+ Add property</button>`;
+    const myQ=actQ().filter(q=>q.customerId===c.id);const myJ=actJ().filter(j=>j.customerId===c.id);
     histH=`<h2 style="margin-top:16px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}${q.paid?" · paid":q.invoiced?" · invoiced":""}</div><div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
       +`<h2 style="margin-top:16px">Jobs (${myJ.length})</h2>`+(myJ.length?myJ.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${fmtDate(j.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`);
   }
@@ -449,40 +472,64 @@ window.openCustomer=function(id){
     <div class="row" style="gap:8px"><div class="grow"><label>Managed by</label><select id="f_manager">${uopts(c.manager)}</select></div>
     <div class="grow"><label>Sold by (credit)</label><select id="f_soldby">${uopts(c.soldBy)}</select></div></div>
     <label>How they found us</label><select id="f_source">${SOURCES.map(o=>`<option value="${o}" ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
-    <h2 style="margin-top:14px">Properties / addresses</h2>
-    <div id="custprops"></div>
-    <button class="btn ghost sm" onclick="addProp()">+ Add property</button>
     <div class="row" style="gap:8px;margin-top:12px"><div class="grow"><label>Type</label><select id="f_type">${TYPES.map(t=>`<option ${c.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
     <div class="grow"><label>Status</label><select id="f_status">${STATUSES.map(s=>`<option ${(c.status||"Lead")===s?"selected":""}>${s}</option>`).join("")}</select></div></div>
     <label>Next follow-up date</label><input id="f_next" type="date" value="${c.next||""}">
     <button class="btn acc" style="margin-top:14px" onclick="saveCustomer('${c.id}',${isNew})">Save</button>
-    ${!isNew?`<div class="row" style="gap:8px;margin-top:10px">
+    ${isNew?`<p class="muted" style="margin-top:8px">Save the customer, then reopen to add properties.</p>`:`${propsH}
+      <div class="row" style="gap:8px;margin-top:12px">
        <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
        <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button></div>
       <label>Add note</label><textarea id="f_note" placeholder="Call outcome, details…"></textarea>
       <button class="btn sm" style="margin-top:6px" onclick="addNote('${c.id}')">Add note</button>
       <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
-      <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`:""}
+      <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`}
   `);
-  renderCustProps();
 };
-function renderCustProps(){const el=document.getElementById("custprops");if(!el)return;
-  el.innerHTML=CPROPS.map((p,i)=>`<div class="card" style="padding:10px;margin-bottom:8px">
-    <div class="row" style="gap:8px"><input id="cp_label_${i}" value="${esc(p.label||"")}" placeholder="Label (Main, Beach house…)" style="flex:1">${CPROPS.length>1?`<button class="rm" onclick="rmProp(${i})">×</button>`:""}</div>
-    <div class="acwrap" style="margin-top:6px"><input id="cp_addr_${i}" value="${esc(p.address||"")}" placeholder="Start typing the address…" oninput="addrSuggest('cp_addr_${i}','cp_box_${i}')"><div class="acbox" id="cp_box_${i}"></div></div>
-  </div>`).join("");}
-function readProps(){CPROPS.forEach((p,i)=>{const l=document.getElementById("cp_label_"+i),a=document.getElementById("cp_addr_"+i);if(l)p.label=l.value;if(a)p.address=a.value;});}
-window.addProp=function(){readProps();CPROPS.push({id:uid(),label:"",address:""});renderCustProps();};
-window.rmProp=function(i){readProps();CPROPS.splice(i,1);renderCustProps();};
 window.saveCustomer=function(id,isNew){
   const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);
   ["name","company","phone","email"].forEach(k=>c[k]=val("f_"+k));
   c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");c.manager=val("f_manager");c.soldBy=val("f_soldby");c.source=val("f_source");
-  readProps();c.properties=CPROPS.filter(p=>(p.label||p.address));if(!c.properties.length)c.properties=[{id:uid(),label:"Main",address:""}];
-  c.address=c.properties[0].address||"";
   touch(c);if(isNew)d.customers.push(c);
-  save();closeModal();render();
+  save();if(document.getElementById("f_name"))closeModal();render();
 };
+/* ---- properties (own entity, M:N with customers) ---- */
+let PCUSTS=[];
+function geocodeProp(p){if(!p.address)return;fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(p.address)).then(r=>r.json()).then(d=>{if(d&&d[0]){p.lat=+d[0].lat;p.lng=+d[0].lon;p.updatedAt=now();save();}}).catch(function(){});}
+window.openProperty=function(id,linkCustId){
+  const d=D();const p=id?d.properties.find(x=>x.id===id):{id:uid(),label:"",address:"",accessNotes:"",customerIds:linkCustId?[linkCustId]:[],lat:null,lng:null};
+  const isNew=!id;PCUSTS=(p.customerIds||[]).slice();
+  let histH="";
+  if(!isNew){const myQ=actQ().filter(q=>q.propertyId===p.id);const myJ=actJ().filter(j=>j.propertyId===p.id);
+    histH=`<h2 style="margin-top:14px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}</div><div class="sub">${fmtDate(q.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
+      +`<h2 style="margin-top:14px">Jobs (${myJ.length})</h2>`+(myJ.length?myJ.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm">${esc(j.title)}</div><div class="sub">${fmtDate(j.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`);}
+  modal(isNew?"New property":"Property",`
+    <label>Label</label><input id="p_label" value="${esc(p.label||"")}" placeholder="e.g. Main office, Beach house">
+    <label>Address</label><div class="acwrap"><input id="p_addr" value="${esc(p.address||"")}" placeholder="Start typing the address…" oninput="addrSuggest('p_addr','p_box')"><div class="acbox" id="p_box"></div></div>
+    <label>Access notes (gate code, pets, parking…)</label><textarea id="p_access">${esc(p.accessNotes||"")}</textarea>
+    <h2 style="margin-top:14px">Linked customers</h2>
+    <div id="p_custs"></div>
+    <button class="btn acc" style="margin-top:14px" onclick="saveProperty('${p.id}',${isNew})">Save</button>
+    ${!isNew?histH+`<button class="btn danger" style="margin-top:16px" onclick="delProperty('${p.id}')">Delete property</button>`:""}
+  `);
+  renderPropCusts();
+};
+function renderPropCusts(){const el=document.getElementById("p_custs");if(!el)return;
+  const linked=PCUSTS.map(cid=>D().customers.find(c=>c.id===cid&&!c.deleted)).filter(Boolean);
+  const avail=actC().filter(c=>PCUSTS.indexOf(c.id)<0);
+  el.innerHTML=(linked.length?linked.map(c=>`<div class="li"><div class="grow">${esc(c.name||c.company)}</div><button class="btn danger sm" onclick="unlinkCust('${c.id}')">Unlink</button></div>`).join(""):`<div class="muted">None linked yet.</div>`)
+    +`<label>Link a customer</label><select id="p_addcust" onchange="linkCust(this.value)"><option value="">— pick —</option>${avail.map(c=>`<option value="${c.id}">${esc(c.name||c.company)}</option>`).join("")}</select>`;}
+window.linkCust=function(cid){if(cid&&PCUSTS.indexOf(cid)<0)PCUSTS.push(cid);renderPropCusts();};
+window.unlinkCust=function(cid){PCUSTS=PCUSTS.filter(x=>x!==cid);renderPropCusts();};
+window.saveProperty=function(id,isNew){
+  const d=D();let p=isNew?{id:id,lat:null,lng:null,customerIds:[]}:d.properties.find(x=>x.id===id);
+  p.label=val("p_label");p.address=val("p_addr");p.accessNotes=val("p_access");p.customerIds=PCUSTS.slice();
+  if(!p.label&&!p.address){alert("Add a label or address.");return;}
+  touch(p);if(isNew)d.properties.push(p);
+  geocodeProp(p);save();closeModal();render();
+};
+window.delProperty=function(id){if(!confirm("Delete this property?"))return;
+  const p=D().properties.find(x=>x.id===id);p.deleted=true;touch(p);save();closeModal();render();};
 window.addNote=function(id){const txt=val("f_note");if(!txt)return;
   const c=D().customers.find(x=>x.id===id);c.notes=c.notes||[];
   c.notes.push({t:new Date().toLocaleString(),text:txt});touch(c);save();openCustomer(id);};
@@ -975,18 +1022,18 @@ function wizCust(){const c=WZ.cust;
     <p class="muted" id="wc_err" style="margin-top:8px"></p>
     <button class="btn acc" style="margin-top:6px" onclick="wizCustNext()">Next: pick services →</button>
   </div>`;}
-function wizPropPicker(){const c=WZ.cust;if(!c.id)return"";const cust=D().customers.find(x=>x.id===c.id);if(!cust||!cust.properties||cust.properties.length<2)return"";
-  return `<label>Which property?</label><select onchange="wizPickProp(this.value)">${cust.properties.map(p=>`<option value="${p.id}" ${c.propertyId===p.id?"selected":""}>${esc(p.label||"")} — ${esc(p.address||"")}</option>`).join("")}</select>`;}
+function wizPropPicker(){const c=WZ.cust;if(!c.id)return"";const ps=propsForCust(c.id);if(ps.length<2)return"";
+  return `<label>Which property?</label><select onchange="wizPickProp(this.value)">${ps.map(p=>`<option value="${p.id}" ${c.propertyId===p.id?"selected":""}>${esc(p.label||"")} — ${esc(p.address||"")}</option>`).join("")}</select>`;}
 function wizSoldPicker(){const c=WZ.cust;if(c.source!=="Cold call / in-person")return"";
   return `<label>Which team member made this sale? (credit)</label><select id="wc_sold"><option value="">— none —</option>${users().map(u=>`<option value="${u.id}" ${c.soldBy===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>`;}
 window.wizCustSearch=function(){const q=val("wc_search").toLowerCase();const box=document.getElementById("wc_sbox");if(!box)return;if(q.length<2){box.innerHTML="";return;}
   const m=actC().filter(c=>(c.name||c.company||"").toLowerCase().indexOf(q)>=0).slice(0,6);
   box.innerHTML=m.length?m.map(c=>`<div class="acitem" onclick="wizPickCust('${c.id}')">${esc(c.name||c.company)}${c.phone?" · "+esc(c.phone):""}</div>`).join(""):`<div class="acitem muted">No match — just fill in the fields below to add new.</div>`;};
 window.wizPickCust=function(id){const cust=D().customers.find(x=>x.id===id);if(!cust)return;
-  const prop=(cust.properties&&cust.properties[0])||{address:cust.address||"",id:""};
+  const ps=propsForCust(cust.id);const prop=ps[0]||{address:"",id:""};
   WZ.cust={id:cust.id,name:cust.name||cust.company||"",phone:cust.phone||"",address:prop.address||"",propertyId:prop.id||"",source:cust.source||"",soldBy:cust.soldBy||"",notes:""};render();};
 window.wizClearCust=function(){WZ.cust={name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""};render();};
-window.wizPickProp=function(pid){const cust=D().customers.find(x=>x.id===WZ.cust.id);if(!cust)return;const p=(cust.properties||[]).find(x=>x.id===pid);if(p){WZ.cust.propertyId=p.id;WZ.cust.address=p.address;render();}};
+window.wizPickProp=function(pid){const p=D().properties.find(x=>x.id===pid);if(p){WZ.cust.propertyId=p.id;WZ.cust.address=p.address;render();}};
 window.wizCustNext=function(){
   WZ.cust.name=val("wc_name");WZ.cust.phone=val("wc_phone");WZ.cust.address=val("wc_address");WZ.cust.source=val("wc_source");WZ.cust.notes=val("wc_notes");
   const sold=document.getElementById("wc_sold");if(sold)WZ.cust.soldBy=sold.value;
@@ -1050,13 +1097,17 @@ window.wizFinish=function(){
   const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const disc=recDisc+(WZ.disc||0);const total=Math.max(0,sub-disc);
   let cust=WZ.cust.id?d.customers.find(c=>c.id===WZ.cust.id):null;
   if(!cust)cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
-  if(!cust){cust={id:uid(),name:WZ.cust.name,company:"",phone:WZ.cust.phone,email:"",town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,soldBy:WZ.cust.soldBy,manager:WZ.cust.soldBy,notes:[],next:"",properties:[{id:uid(),label:"Main",address:WZ.cust.address}],address:WZ.cust.address};
+  if(!cust){cust={id:uid(),name:WZ.cust.name,company:"",phone:WZ.cust.phone,email:"",town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,soldBy:WZ.cust.soldBy,manager:WZ.cust.soldBy,notes:[],next:""};
     if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});
     touch(cust);d.customers.push(cust);}
-  else{cust.phone=cust.phone||WZ.cust.phone;if(!cust.properties)cust.properties=[{id:uid(),label:"Main",address:WZ.cust.address||cust.address||""}];
-    if(WZ.cust.source&&!cust.source)cust.source=WZ.cust.source;if(WZ.cust.soldBy&&!cust.soldBy)cust.soldBy=WZ.cust.soldBy;
+  else{cust.phone=cust.phone||WZ.cust.phone;if(WZ.cust.source&&!cust.source)cust.source=WZ.cust.source;if(WZ.cust.soldBy&&!cust.soldBy)cust.soldBy=WZ.cust.soldBy;
     if(cust.status==="Lead")cust.status="Quoted";if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});touch(cust);}
-  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:WZ.cust.propertyId||"",address:WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
+  // resolve the property (existing, or create one for this address linked to the customer)
+  let prop=WZ.cust.propertyId?d.properties.find(x=>x.id===WZ.cust.propertyId):null;
+  if(!prop&&WZ.cust.address){prop=actProps().find(x=>(x.address||"").toLowerCase()===WZ.cust.address.toLowerCase()&&(x.customerIds||[]).indexOf(cust.id)>=0);}
+  if(!prop){prop={id:uid(),label:"Main",address:WZ.cust.address||"",accessNotes:"",lat:null,lng:null,customerIds:[cust.id],updatedAt:now()};d.properties.push(prop);geocodeProp(prop);}
+  else if((prop.customerIds||[]).indexOf(cust.id)<0){prop.customerIds.push(cust.id);touch(prop);}
+  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
   touch(q);d.quotes.push(q);save();
   CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
 };
