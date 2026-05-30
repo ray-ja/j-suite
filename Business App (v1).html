@@ -44,6 +44,10 @@
   .maptop{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
   #map{height:60vh;min-height:320px;border-radius:12px;border:1px solid var(--line);z-index:1}
   .leaflet-container{font:inherit}
+  .acwrap{position:relative}
+  .acbox{position:absolute;left:0;right:0;top:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;z-index:50;max-height:210px;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+  .acitem{padding:9px 11px;font-size:13px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink)}
+  .acitem:last-child{border-bottom:none}
   button{font-family:inherit;cursor:pointer}
   .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;width:100%}
   .btn.acc{background:var(--accent);color:var(--accent-ink)}
@@ -272,6 +276,7 @@ function load(){
     ["customers","quotes","jobs","todos","mktTracker","docs","places"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
+    (S[b].customers||[]).forEach(c=>{if(!c.properties)c.properties=[{id:uid(),label:"Main",address:c.address||""}];});
   });
   if(!S.seeded){seedTodos();seedDocs();S.seeded=true;save();}
   if(!S.researchV2){setResearchDocs();S.researchV2=true;save();}
@@ -421,9 +426,13 @@ function liCustomer(c){
     <div class="sub">${esc([c.company&&c.name?c.company:"",c.town,c.phone].filter(Boolean).join(" · "))||"&nbsp;"}</div></div>
     <span class="badge s-${c.status||"Lead"}">${c.status||"Lead"}</span></div>`;
 }
+const SOURCES=["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"];
+let CPROPS=[];
 window.openCustomer=function(id){
   const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};
   const isNew=!id;const f=k=>`value="${esc(c[k]||"")}"`;
+  CPROPS=JSON.parse(JSON.stringify(c.properties&&c.properties.length?c.properties:[{id:uid(),label:"Main",address:c.address||""}]));
+  const uopts=sel=>`<option value="">— none —</option>`+users().map(u=>`<option value="${u.id}" ${sel===u.id?"selected":""}>${esc(u.username)}</option>`).join("");
   let notesH=(c.notes||[]).slice().reverse().map(n=>`<div class="note"><div class="t">${esc(n.t)}</div>${esc(n.text)}</div>`).join("")||`<div class="muted">No notes yet.</div>`;
   let histH="";
   if(!isNew){
@@ -436,10 +445,14 @@ window.openCustomer=function(id){
     <label>Name</label><input id="f_name" ${f("name")} placeholder="Contact name">
     <label>Company</label><input id="f_company" ${f("company")} placeholder="Company / property">
     <div class="row" style="gap:8px"><div class="grow"><label>Phone</label><input id="f_phone" ${f("phone")} inputmode="tel"></div>
-    <div class="grow"><label>Town</label><input id="f_town" ${f("town")}></div></div>
-    <label>Email</label><input id="f_email" ${f("email")} inputmode="email">
-    <label>Address / property</label><input id="f_address" ${f("address")}>
-    <div class="row" style="gap:8px"><div class="grow"><label>Type</label><select id="f_type">${TYPES.map(t=>`<option ${c.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div class="grow"><label>Email</label><input id="f_email" ${f("email")} inputmode="email"></div></div>
+    <div class="row" style="gap:8px"><div class="grow"><label>Managed by</label><select id="f_manager">${uopts(c.manager)}</select></div>
+    <div class="grow"><label>Sold by (credit)</label><select id="f_soldby">${uopts(c.soldBy)}</select></div></div>
+    <label>How they found us</label><select id="f_source">${SOURCES.map(o=>`<option value="${o}" ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
+    <h2 style="margin-top:14px">Properties / addresses</h2>
+    <div id="custprops"></div>
+    <button class="btn ghost sm" onclick="addProp()">+ Add property</button>
+    <div class="row" style="gap:8px;margin-top:12px"><div class="grow"><label>Type</label><select id="f_type">${TYPES.map(t=>`<option ${c.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
     <div class="grow"><label>Status</label><select id="f_status">${STATUSES.map(s=>`<option ${(c.status||"Lead")===s?"selected":""}>${s}</option>`).join("")}</select></div></div>
     <label>Next follow-up date</label><input id="f_next" type="date" value="${c.next||""}">
     <button class="btn acc" style="margin-top:14px" onclick="saveCustomer('${c.id}',${isNew})">Save</button>
@@ -451,12 +464,23 @@ window.openCustomer=function(id){
       <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
       <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`:""}
   `);
+  renderCustProps();
 };
+function renderCustProps(){const el=document.getElementById("custprops");if(!el)return;
+  el.innerHTML=CPROPS.map((p,i)=>`<div class="card" style="padding:10px;margin-bottom:8px">
+    <div class="row" style="gap:8px"><input id="cp_label_${i}" value="${esc(p.label||"")}" placeholder="Label (Main, Beach house…)" style="flex:1">${CPROPS.length>1?`<button class="rm" onclick="rmProp(${i})">×</button>`:""}</div>
+    <div class="acwrap" style="margin-top:6px"><input id="cp_addr_${i}" value="${esc(p.address||"")}" placeholder="Start typing the address…" oninput="addrSuggest('cp_addr_${i}','cp_box_${i}')"><div class="acbox" id="cp_box_${i}"></div></div>
+  </div>`).join("");}
+function readProps(){CPROPS.forEach((p,i)=>{const l=document.getElementById("cp_label_"+i),a=document.getElementById("cp_addr_"+i);if(l)p.label=l.value;if(a)p.address=a.value;});}
+window.addProp=function(){readProps();CPROPS.push({id:uid(),label:"",address:""});renderCustProps();};
+window.rmProp=function(i){readProps();CPROPS.splice(i,1);renderCustProps();};
 window.saveCustomer=function(id,isNew){
   const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);
-  ["name","company","phone","town","email","address"].forEach(k=>c[k]=val("f_"+k));
-  c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");touch(c);
-  if(isNew)d.customers.push(c);
+  ["name","company","phone","email"].forEach(k=>c[k]=val("f_"+k));
+  c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");c.manager=val("f_manager");c.soldBy=val("f_soldby");c.source=val("f_source");
+  readProps();c.properties=CPROPS.filter(p=>(p.label||p.address));if(!c.properties.length)c.properties=[{id:uid(),label:"Main",address:""}];
+  c.address=c.properties[0].address||"";
+  touch(c);if(isNew)d.customers.push(c);
   save();closeModal();render();
 };
 window.addNote=function(id){const txt=val("f_note");if(!txt)return;
@@ -573,7 +597,7 @@ window.printQuote=function(){
   .ft{margin-top:28px;color:#6b7280;font-size:12px}
   @media print{body{padding:6px}}</style></head>
   <body><div class="hd"><div class="n">${nameHtml}</div><div style="font-weight:700">${(CURQ&&CURQ.invoiced)?"INVOICE":"QUOTE"}</div></div>
-  ${who?`<h2>Prepared for</h2><div>${esc(who)}</div>`:""}
+  ${who?`<h2>Prepared for</h2><div>${esc(who)}${(CURQ&&CURQ.address)?"<br>"+esc(CURQ.address):""}</div>`:""}
   <h2>Services</h2><table><tr><th>Service</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th></tr>${rows}</table>
   ${t.disc?`<div class="disc">Recurring discount (20%): -${money(t.disc)}</div>`:""}
   <div class="tot">Total: ${money(t.total)}</div>
@@ -931,22 +955,41 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:""},items:[],recurring:false,disc:0,svc:null,inp:{}};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,svc:null,inp:{}};WZON=true;TAB="quotes";render();};
 window.exitWizard=function(){WZON=false;render();};
 function wizHead(n,total,title){return `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Step ${n} of ${total}</div><div class="nm" style="font-size:18px">${title}</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;}
 function wizRender(){const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
 function wizCust(){const c=WZ.cust;
   return wizHead(1,5,"Who's the quote for?")+`<div class="card">
+    <label>Find an existing customer</label>
+    <div class="acwrap"><input id="wc_search" placeholder="Type a name…" autocomplete="off" oninput="wizCustSearch()"><div class="acbox" id="wc_sbox"></div></div>
+    ${c.id?`<div class="muted" style="margin-top:4px">Linked: <b>${esc(c.name)}</b> — <a href="#" onclick="wizClearCust();return false">clear</a></div>`:""}
+    <div id="wc_propwrap">${wizPropPicker()}</div>
+    <div style="border-top:1px solid var(--line);margin:14px 0"></div>
     <label>Name *</label><input id="wc_name" value="${esc(c.name)}" placeholder="Customer or property name">
     <label>Phone *</label><input id="wc_phone" value="${esc(c.phone)}" inputmode="tel" placeholder="(252) ___-____">
-    <label>Property address *</label><input id="wc_address" value="${esc(c.address)}" placeholder="Street, town">
-    <label>How'd they find us?</label><select id="wc_source">${["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"].map(o=>`<option ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
+    <label>Property address *</label><div class="acwrap"><input id="wc_address" value="${esc(c.address)}" placeholder="Start typing the address…" oninput="addrSuggest('wc_address','wc_abox')"><div class="acbox" id="wc_abox"></div></div>
+    <label>How'd they find us?</label><select id="wc_source" onchange="WZ.cust.source=this.value;var w=document.getElementById('wc_soldwrap');if(w)w.innerHTML=wizSoldPicker()">${SOURCES.map(o=>`<option value="${o}" ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
+    <div id="wc_soldwrap">${wizSoldPicker()}</div>
     <label>Notes (gate code, pets, access…)</label><textarea id="wc_notes">${esc(c.notes)}</textarea>
     <p class="muted" id="wc_err" style="margin-top:8px"></p>
     <button class="btn acc" style="margin-top:6px" onclick="wizCustNext()">Next: pick services →</button>
   </div>`;}
+function wizPropPicker(){const c=WZ.cust;if(!c.id)return"";const cust=D().customers.find(x=>x.id===c.id);if(!cust||!cust.properties||cust.properties.length<2)return"";
+  return `<label>Which property?</label><select onchange="wizPickProp(this.value)">${cust.properties.map(p=>`<option value="${p.id}" ${c.propertyId===p.id?"selected":""}>${esc(p.label||"")} — ${esc(p.address||"")}</option>`).join("")}</select>`;}
+function wizSoldPicker(){const c=WZ.cust;if(c.source!=="Cold call / in-person")return"";
+  return `<label>Which team member made this sale? (credit)</label><select id="wc_sold"><option value="">— none —</option>${users().map(u=>`<option value="${u.id}" ${c.soldBy===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>`;}
+window.wizCustSearch=function(){const q=val("wc_search").toLowerCase();const box=document.getElementById("wc_sbox");if(!box)return;if(q.length<2){box.innerHTML="";return;}
+  const m=actC().filter(c=>(c.name||c.company||"").toLowerCase().indexOf(q)>=0).slice(0,6);
+  box.innerHTML=m.length?m.map(c=>`<div class="acitem" onclick="wizPickCust('${c.id}')">${esc(c.name||c.company)}${c.phone?" · "+esc(c.phone):""}</div>`).join(""):`<div class="acitem muted">No match — just fill in the fields below to add new.</div>`;};
+window.wizPickCust=function(id){const cust=D().customers.find(x=>x.id===id);if(!cust)return;
+  const prop=(cust.properties&&cust.properties[0])||{address:cust.address||"",id:""};
+  WZ.cust={id:cust.id,name:cust.name||cust.company||"",phone:cust.phone||"",address:prop.address||"",propertyId:prop.id||"",source:cust.source||"",soldBy:cust.soldBy||"",notes:""};render();};
+window.wizClearCust=function(){WZ.cust={name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""};render();};
+window.wizPickProp=function(pid){const cust=D().customers.find(x=>x.id===WZ.cust.id);if(!cust)return;const p=(cust.properties||[]).find(x=>x.id===pid);if(p){WZ.cust.propertyId=p.id;WZ.cust.address=p.address;render();}};
 window.wizCustNext=function(){
-  WZ.cust={name:val("wc_name"),phone:val("wc_phone"),address:val("wc_address"),source:val("wc_source"),notes:val("wc_notes"),id:WZ.cust.id};
+  WZ.cust.name=val("wc_name");WZ.cust.phone=val("wc_phone");WZ.cust.address=val("wc_address");WZ.cust.source=val("wc_source");WZ.cust.notes=val("wc_notes");
+  const sold=document.getElementById("wc_sold");if(sold)WZ.cust.soldBy=sold.value;
   const miss=[];if(!WZ.cust.name)miss.push("name");if(!WZ.cust.phone)miss.push("phone");if(!WZ.cust.address)miss.push("address");
   if(miss.length){document.getElementById("wc_err").innerHTML='<span style="color:var(--danger)">Please fill in: '+miss.join(", ")+" (required).</span>";return;}
   WZ.step="pick";render();
@@ -1005,13 +1048,15 @@ function wizReview(){
 window.wizFinish=function(){
   const d=D();let sub=0;WZ.items.forEach(it=>sub+=it.price);
   const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const disc=recDisc+(WZ.disc||0);const total=Math.max(0,sub-disc);
-  // create/find customer
-  let cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
-  if(!cust){cust={id:uid(),name:WZ.cust.name,phone:WZ.cust.phone,address:WZ.cust.address,town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,notes:[],next:""};
+  let cust=WZ.cust.id?d.customers.find(c=>c.id===WZ.cust.id):null;
+  if(!cust)cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
+  if(!cust){cust={id:uid(),name:WZ.cust.name,company:"",phone:WZ.cust.phone,email:"",town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,soldBy:WZ.cust.soldBy,manager:WZ.cust.soldBy,notes:[],next:"",properties:[{id:uid(),label:"Main",address:WZ.cust.address}],address:WZ.cust.address};
     if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});
     touch(cust);d.customers.push(cust);}
-  else{cust.phone=cust.phone||WZ.cust.phone;cust.address=cust.address||WZ.cust.address;if(cust.status==="Lead")cust.status="Quoted";touch(cust);}
-  const q={id:uid(),customerId:cust.id,cust:cust.name,date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
+  else{cust.phone=cust.phone||WZ.cust.phone;if(!cust.properties)cust.properties=[{id:uid(),label:"Main",address:WZ.cust.address||cust.address||""}];
+    if(WZ.cust.source&&!cust.source)cust.source=WZ.cust.source;if(WZ.cust.soldBy&&!cust.soldBy)cust.soldBy=WZ.cust.soldBy;
+    if(cust.status==="Lead")cust.status="Quoted";if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});touch(cust);}
+  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:WZ.cust.propertyId||"",address:WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
   touch(q);d.quotes.push(q);save();
   CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
 };
@@ -1107,6 +1152,9 @@ window.importData=function(inp){
 /* ---------- helpers ---------- */
 function val(id){const e=document.getElementById(id);return e?e.value.trim():""}
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]))}
+let _acT=null;
+window.addrSuggest=function(inpId,boxId){clearTimeout(_acT);const inp=document.getElementById(inpId),box=document.getElementById(boxId);if(!inp||!box)return;const q=inp.value.trim();if(q.length<4){box.innerHTML="";return;}_acT=setTimeout(function(){fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q="+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){box.innerHTML=(d||[]).map(function(x){return '<div class="acitem" data-a="'+esc(x.display_name)+'" onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+esc(x.display_name)+'</div>';}).join("");}).catch(function(){});},350);};
+window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId);inp.value=el.getAttribute("data-a");document.getElementById(boxId).innerHTML="";try{inp.dispatchEvent(new Event("change"));}catch(e){}};
 function applyTheme(){document.body.classList.toggle("dark",localStorage.getItem("jra_theme")==="dark");}
 window.toggleTheme=function(){const dark=localStorage.getItem("jra_theme")!=="dark";localStorage.setItem("jra_theme",dark?"dark":"light");applyTheme();};
 
