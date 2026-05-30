@@ -4,18 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>J-Suite</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1B2A4E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
 <style>
   :root{
-    --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee;
+    --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee; --soft:#f7f9fb;
     --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b;
   }
   body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; }
+  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#94a1b2; --line:#2a333f; --soft:#222b36; --danger:#e8705f; }
+  body.dark[data-biz="jam"]{ --accent:#37b0f0; }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;padding-bottom:72px}
   header{background:var(--brand);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px}
   .logo{font-weight:800;font-size:18px;letter-spacing:.5px;line-height:1}
   .logo .ac{color:var(--accent)}
   .bizsel{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:600}
+  .bizsel option{color:#1b2330;background:#fff;font-weight:600}
   .wrap{max-width:780px;margin:0 auto;padding:14px}
   h2{font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 4px 8px}
   h2:first-child{margin-top:4px}
@@ -27,24 +34,29 @@
   .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap}
   .s-Lead{background:#eef2ff;color:#3b46c4}.s-Contacted{background:#fff4e5;color:#b26a00}
   .s-Quoted{background:#e7f0ff;color:#1f5fbf}.s-Won{background:#e7f7ea;color:#1d8a3a}.s-Lost{background:#fdecec;color:#c0392b}
+  .p-High{background:#fdecec;color:#c0392b}.p-Medium{background:#fff4e5;color:#b26a00}.p-Low{background:#eef2ff;color:#3b46c4}
+  .subnav{display:flex;gap:6px;margin:0 4px 12px;flex-wrap:wrap}
+  .subbtn{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600}
+  .subbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .m-Planned{background:#eef2ff;color:#3b46c4}.m-Active{background:#e7f7ea;color:#1d8a3a}.m-Paused{background:#fff4e5;color:#b26a00}.m-Done{background:#eceff3;color:#5b6677}
   button{font-family:inherit;cursor:pointer}
   .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;width:100%}
   .btn.acc{background:var(--accent);color:var(--accent-ink)}
   .btn.ghost{background:transparent;color:var(--brand);border:1.5px solid var(--brand)}
   .btn.sm{width:auto;padding:9px 13px;font-size:14px}
   .btn.danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger)}
-  input,select,textarea{font-family:inherit;font-size:16px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  input,select,textarea{font-family:inherit;font-size:16px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
   label{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:10px 2px 4px}
   textarea{min-height:70px;resize:vertical}
   .search{margin-bottom:10px}
-  nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:30}
+  nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;z-index:30}
   nav button{flex:1;background:none;border:none;padding:9px 0 8px;color:var(--muted);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
   nav button.on{color:var(--brand)}
   nav .ic{font-size:20px;line-height:1}
   .fab{position:fixed;right:16px;bottom:84px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:none;font-size:30px;font-weight:700;box-shadow:0 6px 16px rgba(0,0,0,.22);z-index:25;display:flex;align-items:center;justify-content:center}
   .overlay{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:40;display:none;align-items:flex-end;justify-content:center}
   .overlay.show{display:flex}
-  .sheet{background:#fff;width:100%;max-width:780px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 16px 26px;position:relative}
+  .sheet{background:var(--card);width:100%;max-width:780px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px 16px 26px;position:relative}
   .shead{display:flex;align-items:center;margin-bottom:6px}
   .shead h3{font-size:18px}
   .shead .cl{margin-left:auto;background:none;border:none;font-size:24px;color:var(--muted);padding:0 4px}
@@ -53,28 +65,41 @@
   .empty .big{font-size:40px;margin-bottom:8px}
   .li{display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
   .li:last-child{border-bottom:none}
-  .note{background:#f7f9fb;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:14px}
+  .note{background:var(--soft);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:14px}
   .note .t{color:var(--muted);font-size:11px;margin-bottom:2px}
   .qline{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .qline select{flex:1}
   .qline input.q{width:64px;text-align:center}
   .qline input.pr{width:84px;text-align:right}
   .qline .rm{background:none;border:none;color:var(--danger);font-size:20px;padding:0 4px}
-  .totbar{position:sticky;bottom:0;background:#fff;border-top:2px solid var(--accent);padding:12px 2px;margin-top:8px;display:flex;align-items:center}
+  .totbar{position:sticky;bottom:0;background:var(--card);border-top:2px solid var(--accent);padding:12px 2px;margin-top:8px;display:flex;align-items:center}
   .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:22px;font-weight:800;color:var(--brand)}
-  .toggle{display:flex;align-items:center;gap:10px;background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+  .toggle{display:flex;align-items:center;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
   .toggle input{width:auto}
   .secthd{display:flex;align-items:center;margin:18px 4px 6px}
   .secthd h2{margin:0}
   .secthd .ct{margin-left:auto;color:var(--muted);font-size:13px}
   .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none}
   .grid2{display:grid;grid-template-columns:1fr;gap:0}
+  .calhead{display:flex;align-items:center;gap:12px;margin:4px 4px 10px}
+  .calhead .mtitle{font-weight:800;font-size:17px}
+  .calnav{background:var(--brand);color:#fff;border:none;border-radius:8px;width:34px;height:34px;font-size:18px;font-weight:700}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px}
+  .caldow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);padding:2px 0}
+  .calcell{background:var(--card);border:1px solid var(--line);border-radius:8px;min-height:56px;padding:4px;cursor:pointer;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+  .calcell.out{background:transparent;border-color:transparent;cursor:default}
+  .calcell.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .calcell .dnum{font-size:12px;font-weight:700;color:var(--muted)}
+  .calcell.today .dnum{color:var(--brand)}
+  .caljob{background:var(--brand);color:#fff;border-radius:4px;font-size:10px;line-height:1.3;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .calmore{font-size:10px;color:var(--muted)}
+  @media(min-width:900px){.calcell{min-height:92px}.caljob{font-size:11px}}
   /* ---------- DESKTOP ---------- */
   @media(min-width:900px){
     body{font-size:17px;padding-bottom:0}
-    header{padding:15px 26px}
+    header{height:60px;padding:0 26px}
     .logo{font-size:22px}
-    nav{top:55px;bottom:0;left:0;right:auto;width:224px;flex-direction:column;border-top:none;border-right:1px solid var(--line);padding-top:10px}
+    nav{top:60px;bottom:0;left:0;right:auto;width:224px;flex-direction:column;border-top:none;border-right:1px solid var(--line);padding-top:16px}
     nav button{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:14px;padding:15px 24px;font-size:15px;width:100%}
     nav button.on{color:var(--brand);background:rgba(0,0,0,.035);box-shadow:inset 4px 0 0 var(--brand)}
     nav .ic{font-size:20px}
@@ -110,6 +135,8 @@
   <button data-tab="customers"><span class="ic">👥</span>Customers</button>
   <button data-tab="quotes"><span class="ic">🧾</span>Quotes</button>
   <button data-tab="schedule"><span class="ic">📅</span>Schedule</button>
+  <button data-tab="todo"><span class="ic">✅</span>To-Do</button>
+  <button data-tab="plan"><span class="ic">📈</span>Plan</button>
   <button data-tab="data"><span class="ic">⚙️</span>Data</button>
 </nav>
 
@@ -163,25 +190,73 @@ const CATALOG = {
     {id:"jc6",cat:"Custom (quote)",name:"Structured wiring (quote)",price:0,unit:"quote"}
   ]
 };
-const BIZ={obx:{name:'OBX LOT <span class="ac">SOLUTIONS</span>',recurring:true,phone:"(252) 564-8717"},
-           jam:{name:'JAMIESON <span class="ac">AUTOMATION</span>',recurring:false,phone:""}};
+const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 564-8717"},
+           jam:{name:"Jamieson Automation",logo:"assets/logo-jam.png",recurring:false,phone:""}};
 const STATUSES=["Lead","Contacted","Quoted","Won","Lost"];
 const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscaper (partner)","Other"];
 
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
   if(!S||!S.obx)S={biz:"obx",obx:blank(),jam:blank()};
   if(!S.jam)S.jam=blank();
   if(!S.sync)S.sync={url:"",token:"",last:0,auto:true};
-  // migrate: ensure updatedAt on every record
-  ["obx","jam"].forEach(b=>["customers","quotes","jobs"].forEach(col=>{
-    (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
-  }));
+  if(!S.users)S.users=[];
+  ["obx","jam"].forEach(b=>{
+    if(!S[b].todos)S[b].todos=[];
+    if(!S[b].mktTracker)S[b].mktTracker=[];
+    if(!S[b].docs)S[b].docs=[];
+    ["customers","quotes","jobs","todos","mktTracker","docs"].forEach(col=>{
+      (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
+    });
+  });
+  if(!S.seeded){seedTodos();seedDocs();S.seeded=true;save();}
+  if(!S.researchV2){setResearchDocs();S.researchV2=true;save();}
+}
+function setResearchDocs(){
+  const set=(biz,text)=>{let dc=S[biz].docs.find(x=>x.id==="research");if(dc){dc.text=text;dc.deleted=false;dc.updatedAt=now();}else S[biz].docs.push({id:"research",text:text,updatedAt:now()});};
+  set("obx","OBX LOT SOLUTIONS — Market Research (updated overnight)\n\nTHE BIG PICTURE\nThe Outer Banks runs on absentee owners and rentals. ~60% of homes here are second homes, ~52% sit vacant at any time, and there are 8,000-10,000+ vacation rentals in Dare County alone. Dare saw $2.1B in visitor spending in 2024 and ~45% of local jobs are tourism. NC also has a real skilled-trades labor shortage. Translation: thousands of pricey properties owned by people who aren't here, who need a reliable local to clean, wash, watch, and fix them — in a market short on reliable help. That gap is the whole opportunity.\n\nWHAT TO PUSH FIRST\n1) Pressure & soft washing — the engine.\n2) House-watch / property checks — the sleeper + the wedge.\n3) Keep junk removal (get the trailer).\n4) Bundle window + gutter cleaning onto wash visits.\n5) Queue holiday lighting for Q4.\n\nPRESSURE & SOFT WASHING (start now)\nSalt + humidity grow algae/mildew fast on the coast, so exteriors need washing on a recurring (often annual) basis — recurring demand is the point. US industry is $1.2B across ~32,000 businesses; gross margins commonly 40-65%. House exterior $192-400; pricing $0.30-0.80/sq ft; roof soft-wash ~$700. Lead with SOFT washing (houses, roofs, siding) for recurring money + concrete pressure washing. Sell annual plans. You already own a commercial unit and the brothers can run it.\n\nHOUSE-WATCH / PROPERTY CHECKS (start now)\nWith 60% absentee ownership, there's a huge base needing property checks — and insurers often require checks on vacant homes. Per-visit recurring, near-zero equipment, delivered with a photo/text report = high trust, high margin, sticky. It's also the WEDGE: once you're the trusted person at the property, you get the washing, junk, repairs, and Jamieson tech too. Offer tiered monthly/bi-weekly plans with a branded report.\n\nJUNK REMOVAL (keep)\n$350-850/job, solo margins 40-72%; tipping ~$62/ton. Trailer is the gating item. Good cash; pairs with clean-outs for the same PM/absentee customers.\n\nWINDOW + GUTTER (bundle, don't lead)\nWindows $150-370/visit, gutters $0.95-2.50/linear ft, both ~twice-yearly, 20-50% margin. Saturated as standalone — ATTACH them to wash/house-watch accounts as recurring add-ons.\n\nHOLIDAY LIGHTING (queue for Q4)\nLands when the OBX is dead = off-season cash. 30%+ net, materials only 10-12%, $8-35/linear ft; a 3-person crew nets $1,000-1,700/day; $100k+/season is doable. Decide by late summer, pre-sell Sept/Oct. Bridges into Jamieson's permanent lighting.\n\nTURNOVER CLEANING (defer)\nCleanliness is the #1 guest complaint and managers can't staff turnover days — huge market, but same-day weekend turns are risky with a part-time crew. Revisit once the crew is proven.\n\nHOW IT CONNECTS TO JAMIESON\nSame customers (property managers + second-home owners). House-watch opens the door; washing/junk are the recurring revenue; then Jamieson sells Starlink/wifi/smart locks/cameras/AV/lighting into the same door. One PM = dozens of doors for both businesses.\n\n(Full report with all numbers + sources: see 'Market Research & Strategy.md' in the project folder.)");
+  set("jam","JAMIESON AUTOMATION — Market Research (updated overnight)\n\nTHE BIG PICTURE\nThe OBX is absentee-owner and rental-heavy: ~60% second homes, 8,000-10,000+ vacation rentals in Dare alone, a ~$100B US vacation-rental market, and a US smart-home market of ~$28-36B growing 17-27%/yr (41% of US households already have smart-home tech). These owners want reliable guest wifi, keyless entry, cameras, and systems that just work — and there are few skilled, reliable local integrators. Premium, relationship-sold work is wide open.\n\nWHAT TO PUSH FIRST\n1) Starlink + vacation-rental tech packages.\n2) Commercial AV / Q-Sys for restaurants & bars (your deepest edge).\n3) Permanent outdoor LED lighting (high-ticket bet).\nPlus: security cameras/smart home as cross-sell; EV/generators with a license workaround; boat fiberglass as a wildcard.\n\nSTARLINK + RENTAL-TECH PACKAGES (push now)\n71% of travelers prefer keyless entry; rentals need reliable wifi; Starlink's own installs carry $100-1,500 demand surcharges in busy areas (supply gap). You've done 3 installs already. Bundle Starlink + mesh wifi + smart lock + thermostat + cameras into a flat-rate 'rental-ready' package sold per door to PMs and owners. One PM = many doors.\n\nCOMMERCIAL AV / Q-SYS (your edge)\nThe OBX is dense with restaurants/bars, and you have real Q-Sys/QSC expertise — the exact platform for multi-zone hospitality audio, paging, and control. Few true pros compete locally. High-ticket installs + recurring support/programming. Relationship-sold: walk into venues, lead with Q-Sys. Hard for others to copy.\n\nPERMANENT OUTDOOR LED LIGHTING (high-ticket bet)\nTrimlight/Jellyfish/Gemstone-style systems are year-round (holiday + accent + security in one app), sold to affluent homes — the OBX is full of them, with likely little local competition. $1,800-2,500+ per home, $18-35/linear ft, ~$650 controller; margins like holiday lighting. It's technical (LED channels, controllers, app/network) = your wheelhouse, and it bridges OBX Lot Solutions' seasonal lighting into a premium product. Become a dealer this summer; sell in the fall.\n\nSECURITY CAMERAS + SMART HOME (cross-sell)\nSmart-home market ~$28-36B, growing fast, 41% household adoption. Cameras/locks/thermostats attach naturally to the rental package and any home you're already in.\n\nEV CHARGERS & GENERATORS (demand yes, license constraint)\nStrong demand (NC EV charging +39% YoY; coastal NC wants Generac standby generators, which book up before hurricane season). BUT both hardwire into the panel = NC licensed electrician required, which you're not yet. Options: partner with a licensed electrician (own mounting/config/automation + the customer), do plug-in EV chargers only (no license needed), or pursue a Limited electrical license later (2 yrs experience, up to $60k jobs). Secondary until you pick a path.\n\nWILDCARD: MOBILE BOAT FIBERGLASS/GELCOAT REPAIR\nYou have rare structural fiberglass skill; the OBX is boat-dense; NC sun cracks/fades gelcoat (recurring). Shops charge ~$110/hr, $450-500 for small repairs. A mobile service is a high-margin niche with thin competition. Worth a low-cost test (marina drop-bys).\n\nHOW IT CONNECTS TO OBX LOT SOLUTIONS\nSame customers. OBX Lot Solutions' house-watch/washing relationships become warm leads for Jamieson's high-margin Starlink/AV/lighting work. Keep brands separate (you own 100% of Jamieson) but work one shared PM list.\n\n(Full report with all numbers + sources: see 'Market Research & Strategy.md' in the project folder.)");
+}
+function seedTodos(){
+  const mk=(title,priority,due)=>({id:uid(),title,priority,due,done:false,notes:"",updatedAt:now()});
+  S.obx.todos.push(
+    mk("Call the top 5 property managers on the call list","High","2026-06-02"),
+    mk("Pick up uniforms when they arrive","High","2026-06-05"),
+    mk("Sort out a trailer (buy or rent) for hauling","High","2026-06-09"),
+    mk("Train the brothers on the power washer","Medium","2026-06-12"),
+    mk("Order yard signs / vehicle magnets","Medium","2026-06-16"),
+    mk("Polish the Squarespace site (header logo + copy)","Medium","2026-06-09"),
+    mk("Set up Google Business Profile for local SEO","Low","2026-06-20"),
+    mk("Build a recurring-route schedule template","Low","2026-06-23")
+  );
+  S.jam.todos.push(
+    mk("Create Intuit Developer app + get QuickBooks OAuth keys (Client ID/Secret; redirect http://localhost:4000/qb/callback)","High","2026-06-03"),
+    mk("Get a business phone line (Google Voice / Nextiva) to replace personal cell","High","2026-06-06"),
+    mk("Register a domain + publish the Jamieson website","High","2026-06-09"),
+    mk("Finalize Starlink flat-rate install package + pricing","Medium","2026-06-10"),
+    mk("Make a one-page Jamieson line card / leave-behind","Medium","2026-06-12"),
+    mk("Add an online booking link for flat-rate installs","Medium","2026-06-20"),
+    mk("Reach out to 3 property managers re: rental tech (wifi/Starlink/smart locks)","Low","2026-06-16"),
+    mk("List on Google Business Profile + local directories","Low","2026-06-23")
+  );
+}
+function seedDocs(){
+  const d=(id,text)=>({id,text,updatedAt:now()});
+  S.obx.docs.push(
+    d("onepage","OBX LOT SOLUTIONS — One-Page\n\nWHAT WE DO\nCommercial property cleanup on the Outer Banks: parking-lot litter, storefront & walkway, dumpster areas, roadside, junk removal — plus power washing and window washing.\n\nWHO WE SERVE\nProperty managers, HOAs/POAs, shopping centers, and retail/commercial owners from Corolla to Manteo (and lower Currituck to Jarvisburg). Start with commercial recurring work; vacation-rental turnovers later, once the crew is reliable.\n\nOUR EDGE\nReliable, local, uniformed — we show up. In a service-starved tourist economy, dependability is the differentiator.\n\nMODEL\nRecurring contracts (20% off) for predictable revenue, run by a small crew. Low-skill, labor-leveraged. Online booking + on-the-spot quotes remove friction.\n\nOWNERSHIP\nRay + two partners (equal thirds). Ray leads ops/sales and trains the crew.\n\n90-DAY GOALS\n- Land 3-5 recurring commercial accounts\n- Add power washing & window washing revenue\n- Build a dependable 2-person crew rhythm\n- Reach consistent weekly cash flow"),
+    d("marketing","OBX LOT SOLUTIONS — Marketing Strategy\n\nPOSITIONING\n\"The cleanup crew that actually shows up.\" Reliability first.\n\nCHANNELS (priority order)\n1. Direct B2B outreach — cold calls + in-person drop-bys to property managers, HOAs, shopping centers (see the call list). Highest ROI.\n2. Landscaper partnerships — be their cleanup subcontractor; one yes = several properties.\n3. Google Search ads — small budget on local-intent terms (already ~$10/day).\n4. Facebook/Instagram — local awareness with before/after photos.\n5. Google Business Profile + local SEO.\n\nTACTICS\n- Before/after photos on every job for social proof.\n- 20% recurring discount as the close.\n- Leave-behind flyer + business card on every visit.\n- Ask happy clients for a Google review.\n\nTRACK\nUse the tracker below. Watch cost-per-lead and which channels produce recurring accounts (not just one-offs)."),
+    d("research","OBX LOT SOLUTIONS — Market Research\n\nMARKET\nOuter Banks: tourist-driven, rental-heavy, transient, expensive, service-based economy. Reliable skilled/semi-skilled labor is scarce — the core opportunity.\n\nDEMAND\nCommercial property managers, HOAs, shopping centers, and retail need recurring exterior cleanup. Vacation-rental turnovers are a large but time-critical market (defer until crew is reliable).\n\nPRICING (market-based — see Service Menu)\nLot cleanup from $79; power washing $99-549 by size; windows $12-18/window. Recurring = 20% off.\n\nKEY TARGETS (see call list)\nSeaside Management, Signature Touch, Harrell & Associates, Joe Lamb Jr., Outlets Nags Head — plus landscaper partners (Four Seasons, Kim Franks).\n\nRESEARCH TOOLS\n- Google Maps — scout properties & find managers\n- OBX Association of Realtors / property-mgmt directories\n- Google Business Profile — competitors & reviews\n- County GIS / parcel data — identify commercial owners\n- Facebook local groups — demand signals")
+  );
+  S.jam.docs.push(
+    d("onepage","JAMIESON AUTOMATION — One-Page\n\nWHAT WE DO\nAutomation, A/V, networking, and smart-home installation on the Outer Banks. Two tiers: flat-rate installs (Starlink, mesh wifi, smart locks/cameras/thermostats, TV/soundbar) and custom integration (home/business automation, whole-house A/V, control systems/PLC, commercial networks).\n\nWHO WE SERVE\nHomeowners, vacation-rental owners/managers, and local businesses that need reliable, expert installs and systems that just work.\n\nOUR EDGE\nA first-principles technician with deep ride-tech background (PLCs, high-voltage, networks, A/V) who builds bulletproof, easy-to-use systems — and shows up. Premium, relationship-sold, 100% Ray-owned.\n\nMODEL\nFlat-rate installs bookable online (high margin, repeatable) + quoted custom work. QuickBooks owns the books; the app owns quoting/scheduling/CRM.\n\n90-DAY GOALS\n- Publish the website + add a business phone line\n- Productize & promote Starlink installs\n- Land first paid installs beyond the escape room\n- Wire QuickBooks for clean invoicing"),
+    d("marketing","JAMIESON AUTOMATION — Marketing Strategy\n\nPOSITIONING\n\"Expert automation, A/V & networking — done right, shows up.\" Premium and dependable.\n\nCHANNELS (priority order)\n1. Website + Google Business Profile — capture \"OBX Starlink installer\", \"home automation\", \"network install\" searches.\n2. Productized Starlink installs — clear flat-rate offer + online booking; the wedge service.\n3. Vacation-rental property managers — wifi, smart locks, Starlink, cameras across units (cross-sell from OBX Lot Solutions relationships).\n4. Referrals — every clean install becomes a referral; ask for it.\n5. Local Facebook groups + targeted ads for high-ticket installs.\n\nTACTICS\n- Photograph clean installs; build a portfolio.\n- Lead with Starlink (high demand, repeatable); upsell networking/smart-home.\n- Publish flat pricing = trust + fewer tire-kickers.\n\nTRACK\nTracker below: which services and channels actually book. Protect Ray's time for high-margin work."),
+    d("research","JAMIESON AUTOMATION — Market Research\n\nMARKET\nOBX has heavy vacation-rental and second-home density — strong demand for Starlink (spotty rural internet), wifi/networking, smart locks (remote rental access), cameras, and A/V. Few skilled, reliable local integrators.\n\nDEMAND DRIVERS\n- Starlink: rural/island connectivity gaps; rentals want reliable guest wifi.\n- Smart locks/thermostats/cameras: rental turnover & remote management.\n- A/V & automation: second-home owners with budget.\n\nPRICING (market-based — see Service Menu)\nStarlink install $299-599; mesh wifi from $249; TV mount $149-279; smart lock $129. Custom = quoted.\n\nCOMPETITION\nMostly generalist handymen and out-of-area integrators. Edge = local + expert + reliable + flat pricing.\n\nRESEARCH TOOLS\n- Google Trends / Keyword Planner — \"OBX Starlink\", \"home automation OBX\"\n- Starlink installer directories & forums\n- Property-management company sites — see their tech needs\n- Reddit r/Starlink, r/homeautomation — real install pain points\n- Competitor Google Business Profiles & reviews")
+  );
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(S))}
 function D(){return S[S.biz]}
@@ -194,6 +269,7 @@ function fmtDate(d){if(!d)return"";const p=d.split("-");return `${p[1]}/${p[2]}/
 function actC(){return D().customers.filter(c=>!c.deleted)}
 function actQ(){return D().quotes.filter(q=>!q.deleted)}
 function actJ(){return D().jobs.filter(j=>!j.deleted)}
+function actTodo(){return D().todos.filter(t=>!t.deleted)}
 function custName(id){const c=D().customers.find(x=>x.id===id);return c?(c.name||c.company||"—"):"—"}
 function touch(r){r.updatedAt=now();return r}
 
@@ -201,17 +277,17 @@ function touch(r){r.updatedAt=now();return r}
 let TAB="today";
 const view=document.getElementById("view");
 function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
-  document.getElementById("logo").innerHTML=BIZ[b].name;
+  document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:40px;width:auto;max-width:220px;object-fit:contain;display:block">';
   document.getElementById("bizsel").value=b;render()}
 function render(){
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
-  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,data:rData}[TAB])();
+  ({today:rToday,customers:rCustomers,quotes:rQuotes,schedule:rSchedule,todo:rTodos,plan:rPlan,data:rData}[TAB])();
   renderSyncPill();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;render()});
 document.getElementById("bizsel").onchange=e=>setBiz(e.target.value);
 document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else openCustomer();
+  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="data")return;else openCustomer();
 };
 
 /* ---------- modal ---------- */
@@ -231,9 +307,21 @@ function rToday(){
      .sort((a,b)=>(a.next||"9999")<(b.next||"9999")?-1:1);
   const jobs=actJ().filter(j=>!j.done&&j.date===t);
   const won=actC().filter(c=>c.status==="Won").length;
+  const d7=new Date();d7.setDate(d7.getDate()+7);
+  const wkEnd=d7.getFullYear()+"-"+String(d7.getMonth()+1).padStart(2,"0")+"-"+String(d7.getDate()).padStart(2,"0");
+  const pipeline=actQ().filter(q=>!q.paid).reduce((s,q)=>s+(q.total||0),0);
+  const outstanding=actQ().filter(q=>q.invoiced&&!q.paid).reduce((s,q)=>s+(q.total||0),0);
+  const jobsWeek=actJ().filter(j=>!j.done&&j.date>=t&&j.date<=wkEnd).length;
   let h=`<h2>Today · ${fmtDate(t)}</h2>
     <div class="card row"><div class="grow"><div class="nm">${actC().length} customers · ${actQ().length} quotes · ${won} won</div>
-    <div class="sub">${BIZ[S.biz].phone||"Jamieson Automation"}</div></div></div>`;
+    <div class="sub">${BIZ[S.biz].phone||"Jamieson Automation"}</div></div></div>
+    <div class="card" style="display:flex;gap:6px;text-align:center">
+      <div class="grow"><div style="font-size:20px;font-weight:800;color:var(--brand)">${money(pipeline)}</div><div class="sub">open pipeline</div></div>
+      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand)">${money(outstanding)}</div><div class="sub">unpaid</div></div>
+      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand)">${jobsWeek}</div><div class="sub">jobs this week</div></div>
+    </div>`;
+  const dueT=sortTodos(actTodo().filter(x=>!x.done&&x.due&&x.due<=t));
+  if(dueT.length)h+=`<div class="secthd"><h2>To-do — due now</h2><span class="ct">${dueT.length}</span></div><div class="card">`+dueT.map(td=>liTodo(td,t)).join("")+`</div>`;
   h+=`<div class="secthd"><h2>To call / visit</h2><span class="ct">${calls.length}</span></div>`;
   h+= calls.length?`<div class="card">`+calls.slice(0,30).map(liCustomer).join("")+`</div>`
      :`<div class="empty">Nothing pending. Add customers or set follow-up dates.</div>`;
@@ -266,6 +354,13 @@ window.openCustomer=function(id){
   const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};
   const isNew=!id;const f=k=>`value="${esc(c[k]||"")}"`;
   let notesH=(c.notes||[]).slice().reverse().map(n=>`<div class="note"><div class="t">${esc(n.t)}</div>${esc(n.text)}</div>`).join("")||`<div class="muted">No notes yet.</div>`;
+  let histH="";
+  if(!isNew){
+    const myQ=actQ().filter(q=>q.customerId===c.id);
+    const myJ=actJ().filter(j=>j.customerId===c.id);
+    histH=`<h2 style="margin-top:16px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}${q.paid?" · paid":q.invoiced?" · invoiced":""}</div><div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
+      +`<h2 style="margin-top:16px">Jobs (${myJ.length})</h2>`+(myJ.length?myJ.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${fmtDate(j.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`);
+  }
   modal(isNew?"New customer":"Customer",`
     <label>Name</label><input id="f_name" ${f("name")} placeholder="Contact name">
     <label>Company</label><input id="f_company" ${f("company")} placeholder="Company / property">
@@ -282,7 +377,7 @@ window.openCustomer=function(id){
        <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button></div>
       <label>Add note</label><textarea id="f_note" placeholder="Call outcome, details…"></textarea>
       <button class="btn sm" style="margin-top:6px" onclick="addNote('${c.id}')">Add note</button>
-      <h2 style="margin-top:16px">Notes</h2>${notesH}
+      <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
       <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`:""}
   `);
 };
@@ -306,13 +401,13 @@ function rQuotes(){
   else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
     <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
     <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
-    <div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)${q.recurring?" · recurring":""}</div></div>
+    <div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
     <div style="font-weight:800;color:var(--brand)">${money(q.total)}</div></div>`).join("")+`</div>`;
   view.innerHTML=h;
 }
-let QITEMS=[];
+let QITEMS=[];let CURQ=null;
 window.openQuote=function(id,customerId){
-  const d=D();const q=id?d.quotes.find(x=>x.id===id):null;
+  const d=D();const q=id?d.quotes.find(x=>x.id===id):null;CURQ=q;
   QITEMS=q?JSON.parse(JSON.stringify(q.items)):[];
   const custDefault=q?q.customerId:(customerId||"");const custFree=q?q.cust:"";
   const opts=`<option value="">— pick customer —</option>`+actC().map(c=>`<option value="${c.id}" ${custDefault===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
@@ -326,7 +421,11 @@ window.openQuote=function(id,customerId){
     <div class="row" style="gap:8px;margin-top:12px">
       <button class="btn acc grow" onclick="saveQuote('${q?q.id:""}')">Save quote</button>
       <button class="btn ghost grow" onclick="copyQuote()">Copy as text</button></div>
-    ${id?`<button class="btn danger" style="margin-top:10px" onclick="delQuote('${id}')">Delete quote</button>`:""}
+    <button class="btn ghost" style="margin-top:8px" onclick="printQuote()">🖨 Print / Save PDF</button>
+    ${id?`<div class="row" style="gap:8px;margin-top:8px">
+      <button class="btn ghost sm grow" onclick="toggleInvoiced('${id}')">${q&&q.invoiced?"✓ Invoiced":"Mark invoiced"}</button>
+      <button class="btn ghost sm grow" onclick="togglePaid('${id}')">${q&&q.paid?"✓ Paid":"Mark paid"}</button></div>
+      <button class="btn danger" style="margin-top:10px" onclick="delQuote('${id}')">Delete quote</button>`:""}
   `);
   renderLines();
 };
@@ -365,6 +464,8 @@ window.saveQuote=function(id){
 };
 window.delQuote=function(id){if(!confirm("Delete this quote?"))return;
   const q=D().quotes.find(x=>x.id===id);q.deleted=true;touch(q);save();closeModal();render();};
+window.toggleInvoiced=function(id){const q=D().quotes.find(x=>x.id===id);q.invoiced=!q.invoiced;touch(q);save();openQuote(id);};
+window.togglePaid=function(id){const q=D().quotes.find(x=>x.id===id);q.paid=!q.paid;if(q.paid)q.invoiced=true;touch(q);save();openQuote(id);};
 window.copyQuote=function(){
   const t=quoteCalc();
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
@@ -375,26 +476,86 @@ window.copyQuote=function(){
   if(navigator.clipboard)navigator.clipboard.writeText(txt);
   alert("Quote copied — paste it into a text or email:\n\n"+txt);
 };
+window.printQuote=function(){
+  const t=quoteCalc();const biz=S.biz;const isObx=biz==="obx";
+  const brand=isObx?"#1B2A4E":"#002052";const acc=isObx?"#8BC34A":"#0099E5";
+  const name=isObx?"OBX Lot Solutions":"Jamieson Automation";
+  const phone=BIZ[biz].phone||"";
+  const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"");
+  const rows=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`<tr><td>${esc(it.name)}</td><td style="text-align:center">${it.qty||1}</td><td style="text-align:right">${money((it.price||0)*(it.qty||1))}</td></tr>`).join("");
+  const nameHtml=name.replace(/ ([^ ]+)$/,' <span style="color:'+acc+'">$1</span>');
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Quote - ${esc(name)}</title>
+  <style>body{font-family:Arial,Helvetica,sans-serif;color:#1b2330;margin:0;padding:32px}
+  .hd{background:${brand};color:#fff;padding:18px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}
+  .hd .n{font-size:22px;font-weight:800}
+  h2{margin:22px 0 4px;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
+  table{width:100%;border-collapse:collapse;margin-top:6px}
+  th,td{padding:10px 8px;border-bottom:1px solid #e2e7ee;font-size:14px}
+  th{text-align:left;color:#6b7280;font-size:11px;text-transform:uppercase}
+  .tot{margin-top:14px;text-align:right;font-size:22px;font-weight:800;color:${brand}}
+  .disc{text-align:right;color:#6b7280;font-size:13px;margin-top:6px}
+  .ft{margin-top:28px;color:#6b7280;font-size:12px}
+  @media print{body{padding:6px}}</style></head>
+  <body><div class="hd"><div class="n">${nameHtml}</div><div style="font-weight:700">${(CURQ&&CURQ.invoiced)?"INVOICE":"QUOTE"}</div></div>
+  ${who?`<h2>Prepared for</h2><div>${esc(who)}</div>`:""}
+  <h2>Services</h2><table><tr><th>Service</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th></tr>${rows}</table>
+  ${t.disc?`<div class="disc">Recurring discount (20%): -${money(t.disc)}</div>`:""}
+  <div class="tot">Total: ${money(t.total)}</div>
+  <div class="ft">${esc(name)}${phone?" &middot; "+phone:""} &middot; ${new Date().toLocaleDateString()}</div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`;
+  const w=window.open("","_blank");if(!w){alert("Allow pop-ups for this page to print the quote.");return;}
+  w.document.write(html);w.document.close();
+};
 
 /* ---------- SCHEDULE ---------- */
+let CALY=null,CALM=null;
 function rSchedule(){
-  const t=today();const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
+  const t=today();
+  if(CALY==null){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();}
+  const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
+  let h=`<h2>Schedule</h2>`+renderCalendar(jobs);
   const groups={Today:[],Upcoming:[],Done:[]};
   jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
-  let h=`<h2>Schedule</h2>`;
-  if(!jobs.length){view.innerHTML=h+`<div class="empty"><div class="big">📅</div>No jobs scheduled.<br>Tap + to add one.</div>`;return;}
+  if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
   ["Today","Upcoming","Done"].forEach(g=>{if(!groups[g].length)return;
     h+=`<div class="secthd"><h2>${g}</h2><span class="ct">${groups[g].length}</span></div><div class="card">`+groups[g].map(liJob).join("")+`</div>`;});
   view.innerHTML=h;
 }
+function renderCalendar(jobs){
+  const t=today();const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
+  const first=new Date(CALY,CALM,1);const startDow=first.getDay();
+  const dim=new Date(CALY,CALM+1,0).getDate();
+  const mname=first.toLocaleString(undefined,{month:"long"});
+  const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
+  let cells=dows.map(d=>`<div class="caldow">${d}</div>`).join("");
+  for(let i=0;i<startDow;i++)cells+=`<div class="calcell out"></div>`;
+  for(let day=1;day<=dim;day++){
+    const ds=CALY+"-"+String(CALM+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+    const dj=byDate[ds]||[];let inner=`<div class="dnum">${day}</div>`;
+    dj.slice(0,2).forEach(j=>inner+=`<div class="caljob" style="${j.done?'opacity:.5;text-decoration:line-through':''}">${esc(j.title||'Job')}</div>`);
+    if(dj.length>2)inner+=`<div class="calmore">+${dj.length-2} more</div>`;
+    cells+=`<div class="calcell${ds===t?' today':''}" onclick="openDay('${ds}')">${inner}</div>`;
+  }
+  return `<div class="calhead"><button class="calnav" onclick="calShift(-1)">‹</button>
+    <div class="mtitle">${mname} ${CALY}</div><button class="calnav" onclick="calShift(1)">›</button>
+    <button class="btn ghost sm" style="margin-left:auto" onclick="calToday()">Today</button></div>
+    <div class="calgrid">${cells}</div>`;
+}
+window.calShift=function(n){CALM+=n;if(CALM<0){CALM=11;CALY--;}if(CALM>11){CALM=0;CALY++;}render();};
+window.calToday=function(){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();render();};
+window.openDay=function(ds){
+  const jobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+  const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
+  modal(fmtDate(ds),`<div class="card">${list}</div><button class="btn acc" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`);
+};
 function liJob(j){
   return `<div class="li"><div class="grow" onclick="openJob('${j.id}')">
     <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
     <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div>
     <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
 }
-window.openJob=function(id,customerId){
-  const d=D();const j=id?d.jobs.find(x=>x.id===id):{id:uid(),date:today(),customerId:customerId||""};
+window.openJob=function(id,customerId,presetDate){
+  const d=D();const j=id?d.jobs.find(x=>x.id===id):{id:uid(),date:presetDate||today(),customerId:customerId||""};
   const isNew=!id;
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
@@ -420,6 +581,110 @@ window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done
 window.delJob=function(id){if(!confirm("Delete this job?"))return;
   const j=D().jobs.find(x=>x.id===id);j.deleted=true;touch(j);save();closeModal();render();};
 
+/* ---------- TO-DO ---------- */
+const PRI_ORDER={High:0,Medium:1,Low:2};
+function sortTodos(list){return list.slice().sort((a,b)=>{
+  if(!!a.done!==!!b.done)return a.done?1:-1;
+  if((PRI_ORDER[a.priority]??1)!==(PRI_ORDER[b.priority]??1))return (PRI_ORDER[a.priority]??1)-(PRI_ORDER[b.priority]??1);
+  return (a.due||"9999")<(b.due||"9999")?-1:1;});}
+function rTodos(){
+  const t=today();const list=sortTodos(actTodo());
+  const openCt=list.filter(x=>!x.done).length;
+  let h=`<div class="secthd"><h2>To-Do · ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2><span class="ct">${openCt} open</span></div>`;
+  if(!list.length)h+=`<div class="empty"><div class="big">✅</div>No to-dos yet. Tap + to add one.</div>`;
+  else h+=`<div class="card">`+list.map(td=>liTodo(td,t)).join("")+`</div>`;
+  view.innerHTML=h;
+}
+function liTodo(td,t){
+  const overdue=td.due&&!td.done&&td.due<t;
+  return `<div class="li">
+    <input type="checkbox" style="width:22px;height:22px" ${td.done?"checked":""} onchange="toggleTodo('${td.id}')">
+    <div class="grow" onclick="openTodo('${td.id}')">
+      <div class="nm" style="${td.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(td.title)}</div>
+      <div class="sub" style="${overdue?'color:var(--danger);font-weight:600':''}">${td.due?(overdue?"⚠ overdue · ":"")+"due "+fmtDate(td.due):"no due date"}${td.assignee?" · "+esc(userName(td.assignee)):""}</div>
+    </div>
+    <span class="badge p-${td.priority||"Low"}">${td.priority||"Low"}</span></div>`;
+}
+window.openTodo=function(id){
+  const d=D();const td=id?d.todos.find(x=>x.id===id):{id:uid(),priority:"Medium",done:false};
+  const isNew=!id;
+  modal(isNew?"New to-do":"To-do",`
+    <label>Task</label><input id="td_title" value="${esc(td.title||"")}" placeholder="What needs doing?">
+    <div class="row" style="gap:8px"><div class="grow"><label>Priority</label><select id="td_pri">${["High","Medium","Low"].map(p=>`<option ${(td.priority||"Medium")===p?"selected":""}>${p}</option>`).join("")}</select></div>
+    <div class="grow"><label>Due date</label><input id="td_due" type="date" value="${td.due||""}"></div></div>
+    <label>Assign to</label><select id="td_assignee"><option value="">— unassigned —</option>${users().map(u=>`<option value="${u.id}" ${td.assignee===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>
+    <label>Notes</label><textarea id="td_notes">${esc(td.notes||"")}</textarea>
+    <button class="btn acc" style="margin-top:14px" onclick="saveTodo('${td.id}',${isNew})">Save</button>
+    ${!isNew?`<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="toggleTodo('${td.id}');closeModal()">${td.done?"Mark not done":"Mark done"}</button>
+      <button class="btn danger" style="margin-top:10px" onclick="delTodo('${td.id}')">Delete</button>`:""}
+  `);
+};
+window.saveTodo=function(id,isNew){
+  const d=D();let td=isNew?{id,done:false}:d.todos.find(x=>x.id===id);
+  td.title=val("td_title");td.priority=val("td_pri");td.due=val("td_due");td.notes=val("td_notes");td.assignee=val("td_assignee");
+  if(!td.title){alert("Give the to-do a title.");return;}
+  touch(td);if(isNew)d.todos.push(td);
+  save();closeModal();render();
+};
+window.toggleTodo=function(id){const td=D().todos.find(x=>x.id===id);td.done=!td.done;touch(td);save();render();};
+window.delTodo=function(id){if(!confirm("Delete this to-do?"))return;
+  const td=D().todos.find(x=>x.id===id);td.deleted=true;touch(td);save();closeModal();render();};
+
+/* ---------- PLAN (one-page / marketing / research) ---------- */
+let PLANSUB="onepage";
+function rPlan(){
+  const subs=[["onepage","One-Page"],["marketing","Marketing"],["research","Research"]];
+  let h=`<div class="secthd"><h2>Plan · ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2></div>`;
+  h+=`<div class="subnav">`+subs.map(s=>`<button class="subbtn ${PLANSUB===s[0]?"on":""}" onclick="planSub('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+  if(PLANSUB==="marketing"){
+    h+=docCard("marketing","Marketing strategy");
+    const items=D().mktTracker.filter(x=>!x.deleted);
+    h+=`<div class="secthd"><h2>Campaign tracker</h2><button class="btn ghost sm" onclick="openMkt()">+ Add</button></div>`;
+    h+= items.length?`<div class="card">`+items.map(liMkt).join("")+`</div>`:`<div class="empty" style="padding:16px">No campaigns tracked yet. Tap + Add.</div>`;
+  } else if(PLANSUB==="research"){ h+=docCard("research","Market research"); }
+  else { h+=docCard("onepage","Business foundation"); }
+  view.innerHTML=h;
+}
+window.planSub=function(s){PLANSUB=s;render();};
+function docText(id){const d=D().docs.find(x=>x.id===id&&!x.deleted);return d?d.text:"";}
+function docCard(id,title){
+  const txt=docText(id);
+  return `<div class="card"><div class="row" style="margin-bottom:8px"><div class="grow"><strong>${title}</strong></div><button class="btn ghost sm" onclick="editDoc('${id}','${esc(title)}')">Edit</button></div>
+    <div style="white-space:pre-wrap;font-size:14px;line-height:1.55">${txt?esc(txt):'<span class="muted">Empty — tap Edit to add.</span>'}</div></div>`;
+}
+window.editDoc=function(id,title){
+  modal("Edit · "+title,`<textarea id="doc_text" style="min-height:320px">${esc(docText(id))}</textarea>
+    <button class="btn acc" style="margin-top:12px" onclick="saveDoc('${id}')">Save</button>`);
+};
+window.saveDoc=function(id){
+  const text=document.getElementById("doc_text").value;
+  let d=D().docs.find(x=>x.id===id);
+  if(d){d.text=text;d.deleted=false;d.updatedAt=now();}else D().docs.push({id:id,text:text,updatedAt:now()});
+  save();closeModal();render();
+};
+function liMkt(m){
+  return `<div class="li"><div class="grow" onclick="openMkt('${m.id}')"><div class="nm">${esc(m.channel||"Campaign")}</div><div class="sub">${esc(m.notes||"")||"&nbsp;"}</div></div><span class="badge m-${(m.status||"Planned")}">${m.status||"Planned"}</span></div>`;
+}
+window.openMkt=function(id){
+  const d=D();const m=id?d.mktTracker.find(x=>x.id===id):{id:uid()};
+  const isNew=!id;const sts=["Planned","Active","Paused","Done"];
+  modal(isNew?"New campaign":"Campaign",`
+    <label>Channel / campaign</label><input id="mk_ch" value="${esc(m.channel||"")}" placeholder="e.g. Google Ads, PM cold calls">
+    <label>Status</label><select id="mk_st">${sts.map(s=>`<option ${(m.status||"Planned")===s?"selected":""}>${s}</option>`).join("")}</select>
+    <label>Notes / results</label><textarea id="mk_notes">${esc(m.notes||"")}</textarea>
+    <button class="btn acc" style="margin-top:12px" onclick="saveMkt('${m.id}',${isNew})">Save</button>
+    ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delMkt('${m.id}')">Delete</button>`:""}`);
+};
+window.saveMkt=function(id,isNew){
+  const d=D();let m=isNew?{id}:d.mktTracker.find(x=>x.id===id);
+  m.channel=val("mk_ch");m.status=val("mk_st");m.notes=val("mk_notes");
+  if(!m.channel){alert("Add a channel/campaign name.");return;}
+  m.updatedAt=now();if(isNew)d.mktTracker.push(m);
+  save();closeModal();render();
+};
+window.delMkt=function(id){if(!confirm("Delete this campaign?"))return;
+  const m=D().mktTracker.find(x=>x.id===id);m.deleted=true;m.updatedAt=now();save();closeModal();render();};
+
 /* ---------- DATA + SYNC ---------- */
 function rData(){
   const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
@@ -433,6 +698,15 @@ function rData(){
         <button class="btn grow" onclick="saveSync()">Save settings</button>
         <button class="btn acc grow" onclick="syncNow()">Sync now</button></div>
       <p class="muted" style="margin-top:8px">Last synced: ${last}. <span id="sy_msg"></span></p>
+    </div>
+    <h2>Appearance</h2>
+    <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${localStorage.getItem("jra_theme")==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode</label></div></div>
+    <h2>Team</h2>
+    <div class="card">
+      <div class="row"><div class="grow"><div class="nm">${curUser()?esc(curUser().username):"Not signed in"}</div><div class="sub">${curUser()?"signed in on this device":"sign in to tag your work"}</div></div>
+      ${curUser()?`<button class="btn ghost sm" onclick="logoutUser()">Sign out</button>`:`<button class="btn ghost sm" onclick="openLogin()">Sign in</button>`}</div>
+      ${users().length?`<div style="margin-top:8px">`+users().map(u=>`<div class="li"><div class="grow">${esc(u.username)}${curUser()&&curUser().id===u.id?" · you":""}</div><button class="btn danger sm" onclick="delUser('${u.id}')">Remove</button></div>`).join("")+`</div>`:`<div class="muted" style="margin-top:8px">No accounts yet.</div>`}
+      <button class="btn ghost" style="margin-top:10px" onclick="openCreateAccount()">+ Add account</button>
     </div>
     <h2>This device</h2>
     <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
@@ -457,11 +731,11 @@ window.syncNow=async function(){
   try{
     const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam}})});
+      body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam,users:S.users}})});
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();
     if(!data||!data.state||!data.state.obx)throw new Error("bad response");
-    S.obx=data.state.obx;S.jam=data.state.jam;S.sync.last=now();save();
+    S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;S.sync.last=now();save();
     render();syMsg("Synced ✓");
   }catch(e){syMsg("Sync failed: "+e.message);if(btn)btn.textContent="⟳ Sync";}
 };
@@ -482,10 +756,55 @@ window.importData=function(inp){
 /* ---------- helpers ---------- */
 function val(id){const e=document.getElementById(id);return e?e.value.trim():""}
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]))}
+function applyTheme(){document.body.classList.toggle("dark",localStorage.getItem("jra_theme")==="dark");}
+window.toggleTheme=function(){const dark=localStorage.getItem("jra_theme")!=="dark";localStorage.setItem("jra_theme",dark?"dark":"light");applyTheme();};
+
+/* ---------- USERS / lightweight accounts ---------- */
+async function hashPw(pw){
+  try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(pw+"::jsuite"));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");}
+  catch(e){let h=5381;const s=pw+"::jsuite";for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;return "f"+h.toString(16);}
+}
+function users(){return (S.users||[]).filter(u=>!u.deleted);}
+function curUser(){const id=localStorage.getItem("jra_session");return users().find(u=>u.id===id)||null;}
+function userName(id){const u=(S.users||[]).find(x=>x.id===id);return u?u.username:"";}
+window.openCreateAccount=function(){modal("New account",`
+  <p class="muted" style="margin-bottom:8px">No email needed — just a username and password. This is lightweight identity for your team (for assigning to-dos), not bank-grade security.</p>
+  <label>Username</label><input id="u_name" autocomplete="off">
+  <label>Password</label><input id="u_pw" type="password" autocomplete="new-password">
+  <button class="btn acc" style="margin-top:14px" onclick="createAccount()">Create account</button>`);};
+window.createAccount=async function(){
+  const un=val("u_name"),pw=val("u_pw");
+  if(!un||!pw){alert("Username and password required.");return;}
+  if(users().some(u=>u.username.toLowerCase()===un.toLowerCase())){alert("That username is taken.");return;}
+  if(!S.users)S.users=[];
+  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),updatedAt:now()});
+  const u=S.users[S.users.length-1];localStorage.setItem("jra_session",u.id);
+  save();closeModal();render();
+};
+window.openLogin=function(){modal("Sign in",`
+  <label>Username</label><input id="l_name" autocomplete="off">
+  <label>Password</label><input id="l_pw" type="password" autocomplete="off">
+  <button class="btn acc" style="margin-top:14px" onclick="loginUser()">Sign in</button>`);};
+window.loginUser=async function(){
+  const un=val("l_name"),pw=val("l_pw");
+  const u=users().find(x=>x.username.toLowerCase()===un.toLowerCase());
+  if(!u||u.passhash!==await hashPw(pw)){alert("Wrong username or password.");return;}
+  localStorage.setItem("jra_session",u.id);closeModal();render();
+};
+window.logoutUser=function(){localStorage.removeItem("jra_session");render();};
+window.delUser=function(id){if(!confirm("Remove this account?"))return;
+  const u=S.users.find(x=>x.id===id);u.deleted=true;u.updatedAt=now();
+  if(localStorage.getItem("jra_session")===id)localStorage.removeItem("jra_session");
+  save();render();};
 
 /* ---------- boot ---------- */
-load();setBiz(S.biz);
-if(S.sync.url&&S.sync.auto)syncNow();
+applyTheme();
+load();
+/* if the app is served from the sync server, default the sync URL to that origin */
+if(!S.sync.url && location.protocol.indexOf("http")===0){S.sync.url=location.origin;save();}
+setBiz(S.biz);
+if(S.sync.url&&S.sync.token&&S.sync.auto)syncNow();
+if("serviceWorker" in navigator && window.isSecureContext){navigator.serviceWorker.register("sw.js").catch(function(){});}
 /* v2 */
 </script>
 </body>

@@ -2,6 +2,11 @@
 data.json
 business-app-backup-*.json
 
+# --- Secrets (QuickBooks OAuth keys & tokens) ---
+qb-config.json
+qb-tokens.json
+.env
+
 # --- Office lock & temp files ---
 ~$*
 .~lock.*#
