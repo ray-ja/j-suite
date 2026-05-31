@@ -409,6 +409,19 @@ function D(){return S[S.biz]}
 function cat(){return CATALOG[S.biz]}
 function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
 function money(n){return "$"+(Math.round(n)).toLocaleString()}
+/* COGS layer — Part 3: render helpers (Cost/Price/Profit/Margin strip + floor warning). */
+function cogsStrip(price, cost){
+  const profit = price - cost, margin = price>0 ? profit/price : 0;
+  const warn = belowMarginFloor(margin);
+  return `<div class="cogs" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+    <div class="kp"><b>${money(cost)}</b><span class="kl">Cost</span></div>
+    <div class="kp"><b>${money(price)}</b><span class="kl">Price</span></div>
+    <div class="kp"><b>${money(profit)}</b><span class="kl">Profit</span></div>
+    <div class="kp" style="${warn?'color:#c0392b':''}"><b>${pct(margin)}</b><span class="kl">Margin</span></div>
+  </div>${warn?`<div class="note" style="border-left:4px solid #c0392b;background:#fdecea;color:#922;padding:8px;border-radius:6px">
+    ⚠ Margin ${pct(margin)} is under the ${Math.round(MARGIN_FLOOR*100)}% floor — this discount is eating your profit. Hold the price or trim scope.</div>`:""}`;
+}
+function itemsCost(items){let c=0;(items||[]).forEach(it=>c+=(+it.cost||0)*(it.qty||1));return c;}
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function fmtDate(d){if(!d)return"";const p=d.split("-");return `${p[1]}/${p[2]}/${p[0].slice(2)}`}
 /* active (non-deleted) accessors */
@@ -634,6 +647,7 @@ window.openQuote=function(id,customerId,preset){
     <button class="btn ghost sm" style="margin-top:6px" onclick="addLine()">+ Add line</button>
     ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="q_rec" ${q&&q.recurring?"checked":""} onchange="renderTot()"><label style="margin:0">Recurring service — 20% off</label></div>`:""}
     <div class="totbar"><span class="lab">Total</span><span class="amt" id="q_tot">$0</span></div>
+    <div id="q_cogs"></div>
     <div class="row" style="gap:8px;margin-top:12px">
       <button class="btn acc grow" onclick="saveQuote('${q?q.id:""}')">Save quote</button>
       <button class="btn ghost grow" onclick="copyQuote()">Copy as text</button></div>
@@ -641,6 +655,7 @@ window.openQuote=function(id,customerId,preset){
     ${id?`<div class="row" style="gap:8px;margin-top:8px">
       <button class="btn ghost sm grow" onclick="toggleInvoiced('${id}')">${q&&q.invoiced?"✓ Invoiced":"Mark invoiced"}</button>
       <button class="btn ghost sm grow" onclick="togglePaid('${id}')">${q&&q.paid?"✓ Paid":"Mark paid"}</button></div>
+      ${q&&q.paymentLink?`<a class="btn acc" style="margin-top:8px" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a>`:`<div class="note" style="margin-top:8px">Add a payment link (Stripe Payment Links recommended — no monthly fee, ~2.9%+30¢, one link per amount). Paste it once your Stripe account is connected.</div><input id="q_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="setPayLink('${id}')">Save link</button>`}
       <button class="btn danger" style="margin-top:10px" onclick="delQuote('${id}')">Delete quote</button>`:""}
   `);
   renderLines();
@@ -651,11 +666,13 @@ function renderLines(){
     const groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
     const opts=groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${it.serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
     const isQuote=it.unit==="quote";
+    const isJunk=/junk|haul|debris|clear|cleanout|dump|move-out/i.test(it.name||"");
     return `<div class="qline">
       <select onchange="lineSvc(${i},this.value)"><option value="">— service —</option>${opts}</select>
       <input class="q" type="number" min="1" value="${it.qty}" oninput="lineQty(${i},this.value)" title="qty">
       <input class="pr" type="number" value="${it.price}" ${isQuote?"":"readonly"} oninput="linePrice(${i},this.value)" title="price">
-      <button class="rm" onclick="rmLine(${i})">×</button></div>`;
+      <input class="pr" type="number" value="${it.cost||0}" oninput="lineCost(${i},this.value)" title="cost" placeholder="cost">
+      <button class="rm" onclick="rmLine(${i})">×</button>${isJunk?`<button class="btn ghost sm" style="margin-top:4px" onclick="junkHelper(${i})">⚖ Dump fee from load weight</button>`:""}</div>`;
   }).join("")||`<div class="muted">No items yet — add one.</div>`;
   renderTot();
 }
@@ -665,15 +682,17 @@ window.lineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s)return;
   QITEMS[i]={serviceId:s.id,name:s.name,unit:s.unit,price:s.price,qty:QITEMS[i].qty||1};renderLines();};
 window.lineQty=function(i,v){QITEMS[i].qty=Math.max(1,parseInt(v)||1);renderTot();};
 window.linePrice=function(i,v){QITEMS[i].price=parseFloat(v)||0;renderTot();};
+window.lineCost=function(i,v){QITEMS[i].cost=parseFloat(v)||0;renderTot();};
+window.junkHelper=function(i){const lbs=parseFloat(prompt("Estimated load weight (lbs)? Pickup load ≈ 1500–2500.","2000"));if(!lbs)return;QITEMS.splice(i+1,0,disposalLine(lbs));renderLines();};
 function quoteCalc(){let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const rec=document.getElementById("q_rec")&&document.getElementById("q_rec").checked;
   const disc=rec?sub*0.2:0;return{sub,disc,total:sub-disc,rec};}
-window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);};
+window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);const ce=document.getElementById("q_cogs");if(ce)ce.innerHTML=cogsStrip(t.total,itemsCost(QITEMS));};
 function quoteFigures(){if(!document.getElementById("q_rec")&&CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal,disc:CURQ.discount,total:CURQ.total};return quoteCalc();}
 window.saveQuote=function(id){
   const t=quoteCalc();const d=D();
   const obj={id:id||uid(),customerId:val("q_cust"),cust:val("q_custfree")||(val("q_cust")?custName(val("q_cust")):""),
-    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,total:t.total};
+    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,total:t.total,cost:itemsCost(QITEMS),paymentLink:CURQ?(CURQ.paymentLink||""):""};
   if(!obj.items.length){alert("Add at least one line item.");return;}
   touch(obj);
   if(id){const i=d.quotes.findIndex(x=>x.id===id);d.quotes[i]=obj;}else d.quotes.push(obj);
@@ -685,6 +704,7 @@ window.delQuote=function(id){if(!confirm("Delete this quote?"))return;
   const q=D().quotes.find(x=>x.id===id);q.deleted=true;touch(q);save();closeModal();render();};
 window.toggleInvoiced=function(id){const q=D().quotes.find(x=>x.id===id);q.invoiced=!q.invoiced;touch(q);save();openQuote(id);};
 window.togglePaid=function(id){const q=D().quotes.find(x=>x.id===id);q.paid=!q.paid;if(q.paid){q.invoiced=true;logEvent("Invoice paid — "+money(q.total)+(q.cust?" · "+q.cust:""),"paid");}touch(q);save();openQuote(id);};
+window.setPayLink=function(id){const q=D().quotes.find(x=>x.id===id);if(!q)return;q.paymentLink=val("q_paylink").trim();touch(q);save();openQuote(id);};
 window.copyQuote=function(){
   const t=quoteFigures();const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
@@ -2502,6 +2522,9 @@ const RATES_DEFAULT={
 };
 function getRates(){try{const d=D().docs.find(x=>x.id==="rates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz]));}
 function setRates(obj){let d=D().docs.find(x=>x.id==="rates");if(d){d.text=JSON.stringify(obj);d.updatedAt=now();}else D().docs.push({id:"rates",text:JSON.stringify(obj),updatedAt:now()});save();}
+/* COGS layer — Part 2: cost overlay (same persisted-doc pattern as getRates/setRates). */
+function getCosts(){try{const d=D().docs.find(x=>x.id==="costs"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(COST_DEFAULT));}
+function setCosts(obj){let d=D().docs.find(x=>x.id==="costs");if(d){d.text=JSON.stringify(obj);d.updatedAt=now();}else D().docs.push({id:"costs",text:JSON.stringify(obj),updatedAt:now()});save();}
 function tierPrice(qty,tiers){let rem=qty,prev=0,sum=0;for(let k=0;k<tiers.length;k++){const cap=tiers[k][0],rate=tiers[k][1];const span=Math.min(rem,cap-prev);if(span>0){sum+=span*rate;rem-=span;}prev=cap;if(rem<=0)break;}return sum;}
 function rnd5(n){return Math.round(n/5)*5;}
 /* each calculator returns {name, price, notes:[]} */
@@ -2549,7 +2572,96 @@ function calcQuote(key,inp){
   } else if(key==="labor"){
     price=r.rate*(inp.hours||1); name=r.label+" — "+(inp.hours||1)+" hr";
   }
-  return {name:name,price:rnd5(price),notes:notes};
+  return {name:name,price:rnd5(price),cost:calcCost(key,inp),notes:notes};
+}
+
+/* COGS_LAYER_V1 — COGS + payment layer, Part 1 (pure logic). Idempotency sentinel; do not duplicate. */
+var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (Dare County C&D, Manns Harbor)
+var DISPOSAL_FREE_LBS     = 500;     // residential free allowance
+var LBS_PER_TON           = 2000;
+var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
+function disposalCost(lbs){
+  lbs = Math.max(0, +lbs || 0);
+  var billable = Math.max(0, lbs - DISPOSAL_FREE_LBS);
+  return Math.round((billable / LBS_PER_TON) * DISPOSAL_RATE_PER_TON * 100) / 100;
+}
+function lineFigures(price, cost, qty){
+  qty = qty || 1;
+  var P = (+price || 0) * qty;
+  var C = (+cost  || 0) * qty;
+  var profit = P - C;
+  return { price: P, cost: C, profit: profit, margin: P > 0 ? profit / P : 0 };
+}
+function quoteCogs(items, discount){
+  var price = 0, cost = 0;
+  (items || []).forEach(function(it){
+    var f = lineFigures(it.price, it.cost, it.qty);
+    price += f.price; cost += f.cost;
+  });
+  price = Math.max(0, price - (+discount || 0));
+  var profit = price - cost;
+  return { price: price, cost: cost, profit: profit, margin: price > 0 ? profit / price : 0 };
+}
+function belowMarginFloor(margin, floor){
+  return margin < (floor == null ? MARGIN_FLOOR : floor);
+}
+function pct(margin){ return (margin * 100).toFixed(1) + "%"; }
+var COST_DEFAULT = {
+  obx: {
+    softwash:  { base: 8,  perUnit: 0.0088 },
+    roofwash:  { base: 8,  perUnit: 0.011  },
+    pressure:  { base: 12, perUnit: 0.004  },
+    deck:      { base: 8,  perUnit: 0.010  },
+    windows:   { base: 5,  perUnit: 0.10   },
+    gutters:   { base: 10, perUnit: 0.05   },
+    parking:   { base: 15, perUnit: 0.20   },
+    housewatch:{ base: 4                    },
+    junk:      { base: 25, lbsPerEighth: 312.5 }
+  },
+  jam: {
+    lock:    { hardware: { wifi: 220, retrofit: 210, budget: 100, "customer-supplied": 0 }, addlHw: 200, hub: 130, misc: 10 },
+    camera:  { nvr: 300, perCam: 129, run: 20, misc: 15 },
+    network: { base: 120, perAp: 130, perDrop: 20, design: 0 },
+    starlink:{ mount: { eave: 50, roof: 50, pole: 65 }, perExt: 25 },
+    labor:   { rate: 0 }
+  }
+};
+function calcCost(key, inp, costs){
+  costs = costs || COST_DEFAULT;
+  var biz = (typeof S !== "undefined" && S.biz) ? S.biz : (costs.obx && costs.obx[key] ? "obx" : "jam");
+  var table = costs[biz] || {};
+  var c = table[key];
+  if (!c) return 0;
+  inp = inp || {};
+  var qty = inp.qty || 0, n = Math.max(1, inp.count || 1);
+  switch (key) {
+    case "softwash": case "roofwash": case "pressure": case "deck": case "windows": case "gutters":
+      return Math.round(((c.base || 0) + (c.perUnit || 0) * qty) * 100) / 100;
+    case "parking":
+      return Math.round(((c.base || 0) + (c.perUnit || 0) * qty) * 100) / 100;
+    case "housewatch":
+      return c.base || 0;
+    case "junk": {
+      var lbs = inp.lbs != null ? inp.lbs : (inp.eighths || 1) * (c.lbsPerEighth || 312.5);
+      return Math.round(((c.base || 0) + disposalCost(lbs)) * 100) / 100;
+    }
+    case "lock":
+      return (c.hardware[inp.type] || 0) * n + (c.addlHw || 0) * (n - 1) + (inp.hub ? c.hub : 0) + (c.misc || 0);
+    case "camera":
+      return (c.nvr || 0) + (c.perCam || 0) * n + (c.run || 0) * (inp.runs != null ? inp.runs : n) + (c.misc || 0);
+    case "network":
+      return (c.base || 0) + (c.perAp || 0) * (inp.aps || 0) + (c.perDrop || 0) * (inp.drops || 0) + (inp.design ? c.design : 0);
+    case "starlink":
+      return (c.mount[inp.mount] || c.mount.eave) + (c.perExt || 0) * (inp.ext || 0);
+    case "labor":
+      return (c.rate || 0) * (inp.hours || 1);
+    default:
+      return 0;
+  }
+}
+function disposalLine(lbs){
+  return { serviceId: "", name: "Dump fee — " + lbs + " lbs (Dare C&D, first 500 free)",
+           unit: "cost", price: 0, qty: 1, cost: disposalCost(lbs), costLine: true };
 }
 
 /* ---------- JUNK / MOVE-OUT ITEM BUILDER (inside the wizard) ---------- */
@@ -3146,6 +3258,7 @@ function wizReview(){
     ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;render()"><label style="margin:0">Recurring plan — 20% off</label></div>`:""}
     <label>Extra discount ($, optional)</label><input type="number" id="wz_disc" value="${WZ.disc||0}" onchange="WZ.disc=parseFloat(this.value)||0;render()">
     <div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc):""}</div>
+    ${cogsStrip(total, itemsCost(WZ.items))}
     <div class="totbar"><span class="lab">Total to present</span><span class="amt">${money(total)}</span></div>
     ${notes.length?`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`:""}
     <button class="btn acc" style="margin-top:12px" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>Save &amp; present →</button>
@@ -3165,7 +3278,7 @@ window.wizFinish=function(){
   if(!prop&&WZ.cust.address){prop=actProps().find(x=>(x.address||"").toLowerCase()===WZ.cust.address.toLowerCase()&&(x.customerIds||[]).indexOf(cust.id)>=0);}
   if(!prop){prop={id:uid(),label:"Main",address:WZ.cust.address||"",accessNotes:"",lat:null,lng:null,customerIds:[cust.id],updatedAt:now()};d.properties.push(prop);geocodeProp(prop);}
   else if((prop.customerIds||[]).indexOf(cust.id)<0){prop.customerIds.push(cust.id);touch(prop);}
-  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1})),recurring:rec,subtotal:sub,discount:disc,total:total};
+  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1,cost:it.cost||0})),recurring:rec,subtotal:sub,discount:disc,total:total,cost:itemsCost(WZ.items),paymentLink:""};
   touch(q);d.quotes.push(q);logEvent("Quote created — "+money(total)+(cust&&cust.name?" · "+cust.name:""),"quote");save();
   CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
 };
@@ -3289,6 +3402,12 @@ window.openRatesEditor=function(){modal("Pricing rates",`<p class="muted" style=
   <p id="rates_err" class="muted"></p>
   <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveRatesEditor()">Save</button><button class="btn ghost grow" onclick="resetRates()">Reset to defaults</button></div>`);};
 window.saveRatesEditor=function(){try{const o=JSON.parse(document.getElementById("rates_json").value);setRates(o);closeModal();alert("Pricing rates saved.");}catch(e){const el=document.getElementById("rates_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
+window.openCostsEditor=function(){modal("Job costs (COGS)",`<p class="muted" style="margin-bottom:8px">Advanced — edit the material/hardware cost defaults. Same shape as the built-in defaults; keep the format.</p>
+  <textarea id="costs_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getCosts(),null,2))}</textarea>
+  <p id="costs_err" class="muted"></p>
+  <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveCostsEditor()">Save</button><button class="btn ghost grow" onclick="resetCosts()">Reset to defaults</button></div>`);};
+window.saveCostsEditor=function(){try{const o=JSON.parse(document.getElementById("costs_json").value);setCosts(o);closeModal();alert("Job costs saved.");}catch(e){const el=document.getElementById("costs_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
+window.resetCosts=function(){if(!confirm("Reset job costs to defaults?"))return;setCosts(JSON.parse(JSON.stringify(COST_DEFAULT)));closeModal();alert("Job costs reset to defaults.");};
 window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
 function rData(){
   const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
@@ -3318,6 +3437,9 @@ function rData(){
       <div style="border-top:1px solid var(--line);margin:10px 0"></div>
       <p class="muted" style="margin-bottom:8px">Legacy quick-builder rates (raw JSON, the older simple calculators).</p>
       <button class="btn ghost" onclick="openRatesEditor()">Edit legacy rates (JSON)</button></div>
+    <h2>Job costs (COGS)</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">Material/hardware cost defaults behind each service — these drive the live <b>Cost / Profit / Margin</b> strip on every quote.</p>
+      <button class="btn ghost" onclick="openCostsEditor()">Edit job costs (JSON)</button></div>
     <h2>This device</h2>
     <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
     <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
