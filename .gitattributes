@@ -1,0 +1,15 @@
+# Normalize all text to LF in the repo; check out LF on every platform.
+# Root-cause fix for the tree-wide LF->CRLF flip (paired with core.autocrlf=false).
+* text=auto eol=lf
+
+# Binary assets — never touch line endings (would corrupt them on renormalize).
+*.pdf  binary
+*.xlsx binary
+*.xls  binary
+*.docx binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
