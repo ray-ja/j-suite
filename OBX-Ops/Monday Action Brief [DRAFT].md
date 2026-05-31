@@ -1,4 +1,7 @@
 # Monday Action Brief — June 1, 2026
+
+> ⚠️ **SUPERSEDED — DO NOT USE.** The canonical Monday brief is **`Monday Action Brief — June 1.md`** in the project root (part of Ray's morning handoff set). This OBX-Ops copy is kept for history only. See `OBX-Ops/CANONICAL FILE MAP.md`.
+
 *OBX Lot Solutions · your morning game plan. Draft.*
 
 ## ☀️ The one thing today

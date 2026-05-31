@@ -13,7 +13,7 @@
 - [ ] Set the **`obxlotsolutions.com/review` redirect** now that the OBX site is live (target gets filled in Step ②).
 - [ ] Test each quote form end-to-end (submit one, confirm it lands).
 
-> Sites to deploy: **OBX Lot Solutions**, **Jamieson Automation** (both ready in `/websites`), the **OBX Second-Home Care Hub**, and the 4th site. → *unblocks ②, ③, ④, ⑤.*
+> **The four properties to deploy:** **OBX Lot Solutions** (`websites/obx-lot-solutions/`), **Jamieson Automation** (`websites/jamieson-automation/`), **Second-Home Care Hub**, and **Rental Owner's Kit** landing (`moneymakers/obx-rental-owner-kit/`). → *unblocks ②, ③, ④, ⑤.*
 
 ### ② Create the Google Business Profiles  *(needs the live site/domain from ①)*
 - [ ] Create + verify a GBP for **OBX Lot Solutions** (and **Jamieson Automation**) — full steps in **`Marketing/Launch-Day Playbook.md`**; owner-action summary in **`OBX-Ops/Ray — Google Setup Checklist`**.
@@ -39,6 +39,6 @@
 - [ ] Paste the Gumroad product/store links into the Hub and into email/marketing. → *unblocks selling the Kits.*
 
 ---
-**Done when:** all 4 sites resolve on their domains, GBP live + review link wired to the QR, Stripe taking test payments, affiliate links live with disclosure, and Gumroad products purchasable.
+**Done when:** all four sites resolve on their domains, GBP live + review link wired to the QR, Stripe taking test payments, affiliate links live with disclosure, and Gumroad products purchasable.
 
-> **❓ASK FOR STRATEGY:** Only **2 site folders** exist in `/websites` today (OBX Lot Solutions, Jamieson Automation); the **Hub** is in flight with Dev and a **4th site** isn't on disk yet. Confirm the 4th site's identity (or that it's Hub + one more) so Step ① names all four exactly.
+*Note: OBX Lot Solutions and Jamieson Automation are ready in `/websites`; the Second-Home Care Hub and the Rental Owner's Kit landing (`moneymakers/obx-rental-owner-kit/`) deploy the same way once Dev finalizes them.*

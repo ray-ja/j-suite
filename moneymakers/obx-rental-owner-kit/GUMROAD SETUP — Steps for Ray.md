@@ -17,21 +17,23 @@
 1. Go to **gumroad.com** and sign up (use the business email).
 2. Complete payout settings (bank/PayPal) and tax info. *(Gumroad handles sales-tax/VAT collection for digital goods — one less thing for you.)*
 
+> **Delivery model (decided — launch shortcut):** all three paid tiers deliver the **same full 20-page master** (`OBX-Rental-Owner-Kit.pdf`). The only real difference is the **$49 tier adds a 20-min consult**. This is the fastest path — one file to manage. (Component-gating can come later.)
+
 ## Step 2 — Create the product (Tier 1: The Kit — $29)
 1. Dashboard → **New Product** → type **Digital product**.
 2. Name: **The OBX Rental Owner's Operations Kit**.
 3. Price: **$29**.
-4. Upload `OBX-Rental-Owner-Kit.pdf` (the 20-page master). *(For a strict $29-vs-$39 split, gate component 7 — see PACKAGING; for a simple launch, the master can serve the paid tiers and the consult differentiates $49.)*
+4. Upload `OBX-Rental-Owner-Kit.pdf` (the 20-page master — all 7 components).
 5. Description: paste from `sales/Sales Page Copy.md` (hero + what's inside + why-it's-worth-it + FAQ).
 6. Cover image: the kit cover (it's page 1 of the master PDF — export it as an image).
 
 ## Step 3 — Add the higher tiers (Gumroad "Versions")
-Gumroad lets one product have multiple **versions** at different prices — use this for the three tiers:
+Gumroad lets one product have multiple **versions** at different prices — use this for the three tiers. **All three deliver the same 20pp master**; only the $49 adds the consult note:
 1. In the product, enable **Versions**.
-2. **Version A — The Kit ($29):** the six core files.
-3. **Version B — Kit + Tech Guide ($39):** the six + `07-tech-ready-guide`.
-4. **Version C — Kit + Tech Guide + Consult ($49):** same files + the consult-booking note PDF.
-*(Each version can deliver its own file set — set them per the PACKAGING doc.)*
+2. **Version A — The Kit ($29):** the master PDF.
+3. **Version B — Kit + Tech-Ready Guide ($39):** the master PDF (the Tech-Ready Guide is part of it — this tier highlights it as the step-up reason).
+4. **Version C — Kit + Tech Guide + Consult ($49):** the master PDF **+** the consult-booking note PDF.
+*(Only Version C needs an extra file. A, B, and C otherwise upload the same master — quick to set up.)*
 
 ## Step 4 — The $19 launch promo
 Two easy ways:

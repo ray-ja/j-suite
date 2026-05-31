@@ -121,4 +121,4 @@ Count your ✅s across all five sections (24 items total):
 - The checkbox items can become an interactive/printable checklist in the kit; the "why" blocks become the explanatory copy.
 - Insurance-discount line must stay framed as *"ask your insurer"* — never promise a specific discount.
 - CTAs are placeholders → wire to the Jamieson inquiry flow (Client Communication Template #1) and the rental-tech one-pager.
-- Pairs with the pricing brief (`research/Comparable Pricing — Rental Owner Digital Products (DRAFT).md`) for how to position/价 the overall kit.
+- Pairs with the pricing brief (`research/Comparable Pricing — Rental Owner Digital Products (DRAFT).md`) for how to position/price the overall kit.

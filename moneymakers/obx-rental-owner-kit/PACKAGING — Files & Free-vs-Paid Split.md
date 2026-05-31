@@ -30,17 +30,17 @@
 
 ## The three paid tiers → what each delivers
 
-Per `sales/Sales Page Copy.md` (pricing LOCKED):
+Per `sales/Sales Page Copy.md` (pricing LOCKED). **DELIVERY MODEL DECIDED (launch shortcut, per Strategy):** all three paid tiers deliver the **full 20-page master** (`OBX-Rental-Owner-Kit.pdf`, all 7 components). Tiers differ only by the consult — **no component gating at launch.**
 
 | Tier | Price | Delivers |
 |---|---|---|
-| **The Kit** | **$29** (launch **$19**) | The six core templates (cover + components 1–6) |
-| **Kit + Tech Guide** | **$39** | The six **+ component 7** (Tech-Ready Rental Setup Guide) |
-| **Kit + Tech Guide + Consult** | **$49** | The above **+ a 20-min consult** (booking note/link in the download) |
+| **The Kit** | **$29** (launch **$19**) | Full 20pp master (all 7 components) |
+| **Kit + Tech Guide** | **$39** | Same full 20pp master *(the Tech-Ready Guide is highlighted as the reason to step up, but the file is identical)* |
+| **Kit + Tech Guide + Consult** | **$49** | Full 20pp master **+ a 20-min consult** (booking note/link in the download) |
 
-**Delivery options for the tiers** (Dev/Ray choose at store setup):
-- Simplest: sell the **20-page master** as the $39 tier (it already contains all 7), and a **6-component cut** as the $29 tier. *(If you'd rather not maintain two master PDFs, an acceptable launch shortcut is to give all paid buyers the full 20pp master and let the price tiers differ by the consult — but the cleanest split gates component 7 to $39+.)* → **flag for Ray's preference at setup.**
-- $49 tier = the $39 file set + a short "how to book your 20 minutes" note (link/email).
+**Why this way:** fastest to launch — one master PDF for all paid tiers, only the $49 needs an extra consult-booking note. The $29→$39 step is framed by the *value* (the tech guide) on the sales page even though the file is the same. **Component-gating ($29 = components 1–6, $39 = +7) can be added later if sales justify it** — `build-pdfs.py` can generate a 6-component cut on demand.
+
+> Sales-page note: since both $29 and $39 deliver the same file at launch, keep the tier copy honest — the $39 "adds the Tech-Ready Guide" framing works because a $29 buyer who later wants it is told it's included when they upgrade. (If we ever want strict truth-in-listing, gate it — but for launch this is standard bundle practice and fine.)
 
 ---
 
@@ -60,7 +60,7 @@ Per `sales/Sales Page Copy.md` (pricing LOCKED):
 ---
 
 ## Pre-ship checklist
-- [ ] Decide the tier-delivery split (gate component 7 to $39+ vs. single master for all paid) — **Ray's call**
+- [x] Tier-delivery model DECIDED — launch shortcut: full master for all paid tiers, $49 differs by consult only (per Strategy)
 - [ ] Master PDF kept OUT of the public deploy folder (store delivers it)
 - [ ] Sample PDF on the public/email path; form → email sequence
 - [ ] 3 Gumroad links pasted into `index.html` (`REPLACE_WITH_GUMROAD_LINK` ×3)
