@@ -171,4 +171,6 @@ We serve the Outer Banks and lower Currituck: **Corolla · Duck · Southern Shor
 
 1. **Home-watch $59/visit — confirmed.** Undercuts the $65–85 local band by just enough to be the clear value pick without giving it away. Recurring tiers step down from there: monthly **$59**, bi-weekly **$54**, weekly **$49** — all under market.
 2. **Whole-house clear-outs — confirmed quote-only** ("free on-site quote, most 3-bed $1,200–2,500"), so the site never undercuts Ray's in-person number.
-3. **Insured, not "licensed."** OBX carries a real Next Insurance COI ($1M/$1M) — the site says **Insured**. Do not add "licensed" (no contractor license claimed). *(Asymmetry vs. Jamieson, which stays silent o
+3. **Insured, not "licensed."** OBX carries a real Next Insurance COI ($1M/$1M) — the site says **Insured**. Do not add "licensed" (no contractor license claimed). *(Asymmetry vs. Jamieson, which stays silent on insurance — it has no standing GL.)*
+
+All prices verified above the COGS floor (35%+ margin guardrail). Ready for DevOps build + Stripe wiring.

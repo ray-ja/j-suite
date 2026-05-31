@@ -69,4 +69,4 @@
 ## Approval notes for Ray
 - **Two posts need a real asset:** Thursday's before/after (your June 17 photos — see the Shot Guide) and, soon after, the Saturday post's real quote. Everything else can schedule on your OK.
 - **[GOOGLE REVIEW LINK]** — paste your live GBP review short-link once (see `OBX-Ops/QR-to-Google-Review Setup Guide`); it drops into the Sat post, the review kit, and the QR card.
-- **Cadence:** one post/day is plenty at launch. If you'd rather do 3–4/week, I'll trim to the 
+- **Cadence:** one post/day is plenty at launch. If you'd rather do 3–4/week, I'll trim to the strongest.

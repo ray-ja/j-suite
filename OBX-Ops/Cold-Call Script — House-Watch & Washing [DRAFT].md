@@ -64,4 +64,38 @@ Different angle: turn a competitor into a feeder.
 ## F2 · Voicemail (you'll hit a lot of these — keep it under 20 sec)
 > "Hi, this is **Ray with OBX Lot Solutions** — we do recurring soft-washing and property checks for vacation-rental and absentee homes here on the Outer Banks. I'd love to look at one or two of your managed homes and put together a no-pressure quote. Give me a call back at **(252) 564-8717** — that's 252-564-8717 — or I'll try you again [day]. Thanks!"
 - Say the number **twice, slowly.** Log **CB** with the day you'll retry — then actually retry.
-- If you have their cell, **text right after** the voicemail (see below). The combo lands
+- If you have their cell, **text right after** the voicemail (see below). The combo lands far more callbacks than either alone.
+
+## F3 · Text after voicemail
+> "Hi [name] — Ray with OBX Lot Solutions, just left you a voicemail. We soft-wash & do property checks for managed/absentee homes on the OBX. Could I swing by one of your homes this week for a quick no-pressure quote? (252) 564-8717"
+
+## F4 · Email drop — the "send me an email" / leave-behind one-pager
+*(Use when they ask for email, or as a follow-up after any call. Attach `OBX Lot Solutions - Flyer (leave-behind).pdf`.)*
+
+**Subject:** Reliable soft-washing & home-watch for your managed homes — OBX Lot Solutions
+
+> Hi [name],
+>
+> Great talking with you / thanks for the note. Quick summary of what we do for property and rental managers on the Outer Banks:
+>
+> - **Exterior soft-washing** on a recurring schedule — siding, roofs, decks, walkways — so your portfolio always looks rental-ready and you never field the "my house is green" call.
+> - **Home-watch checks** on vacant/absentee homes — interior + exterior walk-through, run water, check HVAC, look for leaks/pests/storm damage, with a **photo report every visit**.
+> - **Local, uniformed, and we actually show up.** Recurring accounts get **20% off**.
+>
+> I'd love to look at one or two of your homes this week and send you a written, no-obligation quote the same day. What day works — Wednesday or Thursday?
+>
+> Ray
+> OBX Lot Solutions
+> (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+
+*Draft only — Ray sends. Log **Q** once sent.*
+
+## G · Log every call (Status / Notes column)
+**W** = walkthrough booked (+day/time) · **CB** = call back (+date) · **Q** = quote sent · **NO** = not interested (+why) · **GK** = gatekeeper, need decision-maker (+name)
+
+## Reminders
+- Smile — it carries through the phone.
+- You're offering reliability they can't easily get. Sound like it.
+- One big-VRM yes can be **hundreds of homes** of recurring washing. Quality over volume.
+- Once you're the trusted person, you get the gutters, junk, *and* the Jamieson tech work.
+- Your line: **(252) 564-8717** · contact@obxlotsolutions.com · obxlotsolutions.com

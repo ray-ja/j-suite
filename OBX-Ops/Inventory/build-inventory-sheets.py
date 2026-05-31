@@ -122,4 +122,6 @@ if __name__ == "__main__":
     print("Parsed %d master items -> %d job sheets + _index.md" % (len(rows), len(JOBS)))
     if warnings:
         print("WARNINGS:")
-  
+        print(NL.join(warnings))
+    else:
+        print("All items carry valid tags. No drift risk: re-run anytime.")

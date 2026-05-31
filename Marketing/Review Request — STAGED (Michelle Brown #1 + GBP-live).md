@@ -59,4 +59,13 @@ The full templates (washing, junk, home-watch, PM/email) + cadence table live in
 2. Ask **in person first, then text** the one-tap link. Text beats email for response.
 3. **Never** pay or discount for reviews (Google can remove them). Ask, don't buy.
 4. **Reply to every review** — it signals an active, trusted business and helps ranking.
-5. If someone seems unhappy, **fix it first** — don't fish
+5. If someone seems unhappy, **fix it first** — don't fish for a bad review.
+
+**Simple tracker (Ray or the app's Accounts):**
+
+| Customer | Job / date | Asked? | Channel | Review live? | Replied? |
+|---|---|---|---|---|---|
+| Michelle Brown | Clear-out · Jun 17 | ☐ | text | ☐ | ☐ |
+| | | ☐ | | ☐ | ☐ |
+
+*Goal: bank the first 5 reviews fast — that's the threshold where the GBP starts converting cold searches.*

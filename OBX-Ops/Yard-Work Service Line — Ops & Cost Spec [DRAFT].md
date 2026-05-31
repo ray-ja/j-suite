@@ -21,7 +21,10 @@
 | **Mulch & bed refresh** | Quote (materials pass-through) | Materials billed as a separate cost+markup line. |
 | **Small limb / sapling removal** | Quote — **with the limit below** | See the licensing/safety line. |
 
-**⚠ Scope/safety line (the yard-work equivalent of Jamieson's "no line-voltage" rule):** OBXLS does **ground-level brush, saplings, and small limbs only.** Felling mature trees, climbing/aerial work, anything near power lines, or large-trunk removal goes to a **licensed, insured tree service** (e.g., sub or refer — Crew Cutters does tree removal) or is declined. Tree work is the #1 injury/liability category in this trade; our GL policy and crew aren't set up for it. Protects the crew and the brand.
+**⚠ Tree / limb scope cap (Ray-set policy — the yard-work equivalent of Jamieson's "no line-voltage" rule):**
+- **In scope:** limb removal, branch cutting, brush, and **small-tree** removal — **ground-based only, anything reachable from a 30-ft ladder or shorter.** Ray owns the 30-ft ladder + a small chainsaw; larger chainsaw / pole saw / chipper are rented per job (pass-through).
+- **Out of scope — sub or refer** (e.g., Crew Cutters, a licensed/insured tree service) **or decline:** full/large tree removal, anything requiring **climbing** the tree, anything **above ~30 ft / out of ladder reach**, and heavy controlled drops. *We are not a tree-removal service.*
+- Tree work is the #1 injury/liability category in this trade; this cap keeps us inside the crew's skill, the GL policy, and the brand. Same wording lives in `Inventory/master-inventory.md` and the LS site service copy.
 
 ---
 

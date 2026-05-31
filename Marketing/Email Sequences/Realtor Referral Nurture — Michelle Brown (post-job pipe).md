@@ -63,4 +63,8 @@ Rotate one of these once a month (only when genuine — never spammy):
 
 ## How to run it (Ray)
 - **Log Michelle in Accounts as a referral source** (name, cell, email, brokerage) — track every closing she sends.
-- **Send checklist:** ☐ photos sent same day ☐ review asked ☐ cards dropped at her office ☐ logged as referral source ☐ monthly touch sch
+- **Send checklist:** ☐ photos sent same day ☐ review asked ☐ cards dropped at her office ☐ logged as referral source ☐ monthly touch scheduled.
+- **The mindset:** every message is fast, useful, and makes *her* look good to *her* clients. That's what gets an agent to refer you on repeat.
+- **Track the pipe:** when a referral closes, send a genuine thank-you (a text is fine) — acknowledged referrers refer again.
+
+*Nothing here sends automatically. These are drafts for you to send in your own voice.*

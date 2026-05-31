@@ -36,4 +36,7 @@ Verified real, full-service property-management companies in the northern servic
 | 19 | **Carolina Designs Realty** | VRM — Duck (upscale/curated) | Duck | (800) 368-3825 · rentals@carolinadesigns.com | **Washing-first** | Higher-end Duck homes where owners pay for "always-pristine." Strong soft-wash + house-watch combo. |
 | 20 | **Atlantic Realty of the Outer Banks** | PM since 1982 (owner-services focus) | Kitty Hawk | (252) 680-1815 (PM line) · info@atlanticrealty-nc.com | **House-watch-first** | Smaller, owner-services-oriented PM — best entry is scheduled property checks, then attach washing. Faster to a decision-maker. |
 
-*Checked and excluded:* **Corolla Classic Vacations** — its booking email is `@villagerealtyobx.com`, i.e. it's a **Village Realty** brand (already #8); contacting both would doubl
+*Checked and excluded:* **Corolla Classic Vacations** — its booking email is `@villagerealtyobx.com`, i.e. it's a **Village Realty** brand (already #8); contacting both would double-call the same operator.
+
+---
+> **Resolved (prior fork):** Strategy directed — kept the 2 referral landscapers (#14–15) **and** sourced 5 more PMs (#16–20). No open forks.

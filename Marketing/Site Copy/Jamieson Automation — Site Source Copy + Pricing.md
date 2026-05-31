@@ -187,4 +187,3 @@ Serving the Outer Banks and northeastern NC: Corolla · Duck · Southern Shores 
 2. **No insurance claim — confirmed.** Jamieson Automation LLC has no standing GL (on-demand COI only), so the site stays **silent on insurance** — adding an "insured" line would be false. *(Asymmetry: OBX says insured because it has a real Next Insurance COI; Jamieson does not.)*
 
 **Phone confirmed:** (757) 903-8899 (matches the AoO; JA Ops is swapping it across the 39 site pages). Email `hello@jamiesonautomation.com` is still a placeholder — confirm or replace before DevOps ships. Everything else is build-ready.
-  

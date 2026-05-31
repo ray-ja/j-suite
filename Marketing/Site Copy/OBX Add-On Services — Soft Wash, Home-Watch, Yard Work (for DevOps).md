@@ -62,4 +62,6 @@
 ---
 
 ## Notes for DevOps / Ray
-- **Yard work is live by default.** Ray can flip it OFF the site if he wants to stagger launches — say the word and I'll mark it sta
+- **Yard work is live by default.** Ray can flip it OFF the site if he wants to stagger launches — say the word and I'll mark it staged.
+- Keep the **tree-work scope cap** line visible on the page — it's a liability guardrail, not just copy.
+- Soft wash + home-watch are unchanged/locked. All three blocks are build-ready.
