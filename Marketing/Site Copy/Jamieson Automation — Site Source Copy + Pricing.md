@@ -1,6 +1,6 @@
 # Jamieson Automation — Site Source Copy + Pricing
 
-> **STATUS: ✅ APPROVED FOR BUILD — hand to DevOps.** Pricing + positioning locked by Strategy 2026-05-31. One open factual confirm: the 757 phone digits (marked [CONFIRM]). Nothing publishes without Ray.
+> **STATUS: ✅ APPROVED FOR BUILD — hand to DevOps.** Pricing + positioning locked by Strategy 2026-05-31. Phone confirmed (757) 903-8899. Nothing publishes without Ray.
 
 *Source copy powering the Jamieson site rebuild (Stripe-integrated). Content + pricing of record — DevOps builds pages and wires Stripe from it. Marketing owns this file. Nothing publishes without Ray.*
 
@@ -16,7 +16,7 @@
 
 **Legal/contact (site-wide footer):**
 Jamieson Automation LLC · Outer Banks, NC
-[CONFIRM] (757) 903-8899 · hello@jamiesonautomation.com · jamiesonautomation.com
+(757) 903-8899 · hello@jamiesonautomation.com · jamiesonautomation.com
 
 ---
 
@@ -165,9 +165,9 @@ Serving the Outer Banks and northeastern NC: Corolla · Duck · Southern Shores 
 ## CONTACT / CONSULT FORM
 
 **Headline:** Tell us what you want to set up.
-**Subhead:** Call or text [CONFIRM] (757) 903-8899, or send the details below for a fair quote.
+**Subhead:** Call or text (757) 903-8899, or send the details below for a fair quote.
 **Form fields:** name · phone · email · property/business address · service(s) of interest · property type (home / vacation rental / business) · details · timeline.
-**Confirmation:** Thanks — we'll follow up with a straight answer and a quote. For anything urgent, call or text [CONFIRM] (757) 903-8899.
+**Confirmation:** Thanks — we'll follow up with a straight answer and a quote. For anything urgent, call or text (757) 903-8899.
 
 ---
 
@@ -186,4 +186,5 @@ Serving the Outer Banks and northeastern NC: Corolla · Duck · Southern Shores 
 1. **Slight undercut only — confirmed.** Install labor sits just under local integrators (e.g., Starlink standard $279), hardware stays pass-through. **Lead on value/trust — responsiveness, local, quality — not "cheapest."** Bargain framing reads as risky to AV/security buyers, so the copy never competes on price.
 2. **No insurance claim — confirmed.** Jamieson Automation LLC has no standing GL (on-demand COI only), so the site stays **silent on insurance** — adding an "insured" line would be false. *(Asymmetry: OBX says insured because it has a real Next Insurance COI; Jamieson does not.)*
 
-**One factual confirm still owed by Ray:** the footer phone **[CONFIRM] (757) 903-8899** and email — verify exact digits before DevOps ships. Everything else is build-ready.
+**Phone confirmed:** (757) 903-8899 (matches the AoO; JA Ops is swapping it across the 39 site pages). Email `hello@jamiesonautomation.com` is still a placeholder — confirm or replace before DevOps ships. Everything else is build-ready.
+  
