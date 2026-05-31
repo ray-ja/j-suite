@@ -16,8 +16,11 @@
     --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b;
   }
   body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; }
-  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#94a1b2; --line:#2a333f; --soft:#222b36; --danger:#e8705f; }
+  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#aab7c7; --line:#33404e; --soft:#262f3b; --danger:#e8705f; }
   body.dark[data-biz="jam"]{ --accent:#37b0f0; }
+  /* Dark mode: ghost buttons (e.g. wizard service tiles) used --brand for text+border, which stays dark navy in dark mode → invisible. Lift to readable ink. */
+  body.dark .btn.ghost{ color:var(--ink); border-color:#4a5a6e; }
+  body.dark .badge{ color:var(--ink); }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;padding-bottom:72px}
   header{background:var(--brand);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px}
@@ -645,10 +648,12 @@ window.openQuote=function(id,customerId,preset){
     <input id="q_custfree" style="margin-top:6px" placeholder="…or type a name" value="${esc(custFree)}">
     <h2 style="margin-top:14px">Line items</h2><div id="qlines"></div>
     <button class="btn ghost sm" style="margin-top:6px" onclick="addLine()">+ Add line</button>
-    ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="q_rec" ${q&&q.recurring?"checked":""} onchange="renderTot()"><label style="margin:0">Recurring service — 20% off</label></div>`:""}
-    <div class="totbar"><span class="lab">Total</span><span class="amt" id="q_tot">$0</span></div>
+    ${(BIZ[S.biz].recurring && !QITEMS.some(it=>/junk|haul|move-?out|clear|storm|debris|dump|clean-?out/i.test(it.name||"")))?`<div class="toggle"><input type="checkbox" id="q_rec" ${q&&q.recurring?"checked":""} onchange="renderTot()"><label style="margin:0">Recurring service — 20% off</label></div>`:""}
+    <label>Extra discount ($, optional)</label><input type="number" id="q_disc" value="${q?Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0)):0}" oninput="renderTot()">
+    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="q_miles" value="${q?(q.miles||0):0}" oninput="renderTot()">
+    <div class="totbar" style="position:static"><span class="lab">Total</span><span class="amt" id="q_tot">$0</span></div>
     <div id="q_cogs"></div>
-    <div class="row" style="gap:8px;margin-top:12px">
+    <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn acc grow" onclick="saveQuote('${q?q.id:""}')">Save quote</button>
       <button class="btn ghost grow" onclick="copyQuote()">Copy as text</button></div>
     <button class="btn ghost" style="margin-top:8px" onclick="printQuote()">🖨 Print / Save PDF</button>
@@ -683,16 +688,20 @@ window.lineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s)return;
 window.lineQty=function(i,v){QITEMS[i].qty=Math.max(1,parseInt(v)||1);renderTot();};
 window.linePrice=function(i,v){QITEMS[i].price=parseFloat(v)||0;renderTot();};
 window.lineCost=function(i,v){QITEMS[i].cost=parseFloat(v)||0;renderTot();};
-window.junkHelper=function(i){const lbs=parseFloat(prompt("Estimated load weight (lbs)? Pickup load ≈ 1500–2500.","2000"));if(!lbs)return;QITEMS.splice(i+1,0,disposalLine(lbs));renderLines();};
+window.junkHelper=function(i){const lbs=parseFloat(prompt("Estimated load weight (lbs)? Pickup load ≈ 1500–2500.","2000"));if(!lbs)return;const veg=confirm("Is this CLEAN vegetative debris (yard/brush only)?\n\nOK = clean veg → dumps FREE in Dare County.\nCancel = mixed C&D load → $73.16/ton over the first 500 lbs.");QITEMS.splice(i+1,0,disposalLine(lbs,veg));renderLines();};
 function quoteCalc(){let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const rec=document.getElementById("q_rec")&&document.getElementById("q_rec").checked;
-  const disc=rec?sub*0.2:0;return{sub,disc,total:sub-disc,rec};}
-window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);const ce=document.getElementById("q_cogs");if(ce)ce.innerHTML=cogsStrip(t.total,itemsCost(QITEMS));};
+  const recDisc=rec?sub*0.2:0;
+  const md=document.getElementById("q_disc")?(parseFloat(document.getElementById("q_disc").value)||0):0;
+  const disc=recDisc+md;
+  const miles=document.getElementById("q_miles")?(parseFloat(document.getElementById("q_miles").value)||0):0;
+  return{sub,disc,manualDisc:md,recDisc,miles,total:Math.max(0,sub-disc),rec};}
+window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);const ce=document.getElementById("q_cogs");if(ce)ce.innerHTML=cogsStrip(t.total,itemsCost(QITEMS)+mileageCost(t.miles))+(t.miles?`<div class="sub" style="margin-top:2px">Incl. ${money(mileageCost(t.miles))} drive (${t.miles} mi × ${MILEAGE_RATE_LABEL})</div>`:"");};
 function quoteFigures(){if(!document.getElementById("q_rec")&&CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal,disc:CURQ.discount,total:CURQ.total};return quoteCalc();}
 window.saveQuote=function(id){
   const t=quoteCalc();const d=D();
   const obj={id:id||uid(),customerId:val("q_cust"),cust:val("q_custfree")||(val("q_cust")?custName(val("q_cust")):""),
-    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,total:t.total,cost:itemsCost(QITEMS),paymentLink:CURQ?(CURQ.paymentLink||""):""};
+    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,manualDisc:t.manualDisc,miles:t.miles,total:t.total,cost:itemsCost(QITEMS)+mileageCost(t.miles),paymentLink:CURQ?(CURQ.paymentLink||""):""};
   if(!obj.items.length){alert("Add at least one line item.");return;}
   touch(obj);
   if(id){const i=d.quotes.findIndex(x=>x.id===id);d.quotes[i]=obj;}else d.quotes.push(obj);
@@ -723,6 +732,9 @@ window.printQuote=function(){
   const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   const rows=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`<tr><td>${esc(it.name)}</td><td style="text-align:center">${it.qty||1}</td><td style="text-align:right">${money((it.price||0)*(it.qty||1))}</td></tr>`).join("");
   const nameHtml=name.replace(/ ([^ ]+)$/,' <span style="color:'+acc+'">$1</span>');
+  // Logo on the PDF header: OBX logo base64-embedded so the printed quote is fully self-contained (works when Ray opens the app as a local file:// — a served URL would not resolve there).
+  const OBX_LOGO="data:image/png;base64,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";
+  const brandHtml=isObx?`<img src="${OBX_LOGO}" alt="${esc(name)}" style="height:48px;max-width:260px;object-fit:contain;background:#fff;border-radius:8px;padding:5px 10px">`:`<div class="n">${nameHtml}</div>`;
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Quote - ${esc(name)}</title>
   <style>body{font-family:Arial,Helvetica,sans-serif;color:#1b2330;margin:0;padding:32px}
   .hd{background:${brand};color:#fff;padding:18px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}
@@ -735,10 +747,10 @@ window.printQuote=function(){
   .disc{text-align:right;color:#6b7280;font-size:13px;margin-top:6px}
   .ft{margin-top:28px;color:#6b7280;font-size:12px}
   @media print{body{padding:6px}}</style></head>
-  <body><div class="hd"><div class="n">${nameHtml}</div><div style="font-weight:700">${(CURQ&&CURQ.invoiced)?"INVOICE":"QUOTE"}</div></div>
+  <body><div class="hd">${brandHtml}<div style="font-weight:700">${(CURQ&&CURQ.invoiced)?"INVOICE":"QUOTE"}</div></div>
   ${who?`<h2>Prepared for</h2><div>${esc(who)}${(CURQ&&CURQ.address)?"<br>"+esc(CURQ.address):""}</div>`:""}
   <h2>Services</h2><table><tr><th>Service</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th></tr>${rows}</table>
-  ${t.disc?`<div class="disc">Recurring discount (20%): -${money(t.disc)}</div>`:""}
+  ${t.disc?`<div class="disc">Discount: -${money(t.disc)}</div>`:""}
   <div class="tot">Total: ${money(t.total)}</div>
   <div class="ft">${esc(name)}${phone?" &middot; "+phone:""} &middot; ${new Date().toLocaleDateString()}</div>
   <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`;
@@ -2580,6 +2592,11 @@ var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (Dare County C&D, Manns Harbor)
 var DISPOSAL_FREE_LBS     = 500;     // residential free allowance
 var LBS_PER_TON           = 2000;
 var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
+var MILEAGE_RATE          = 0.725;   // $/mi round-trip vehicle cost — 2026 IRS rate 72.5¢ (absorbs fuel; no separate gas line, no hourly wage)
+var MILEAGE_RATE_LABEL    = "72.5¢"; // display form (avoids $0.725 rounding to $0.72)
+var CONSUMABLES_PCT       = 0.05;    // washing/cleaning chemical + consumable allowance, as % of labor sub
+var VEG_FREE              = true;    // clean vegetative debris dumps FREE in Dare County (mixed loads = $73.16/ton)
+function mileageCost(miles){ return Math.round((Math.max(0,+miles||0) * MILEAGE_RATE) * 100) / 100; }
 function disposalCost(lbs){
   lbs = Math.max(0, +lbs || 0);
   var billable = Math.max(0, lbs - DISPOSAL_FREE_LBS);
@@ -2659,9 +2676,10 @@ function calcCost(key, inp, costs){
       return 0;
   }
 }
-function disposalLine(lbs){
-  return { serviceId: "", name: "Dump fee — " + lbs + " lbs (Dare C&D, first 500 free)",
-           unit: "cost", price: 0, qty: 1, cost: disposalCost(lbs), costLine: true };
+function disposalLine(lbs, veg){
+  var c = veg ? 0 : disposalCost(lbs);
+  return { serviceId: "", name: "Dump fee — " + lbs + " lbs " + (veg ? "(clean vegetative debris — free, Dare County)" : "(mixed C&D, first 500 lbs free)"),
+           unit: "cost", price: 0, qty: 1, cost: c, costLine: true };
 }
 
 /* ---------- JUNK / MOVE-OUT ITEM BUILDER (inside the wizard) ---------- */
@@ -2795,7 +2813,8 @@ window.wizAddJunk=function(){
   const itemCount=WZ.junk.reduce((s,x)=>s+(x.qty||0),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 of a standard truck ("+c.cuft+" cu ft, "+c.lbs+" lb)."+(c.dump?" Includes "+money(c.dump)+" heavy-load surcharge.":""));
-  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:c.total,notes:notes,qty:1,unit:"job",serviceId:""});
+  var junkCost=(c.special||0)+(c.dump||0)+(c.rental||0); // hard cost: special-item disposal + heavy-load landfill + equipment rental (no labor; mileage added per-quote)
+  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:c.total,cost:junkCost,notes:notes,qty:1,unit:"job",serviceId:""});
   WZ.junk=[];WZ.step="review";render();
 };
 
@@ -3145,7 +3164,8 @@ window.wizAddDeep=function(key){const c=calcDeep(key),cfg=getDeepCfg(key);if(!c.
   const notes=[];
   if(c.unc)notes.push("Estimate ±"+money(c.unc)+" — "+(cfg.unc.reason||"confirmed on site")+".");
   c.modRows.forEach(m=>notes.push(m[0]+" ("+m[1]+")."));
-  WZ.items.push({name:cfg.label+" — "+c.rows.length+" line"+(c.rows.length>1?"s":""),price:c.total,notes:notes,qty:1,unit:"job",serviceId:"",breakdown:c.rows.map(r=>r.label+": "+money(r.amt))});
+  var deepCost=(c.fees||0)+Math.round((c.sub||0)*CONSUMABLES_PCT); // hard cost: per-item disposal/material fees + chemical/consumable allowance (no labor; mileage added per-quote)
+  WZ.items.push({name:cfg.label+" — "+c.rows.length+" line"+(c.rows.length>1?"s":""),price:c.total,cost:deepCost,notes:notes,qty:1,unit:"job",serviceId:"",breakdown:c.rows.map(r=>r.label+": "+money(r.amt))});
   if(WZ.deep)WZ.deep[key]=[];if(WZ.deepMods)WZ.deepMods[key]={};WZ.step="review";render();
 };
 
@@ -3170,7 +3190,7 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,svc:null,inp:{},deep:{},deepMods:{},deepSearch:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,miles:0,svc:null,inp:{},deep:{},deepMods:{},deepSearch:""};WZON=true;TAB="quotes";render();};
 window.exitWizard=function(){WZON=false;render();};
 function wizHead(n,total,title){return `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Step ${n} of ${total}</div><div class="nm" style="font-size:18px">${title}</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;}
 function wizRender(){const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
@@ -3243,12 +3263,13 @@ window.wizLive=function(){if(!WZ_FIELDS[WZ.svc])return;const inp=wizReadInp();le
 window.wizAddItem=function(){const inp=wizReadInp();let res;
   if(WZ.svc==="custom"){if(!inp.name||!inp.price){alert("Add a description and price.");return;}res={name:inp.name,price:rnd5(inp.price),notes:[]};}
   else{if(!inp.qty&&!inp.count&&!inp.hours&&WZ.svc!=="housewatch"&&WZ.svc!=="starlink"&&WZ.svc!=="network"){alert("Enter the amount of work first.");return;}res=calcQuote(WZ.svc,inp);}
-  WZ.items.push({name:res.name,price:res.price,notes:res.notes||[],qty:1,unit:"quote",serviceId:""});
+  WZ.items.push({name:res.name,price:res.price,cost:(res.cost||0),notes:res.notes||[],qty:1,unit:"quote",serviceId:""});
   WZ.step="review";render();
 };
 window.wizRemItem=function(i){WZ.items.splice(i,1);render();};
 function wizReview(){
   let sub=0;WZ.items.forEach(it=>sub+=it.price);
+  const mc=mileageCost(WZ.miles);
   const rec=WZ.recurring&&BIZ[S.biz].recurring; const recDisc=rec?sub*0.2:0;
   const total=Math.max(0,sub-recDisc-(WZ.disc||0));
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
@@ -3257,8 +3278,10 @@ function wizReview(){
     <button class="btn ghost sm" style="margin-top:8px" onclick="WZ.step='pick';render()">+ Add another service</button>
     ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;render()"><label style="margin:0">Recurring plan — 20% off</label></div>`:""}
     <label>Extra discount ($, optional)</label><input type="number" id="wz_disc" value="${WZ.disc||0}" onchange="WZ.disc=parseFloat(this.value)||0;render()">
+    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" value="${WZ.miles||0}" onchange="WZ.miles=parseFloat(this.value)||0;render()">
     <div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc):""}</div>
-    ${cogsStrip(total, itemsCost(WZ.items))}
+    ${cogsStrip(total, itemsCost(WZ.items)+mc)}
+    <div class="sub" style="margin-top:4px">Cost includes ${money(itemsCost(WZ.items))} job hard cost${WZ.miles?" + "+money(mc)+" drive ("+WZ.miles+" mi × "+MILEAGE_RATE_LABEL+")":""}.</div>
     <div class="totbar"><span class="lab">Total to present</span><span class="amt">${money(total)}</span></div>
     ${notes.length?`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`:""}
     <button class="btn acc" style="margin-top:12px" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>Save &amp; present →</button>
@@ -3278,7 +3301,7 @@ window.wizFinish=function(){
   if(!prop&&WZ.cust.address){prop=actProps().find(x=>(x.address||"").toLowerCase()===WZ.cust.address.toLowerCase()&&(x.customerIds||[]).indexOf(cust.id)>=0);}
   if(!prop){prop={id:uid(),label:"Main",address:WZ.cust.address||"",accessNotes:"",lat:null,lng:null,customerIds:[cust.id],updatedAt:now()};d.properties.push(prop);geocodeProp(prop);}
   else if((prop.customerIds||[]).indexOf(cust.id)<0){prop.customerIds.push(cust.id);touch(prop);}
-  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1,cost:it.cost||0})),recurring:rec,subtotal:sub,discount:disc,total:total,cost:itemsCost(WZ.items),paymentLink:""};
+  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1,cost:it.cost||0})),recurring:rec,subtotal:sub,discount:disc,total:total,miles:(WZ.miles||0),cost:itemsCost(WZ.items)+mileageCost(WZ.miles),paymentLink:""};
   touch(q);d.quotes.push(q);logEvent("Quote created — "+money(total)+(cust&&cust.name?" · "+cust.name:""),"quote");save();
   CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
 };
