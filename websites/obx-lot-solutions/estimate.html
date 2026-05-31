@@ -15,6 +15,19 @@
 <section class="hero"><div class="wrap"><h1>Get your free estimate</h1><p class="lead">Tell us about your property and we'll get you an honest, written number — fast. No pressure, ever.</p><a class="btn ghost" href="tel:+12525648717">📞 Prefer to call? (252) 564-8717</a></div></section>
 
 <section><div class="wrap">
+<div class="formcard" style="margin-bottom:18px">
+  <h2 style="margin-top:0">Book &amp; pay online</h2>
+  <p style="margin-top:0;color:var(--muted)">Flat-rate services you can book and pay for right now. Bigger or custom jobs — use the free-estimate form below.</p>
+  <div class="checkrow" style="gap:10px">
+    <a class="btn navy" data-stripe="driveway-small" data-quote="Driveway wash — get a quote">🧱 Driveway wash — from $89</a>
+    <a class="btn navy" data-stripe="house-softwash-1story" data-quote="House soft wash — get a quote">🏠 House soft wash — from $349</a>
+    <a class="btn navy" data-stripe="deck-wash" data-quote="Deck / patio wash — get a quote">🪵 Deck / patio wash — from $119</a>
+    <a class="btn navy" data-stripe="homewatch-monthly" data-quote="Home-watch plan — get a quote">👁️ Home-watch — $59/visit</a>
+    <a class="btn navy" data-stripe="yard-mow" data-quote="Lawn mow &amp; trim — get a quote">🌿 Lawn mow &amp; trim — from $45</a>
+    <a class="btn navy" data-stripe="junk-single" data-quote="Junk pickup — get a quote">🚛 Single-item junk pickup — from $99</a>
+  </div>
+  <p class="meta" style="color:var(--muted);font-size:.85rem;margin-top:12px">Secure checkout by Stripe. Recurring plans bill automatically and save 20%. Prices confirmed on site for variable scope.</p>
+</div>
 <form class="formcard" name="estimate" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks.html">
   <input type="hidden" name="form-name" value="estimate">
   <p style="display:none"><label>Don't fill this out: <input name="bot-field"></label></p>
@@ -28,7 +41,8 @@
     <label><input type="checkbox" name="services" value="Soft/pressure washing"> Soft/pressure washing</label>
     <label><input type="checkbox" name="services" value="Home watch"> Home watch</label>
     <label><input type="checkbox" name="services" value="Junk removal"> Junk removal</label>
-    <label><input type="checkbox" name="services" value="Gutters/windows"> Gutters/windows</label>
+    <label><input type="checkbox" name="services" value="Yard work"> Yard work</label>
+    <label><input type="checkbox" name="services" value="Window washing"> Window washing</label>
     <label><input type="checkbox" name="services" value="Commercial cleanup"> Commercial cleanup</label>
     <label><input type="checkbox" name="services" value="Seasonal/storm"> Seasonal/storm</label>
   </div>
@@ -38,12 +52,4 @@
   <label>How did you find us?</label>
   <select name="source"><option>Google</option><option>Referral / word of mouth</option><option>Facebook / Nextdoor</option><option>Saw the truck / sign</option><option>Property manager</option><option>Other</option></select>
   <button class="btn block navy" type="submit" style="margin-top:18px">Send my estimate request</button>
-  <p class="meta" style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:10px">We'll get back to you the same day during business hours.</p>
-</form>
-</div></section>
-
-<footer class="site"><div class="wrap"><div class="fgrid"><div><h4>OBX Lot Solutions</h4><p>Exterior cleaning, home watch, and cleanup for the Outer Banks.</p><p>📞 <a href="tel:+12525648717" style="display:inline">(252) 564-8717</a></p></div><div><h4>Services</h4><a href="soft-washing.html">Soft &amp; pressure washing</a><a href="home-watch.html">Home watch</a><a href="services.html#junk">Junk removal</a><a href="services.html#commercial">Commercial cleanup</a></div><div><h4>Company</h4><a href="about.html">About</a><a href="home-watch-checklist.html">Free checklist</a><a href="faq.html">FAQ</a><a href="service-area.html">Service area</a><a href="reviews.html">Reviews</a><a href="case-studies.html">Projects</a><a href="blog.html">Resources</a><a href="contact.html">Contact</a></div><div><h4>Service area</h4><p>Corolla · Duck · Southern Shores · Kitty Hawk · Kill Devil Hills · Nags Head · Manteo · Avon · Hatteras · Ocracoke</p></div></div><div class="fbar">© <span id="yr"></span> OBX Lot Solutions. Licensed &amp; insured.</div></div></footer>
-<div class="callbar"><a class="c" href="tel:+12525648717">📞 Call now</a><a class="q" href="#">Free estimate</a></div>
-<script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
-<script defer src="cro.js"></script>
-</body></html>
+  <p class="meta" style="text-align:center;color:var(--muted
