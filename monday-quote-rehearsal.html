@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Monday Clear-Out — Quote Rehearsal</title>
+<style>
+  :root{--brand:#1B2A4E;--accent:#8BC34A;--accent-ink:#1B2A4E;--card:#fff;--line:#e6e8ee;--muted:#6b7280;--soft:#f4f6fb;--bg:#eef1f7;--warn:#c0392b;--warn-bg:#fdecea;--good:#1a7f37;--gold:#b8860b}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:#101828;line-height:1.4;padding-bottom:96px}
+  .app{max-width:440px;margin:0 auto;background:var(--bg);min-height:100vh}
+  header{background:var(--brand);color:#fff;padding:16px 16px 14px;position:sticky;top:0;z-index:5}
+  header .t{font-size:17px;font-weight:800}
+  header .s{font-size:12px;opacity:.85;margin-top:2px}
+  header .tag{display:inline-block;font-size:10.5px;background:rgba(255,255,255,.16);padding:3px 8px;border-radius:20px;margin-top:7px}
+  .wrap{padding:14px}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 2px 8px;display:flex;align-items:center;gap:6px}
+  h2 .n{background:var(--brand);color:#fff;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px;margin-bottom:12px;box-shadow:0 1px 2px rgba(16,24,40,.05)}
+  .intro{background:#fff8e1;border:1px solid #ffe082;border-radius:14px;padding:13px 15px;margin-bottom:6px;font-size:13.5px}
+  .rm{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .rm:last-child{border-bottom:none}
+  .rm .nm{flex:1;font-weight:600;font-size:14.5px}
+  .rm .nm small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
+  .rm input[type=range]{flex:1.3;accent-color:var(--accent)}
+  .rm .v{width:58px;text-align:right;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums}
+  .sumline{display:flex;align-items:baseline;gap:8px;margin-top:12px;padding-top:10px;border-top:2px solid var(--accent)}
+  .sumline .big{font-size:30px;font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+  .sumline .u{font-size:13px;color:var(--muted)}
+  .hint{font-size:12px;color:var(--muted);margin-top:4px}
+  .seg{display:flex;background:var(--soft);border:1px solid var(--line);border-radius:11px;padding:4px;gap:4px;margin:6px 0}
+  .seg button{flex:1;border:none;background:transparent;padding:10px 6px;border-radius:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;line-height:1.2}
+  .seg button.on{background:var(--brand);color:#fff}
+  .seg button small{display:block;font-weight:500;font-size:10.5px;opacity:.8}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:11px 2px 4px}
+  input[type=number],select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;font-family:inherit}
+  .two{display:flex;gap:10px}.two>div{flex:1}
+  .costrow{display:flex;justify-content:space-between;padding:6px 0;font-size:14px;border-bottom:1px dashed var(--line)}
+  .costrow:last-child{border-bottom:none}
+  .costrow .lab{color:#334}.costrow .amt{font-weight:700;font-variant-numeric:tabular-nums}
+  .costrow.tot{border-top:2px solid var(--line);margin-top:4px;padding-top:9px;border-bottom:none}
+  .costrow.tot .lab{font-weight:800}.costrow.tot .amt{font-weight:800;font-size:17px}
+  .cogs{display:flex;gap:7px;margin:12px 0 4px}
+  .kp{flex:1;background:var(--soft);border:1px solid var(--line);border-radius:11px;padding:11px 6px;text-align:center}
+  .kp b{font-size:18px;display:block;font-variant-numeric:tabular-nums}
+  .kp .kl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+  .kp.warn b{color:var(--warn)}.kp.good b{color:var(--good)}
+  .note{border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px}
+  .note.warn{border-left:4px solid var(--warn);background:var(--warn-bg);color:#922}
+  .note.good{border-left:4px solid var(--good);background:#eaf6ec;color:#1a5e2a}
+  .note.info{border-left:4px solid var(--brand);background:var(--soft)}
+  /* market band */
+  .band{position:relative;height:46px;margin:14px 0 6px;border-radius:9px;background:linear-gradient(90deg,#fde2e1 0%,#fde2e1 var(--lo),#e7f4ea var(--lo),#e7f4ea var(--hi),#fff3d6 var(--hi),#fff3d6 100%);border:1px solid var(--line)}
+  .band .seam{position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,.18)}
+  .band .lbl{position:absolute;top:50%;transform:transl(-50%,-50%);font-size:10px;color:#555;white-space:nowrap;transform:translateX(-50%) translateY(-50%)}
+  .band .mark{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--brand);border-radius:2px}
+  .band .mark::after{content:attr(data-p);position:absolute;top:-17px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:800;color:var(--brand);white-space:nowrap}
+  .bandcap{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:2px}
+  .priceval{font-size:34px;font-weight:800;color:var(--brand);text-align:center;font-variant-numeric:tabular-nums}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:10px;padding:12px 14px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;width:100%}
+  .btn.acc{background:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:transparent;color:var(--brand);border:1.5px solid var(--brand)}
+  .muted{color:var(--muted);font-size:12.5px}
+  .pipe{background:var(--brand);color:#fff;border-radius:14px;padding:14px;font-size:13.5px;margin-bottom:12px}
+  .pipe b{color:var(--accent)}
+  .trow{display:flex;gap:6px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;padding:2px 0}
+  .trow .g{color:var(--good)}.trow .b{color:var(--warn)}
+  .stickytot{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -3px 12px rgba(16,24,40,.08);z-index:8}
+  .stickytot .inner{max-width:440px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px}
+  .stickytot .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .stickytot .price{font-size:22px;font-weight:800;color:var(--brand);font-variant-numeric:tabular-nums}
+  .stickytot .m{margin-left:auto;text-align:right}
+  .stickytot .m b{font-size:18px;font-variant-numeric:tabular-nums}.stickytot .m.warn b{color:var(--warn)}.stickytot .m.good b{color:var(--good)}
+  .stickytot .m span{display:block;font-size:10px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="t">🗑️ Monday Clear-Out — Quote Rehearsal</div>
+  <div class="s">Realtor whole-house cleanout · job June 17</div>
+  <span class="tag">PRACTICE MODE · sample data · not the live app</span>
+</header>
+<div class="wrap">
+
+  <div class="intro">
+    <b>Rehearse Monday's exact quote on your phone.</b> Walk the rooms, size the load, pick dumpster vs. self-haul, and watch your <b>true cost, margin, and final price</b> move live against the market band. Preloaded with a medium 3-bed (~2 loads). Nothing here is live — just practice so you quote with confidence in front of her.
+  </div>
+
+  <div class="pipe">
+    🎯 <b>Monday's real goal isn't the job — it's the realtor.</b> Every house she sells = a future clear-out, clean, or house-watch. Land this, look pro, and she's a referral pipe. Get her <b>name · cell · email · brokerage</b> before you leave.
+  </div>
+
+  <!-- STEP 1 — ROOMS -->
+  <h2><span class="n">1</span> Walk the rooms — size the load</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:6px">Eyeball each space as a fraction of a <b>pickup truckload</b>. Garages, sheds &amp; outside piles hide the volume. (1 load ≈ ½ of a 20-yd dumpster.)</div>
+    <div id="rooms"></div>
+    <div class="sumline"><span class="big" id="loads">0.0</span><span class="u">truckloads</span><span class="u" id="loadnote" style="margin-left:auto"></span></div>
+    <div class="hint" id="dumprec"></div>
+  </div>
+
+  <!-- STEP 2 — HAUL METHOD -->
+  <h2><span class="n">2</span> How you'll haul it</h2>
+  <div class="card">
+    <div class="seg">
+      <button id="mA" class="on" onclick="setMethod('A')">▶ Roll-off dumpster<small>recommended — no trailer</small></button>
+      <button id="mB" onclick="setMethod('B')">Self-haul (pickup)<small>small loads only</small></button>
+    </div>
+    <div id="methodBody"></div>
+  </div>
+
+  <!-- STEP 3 — LABOR + GAS -->
+  <h2><span class="n">3</span> Crew &amp; gas</h2>
+  <div class="card">
+    <div class="two">
+      <div><label>Hours on site</label><input id="hours" type="number" min="0" step="0.5" value="7" oninput="recalc()"></div>
+      <div><label>Brothers on crew</label><input id="crew" type="number" min="1" step="1" value="2" oninput="recalc()"></div>
+    </div>
+    <div class="two">
+      <div><label>Pay / crew-hr ($)</label><input id="wage" type="number" min="0" step="1" value="18" oninput="recalc()"></div>
+      <div><label>Gas ($)</label><input id="gas" type="number" min="0" step="5" value="30" oninput="recalc()"></div>
+    </div>
+    <div class="hint" id="laborhint"></div>
+  </div>
+
+  <!-- STEP 4 — COST -->
+  <h2><span class="n">4</span> Your true cost (the floor)</h2>
+  <div class="card"><div id="costBreak"></div></div>
+
+  <!-- STEP 5 — PRICE -->
+  <h2><span class="n">5</span> Set the price — check the market band</h2>
+  <div class="card">
+    <div class="seg" style="margin-top:0">
+      <button id="bd3" class="on" onclick="setBand('three')">3-bed house<small>$1,000–2,500</small></button>
+      <button id="bdL" onclick="setBand('large')">Packed / 2,000+ sqft<small>$3,000–5,500</small></button>
+    </div>
+    <div class="priceval" id="priceVal">$0</div>
+    <input id="price" type="range" min="500" max="6000" step="50" value="1750" oninput="recalc()" style="width:100%;accent-color:var(--brand)">
+    <div class="band" id="band"><div class="mark" id="mark" data-p=""></div></div>
+    <div class="bandcap"><span id="bandLo"></span><span style="color:var(--good)">market range</span><span id="bandHi"></span></div>
+    <div id="priceNote"></div>
+    <div class="cogs" id="cogs"></div>
+  </div>
+
+  <!-- PAY SCAFFOLD -->
+  <h2><span class="n">6</span> Same-day written quote + payment</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:8px">Give her a <b>firm number on paper</b> today (print/PDF from the app). Payment via <b>Stripe Payment Link</b> on completion — scaffold only, nothing wired here.</div>
+    <div id="payArea"></div>
+    <a class="btn ghost" style="margin-top:8px" href="#" onclick="return false">🖨 Print / Save PDF (in the live app)</a>
+  </div>
+
+  <div class="pipe" style="background:#0f1d38">
+    <b>The close + the ask.</b> Present the written quote → confirm June 17 (dumpster drops a day prior) → plant the pipe: <i>"I also do pressure washing and home-watch checks on vacant listings — one call."</i> → ask directly: <i>"I'd love to be your go-to for clear-outs on your future sales."</i>
+  </div>
+
+  <!-- TESTS -->
+  <h2>✓ Math verification (33 tests)</h2>
+  <div class="card">
+    <button class="btn ghost" onclick="runTests()">▶ Run 33 tests</button>
+    <div id="testSummary" style="font-weight:800;margin:10px 0 6px"></div>
+    <div id="testOut"></div>
+  </div>
+
+</div>
+</div>
+
+<div class="stickytot"><div class="inner">
+  <div><div class="l">Quote her</div><div class="price" id="sPrice">$0</div></div>
+  <div class="m" id="sMargin"><b>0%</b><span>margin · <span id="sProfit">$0</span> profit</span></div>
+</div></div>
+
+<script>
+"use strict";
+/* ===== PURE LOGIC — verbatim from cogs-payment-layer.js (Part 1) ===== */
+var DISPOSAL_RATE_PER_TON=73.16, DISPOSAL_FREE_LBS=500, LBS_PER_TON=2000, MARGIN_FLOOR=0.35;
+function disposalCost(lbs){lbs=Math.max(0,+lbs||0);var b=Math.max(0,lbs-DISPOSAL_FREE_LBS);return Math.round((b/LBS_PER_TON)*DISPOSAL_RATE_PER_TON*100)/100;}
+function lineFigures(price,cost,qty){qty=qty||1;var P=(+price||0)*qty,C=(+cost||0)*qty,profit=P-C;return{price:P,cost:C,profit:profit,margin:P>0?profit/P:0};}
+function quoteCogs(items,discount){var price=0,cost=0;(items||[]).forEach(function(it){var f=lineFigures(it.price,it.cost,it.qty);price+=f.price;cost+=f.cost;});price=Math.max(0,price-(+discount||0));var profit=price-cost;return{price:price,cost:cost,profit:profit,margin:price>0?profit/price:0};}
+function belowMarginFloor(margin,floor){return margin<(floor==null?MARGIN_FLOOR:floor);}
+function pct(m){return (m*100).toFixed(0)+"%";}
+function disposalLine(lbs){return{name:"Dump fee — "+lbs+" lbs (Dare C&D, first 500 free)",unit:"cost",price:0,qty:1,cost:disposalCost(lbs),costLine:true};}
+function money(n){return "$"+(Math.round(n)).toLocaleString();}
+
+/* ===== rehearsal state ===== */
+var ROOMS=[
+  {k:"master",  n:"Master bedroom", h:"furniture, closet", v:0.25},
+  {k:"bed2",    n:"Bedroom 2",      h:"",                  v:0.20},
+  {k:"bed3",    n:"Bedroom 3",      h:"",                  v:0.20},
+  {k:"living",  n:"Living / dining", h:"sofas, TV stand",  v:0.25},
+  {k:"kitchen", n:"Kitchen",        h:"appliances?",       v:0.15},
+  {k:"garage",  n:"Garage",         h:"hides the volume",  v:0.45},
+  {k:"attic",   n:"Attic / crawl",  h:"",                  v:0.10},
+  {k:"shed",    n:"Shed",           h:"",                  v:0.20},
+  {k:"outside", n:"Porch / outside piles", h:"",           v:0.20}
+];
+var LBS_PER_LOAD=2500;          // full pickup load ≈ 2,500 lbs (cost model)
+var METHOD="A", BAND="three", PRICE=1750;
+var BANDS={three:{lo:1000,hi:2500,label:"3-bed cleanout"}, large:{lo:3000,hi:5500,label:"packed / 2,000+ sqft"}};
+var dumpSize="20", dumpPrice=450;
+
+function loads(){var s=0;ROOMS.forEach(function(r){s+=r.v;});return Math.round(s*100)/100;}
+
+function renderRooms(){
+  document.getElementById("rooms").innerHTML=ROOMS.map(function(r,i){
+    return '<div class="rm"><div class="nm">'+r.n+(r.h?'<small>'+r.h+'</small>':'')+'</div>'
+      +'<input type="range" min="0" max="1" step="0.05" value="'+r.v+'" oninput="setRoom('+i+',this.value)">'
+      +'<div class="v" id="rv'+i+'">'+r.v.toFixed(2)+' ld</div></div>';
+  }).join("");
+}
+window.setRoom=function(i,v){ROOMS[i].v=+v;document.getElementById("rv"+i).textContent=(+v).toFixed(2)+" ld";recalc();};
+
+window.setMethod=function(m){METHOD=m;document.getElementById("mA").classList.toggle("on",m==="A");document.getElementById("mB").classList.toggle("on",m==="B");recalc();};
+window.setBand=function(b){BAND=b;document.getElementById("bd3").classList.toggle("on",b==="three");document.getElementById("bdL").classList.toggle("on",b==="large");
+  // nudge default price toward the new band's middle if currently outside it
+  var bd=BANDS[b];if(PRICE<bd.lo||PRICE>bd.hi){PRICE=Math.round((bd.lo+bd.hi)/2/50)*50;document.getElementById("price").value=PRICE;}recalc();};
+window.setDump=function(){dumpSize=document.getElementById("dsize").value;dumpPrice=parseFloat(document.getElementById("dprice").value)||0;recalc();};
+
+function methodBody(){
+  var L=loads();
+  if(METHOD==="A"){
+    var rec = L<=2 ? "20" : "30";
+    return '<div class="note info">The dumpster price <b>includes hauling + tonnage</b> — no Manns Harbor runs. Pass it through as a line, then your labor + margin on top.</div>'
+      +'<div class="two"><div><label>Dumpster size</label><select id="dsize" onchange="syncDump();recalc()">'
+      +'<option value="20"'+(dumpSize==="20"?" selected":"")+'>20-yd (~2 loads)</option>'
+      +'<option value="30"'+(dumpSize==="30"?" selected":"")+'>30-yd (~3–4 loads)</option></select></div>'
+      +'<div><label>Dumpster $ / week</label><input id="dprice" type="number" min="0" step="10" value="'+dumpPrice+'" oninput="dumpPrice=parseFloat(this.value)||0;recalc()"></div></div>'
+      +'<div class="hint">NC roll-off: 20-yd ≈ $300–450/wk, 30-yd ≈ $350–500/wk. Confirm a Soundside Recycling quote before the 17th. Your ~'+L.toFixed(1)+' loads → suggested <b>'+rec+'-yd</b>.</div>';
+  } else {
+    var lbs=Math.round(L*LBS_PER_LOAD);
+    return '<div class="note warn">Self-haul means <b>many pickup trips</b> + the dump line you pay by weight. For a whole house this eats your day — Option A usually wins.</div>'
+      +'<div class="costrow"><span class="lab">Est. weight ('+L.toFixed(1)+' loads × '+LBS_PER_LOAD+' lbs)</span><span class="amt">'+lbs.toLocaleString()+' lbs</span></div>'
+      +'<div class="costrow"><span class="lab">Disposal @ $73.16/ton (first 500 lbs free)</span><span class="amt">'+money(disposalCost(lbs))+'</span></div>'
+      +'<div class="hint">'+((lbs-500)/2000>0?((lbs-500)/2000).toFixed(2)+' billable tons after the free 500 lbs.':'under the free allowance.')+' Plus extra gas for the trips (bump the gas field).</div>';
+  }
+}
+window.syncDump=function(){dumpSize=document.getElementById("dsize").value;};
+
+function costItems(){
+  var L=loads(), items=[], hours=parseFloat(val("hours"))||0, crew=parseFloat(val("crew"))||0, wage=parseFloat(val("wage"))||0, gas=parseFloat(val("gas"))||0;
+  var labor=hours*crew*wage;
+  items.push({lab:"Crew labor ("+hours+" hr × "+crew+" × $"+wage+" = "+(hours*crew)+" crew-hrs)", cost:labor});
+  if(METHOD==="A"){
+    items.push({lab:"Roll-off dumpster ("+dumpSize+"-yd, incl. hauling + tonnage)", cost:dumpPrice});
+  } else {
+    var lbs=Math.round(L*LBS_PER_LOAD);
+    items.push({lab:"Disposal ("+lbs.toLocaleString()+" lbs @ $73.16/ton, 500 free)", cost:disposalCost(lbs)});
+  }
+  items.push({lab:"Gas", cost:gas});
+  return items;
+}
+function val(id){var e=document.getElementById(id);return e?e.value:"";}
+
+function recalc(){
+  // step 1
+  var L=loads();
+  document.getElementById("loads").textContent=L.toFixed(1);
+  document.getElementById("loadnote").textContent = L<=2 ? "≈ medium 3-bed" : (L<=4? "heavily packed":"very large");
+  document.getElementById("dumprec").textContent = "≈ "+(L/2).toFixed(1)+" × a 20-yd dumpster" + (L>2?" — go 30-yd":"");
+  // step 2 body
+  document.getElementById("methodBody").innerHTML=methodBody();
+  // step 3 hint
+  var hours=parseFloat(val("hours"))||0,crew=parseFloat(val("crew"))||0,wage=parseFloat(val("wage"))||0;
+  document.getElementById("laborhint").textContent=(hours*crew)+" crew-hours × $"+wage+" = "+money(hours*crew*wage)+". A whole house ≈ a full crew day.";
+  // step 4 cost
+  var items=costItems(), cost=0; items.forEach(function(it){cost+=it.cost;});
+  document.getElementById("costBreak").innerHTML=items.map(function(it){
+    return '<div class="costrow"><span class="lab">'+it.lab+'</span><span class="amt">'+money(it.cost)+'</span></div>';
+  }).join("")+'<div class="costrow tot"><span class="lab">True cost — your floor</span><span class="amt">'+money(cost)+'</span></div>';
+  // step 5 price + band
+  PRICE=parseFloat(val("price"))||0;
+  document.getElementById("priceVal").textContent=money(PRICE);
+  var bd=BANDS[BAND];
+  // band visual spans 0..maxScale
+  var maxScale=Math.max(bd.hi*1.25, PRICE*1.1, 3500);
+  var loPct=(bd.lo/maxScale*100), hiPct=(bd.hi/maxScale*100), pPct=Math.min(100,PRICE/maxScale*100);
+  var bandEl=document.getElementById("band");
+  bandEl.style.setProperty("--lo",loPct+"%"); bandEl.style.setProperty("--hi",hiPct+"%");
+  var mk=document.getElementById("mark"); mk.style.left=pPct+"%"; mk.setAttribute("data-p",money(PRICE));
+  document.getElementById("bandLo").textContent=money(bd.lo); document.getElementById("bandHi").textContent=money(bd.hi);
+  // figures
+  var profit=PRICE-cost, margin=PRICE>0?profit/PRICE:0, warn=belowMarginFloor(margin);
+  document.getElementById("cogs").innerHTML=
+     '<div class="kp"><b>'+money(cost)+'</b><span class="kl">Cost</span></div>'
+    +'<div class="kp"><b>'+money(PRICE)+'</b><span class="kl">Price</span></div>'
+    +'<div class="kp '+(profit<0?'warn':'good')+'"><b>'+money(profit)+'</b><span class="kl">Profit</span></div>'
+    +'<div class="kp '+(warn?'warn':'good')+'"><b>'+pct(margin)+'</b><span class="kl">Margin</span></div>';
+  // price note: market sanity + floor
+  var note="";
+  if(PRICE<bd.lo) note='<div class="note warn">⚠ <b>'+money(PRICE)+'</b> is <b>below market</b> for a '+bd.label+' ('+money(bd.lo)+'–'+money(bd.hi)+'). Don\'t underprice a whole house to win it — you\'ll work a full day for scraps. Price the volume you saw.</div>';
+  else if(PRICE>bd.hi) note='<div class="note info">'+money(PRICE)+' is <b>above</b> the typical '+bd.label+' range ('+money(bd.lo)+'–'+money(bd.hi)+'). Fine if the volume/access justifies it — just be ready to explain why.</div>';
+  else note='<div class="note good">✓ <b>'+money(PRICE)+'</b> sits inside the market range for a '+bd.label+'. Firm, defensible number.</div>';
+  if(warn) note+='<div class="note warn">⚠ Margin '+pct(margin)+' is under the '+Math.round(MARGIN_FLOOR*100)+'% floor — too thin for a full crew day. Raise the price or trim scope.</div>';
+  document.getElementById("priceNote").innerHTML=note;
+  // sticky bar
+  document.getElementById("sPrice").textContent=money(PRICE);
+  document.getElementById("sProfit").textContent=money(profit);
+  var sm=document.getElementById("sMargin"); sm.className="m "+(warn||profit<0?"warn":"good");
+  sm.querySelector("b").textContent=pct(margin);
+}
+
+/* pay scaffold */
+var PAYLINK="";
+function renderPay(){
+  var a=document.getElementById("payArea");
+  if(PAYLINK){a.innerHTML='<a class="btn acc" href="'+PAYLINK.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener">💳 Pay now</a>'
+    +'<div class="muted" style="margin-top:8px">Saved · <button class="btn ghost" style="width:auto;padding:5px 10px;display:inline-flex" onclick="PAYLINK=\'\';renderPay()">Remove</button></div>';}
+  else{a.innerHTML='<div class="note info">Empty until you connect Stripe — no keys, no money moves automatically.</div>'
+    +'<input id="pl" placeholder="https://buy.stripe.com/..." style="margin-bottom:8px"><button class="btn acc" onclick="PAYLINK=(document.getElementById(\'pl\').value||\'\').trim()||\'https://buy.stripe.com/test_demo\';renderPay()">Save link &amp; show Pay-now</button>';}
+}
+
+/* ===== test harness — same 33 assertions as cogs-payment-tests.js ===== */
+function runTests(){
+  var out=[],pass=0,fail=0;
+  function ok(n,c,got){if(c){pass++;out.push('<div class="trow"><span class="g">✓</span> '+n+'</div>');}else{fail++;out.push('<div class="trow"><span class="b">✗</span> '+n+' — '+JSON.stringify(got)+'</div>');}}
+  function near(a,b,e){return Math.abs(a-b)<=(e==null?0.01:e);}
+  function bmf(m,f){return m<(f==null?0.35:f);}
+  var C={obx:{softwash:{base:8,perUnit:0.0088},pressure:{base:12,perUnit:0.004},junk:{base:25,lbsPerEighth:312.5}},jam:{lock:{hardware:{wifi:220},addlHw:200,hub:130,misc:10},starlink:{mount:{eave:50},perExt:25}}};
+  function calcCost(key,inp,t){var c=(t.obx&&t.obx[key])?t.obx[key]:(t.jam?t.jam[key]:null);if(!c)return 0;inp=inp||{};var qty=inp.qty||0,n=Math.max(1,inp.count||1);
+    if(key==="softwash"||key==="pressure")return Math.round(((c.base||0)+(c.perUnit||0)*qty)*100)/100;
+    if(key==="junk"){var lbs=inp.lbs!=null?inp.lbs:(inp.eighths||1)*(c.lbsPerEighth||312.5);return Math.round(((c.base||0)+disposalCost(lbs))*100)/100;}
+    if(key==="lock")return (c.hardware[inp.type]||0)*n+(c.addlHw||0)*(n-1)+(inp.hub?c.hub:0)+(c.misc||0);
+    if(key==="starlink")return (c.mount[inp.mount]||c.mount.eave)+(c.perExt||0)*(inp.ext||0);return 0;}
+  ok("500 lbs (all free) = $0",disposalCost(500)===0,disposalCost(500));
+  ok("400 lbs (under free) = $0",disposalCost(400)===0,disposalCost(400));
+  ok("2000 lbs = $54.87",near(disposalCost(2000),54.87),disposalCost(2000));
+  ok("2500 lbs = $73.16",near(disposalCost(2500),73.16),disposalCost(2500));
+  ok("4500 lbs = $146.32",near(disposalCost(4500),146.32),disposalCost(4500));
+  ok("1500 lbs = $36.58",near(disposalCost(1500),36.58),disposalCost(1500));
+  ok("negative lbs = $0",disposalCost(-100)===0,disposalCost(-100));
+  var hw=lineFigures(399,30,1);ok("house wash profit = $369",hw.profit===369,hw);
+  ok("house wash margin = 92.5%",near(hw.margin,0.9248,0.001),hw.margin);
+  var dw=lineFigures(149,14,1);ok("driveway margin ≈ 90.6%",near(dw.margin,0.9060,0.001),dw.margin);
+  var qy=lineFigures(12,5,10);ok("qty price = $120",qy.price===120,qy);
+  ok("qty cost = $50",qy.cost===50,qy);ok("qty profit = $70",qy.profit===70,qy);
+  ok("zero-price = 0% margin (no div0)",lineFigures(0,10,1).margin===0,lineFigures(0,10,1));
+  var items=[{price:399,cost:30,qty:1},{price:149,cost:14,qty:1}];var q=quoteCogs(items,0);
+  ok("quote price = $548",q.price===548,q);ok("quote cost = $44",q.cost===44,q);ok("quote profit = $504",q.profit===504,q);
+  var qd=quoteCogs(items,100);ok("discount → price $448",qd.price===448,qd);ok("discount keeps cost $44",qd.cost===44,qd);ok("discount → profit $404",qd.profit===404,qd);
+  ok("90% margin: no warning",bmf(0.90)===false,true);
+  ok("35% margin: no warning (at floor)",bmf(0.35)===false,true);
+  ok("34.9% margin: WARN",bmf(0.349)===true,true);
+  var fc=quoteCogs([{price:200,cost:150,qty:1}],0);ok("$200/$150 = 25% → WARN",bmf(fc.margin),fc.margin);
+  ok("softwash 2500 sqft ≈ $30",near(calcCost("softwash",{qty:2500},C),30,1),calcCost("softwash",{qty:2500},C));
+  ok("pressure 600 sqft ≈ $14",near(calcCost("pressure",{qty:600},C),14.4,1),calcCost("pressure",{qty:600},C));
+  ok("junk 4/8 truck = base+dump",near(calcCost("junk",{eighths:4},C),25+disposalCost(1250),0.5),calcCost("junk",{eighths:4},C));
+  ok("junk explicit lbs overrides",near(calcCost("junk",{lbs:2500},C),25+73.16,0.5),calcCost("junk",{lbs:2500},C));
+  ok("starlink eave: kit $0, mount $50",calcCost("starlink",{mount:"eave"},C)===50,calcCost("starlink",{mount:"eave"},C));
+  ok("lock wifi x1 = $230",calcCost("lock",{type:"wifi",count:1},C)===230,calcCost("lock",{type:"wifi",count:1},C));
+  var dl=disposalLine(2000);ok("disposal line is cost line",dl.costLine===true&&dl.unit==="cost",dl);
+  ok("disposal line cost = $54.87",near(dl.cost,54.87),dl.cost);ok("disposal line price = $0",dl.price===0,dl);
+  document.getElementById("testSummary").innerHTML=(fail?'<span style="color:#c0392b">':'<span style="color:#1a7f37">')+pass+" passed, "+fail+" failed</span>";
+  document.getElementById("testOut").innerHTML=out.join("");
+}
+
+/* boot */
+renderRooms();recalc();renderPay();runTests();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#002052"/>
+  <text x="60" y="80" fill="#0099E5" font-size="24" font-weight="700" letter-spacing="4">JAMIESON AUTOMATION</text>
+  <rect x="60" y="98" width="100" height="5" fill="#0099E5"/>
+  <text x="60" y="152" fill="#ffffff" font-size="34" font-weight="800">Clean install</text>
+  <rect x="60" y="185" width="960" height="600" rx="16" fill="#0a2d6b" stroke="#0099E5" stroke-width="2" stroke-dasharray="12 8"/>
+  <text x="540" y="475" fill="#5b7fb0" font-size="32" font-weight="700" text-anchor="middle">DROP INSTALL PHOTO HERE</text>
+  <text x="540" y="520" fill="#5b7fb0" font-size="24" text-anchor="middle">tidy cable work · mounted Starlink · clean rack</text>
+  <text x="60" y="860" fill="#ffffff" font-size="48" font-weight="800">Done right the first time.</text>
+  <text x="60" y="916" fill="#0099E5" font-size="30" font-weight="600">Tidy runs. Configured network. No callbacks.</text>
+  <rect x="0" y="980" width="1080" height="100" fill="#0099E5"/>
+  <text x="60" y="1043" fill="#002052" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cfe3ec"/>
+      <stop offset="1" stop-color="#eaf2f5"/>
+    </linearGradient>
+    <linearGradient id="overlay" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#14233F" stop-opacity="0.92"/>
+      <stop offset="0.55" stop-color="#14233F" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#14233F" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E8BA6"/>
+      <stop offset="1" stop-color="#1f6f86"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect x="0" y="560" width="1600" height="120" fill="url(#water)" opacity="0.85"/>
+  <circle cx="1240" cy="220" r="80" fill="#f6e7c8" opacity="0.7"/>
+  <path d="M0 680 Q 400 620 800 680 T 1600 670 L1600 900 L0 900 Z" fill="#E8DCC4"/>
+  <path d="M0 720 Q 500 680 1000 730 T 1600 720 L1600 900 L0 900 Z" fill="#d8c6a0" opacity="0.6"/>
+
+  <g transform="translate(1080,470)">
+    <rect x="0" y="60" width="300" height="150" fill="#ffffff"/>
+    <rect x="0" y="60" width="300" height="150" fill="#dfe7ea" opacity="0.4"/>
+    <path d="M-20 60 L150 -20 L320 60 Z" fill="#3a4a5e"/>
+    <rect x="40" y="100" width="46" height="46" fill="#2E8BA6" opacity="0.7"/>
+    <rect x="130" y="100" width="46" height="46" fill="#2E8BA6" opacity="0.7"/>
+    <rect x="220" y="100" width="46" height="60" fill="#14233F" opacity="0.8"/>
+    <rect x="20" y="210" width="14" height="70" fill="#cbb894"/>
+    <rect x="266" y="210" width="14" height="70" fill="#cbb894"/>
+  </g>
+
+  <path d="M0 540 q 60 -22 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0 t 120 0" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.5"/>
+
+  <rect width="1600" height="900" fill="url(#overlay)"/>
+
+  <text x="80" y="70" fill="#ffffff" font-size="26" font-weight="bold" letter-spacing="1">OBX Second-Home Care Hub</text>
+  <g font-family="Arial, sans-serif" font-size="17" fill="#dbe6ec">
+    <text x="900" y="68">Storm Prep</text>
+    <text x="1030" y="68">Insurance</text>
+    <text x="1150" y="68">Off-Season</text>
+    <text x="1280" y="68">Smart Monitoring</text>
+  </g>
+  <rect x="1460" y="46" width="70" height="34" rx="17" fill="#8BC34A"/>
+  <text x="1468" y="69" font-family="Arial, sans-serif" font-size="15" font-weight="bold" fill="#14233F">Checklist</text>
+
+  <text x="80" y="330" fill="#8BC34A" font-family="Arial, sans-serif" font-size="20" font-weight="bold" letter-spacing="3">FOR OUTER BANKS SECOND-HOME OWNERS</text>
+  <text x="78" y="420" fill="#ffffff" font-size="74" font-weight="bold">Own your Outer Banks</text>
+  <text x="78" y="500" fill="#ffffff" font-size="74" font-weight="bold">home from anywhere &#8212;</text>
+  <text x="78" y="580" fill="#8BC34A" font-size="74" font-weight="bold">with confidence.</text>
+  <text x="80" y="648" fill="#dbe6ec" font-family="Arial, sans-serif" font-size="25">Salt, storms, and humidity work on a coastal house every day you're not there.</text>
+  <text x="80" y="684" fill="#dbe6ec" font-family="Arial, sans-serif" font-size="25">We're the local resource that helps you protect it.</text>
+
+  <rect x="80" y="730" width="370" height="64" rx="32" fill="#8BC34A"/>
+  <text x="110" y="770" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#14233F">Get the free Home-Watch Checklist &#8594;</text>
+  <text x="480" y="770" font-family="Arial, sans-serif" font-size="21" fill="#9fd3e0" text-decoration="underline">Is a home-watch service right for you? &#8594;</text>
+</svg>

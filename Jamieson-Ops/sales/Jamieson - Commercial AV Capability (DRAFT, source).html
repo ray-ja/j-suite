@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Jamieson Automation - Commercial AV Capability</title>
+<style>
+  :root{--navy:#002052;--blue:#0099E5;--ink:#1d2733;--muted:#5b6573;--line:#dfe5ec;--light:#eaf4fb;--grey:#f7f9fc;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{font-family:'Segoe UI',Helvetica,Arial,sans-serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  @page{size:Letter;margin:0;}
+  .page{width:8.5in;min-height:11in;padding:0.4in 0.5in 0.32in;margin:0 auto;background:#fff;}
+  .top{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--blue);padding-bottom:8px;}
+  .top .brand b{font-size:19px;color:var(--navy);font-weight:800;}
+  .top .brand b span{color:var(--blue);}
+  .top .brand div{font-size:8.5px;color:var(--muted);margin-top:1px;letter-spacing:.3px;}
+  .top .tag{text-align:right;font-size:9px;color:var(--muted);line-height:1.4;}
+  .top .tag b{color:var(--navy);}
+  h1.title{color:var(--navy);font-size:18px;margin-top:11px;line-height:1.15;}
+  .subtitle{color:var(--blue);font-weight:700;font-size:11px;margin-top:3px;margin-bottom:10px;}
+  /* case study hero */
+  .case{border:2px solid var(--navy);border-radius:9px;overflow:hidden;margin-bottom:13px;}
+  .case .ch{background:var(--navy);color:#fff;padding:8px 13px;display:flex;justify-content:space-between;align-items:center;}
+  .case .ch .lbl{font-size:8.5px;font-weight:800;letter-spacing:.9px;color:var(--blue);text-transform:uppercase;}
+  .case .ch .name{font-size:14px;font-weight:800;margin-top:1px;}
+  .case .ch .where{font-size:9px;opacity:.85;text-align:right;}
+  .case .cbody{padding:11px 13px;}
+  .case .lead{font-size:10px;line-height:1.5;color:var(--ink);}
+  .case .lead b{color:var(--navy);}
+  .case .grid{display:flex;gap:11px;margin-top:9px;}
+  .case .col{flex:1;}
+  .case .col h4{font-size:8.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);margin-bottom:4px;border-bottom:1px solid var(--line);padding-bottom:3px;}
+  .case .col ul{list-style:none;}
+  .case .col li{font-size:9px;line-height:1.35;padding:2px 0 2px 12px;position:relative;color:var(--ink);}
+  .case .col li::before{content:"\203A";color:var(--blue);font-weight:800;position:absolute;left:1px;}
+  .case .pull{margin-top:9px;background:var(--light);border-left:3px solid var(--blue);padding:7px 11px;font-size:9.5px;font-style:italic;color:var(--navy);line-height:1.4;}
+  .case .pull b{font-style:normal;}
+  /* why it matters to venues */
+  .bridge{font-size:10px;line-height:1.5;color:var(--muted);margin-bottom:12px;}
+  .bridge b{color:var(--navy);}
+  /* capabilities */
+  .section-h{font-size:11px;color:var(--navy);font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;border-bottom:2px solid var(--blue);padding-bottom:4px;}
+  .caps{display:flex;gap:10px;margin-bottom:12px;}
+  .cap{flex:1;border:1px solid var(--line);border-radius:7px;padding:9px 11px;}
+  .cap h3{font-size:10px;color:var(--navy);font-weight:800;margin-bottom:5px;}
+  .cap h3 span{color:var(--blue);}
+  .cap ul{list-style:none;}
+  .cap li{font-size:9px;line-height:1.35;padding:2.5px 0 2.5px 12px;position:relative;border-bottom:1px dotted var(--line);}
+  .cap li:last-child{border-bottom:none;}
+  .cap li::before{content:"\203A";color:var(--blue);font-weight:800;position:absolute;left:1px;}
+  /* edge strip */
+  .edge{background:var(--navy);color:#fff;border-radius:8px;padding:11px 14px;display:flex;gap:14px;align-items:center;margin-bottom:12px;}
+  .edge .l{flex:1.5;}
+  .edge .l h3{font-size:12px;font-weight:800;}
+  .edge .l h3 span{color:var(--blue);}
+  .edge .l p{font-size:9.3px;opacity:.92;line-height:1.45;margin-top:3px;}
+  .edge .r{flex:1;border-left:1px solid rgba(255,255,255,.25);padding-left:13px;}
+  .edge .r li{list-style:none;font-size:9px;line-height:1.4;padding:1.5px 0 1.5px 12px;position:relative;opacity:.95;}
+  .edge .r li::before{content:"\2713";color:var(--blue);font-weight:800;position:absolute;left:0;}
+  /* close */
+  .close{display:flex;gap:12px;align-items:stretch;}
+  .close .who{flex:1.3;border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
+  .close .who h3{font-size:9.5px;color:var(--navy);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+  .close .who p{font-size:9px;color:var(--muted);line-height:1.45;}
+  .close .cta{flex:1;background:var(--light);border-radius:8px;padding:9px 12px;text-align:center;display:flex;flex-direction:column;justify-content:center;}
+  .close .cta .big{font-size:11px;font-weight:800;color:var(--navy);line-height:1.3;}
+  .close .cta .small{font-size:9px;color:var(--blue);font-weight:700;margin-top:4px;}
+  .foot{margin-top:11px;border-top:1px solid var(--line);padding-top:6px;display:flex;justify-content:space-between;font-size:8px;color:var(--muted);}
+  .foot b{color:var(--navy);}
+</style></head>
+<body><div class="page">
+
+  <div class="top">
+    <div class="brand"><b>JAMIESON <span>AUTOMATION</span></b><div>COMMERCIAL AV &middot; NETWORKED AUDIO &middot; CONTROL &amp; AUTOMATION</div></div>
+    <div class="tag"><b>Outer Banks, NC</b><br>jamiesonautomation.com &middot; (252) ___-____</div>
+  </div>
+
+  <h1 class="title">Audio, AV &amp; control that runs your venue &mdash; and keeps running on a packed Saturday night.</h1>
+  <div class="subtitle">For Outer Banks restaurants, bars &amp; venues. Designed, installed, programmed, and supported by one local pro.</div>
+
+  <!-- CASE STUDY HERO -->
+  <div class="case">
+    <div class="ch">
+      <div><div class="lbl">Case Study &mdash; Proof in the field</div><div class="name">OBX-Scape Rooms</div></div>
+      <div class="where">Escape-room &amp; live<br>game-show venue &middot; OBX</div>
+    </div>
+    <div class="cbody">
+      <p class="lead">Escape rooms are some of the most demanding control environments anywhere &mdash; dozens of cues, sensors, sound effects, and triggers that all have to fire on time, every time, in front of a live audience. Jamieson Automation <b>built and programmed</b> the automation and A/V behind OBX-Scape Rooms, including a full <b>live game-show experience</b> from the ground up &mdash; the same networked-audio, control-logic, and integration skillset a venue needs, proven in a far harder room.</p>
+      <div class="grid">
+        <div class="col">
+          <h4>What we built</h4>
+          <ul>
+            <li>Networked audio &amp; sound-effect cueing (Q-Sys-class control)</li>
+            <li>PLC / automation logic driving lights, props &amp; triggers</li>
+            <li>A/V playback, displays &amp; show control</li>
+            <li>Business-grade network tying it all together</li>
+            <li>A complete live game-show experience, built new</li>
+          </ul>
+        </div>
+        <div class="col">
+          <h4>Why it proves the commercial case</h4>
+          <ul>
+            <li>Show-critical reliability &mdash; it can't fail mid-game</li>
+            <li>Multi-zone, multi-source audio under real timing pressure</li>
+            <li>Scene/sequence programming, not just speakers on a wall</li>
+            <li>One person designed, built, programmed &amp; still supports it</li>
+            <li>Local, ongoing &mdash; not a vendor who installs and vanishes</li>
+          </ul>
+        </div>
+      </div>
+      <div class="pull"><b>The takeaway:</b> if it holds up running a live escape-room and game show, your dining room, bar, and patio audio is well within reach &mdash; with the same person on the other end of the phone when you need a change.</div>
+    </div>
+  </div>
+
+  <p class="bridge"><b>What that means for your venue:</b> most bar and restaurant audio is consumer gear that can't zone, can't page over music, and needs a "guy" every time it breaks. We design the system properly, <b>program it to run itself</b>, and support it locally &mdash; so the patio, the dining room, and the bar each do the right thing without staff fighting a volume knob.</p>
+
+  <!-- CAPABILITIES -->
+  <div class="section-h">What we do for restaurants, bars &amp; venues</div>
+  <div class="caps">
+    <div class="cap">
+      <h3><span>1.</span> Multi-Zone Audio</h3>
+      <ul>
+        <li>Independent volume &amp; source per area &mdash; dining, bar, patio, restrooms</li>
+        <li>Background music that's actually controllable</li>
+        <li>Clean, even coverage &mdash; no dead spots or blown-out tables</li>
+      </ul>
+    </div>
+    <div class="cap">
+      <h3><span>2.</span> Paging &amp; AV</h3>
+      <ul>
+        <li>Page over music with auto-ducking (last call, staff, emergencies)</li>
+        <li>Sports/AV switching &mdash; any game to any screen</li>
+        <li>Projector/screen &amp; source control for events</li>
+      </ul>
+    </div>
+    <div class="cap">
+      <h3><span>3.</span> Control &amp; Support</h3>
+      <ul>
+        <li>One-tap scenes: Open &middot; Happy Hour &middot; Live Music &middot; Close</li>
+        <li>Scheduling (patio off at 10pm) &amp; simple staff interface</li>
+        <li>Remote monitoring + local priority support plan</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- THE EDGE -->
+  <div class="edge">
+    <div class="l">
+      <h3>Why Jamieson, not just another <span>speaker installer</span></h3>
+      <p>Plenty of outfits can hang speakers and pull cable. Very few can truly <b>program and commission</b> a networked control system &mdash; scenes, paging logic, scheduling, and the network underneath. That control layer is exactly what we do, and it's what makes a system run itself instead of needing babysitting.</p>
+    </div>
+    <div class="r">
+      <ul>
+        <li>Design, install, program &amp; support &mdash; one source</li>
+        <li>Networking specialists (the #1 cause of AV failures)</li>
+        <li>Local &amp; responsive &mdash; we answer the phone</li>
+        <li>Hardware &amp; labor itemized &mdash; transparent quotes</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- CLOSE -->
+  <div class="close">
+    <div class="who">
+      <h3>Good fit if you have&hellip;</h3>
+      <p>Multiple spaces (dining + bar + patio), live music or events, sports to manage across screens, or audio that drops, distorts, or takes a service call every time it hiccups. New build, remodel, or fixing a system that never worked right.</p>
+    </div>
+    <div class="cta">
+      <div class="big">Let's walk your space and scope it.</div>
+      <div class="small">Free on-site assessment &middot; [phone] &middot; [email]</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Networked audio &middot; paging &middot; AV switching &middot; control &amp; scheduling &middot; business networking &middot; ongoing support</span>
+    <span><b>Jamieson Automation</b> &middot; DRAFT</span>
+  </div>
+
+</div></body></html>

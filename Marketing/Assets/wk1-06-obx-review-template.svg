@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#1B2A4E"/>
+  <!-- header -->
+  <text x="60" y="92" fill="#8BC34A" font-size="26" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <rect x="60" y="112" width="120" height="6" fill="#8BC34A"/>
+  <!-- big quote mark -->
+  <text x="48" y="320" fill="#8BC34A" font-size="220" font-weight="800" opacity="0.85">&#8220;</text>
+  <!-- stars -->
+  <g transform="translate(60,300)" fill="#8BC34A">
+    <text x="0" y="0" font-size="56">★ ★ ★ ★ ★</text>
+  </g>
+  <!-- quote area -->
+  <text x="60" y="430" fill="#ffffff" font-size="40" font-weight="700">[ Customer quote goes here</text>
+  <text x="60" y="486" fill="#ffffff" font-size="40" font-weight="700">once approved — e.g. ]</text>
+  <text x="60" y="566" fill="#cdd6e6" font-size="34" font-style="italic">"Showed up on time, sent me photos of</text>
+  <text x="60" y="612" fill="#cdd6e6" font-size="34" font-style="italic">the whole job, and my place has never</text>
+  <text x="60" y="658" fill="#cdd6e6" font-size="34" font-style="italic">looked better. Finally someone reliable</text>
+  <text x="60" y="704" fill="#cdd6e6" font-size="34" font-style="italic">on the Outer Banks."</text>
+  <line x1="60" y1="760" x2="300" y2="760" stroke="#3a4a72" stroke-width="3"/>
+  <text x="60" y="812" fill="#8BC34A" font-size="30" font-weight="700">Reliable. Local. Photo-proof every visit.</text>
+  <!-- footer -->
+  <rect x="0" y="980" width="1080" height="100" fill="#8BC34A"/>
+  <text x="60" y="1043" fill="#1B2A4E" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

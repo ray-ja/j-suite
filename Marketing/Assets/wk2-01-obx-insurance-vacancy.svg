@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#1B2A4E"/>
+  <circle cx="980" cy="120" r="220" fill="#22335c"/>
+  <text x="60" y="92" fill="#8BC34A" font-size="26" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <rect x="60" y="112" width="120" height="6" fill="#8BC34A"/>
+  <!-- shield -->
+  <g transform="translate(820,200)">
+    <path d="M0 0 L120 0 L120 70 Q120 150 60 185 Q0 150 0 70 Z" fill="#8BC34A"/>
+    <path d="M30 88 l22 22 l40 -50" fill="none" stroke="#1B2A4E" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="60" y="290" fill="#ffffff" font-size="50" font-weight="800">Does your policy</text>
+  <text x="60" y="350" fill="#ffffff" font-size="50" font-weight="800">require</text>
+  <text x="60" y="410" fill="#8BC34A" font-size="50" font-weight="800">vacant-home checks?</text>
+  <text x="60" y="500" fill="#cdd6e6" font-size="29">Many insurers expect a vacant home to be checked</text>
+  <text x="60" y="540" fill="#cdd6e6" font-size="29">on a regular basis — or a claim can be reduced.</text>
+  <rect x="60" y="600" width="900" height="230" rx="16" fill="#22335c"/>
+  <text x="90" y="660" fill="#8BC34A" font-size="28" font-weight="700">What protects you:</text>
+  <text x="90" y="710" fill="#ffffff" font-size="28">A dated, photo-documented record that someone</text>
+  <text x="90" y="748" fill="#ffffff" font-size="28">responsible was there and the home was sound.</text>
+  <text x="90" y="800" fill="#9fb0cb" font-size="24" font-style="italic">Ask your own agent exactly what your policy says.</text>
+  <rect x="0" y="980" width="1080" height="100" fill="#8BC34A"/>
+  <text x="60" y="1043" fill="#1B2A4E" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

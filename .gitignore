@@ -24,3 +24,6 @@ npm-debug.log*
 # --- Editor ---
 .vscode/
 .idea/
+
+_sync_probe.txt
+*.bak

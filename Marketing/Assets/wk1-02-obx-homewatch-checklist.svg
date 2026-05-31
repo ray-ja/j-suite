@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#1B2A4E"/>
+  <circle cx="980" cy="120" r="220" fill="#22335c"/>
+  <!-- header -->
+  <text x="60" y="92" fill="#8BC34A" font-size="26" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <rect x="60" y="112" width="120" height="6" fill="#8BC34A"/>
+  <!-- badge -->
+  <rect x="60" y="160" width="300" height="56" rx="28" fill="#8BC34A"/>
+  <text x="86" y="198" fill="#1B2A4E" font-size="28" font-weight="800">FREE DOWNLOAD</text>
+  <!-- title -->
+  <text x="60" y="320" fill="#ffffff" font-size="66" font-weight="800">The Absentee</text>
+  <text x="60" y="392" fill="#ffffff" font-size="66" font-weight="800">Owner's</text>
+  <text x="60" y="464" fill="#8BC34A" font-size="66" font-weight="800">Home-Watch</text>
+  <text x="60" y="536" fill="#8BC34A" font-size="66" font-weight="800">Checklist</text>
+  <!-- checklist motif -->
+  <g transform="translate(60,600)">
+    <rect x="0" y="0" width="34" height="34" rx="6" fill="none" stroke="#8BC34A" stroke-width="4"/>
+    <path d="M7 17 l9 9 l16 -20" fill="none" stroke="#8BC34A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="54" y="28" fill="#e6ecf5" font-size="30">What to check inside &amp; out</text>
+  </g>
+  <g transform="translate(60,660)">
+    <rect x="0" y="0" width="34" height="34" rx="6" fill="none" stroke="#8BC34A" stroke-width="4"/>
+    <path d="M7 17 l9 9 l16 -20" fill="none" stroke="#8BC34A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="54" y="28" fill="#e6ecf5" font-size="30">How often it should happen</text>
+  </g>
+  <g transform="translate(60,720)">
+    <rect x="0" y="0" width="34" height="34" rx="6" fill="none" stroke="#8BC34A" stroke-width="4"/>
+    <path d="M7 17 l9 9 l16 -20" fill="none" stroke="#8BC34A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="54" y="28" fill="#e6ecf5" font-size="30">What insurers expect on vacant homes</text>
+  </g>
+  <text x="60" y="838" fill="#9fb0cb" font-size="28">A leak caught in week one is a cleanup — not a renovation.</text>
+  <!-- footer -->
+  <rect x="0" y="980" width="1080" height="100" fill="#8BC34A"/>
+  <text x="60" y="1033" fill="#1B2A4E" font-size="27" font-weight="800">Comment "CHECKLIST" — we'll send it over</text>
+  <text x="60" y="1063" fill="#1B2A4E" font-size="22" font-weight="600">(252) 564-8717  ·  contact@obxlotsolutions.com</text>
+</svg>

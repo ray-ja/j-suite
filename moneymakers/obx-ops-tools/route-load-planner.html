@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Weekly Capacity & Route Load — OBX Ops Tools</title>
+<link rel="stylesheet" href="app.css">
+</head><body><div class="app">
+<header>
+  <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#24365f"/><path d="M7 25c4 0 4-3 8-3s4 3 8 3 4-3 8-3" stroke="#8BC34A" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M13 20l7-9 7 9" stroke="#fff" stroke-width="2.4" fill="none" stroke-linejoin="round"/></svg>
+  <div><div class="t">Route Load Planner</div><div class="s">Jobs/week the crew can clear</div></div>
+  <a class="back" href="index.html">Tools ↑</a>
+</header>
+<div class="wrap">
+  <div class="intro">Plan the week before you book it. See how many jobs the crew realistically clears, your <b>profit per route-day</b>, and where the drive between OBX stops is costing you capacity.</div>
+
+  <div class="card">
+    <h2 style="margin-top:2px">Crew &amp; week</h2>
+    <div class="three">
+      <div><label>Crews</label><input id="crews" type="number" inputmode="decimal" value="1" oninput="calc()"></div>
+      <div><label>Days/week</label><input id="days" type="number" inputmode="decimal" value="5" oninput="calc()"></div>
+      <div><label>Hrs/day</label><input id="hpd" type="number" inputmode="decimal" value="8" oninput="calc()"></div>
+    </div>
+
+    <h2>Per job</h2>
+    <div class="three">
+      <div><label>On-site hrs</label><input id="dur" type="number" inputmode="decimal" value="2.5" oninput="calc()"></div>
+      <div><label>Drive between <span class="h">min</span></label><input id="drive" type="number" inputmode="decimal" value="25" oninput="calc()"></div>
+      <div><label>Setup/buffer <span class="h">min</span></label><input id="buf" type="number" inputmode="decimal" value="15" oninput="calc()"></div>
+    </div>
+    <div class="two">
+      <div><label>Avg revenue / job <span class="h">$</span></label><input id="rev" type="number" inputmode="decimal" value="250" oninput="calc()"></div>
+      <div><label>Avg cost / job <span class="h">$</span></label><input id="cost" type="number" inputmode="decimal" value="110" oninput="calc()"></div>
+    </div>
+    <p class="hint">Tip: grab "avg cost / job" from the Fuel &amp; Trip calculator (fuel + crew + materials for a typical stop).</p>
+  </div>
+
+  <div class="result" id="res">
+    <div class="hd">Crew clears about</div>
+    <div class="big good" id="jpw">—</div>
+    <div class="sub" id="jsub">jobs/week · — per route-day</div>
+    <div class="kpis">
+      <div class="kpi"><b id="ppd">—</b><span>Profit/route-day</span></div>
+      <div class="kpi"><b id="wprof">—</b><span>Profit/week</span></div>
+      <div class="kpi"><b id="util">—</b><span>On-site util</span></div>
+    </div>
+    <div class="verdict" id="verdict">—</div>
+  </div>
+
+  <h2>The week, by the numbers</h2>
+  <div class="card bd" id="bd"></div>
+
+  <h2>What if you add a crew?</h2>
+  <div class="card">
+    <div class="compare">
+      <div class="c"><div class="v" id="c1j">—</div><div class="l">jobs/wk now</div></div>
+      <div class="c"><div class="v" id="c2j">—</div><div class="l">with +1 crew</div></div>
+      <div class="c"><div class="v" id="c2p">—</div><div class="l">profit/wk +1 crew</div></div>
+    </div>
+    <p class="hint" id="addnote"></p>
+  </div>
+
+  <div class="footer">OBX Lot Solutions · internal tool · estimates only</div>
+</div></div>
+<script>
+"use strict";
+function $(id){return document.getElementById(id);}
+function num(id){return parseFloat($(id).value)||0;}
+function money(n){return (n<0?"-$":"$")+Math.abs(Math.round(n)).toLocaleString();}
+function jobsPerCrewDay(hpd,perJob){return perJob>0?Math.floor(hpd/perJob):0;}
+function calc(){
+  var crews=num("crews")||1, days=num("days"), hpd=num("hpd"),
+      dur=num("dur"), drive=num("drive"), buf=num("buf"),
+      rev=num("rev"), cost=num("cost");
+  var perJob = dur + drive/60 + buf/60;            // hrs tied up per job
+  var jpcd = jobsPerCrewDay(hpd, perJob);          // jobs per crew per day
+  var routeDays = crews*days;
+  var jpw = jpcd*routeDays;                         // jobs/week
+  var wRev = jpw*rev, wCost = jpw*cost, wProfit = wRev - wCost;
+  var profitPerJob = rev-cost;
+  var ppd = routeDays>0 ? wProfit/routeDays : 0;
+  var util = hpd>0 ? (jpcd*dur)/hpd : 0;            // on-site share of the day
+  var driveShare = perJob>0 ? (drive/60)/perJob : 0;
+  // outputs
+  $("jpw").textContent=jpw;
+  $("jsub").textContent=jpw+" jobs/week · "+jpcd+" per route-day";
+  $("ppd").textContent=money(ppd);
+  $("wprof").textContent=money(wProfit);
+  $("util").textContent=(util*100).toFixed(0)+"%";
+  var v=$("verdict");
+  if(jpcd===0){v.className="verdict warn";v.innerHTML="🔴 A single job doesn't fit your day — on-site + drive ("+perJob.toFixed(1)+" hrs) exceeds hrs/day. Shorten jobs or lengthen the day.";}
+  else if(driveShare>0.30){v.className="verdict thin";v.innerHTML="🟡 Drive is "+(driveShare*100).toFixed(0)+"% of each job's time — cluster stops by town to claw back capacity.";}
+  else if(util<0.55){v.className="verdict thin";v.innerHTML="🟡 Only "+(util*100).toFixed(0)+"% of the day is on-site — there's room for another stop or a shorter buffer.";}
+  else {v.className="verdict good";v.innerHTML="🟢 Tight route — "+(util*100).toFixed(0)+"% on-site time, "+money(ppd)+"/route-day.";}
+  $("bd").innerHTML=
+    '<div class="r"><span>Time tied up per job</span><b>'+perJob.toFixed(2)+' hrs</b></div>'+
+    '<div class="r"><span>Jobs per crew per day</span><b>'+jpcd+'</b></div>'+
+    '<div class="r"><span>Route-days/week ('+crews+' crew × '+days+' days)</span><b>'+routeDays+'</b></div>'+
+    '<div class="r t"><span>Jobs/week</span><b>'+jpw+'</b></div>'+
+    '<div class="r"><span>Revenue/week</span><b>'+money(wRev)+'</b></div>'+
+    '<div class="r"><span>Cost/week</span><b>'+money(wCost)+'</b></div>'+
+    '<div class="r t"><span>Profit/week</span><b>'+money(wProfit)+'</b></div>'+
+    '<div class="r"><span>≈ Profit/month (×4.3)</span><b>'+money(wProfit*4.3)+'</b></div>'+
+    '<div class="r"><span>Profit per job</span><b>'+money(profitPerJob)+'</b></div>';
+  // +1 crew compare
+  var jpw2=jpcd*(crews+1)*days, wProfit2=jpw2*profitPerJob;
+  $("c1j").textContent=jpw; $("c2j").textContent=jpw2; $("c2p").textContent=money(wProfit2);
+  $("addnote").textContent="Adding a crew adds "+(jpw2-jpw)+" jobs/week and about "+money(wProfit2-wProfit)+"/week — if you can keep them fed with work and the routes stay tight.";
+}
+calc();
+</script>
+</body></html>

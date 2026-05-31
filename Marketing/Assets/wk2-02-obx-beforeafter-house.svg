@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#1B2A4E"/>
+  <text x="60" y="80" fill="#8BC34A" font-size="24" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <rect x="60" y="98" width="100" height="5" fill="#8BC34A"/>
+  <text x="60" y="150" fill="#ffffff" font-size="34" font-weight="800">House soft wash</text>
+  <g>
+    <rect x="60" y="180" width="450" height="600" rx="14" fill="#22335c" stroke="#3a4a72" stroke-width="2" stroke-dasharray="12 8"/>
+    <text x="285" y="470" fill="#6b7a99" font-size="28" font-weight="700" text-anchor="middle">DROP "BEFORE"</text>
+    <text x="285" y="508" fill="#6b7a99" font-size="28" font-weight="700" text-anchor="middle">PHOTO HERE</text>
+    <rect x="80" y="200" width="150" height="50" rx="25" fill="#1B2A4E" opacity="0.85"/>
+    <text x="100" y="234" fill="#ffffff" font-size="28" font-weight="800">BEFORE</text>
+  </g>
+  <g>
+    <rect x="570" y="180" width="450" height="600" rx="14" fill="#22335c" stroke="#8BC34A" stroke-width="2" stroke-dasharray="12 8"/>
+    <text x="795" y="470" fill="#6b7a99" font-size="28" font-weight="700" text-anchor="middle">DROP "AFTER"</text>
+    <text x="795" y="508" fill="#6b7a99" font-size="28" font-weight="700" text-anchor="middle">PHOTO HERE</text>
+    <rect x="590" y="200" width="130" height="50" rx="25" fill="#8BC34A"/>
+    <text x="610" y="234" fill="#1B2A4E" font-size="28" font-weight="800">AFTER</text>
+  </g>
+  <text x="60" y="858" fill="#ffffff" font-size="44" font-weight="800">Ten years younger in an afternoon.</text>
+  <text x="60" y="912" fill="#8BC34A" font-size="30" font-weight="600">Low pressure. No stripped paint. Just clean.</text>
+  <rect x="0" y="980" width="1080" height="100" fill="#8BC34A"/>
+  <text x="60" y="1043" fill="#1B2A4E" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

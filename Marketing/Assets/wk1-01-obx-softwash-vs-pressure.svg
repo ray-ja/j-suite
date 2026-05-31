@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#1B2A4E"/>
+  <!-- header -->
+  <text x="60" y="92" fill="#8BC34A" font-size="26" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <text x="60" y="125" fill="#9fb0cb" font-size="19" letter-spacing="2">OUTER BANKS PROPERTY CARE</text>
+  <rect x="60" y="150" width="120" height="6" fill="#8BC34A"/>
+  <!-- title -->
+  <text x="60" y="250" fill="#ffffff" font-size="62" font-weight="800">Soft wash or</text>
+  <text x="60" y="320" fill="#ffffff" font-size="62" font-weight="800">pressure wash?</text>
+  <text x="60" y="372" fill="#8BC34A" font-size="32" font-weight="600">Using the wrong one can cost you a roof.</text>
+  <!-- split panels -->
+  <g>
+    <rect x="60" y="430" width="448" height="430" rx="18" fill="#22335c" stroke="#8BC34A" stroke-width="3"/>
+    <text x="84" y="500" fill="#8BC34A" font-size="34" font-weight="800">SOFT WASH</text>
+    <text x="84" y="540" fill="#cdd6e6" font-size="22">Low pressure + solution</text>
+    <line x1="84" y1="562" x2="484" y2="562" stroke="#3a4a72" stroke-width="2"/>
+    <text x="84" y="610" fill="#ffffff" font-size="24" font-weight="700">Use on:</text>
+    <text x="84" y="652" fill="#e6ecf5" font-size="24">• Roofs</text>
+    <text x="84" y="692" fill="#e6ecf5" font-size="24">• Siding</text>
+    <text x="84" y="732" fill="#e6ecf5" font-size="24">• Screens &amp; painted surfaces</text>
+    <text x="84" y="800" fill="#8BC34A" font-size="22" font-weight="600">Kills algae &amp; mildew. Lasts longer.</text>
+  </g>
+  <g>
+    <rect x="572" y="430" width="448" height="430" rx="18" fill="#22335c" stroke="#3a4a72" stroke-width="3"/>
+    <text x="596" y="500" fill="#ffffff" font-size="34" font-weight="800">PRESSURE WASH</text>
+    <text x="596" y="540" fill="#cdd6e6" font-size="22">High pressure</text>
+    <line x1="596" y1="562" x2="996" y2="562" stroke="#3a4a72" stroke-width="2"/>
+    <text x="596" y="610" fill="#ffffff" font-size="24" font-weight="700">Use on:</text>
+    <text x="596" y="652" fill="#e6ecf5" font-size="24">• Driveways</text>
+    <text x="596" y="692" fill="#e6ecf5" font-size="24">• Concrete &amp; sidewalks</text>
+    <text x="596" y="732" fill="#e6ecf5" font-size="24">• Dumpster pads</text>
+    <text x="596" y="800" fill="#ff9a8b" font-size="22" font-weight="600">Never on shingles — strips granules.</text>
+  </g>
+  <!-- footer -->
+  <rect x="0" y="980" width="1080" height="100" fill="#8BC34A"/>
+  <text x="60" y="1043" fill="#1B2A4E" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

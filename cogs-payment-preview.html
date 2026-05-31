@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>J-Suite — COGS + Payment Layer (Preview)</title>
+<style>
+  :root{--brand:#1B2A4E;--accent:#8BC34A;--accent-ink:#1B2A4E;--card:#fff;--line:#e6e8ee;--muted:#6b7280;--soft:#f4f6fb;--bg:#eef1f7;--warn:#c0392b;--warn-bg:#fdecea}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:#101828;line-height:1.4;padding:0 0 60px}
+  header{background:var(--brand);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px}
+  header .dot{width:26px;height:26px;border-radius:7px;background:var(--accent)}
+  header b{font-size:16px}header .tag{margin-left:auto;font-size:11px;background:rgba(255,255,255,.15);padding:4px 8px;border-radius:20px}
+  .wrap{max-width:760px;margin:0 auto;padding:16px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:20px 4px 8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .intro{background:#fff8e1;border:1px solid #ffe082;border-radius:12px;padding:14px 16px;margin-bottom:14px;font-size:14px}
+  .li{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .li:last-child{border-bottom:none}
+  .li .grow{flex:1;min-width:0}
+  .li .nm{font-weight:600;font-size:15px}
+  .li .sub{color:var(--muted);font-size:12px}
+  .li .amt{font-weight:700;white-space:nowrap}
+  .li .cst{color:var(--muted);font-size:12px;white-space:nowrap;width:74px;text-align:right}
+  .li.costline{background:var(--soft);border-radius:8px;padding:8px 10px;margin:4px 0;border:none}
+  .li.costline .nm{font-weight:600;color:#7a5}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:12px 2px 4px}
+  input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;background:#fff;font-family:inherit}
+  .row{display:flex;gap:8px;align-items:center}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:9px;padding:11px 14px;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none}
+  .btn.acc{background:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:transparent;color:var(--brand);border:1.5px solid var(--brand)}
+  .btn.sm{padding:7px 11px;font-size:13px}
+  .cogs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+  .kp{flex:1;min-width:72px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 8px;text-align:center}
+  .kp b{font-size:19px;display:block}
+  .kp .kl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+  .kp.warn b{color:var(--warn)}
+  .note{border-radius:9px;padding:10px 12px;margin:8px 0;font-size:13.5px}
+  .note.warn{border-left:4px solid var(--warn);background:var(--warn-bg);color:#922}
+  .note.info{border-left:4px solid var(--brand);background:var(--soft)}
+  .totbar{display:flex;align-items:center;border-top:2px solid var(--accent);padding-top:12px;margin-top:10px}
+  .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:24px;font-weight:800;color:var(--brand)}
+  .muted{color:var(--muted);font-size:13px}
+  .trow{display:flex;align-items:center;gap:8px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;padding:3px 0}
+  .trow .g{color:#1a7f37}.trow .b{color:#c0392b}
+  .pillbar{display:flex;gap:6px;margin:6px 0 2px;flex-wrap:wrap}
+  .pillbar button{background:var(--soft);border:1px solid var(--line);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .pillbar button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .scen{font-size:12px;color:var(--muted);margin-top:2px}
+  code{background:var(--soft);padding:1px 5px;border-radius:5px;font-size:12.5px}
+</style>
+</head>
+<body>
+<header><div class="dot"></div><b>J-Suite — COGS + Payment Layer</b><span class="tag">PREVIEW · sample data · not the live app</span></header>
+<div class="wrap">
+
+  <div class="intro">
+    <b>What this is.</b> A safe sandbox to see the new quote features before they go into the real app — nothing here touches your live data or any payment account. Drag the <b>discount</b> and watch the margin strip react; try the <b>dump-fee helper</b>; toggle the <b>Pay-now</b> scaffold. The math is the exact code from <code>cogs-payment-layer.js</code> (the same code that passes 33/33 tests — re-run them live at the bottom).
+  </div>
+
+  <!-- ============ SAMPLE QUOTE ============ -->
+  <h2>Sample quote — soft-wash package (OBX Lot Solutions)</h2>
+  <div class="card">
+    <div id="lines"></div>
+
+    <div class="pillbar" style="margin-top:10px">
+      <span class="muted" style="align-self:center;margin-right:4px">Quick scenarios:</span>
+      <button onclick="setScenario(0)" id="sc0" class="on">Full price</button>
+      <button onclick="setScenario(75)" id="sc75">$75 off</button>
+      <button onclick="setScenario(300)" id="sc300">$300 off (underwater)</button>
+    </div>
+
+    <label>On-site discount ($) — lower it and watch margin fall</label>
+    <input id="disc" type="range" min="0" max="500" step="5" value="0" oninput="onDisc(this.value)" style="padding:0">
+    <div class="scen"><span id="discLbl">$0 off</span> · discount comes off <b>price only</b> — your cost floor doesn't move</div>
+
+    <!-- live margin strip injects here -->
+    <div id="cogs"></div>
+
+    <div class="totbar"><span class="lab">Total to present</span><span class="amt" id="tot">$0</span></div>
+  </div>
+
+  <!-- ============ DISPOSAL HELPER ============ -->
+  <h2>Junk job — dump-fee helper</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:4px">Dare County C&amp;D Landfill: <b>$73.16/ton</b>, first <b>500 lbs free</b>. Estimate the load and it drops a disposal <i>cost</i> line into the quote automatically — the line most new haulers eat by accident.</div>
+    <label>Estimated load weight (lbs) — a pickup load ≈ 1,500–2,500</label>
+    <div class="row">
+      <input id="lbs" type="number" value="2000" min="0" step="50">
+      <button class="btn acc" style="white-space:nowrap" onclick="addDisposal()">⚖ Add dump-fee line</button>
+    </div>
+    <div id="dispOut" class="note info" style="margin-top:10px"></div>
+  </div>
+
+  <!-- ============ PAY NOW SCAFFOLD ============ -->
+  <h2>Payment link — "Pay now" (scaffold only)</h2>
+  <div class="card">
+    <div class="muted" style="margin-bottom:6px">Provider-agnostic. Recommended default: <b>Stripe Payment Links</b> — no monthly fee, ~2.9% + 30¢, one link per amount, no code. <b>Nothing is wired to a live account here</b> — paste a link to see the button appear. (In the real app this stays empty until you connect Stripe.)</div>
+    <div id="payArea"></div>
+  </div>
+
+  <!-- ============ LIVE TESTS ============ -->
+  <h2>Verification — runs the 33 unit tests in your browser</h2>
+  <div class="card">
+    <button class="btn ghost sm" onclick="runTests()">▶ Run 33 tests</button>
+    <div id="testSummary" style="font-weight:800;margin:10px 0 6px"></div>
+    <div id="testOut"></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+/* ===== PURE LOGIC — copied verbatim from cogs-payment-layer.js (Part 1) ===== */
+var DISPOSAL_RATE_PER_TON=73.16, DISPOSAL_FREE_LBS=500, LBS_PER_TON=2000, MARGIN_FLOOR=0.35;
+function disposalCost(lbs){lbs=Math.max(0,+lbs||0);var b=Math.max(0,lbs-DISPOSAL_FREE_LBS);return Math.round((b/LBS_PER_TON)*DISPOSAL_RATE_PER_TON*100)/100;}
+function lineFigures(price,cost,qty){qty=qty||1;var P=(+price||0)*qty,C=(+cost||0)*qty,profit=P-C;return{price:P,cost:C,profit:profit,margin:P>0?profit/P:0};}
+function quoteCogs(items,discount){var price=0,cost=0;(items||[]).forEach(function(it){var f=lineFigures(it.price,it.cost,it.qty);price+=f.price;cost+=f.cost;});price=Math.max(0,price-(+discount||0));var profit=price-cost;return{price:price,cost:cost,profit:profit,margin:price>0?profit/price:0};}
+function belowMarginFloor(margin,floor){return margin<(floor==null?MARGIN_FLOOR:floor);}
+function pct(m){return (m*100).toFixed(1)+"%";}
+function disposalLine(lbs){return{name:"Dump fee — "+lbs+" lbs (Dare C&D, first 500 free)",unit:"cost",price:0,qty:1,cost:disposalCost(lbs),costLine:true};}
+function money(n){return "$"+(Math.round(n)).toLocaleString();}
+
+/* ===== render helper — cogsStrip (Part 3) ===== */
+function cogsStrip(price,cost){
+  var profit=price-cost, margin=price>0?profit/price:0, warn=belowMarginFloor(margin);
+  return '<div class="cogs">'
+    +'<div class="kp"><b>'+money(cost)+'</b><span class="kl">Cost</span></div>'
+    +'<div class="kp"><b>'+money(price)+'</b><span class="kl">Price</span></div>'
+    +'<div class="kp"><b>'+money(profit)+'</b><span class="kl">Profit</span></div>'
+    +'<div class="kp '+(warn?'warn':'')+'"><b>'+pct(margin)+'</b><span class="kl">Margin</span></div></div>'
+    +(warn?'<div class="note warn">⚠ Margin '+pct(margin)+' is under the '+Math.round(MARGIN_FLOOR*100)+'% floor — this discount is eating your profit. Hold the price or trim scope.</div>':'');
+}
+function itemsCost(items){var c=0;(items||[]).forEach(function(it){c+=(+it.cost||0)*(it.qty||1);});return c;}
+
+/* ===== sample quote state ===== */
+var QITEMS=[
+  {name:"House wash — ≤2500 sqft (soft wash)", sub:"2,400 sqft siding · 2.5% SH mix", price:399, cost:30, qty:1},
+  {name:"Driveway — medium (2-car)", sub:"~600 sqft concrete", price:149, cost:14, qty:1},
+  {name:"Gutter cleaning (from)", sub:"~160 ft, 1-story", price:149, cost:18, qty:1}
+];
+var DISC=0;
+
+function renderLines(){
+  document.getElementById("lines").innerHTML=QITEMS.map(function(it){
+    var cls=it.costLine?"li costline":"li";
+    return '<div class="'+cls+'"><div class="grow"><div class="nm">'+it.name+'</div>'
+      +(it.sub?'<div class="sub">'+it.sub+'</div>':'')+'</div>'
+      +'<div class="cst">cost '+money((it.cost||0)*(it.qty||1))+'</div>'
+      +'<div class="amt">'+money((it.price||0)*(it.qty||1))+'</div></div>';
+  }).join("");
+}
+function refresh(){
+  renderLines();
+  var f=quoteCogs(QITEMS,DISC);
+  document.getElementById("cogs").innerHTML=cogsStrip(f.price,f.cost);
+  document.getElementById("tot").textContent=money(f.price);
+}
+function onDisc(v){DISC=+v;document.getElementById("discLbl").textContent=money(DISC)+" off";
+  ["sc0","sc75","sc300"].forEach(function(id){document.getElementById(id).classList.remove("on");});
+  refresh();}
+function setScenario(v){DISC=v;document.getElementById("disc").value=v;document.getElementById("discLbl").textContent=money(v)+" off";
+  ["sc0","sc75","sc300"].forEach(function(id){document.getElementById(id).classList.remove("on");});
+  document.getElementById("sc"+v).classList.add("on");refresh();}
+
+function addDisposal(){
+  var lbs=parseFloat(document.getElementById("lbs").value)||0;
+  QITEMS=QITEMS.filter(function(it){return !it.costLine;}); // replace any prior dump line
+  var dl=disposalLine(lbs);QITEMS.push(dl);
+  document.getElementById("dispOut").innerHTML="Added <b>"+dl.name+"</b> → disposal cost <b>"+money(dl.cost)
+    +"</b> ("+(lbs<=500?"under the 500-lb free allowance":((lbs-500)/2000).toFixed(2)+" billable tons × $73.16")+"). "
+    +"It's a <i>cost-only</i> line — price your labor + margin on top.";
+  refresh();
+}
+
+/* ===== Pay-now scaffold ===== */
+var PAYLINK="";
+function renderPay(){
+  var a=document.getElementById("payArea");
+  if(PAYLINK){
+    a.innerHTML='<a class="btn acc" href="'+PAYLINK.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener">💳 Pay now</a>'
+      +'<div class="muted" style="margin-top:8px">Link saved: <code>'+PAYLINK.replace(/</g,'&lt;')+'</code> '
+      +'<button class="btn ghost sm" style="margin-left:6px" onclick="clearLink()">Remove</button></div>';
+  } else {
+    a.innerHTML='<div class="note info">No payment link yet. In the live app this stays empty until you connect Stripe — no keys, no money moves automatically.</div>'
+      +'<label>Payment link</label><input id="pl" placeholder="https://buy.stripe.com/...">'
+      +'<button class="btn acc sm" style="margin-top:8px" onclick="saveLink()">Save link &amp; show Pay-now</button>';
+  }
+}
+function saveLink(){PAYLINK=(document.getElementById("pl").value||"").trim()||"https://buy.stripe.com/test_demo_link";renderPay();}
+function clearLink(){PAYLINK="";renderPay();}
+
+/* ===== in-browser test harness (same 33 assertions as cogs-payment-tests.js) ===== */
+function runTests(){
+  var out=[],pass=0,fail=0;
+  function ok(n,c,got){if(c){pass++;out.push('<div class="trow"><span class="g">✓</span> '+n+'</div>');}
+    else{fail++;out.push('<div class="trow"><span class="b">✗</span> '+n+' — got '+JSON.stringify(got)+'</div>');}}
+  function near(a,b,e){return Math.abs(a-b)<=(e==null?0.01:e);}
+  var C={obx:{softwash:{base:8,perUnit:0.0088},pressure:{base:12,perUnit:0.004},junk:{base:25,lbsPerEighth:312.5}},
+         jam:{lock:{hardware:{wifi:220},addlHw:200,hub:130,misc:10},starlink:{mount:{eave:50},perExt:25}}};
+  function calcCost(key,inp,t){var c=(t.obx&&t.obx[key])?t.obx[key]:(t.jam?t.jam[key]:null);if(!c)return 0;inp=inp||{};var qty=inp.qty||0,n=Math.max(1,inp.count||1);
+    if(key==="softwash"||key==="pressure")return Math.round(((c.base||0)+(c.perUnit||0)*qty)*100)/100;
+    if(key==="junk"){var lbs=inp.lbs!=null?inp.lbs:(inp.eighths||1)*(c.lbsPerEighth||312.5);return Math.round(((c.base||0)+disposalCost(lbs))*100)/100;}
+    if(key==="lock")return (c.hardware[inp.type]||0)*n+(c.addlHw||0)*(n-1)+(inp.hub?c.hub:0)+(c.misc||0);
+    if(key==="starlink")return (c.mount[inp.mount]||c.mount.eave)+(c.perExt||0)*(inp.ext||0);return 0;}
+
+  ok("500 lbs (all free) = $0",disposalCost(500)===0,disposalCost(500));
+  ok("400 lbs (under free) = $0",disposalCost(400)===0,disposalCost(400));
+  ok("2000 lbs = $54.87",near(disposalCost(2000),54.87),disposalCost(2000));
+  ok("2500 lbs = $73.16",near(disposalCost(2500),73.16),disposalCost(2500));
+  ok("4500 lbs = $146.32",near(disposalCost(4500),146.32),disposalCost(4500));
+  ok("1500 lbs = $36.58",near(disposalCost(1500),36.58),disposalCost(1500));
+  ok("negative lbs = $0",disposalCost(-100)===0,disposalCost(-100));
+  var hw=lineFigures(399,30,1);ok("house wash profit = $369",hw.profit===369,hw);
+  ok("house wash margin = 92.5%",near(hw.margin,0.9248,0.001),hw.margin);
+  var dw=lineFigures(149,14,1);ok("driveway margin ≈ 90.6%",near(dw.margin,0.9060,0.001),dw.margin);
+  var qy=lineFigures(12,5,10);ok("qty price = $120",qy.price===120,qy);
+  ok("qty cost = $50",qy.cost===50,qy);ok("qty profit = $70",qy.profit===70,qy);
+  ok("zero-price = 0% margin (no div0)",lineFigures(0,10,1).margin===0,lineFigures(0,10,1));
+  var items=[{price:399,cost:30,qty:1},{price:149,cost:14,qty:1}];var q=quoteCogs(items,0);
+  ok("quote price = $548",q.price===548,q);ok("quote cost = $44",q.cost===44,q);ok("quote profit = $504",q.profit===504,q);
+  var qd=quoteCogs(items,100);ok("discount → price $448",qd.price===448,qd);ok("discount keeps cost $44",qd.cost===44,qd);ok("discount → profit $404",qd.profit===404,qd);
+  ok("90% margin: no warning",belowMarginFloor(0.90)===false,true);
+  ok("35% margin: no warning (at floor)",belowMarginFloor(0.35)===false,true);
+  ok("34.9% margin: WARN",belowMarginFloor(0.349)===true,true);
+  var fc=quoteCogs([{price:200,cost:150,qty:1}],0);ok("$200/$150 = 25% → WARN",belowMarginFloor(fc.margin),fc.margin);
+  ok("softwash 2500 sqft ≈ $30",near(calcCost("softwash",{qty:2500},C),30,1),calcCost("softwash",{qty:2500},C));
+  ok("pressure 600 sqft ≈ $14",near(calcCost("pressure",{qty:600},C),14.4,1),calcCost("pressure",{qty:600},C));
+  ok("junk 4/8 truck = base+dump",near(calcCost("junk",{eighths:4},C),25+disposalCost(1250),0.5),calcCost("junk",{eighths:4},C));
+  ok("junk explicit lbs overrides",near(calcCost("junk",{lbs:2500},C),25+73.16,0.5),calcCost("junk",{lbs:2500},C));
+  ok("starlink eave: kit $0, mount $50",calcCost("starlink",{mount:"eave"},C)===50,calcCost("starlink",{mount:"eave"},C));
+  ok("lock wifi x1 = $230",calcCost("lock",{type:"wifi",count:1},C)===230,calcCost("lock",{type:"wifi",count:1},C));
+  var dl=disposalLine(2000);ok("disposal line is cost line",dl.costLine===true&&dl.unit==="cost",dl);
+  ok("disposal line cost = $54.87",near(dl.cost,54.87),dl.cost);ok("disposal line price = $0",dl.price===0,dl);
+
+  document.getElementById("testSummary").innerHTML=(fail?'<span style="color:#c0392b">':'<span style="color:#1a7f37">')+pass+" passed, "+fail+" failed</span>";
+  document.getElementById("testOut").innerHTML=out.join("");
+}
+
+/* boot */
+refresh();renderPay();runTests();
+</script>
+</body>
+</html>

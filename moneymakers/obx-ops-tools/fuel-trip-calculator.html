@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Fuel & Trip Profitability — OBX Ops Tools</title>
+<link rel="stylesheet" href="app.css">
+</head><body><div class="app">
+<header>
+  <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="9" fill="#24365f"/><path d="M7 25c4 0 4-3 8-3s4 3 8 3 4-3 8-3" stroke="#8BC34A" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M13 20l7-9 7 9" stroke="#fff" stroke-width="2.4" fill="none" stroke-linejoin="round"/></svg>
+  <div><div class="t">Fuel &amp; Trip Profit</div><div class="s">Is this job worth the drive?</div></div>
+  <a class="back" href="index.html">Tools ↑</a>
+</header>
+<div class="wrap">
+  <div class="intro">Punch in a job before you say yes. On the OBX, a long drive can quietly eat a small ticket. This shows your <b>real profit, margin, and $/hour</b> after fuel and crew — and the lowest price worth taking.</div>
+
+  <div class="card">
+    <label>Job price (what you charge) <span class="h">$</span></label>
+    <input id="rev" type="number" inputmode="decimal" value="399" oninput="calc()">
+
+    <div class="two">
+      <div><label>Round-trip miles</label><input id="miles" type="number" inputmode="decimal" value="60" oninput="calc()"></div>
+      <div><label>Truck MPG</label><input id="mpg" type="number" inputmode="decimal" value="16" oninput="calc()"></div>
+    </div>
+    <div class="two">
+      <div><label>Fuel $/gal <span class="h">edit to today's</span></label><input id="fuel" type="number" inputmode="decimal" value="3.20" oninput="calc()"></div>
+      <div><label>Materials / dump $</label><input id="mat" type="number" inputmode="decimal" value="30" oninput="calc()"></div>
+    </div>
+
+    <h2 style="margin-top:16px">Crew</h2>
+    <div class="three">
+      <div><label>On-site hrs</label><input id="hrs" type="number" inputmode="decimal" value="2.5" oninput="calc()"></div>
+      <div><label>Crew #</label><input id="crew" type="number" inputmode="decimal" value="2" oninput="calc()"></div>
+      <div><label>$/crew-hr</label><input id="wage" type="number" inputmode="decimal" value="18" oninput="calc()"></div>
+    </div>
+    <div class="two">
+      <div><label>Round-trip drive hrs</label><input id="drive" type="number" inputmode="decimal" value="1.0" oninput="calc()"></div>
+      <div><label style="visibility:hidden">x</label>
+        <label class="toggle" style="margin-top:0"><input id="paydrive" type="checkbox" checked onchange="calc()"> Pay crew for drive</label></div>
+    </div>
+  </div>
+
+  <div class="result" id="res">
+    <div class="hd">Profit on this job</div>
+    <div class="big good" id="profit">$—</div>
+    <div class="sub" id="psub">—</div>
+    <div class="kpis">
+      <div class="kpi"><b id="margin">—</b><span>Margin</span></div>
+      <div class="kpi"><b id="perhr">—</b><span>$/job-hr</span></div>
+      <div class="kpi"><b id="fuelcost">—</b><span>Fuel</span></div>
+    </div>
+    <div class="verdict good" id="verdict">—</div>
+  </div>
+
+  <h2>Cost breakdown</h2>
+  <div class="card bd" id="bd"></div>
+
+  <div class="footer">OBX Lot Solutions · internal tool · estimates only</div>
+</div></div>
+<script>
+"use strict";
+var FLOOR=0.35;            // margin floor
+function $(id){return document.getElementById(id);}
+function num(id){return parseFloat($(id).value)||0;}
+function money(n){return (n<0?"-$":"$")+Math.abs(Math.round(n)).toLocaleString();}
+function calc(){
+  var rev=num("rev"), miles=num("miles"), mpg=num("mpg")||1, fuelP=num("fuel"),
+      mat=num("mat"), hrs=num("hrs"), crew=num("crew")||1, wage=num("wage"),
+      drive=num("drive"), pay=$("paydrive").checked;
+  var fuel = miles/mpg*fuelP;
+  var crewHrs = hrs*crew + (pay? drive*crew : 0);
+  var labor = crewHrs*wage;
+  var cost = fuel + labor + mat;
+  var profit = rev - cost;
+  var margin = rev>0 ? profit/rev : 0;
+  var jobHours = hrs + drive;                 // clock time the job ties up
+  var perHr = jobHours>0 ? profit/jobHours : 0;
+  var minPrice = cost/(1-FLOOR);              // price for a 35% margin
+  // outputs
+  var pe=$("profit"); pe.textContent=money(profit); pe.className="big "+(profit<=0?"warn":"good");
+  $("psub").textContent="on a "+money(rev)+" job · "+jobHours.toFixed(1)+" hrs door-to-door";
+  $("margin").textContent=(margin*100).toFixed(0)+"%";
+  $("perhr").textContent=money(perHr);
+  $("fuelcost").textContent=money(fuel);
+  // verdict
+  var v=$("verdict");
+  if(profit<=0){v.className="verdict warn";v.innerHTML="🔴 Underwater — you'd lose money. Need at least <b>"+money(minPrice)+"</b> to clear the 35% floor.";}
+  else if(margin<FLOOR){v.className="verdict thin";v.innerHTML="🟡 Thin — below the 35% floor. Charge <b>"+money(minPrice)+"+</b>, trim the trip, or bundle a nearby job.";}
+  else if(perHr<60){v.className="verdict thin";v.innerHTML="🟡 Margin's fine but only <b>"+money(perHr)+"/hr</b> door-to-door — OK if it's on the way, thin if it's a special trip.";}
+  else {v.className="verdict good";v.innerHTML="🟢 Worth it — "+(margin*100).toFixed(0)+"% margin, "+money(perHr)+"/hr door-to-door.";}
+  // breakdown
+  $("bd").innerHTML=
+    '<div class="r"><span>Fuel ('+miles+' mi ÷ '+mpg+' mpg × $'+fuelP.toFixed(2)+')</span><b>'+money(fuel)+'</b></div>'+
+    '<div class="r"><span>Crew labor ('+crewHrs.toFixed(1)+' crew-hrs × $'+wage+')</span><b>'+money(labor)+'</b></div>'+
+    '<div class="r"><span>Materials / dump</span><b>'+money(mat)+'</b></div>'+
+    '<div class="r t"><span>Total cost</span><b>'+money(cost)+'</b></div>'+
+    '<div class="r"><span>Job price</span><b>'+money(rev)+'</b></div>'+
+    '<div class="r t"><span>Profit</span><b>'+money(profit)+'</b></div>'+
+    '<div class="r"><span>Min price for 35% margin</span><b>'+money(minPrice)+'</b></div>';
+}
+calc();
+</script>
+</body></html>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1080" height="1080" fill="#8BC34A"/>
+  <rect x="0" y="0" width="1080" height="1080" fill="#8BC34A"/>
+  <!-- header -->
+  <text x="60" y="92" fill="#1B2A4E" font-size="26" font-weight="700" letter-spacing="4">OBX LOT SOLUTIONS</text>
+  <rect x="60" y="112" width="120" height="6" fill="#1B2A4E"/>
+  <!-- title -->
+  <text x="60" y="280" fill="#1B2A4E" font-size="78" font-weight="800">Wash it once.</text>
+  <text x="60" y="370" fill="#1B2A4E" font-size="78" font-weight="800">Stop thinking</text>
+  <text x="60" y="460" fill="#1B2A4E" font-size="78" font-weight="800">about it.</text>
+  <!-- body -->
+  <text x="60" y="560" fill="#1f3a14" font-size="30">Salt &amp; humidity regrow algae every single year.</text>
+  <text x="60" y="602" fill="#1f3a14" font-size="30">A recurring plan keeps your home clean on schedule —</text>
+  <text x="60" y="644" fill="#1f3a14" font-size="30">so you never look at green siding again.</text>
+  <!-- 20% badge -->
+  <g transform="translate(60,710)">
+    <rect x="0" y="0" width="420" height="160" rx="18" fill="#1B2A4E"/>
+    <text x="30" y="86" fill="#8BC34A" font-size="78" font-weight="800">20% OFF</text>
+    <text x="32" y="128" fill="#ffffff" font-size="30" font-weight="600">every recurring visit</text>
+  </g>
+  <text x="520" y="800" fill="#1B2A4E" font-size="34" font-weight="800">Set it once.</text>
+  <text x="520" y="844" fill="#1B2A4E" font-size="34" font-weight="800">We've got the rest.</text>
+  <!-- footer -->
+  <rect x="0" y="980" width="1080" height="100" fill="#1B2A4E"/>
+  <text x="60" y="1043" fill="#8BC34A" font-size="30" font-weight="800">(252) 564-8717  ·  obxlotsolutions.com</text>
+</svg>

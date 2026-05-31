@@ -1,0 +1,74 @@
+/* Jamieson Automation — premium, consultative. Brand: navy #002052 / blue #0099E5. */
+:root{
+  --navy:#002052; --navy2:#001640; --blue:#0099E5; --blue-d:#0078b8; --cyan:#37b0f0;
+  --ink:#0f1b2d; --muted:#5b6b80; --line:#e3e9f0; --bg:#ffffff; --soft:#f4f7fb; --dark:#04122b;
+  --maxw:1120px; --r:14px; --sh:0 10px 30px rgba(0,32,82,.10);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.65;font-size:17px}
+img{max-width:100%;display:block} a{color:var(--blue-d)}
+h1,h2,h3{line-height:1.16;color:var(--navy);margin:0 0 .5em;letter-spacing:-.01em} h1{font-size:2.1rem;font-weight:800} h2{font-size:1.6rem;font-weight:800} h3{font-size:1.15rem}
+p{margin:0 0 1em} .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px}
+.btn{display:inline-block;background:var(--blue);color:#fff;font-weight:700;padding:14px 24px;border-radius:10px;text-decoration:none;border:none;cursor:pointer;font-size:1rem;text-align:center;box-shadow:0 6px 18px rgba(0,153,229,.3)}
+.btn:hover{background:var(--blue-d)} .btn.ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5);box-shadow:none}
+.btn.navy{background:var(--navy);color:#fff;box-shadow:none} .btn.block{display:block;width:100%}
+.topbar{background:var(--dark);color:#cfe6f7;font-size:.82rem}
+.topbar .wrap{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 18px;flex-wrap:wrap}
+.topbar a{color:#fff;text-decoration:none;font-weight:700}
+header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);box-shadow:0 1px 0 var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;max-width:var(--maxw);margin:0 auto}
+.logo{display:flex;align-items:center;gap:11px;text-decoration:none}
+.logo .mark{width:40px;height:40px;flex:0 0 auto}
+.logo .txt{font-weight:800;color:var(--navy);font-size:1.08rem;line-height:1} .logo .txt span{color:var(--blue);display:block;font-size:.66rem;font-weight:700;letter-spacing:1.5px}
+.navlinks{display:none} .navlinks a{color:var(--navy);text-decoration:none;font-weight:600;margin-left:20px;font-size:.95rem} .navlinks a:hover{color:var(--blue)}
+.navcta{display:none}
+.menu-toggle{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-size:1.1rem;cursor:pointer}
+#nav-check{display:none}
+.mobilemenu{display:none;flex-direction:column;background:var(--navy);padding:8px 18px 16px}
+.mobilemenu a{color:#fff;text-decoration:none;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.12);font-weight:600}
+#nav-check:checked ~ .mobilemenu{display:flex}
+.hero{background:radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.35),transparent),linear-gradient(160deg,var(--navy) 0%,var(--dark) 100%);color:#fff;position:relative;overflow:hidden}
+.hero .wrap{padding:50px 18px 58px;position:relative;z-index:2}
+.hero h1{color:#fff;max-width:20ch} .hero p.lead{font-size:1.15rem;max-width:46ch;color:#cfe0f0}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.hero .badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+.badge{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;color:#fff;display:flex;align-items:center;gap:6px}
+.grid-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.10) 1px,transparent 1px);background-size:22px 22px;z-index:1;opacity:.5}
+section{padding:48px 0} section.alt{background:var(--soft)} section.dark{background:var(--navy);color:#cfe0f0} section.dark h2,section.dark h3{color:#fff}
+.kicker{color:var(--blue);font-weight:800;text-transform:uppercase;letter-spacing:1.5px;font-size:.76rem;margin-bottom:6px}
+.center{text-align:center} .center p{margin-left:auto;margin-right:auto;max-width:62ch}
+.grid{display:grid;gap:18px;grid-template-columns:1fr}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:24px;box-shadow:var(--sh)}
+.card .ic{width:48px;height:48px;background:linear-gradient(135deg,var(--navy),var(--blue));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:14px}
+.card h3{margin-bottom:6px} .card .price{color:var(--blue-d);font-weight:800}
+.steps{display:grid;gap:16px;grid-template-columns:1fr}
+.step{display:flex;gap:14px;align-items:flex-start} .step .n{flex:0 0 auto;width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}
+.trust{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;text-align:center}
+.trust .v{font-size:1.7rem;font-weight:800;color:var(--blue)} .trust .l{font-size:.8rem;color:#cfe0f0}
+.review{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:var(--sh)}
+.stars{color:#f5a623;font-size:1.1rem} .review .who{font-weight:800;margin-top:8px} .review .meta{color:var(--muted);font-size:.85rem}
+.ctaband{background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;text-align:center} .ctaband h2{color:#fff}
+.formcard{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:26px;box-shadow:var(--sh);max-width:580px;margin:0 auto}
+label{display:block;font-weight:700;margin:14px 0 5px;font-size:.92rem}
+input,select,textarea{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;font-family:inherit}
+textarea{min-height:90px} .req{color:#c0392b}
+.checkrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.checkrow label{display:flex;align-items:center;gap:7px;font-weight:600;background:var(--soft);border:1.5px solid var(--line);border-radius:9px;padding:9px 12px;margin:0;cursor:pointer}
+.checkrow input{width:auto}
+footer.site{background:var(--dark);color:#aebfd4;padding:40px 0 24px;font-size:.92rem}
+footer.site h4{color:#fff;font-size:1rem;margin:0 0 10px} footer.site a{color:#aebfd4;text-decoration:none;display:block;padding:3px 0} footer.site a:hover{color:var(--blue)}
+.fgrid{display:grid;gap:26px;grid-template-columns:1fr}
+.fbar{border-top:1px solid rgba(255,255,255,.1);margin-top:24px;padding-top:16px;font-size:.8rem;color:#6f82a0}
+.callbar{position:fixed;bottom:0;left:0;right:0;display:flex;z-index:60;box-shadow:0 -2px 12px rgba(0,0,0,.18)}
+.callbar a{flex:1;text-align:center;padding:14px;font-weight:800;text-decoration:none;color:#fff} .callbar .c{background:var(--navy)} .callbar .q{background:var(--blue)}
+body{padding-bottom:54px}
+.split{display:block}
+@media(min-width:760px){
+  h1{font-size:2.8rem} .hero .wrap{padding:78px 18px 88px}
+  .navlinks,.navcta{display:flex;align-items:center} .menu-toggle{display:none}
+  .grid.c2{grid-template-columns:1fr 1fr} .grid.c3{grid-template-columns:repeat(3,1fr)} .grid.c4{grid-template-columns:repeat(4,1fr)}
+  .steps{grid-template-columns:repeat(4,1fr)} .trust{grid-template-columns:repeat(4,1fr)}
+  .fgrid{grid-template-columns:2fr 1fr 1fr 1.5fr}
+  .callbar{display:none} body{padding-bottom:0}
+  .split{display:grid;grid-template-columns:1.1fr .9fr;gap:34px;align-items:center}
+}
