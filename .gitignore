@@ -2,6 +2,9 @@
 data.json
 business-app-backup-*.json
 
+# --- Company document vault (EIN, insurance, COI — server-only, never commit) ---
+company-docs/
+
 # --- Secrets (QuickBooks OAuth keys & tokens) ---
 qb-config.json
 qb-tokens.json
