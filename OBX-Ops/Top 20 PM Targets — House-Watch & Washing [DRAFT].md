@@ -1,7 +1,7 @@
 # Top 20 PM Targets — House-Watch & Washing  *(call sheet, DRAFT)*
 Pulled from *OBX Lot Solutions - Commercial Call List.xlsx* (#1–15), re-ranked for the **house-watch + washing** play (not lot/dumpster cleanup), then **expanded with 5 newly sourced OBX rental managers (#16–20)**.
 
-**Why this ranking:** washing scales with portfolio size (every absentee home needs annual algae soft-wash = recurring), and PMs/VRMs are the **channel to the 60% of OBX homes that are absentee-owned** — the house-watch sweet spot. Big portfolios rank high for washing volume; smaller/local shops rank for an easy first yes. **All phones re-verified against official sources May 31, 2026** — ★ = verified, dial-ready · ⟳ = still confirm on site (1 left). Numbers are main/reservations lines; ask for the maintenance / property-services coordinator.
+**Why this ranking:** washing scales with portfolio size (every absentee home needs annual algae soft-wash = recurring), and PMs/VRMs are the **channel to the 60% of OBX homes that are absentee-owned** — the house-watch sweet spot. Big portfolios rank high for washing volume; smaller/local shops rank for an easy first yes. **All phones re-verified against official sources May 31, 2026** — ★ = verified, dial-ready. **All 20 are now dial-ready** (Crew Cutters #14 verified June 1: 252-480-2689). Numbers are main/reservations lines; ask for the maintenance / property-services coordinator.
 
 | # | Target | Type / size | Towns | Phone | Lead service | Why they fit |
 |---|---|---|---|---|---|---|
@@ -18,10 +18,10 @@ Pulled from *OBX Lot Solutions - Commercial Call List.xlsx* (#1–15), re-ranked
 | 11 | **Seaside Management** | HOA / condo / commercial | Kitty Hawk (whole OBX) | ★ (252) 261-1200 | House-watch (HOA owners) + washing | Manages HOA common areas + absentee-owner units. **Phone verified — call now.** |
 | 12 | **Signature Touch Property Mgmt** | HOA / association | Currituck & Dare | ★ (252) 441-8857 | Washing + house-watch | One contract can cover several communities. **Phone verified — call now.** |
 | 13 | **Harrell & Associates** | Residential & commercial | Nags Head | ★ (252) 441-7887 | House-watch + washing | Has a commercial division; ask for the property-management manager. **Phone verified.** |
-| 14 | **Crew Cutters OBX** *(partner channel)* | Landscaping / property maint. | Corolla→Nags Head | ⟳ crewcuttersobx.com | Referral / sub on washing | Holds vacation-rental & commercial accounts but skips washing — refer/sub angle, not a direct buyer. |
+| 14 | **Crew Cutters OBX** *(partner channel)* | Landscaping / lawn / tree removal (since 2001), KDH | Corolla→Nags Head | ★ (252) 480-2689 | Referral / sub on washing | Holds vacation-rental & commercial accounts but skips exterior washing — refer/sub angle, not a direct buyer. **Note:** now a direct competitor on the new yard-work line (they do landscaping + tree removal), so play this purely as a washing cross-referral, not a yard-work pitch. |
 | 15 | **Kim Franks Lawn & Landscaping** *(partner channel)* | Residential & commercial | KDH, KH, NH, SS, Duck, Corolla | ★ (252) 573-9374 | Referral / sub on washing | Residential reach across every town; one yes can hand you several washing referrals. |
 
-**Call-order tip:** **19 of 20 are dial-ready** (only Crew Cutters #14 still needs a website check). Call top-down — the whole list is callable today. Best windows: Tue–Thu, 9–11am / 1:30–4pm.
+**Call-order tip:** **all 20 are dial-ready.** Call top-down — the whole list is callable today. Best windows: Tue–Thu, 9–11am / 1:30–4pm.
 
 ---
 
@@ -36,7 +36,4 @@ Verified real, full-service property-management companies in the northern servic
 | 19 | **Carolina Designs Realty** | VRM — Duck (upscale/curated) | Duck | (800) 368-3825 · rentals@carolinadesigns.com | **Washing-first** | Higher-end Duck homes where owners pay for "always-pristine." Strong soft-wash + house-watch combo. |
 | 20 | **Atlantic Realty of the Outer Banks** | PM since 1982 (owner-services focus) | Kitty Hawk | (252) 680-1815 (PM line) · info@atlanticrealty-nc.com | **House-watch-first** | Smaller, owner-services-oriented PM — best entry is scheduled property checks, then attach washing. Faster to a decision-maker. |
 
-*Checked and excluded:* **Corolla Classic Vacations** — its booking email is `@villagerealtyobx.com`, i.e. it's a **Village Realty** brand (already #8); contacting both would double-call the same operator.
-
----
-> **Resolved (prior fork):** Strategy directed — kept the 2 referral landscapers (#14–15) **and** sourced 5 more PMs (#16–20). No open forks.
+*Checked and excluded:* **Corolla Classic Vacations** — its booking email is `@villagerealtyobx.com`, i.e. it's a **Village Realty** brand (already #8); contacting both would doubl
