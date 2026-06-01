@@ -32,5 +32,12 @@ Load order only matters for top-level `const`/`let` and the boot block — keep 
 - **ES modules** — breaks `file://` use + needs export/import refactor of ~200 functions. High risk, no upside here.
 - **Bundler/build step** — adds tooling to a zero-build app; reintroduces a "large generated file." Defeats the purpose.
 
+## ✅ Status: GREENLIT + tooling built & verified (2026-05-31)
+Strategy greenlit Option 1. The split is now **mechanical** — `DevOps/split_app.py` does it deterministically and **proves it lossless**:
+- Reads the clean monolith from `git show HEAD` (bypasses the torn mount); writes only small files.
+- Tested against HEAD (491,171 B): **30 js files + `app.css` (~14 KB) + a ~3.6 KB shell**; the lossless assert (`"".join(chunks)==original script`) **PASSED**, and the reassembled JS passes `node --check`. The shell ends `</body></html>`. Largest chunk ~100 KB (a data-heavy section, 5× under the monolith — watch it).
+- **To execute (clean session, AFTER the Round-2 re-apply is committed so HEAD includes it):** `python3 DevOps/split_app.py . git` → then browser-verify (`file://` + served): every tab, full quote flow, sync, print → Ray commits. `git revert` if anything regresses.
+- Load order is source order (boot chunk stays last), so dependencies are preserved. Classic `<script src>` keeps `file://` working.
+
 ## Ask
-Greenlight the **mechanical `<script src>` split** (Option 1) as a dedicated clean-session task. Sequencing suggestion: **do the Round-2 re-apply FIRST** (small, Ray's waiting on it — see `Quote-Tool Round 2 — Patch & Recovery.md`), **then the split**, so we're not re-applying Round-2 against a moving structure. After the split, all future quote-tool work (the rest of Round 2: #1/#2/#3/#5/#6/#10 + pickup-load model) lands reliably.
+Greenlight the **mechanical `<script src>` split** (Option 1) as a dedicated clean-session task. — DONE (greenlit); script built + verified, ready to run. Sequencing suggestion: **do the Round-2 re-apply FIRST** (small, Ray's waiting on it — see `Quote-Tool Round 2 — Patch & Recovery.md`), **then the split**, so we're not re-applying Round-2 against a moving structure. After the split, all future quote-tool work (the rest of Round 2: #1/#2/#3/#5/#6/#10 + pickup-load model) lands reliably.
