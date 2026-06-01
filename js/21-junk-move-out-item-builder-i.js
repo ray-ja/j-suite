@@ -57,7 +57,7 @@ function wizJunkUI(){
     <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b><br>Location labor (stairs/attic): <b>+${money(c.locLabor)}</b><br>Special-item disposal: <b>+${money(c.special)}</b>${c.dump?`<br>Heavy/dense-load surcharge: <b>+${money(c.dump)}</b>`:""}${c.rental?`<br>Equipment rental (${esc(c.rentalName)}): <b>+${money(c.rental)}</b>`:""}</div></div>`;
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
   h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(c.total)}</div></div>`;
-  h+=`<div class="row" style="gap:8px;margin-top:6px"><button class="btn ghost grow" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
+  h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(c.total)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
   return h;
 }
 function junkCatalogHTML(){
@@ -75,10 +75,11 @@ function junkCatalogHTML(){
     if(!hits.length)return `<div class="card"><div class="muted">No items match “${esc(WZ.junkSearch)}”. Try a shorter word, or clear the search to browse categories. (Anything unusual? Add it as a Custom line back on the services screen.)</div></div>`;
     return `<div class="card"><div class="sub" style="margin-bottom:4px">${hits.length} match${hits.length>1?"es":""} for “${esc(WZ.junkSearch)}”</div>`+hits.map(row).join("")+`</div>`;
   }
-  return JUNK_CAT.map((g,gi)=>`<details class="card" ${gi<3?"open":""}><summary style="font-weight:800;cursor:pointer">${esc(g[0])}</summary><div style="margin-top:4px">`+g[1].map(row).join("")+`</div></details>`).join("");
+  return JUNK_CAT.map((g,gi)=>{const op=(WZ.junkOpen&&(gi in WZ.junkOpen))?WZ.junkOpen[gi]:(gi<3);return `<details class="card" ${op?"open":""} ontoggle="wizJunkToggle(${gi},this.open)"><summary style="font-weight:800;cursor:pointer">${esc(g[0])}</summary><div style="margin-top:4px">`+g[1].map(row).join("")+`</div></details>`;}).join("");
 }
 window.wizJSearch=function(){const e=document.getElementById("je_search");WZ.junkSearch=e?e.value:"";const c=document.getElementById("je_catalog");if(c)c.innerHTML=junkCatalogHTML();};
-window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}render();};
+window.wizJunkToggle=function(gi,open){if(!WZ.junkOpen)WZ.junkOpen={};WZ.junkOpen[gi]=open;};
+window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;render();}};
 window.openTrailerBuy=function(){
   // break-even line chart: used utility trailer ($1,500) vs renting, at 4 uses/mo over 24 months
@@ -133,4 +134,3 @@ window.wizAddJunk=function(){
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:c.total,cost:junkCost,notes:notes,qty:1,unit:"job",serviceId:""});
   WZ.junk=[];WZ.step="pick";render();
 };
-

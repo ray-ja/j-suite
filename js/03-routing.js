@@ -6,6 +6,7 @@ function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   document.getElementById("bizsel").value=b;render()}
 function render(){
   if(TAB!=="training")TRMOD=null;
+  document.body.classList.toggle("wizon",!!WZON);
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
   ({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,data:rData}[TAB])();
   renderSyncPill();

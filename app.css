@@ -127,6 +127,11 @@
   .qline .rm{background:none;border:none;color:var(--danger);font-size:20px;padding:0 4px}
   .totbar{position:sticky;bottom:0;background:var(--card);border-top:2px solid var(--accent);padding:12px 2px;margin-top:8px;display:flex;align-items:center}
   .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:22px;font-weight:800;color:var(--brand)}
+  .wizfoot{position:sticky;bottom:72px;z-index:26;display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-top:2px solid var(--accent);border-radius:12px;padding:10px 12px;margin-top:10px;box-shadow:0 -3px 12px rgba(0,0,0,.12)}
+  .wizfoot .wf-amt{white-space:nowrap}.wizfoot .wf-lab{color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+  .wizfoot .wf-amt b{font-size:21px;color:var(--brand);margin-left:5px}
+  .wizfoot .btn{width:auto}.wizfoot .btn.grow{flex:1}
+  body.wizon .fab{display:none}
   .toggle{display:flex;align-items:center;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
   .toggle input{width:auto}
   .secthd{display:flex;align-items:center;margin:18px 4px 6px}
@@ -150,6 +155,7 @@
   /* ---------- DESKTOP ---------- */
   @media(min-width:900px){
     body{font-size:17px;padding-bottom:0}
+    .wizfoot{bottom:0}
     header{height:60px;padding:0 26px}
     .logo{font-size:22px}
     nav{top:60px;bottom:0;left:0;right:auto;width:224px;flex-direction:column;border-top:none;border-right:1px solid var(--line);padding-top:16px}
