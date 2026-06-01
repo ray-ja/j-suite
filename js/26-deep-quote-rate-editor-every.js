@@ -1,0 +1,124 @@
+/* ---------- DEEP QUOTE RATE EDITOR (every rate, modifier & minimum, with sources) ---------- */
+function deepEditorHTML(){
+  const ov=deepOverrides();
+  const svcs=WZ_SVC[S.biz].filter(s=>DEEP[s[0]]);
+  return svcs.map(s=>{const key=s[0];const cfg=getDeepCfg(key);const edited=!!ov[key];
+    let h=`<details class="card"><summary style="font-weight:800;cursor:pointer">${esc(s[1])}${edited?` <span class="badge" style="background:var(--accent);color:var(--accent-ink)">edited</span>`:""}</summary><div style="margin-top:8px">`;
+    h+=`<div class="sub" style="margin-bottom:8px;line-height:1.5">📚 <b>Source:</b> ${esc(DEEP_SRC[key]||"")}</div>`;
+    h+=`<div class="row" style="align-items:center;gap:8px"><div class="grow"><b>Minimum charge</b></div><span class="sub">$</span><input type="number" style="width:90px" value="${cfg.min}" onchange="setDeepMin('${key}',this.value)"></div>`;
+    cfg.groups.forEach(g=>{h+=`<div style="font-weight:700;margin-top:12px;border-top:1px solid var(--line);padding-top:8px">${esc(g[0])}</div>`;
+      g[1].forEach(it=>{
+        if(it.kind==="area"){h+=`<div class="sub" style="margin-top:6px">${esc(it.label)} — $/${esc(it.unit)} (sliding scale by size):</div><div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px">`+it.tiers.map((t,ti)=>`<span class="sub">${t[0]>=1e9?"largest:":"≤"+t[0].toLocaleString()+":"}</span><input type="number" step="0.01" style="width:72px" value="${t[1]}" onchange="setDeepTier('${key}','${it.k}',${ti},this.value)">`).join("")+`</div>`;}
+        else h+=`<div class="row" style="align-items:center;gap:8px;margin-top:6px"><div class="grow sub">${esc(it.label)}</div><span class="sub">$</span><input type="number" step="0.01" style="width:86px" value="${it.rate}" onchange="setDeepItemRate('${key}','${it.k}',this.value)"><span class="sub">/${esc(it.unit)}</span></div>`;
+        if(it.mods)h+=it.mods.filter(m=>m[2]!==0||true).map(m=>`<div class="row" style="align-items:center;gap:8px;margin:2px 0 2px 16px"><div class="grow sub">↳ ${esc(m[1])}</div><input type="number" style="width:64px" value="${Math.round(m[2]*100)}" onchange="setDeepLmod('${key}','${it.k}','${m[0]}',this.value)"><span class="sub">%</span></div>`).join("");
+      });
+    });
+    if(cfg.mods&&cfg.mods.length){h+=`<div style="font-weight:700;margin-top:12px;border-top:1px solid var(--line);padding-top:8px">Job conditions</div>`;
+      cfg.mods.forEach(md=>{
+        if(md.t==="chk"){const isFlat=md.flat!=null;h+=`<div class="row" style="align-items:center;gap:8px;margin-top:4px"><div class="grow sub">${esc(md.label)}</div><span class="sub">${isFlat?"$":""}</span><input type="number" style="width:74px" value="${isFlat?md.flat:Math.round(md.pct*100)}" onchange="setDeepJmodChk('${key}','${md.k}',this.value)"><span class="sub">${isFlat?"":"%"}</span></div>`;}
+        else {h+=`<div class="sub" style="margin-top:6px">${esc(md.label)}:</div>`+md.opts.map(o=>{const e=o[2]||{};if(e.pct==null&&e.flat==null)return"";const isFlat=e.flat!=null;return `<div class="row" style="align-items:center;gap:8px;margin:2px 0 2px 16px"><div class="grow sub">↳ ${esc(o[1])}</div><span class="sub">${isFlat?"$":""}</span><input type="number" style="width:74px" value="${isFlat?e.flat:Math.round(e.pct*100)}" onchange="setDeepJmodSel('${key}','${md.k}','${o[0]}',this.value)"><span class="sub">${isFlat?"":"%"}</span></div>`;}).join("");}
+      });
+    }
+    h+=`<button class="btn ghost sm" style="margin-top:12px" onclick="resetDeepKey('${key}')">↺ Reset this service to researched defaults</button>`;
+    return h+`</div></details>`;
+  }).join("");
+}
+window.openDeepEditor=function(){modal("Deep quote rates",`<p class="muted" style="margin-bottom:8px">Every rate, modifier %, and minimum behind the deep estimators — edit any of them and the change flows straight into the Guided Quote. The 📚 line shows where each default came from. Percentages are whole numbers (25 = +25%, −15 = a 15% discount); flat adjustments are dollars.</p><div id="deepEditBody">`+deepEditorHTML()+`</div><button class="btn ghost" style="margin-top:10px" onclick="resetDeepAll()">↺ Reset ALL ${esc(BIZ[S.biz].name)} deep rates</button>`);};
+function _ovset(key,fn){const o=deepOverrides();if(!o[key])o[key]={};fn(o[key]);setDeepOverrides(o);}
+window.setDeepMin=function(key,v){_ovset(key,x=>x.min=parseFloat(v)||0);};
+window.setDeepItemRate=function(key,ik,v){_ovset(key,x=>{x.items=x.items||{};x.items[ik]=x.items[ik]||{};x.items[ik].rate=parseFloat(v)||0;});};
+window.setDeepTier=function(key,ik,ti,v){const it=getDeepCfg(key).groups.reduce((a,g)=>a.concat(g[1]),[]).find(z=>z.k===ik);const tiers=it.tiers.map(t=>[t[0],t[1]]);tiers[ti][1]=parseFloat(v)||0;_ovset(key,x=>{x.items=x.items||{};x.items[ik]=x.items[ik]||{};x.items[ik].tiers=tiers;});};
+window.setDeepLmod=function(key,ik,mv,v){_ovset(key,x=>{x.lmods=x.lmods||{};x.lmods[ik]=x.lmods[ik]||{};x.lmods[ik][mv]=(parseFloat(v)||0)/100;});};
+window.setDeepJmodChk=function(key,mk,v){_ovset(key,x=>{x.jmods=x.jmods||{};const md=DEEP[key].mods.find(m=>m.k===mk);x.jmods[mk]=(md.flat!=null)?(parseFloat(v)||0):((parseFloat(v)||0)/100);});};
+window.setDeepJmodSel=function(key,mk,opt,v){_ovset(key,x=>{x.jmods=x.jmods||{};if(typeof x.jmods[mk]!=="object"||x.jmods[mk]==null)x.jmods[mk]={};const md=DEEP[key].mods.find(m=>m.k===mk);const o=md.opts.find(z=>z[0]===opt);const isFlat=o[2]&&o[2].flat!=null;x.jmods[mk][opt]=isFlat?(parseFloat(v)||0):((parseFloat(v)||0)/100);});};
+window.resetDeepKey=function(key){const o=deepOverrides();delete o[key];setDeepOverrides(o);const b=document.getElementById("deepEditBody");if(b)b.innerHTML=deepEditorHTML();};
+window.resetDeepAll=function(){if(!confirm("Reset ALL deep quote rates for this business to the researched defaults?"))return;setDeepOverrides({});const b=document.getElementById("deepEditBody");if(b)b.innerHTML=deepEditorHTML();};
+
+window.openRatesEditor=function(){modal("Pricing rates",`<p class="muted" style="margin-bottom:8px">Advanced — edit the numbers, keep the format. Tiers are [up-to-amount, price-per-unit]; multipliers like 1.25 add 25%.</p>
+  <textarea id="rates_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getRates(),null,2))}</textarea>
+  <p id="rates_err" class="muted"></p>
+  <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveRatesEditor()">Save</button><button class="btn ghost grow" onclick="resetRates()">Reset to defaults</button></div>`);};
+window.saveRatesEditor=function(){try{const o=JSON.parse(document.getElementById("rates_json").value);setRates(o);closeModal();alert("Pricing rates saved.");}catch(e){const el=document.getElementById("rates_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
+window.openCostsEditor=function(){modal("Job costs (COGS)",`<p class="muted" style="margin-bottom:8px">Advanced — edit the material/hardware cost defaults. Same shape as the built-in defaults; keep the format.</p>
+  <textarea id="costs_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getCosts(),null,2))}</textarea>
+  <p id="costs_err" class="muted"></p>
+  <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveCostsEditor()">Save</button><button class="btn ghost grow" onclick="resetCosts()">Reset to defaults</button></div>`);};
+window.saveCostsEditor=function(){try{const o=JSON.parse(document.getElementById("costs_json").value);setCosts(o);closeModal();alert("Job costs saved.");}catch(e){const el=document.getElementById("costs_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
+window.resetCosts=function(){if(!confirm("Reset job costs to defaults?"))return;setCosts(JSON.parse(JSON.stringify(COST_DEFAULT)));closeModal();alert("Job costs reset to defaults.");};
+window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
+function rData(){
+  const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
+  const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
+  view.innerHTML=`<h2>Sync</h2>
+    <div class="card">
+      <label>Sync server URL</label><input id="sy_url" value="${esc(S.sync.url)}" placeholder="http://your-server:4000">
+      <label>Access token (shared secret)</label><input id="sy_token" value="${esc(S.sync.token)}" placeholder="set this same on the server">
+      <div class="toggle"><input type="checkbox" id="sy_auto" ${S.sync.auto?"checked":""}><label style="margin:0">Auto-sync when the app opens</label></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn grow" onclick="saveSync()">Save settings</button>
+        <button class="btn acc grow" onclick="syncNow()">Sync now</button></div>
+      <p class="muted" style="margin-top:8px">Last synced: ${last}. <span id="sy_msg"></span></p>
+    </div>
+    <h2>Appearance</h2>
+    <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${localStorage.getItem("jra_theme")==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode</label></div></div>
+    <h2>Team</h2>
+    <div class="card">
+      <div class="row"><div class="grow"><div class="nm">${curUser()?esc(curUser().username):"Not signed in"}</div><div class="sub">${curUser()?"signed in on this device":"sign in to tag your work"}</div></div>
+      ${curUser()?`<button class="btn ghost sm" onclick="logoutUser()">Sign out</button>`:`<button class="btn ghost sm" onclick="openLogin()">Sign in</button>`}</div>
+      ${users().length?`<div style="margin-top:8px">`+users().map(u=>`<div class="li"><div class="grow">${esc(u.username)}${curUser()&&curUser().id===u.id?" · you":""}</div><button class="btn danger sm" onclick="delUser('${u.id}')">Remove</button></div>`).join("")+`</div>`:`<div class="muted" style="margin-top:8px">No accounts yet.</div>`}
+      <button class="btn ghost" style="margin-top:10px" onclick="openCreateAccount()">+ Add account</button>
+    </div>
+    <h2>Pricing rates</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">Edit every rate, modifier, and minimum behind the <b>deep line-item estimators</b> — with the source of each number shown so you know what you're changing. Flows straight into the Guided Quote.</p>
+      <button class="btn acc" onclick="openDeepEditor()">⚙️ Edit deep quote rates</button>
+      <div style="border-top:1px solid var(--line);margin:10px 0"></div>
+      <p class="muted" style="margin-bottom:8px">Legacy quick-builder rates (raw JSON, the older simple calculators).</p>
+      <button class="btn ghost" onclick="openRatesEditor()">Edit legacy rates (JSON)</button></div>
+    <h2>Job costs (COGS)</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">Material/hardware cost defaults behind each service — these drive the live <b>Cost / Profit / Margin</b> strip on every quote.</p>
+      <button class="btn ghost" onclick="openCostsEditor()">Edit job costs (JSON)</button></div>
+    <h2>This device</h2>
+    <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
+    <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
+    <h2>Backup</h2>
+    <div class="card">
+      <p class="muted" style="margin-bottom:10px">Data lives on this device. Export a backup any time; import to restore or move it manually.</p>
+      <button class="btn ghost" onclick="exportData()">Export backup (.json)</button>
+      <label>Import backup</label><input type="file" accept="application/json" id="impfile" onchange="importData(this)">
+    </div>
+    <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
+}
+window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
+  S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();};
+function syMsg(t){const e=document.getElementById("sy_msg");if(e)e.textContent=t;}
+function renderSyncPill(){const b=document.getElementById("syncbtn");
+  if(!S.sync.url){b.style.display="none";return;}
+  b.style.display="";b.textContent="⟳ Sync";}
+window.syncNow=async function(){
+  if(!S.sync.url){if(TAB==="data")syMsg("Set a server URL first.");else{TAB="data";render();}return;}
+  syMsg("Syncing…");const btn=document.getElementById("syncbtn");if(btn)btn.textContent="⟳ …";
+  try{
+    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam,users:S.users}})});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const data=await res.json();
+    if(!data||!data.state||!data.state.obx)throw new Error("bad response");
+    S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;S.sync.last=now();save();
+    render();syMsg("Synced ✓");
+  }catch(e){syMsg("Sync failed: "+e.message);if(btn)btn.textContent="⟳ Sync";}
+};
+window.exportData=function(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="business-app-backup-"+today()+".json";a.click();
+};
+window.importData=function(inp){
+  const file=inp.files[0];if(!file)return;const r=new FileReader();
+  r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.obx||!o.jam)throw 0;
+    if(!confirm("Replace all current data with this backup?"))return;
+    o.sync=o.sync||S.sync;S=o;S.biz=S.biz||"obx";save();setBiz(S.biz);alert("Imported.");}
+    catch(e){alert("That doesn't look like a valid backup file.")}};
+  r.readAsText(file);
+};
+
