@@ -13,7 +13,8 @@ h=h.replace("</body>",smokeScript+"\n</body>");
 fs.writeFileSync("__verify_tmp.html",h);
 const chrome="C:/Program Files/Google/Chrome/Application/chrome.exe";
 try{
-  const out=cp.execSync(`"${chrome}" --headless --disable-gpu --dump-dom --virtual-time-budget=2500 "file:///${process.cwd().replace(/\\/g,"/")}/__verify_tmp.html"`,{encoding:"utf8",stdio:["ignore","pipe","ignore"]});
+  const prof=require("os").tmpdir()+"/jsuite-verify-"+process.pid;  // isolated profile → no default-profile lock contention
+  const out=cp.execSync(`"${chrome}" --headless --disable-gpu --no-first-run --no-default-browser-check --user-data-dir="${prof}" --dump-dom --virtual-time-budget=2500 "file:///${process.cwd().replace(/\\/g,"/")}/__verify_tmp.html"`,{encoding:"utf8",stdio:["ignore","pipe","ignore"],timeout:60000});
   const m=out.match(/data-errs="([^"]*)"/);
   const errs=m?JSON.parse(m[1].replace(/&quot;/g,'"').replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")):null;
   if(errs===null){console.log("FAIL: data-errs not found (page did not finish booting)");process.exit(1);}

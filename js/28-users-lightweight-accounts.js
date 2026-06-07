@@ -73,7 +73,7 @@ window.appLogin=async function(){
     S.sync.url=base;if(d.token)S.sync.token=d.token;S.sync.auto=true;
     if(d.user&&d.user.id)localStorage.setItem("jra_session",d.user.id);
     window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
-    await syncNow();
+    if(typeof syncRun==="function")await syncRun("pull");   // pull their data silently (no empty-store confirm)
     if(typeof applyUserSettings==="function")applyUserSettings();
     render();
   }catch(e){loginMsg("Couldn't reach the server — check the URL / Tailscale connection.");}
@@ -83,7 +83,7 @@ window.appBootstrapToken=async function(){
   if(!tok){loginMsg("Paste a token first.");return;}
   S.sync.url=base;S.sync.token=tok;S.sync.auto=true;window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
   loginMsg("Connecting…");
-  try{await syncNow();}catch(e){}
+  try{if(typeof syncRun==="function")await syncRun("pull");else await syncNow();}catch(e){}
   render();
 };
 window.useOffline=function(){localStorage.setItem("jra_offline_ok","1");render();};
