@@ -14,12 +14,21 @@ const incoming = {
   users: [{ id: "u1", username: "ray", passhash: t.hashPw("pw"), updatedAt: 3 }]
 };
 const m = t.mergeState(stored, incoming);
-ok("all collections present on obx", ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory"].every(k => Array.isArray(m.obx[k])), Object.keys(m.obx));
+ok("all collections present on obx", ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog"].every(k => Array.isArray(m.obx[k])), Object.keys(m.obx));
 ok("jam business scaffolded", m.jam && Array.isArray(m.jam.customers), m.jam);
 ok("users array migrated in", Array.isArray(m.users) && m.users.length === 1, m.users);
 ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") || {}).name === "New", m.obx.customers);
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);
 ok("incoming-only collection merged", m.obx.quotes.length === 1, m.obx.quotes);
+
+console.log("— changelog (activity log) syncs per business, append-union —");
+const cl = t.mergeState(
+  { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
+  { obx: { changelog: [{ id: "e2", ts: 20, action: "create", entity: "quote", entityId: "q1", user: "u2", summary: "Quoted $400", updatedAt: 20 }] } }
+);
+ok("changelog present on obx", Array.isArray(cl.obx.changelog), cl.obx);
+ok("entries from both devices merge (append-union)", cl.obx.changelog.length === 2 && cl.obx.changelog.some(e => e.id === "e1") && cl.obx.changelog.some(e => e.id === "e2"), cl.obx.changelog.map(e => e.id));
+ok("attribution fields preserved", (cl.obx.changelog.find(e => e.id === "e1") || {}).user === "u1", cl.obx.changelog);
 
 console.log("— per-user settings survive the merge —");
 const s2 = t.mergeState(
