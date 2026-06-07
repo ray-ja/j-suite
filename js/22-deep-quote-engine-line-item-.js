@@ -317,6 +317,34 @@ function deepCatalogHTML(key){const cfg=getDeepCfg(key);const L=(WZ.deep&&WZ.dee
     return `<div class="card"><div class="sub" style="margin-bottom:4px">${hits.length} match${hits.length>1?"es":""}</div>`+hits.map(row).join("")+`</div>`;}
   return cfg.groups.map((g,gi)=>`<details class="card" ${gi<2?"open":""}><summary style="font-weight:800;cursor:pointer">${esc(g[0])}</summary><div style="margin-top:4px">`+g[1].map(row).join("")+`</div></details>`).join("");
 }
+/* Local OBX market ranges per service (typical whole-job), folded in from the quote-rehearsal
+   tool. Used by marketBandHTML to show the quote against the local range. Editable benchmarks. */
+const MARKET_BANDS={
+ softwash:{lo:300,hi:650,label:"house soft wash"},
+ roofwash:{lo:400,hi:900,label:"roof soft wash"},
+ pressure:{lo:150,hi:450,label:"concrete pressure wash"},
+ deck:{lo:150,hi:500,label:"deck / patio wash"},
+ windows:{lo:150,hi:450,label:"window cleaning"},
+ gutters:{lo:150,hi:400,label:"gutter cleaning"},
+ lotclear:{lo:1500,hi:6000,label:"lot / land clearing"},
+ brush:{lo:150,hi:600,label:"brush & yard debris"},
+ storm:{lo:500,hi:3000,label:"storm cleanup"},
+ parking:{lo:150,hi:800,label:"parking-lot cleanup"},
+ housewatch:{lo:40,hi:75,label:"house-watch (per visit)"},
+ junk:{lo:150,hi:800,label:"junk / cleanout (scales with volume)"},
+ demo:{lo:350,hi:1000,label:"shed demolition"}
+};
+/* rehearsal-style band: a red(below)/green(in)/amber(above) bar with the quote marked. Self-contained inline styles. */
+function marketBandHTML(price,lo,hi,label){
+  if(!(hi>0))return "";
+  const maxScale=Math.max(hi*1.25,price*1.1,lo*1.5,1);
+  const loP=Math.min(100,lo/maxScale*100),hiP=Math.min(100,hi/maxScale*100),pP=Math.min(100,Math.max(0,price/maxScale*100));
+  const status=price<lo?`<span style="color:var(--danger);font-weight:700">below the local range</span> — don't underprice the volume you saw`:price>hi?`<span style="font-weight:700">above the local range</span> — fine if access/volume justifies it`:`<span style="color:#1a7f37;font-weight:700">inside the local range</span> — firm, defensible number`;
+  return `<div class="card"><div style="font-weight:800;font-size:13px;margin-bottom:4px">📊 Market check — ${esc(label)}</div>
+    <div style="position:relative;height:30px;border-radius:8px;border:1px solid var(--line);overflow:hidden;background:linear-gradient(90deg,#fde2e1 0,#fde2e1 ${loP}%,#e7f4ea ${loP}%,#e7f4ea ${hiP}%,#fff3d6 ${hiP}%,#fff3d6 100%)"><div style="position:absolute;top:-3px;bottom:-3px;left:${pP}%;width:3px;background:var(--brand)" title="${money(price)}"></div></div>
+    <div class="row" style="justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px"><span>${money(lo)}</span><span>local range</span><span>${money(hi)}</span></div>
+    <div class="sub" style="margin-top:4px">Your ${money(price)} is ${status}.</div></div>`;
+}
 function wizDeepUI(key){const cfg=getDeepCfg(key);const c=calcDeep(key);const mods=(WZ.deepMods&&WZ.deepMods[key])||{};
   let h=wizHead(3,5,cfg.label);
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">${cfg.how}</div></details>`;
@@ -331,6 +359,7 @@ function wizDeepUI(key){const cfg=getDeepCfg(key);const c=calcDeep(key);const mo
   if(cfg.glossary)h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📖 Plain-English glossary (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px">${cfg.glossary.map(g=>`<b>${esc(g[0])}:</b> ${esc(g[1])}`).join("<br><br>")}</div></details>`;
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Itemized breakdown</div><div style="font-size:13px;line-height:1.9" id="dz_break">${deepBreakHTML(c)}</div><div style="border-top:1px solid var(--line);margin:8px 0"></div><div class="row" style="justify-content:space-between;align-items:center"><span class="sub">Estimate</span><b id="dz_total" style="font-size:20px">${money(c.total)}</b></div>${c.unc?`<div class="sub" id="dz_range">Likely range ${money(c.total-c.unc)}–${money(c.total+c.unc)}</div>`:""}</div>`;
   h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(c.total)}</div>${c.unc?`<div style="font-size:12px;opacity:.9">± ${money(c.unc)} until confirmed on site</div>`:""}</div>`;
+  if(MARKET_BANDS[key])h+=marketBandHTML(c.total,MARKET_BANDS[key].lo,MARKET_BANDS[key].hi,MARKET_BANDS[key].label);
   h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b id="dz_foot">${money(c.total)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddDeep('${key}')">Add to quote</button></div>`;
   return h;
 }

@@ -6,6 +6,12 @@ const JUNK_PEREIGHTH=80;  // $ per 1/8-truck of volume
 const JUNK_MIN=95;        // minimum job ($)
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
+const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
+/* suggest the cheapest adequate haul method from the load volume (eighths ≈ 60-cu-ft pickup loads) */
+function junkHaulSuggest(c){const loads=c.eighths;
+  if(loads<=1.5)return{method:"pickup",label:"Pickup (self-haul)",note:loads<=1?"one trip":"1–2 trips"};
+  if(loads<=4)return{method:"trailer",label:"Rental dump trailer",note:"a few loads"};
+  return{method:"rolloff",label:(loads<=6?"20-yd":"30-yd")+" roll-off dumpster",note:"whole-house volume"};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
 const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50,farcarry:0.20};
 const JUNK_LOC=[["ground","Ground floor (no add)"],["curbside","Curbside / outside (−15% labor)"],["upstairs","Upstairs (+25% labor)"],["basement","Basement (+30% labor)"],["attic","Attic / crawlspace (+50% labor)"],["farcarry","Long carry / no driveway (+20% labor)"]];
@@ -32,9 +38,12 @@ function calcJunk(){
   const haul=cuft>0?JUNK_TRIPBASE+eighths*JUNK_PEREIGHTH:0;
   const overLbs=Math.max(0,lbs-cuft*JUNK_DENSITY);
   const dump=Math.round(overLbs/2000*JUNK_TON);
-  const ro=JUNK_RENTAL.find(r=>r[0]===(WZ.junkRental||"none")),rental=ro?ro[2]:0;
+  // haul method drives the rental passthrough (cost model unchanged — just the source of "rental")
+  const meth=WZ.junkHaul||"pickup";let rental=0,rentalName="";
+  if(meth==="trailer"){const ro=JUNK_RENTAL.find(r=>r[0]===(WZ.junkRental||"t_d58"));rental=ro?ro[2]:0;rentalName=ro?ro[1]:"";}
+  else if(meth==="rolloff"){rental=WZ.junkDump!=null?(+WZ.junkDump||0):JUNK_DUMP_DEFAULT;rentalName=(WZ.junkDumpSize||"20")+"-yd roll-off dumpster";}
   let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+special+dump+rental)/25)*25);
-  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),special:special,dump:dump,rental:rental,rentalName:ro?ro[1]:"",total:total,counts:counts};
+  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),special:special,dump:dump,rental:rental,rentalName:rentalName,total:total,counts:counts};
 }
 function wizJunkUI(){
   if(!WZ.junk)WZ.junk=[];
@@ -48,15 +57,25 @@ function wizJunkUI(){
   const c=calcJunk(),cap=getTruckCap();
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💵 How the price is built (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px"><b>Volume — industry standard:</b> priced by fraction of a standard junk truck. A <b>full truck ≈ 480 cu ft (18 cu yd)</b> — the size 1-800-GOT-JUNK and the big guys use; one eighth ≈ 60 cu ft. <b>$${JUNK_TRIPBASE} base + $${JUNK_PEREIGHTH} per 1/8 truck.</b><br><b>Location labor</b> adds to each item: curbside −15%, upstairs +25%, basement +30%, attic +50%, long carry +20%.<br><b>Special items</b> are flat disposal fees: Freon $45, mattress $25, tire $8, e-waste $30, paint $10, other appliance $25.<br><b>Heavy/dense loads</b> (concrete, drywall, piles of appliances) add a landfill surcharge by weight.<br>Rounds up to the nearest $25; $${JUNK_MIN} minimum.</div></details>`;
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">🚚 Equipment rental costs (Home Depot, ~4 hr) — reference</summary><div style="font-size:12px;line-height:1.7;margin-top:8px"><b>Trailers (tow with your truck, 4-hr rate):</b><br>Lawn &amp; garden 3×5 — $25 · Channel-frame 5×8 — $39 · Solid-wall 5×8 — $42 · Dump 5×8 — $157 · Dump 6×10 — $172 · Dump 7×14 — $187<br><b>Trucks (per 75 min; a 4-hr job = 4 increments):</b><br>8-ft pickup $18 → $72 · 8-ft flatbed $19 → $76 · 10-ft flatbed $19 → $76 · Cargo van $19 → $76 · Box truck $29 → $116<br><span class="sub">Reference only — add one below to fold it into this quote when a job needs the gear.</span></div></details>`;
-  h+=`<div class="card"><label style="margin-top:0;font-weight:800">Add equipment rental to this quote?</label><select onchange="WZ.junkRental=this.value;render()" style="font-size:13px">${JUNK_RENTAL.map(r=>`<option value="${r[0]}" ${(WZ.junkRental||"none")===r[0]?"selected":""}>${esc(r[1])}${r[2]?" — $"+r[2]:""}</option>`).join("")}</select><button class="btn ghost" style="margin-top:10px" onclick="openTrailerBuy()">🧮 Buy vs. rent a trailer? — full analysis</button></div>`;
-  h+=`<div class="card"><div style="font-weight:800;margin-bottom:4px">≈ ${c.eighths.toFixed(1)} / 8 of a standard truck</div>
-    <div class="sub">${c.cuft} cu ft · ${c.lbs} lb · full truck ≈ 480 cu ft (18 cu yd)</div>
-    <div style="height:12px;background:var(--soft);border-radius:7px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${Math.min(100,Math.round(c.eighths/8*100))}%;background:var(--accent)"></div></div>
-    <div class="row" style="align-items:center;gap:6px;font-size:12.5px;flex-wrap:wrap;margin-top:8px"><span>For reference, my truck bed holds</span><input type="number" value="${cap}" style="width:64px" onchange="setTruckCap(this.value)"><span>cu ft → ≈ <b id="je_trips">${c.trips.toFixed(1)}</b> of my loads</span></div>
-    <div class="sub" style="margin-top:2px">F-150 8-ft bed: level ≈ 65 · heaped ≈ 95. (Reference only — price is by the standard truck.)</div>
-    <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b><br>Location labor (stairs/attic): <b>+${money(c.locLabor)}</b><br>Special-item disposal: <b>+${money(c.special)}</b>${c.dump?`<br>Heavy/dense-load surcharge: <b>+${money(c.dump)}</b>`:""}${c.rental?`<br>Equipment rental (${esc(c.rentalName)}): <b>+${money(c.rental)}</b>`:""}</div></div>`;
+  // how you'll haul it — pickup (default) / rental trailer / roll-off dumpster, with the cheapest-adequate suggestion
+  const haul=WZ.junkHaul||"pickup",sug=junkHaulSuggest(c);
+  h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">🚚 How you'll haul it</div>
+    <div class="row" style="gap:6px">${[["pickup","Pickup<small style='display:block;font-weight:400;font-size:10px'>self-haul</small>"],["trailer","Rental trailer<small style='display:block;font-weight:400;font-size:10px'>tow it</small>"],["rolloff","Roll-off<small style='display:block;font-weight:400;font-size:10px'>dumpster</small>"]].map(m=>`<button class="btn ${haul===m[0]?'acc':'ghost'} sm grow" style="line-height:1.15" onclick="WZ.junkHaul='${m[0]}';${m[0]==='trailer'?"if(!WZ.junkRental)WZ.junkRental='t_d58';":""}render()">${m[1]}</button>`).join("")}</div>
+    <div class="sub" style="margin-top:6px">💡 Cheapest adequate for ~${c.eighths.toFixed(1)} pickup loads: <b>${sug.label}</b> (${sug.note}). ${haul===sug.method?"<b>✓ selected</b>":`<a href="#" onclick="WZ.junkHaul='${sug.method}';${sug.method==='trailer'?"if(!WZ.junkRental)WZ.junkRental='t_d58';":""}render();return false">use it</a>`}</div>`;
+  if(haul==="pickup")h+=`<div class="sub" style="margin-top:6px">Your own truck — no rental cost. Multi-trip; add round-trip miles on the review for fuel.</div>`;
+  else if(haul==="trailer")h+=`<label style="margin-top:6px">Trailer / truck rental (Home Depot, ~4 hr)</label><select onchange="WZ.junkRental=this.value;render()" style="font-size:13px">${JUNK_RENTAL.filter(r=>r[0]!=="none").map(r=>`<option value="${r[0]}" ${(WZ.junkRental||"t_d58")===r[0]?"selected":""}>${esc(r[1])}${r[2]?" — $"+r[2]:""}</option>`).join("")}</select>`;
+  else h+=`<div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label style="margin-top:0">Dumpster size</label><select onchange="WZ.junkDumpSize=this.value;render()" style="font-size:13px"><option value="20" ${(WZ.junkDumpSize||"20")==="20"?"selected":""}>20-yd (~2 loads)</option><option value="30" ${WZ.junkDumpSize==="30"?"selected":""}>30-yd (~3–4 loads)</option></select></div><div class="grow"><label style="margin-top:0">Dumpster $</label><input type="number" value="${WZ.junkDump!=null?WZ.junkDump:JUNK_DUMP_DEFAULT}" onchange="WZ.junkDump=parseFloat(this.value)||0;render()"></div></div><div class="sub" style="margin-top:4px">NC roll-off: 20-yd ≈ $300–450/wk · 30-yd ≈ $350–500/wk. Price includes haul + tonnage — pass it through.</div>`;
+  h+=`<button class="btn ghost" style="margin-top:10px" onclick="openTrailerBuy()">🧮 Buy vs. rent a trailer? — full analysis</button></div>`;
+  // volume — pickup loads (F-150 bed ≈ 1/8 box-truck) vs box-truck loads
+  const unit=WZ.junkUnit||"pickup",pickupLoads=c.eighths,boxLoads=c.eighths/8,fillPct=Math.min(100,Math.round(c.eighths/8*100));
+  h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow" style="font-weight:800">${unit==="pickup"?`≈ ${pickupLoads.toFixed(1)} pickup loads`:`≈ ${boxLoads.toFixed(2)} box-truck loads`}</div><button class="btn ghost sm" onclick="WZ.junkUnit='${unit==="pickup"?"box":"pickup"}';render()">${unit==="pickup"?"↔ box truck":"↔ my pickup"}</button></div>
+    <div class="sub">${c.cuft} cu ft · ${c.lbs} lb · F-150 8-ft bed ≈ 1/8 box-truck load (60 cu ft) · box truck ≈ 480 cu ft (18 cu yd)</div>
+    <div style="height:12px;background:var(--soft);border-radius:7px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${fillPct}%;background:var(--accent)"></div></div>
+    <div class="sub" style="margin-top:6px">${unit==="pickup"?`${Math.ceil(pickupLoads)} pickup trip(s) at ~60 cu ft each (multi-load). Heaped beds carry more — priced by the standard truck.`:`${boxLoads.toFixed(2)} of a full box-truck load.`}</div>
+    <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b><br>Location labor (stairs/attic): <b>+${money(c.locLabor)}</b><br>Special-item disposal: <b>+${money(c.special)}</b>${c.dump?`<br>Heavy/dense-load surcharge: <b>+${money(c.dump)}</b>`:""}${c.rental?`<br>Haul (${esc(c.rentalName)}): <b>+${money(c.rental)}</b>`:""}</div></div>`;
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
   h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(c.total)}</div></div>`;
+  if(typeof marketBandHTML==="function"&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)h+=marketBandHTML(c.total,MARKET_BANDS.junk.lo,MARKET_BANDS.junk.hi,MARKET_BANDS.junk.label);
   h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(c.total)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
   return h;
 }

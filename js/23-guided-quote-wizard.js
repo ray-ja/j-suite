@@ -157,6 +157,7 @@ function reviewSummaryHTML(){
         <div class="sub" style="margin-top:6px">Field-Work share only (80% of the 60% pool); Sales credit (15%) + Admin (5%) are separate. Hard out-of-pocket (dump/rental) comes from the 15% Business Fund. Industry margins for this kind of work run ~40–65% — but the take-home above is your real number.</div>
       </div>
     </details>`;
+  if(WZ.hours)h+=`<div class="sub" style="margin-top:4px">⏱ Planned ~${WZ.hours} hr on site${total>0?` · solo take-home ≈ ${money(fieldPool/Math.max(1,WZ.hours))}/hr`:""}.</div>`;
   if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
   return h;
 }
@@ -207,7 +208,9 @@ function wizReview(){
   if(BIZ[S.biz].recurring)h+=`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;wizReviewTotals()"><label style="margin:0">Recurring plan — 20% off</label></div>`;
   h+=`<label>Discount</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">${[5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${WZ.discPct===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p}%</button>`).join("")}<button class="btn ghost sm" onclick="WZ.disc=0;WZ.discPct=null;render()">Clear</button></div>
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" oninput="wizDiscFlat(this.value)"></div></div>
-    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" oninput="WZ.miles=parseFloat(this.value)||0;wizReviewTotals()"></div>`;
+    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" oninput="WZ.miles=parseFloat(this.value)||0;wizReviewTotals()">
+    <label>Hours on site (planning)</label><input type="number" id="wz_hours" inputmode="decimal" min="0" step="0.5" value="${WZ.hours||0}" oninput="WZ.hours=parseFloat(this.value)||0;wizReviewTotals()">
+    <div class="sub">For scheduling only — labor is paid from the revenue split, so it isn't a cost line.</div></div>`;
   // live summary region (partial-updated to preserve input focus)
   h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
   // collateral
