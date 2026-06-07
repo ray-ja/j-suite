@@ -18,6 +18,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 let QB = null; try { QB = require("./qb-bridge"); } catch (e) {}
 
 const PORT = process.env.PORT || 4000;
@@ -45,6 +46,35 @@ function mergeColl(a = [], b = []) {
   }
   return [...map.values()];
 }
+/* ----- auth: verify a login against the SHA-256 account records the app already syncs here -----
+   Records look like { id, username, passhash, settings, deleted, updatedAt }. The app hashes with
+   WebCrypto SHA-256 in secure contexts and a djb2 fallback when crypto.subtle is unavailable
+   (file:// / plain-http), so we accept either to match whatever it stored. */
+function hashPw(pw) { return crypto.createHash("sha256").update(String(pw) + "::jsuite").digest("hex"); }
+function hashPwFallback(pw) { let h = 5381; const s = String(pw) + "::jsuite"; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return "f" + h.toString(16); }
+function accountByName(store, username) {
+  const us = (store && store.users) || [];
+  const lc = String(username || "").toLowerCase();
+  return us.find(u => u && !u.deleted && String(u.username || "").toLowerCase() === lc) || null;
+}
+function verifyLogin(store, username, password) {
+  const u = accountByName(store, username);
+  if (!u || !u.passhash) return null;
+  const ph = String(u.passhash);
+  return (ph === hashPw(password) || ph === hashPwFallback(password)) ? u : null;
+}
+/* light per-IP rate limit on /login — a brute-force speed bump, not a fortress */
+const LOGIN_WINDOW_MS = 5 * 60 * 1000, LOGIN_MAX = 20;
+const loginHits = new Map();
+function rateCheck(ip) {
+  const t = Date.now();
+  let h = loginHits.get(ip);
+  if (!h || t - h.t0 > LOGIN_WINDOW_MS) { h = { n: 0, t0: t }; loginHits.set(ip, h); }
+  h.n++;
+  if (h.n > LOGIN_MAX) return { ok: false, retry: Math.ceil((LOGIN_WINDOW_MS - (t - h.t0)) / 1000) };
+  return { ok: true };
+}
+
 function mergeState(stored, incoming) {
   const out = {};
   for (const biz of BIZES) {
@@ -74,6 +104,25 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: true, store: FILE }));
+  }
+
+  // login: verify credentials against the synced account records, hand back the sync token
+  if (req.method === "POST" && req.url === "/login") {
+    const ip = req.socket && req.socket.remoteAddress || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
+      const store = loadStore();
+      const accounts = (((store && store.users) || []).filter(u => u && !u.deleted)).length;
+      const u = verifyLogin(store, p.username, p.password);
+      if (!u) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "unauthorized", accounts: accounts })); }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, token: TOKEN, user: { id: u.id, username: u.username, settings: u.settings || null } }));
+    });
+    return;
   }
 
   if (req.method === "POST" && req.url === "/sync") {
@@ -129,6 +178,11 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end('{"error":"not found"}');
 });
 
-server.listen(PORT, () => {
-  console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
-});
+// Tailscale-only posture: bound to the host's interfaces, reached over the tailnet — the port is
+// NOT forwarded/exposed publicly. Keep it that way; auth + token are a second layer, not the first.
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
+  });
+}
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore };
