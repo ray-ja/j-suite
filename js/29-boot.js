@@ -11,6 +11,13 @@ if(!S.sync.url && location.protocol.indexOf("http")===0){S.sync.url=location.ori
 applyTheme();
 setBiz(S.biz);
 if(typeof applyUserSettings==="function")applyUserSettings();
-if(S.sync.url&&S.sync.token&&S.sync.auto)syncNow();
+/* auto-sync: pull on open, on focus/visibility, on reconnect, and on a slow interval */
+if(typeof syncRun==="function"){
+  if(S.sync.url&&S.sync.token&&S.sync.auto)syncRun("pull");
+  window.addEventListener("focus",function(){syncRun("pull");});
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)syncRun("pull");});
+  window.addEventListener("online",function(){_retryN=0;syncRun(SYNC_DIRTY?"auto":"pull");});
+  setInterval(function(){syncRun("pull");},60000);
+}
 if("serviceWorker" in navigator && window.isSecureContext){navigator.serviceWorker.register("sw.js").catch(function(){});}
 /* v2 */

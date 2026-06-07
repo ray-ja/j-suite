@@ -137,7 +137,10 @@
   .secthd{display:flex;align-items:center;margin:18px 4px 6px}
   .secthd h2{margin:0}
   .secthd .ct{margin-left:auto;color:var(--muted);font-size:13px}
-  .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none}
+  .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none;cursor:pointer;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .syncpill.ok{background:rgba(139,195,74,.30)}
+  .syncpill.busy{background:rgba(255,255,255,.28)}
+  .syncpill.warn{background:rgba(232,112,95,.85)}
   .grid2{display:grid;grid-template-columns:1fr;gap:0}
   .calhead{display:flex;align-items:center;gap:12px;margin:4px 4px 10px}
   .calhead .mtitle{font-weight:800;font-size:17px}

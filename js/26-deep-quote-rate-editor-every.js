@@ -51,13 +51,15 @@ function rData(){
   const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
   view.innerHTML=`<h2>Sync</h2>
     <div class="card">
-      <label>Sync server URL</label><input id="sy_url" value="${esc(S.sync.url)}" placeholder="http://your-server:4000">
-      <label>Access token (shared secret)</label><input id="sy_token" value="${esc(S.sync.token)}" placeholder="set this same on the server">
-      <div class="toggle"><input type="checkbox" id="sy_auto" ${S.sync.auto?"checked":""}><label style="margin:0">Auto-sync when the app opens</label></div>
-      <div class="row" style="gap:8px;margin-top:12px">
-        <button class="btn grow" onclick="saveSync()">Save settings</button>
-        <button class="btn acc grow" onclick="syncNow()">Sync now</button></div>
-      <p class="muted" style="margin-top:8px">Last synced: ${last}. <span id="sy_msg"></span></p>
+      <div class="nm" id="sy_state">${SYNC_LABEL[SYNC_STATE]||"✓ Synced"}</div>
+      <div class="sub">Last synced: ${last}. <span id="sy_msg"></span></div>
+      <p class="muted" style="margin-top:8px">Changes sync automatically — pushed a couple seconds after each edit, pulled when you open or focus the app. Nothing to press.</p>
+      <details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">Advanced</summary>
+        <label>Sync server URL</label><input id="sy_url" value="${esc(S.sync.url)}" placeholder="http://your-server:4000">
+        <label>Access token (shared secret)</label><input id="sy_token" value="${esc(S.sync.token)}" placeholder="set this same on the server">
+        <div class="toggle"><input type="checkbox" id="sy_auto" ${S.sync.auto?"checked":""}><label style="margin:0">Auto-sync</label></div>
+        <div class="row" style="gap:8px;margin-top:12px"><button class="btn grow" onclick="saveSync()">Save settings</button><button class="btn ghost grow" onclick="syncNow()">Sync now</button></div>
+      </details>
     </div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
@@ -89,27 +91,74 @@ function rData(){
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
 }
 window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
-  S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();};
+  S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
+  if(syncConfigured())syncRun("pull");};
 function syMsg(t){const e=document.getElementById("sy_msg");if(e)e.textContent=t;}
-function renderSyncPill(){const b=document.getElementById("syncbtn");
-  if(!S.sync.url){b.style.display="none";return;}
-  b.style.display="";b.textContent="⟳ Sync";}
-window.syncNow=async function(){
-  if(!S.sync.url){if(TAB==="data")syMsg("Set a server URL first.");else{TAB="data";render();}return;}
-  syMsg("Syncing…");const btn=document.getElementById("syncbtn");if(btn)btn.textContent="⟳ …";
+/* ===== sync engine =====
+   Auto-push every local change (debounced ~2.5s), pull on open/focus + periodically, with the
+   server's per-record last-write-wins merge. Offline changes stay saved locally and retry with
+   backoff. The status chip is always visible; "Sync now" is manual-only under Advanced. */
+var SYNC_STATE="synced";          // 'synced' | 'syncing' | 'offline'
+var SYNC_DIRTY=false;             // unsynced local edits exist
+var _syncTimer=null,_retryTimer=null,_retryN=0,_syncInflight=false,_editSeq=0;
+function syncConfigured(){return !!(S.sync&&S.sync.url&&S.sync.token&&S.sync.auto)&&!window.AUTH_401;}
+/* "business data" only — seeded docs/inventory/todos don't count as real content */
+function storeIsEmpty(){
+  function n(b){const x=S[b]||{},c=k=>(x[k]||[]).filter(r=>!r.deleted).length;return c("customers")+c("quotes")+c("jobs")+c("properties")+c("places")+c("mktTracker");}
+  return (n("obx")+n("jam"))===0;
+}
+function setSyncState(s){SYNC_STATE=s;renderSyncPill();const e=document.getElementById("sy_state");if(e)e.textContent=SYNC_LABEL[s]||"";}
+const SYNC_LABEL={synced:"✓ Synced",syncing:"⟳ Syncing…",offline:"● Offline — changes saved, will sync"};
+function renderSyncPill(){const b=document.getElementById("syncbtn");if(!b)return;
+  if(!S.sync||!S.sync.url){b.style.display="none";return;}
+  b.style.display="";b.onclick=function(){TAB="data";render();};
+  const short={synced:"✓ Synced",syncing:"⟳ Syncing…",offline:"● Offline — saved"};
+  const mod={synced:"ok",syncing:"busy",offline:"warn"}[SYNC_STATE]||"ok";
+  b.textContent=short[SYNC_STATE]||short.synced;b.title=SYNC_LABEL[SYNC_STATE]||"";b.className="syncpill "+mod;}
+function scheduleAutoPush(){
+  if(!syncConfigured())return;
+  SYNC_DIRTY=true;_editSeq++;setSyncState("syncing");   // optimistic: queued → will push
+  clearTimeout(_syncTimer);_syncTimer=setTimeout(function(){syncRun("auto");},2500);
+}
+window.scheduleAutoPush=scheduleAutoPush;
+function scheduleRetry(){clearTimeout(_retryTimer);const delay=Math.min(60000,3000*Math.pow(2,_retryN));_retryN++;
+  _retryTimer=setTimeout(function(){syncRun(SYNC_DIRTY?"auto":"pull");},delay);}
+async function syncRun(mode){
+  mode=mode||"pull";
+  if(!syncConfigured())return;
+  // SAFETY (encode the lesson): an empty / not-yet-pulled local store must PULL first — never
+  // auto-push an empty dataset over a non-empty server. Manual empty push requires confirmation.
+  if(storeIsEmpty()){
+    if(mode==="manual"&&!confirm("This device has no local business data yet.\n\nPull from the server (recommended)? An empty device must not overwrite server data."))return;
+    mode="pull";
+  }
+  if(mode==="pull"&&S.sync.last&&(now()-S.sync.last<4000)&&!SYNC_DIRTY)return; // throttle redundant pulls
+  if(_syncInflight)return;                                                      // coalesce; post-success reschedules if dirty
+  const seq=_editSeq;_syncInflight=true;setSyncState("syncing");
+  const sentSig=JSON.stringify({obx:S.obx,jam:S.jam,users:S.users});
   try{
-    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{
-      method:"POST",headers:{"Content-Type":"application/json"},
+    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam,users:S.users}})});
-    if(res.status===401){window.AUTH_401=true;S.sync.token="";save();if(btn)btn.textContent="⟳ Sync";syMsg("Not authorized — sign in again.");render();return;}
+    if(res.status===401){window.AUTH_401=true;S.sync.token="";save();_syncInflight=false;setSyncState("offline");syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();
     if(!data||!data.state||!data.state.obx)throw new Error("bad response");
-    window.AUTH_401=false;
+    window.AUTH_401=false;_retryN=0;
+    const changed=JSON.stringify(data.state)!==sentSig;
+    window.__syncApplying=true;
     S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;S.sync.last=now();save();
-    render();syMsg("Synced ✓");
-  }catch(e){syMsg("Sync failed: "+e.message);if(btn)btn.textContent="⟳ Sync";}
-};
+    window.__syncApplying=false;
+    _syncInflight=false;syMsg("Synced ✓");
+    if(_editSeq!==seq){scheduleAutoPush();}            // edits arrived mid-flight → push again
+    else{SYNC_DIRTY=false;setSyncState("synced");}
+    if(changed)safeRender();
+  }catch(e){_syncInflight=false;setSyncState("offline");syMsg("Offline — changes saved, will sync.");scheduleRetry();}
+}
+window.syncRun=syncRun;
+/* re-render without blowing away an open modal or the wizard mid-edit */
+function safeRender(){if(typeof WZON!=="undefined"&&WZON)return;const ov=document.getElementById("overlay");if(ov&&ov.classList.contains("show"))return;render();}
+/* manual sync — Advanced only */
+window.syncNow=function(){if(!S.sync||!S.sync.url){if(TAB==="data")syMsg("Set a server URL first.");else{TAB="data";render();}return;}syncRun("manual");};
 window.exportData=function(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);

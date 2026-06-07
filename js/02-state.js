@@ -89,7 +89,9 @@ function seedDocs(){
     d("research","JAMIESON AUTOMATION — Market Research\n\nMARKET\nOBX has heavy vacation-rental and second-home density — strong demand for Starlink (spotty rural internet), wifi/networking, smart locks (remote rental access), cameras, and A/V. Few skilled, reliable local integrators.\n\nDEMAND DRIVERS\n- Starlink: rural/island connectivity gaps; rentals want reliable guest wifi.\n- Smart locks/thermostats/cameras: rental turnover & remote management.\n- A/V & automation: second-home owners with budget.\n\nPRICING (market-based — see Service Menu)\nStarlink install $299-599; mesh wifi from $249; TV mount $149-279; smart lock $129. Custom = quoted.\n\nCOMPETITION\nMostly generalist handymen and out-of-area integrators. Edge = local + expert + reliable + flat pricing.\n\nRESEARCH TOOLS\n- Google Trends / Keyword Planner — \"OBX Starlink\", \"home automation OBX\"\n- Starlink installer directories & forums\n- Property-management company sites — see their tech needs\n- Reddit r/Starlink, r/homeautomation — real install pain points\n- Competitor Google Business Profiles & reviews")
   );
 }
-function save(){localStorage.setItem(KEY,JSON.stringify(S))}
+function save(){localStorage.setItem(KEY,JSON.stringify(S));
+  /* auto-sync: any local write queues a debounced push (skipped while applying a pulled merge) */
+  if(!window.__syncApplying&&typeof scheduleAutoPush==="function")scheduleAutoPush();}
 function D(){return S[S.biz]}
 function cat(){return CATALOG[S.biz]}
 function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
