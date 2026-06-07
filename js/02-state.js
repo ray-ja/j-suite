@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -15,7 +15,8 @@ function load(){
     if(!S[b].docs)S[b].docs=[];
     if(!S[b].places)S[b].places=[];
     if(!S[b].properties)S[b].properties=[];
-    ["customers","quotes","jobs","todos","mktTracker","docs","places","properties"].forEach(col=>{
+    if(!S[b].inventory)S[b].inventory=[];
+    ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
   });
@@ -28,6 +29,8 @@ function load(){
   if(!S.researchV3){appendOpportunity();S.researchV3=true;save();}
   if(!S.marketingV2){appendMarketing();S.marketingV2=true;save();}
   if(!S.ceoV1){seedCeo();S.ceoV1=true;save();}
+  /* inventory master — seeded/refreshed from js/31-inventory.js (its INV_SEED is the import of OBX-Ops/Inventory/master-inventory.md); preserves the user's Have?/Qty marks. Runs at boot after all modules parse. */
+  if(typeof seedInventory==="function")seedInventory();
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
 }
 function seedCeo(){
