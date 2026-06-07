@@ -31,13 +31,14 @@ window.saveProperty=function(id,isNew){
   p.label=val("p_label");p.address=val("p_addr");p.accessNotes=val("p_access");p.customerIds=PCUSTS.slice();
   if(!p.label&&!p.address){alert("Add a label or address.");return;}
   touch(p);if(isNew)d.properties.push(p);
+  if(typeof logChange==="function")logChange(isNew?"create":"update","property",p.id,(isNew?"Added property ":"Updated property ")+(p.label||p.address||""));
   geocodeProp(p);save();closeModal();render();
 };
 window.delProperty=function(id){if(!confirm("Delete this property?"))return;
-  const p=D().properties.find(x=>x.id===id);p.deleted=true;touch(p);save();closeModal();render();};
+  const p=D().properties.find(x=>x.id===id);p.deleted=true;touch(p);if(typeof logChange==="function")logChange("delete","property",id,"Deleted property "+(p.label||p.address||""));save();closeModal();render();};
 window.addNote=function(id){const txt=val("f_note");if(!txt)return;
   const c=D().customers.find(x=>x.id===id);c.notes=c.notes||[];
   c.notes.push({t:new Date().toLocaleString(),text:txt});touch(c);save();openCustomer(id);};
 window.delCustomer=function(id){if(!confirm("Delete this customer?"))return;
-  const c=D().customers.find(x=>x.id===id);c.deleted=true;touch(c);save();closeModal();render();};
+  const c=D().customers.find(x=>x.id===id);c.deleted=true;touch(c);if(typeof logChange==="function")logChange("delete","customer",id,"Deleted "+(c.name||c.company||"customer"));save();closeModal();render();};
 

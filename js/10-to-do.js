@@ -41,9 +41,10 @@ window.saveTodo=function(id,isNew){
   td.title=val("td_title");td.priority=val("td_pri");td.due=val("td_due");td.notes=val("td_notes");td.assignee=val("td_assignee");
   if(!td.title){alert("Give the to-do a title.");return;}
   touch(td);if(isNew)d.todos.push(td);
+  if(typeof logChange==="function")logChange(isNew?"create":"update","todo",td.id,(isNew?"Added to-do ":"Updated to-do ")+(td.title||""));
   save();closeModal();render();
 };
-window.toggleTodo=function(id){const td=D().todos.find(x=>x.id===id);td.done=!td.done;touch(td);save();render();};
+window.toggleTodo=function(id){const td=D().todos.find(x=>x.id===id);td.done=!td.done;if(typeof logChange==="function")logChange("update","todo",id,(td.done?"Completed to-do ":"Reopened to-do ")+(td.title||""));touch(td);save();render();};
 window.delTodo=function(id){if(!confirm("Delete this to-do?"))return;
-  const td=D().todos.find(x=>x.id===id);td.deleted=true;touch(td);save();closeModal();render();};
+  const td=D().todos.find(x=>x.id===id);td.deleted=true;touch(td);if(typeof logChange==="function")logChange("delete","todo",id,"Deleted to-do "+(td.title||""));save();closeModal();render();};
 

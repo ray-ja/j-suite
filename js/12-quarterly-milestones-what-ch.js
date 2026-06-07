@@ -2,7 +2,16 @@
 const QUARTERS=["Q2 2026","Q3 2026","Q4 2026","Q1 2027"];
 function mstones(){if(!D().milestones)D().milestones=[];return D().milestones;}
 function chlog(){if(!D().changelog)D().changelog=[];return D().changelog;}
-function logEvent(text,tag){const c=chlog();c.push({id:uid(),ts:now(),text:text,tag:tag||"note"});if(c.length>300)c.splice(0,c.length-300);}
+const CHLOG_CAP=1000;
+function _logUser(){const u=(typeof curUser==="function")?curUser():null;return {user:u?u.id:"",userName:u?u.username:""};}
+/* structured activity entry — the synced attribution trail (who did what, to which record) */
+function logChange(action,entity,entityId,summary){const c=chlog(),who=_logUser();
+  c.push({id:uid(),ts:now(),updatedAt:now(),action:action||"update",entity:entity||"",entityId:entityId||"",summary:summary||"",user:who.user,userName:who.userName});
+  if(c.length>CHLOG_CAP)c.splice(0,c.length-CHLOG_CAP);}
+/* free-text/system note — kept for existing callers; carries attribution + a summary so it shows in Activity */
+function logEvent(text,tag){const c=chlog(),who=_logUser();
+  c.push({id:uid(),ts:now(),updatedAt:now(),text:text,tag:tag||"note",action:tag||"note",entity:"note",entityId:"",summary:text,user:who.user,userName:who.userName});
+  if(c.length>CHLOG_CAP)c.splice(0,c.length-CHLOG_CAP);}
 const MSEED={
  obx:[["Q2 2026","Launch both websites on Netlify — real phone number + a few real reviews",""],["Q2 2026","Lock 5 recurring home-watch accounts",""],["Q2 2026","Get 10 Google reviews live",""],
   ["Q3 2026","20 active recurring accounts (wash + watch)",""],["Q3 2026","Buy a used utility trailer; add lot-clearing as a service",""],["Q3 2026","Hit $6k/mo revenue",""],
@@ -51,7 +60,14 @@ function weekStats(){const wk=now()-7*864e5;const inWk=ds=>{const t=Date.parse(d
   const pipeline=actQ().filter(x=>!x.paid).reduce((s,x)=>s+(x.total||0),0);
   return {newQuotes:q.length,qSum:qSum,paidSum:paidSum,jobsDone:jobsDone,pipeline:pipeline};}
 const LOGTAG={quote:"🧾",paid:"💵",job:"✅",win:"🏆",plan:"🗺️",note:"📝"};
-function liLog(e){return `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${LOGTAG[e.tag]||"•"} ${esc(e.text)}</div><div class="sub">${timeAgo(e.ts)}</div></div>${e.tag==="note"?`<button class="rm" onclick="delLog('${e.id}')">×</button>`:""}</div>`;}
+const ENT_ICON={customer:"👤",quote:"🧾",job:"✅",property:"🏠",todo:"☑️",inventory:"🧰",milestone:"🏆",note:"📝"};
+function liLog(e){
+  const icon=ENT_ICON[e.entity]||LOGTAG[e.tag]||"•";
+  const txt=e.summary||e.text||((e.action||"")+(e.entity?(" "+e.entity):""));
+  const meta=[timeAgo(e.ts)];if(e.userName)meta.push(esc(e.userName));if(e.entity&&e.entity!=="note")meta.push(esc(e.entity));
+  const act=(e.action&&e.action!=="note")?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(e.action)}</span>`:"";
+  const removable=(e.tag==="note"||e.entity==="note");
+  return `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${icon} ${esc(txt)}${act}</div><div class="sub">${meta.join(" · ")}</div></div>${removable?`<button class="rm" onclick="delLog('${e.id}')">×</button>`:""}</div>`;}
 window.delLog=function(id){const e=chlog().find(x=>x.id===id);if(e){e.deleted=true;save();render();}};
 window.openLogNote=function(){modal("Add a note to the log",`<label>What happened?</label><textarea id="lg_t" placeholder="e.g. Met the Sandbridge PM — sending a quote Monday"></textarea><button class="btn acc" style="margin-top:12px" onclick="saveLogNote()">Add</button>`);};
 window.saveLogNote=function(){const t=val("lg_t");if(!t){closeModal();return;}logEvent(t,"note");save();closeModal();render();};
@@ -64,13 +80,23 @@ function rPlanLog(){
   h+=tile("collected",money(s.paidSum),"paid this wk");
   h+=tile("open pipeline",money(s.pipeline),"");
   h+=`</div>`;
-  h+=`<div class="secthd"><h2>Activity log</h2><button class="btn ghost sm" onclick="openLogNote()">+ Add note</button></div>`;
-  const log=chlog().filter(x=>!x.deleted).sort((a,b)=>b.ts-a.ts);
+  h+=`<div class="secthd"><h2>Activity</h2><button class="btn ghost sm" onclick="openLogNote()">+ Add note</button></div>`;
+  const all=chlog().filter(x=>!x.deleted);
+  const usersSet=[...new Set(all.map(e=>e.userName).filter(Boolean))].sort();
+  const entsSet=[...new Set(all.map(e=>e.entity).filter(Boolean))].sort();
+  // filterable by user + entity — doubles as the sales-credit attribution trail
+  if(all.length){h+=`<div class="card" style="display:flex;gap:8px;flex-wrap:wrap">
+    <select style="flex:1;min-width:120px" onchange="setActFilter('u',this.value)"><option value="">All users</option>${usersSet.map(u=>`<option value="${esc(u)}" ${ACT_FU===u?"selected":""}>${esc(u)}</option>`).join("")}</select>
+    <select style="flex:1;min-width:120px" onchange="setActFilter('e',this.value)"><option value="">All types</option>${entsSet.map(en=>`<option value="${esc(en)}" ${ACT_FE===en?"selected":""}>${esc(en)}</option>`).join("")}</select>
+    ${(ACT_FU||ACT_FE)?`<button class="btn ghost sm" onclick="setActFilter('clear')">Clear</button>`:""}</div>`;}
+  const log=all.filter(e=>(!ACT_FU||e.userName===ACT_FU)&&(!ACT_FE||e.entity===ACT_FE)).sort((a,b)=>b.ts-a.ts);
   const wk=now()-7*864e5;const week=log.filter(x=>x.ts>=wk),older=log.filter(x=>x.ts<wk);
-  h+= week.length?`<div class="card">`+week.map(liLog).join("")+`</div>`:`<div class="card"><div class="muted">Nothing logged in the last 7 days yet. Saving a quote, finishing a job, marking an invoice paid, or hitting a milestone all show up here automatically — or tap “+ Add note”.</div></div>`;
-  if(older.length)h+=`<div class="secthd"><h2>Earlier</h2></div><div class="card">`+older.slice(0,40).map(liLog).join("")+`</div>`;
+  h+= week.length?`<div class="card">`+week.map(liLog).join("")+`</div>`:`<div class="card"><div class="muted">${(ACT_FU||ACT_FE)?"No matching activity in the last 7 days.":"Nothing logged in the last 7 days yet. Creating or editing customers, quotes, jobs and to-dos shows up here automatically — with who did it — or tap “+ Add note”."}</div></div>`;
+  if(older.length)h+=`<div class="secthd"><h2>Earlier</h2></div><div class="card">`+older.slice(0,80).map(liLog).join("")+`</div>`;
   return h;
 }
+let ACT_FU="",ACT_FE="";
+window.setActFilter=function(which,v){if(which==="clear"){ACT_FU="";ACT_FE="";}else if(which==="u")ACT_FU=v;else ACT_FE=v;render();};
 
 /* ====================== BUILD PLAN (meta dev plan) ====================== */
 let BPSUB="arch",BPF={inst:"",cat:"",tier:0,status:""},BPSORT="tier";

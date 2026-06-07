@@ -75,5 +75,6 @@ window.saveCustomer=function(id,isNew){
   ["name","company","phone","email"].forEach(k=>c[k]=val("f_"+k));
   c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");c.manager=val("f_manager");c.soldBy=val("f_soldby");c.source=val("f_source");
   touch(c);if(isNew)d.customers.push(c);
+  if(typeof logChange==="function")logChange(isNew?"create":"update","customer",c.id,(isNew?"Logged ":"Updated ")+(c.name||c.company||"customer")+(c.status?" · "+c.status:""));
   save();if(document.getElementById("f_name"))closeModal();render();
 };

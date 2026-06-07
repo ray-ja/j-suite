@@ -279,16 +279,17 @@ window.wizPersist=function(){
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,hours:+WZ.hours||0,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
-  if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);}
-  else{d.quotes.push(q);WZ.id=q.id;logEvent("Quote created — "+money(total)+(q.cust?" · "+q.cust:""),"quote");}
+  if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);
+    if(typeof logChange==="function")logChange("update","quote",q.id,"Updated quote "+money(total)+(q.cust?" · "+q.cust:""));}
+  else{d.quotes.push(q);WZ.id=q.id;if(typeof logChange==="function")logChange("create","quote",q.id,"Quoted "+money(total)+(q.cust?" · "+q.cust:""));}
   if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
   save();return q;
 };
 window.wizFinish=function(){const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;wizClearDraft();WZ.step="done";render();};
 window.wizToggleInvoiced=function(){WZ.invoiced=!WZ.invoiced;wizPersist();render();};
-window.wizTogglePaid=function(){WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(WZ.paid)logEvent("Invoice paid — "+money(q.total)+(q.cust?" · "+q.cust:""),"paid");render();};
+window.wizTogglePaid=function(){WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetPayLink=function(){const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
-window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);save();}wizClearDraft();exitWizard();};
+window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);if(typeof logChange==="function")logChange("delete","quote",q.id,"Deleted quote"+(q.cust?" · "+q.cust:""));save();}wizClearDraft();exitWizard();};
 /* feed the shared print/copy helpers (js/08) from the wizard's state */
 function wizSyncLegacy(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
