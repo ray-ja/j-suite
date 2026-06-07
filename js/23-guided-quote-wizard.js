@@ -78,13 +78,14 @@ function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   return wizHead(3,5,(r?r.label:"Custom line"))+`<div class="card">${hint}${f}
     <div class="totbar" style="border-top-color:var(--accent)"><span class="lab">This line</span><span class="amt" id="wz_live">$0</span></div>
     <div id="wz_note" class="muted" style="font-size:13px"></div>
-    <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddItem()">Add to quote</button></div>
-  </div>`;}
+  </div>
+  <div class="wizfoot"><div class="wf-amt"><span class="wf-lab">This line</span><b id="wz_foot">$0</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddItem()">Add to quote</button></div>`;}
 function wizReadInp(){const fields=WZ_FIELDS[WZ.svc];if(!fields)return WZ.inp||{};const o={};fields.forEach(fl=>{const e=document.getElementById("wf_"+fl.k);if(!e)return;o[fl.k]=fl.t==="chk"?e.checked:(fl.t==="num"?parseFloat(e.value)||0:e.value);});WZ.inp=o;return o;}
 window.wizLive=function(){if(!WZ_FIELDS[WZ.svc])return;const inp=wizReadInp();let res;
   if(WZ.svc==="custom")res={name:inp.name||"Custom line",price:rnd5(inp.price||0),notes:[]};
   else res=calcQuote(WZ.svc,inp)||{price:0,notes:[]};
   const el=document.getElementById("wz_live");if(el)el.textContent=money(res.price);
+  const ft=document.getElementById("wz_foot");if(ft)ft.textContent=money(res.price);
   const nb=document.getElementById("wz_note");if(nb){let notes=(res.notes||[]).slice();
     const fl=WZ_FIELDS[WZ.svc].find(x=>x.warn);if(fl&&(inp[fl.k]||0)>fl.warn)notes.unshift("⚠ That's a big number ("+inp[fl.k]+") — double-check before quoting.");
     nb.innerHTML=notes.map(n=>"• "+esc(n)).join("<br>");}
