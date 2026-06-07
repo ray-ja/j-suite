@@ -1,6 +1,6 @@
 /* ---------- GUIDED QUOTE WIZARD ---------- */
 let WZON=false,WZ=null;
-const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["custom","✏️ Custom line"]],
+const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["custom","✏️ Custom line"]],
   jam:[["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]]};
 const WZ_FIELDS={
  softwash:[{k:"qty",t:"num",label:"Wall area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"],["3","3 stories"]]},{k:"heavy",t:"chk",label:"Heavy algae / soiling"}],
@@ -62,7 +62,7 @@ function wizPick(){const list=WZ_SVC[S.biz];
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
     <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
-window.wizSetSvc=function(k){WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};
+window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="junk")return wizJunkUI();

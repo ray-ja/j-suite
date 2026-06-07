@@ -3,6 +3,7 @@ function rQuotes(){
   if(WZON)return wizRender();
   let h=`<h2>Quotes</h2>
     <button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>
+    <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>
     <button class="btn ghost" style="margin-bottom:10px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
   const list=actQ();
   if(!list.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
