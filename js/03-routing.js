@@ -5,6 +5,7 @@ function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:40px;width:auto;max-width:220px;object-fit:contain;display:block">';
   document.getElementById("bizsel").value=b;render()}
 function render(){
+  if(typeof needLogin==="function"&&needLogin()){renderLogin();renderSyncPill();return;}
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));

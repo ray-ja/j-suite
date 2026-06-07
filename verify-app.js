@@ -8,7 +8,7 @@ const smoke=process.argv[2]||"";
 let h=fs.readFileSync("Business App (v1).html","utf8");
 const collector=`<script>window.__errs=[];window.addEventListener("error",function(e){var src=e.filename||"";if(/unpkg|leaflet|nominatim|openstreetmap|tile/i.test(src))return;if(/31-inventory/i.test(src))return;/* other instance's in-progress file */ if(!e.message&&!e.error)return;/* resource-load (404) events carry no message */ __errs.push((src||"inline")+": "+(e.message||(e.error&&e.error.stack)||""));},true);window.addEventListener("unhandledrejection",function(e){__errs.push("promise: "+(e.reason&&(e.reason.stack||e.reason.message)||e.reason));});var _ce=console.error;console.error=function(){__errs.push("console.error: "+Array.prototype.slice.call(arguments).join(" "));_ce.apply(console,arguments);};<\/script>`;
 h=h.replace("</head>",collector+"\n</head>");
-const smokeScript=`<script>try{${smoke}}catch(e){__errs.push("smoke: "+(e&&e.stack||e));}document.documentElement.setAttribute("data-errs",JSON.stringify(window.__errs));<\/script>`;
+const smokeScript=`<script>(async function(){try{${smoke}}catch(e){__errs.push("smoke: "+(e&&e.stack||e));}document.documentElement.setAttribute("data-errs",JSON.stringify(window.__errs));})();<\/script>`;
 h=h.replace("</body>",smokeScript+"\n</body>");
 fs.writeFileSync("__verify_tmp.html",h);
 const chrome="C:/Program Files/Google/Chrome/Application/chrome.exe";

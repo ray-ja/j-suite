@@ -101,9 +101,11 @@ window.syncNow=async function(){
     const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam,users:S.users}})});
+    if(res.status===401){window.AUTH_401=true;S.sync.token="";save();if(btn)btn.textContent="⟳ Sync";syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();
     if(!data||!data.state||!data.state.obx)throw new Error("bad response");
+    window.AUTH_401=false;
     S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;S.sync.last=now();save();
     render();syMsg("Synced ✓");
   }catch(e){syMsg("Sync failed: "+e.message);if(btn)btn.textContent="⟳ Sync";}
