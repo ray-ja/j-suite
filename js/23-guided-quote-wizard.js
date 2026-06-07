@@ -41,9 +41,15 @@ window.openQuote=function(id,customerId,preset){
   }
   render();
 };
-window.exitWizard=function(){WZON=false;render();};
+window.exitWizard=function(){wizClearDraft();WZON=false;render();};
+/* ---- draft autosave + resume (survive back / close) ---- */
+const WZ_DRAFT_KEY="jsuite_wzdraft";
+window.wizAutosave=function(){try{if(WZON&&WZ&&WZ.step&&WZ.step!=="done")localStorage.setItem(WZ_DRAFT_KEY,JSON.stringify({biz:S.biz,ts:now(),wz:WZ}));}catch(e){}};
+function wzDraftMeta(){try{const d=JSON.parse(localStorage.getItem(WZ_DRAFT_KEY)||"null");if(!d||!d.wz||d.biz!==S.biz)return null;const wz=d.wz;let sub=0;(wz.items||[]).forEach(it=>sub+=(it.price||0)*(it.qty||1));return{name:(wz.cust&&wz.cust.name)||"",items:(wz.items||[]).length,total:sub,editing:!!wz.id};}catch(e){return null;}}
+window.wizResumeDraft=function(){try{const d=JSON.parse(localStorage.getItem(WZ_DRAFT_KEY)||"null");if(!d||!d.wz)return;if(d.biz&&d.biz!==S.biz)setBiz(d.biz);WZ=d.wz;if(!WZ.step||WZ.step==="done")WZ.step=(WZ.items&&WZ.items.length)?"review":"cust";WZON=true;TAB="quotes";render();}catch(e){}};
+window.wizDiscardDraft=function(){wizClearDraft();WZON=false;render();};
 function wizHead(n,total,title){return `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Step ${n} of ${total}</div><div class="nm" style="font-size:18px">${title}</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;}
-function wizRender(){const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
+function wizRender(){wizAutosave();const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
 function wizCust(){const c=WZ.cust;
   return wizHead(1,5,"Who's the quote for?")+`<div class="card">
     <label>Find an existing customer</label>
@@ -159,6 +165,7 @@ function wizReviewTotals(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const total=Math.max(0,sub-recDisc-(WZ.disc||0));
   const f=document.getElementById("wz_rtotal");if(f)f.textContent=money(total);
+  wizAutosave();
 }
 function wizReview(){
   if(!WZ.items)WZ.items=[];
@@ -168,9 +175,9 @@ function wizReview(){
   let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Step 4 of 5"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
   // customer mini-form (full single flow — no bounce required)
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow"><label style="margin-top:0">Customer / name</label></div><button class="btn ghost sm" onclick="WZ.step='cust';render()">↩ Full picker</button></div>
-    <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value">
-    <label>Phone</label><input id="r_phone" value="${esc(WZ.cust.phone||"")}" inputmode="tel" placeholder="(252) ___-____" onchange="WZ.cust.phone=this.value">
-    <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value"></div>`;
+    <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
+    <label>Phone</label><input id="r_phone" value="${esc(WZ.cust.phone||"")}" inputmode="tel" placeholder="(252) ___-____" onchange="WZ.cust.phone=this.value;wizAutosave()">
+    <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
   // editable line items
   h+=`<div class="secthd"><h2>Line items</h2><span class="ct">${WZ.items.length}</span></div><div id="wz_lines">`;
   if(!WZ.items.length)h+=`<div class="empty">No items yet — add a service or a manual line below.</div>`;
