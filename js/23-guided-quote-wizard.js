@@ -19,7 +19,28 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,miles:0,svc:null,inp:{},deep:{},deepMods:{},deepSearch:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:""};WZON=true;TAB="quotes";render();};
+/* Open a saved quote (or a preset line / known customer) straight INTO the wizard — the
+   single quote editor. Replaces the retired standalone modal that used to live in js/08. */
+window.openQuote=function(id,customerId,preset){
+  const d=D();const q=id?d.quotes.find(x=>x.id===id):null;
+  startWizard();
+  if(q){
+    WZ.id=q.id;
+    WZ.cust={id:q.customerId||"",name:q.cust||(q.customerId?custName(q.customerId):""),phone:"",address:q.address||"",source:"",soldBy:"",notes:"",propertyId:q.propertyId||""};
+    if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c){WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";}}
+    WZ.items=JSON.parse(JSON.stringify(q.items||[]));
+    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.haul=q.haul||"pickup";
+    WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
+    WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";
+    WZ.step="review";
+  } else {
+    if(preset)WZ.items=JSON.parse(JSON.stringify(preset));
+    if(customerId){const c=d.customers.find(x=>x.id===customerId);if(c){WZ.cust.id=c.id;WZ.cust.name=c.name||c.company||"";WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";const ps=propsForCust(c.id);if(ps[0]){WZ.cust.address=ps[0].address||"";WZ.cust.propertyId=ps[0].id||"";}}}
+    WZ.step=(WZ.items&&WZ.items.length)?"review":(customerId?"pick":"cust");
+  }
+  render();
+};
 window.exitWizard=function(){WZON=false;render();};
 function wizHead(n,total,title){return `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Step ${n} of ${total}</div><div class="nm" style="font-size:18px">${title}</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;}
 function wizRender(){const f={cust:wizCust,pick:wizPick,calc:wizCalc,review:wizReview,done:wizDone}[WZ.step];view.innerHTML=f();}
@@ -56,7 +77,7 @@ window.wizCustNext=function(){
   const sold=document.getElementById("wc_sold");if(sold)WZ.cust.soldBy=sold.value;
   const miss=[];if(!WZ.cust.name)miss.push("name");if(!WZ.cust.phone)miss.push("phone");if(!WZ.cust.address)miss.push("address");
   if(miss.length){document.getElementById("wc_err").innerHTML='<span style="color:var(--danger)">Please fill in: '+miss.join(", ")+" (required).</span>";return;}
-  WZ.step="pick";render();
+  WZ.step=(WZ.items&&WZ.items.length)?"review":"pick";render();
 };
 function wizPick(){const list=WZ_SVC[S.biz];
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
@@ -97,40 +118,28 @@ window.wizAddItem=function(){const inp=wizReadInp();let res;
   WZ.step="pick";render();
 };
 window.wizRemItem=function(i){WZ.items.splice(i,1);render();};
-window.wizDiscPct=function(p){let s=0;(WZ.items||[]).forEach(it=>s+=it.price);WZ.discPct=p||0;WZ.disc=Math.round(s*(p||0)/100);render();};
-window.wizDiscFlat=function(v){WZ.disc=parseFloat(v)||0;WZ.discPct=null;render();};
-function wizReview(){
-  let sub=0;WZ.items.forEach(it=>sub+=it.price);
+/* discount: chips re-render (to re-highlight); the live %/flat inputs update in place to keep focus */
+window.wizDiscPct=function(p){p=p||0;let s=0;(WZ.items||[]).forEach(it=>s+=(it.price||0)*(it.qty||1));WZ.discPct=p;WZ.disc=Math.round(s*p/100);render();};
+window.wizDiscPctLive=function(v){let p=parseFloat(v)||0,s=0;(WZ.items||[]).forEach(it=>s+=(it.price||0)*(it.qty||1));WZ.discPct=p;WZ.disc=Math.round(s*p/100);const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc;wizReviewTotals();};
+window.wizDiscFlat=function(v){WZ.disc=parseFloat(v)||0;WZ.discPct=null;wizReviewTotals();};
+
+/* ---- the single editable review/edit screen ---- */
+function reviewSummaryHTML(){
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const mc=mileageCost(WZ.miles);
-  const rec=WZ.recurring&&BIZ[S.biz].recurring; const recDisc=rec?sub*0.2:0;
+  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;
   const total=Math.max(0,sub-recDisc-(WZ.disc||0));
-  // negotiation math (items 7-9)
   const cost=itemsCost(WZ.items)+mc;
-  const profit=total-cost, margin=total>0?profit/total:0;
-  const floorPrice=cost>0?cost/(1-MARGIN_FLOOR):0;          // lowest price that holds the 35% margin floor
-  const maxDisc=Math.max(0,sub-floorPrice);                  // room to discount off the subtotal before breaching the floor
-  const maxDiscPct=sub>0?(maxDisc/sub*100):0;
-  const fieldPool=total*0.60*0.80;                           // OA: 60% Labor Pool -> 80% Field Work, then / # working
+  const profit=total-cost,margin=total>0?profit/total:0;
+  const floorPrice=cost>0?cost/(1-MARGIN_FLOOR):0;
+  const maxDisc=Math.max(0,sub-floorPrice),maxDiscPct=sub>0?(maxDisc/sub*100):0;
+  const fieldPool=total*0.60*0.80;
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
-  return wizHead(4,5,"Review the quote")+`<div class="card">
-    ${WZ.items.map((it,i)=>`<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(it.name)}</div></div><div style="font-weight:700">${money(it.price)}</div><button class="rm" onclick="wizRemItem(${i})">×</button></div>`).join("")||'<div class="muted">No items yet.</div>'}
-    <button class="btn ghost sm" style="margin-top:8px" onclick="WZ.step='pick';render()">+ Add another service</button>
-    ${BIZ[S.biz].recurring?`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;render()"><label style="margin:0">Recurring plan — 20% off</label></div>`:""}
-    <label>Discount</label>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">
-      ${[5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${WZ.discPct===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p}%</button>`).join("")}
-      <button class="btn ghost sm" onclick="WZ.disc=0;WZ.discPct=null;render()">Clear</button>
-    </div>
-    <div class="row" style="gap:8px">
-      <div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPct(parseFloat(this.value)||0)"></div>
-      <div class="grow"><label style="margin-top:0">Or flat $</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" onchange="wizDiscFlat(this.value)"></div>
-    </div>
-    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" onchange="WZ.miles=parseFloat(this.value)||0;render()">
-    <div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc)+(WZ.discPct?" ("+WZ.discPct+"%)":""):""}</div>
-    ${cogsStrip(total, cost)}
-    <div class="sub" style="margin-top:4px">Cost includes ${money(itemsCost(WZ.items))} job hard cost${WZ.miles?" + "+money(mc)+" drive ("+WZ.miles+" mi × "+MILEAGE_RATE_LABEL+")":""}.</div>
-    ${cost>0?`<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div style="font-weight:800;font-size:13px">🛑 Walk-away floor</div><div class="sub" style="margin-top:2px">Lowest price before you drop under the ${Math.round(MARGIN_FLOOR*100)}% floor: <b>${money(floorPrice)}</b>. Room to discount: <b>${money(maxDisc)} (${maxDiscPct.toFixed(0)}%)</b> off the ${money(sub)} subtotal.</div></div>`:''}
-    <details class="card" style="margin-top:8px"><summary style="font-weight:800;cursor:pointer">💰 Why this margin + your take-home (tap)</summary>
+  let h=`<div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc)+(WZ.discPct?" ("+WZ.discPct+"%)":""):""}</div>`;
+  h+=cogsStrip(total,cost);
+  h+=`<div class="sub" style="margin-top:4px">Cost includes ${money(itemsCost(WZ.items))} job hard cost${WZ.miles?" + "+money(mc)+" drive ("+WZ.miles+" mi × "+MILEAGE_RATE_LABEL+")":""}.</div>`;
+  if(cost>0)h+=`<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div style="font-weight:800;font-size:13px">🛑 Walk-away floor</div><div class="sub" style="margin-top:2px">Lowest price before you drop under the ${Math.round(MARGIN_FLOOR*100)}% floor: <b>${money(floorPrice)}</b>. Room to discount: <b>${money(maxDisc)} (${maxDiscPct.toFixed(0)}%)</b> off the ${money(sub)} subtotal.</div></div>`;
+  h+=`<details class="card" style="margin-top:8px"><summary style="font-weight:800;cursor:pointer">💰 Why this margin + your take-home (tap)</summary>
       <div style="font-size:13px;line-height:1.7;margin-top:8px">
         <b>Margin = price vs. hard cost.</b> Price ${money(total)} − cost ${money(cost)} (job ${money(itemsCost(WZ.items))}${WZ.miles?` + drive ${money(mc)}`:''}) = profit <b>${money(profit)}</b> (${pct(margin)}). This margin <b>excludes your labor</b> — that's paid from the 60% Labor Pool, so it isn't a cost here.<br><br>
         <b>Your take-home from this job</b> — OA split: 25% tax · 15% business · 60% labor → 80% Field Work, split by who works:
@@ -141,30 +150,146 @@ function wizReview(){
         </table>
         <div class="sub" style="margin-top:6px">Field-Work share only (80% of the 60% pool); Sales credit (15%) + Admin (5%) are separate. Hard out-of-pocket (dump/rental) comes from the 15% Business Fund. Industry margins for this kind of work run ~40–65% — but the take-home above is your real number.</div>
       </div>
-    </details>
-    <div class="totbar"><span class="lab">Total to present</span><span class="amt">${money(total)}</span></div>
-    ${notes.length?`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`:""}
-    <button class="btn acc" style="margin-top:12px" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>Save &amp; present →</button>
-  </div>`;}
-window.wizFinish=function(){
-  const d=D();let sub=0;WZ.items.forEach(it=>sub+=it.price);
-  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const disc=recDisc+(WZ.disc||0);const total=Math.max(0,sub-disc);
+    </details>`;
+  if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
+  return h;
+}
+function wizReviewTotals(){
+  const s=document.getElementById("wz_summary");if(s)s.innerHTML=reviewSummaryHTML();
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
+  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const total=Math.max(0,sub-recDisc-(WZ.disc||0));
+  const f=document.getElementById("wz_rtotal");if(f)f.textContent=money(total);
+}
+function wizReview(){
+  if(!WZ.items)WZ.items=[];
+  const editing=!!WZ.id;
+  const c=cat(),groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
+  const svcOpts=i=>`<option value="">— link a catalog service (optional) —</option>`+groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${WZ.items[i].serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
+  let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Step 4 of 5"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
+  // customer mini-form (full single flow — no bounce required)
+  h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow"><label style="margin-top:0">Customer / name</label></div><button class="btn ghost sm" onclick="WZ.step='cust';render()">↩ Full picker</button></div>
+    <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value">
+    <label>Phone</label><input id="r_phone" value="${esc(WZ.cust.phone||"")}" inputmode="tel" placeholder="(252) ___-____" onchange="WZ.cust.phone=this.value">
+    <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value"></div>`;
+  // editable line items
+  h+=`<div class="secthd"><h2>Line items</h2><span class="ct">${WZ.items.length}</span></div><div id="wz_lines">`;
+  if(!WZ.items.length)h+=`<div class="empty">No items yet — add a service or a manual line below.</div>`;
+  else h+=WZ.items.map((it,i)=>{
+    const lineTot=(it.price||0)*(it.qty||1);
+    const junkish=/junk|haul|debris|clear|cleanout|clean-?out|dump|move-?out|demo|storm|brush/i.test(it.name||"");
+    let r=`<div class="card" style="padding:10px;margin-bottom:8px">
+      <input value="${esc(it.name||"")}" placeholder="Line description" oninput="wizItemField(${i},'name',this.value)" style="font-weight:600;margin:0">
+      <div class="row" style="gap:6px;align-items:center;margin-top:6px"><select style="flex:1;font-size:12px" onchange="wizLineSvc(${i},this.value)">${svcOpts(i)}</select><button class="rm" onclick="wizRemItem(${i})" title="remove">×</button></div>
+      <div class="row" style="gap:8px;margin-top:6px">
+        <div style="flex:1"><label style="margin:0 0 2px">Qty</label><input class="q" type="number" min="1" value="${it.qty||1}" oninput="wizItemField(${i},'qty',this.value)" style="width:100%"></div>
+        <div style="flex:1"><label style="margin:0 0 2px">Price $</label><input type="number" value="${it.price||0}" oninput="wizItemField(${i},'price',this.value)" style="width:100%;text-align:right"></div>
+        <div style="flex:1"><label style="margin:0 0 2px">Cost $</label><input type="number" value="${it.cost||0}" oninput="wizItemField(${i},'cost',this.value)" style="width:100%;text-align:right"></div>
+      </div>
+      <div class="sub" style="margin-top:4px">Line total: <b id="lt_${i}">${money(lineTot)}</b>${it.notes&&it.notes.length?` · ${esc((it.notes||[]).join("; "))}`:""}</div>`;
+    if(junkish)r+=`<details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">⚖ Add dump fee from load weight</summary>
+      <label style="margin-top:6px">Estimated load weight (lbs)</label><input id="df_lbs_${i}" type="number" inputmode="decimal" value="2000" placeholder="pickup load ≈ 1,500–2,500">
+      <div class="toggle"><input type="checkbox" id="df_veg_${i}"><label style="margin:0">Clean vegetative debris (yard/brush) — free in Dare County</label></div>
+      <button class="btn ghost sm" style="margin-top:6px" onclick="wizDumpFee(${i})">Add dump-fee line</button>
+      <div class="sub" style="margin-top:4px">Mixed C&amp;D: $${DISPOSAL_RATE_PER_TON}/ton, first ${DISPOSAL_FREE_LBS} lbs free.</div></details>`;
+    return r+`</div>`;
+  }).join("");
+  h+=`</div>`;
+  h+=`<div class="row" style="gap:8px"><button class="btn ghost grow" onclick="wizAddBlankLine()">+ Add manual line</button><button class="btn ghost grow" onclick="WZ.step='pick';render()">+ Add service</button></div>`;
+  // options
+  h+=`<div class="card" style="margin-top:10px">`;
+  if(BIZ[S.biz].recurring)h+=`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;wizReviewTotals()"><label style="margin:0">Recurring plan — 20% off</label></div>`;
+  h+=`<label>Discount</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">${[5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${WZ.discPct===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p}%</button>`).join("")}<button class="btn ghost sm" onclick="WZ.disc=0;WZ.discPct=null;render()">Clear</button></div>
+    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" oninput="wizDiscFlat(this.value)"></div></div>
+    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" oninput="WZ.miles=parseFloat(this.value)||0;wizReviewTotals()"></div>`;
+  // live summary region (partial-updated to preserve input focus)
+  h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
+  // collateral
+  h+=`<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="wizPrint()">🖨 Print / PDF</button><button class="btn ghost grow" onclick="wizCopy()">Copy text</button></div>`;
+  // edit-mode actions (only for a saved quote)
+  if(editing){
+    h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
+      <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>`;
+    if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
+    else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
+    h+=`</div><button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
+  }
+  // sticky save footer
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const total=Math.max(0,sub-recDisc-(WZ.disc||0));
+  h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
+  return h;
+}
+/* line editing */
+window.wizItemField=function(i,field,v){if(!WZ.items[i])return;
+  if(field==="qty")WZ.items[i].qty=Math.max(1,parseInt(v)||1);
+  else if(field==="price")WZ.items[i].price=parseFloat(v)||0;
+  else if(field==="cost")WZ.items[i].cost=parseFloat(v)||0;
+  else WZ.items[i][field]=v;
+  const lt=document.getElementById("lt_"+i);if(lt)lt.textContent=money((WZ.items[i].price||0)*(WZ.items[i].qty||1));
+  wizReviewTotals();};
+window.wizAddBlankLine=function(){WZ.items.push({serviceId:"",name:"",unit:"flat",price:0,qty:1,cost:0});render();};
+window.wizLineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s){WZ.items[i].serviceId="";render();return;}WZ.items[i]=Object.assign({},WZ.items[i],{serviceId:s.id,name:s.name,unit:s.unit,price:s.price,qty:WZ.items[i].qty||1});render();};
+window.wizDumpFee=function(i){const e=document.getElementById("df_lbs_"+i);const lbs=parseFloat(e?e.value:"")||0;if(!lbs){alert("Enter a load weight in pounds first.");return;}const veg=!!(document.getElementById("df_veg_"+i)||{}).checked;WZ.items.splice(i+1,0,disposalLine(lbs,veg));render();};
+/* upsert WZ -> quotes (create or update), resolving customer + property */
+function wizResolveCust(){
+  const d=D();
   let cust=WZ.cust.id?d.customers.find(c=>c.id===WZ.cust.id):null;
-  if(!cust)cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
-  if(!cust){cust={id:uid(),name:WZ.cust.name,company:"",phone:WZ.cust.phone,email:"",town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,soldBy:WZ.cust.soldBy,manager:WZ.cust.soldBy,notes:[],next:""};
+  if(!cust&&WZ.cust.name)cust=d.customers.find(c=>!c.deleted&&(c.name||"").toLowerCase()===WZ.cust.name.toLowerCase());
+  if(!cust){
+    if(!WZ.cust.name)return{cust:null,prop:null};
+    cust={id:uid(),name:WZ.cust.name,company:"",phone:WZ.cust.phone,email:"",town:"",type:"Residential",status:"Quoted",source:WZ.cust.source,soldBy:WZ.cust.soldBy,manager:WZ.cust.soldBy,notes:[],next:""};
     if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});
-    touch(cust);d.customers.push(cust);}
-  else{cust.phone=cust.phone||WZ.cust.phone;if(WZ.cust.source&&!cust.source)cust.source=WZ.cust.source;if(WZ.cust.soldBy&&!cust.soldBy)cust.soldBy=WZ.cust.soldBy;
-    if(cust.status==="Lead")cust.status="Quoted";if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});touch(cust);}
-  // resolve the property (existing, or create one for this address linked to the customer)
+    touch(cust);d.customers.push(cust);
+  } else {
+    cust.phone=cust.phone||WZ.cust.phone;if(WZ.cust.source&&!cust.source)cust.source=WZ.cust.source;if(WZ.cust.soldBy&&!cust.soldBy)cust.soldBy=WZ.cust.soldBy;
+    if(cust.status==="Lead")cust.status="Quoted";if(WZ.cust.notes)cust.notes.push({t:new Date().toLocaleString(),text:WZ.cust.notes});touch(cust);
+  }
+  WZ.cust.notes="";WZ.cust.id=cust.id;
   let prop=WZ.cust.propertyId?d.properties.find(x=>x.id===WZ.cust.propertyId):null;
-  if(!prop&&WZ.cust.address){prop=actProps().find(x=>(x.address||"").toLowerCase()===WZ.cust.address.toLowerCase()&&(x.customerIds||[]).indexOf(cust.id)>=0);}
-  if(!prop){prop={id:uid(),label:"Main",address:WZ.cust.address||"",accessNotes:"",lat:null,lng:null,customerIds:[cust.id],updatedAt:now()};d.properties.push(prop);geocodeProp(prop);}
-  else if((prop.customerIds||[]).indexOf(cust.id)<0){prop.customerIds.push(cust.id);touch(prop);}
-  const q={id:uid(),customerId:cust.id,cust:cust.name,propertyId:prop.id,address:prop.address||WZ.cust.address||"",date:today(),items:WZ.items.map(it=>({serviceId:"",name:it.name,unit:"quote",price:it.price,qty:1,cost:it.cost||0})),recurring:rec,subtotal:sub,discount:disc,total:total,miles:(WZ.miles||0),cost:itemsCost(WZ.items)+mileageCost(WZ.miles),paymentLink:""};
-  touch(q);d.quotes.push(q);logEvent("Quote created — "+money(total)+(cust&&cust.name?" · "+cust.name:""),"quote");save();
-  CURQ=q;QITEMS=q.items;WZ.savedTotal=total;WZ.step="done";render();
+  if(!prop&&WZ.cust.address)prop=actProps().find(x=>(x.address||"").toLowerCase()===WZ.cust.address.toLowerCase()&&(x.customerIds||[]).indexOf(cust.id)>=0);
+  if(!prop&&WZ.cust.address){prop={id:uid(),label:"Main",address:WZ.cust.address||"",accessNotes:"",lat:null,lng:null,customerIds:[cust.id],updatedAt:now()};d.properties.push(prop);geocodeProp(prop);}
+  else if(prop&&(prop.customerIds||[]).indexOf(cust.id)<0){prop.customerIds.push(cust.id);touch(prop);}
+  if(prop)WZ.cust.propertyId=prop.id;
+  return{cust:cust,prop:prop};
+}
+window.wizPersist=function(){
+  const d=D();const r=wizResolveCust(),cust=r.cust,prop=r.prop;
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
+  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const manual=(WZ.disc||0);const disc=recDisc+manual;const total=Math.max(0,sub-disc);
+  const base=WZ.id?(d.quotes.find(x=>x.id===WZ.id)||{}):{};
+  const q=Object.assign(base,{
+    id:WZ.id||base.id||uid(),
+    customerId:cust?cust.id:(base.customerId||null),
+    cust:WZ.cust.name||(cust?cust.name:(base.cust||"")),
+    propertyId:prop?prop.id:(base.propertyId||null),
+    address:(prop&&prop.address)||WZ.cust.address||base.address||"",
+    date:base.date||today(),
+    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown})),
+    recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),total:total,
+    cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
+    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,hours:+WZ.hours||0,haul:WZ.haul||base.haul||"pickup"
+  });
+  touch(q);
+  if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);}
+  else{d.quotes.push(q);WZ.id=q.id;logEvent("Quote created — "+money(total)+(q.cust?" · "+q.cust:""),"quote");}
+  if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
+  save();return q;
 };
+window.wizFinish=function(){const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;wizClearDraft();WZ.step="done";render();};
+window.wizToggleInvoiced=function(){WZ.invoiced=!WZ.invoiced;wizPersist();render();};
+window.wizTogglePaid=function(){WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(WZ.paid)logEvent("Invoice paid — "+money(q.total)+(q.cust?" · "+q.cust:""),"paid");render();};
+window.wizSetPayLink=function(){const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
+window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);save();}wizClearDraft();exitWizard();};
+/* feed the shared print/copy helpers (js/08) from the wizard's state */
+function wizSyncLegacy(){
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
+  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const disc=recDisc+(WZ.disc||0);const total=Math.max(0,sub-disc);
+  QITEMS=WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0}));
+  CURQ={cust:WZ.cust.name||"",address:WZ.cust.address||"",invoiced:!!WZ.invoiced,paymentLink:WZ.paymentLink||"",subtotal:sub,discount:disc,total:total};
+}
+window.wizPrint=function(){wizSyncLegacy();printQuote();};
+window.wizCopy=function(){wizSyncLegacy();copyQuote();};
+/* draft autosave hook — fleshed out in the autosave chunk; safe no-op clear here */
+function wizClearDraft(){try{localStorage.removeItem("jsuite_wzdraft");}catch(e){}}
 function wizDone(){
   return `<div class="card" style="text-align:center;padding:30px 18px">
     <div style="font-size:40px">✅</div>

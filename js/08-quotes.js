@@ -15,82 +15,15 @@ function rQuotes(){
   view.innerHTML=h;
 }
 let QITEMS=[];let CURQ=null;
-window.openQuote=function(id,customerId,preset){
-  const d=D();const q=id?d.quotes.find(x=>x.id===id):null;CURQ=q;
-  QITEMS=q?JSON.parse(JSON.stringify(q.items)):(preset?JSON.parse(JSON.stringify(preset)):[]);
-  const custDefault=q?q.customerId:(customerId||"");const custFree=q?q.cust:"";
-  const opts=`<option value="">— pick customer —</option>`+actC().map(c=>`<option value="${c.id}" ${custDefault===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
-  modal(id?"Quote":"New quote",`
-    <label>Customer</label><select id="q_cust">${opts}</select>
-    <input id="q_custfree" style="margin-top:6px" placeholder="…or type a name" value="${esc(custFree)}">
-    <h2 style="margin-top:14px">Line items</h2><div id="qlines"></div>
-    <button class="btn ghost sm" style="margin-top:6px" onclick="addLine()">+ Add line</button>
-    ${(BIZ[S.biz].recurring && !QITEMS.some(it=>/junk|haul|move-?out|clear|storm|debris|dump|clean-?out/i.test(it.name||"")))?`<div class="toggle"><input type="checkbox" id="q_rec" ${q&&q.recurring?"checked":""} onchange="renderTot()"><label style="margin:0">Recurring service — 20% off</label></div>`:""}
-    <label>Extra discount ($, optional)</label><input type="number" id="q_disc" value="${q?Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0)):0}" oninput="renderTot()">
-    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="q_miles" value="${q?(q.miles||0):0}" oninput="renderTot()">
-    <div class="totbar" style="position:static"><span class="lab">Total</span><span class="amt" id="q_tot">$0</span></div>
-    <div id="q_cogs"></div>
-    <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn acc grow" onclick="saveQuote('${q?q.id:""}')">Save quote</button>
-      <button class="btn ghost grow" onclick="copyQuote()">Copy as text</button></div>
-    <button class="btn ghost" style="margin-top:8px" onclick="printQuote()">🖨 Print / Save PDF</button>
-    ${id?`<div class="row" style="gap:8px;margin-top:8px">
-      <button class="btn ghost sm grow" onclick="toggleInvoiced('${id}')">${q&&q.invoiced?"✓ Invoiced":"Mark invoiced"}</button>
-      <button class="btn ghost sm grow" onclick="togglePaid('${id}')">${q&&q.paid?"✓ Paid":"Mark paid"}</button></div>
-      ${q&&q.paymentLink?`<a class="btn acc" style="margin-top:8px" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a>`:`<div class="note" style="margin-top:8px">Add a payment link (Stripe Payment Links recommended — no monthly fee, ~2.9%+30¢, one link per amount). Paste it once your Stripe account is connected.</div><input id="q_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="setPayLink('${id}')">Save link</button>`}
-      <button class="btn danger" style="margin-top:10px" onclick="delQuote('${id}')">Delete quote</button>`:""}
-  `);
-  renderLines();
-};
-function renderLines(){
-  const c=cat();
-  document.getElementById("qlines").innerHTML=QITEMS.map((it,i)=>{
-    const groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
-    const opts=groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${it.serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
-    const isQuote=it.unit==="quote";
-    const isJunk=/junk|haul|debris|clear|cleanout|dump|move-out/i.test(it.name||"");
-    return `<div class="qline">
-      <select onchange="lineSvc(${i},this.value)"><option value="">— service —</option>${opts}</select>
-      <input class="q" type="number" min="1" value="${it.qty}" oninput="lineQty(${i},this.value)" title="qty">
-      <input class="pr" type="number" value="${it.price}" ${isQuote?"":"readonly"} oninput="linePrice(${i},this.value)" title="price">
-      <input class="pr" type="number" value="${it.cost||0}" oninput="lineCost(${i},this.value)" title="cost" placeholder="cost">
-      <button class="rm" onclick="rmLine(${i})">×</button>${isJunk?`<button class="btn ghost sm" style="margin-top:4px" onclick="junkHelper(${i})">⚖ Dump fee from load weight</button>`:""}</div>`;
-  }).join("")||`<div class="muted">No items yet — add one.</div>`;
-  renderTot();
+/* The standalone quote modal has been RETIRED — saved quotes now open INTO the guided
+   wizard (js/23, window.openQuote) for full editing: line edits, dump-fee inline input,
+   discount/miles, print/copy, payment link, mark-invoiced/paid, and delete all live there.
+   QITEMS/CURQ remain as the data source for the shared print/copy helpers below; the wizard
+   feeds them via wizSyncLegacy()/wizFinish(). */
+function quoteFigures(){
+  if(CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal||0,disc:CURQ.discount||0,total:CURQ.total};
+  let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));return{sub:sub,disc:0,total:sub};
 }
-window.addLine=function(){QITEMS.push({serviceId:"",name:"",unit:"flat",price:0,qty:1});renderLines();};
-window.rmLine=function(i){QITEMS.splice(i,1);renderLines();};
-window.lineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s)return;
-  QITEMS[i]={serviceId:s.id,name:s.name,unit:s.unit,price:s.price,qty:QITEMS[i].qty||1};renderLines();};
-window.lineQty=function(i,v){QITEMS[i].qty=Math.max(1,parseInt(v)||1);renderTot();};
-window.linePrice=function(i,v){QITEMS[i].price=parseFloat(v)||0;renderTot();};
-window.lineCost=function(i,v){QITEMS[i].cost=parseFloat(v)||0;renderTot();};
-window.junkHelper=function(i){const lbs=parseFloat(prompt("Estimated load weight (lbs)? Pickup load ≈ 1500–2500.","2000"));if(!lbs)return;const veg=confirm("Is this CLEAN vegetative debris (yard/brush only)?\n\nOK = clean veg → dumps FREE in Dare County.\nCancel = mixed C&D load → $73.16/ton over the first 500 lbs.");QITEMS.splice(i+1,0,disposalLine(lbs,veg));renderLines();};
-function quoteCalc(){let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const rec=document.getElementById("q_rec")&&document.getElementById("q_rec").checked;
-  const recDisc=rec?sub*0.2:0;
-  const md=document.getElementById("q_disc")?(parseFloat(document.getElementById("q_disc").value)||0):0;
-  const disc=recDisc+md;
-  const miles=document.getElementById("q_miles")?(parseFloat(document.getElementById("q_miles").value)||0):0;
-  return{sub,disc,manualDisc:md,recDisc,miles,total:Math.max(0,sub-disc),rec};}
-window.renderTot=function(){const t=quoteCalc();const el=document.getElementById("q_tot");if(el)el.textContent=money(t.total);const ce=document.getElementById("q_cogs");if(ce)ce.innerHTML=cogsStrip(t.total,itemsCost(QITEMS)+mileageCost(t.miles))+(t.miles?`<div class="sub" style="margin-top:2px">Incl. ${money(mileageCost(t.miles))} drive (${t.miles} mi × ${MILEAGE_RATE_LABEL})</div>`:"");};
-function quoteFigures(){if(!document.getElementById("q_rec")&&CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal,disc:CURQ.discount,total:CURQ.total};return quoteCalc();}
-window.saveQuote=function(id){
-  const t=quoteCalc();const d=D();
-  const obj={id:id||uid(),customerId:val("q_cust"),cust:val("q_custfree")||(val("q_cust")?custName(val("q_cust")):""),
-    date:today(),items:JSON.parse(JSON.stringify(QITEMS)),recurring:t.rec,subtotal:t.sub,discount:t.disc,manualDisc:t.manualDisc,miles:t.miles,total:t.total,cost:itemsCost(QITEMS)+mileageCost(t.miles),paymentLink:CURQ?(CURQ.paymentLink||""):""};
-  if(!obj.items.length){alert("Add at least one line item.");return;}
-  touch(obj);
-  if(id){const i=d.quotes.findIndex(x=>x.id===id);d.quotes[i]=obj;}else d.quotes.push(obj);
-  if(obj.customerId){const c=d.customers.find(x=>x.id===obj.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
-  if(!id)logEvent("Quote created — "+money(obj.total)+(obj.cust?" · "+obj.cust:""),"quote");
-  save();closeModal();render();
-};
-window.delQuote=function(id){if(!confirm("Delete this quote?"))return;
-  const q=D().quotes.find(x=>x.id===id);q.deleted=true;touch(q);save();closeModal();render();};
-window.toggleInvoiced=function(id){const q=D().quotes.find(x=>x.id===id);q.invoiced=!q.invoiced;touch(q);save();openQuote(id);};
-window.togglePaid=function(id){const q=D().quotes.find(x=>x.id===id);q.paid=!q.paid;if(q.paid){q.invoiced=true;logEvent("Invoice paid — "+money(q.total)+(q.cust?" · "+q.cust:""),"paid");}touch(q);save();openQuote(id);};
-window.setPayLink=function(id){const q=D().quotes.find(x=>x.id===id);if(!q)return;q.paymentLink=val("q_paylink").trim();touch(q);save();openQuote(id);};
 window.copyQuote=function(){
   const t=quoteFigures();const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
