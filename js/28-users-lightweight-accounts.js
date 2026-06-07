@@ -16,7 +16,7 @@ window.createAccount=async function(){
   if(!un||!pw){alert("Username and password required.");return;}
   if(users().some(u=>u.username.toLowerCase()===un.toLowerCase())){alert("That username is taken.");return;}
   if(!S.users)S.users=[];
-  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),updatedAt:now()});
+  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
   const u=S.users[S.users.length-1];localStorage.setItem("jra_session",u.id);
   save();closeModal();render();
 };

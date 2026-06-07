@@ -60,7 +60,7 @@ function rData(){
       <p class="muted" style="margin-top:8px">Last synced: ${last}. <span id="sy_msg"></span></p>
     </div>
     <h2>Appearance</h2>
-    <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${localStorage.getItem("jra_theme")==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode</label></div></div>
+    <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
     <h2>Team</h2>
     <div class="card">
       <div class="row"><div class="grow"><div class="nm">${curUser()?esc(curUser().username):"Not signed in"}</div><div class="sub">${curUser()?"signed in on this device":"sign in to tag your work"}</div></div>
