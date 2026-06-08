@@ -18,10 +18,10 @@ const ADMIN_PAGES = [
   { tab: "training", label: "Train" }, { tab: "market", label: "Market" },
   { tab: "opps", label: "Opps" }, { tab: "sites", label: "Sites" },
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
-  { tab: "data", label: "Data" }
+  { tab: "time", label: "Time" }, { tab: "data", label: "Data" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
-const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "map", "sales", "todo", "inventory"];
+const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "map", "sales", "todo", "inventory", "time"];
 /* owner is implicit "all access" (no pages list); admin/crew seed the editable defaults */
 const DEFAULT_ROLES = [
   { key: "owner", label: "Owner", builtin: true },
