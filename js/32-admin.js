@@ -48,12 +48,23 @@ function allRoles() { return rolesRec().roles; }
 function roleByKey(key) { return allRoles().find(r => r.key === key) || (key === "owner" ? { key: "owner", label: "Owner", builtin: true } : null); }
 function touchRoles() { rolesRec().updatedAt = now(); }
 
-/* role of the active session; no signed-in user (lone offline device) ⇒ full owner access */
-function curRoleKey() { const u = (typeof curUser === "function") ? curUser() : null; return (u && u.role) ? u.role : "owner"; }
+function hasAnyAccount() { return realAccounts().length > 0; }
+/* role for the current session. No signed-in user:
+   - while NO accounts exist yet (brand-new server / #token= bootstrap) ⇒ owner, so the very
+     first device can reach Admin/Data and create the initial owner account to finish setup;
+   - once any account exists, a signed-out / offline device is RESTRICTED to a crew-equivalent
+     view (never owner) — a logged-out device must not see owner-only tabs. */
+const NO_SESSION_ROLE = "__nosession__";
+function curRoleKey() {
+  const u = (typeof curUser === "function") ? curUser() : null;
+  if (u && u.role) return u.role;
+  return hasAnyAccount() ? NO_SESSION_ROLE : "owner";
+}
 function isOwner() { return curRoleKey() === "owner"; }
 function roleAllows(key, tab) {
   if (key === "owner") return true;            // owner sees everything, incl. the admin panel
   if (tab === "admin") return false;           // admin panel is owner-only, always
+  if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user
   if (!Array.isArray(r.pages)) return true;     // role with no restriction ⇒ all pages
