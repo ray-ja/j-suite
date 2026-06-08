@@ -24,8 +24,8 @@
 /cart        /services.html   301
 /checkout    /services.html   301
 
-# --- Google review link — MUST keep working post-cutover. Replace with the exact current target. ---
-/review   https://g.page/r/REPLACE-WITH-REAL-GOOGLE-REVIEW-URL   301
+# --- Google review link — MUST keep working post-cutover. ---
+/review   https://g.page/r/Cfra8psQX2FLEBM/review   301
 
 # --- Catch-all safety net (keep LAST so no old deep link 404s) ---
 /*   /   301
