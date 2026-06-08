@@ -48,6 +48,8 @@ In the app's **Data** tab, set the same server URL and token on each device. `da
 
 **The server also serves the app.** Browse to `http://<server-ip>:4000` from any device on your network (phone, tablet, another PC) to load J-Suite — no file copying. When loaded this way, the sync URL pre-fills to that server automatically; you just enter the token once.
 
+**Install it as an app (PWA).** J-Suite can be added to a device's home screen and run full-screen + offline. Install requires opening it over your Tailscale **https** hostname (the raw `http://…:4000` IP isn't a secure context, so browsers won't offer install). One-time per device — full steps for Android, iOS, and desktop are in **[`PWA-INSTALL.md`](PWA-INSTALL.md)**, and there's an **Install** card in the app's **Data** tab.
+
 ## QuickBooks Online (optional)
 
 The app's invoicing is meant to hand off to QuickBooks, not replace it: the app owns the upstream (leads → quotes → pipeline); QuickBooks owns the downstream (invoices, payments, income). The bridge lets the app push invoices into QBO and pull unpaid/income back.
