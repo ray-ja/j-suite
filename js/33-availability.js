@@ -25,6 +25,15 @@ function availOn(u, ds) {
   return { status: "off", label: "Off (" + DOW[dowOf(ds)] + ")", cls: "off" };
 }
 function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unset"; }
+/* one-line summary of a member's weekly availability + upcoming time-off, for the schedule header */
+function availSummary(u) {
+  if (!u) return "";
+  const a = u.avail, upto = (u.timeoff || []).filter(b => b && !b.deleted && (b.end || b.start) >= today()).length;
+  if (!a || !a.days) return "Not set yet" + (upto ? ` · ${upto} time-off` : "");
+  const days = a.days.map((on, i) => on ? DOW[i] : null).filter(Boolean);
+  const dstr = days.length === 7 ? "Every day" : (days.length ? days.join(", ") : "No work days");
+  return `${dstr}${a.start && a.end ? ` · ${a.start}–${a.end}` : ""}${upto ? ` · ${upto} upcoming time-off` : ""}`;
+}
 function jobsForMemberOn(uid, ds) { return actJ().filter(j => j.date === ds && (j.crew || []).indexOf(uid) >= 0); }
 function availBadge(u, ds) {
   const a = availOn(u, ds);

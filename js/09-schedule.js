@@ -6,7 +6,10 @@ function rSchedule(){
   const t=today();
   if(CALY==null){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();}
   const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
-  let h=sub+`<div class="secthd"><h2>Schedule</h2>${(typeof curUser==="function"&&curUser())?`<button class="btn ghost sm" onclick="openAvailability()">My availability</button>`:""}</div>`+renderCalendar(jobs);
+  const cu=(typeof curUser==="function")?curUser():null;
+  let h=sub+`<div class="secthd"><h2>Schedule</h2>${cu?`<button class="btn ghost sm" onclick="openAvailability()">My availability</button>`:""}</div>`;
+  if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
+  h+=renderCalendar(jobs);
   const groups={Today:[],Upcoming:[],Done:[]};
   jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
   if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
@@ -16,6 +19,10 @@ function rSchedule(){
 }
 window.schedSub=function(s){SCHEDSUB=s;render();};
 window.schedDate=function(v){SCHED_DATE=v;render();};
+/* compact crew initials for a tight space (calendar cells) */
+function crewInitials(ids){return (ids||[]).map(id=>{const u=(S.users||[]).find(x=>x.id===id);if(!u)return"";const p=String(u.username||"").trim().split(/\s+/).filter(Boolean);return (p.length>1?(p[0][0]+p[1][0]):(u.username||"").slice(0,2)).toUpperCase();}).filter(Boolean).join(" ");}
+/* true if any assigned crew member is off/time-off on the job's date */
+function jobHasConflict(j){return (j.crew||[]).some(id=>{const u=(S.users||[]).find(x=>x.id===id);return u&&typeof isFree==="function"&&!isFree(u,j.date);});}
 /* who's assigned to a job, with a conflict flag for anyone not free on the job's date */
 function crewChips(j){const ids=j.crew||[];if(!ids.length)return `<span class="badge" style="background:var(--soft);color:var(--muted)">Unassigned</span>`;
   return ids.map(id=>{const u=(S.users||[]).find(x=>x.id===id);if(!u)return"";
@@ -56,7 +63,8 @@ function renderCalendar(jobs){
   for(let day=1;day<=dim;day++){
     const ds=CALY+"-"+String(CALM+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
     const dj=byDate[ds]||[];let inner=`<div class="dnum">${day}</div>`;
-    dj.slice(0,2).forEach(j=>inner+=`<div class="caljob" style="${j.done?'opacity:.5;text-decoration:line-through':''}">${esc(j.title||'Job')}</div>`);
+    dj.slice(0,2).forEach(j=>{const conf=jobHasConflict(j),ini=crewInitials(j.crew);
+      inner+=`<div class="caljob" style="${j.done?'opacity:.5;text-decoration:line-through':''}${conf?';background:var(--danger)':''}" title="${esc(j.title||'Job')}${ini?' · '+esc(ini):''}${conf?' · crew unavailable':''}">${esc(j.title||'Job')}${ini?` <span style="opacity:.85;font-weight:700">${esc(ini)}</span>`:""}</div>`;});
     if(dj.length>2)inner+=`<div class="calmore">+${dj.length-2} more</div>`;
     cells+=`<div class="calcell${ds===t?' today':''}" onclick="openDay('${ds}')">${inner}</div>`;
   }
