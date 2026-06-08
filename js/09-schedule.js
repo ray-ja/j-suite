@@ -139,3 +139,47 @@ window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done
 window.delJob=function(id){if(!confirm("Delete this job?"))return;
   const j=D().jobs.find(x=>x.id===id);j.deleted=true;touch(j);if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+(j.title||"job"));save();closeModal();render();};
 
+/* ===== Quote → Job: accept a quote with a date/time, creating a scheduled job =====
+   Reachable from the quote flow (wizard). Reuses the crew picker (j_date/j_crew ids + JOBCREW)
+   so picking the job date shows who's free/off that day. The job carries customer, address,
+   crew, date/time + a quoteId link back; the quote is marked accepted + linked to the job. */
+function quoteJobTitle(q){const it=(q.items||[]).filter(x=>x&&x.name);if(it.length)return it[0].name+(it.length>1?` (+${it.length-1} more)`:"");return q.cust?("Job — "+q.cust):"Scheduled job";}
+window.openAcceptSchedule=function(quoteId){
+  if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;     // read-only viewer can't convert
+  if(typeof WZON!=="undefined"&&WZON&&WZ&&WZ.id===quoteId&&typeof wizPersist==="function")wizPersist();  // flush pending edits
+  const d=D();const q=d.quotes.find(x=>x.id===quoteId);if(!q){alert("Save the quote first.");return;}
+  const linked=q.jobId?d.jobs.find(j=>j.id===q.jobId&&!j.deleted):null;
+  JOBCREW=new Set((linked&&linked.crew)||[]);
+  const presetDate=(linked&&linked.date)||q.acceptedDate||today(),presetTime=(linked&&linked.time)||"";
+  modal((linked?"Reschedule job":"Accept & schedule")+" — "+esc(q.cust||"quote"),`
+    <div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(q.cust||"Customer")}</div><div class="sub" style="white-space:normal">${esc(q.address||"no address on quote")}</div><div class="sub">${money(q.total||0)} · ${(q.items||[]).length} item(s)</div></div>
+    <div class="row" style="gap:8px"><div class="grow"><label>Job date</label><input id="j_date" type="date" value="${presetDate}" onchange="renderJobCrew()"></div>
+    <div class="grow"><label>Time</label><input id="j_time" type="time" value="${esc(presetTime)}"></div></div>
+    <label>Assign crew — free/off shown for the chosen date</label>
+    <div id="j_crew"></div>
+    <div class="sub" id="j_crew_note" style="margin-top:6px"></div>
+    <button class="btn acc" style="margin-top:14px" onclick="acceptQuoteToJob('${quoteId}')">${linked?"Update scheduled job":"Create scheduled job"} →</button>`);
+  renderJobCrew();
+};
+window.acceptQuoteToJob=function(quoteId){
+  const d=D();const q=d.quotes.find(x=>x.id===quoteId);if(!q)return;
+  const date=val("j_date")||today(),time=val("j_time");
+  let job=q.jobId?d.jobs.find(j=>j.id===q.jobId):null;const isNew=!job;
+  if(!job){job={id:uid(),done:false};d.jobs.push(job);}
+  if(!job.title)job.title=quoteJobTitle(q);
+  job.customerId=q.customerId||job.customerId||"";job.propertyId=q.propertyId||job.propertyId||"";
+  job.address=q.address||job.address||"";job.crew=[...JOBCREW];job.date=date;job.time=time;job.quoteId=q.id;
+  touch(job);
+  q.accepted=true;q.jobId=job.id;q.acceptedDate=date;touch(q);
+  if(typeof WZ!=="undefined"&&WZ&&WZ.id===q.id){WZ.accepted=true;WZ.jobId=job.id;WZ.acceptedDate=date;}
+  const c=q.customerId?d.customers.find(x=>x.id===q.customerId):null;
+  if(c&&c.status!=="Won"&&c.status!=="Lost"){c.status="Won";touch(c);}
+  if(typeof logChange==="function"){
+    logChange(isNew?"create":"update","job",job.id,(isNew?"Scheduled from quote — ":"Rescheduled — ")+(job.title||"job")+" · "+fmtDate(date)+(time?" "+time:""));
+    logChange("update","quote",q.id,"Accepted & scheduled "+money(q.total||0)+(q.cust?" · "+q.cust:""));
+  }
+  save();closeModal();render();
+};
+/* leave the wizard and open the linked job */
+window.closeWizToJob=function(jobId){if(typeof exitWizard==="function")exitWizard();openJob(jobId);};
+

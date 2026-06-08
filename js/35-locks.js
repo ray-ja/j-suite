@@ -82,6 +82,10 @@ function lockReleaseCurrent() {
   releaseLock(ctx.entity, ctx.recId); save();
 }
 window.lockReleaseCurrent = lockReleaseCurrent;
+/* closeModal hook — only release locks owned by a MODAL editor, never the wizard's own lock
+   (so opening a sub-modal over the quote wizard, e.g. Accept & schedule, doesn't drop its lock). */
+function lockReleaseOnModalClose() { if (LOCKCTX && LOCKCTX.alive === lockModalAlive) lockReleaseCurrent(); }
+window.lockReleaseOnModalClose = lockReleaseOnModalClose;
 /* called from render() — releases the lock the moment its editor stops being shown (navigate-away) */
 function lockCheckAlive() { if (LOCKCTX && LOCKCTX.alive && !LOCKCTX.alive()) lockReleaseCurrent(); }
 window.lockCheckAlive = lockCheckAlive;

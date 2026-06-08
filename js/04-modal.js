@@ -4,7 +4,7 @@ function modal(title,html){
   sheet.innerHTML=`<div class="shead"><h3>${title}</h3><button class="cl" onclick="closeModal()">×</button></div>`+html;
   overlay.classList.add("show");
 }
-function closeModal(){overlay.classList.remove("show");if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();}
+function closeModal(){overlay.classList.remove("show");if(typeof lockReleaseOnModalClose==="function")lockReleaseOnModalClose();}
 overlay.onclick=e=>{if(e.target===overlay)closeModal()};
 window.closeModal=closeModal;
 

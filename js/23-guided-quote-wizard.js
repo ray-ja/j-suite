@@ -33,6 +33,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";
+    WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
     WZ.step="review";
   } else {
     if(preset)WZ.items=JSON.parse(JSON.stringify(preset));
@@ -233,6 +234,19 @@ function wizReview(){
   h+=`<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="wizPrint()">🖨 Print / PDF</button><button class="btn ghost grow" onclick="wizCopy()">Copy text</button></div>`;
   // edit-mode actions (only for a saved quote)
   if(editing){
+    // Accept the quote → schedule a job (crew availability for the chosen date)
+    h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Accept &amp; schedule</div>`;
+    const job=(WZ.accepted&&WZ.jobId)?D().jobs.find(j=>j.id===WZ.jobId&&!j.deleted):null;
+    if(job){
+      h+=`<div class="row"><div class="grow"><div class="nm" style="font-size:15px">✓ Scheduled — ${fmtDate(job.date)}${job.time?" · "+esc(job.time):""}</div><div class="sub" style="margin-top:2px">${(typeof crewChips==="function")?crewChips(job):""}</div></div><button class="btn ghost sm" onclick="closeWizToJob('${job.id}')">Open job</button></div>
+        <button class="btn ghost sm" style="margin-top:8px" onclick="openAcceptSchedule('${WZ.id}')">Reschedule / reassign crew</button>`;
+    } else if(WZ.accepted&&WZ.jobId){
+      h+=`<div class="muted" style="margin-bottom:8px">The linked job was removed.</div><button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Schedule again →</button>`;
+    } else {
+      h+=`<div class="sub" style="white-space:normal;margin-bottom:8px">Customer accepted? Turn this quote into a scheduled job — it carries the customer &amp; address, and lets you assign crew for the date.</div>
+        <button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Accept &amp; schedule job →</button>`;
+    }
+    h+=`</div>`;
     h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
       <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>`;
     if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
