@@ -28,7 +28,7 @@
   </div>
   <p class="meta" style="color:var(--muted);font-size:.85rem;margin-top:12px">Secure checkout by Stripe. Recurring plans bill automatically and save 20%. Prices confirmed on site for variable scope.</p>
 </div>
-<form class="formcard" name="estimate" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks.html">
+<form id="estimate-form" class="formcard" name="estimate" method="POST" data-netlify="true" netlify-honeypot="bot-field" action="/thanks.html">
   <input type="hidden" name="form-name" value="estimate">
   <p style="display:none"><label>Don't fill this out: <input name="bot-field"></label></p>
   <h2 style="margin-top:0">Request your estimate</h2>
@@ -42,9 +42,10 @@
     <label><input type="checkbox" name="services" value="Home watch"> Home watch</label>
     <label><input type="checkbox" name="services" value="Junk removal"> Junk removal</label>
     <label><input type="checkbox" name="services" value="Yard work"> Yard work</label>
+    <label><input type="checkbox" name="services" value="Shed demolition"> Shed demolition</label>
+    <label><input type="checkbox" name="services" value="Moving &amp; loading"> Moving &amp; loading</label>
     <label><input type="checkbox" name="services" value="Window washing"> Window washing</label>
     <label><input type="checkbox" name="services" value="Commercial cleanup"> Commercial cleanup</label>
-    <label><input type="checkbox" name="services" value="Seasonal/storm"> Seasonal/storm</label>
   </div>
   <label>Property size / details</label><textarea name="details" placeholder="e.g. 2-story house ~2,400 sq ft; 2-car driveway; roof has algae on the north side"></textarea>
   <label>Interested in a recurring plan? (save 20%)</label>
