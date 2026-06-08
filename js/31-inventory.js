@@ -175,13 +175,15 @@ function actInv(){return (D().inventory||[]).filter(function(i){return !i.delete
 function invLensItems(tag){return actInv().filter(function(i){var t=i.tags||[];return t.indexOf(tag)>=0||t.indexOf("all")>=0;});}
 
 /* ---- tab state ---- */
-var INVVIEW="master";          // "master" | "job"
+var INVVIEW="master";          // "master" | "job" | "avail"
 var INVJOB="house-wash";       // active job-type lens
 var INVSEARCH="";
+var INV_AVAIL_DATE=null;        // selected date for the equipment-availability-by-date view
 
 window.invSetView=function(v){INVVIEW=v;render();};
 window.invSetJob=function(t){INVJOB=t;render();};
 window.invSearchOn=function(v){INVSEARCH=(v||"").toLowerCase();invRenderMaster();};
+window.invAvailDate=function(v){INV_AVAIL_DATE=v;invRenderAvail();};
 
 function invBizName(){return S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation";}
 
@@ -205,6 +207,7 @@ function rInventory(){
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(INVVIEW==="master"?"on":"")+'" onclick="invSetView(\'master\')">Master list</button>'
     +'<button class="subbtn '+(INVVIEW==="job"?"on":"")+'" onclick="invSetView(\'job\')">By job type</button>'
+    +'<button class="subbtn '+(INVVIEW==="avail"?"on":"")+'" onclick="invSetView(\'avail\')">Availability by date</button>'
     +'</div>';
 
   if(!inv.length){
@@ -215,7 +218,7 @@ function rInventory(){
     return;
   }
   view.innerHTML=sub+'<div id="inv_body"></div>';
-  if(INVVIEW==="master")invRenderMaster();else invRenderJob();
+  if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
 }
 
 /* ---------- MASTER (edit Have?/Qty here, once) ---------- */
@@ -317,6 +320,48 @@ function invLensRow(i){
     +'<div class="grow"><div class="nm" style="'+(i.have?"":"color:var(--muted)")+'">'+esc(i.name)+invCatBadge(i.cat)+'</div>'
     +'<div class="sub" style="white-space:normal">'+invMetaLine(i)+(i.qty?' · qty '+esc(i.qty):"")+'</div></div>'
   +'</div>';
+}
+
+/* ---------- AVAILABILITY BY DATE — what gear is committed/free on a chosen day ----------
+   Reads scheduled jobs (js/09) through the shared engine (js/36): every item required by an active
+   job on the date, rolled up to owned / committed / free, with over-commitments flagged loudly so
+   the owner can rent, buy, or reschedule before the truck rolls. */
+function invRenderAvail(){
+  var body=document.getElementById("inv_body"); if(!body)return;
+  var ds=INV_AVAIL_DATE||today();
+  var rows=(typeof eqAvailabilityByDate==="function")?eqAvailabilityByDate(ds):[];
+  var conflicts=rows.filter(function(r){return r.conflict;});
+
+  var h='<div class="card"><label>Pick a date</label><input type="date" value="'+ds+'" onchange="invAvailDate(this.value)">'
+    +'<div class="sub" style="margin-top:6px">'+DOW[dowOf(ds)]+' · '+fmtDate(ds)+' — equipment required by jobs this day</div></div>';
+
+  h+='<div class="secthd"><h2>Committed equipment</h2><span class="ct">'+rows.length+' item'+(rows.length===1?"":"s")+'</span></div>';
+
+  if(conflicts.length){
+    h+='<div class="card" style="border-left:4px solid var(--danger)">'
+      +'<div style="font-weight:700;margin-bottom:6px">⚠ '+conflicts.length+' over-committed on '+fmtDate(ds)+'</div>'
+      +conflicts.map(function(r){return '<div class="sub" style="white-space:normal">'+esc(eqShortMsg(r.item,r.owned,r.committed,r.jobs))+'</div>';}).join("")
+      +'</div>';
+  }
+
+  if(!rows.length){
+    body.innerHTML=h+'<div class="empty"><div class="big">🗓</div>No equipment is required by any job on '+fmtDate(ds)+'. Attach gear to a job from the Schedule tab.</div>';
+    return;
+  }
+
+  h+='<div class="card" style="padding:6px 10px">'+rows.map(function(r){
+    var i=r.item, nm=i?i.name:"(removed item)";
+    var col=r.conflict?"var(--danger)":(r.free<=0?"var(--muted)":"var(--accent)");
+    return '<div class="li" style="align-items:flex-start'+(r.conflict?";background:#fdecea;border-radius:8px":"")+'">'
+      +'<div class="grow"><div class="nm">'+esc(nm)+(i?invCatBadge(i.cat):"")+'</div>'
+      +'<div class="sub" style="white-space:normal">'+r.jobs.map(function(x){return esc(x.job.title||"Job")+" ×"+x.qty;}).join(" · ")+'</div></div>'
+      +'<div style="text-align:right;flex:0 0 auto;min-width:64px">'
+        +'<div style="font-weight:700;color:'+col+'">'+r.committed+"/"+r.owned+'</div>'
+        +'<div class="sub">'+(r.conflict?("short "+(r.committed-r.owned)):(r.free+" free"))+'</div>'
+      +'</div></div>';
+  }).join("")+'</div>';
+
+  body.innerHTML=h;
 }
 
 /* ---------- add / edit an item (also how a Jamieson master gets built by hand) ---------- */

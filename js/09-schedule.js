@@ -1,5 +1,6 @@
 /* ---------- SCHEDULE ---------- */
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set();
+let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
   const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
   if(SCHEDSUB==="crew"){view.innerHTML=sub+rCrewSchedule();return;}
@@ -80,17 +81,26 @@ window.openDay=function(ds){
   const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
   modal(fmtDate(ds),`<div class="card">${list}</div><button class="btn acc" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`);
 };
+/* compact required-equipment line for a job row — count + a clear flag if any item is over-committed on its date */
+function jobEquipLine(j){
+  const eq=(typeof jobEquip==="function")?jobEquip(j):[];if(!eq.length)return"";
+  const n=eq.reduce((s,e)=>s+e.qty,0);
+  const conf=j.done?0:eq.filter(e=>eqConflict(e.itemId,j.date,e.qty,j.id).conflict).length;
+  const c=conf?` <span style="color:var(--danger);font-weight:700">⚠ ${conf} over-committed</span>`:"";
+  return `<div class="sub" style="margin-top:2px">🧰 ${n} item${n>1?"s":""}${c}</div>`;
+}
 function liJob(j){
   const crew=(j.crew&&j.crew.length)?`<div style="margin-top:4px">${crewChips(j)}</div>`:"";
   return `<div class="li"><div class="grow" onclick="openJob('${j.id}')">
     <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
-    <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}</div>${crew}</div>
+    <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}</div>${crew}${jobEquipLine(j)}</div>
     <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
 }
 window.openJob=function(id,customerId,presetDate){
   const d=D();const j=id?d.jobs.find(x=>x.id===id):{id:uid(),date:presetDate||today(),customerId:customerId||""};
   const isNew=!id;
   JOBCREW=new Set(j.crew||[]);   // live assignment set for this modal
+  JOBEQUIP=(typeof jobEquip==="function")?jobEquip(j):[];JOBEQUIP_JID=j.id;   // live required-equipment list for this modal
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
   modal(isNew?"Schedule job":"Job",`
@@ -98,18 +108,59 @@ window.openJob=function(id,customerId,presetDate){
     <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
     <label>Customer</label><select id="j_cust">${opts}</select>
     <label>Property (for the job route map)</label><select id="j_prop"><option value="">— none —</option>${actProps().map(p=>`<option value="${p.id}" ${j.propertyId===p.id?"selected":""}>${esc(p.label||p.address||"Property")}${p.lat==null?" (no location)":""}</option>`).join("")}</select>
-    <div class="row" style="gap:8px"><div class="grow"><label>Date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="renderJobCrew()"></div>
+    <div class="row" style="gap:8px"><div class="grow"><label>Date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="renderJobCrew();renderJobEquip()"></div>
     <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
     <label>Assign crew</label>
     <div id="j_crew"></div>
     <div class="sub" id="j_crew_note" style="margin-top:6px"></div>
+    <label style="margin-top:12px">Required equipment</label>
+    <div id="j_equip"></div>
+    <div class="sub" id="j_equip_note" style="margin-top:6px"></div>
     <label style="margin-top:12px">Notes</label><textarea id="j_notes">${esc(j.notes||"")}</textarea>
     <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
-  renderJobCrew();
+  renderJobCrew();renderJobEquip();
   if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
 };
+/* required-equipment picker — quantity-aware, with live conflict flags for the chosen date.
+   Reads the master inventory (js/31) and the date the owner is placing the job against, then asks
+   the shared engine (js/36) whether attaching would exceed what Ray owns across overlapping jobs. */
+function renderJobEquip(){
+  const box=document.getElementById("j_equip");if(!box)return;
+  const ds=val("j_date")||today();
+  const inv=(typeof actInv==="function")?actInv():[];
+  if(!inv.length){box.innerHTML=`<div class="muted">No inventory yet — add gear in the Inventory tab to require it here.</div>`;}
+  else{
+    const rows=JOBEQUIP.map(e=>{
+      const i=eqItemById(e.itemId);if(!i)return"";
+      const r=eqConflict(e.itemId,ds,e.qty,JOBEQUIP_JID);
+      const info=r.conflict
+        ?`<div class="sub" style="color:var(--danger);white-space:normal">⚠ ${esc(eqConflictMsg(r))}</div>`
+        :`<div class="sub">${r.owned} owned · ${r.committedOther} committed elsewhere on ${fmtDate(ds)}</div>`;
+      return `<div class="li" style="align-items:flex-start${r.conflict?";background:#fdecea;border-radius:8px":""}">
+        <div class="grow"><div class="nm">${esc(i.name)}${invCatBadge(i.cat)}</div>${info}</div>
+        <input type="number" min="1" value="${e.qty}" style="width:54px;text-align:center;padding:6px;flex:0 0 auto" onchange="eqJobSetQty('${e.itemId}',this.value)" onclick="event.stopPropagation()">
+        <button class="btn ghost sm" style="flex:0 0 auto" onclick="eqJobDetach('${e.itemId}')" title="Remove">✕</button></div>`;
+    }).join("");
+    const attached=new Set(JOBEQUIP.map(e=>e.itemId));
+    const opts=`<option value="">+ Add required equipment…</option>`+inv.filter(i=>!attached.has(i.id))
+      .slice().sort((a,b)=>(a.name||"")<(b.name||"")?-1:1)
+      .map(i=>`<option value="${i.id}">${esc(i.name)} ${eqOwnedQty(i)?"("+eqOwnedQty(i)+" owned)":"(not owned)"}</option>`).join("");
+    box.innerHTML=(rows||`<div class="muted">No equipment required.</div>`)
+      +`<select style="margin-top:8px" onchange="eqJobAttach(this.value);this.value=''">${opts}</select>`;
+  }
+  const note=document.getElementById("j_equip_note");
+  if(note){
+    const conf=JOBEQUIP.map(e=>eqConflict(e.itemId,ds,e.qty,JOBEQUIP_JID)).filter(r=>r.conflict);
+    note.innerHTML=conf.length
+      ?`<span style="color:var(--danger)">⚠ ${conf.length} equipment conflict${conf.length>1?"s":""} on ${fmtDate(ds)} — rent, buy, or reschedule.</span>`
+      :(JOBEQUIP.length?`All required equipment is available on ${fmtDate(ds)}.`:"");
+  }
+}
+window.eqJobAttach=function(id){if(!id)return;if(!JOBEQUIP.some(e=>e.itemId===id))JOBEQUIP.push({itemId:id,qty:1});renderJobEquip();};
+window.eqJobDetach=function(id){JOBEQUIP=JOBEQUIP.filter(e=>e.itemId!==id);renderJobEquip();};
+window.eqJobSetQty=function(id,v){const e=JOBEQUIP.find(x=>x.itemId===id);if(e)e.qty=Math.max(1,parseInt(v,10)||1);renderJobEquip();};
 /* crew picker — reflects availability for the currently-selected date and flags conflicts;
    the note line directly answers "who's available [date]" as the owner places the job */
 function renderJobCrew(){
@@ -130,6 +181,7 @@ window.saveJob=function(id,isNew){
   const d=D();let j=isNew?{id}:d.jobs.find(x=>x.id===id);
   j.title=val("j_title");j.customerId=val("j_cust");j.propertyId=val("j_prop");j.date=val("j_date");j.time=val("j_time");j.notes=val("j_notes");
   j.crew=[...JOBCREW];
+  j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
   if(!j.title){alert("Give the job a name.");return;}
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
   if(typeof logChange==="function")logChange(isNew?"create":"update","job",j.id,(isNew?"Scheduled ":"Updated ")+(j.title||"job")+(j.date?" · "+fmtDate(j.date):""));
