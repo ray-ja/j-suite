@@ -35,6 +35,27 @@ function availSummary(u) {
   return `${dstr}${a.start && a.end ? ` · ${a.start}–${a.end}` : ""}${upto ? ` · ${upto} upcoming time-off` : ""}`;
 }
 function jobsForMemberOn(uid, ds) { return actJ().filter(j => j.date === ds && (j.crew || []).indexOf(uid) >= 0); }
+/* ----- whole-team availability for a date (calendar glance + day detail) -----
+   Open to EVERY role to VIEW — every member sees every member's status. Members who haven't set
+   availability yet fold into "available" (no restriction = available). */
+function teamAvailOn(ds) {
+  const mem = schedMembers(), out = { available: [], off: [], timeoff: [] };
+  mem.forEach(u => { const s = availOn(u, ds).status; if (s === "off") out.off.push(u); else if (s === "timeoff") out.timeoff.push(u); else out.available.push(u); });
+  return out;
+}
+function teamAvailCounts(ds) { const t = teamAvailOn(ds); return { available: t.available.length, off: t.off.length, timeoff: t.timeoff.length, total: t.available.length + t.off.length + t.timeoff.length }; }
+/* per-member availability list for a day. VIEW is open to all roles; the Edit button shows only for
+   self or owner — openAvailability() enforces the same rule, so viewing opens up while editing does not. */
+function teamAvailListHTML(ds) {
+  const mem = schedMembers();
+  if (!mem.length) return `<div class="muted">No team accounts yet.</div>`;
+  const me = (typeof curUser === "function") ? curUser() : null;
+  return mem.slice().sort((a, b) => (a.username || "").localeCompare(b.username || "")).map(u => {
+    const a = availOn(u, ds), mine = !!(me && me.id === u.id), canEdit = mine || (typeof isOwner === "function" && isOwner());
+    return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)} ${availBadge(u, ds)}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
+      <div class="sub" style="white-space:normal">${esc(a.label)}</div></div>${canEdit ? `<button class="btn ghost sm" onclick="openAvailability('${u.id}')">Edit</button>` : ""}</div>`;
+  }).join("");
+}
 function availBadge(u, ds) {
   const a = availOn(u, ds);
   const c = a.cls === "on" ? "background:var(--accent);color:var(--accent-ink)" : a.cls === "off" ? "background:var(--danger);color:#fff" : "background:var(--soft);color:var(--muted)";
