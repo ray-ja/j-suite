@@ -177,3 +177,6 @@
     .empty{padding:60px 16px}
   }
   @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:1fr 1fr 1fr} }
+  /* in-use soft-lock banner (js/35-locks.js) */
+  .lockbanner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-left:4px solid var(--danger);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:14px}
+  .lockbanner .btn{width:auto;flex:0 0 auto}

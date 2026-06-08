@@ -69,6 +69,7 @@ window.openCustomer=function(id){
       <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
       <button class="btn danger" style="margin-top:16px" onclick="delCustomer('${c.id}')">Delete customer</button>`}
   `);
+  if(typeof lockGuard==="function")lockGuard("customer",isNew?null:c.id,()=>openCustomer(id));
 };
 window.saveCustomer=function(id,isNew){
   const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);

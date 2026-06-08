@@ -100,6 +100,7 @@ window.openJob=function(id,customerId,presetDate){
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
   renderJobCrew();
+  if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
 };
 /* crew picker — reflects availability for the currently-selected date and flags conflicts;
    the note line directly answers "who's available [date]" as the owner places the job */

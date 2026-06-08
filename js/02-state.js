@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -16,6 +16,7 @@ function load(){
     if(!S[b].places)S[b].places=[];
     if(!S[b].properties)S[b].properties=[];
     if(!S[b].inventory)S[b].inventory=[];
+    if(!S[b].locks)S[b].locks=[];
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });

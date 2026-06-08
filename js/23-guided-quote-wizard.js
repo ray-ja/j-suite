@@ -39,9 +39,23 @@ window.openQuote=function(id,customerId,preset){
     if(customerId){const c=d.customers.find(x=>x.id===customerId);if(c){WZ.cust.id=c.id;WZ.cust.name=c.name||c.company||"";WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";const ps=propsForCust(c.id);if(ps[0]){WZ.cust.address=ps[0].address||"";WZ.cust.propertyId=ps[0].id||"";}}}
     WZ.step=(WZ.items&&WZ.items.length)?"review":(customerId?"pick":"cust");
   }
+  wizLockReconcile();
   render();
 };
-window.exitWizard=function(){wizClearDraft();WZON=false;render();};
+/* ---- in-use soft lock for the quote being edited (js/35-locks.js) ---- */
+function wizAlive(){return !!(typeof WZON!=="undefined"&&WZON&&TAB==="quotes"&&WZ&&WZ.id&&!WZ.readonly);}
+function wizOnLost(){if(WZON&&WZ){WZ.readonly=true;WZ.lockBy=(typeof findLockRec==="function")?findLockRec("quote",WZ.id):null;render();}}
+function wizLockReconcile(){
+  if(typeof lockAcquire!=="function")return;
+  if(!WZON||!WZ||!WZ.id||WZ.readonly)return;
+  const other=otherActiveLock("quote",WZ.id);
+  if(other){WZ.readonly=true;WZ.lockBy=other;return;}
+  if(!lockHeld("quote",WZ.id))lockAcquire("quote",WZ.id,{onLost:wizOnLost,alive:wizAlive});
+}
+function wizLockedAlert(){if(WZ&&WZ.readonly){alert("This quote is being edited by "+((WZ.lockBy&&WZ.lockBy.name)||"another user")+". Take over editing to make changes.");return true;}return false;}
+window.wizTakeOver=function(){if(!WZ||!WZ.id)return;WZ.readonly=false;WZ.lockBy=null;
+  if(typeof lockAcquire==="function")lockAcquire("quote",WZ.id,{onLost:wizOnLost,alive:wizAlive});render();};
+window.exitWizard=function(){if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZON=false;render();};
 /* ---- draft autosave + resume (survive back / close) ---- */
 const WZ_DRAFT_KEY="jsuite_wzdraft";
 window.wizAutosave=function(){try{if(WZON&&WZ&&WZ.step&&WZ.step!=="done")localStorage.setItem(WZ_DRAFT_KEY,JSON.stringify({biz:S.biz,ts:now(),wz:WZ}));}catch(e){}};
@@ -170,10 +184,12 @@ function wizReviewTotals(){
 }
 function wizReview(){
   if(!WZ.items)WZ.items=[];
+  if(typeof wizLockReconcile==="function")wizLockReconcile();
   const editing=!!WZ.id;
   const c=cat(),groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
   const svcOpts=i=>`<option value="">— link a catalog service (optional) —</option>`+groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${WZ.items[i].serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
   let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Step 4 of 5"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
+  if(WZ.readonly)h=`<div class="lockbanner"><div class="grow">🔒 <b>${esc((WZ.lockBy&&WZ.lockBy.name)||"Someone")}</b>${WZ.lockBy&&WZ.lockBy.initials?` (${esc(WZ.lockBy.initials)})`:""} is editing this — read-only.</div><button class="btn acc sm" onclick="wizTakeOver()">Take over editing</button></div>`+h;
   // customer mini-form (full single flow — no bounce required)
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow"><label style="margin-top:0">Customer / name</label></div><button class="btn ghost sm" onclick="WZ.step='cust';render()">↩ Full picker</button></div>
     <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
@@ -262,6 +278,7 @@ function wizResolveCust(){
   return{cust:cust,prop:prop};
 }
 window.wizPersist=function(){
+  if(WZ&&WZ.readonly)return (D().quotes.find(x=>x.id===WZ.id))||{};   // read-only (someone else holds the lock): never write
   const d=D();const r=wizResolveCust(),cust=r.cust,prop=r.prop;
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const manual=(WZ.disc||0);const disc=recDisc+manual;const total=Math.max(0,sub-disc);
@@ -285,11 +302,11 @@ window.wizPersist=function(){
   if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
   save();return q;
 };
-window.wizFinish=function(){const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;wizClearDraft();WZ.step="done";render();};
-window.wizToggleInvoiced=function(){WZ.invoiced=!WZ.invoiced;wizPersist();render();};
-window.wizTogglePaid=function(){WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.total)+(q.cust?" · "+q.cust:""));render();};
-window.wizSetPayLink=function(){const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
-window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);if(typeof logChange==="function")logChange("delete","quote",q.id,"Deleted quote"+(q.cust?" · "+q.cust:""));save();}wizClearDraft();exitWizard();};
+window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
+window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();};
+window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.total)+(q.cust?" · "+q.cust:""));render();};
+window.wizSetPayLink=function(){if(wizLockedAlert())return;const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
+window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(wizLockedAlert())return;if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);if(typeof logChange==="function")logChange("delete","quote",q.id,"Deleted quote"+(q.cust?" · "+q.cust:""));save();}wizClearDraft();exitWizard();};
 /* feed the shared print/copy helpers (js/08) from the wizard's state */
 function wizSyncLegacy(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));

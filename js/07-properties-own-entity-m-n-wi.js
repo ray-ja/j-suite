@@ -18,6 +18,7 @@ window.openProperty=function(id,linkCustId){
     ${!isNew?histH+`<button class="btn danger" style="margin-top:16px" onclick="delProperty('${p.id}')">Delete property</button>`:""}
   `);
   renderPropCusts();
+  if(typeof lockGuard==="function")lockGuard("property",isNew?null:p.id,()=>openProperty(id));
 };
 function renderPropCusts(){const el=document.getElementById("p_custs");if(!el)return;
   const linked=PCUSTS.map(cid=>D().customers.find(c=>c.id===cid&&!c.deleted)).filter(Boolean);
