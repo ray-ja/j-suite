@@ -55,7 +55,8 @@ function hashPwFallback(pw) { let h = 5381; const s = String(pw) + "::jsuite"; f
 function accountByName(store, username) {
   const us = (store && store.users) || [];
   const lc = String(username || "").toLowerCase();
-  return us.find(u => u && !u.deleted && String(u.username || "").toLowerCase() === lc) || null;
+  // skip soft-deleted, deactivated (active:false), and non-account records (e.g. the roles config)
+  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.username || "").toLowerCase() === lc) || null;
 }
 function verifyLogin(store, username, password) {
   const u = accountByName(store, username);
@@ -116,7 +117,7 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       const store = loadStore();
-      const accounts = (((store && store.users) || []).filter(u => u && !u.deleted)).length;
+      const accounts = (((store && store.users) || []).filter(u => u && !u.deleted && !u.kind)).length;
       const u = verifyLogin(store, p.username, p.password);
       if (!u) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "unauthorized", accounts: accounts })); }
       res.writeHead(200, { "Content-Type": "application/json" });

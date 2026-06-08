@@ -3,7 +3,7 @@ async function hashPw(pw){
   try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(pw+"::jsuite"));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");}
   catch(e){let h=5381;const s=pw+"::jsuite";for(let i=0;i<s.length;i++)h=((h*33)^s.charCodeAt(i))>>>0;return "f"+h.toString(16);}
 }
-function users(){return (S.users||[]).filter(u=>!u.deleted);}
+function users(){return (S.users||[]).filter(u=>!u.deleted&&!u.kind);}
 function curUser(){const id=localStorage.getItem("jra_session");return users().find(u=>u.id===id)||null;}
 function userName(id){const u=(S.users||[]).find(x=>x.id===id);return u?u.username:"";}
 window.openCreateAccount=function(){modal("New account",`
@@ -16,7 +16,8 @@ window.createAccount=async function(){
   if(!un||!pw){alert("Username and password required.");return;}
   if(users().some(u=>u.username.toLowerCase()===un.toLowerCase())){alert("That username is taken.");return;}
   if(!S.users)S.users=[];
-  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
+  const isFirst=users().length===0;   // first account on a fresh setup is the owner; others default to crew
+  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),role:isFirst?"owner":"crew",active:true,settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
   const u=S.users[S.users.length-1];localStorage.setItem("jra_session",u.id);
   save();closeModal();render();
 };
@@ -28,6 +29,7 @@ window.loginUser=async function(){
   const un=val("l_name"),pw=val("l_pw");
   const u=users().find(x=>x.username.toLowerCase()===un.toLowerCase());
   if(!u||u.passhash!==await hashPw(pw)){alert("Wrong username or password.");return;}
+  if(u.active===false){alert("This account is deactivated. Ask an owner to reactivate it.");return;}
   localStorage.setItem("jra_session",u.id);closeModal();render();
 };
 window.logoutUser=function(){localStorage.removeItem("jra_session");render();};
@@ -89,8 +91,11 @@ window.appBootstrapToken=async function(){
 window.useOffline=function(){localStorage.setItem("jra_offline_ok","1");render();};
 /* apply the signed-in user's synced settings (e.g. theme) on this device */
 function applyUserSettings(){const u=(typeof curUser==="function")?curUser():null;if(u&&u.settings&&u.settings.theme)localStorage.setItem("jra_theme",u.settings.theme);if(typeof applyTheme==="function")applyTheme();}
-window.delUser=function(id){if(!confirm("Remove this account?"))return;
-  const u=S.users.find(x=>x.id===id);u.deleted=true;u.updatedAt=now();
+window.delUser=function(id){
+  const u=S.users.find(x=>x.id===id);if(!u)return;
+  if(u.role==="owner"&&typeof activeOwners==="function"&&activeOwners().length<=1){alert("Can't remove the last owner.");return;}
+  if(!confirm("Remove this account?"))return;
+  u.deleted=true;u.updatedAt=now();
   if(localStorage.getItem("jra_session")===id)localStorage.removeItem("jra_session");
   save();render();};
 

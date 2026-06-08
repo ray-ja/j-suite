@@ -38,17 +38,37 @@ const s2 = t.mergeState(
 ok("newer per-user settings win (theme=dark)", (s2.users[0].settings || {}).theme === "dark", s2.users[0]);
 ok("older settings preserved when nothing newer", t.mergeState({ users: [{ id: "u9", username: "a", settings: { theme: "dark" }, updatedAt: 5 }] }, {}).users[0].settings.theme === "dark", null);
 
+console.log("— admin: roles + access-map ride the account merge —");
+const ad = t.mergeState(
+  { users: [
+    { id: "u1", username: "ray", passhash: "x", role: "owner", updatedAt: 5 },
+    { id: "__roles__", kind: "roles", roles: [{ key: "crew", pages: ["today"] }], updatedAt: 5 }
+  ] },
+  { users: [
+    { id: "u1", username: "ray", passhash: "x", role: "admin", updatedAt: 9 },               // role change, newer
+    { id: "__roles__", kind: "roles", roles: [{ key: "crew", pages: ["today", "quotes"] }], updatedAt: 9 }
+  ] }
+);
+ok("role field LWW-merges on the account (admin wins)", (ad.users.find(u => u.id === "u1") || {}).role === "admin", ad.users);
+const rolesRec = ad.users.find(u => u.id === "__roles__");
+ok("roles config record survives merge as a synced record", rolesRec && rolesRec.kind === "roles", rolesRec);
+ok("newer access-map wins (crew gains quotes)", rolesRec && (rolesRec.roles[0].pages || []).indexOf("quotes") >= 0, rolesRec);
+
 console.log("— auth: /login verification —");
 const store = {
   users: [
-    { id: "u1", username: "Ray", passhash: t.hashPw("hunter2"), updatedAt: 1 },
-    { id: "u2", username: "gone", passhash: t.hashPw("x"), deleted: true, updatedAt: 1 }
+    { id: "u1", username: "Ray", passhash: t.hashPw("hunter2"), role: "owner", updatedAt: 1 },
+    { id: "u2", username: "gone", passhash: t.hashPw("x"), deleted: true, updatedAt: 1 },
+    { id: "u3", username: "benched", passhash: t.hashPw("x"), active: false, updatedAt: 1 },
+    { id: "__roles__", kind: "roles", roles: [], updatedAt: 1 }
   ]
 };
 ok("correct password verifies (case-insensitive username)", (t.verifyLogin(store, "ray", "hunter2") || {}).id === "u1", null);
 ok("wrong password rejected", t.verifyLogin(store, "ray", "nope") === null, null);
 ok("unknown user rejected", t.verifyLogin(store, "nobody", "x") === null, null);
 ok("soft-deleted account rejected", t.verifyLogin(store, "gone", "x") === null, null);
+ok("deactivated account rejected (active:false)", t.verifyLogin(store, "benched", "x") === null, null);
+ok("roles config record is not a loginable account", t.accountByName(store, "__roles__") === null && t.verifyLogin(store, "", "") === null, null);
 ok("djb2 fallback hash (file://-created account) also verifies",
   !!t.verifyLogin({ users: [{ id: "u3", username: "leg", passhash: t.hashPwFallback("legacy"), updatedAt: 1 }] }, "leg", "legacy"), null);
 ok("empty store rejects (bootstrap: no accounts yet)", t.verifyLogin({ users: [] }, "ray", "hunter2") === null, null);

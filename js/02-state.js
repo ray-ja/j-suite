@@ -31,6 +31,8 @@ function load(){
   if(!S.ceoV1){seedCeo();S.ceoV1=true;save();}
   /* inventory master — seeded/refreshed from js/31-inventory.js (its INV_SEED is the import of OBX-Ops/Inventory/master-inventory.md); preserves the user's Have?/Qty marks. Runs at boot after all modules parse. */
   if(typeof seedInventory==="function")seedInventory();
+  /* admin/roles — backfill roles + the synced access-map record on accounts (js/32-admin.js) */
+  if(typeof adminMigrate==="function")adminMigrate();
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
 }
 function seedCeo(){
