@@ -12,6 +12,7 @@ function rSchedule(){
   if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
   if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
   h+=renderCalendar(jobs);
+  if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials by status — <b style="color:var(--accent)">available</b>, <b style="color:#b26a00">time-off</b>, <b style="color:var(--danger)">off</b>. Tap a day for the full picture.</div>`;
   const groups={Today:[],Upcoming:[],Done:[]};
   jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
   if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
@@ -54,6 +55,24 @@ function rCrewSchedule(){
     return `<div class="li" style="cursor:pointer" onclick="schedDate('${d}')"><div class="grow"><div class="nm" style="font-size:14px${d===ds?";color:var(--brand)":""}">${DOW[dowOf(d)]} ${fmtDate(d)}</div></div><div class="sub">${jc} job${jc!==1?"s":""} · ${free} free</div></div>`;}).join("")+`</div>`;
   return h;
 }
+/* inline crew-availability chips for a month-grid day cell — one tiny initial per member, colored
+   by that day's status (available=accent · time-off=amber · off=danger), in stable member order so
+   the same person sits in the same spot across days. Stays on one line (never grows the cell height);
+   if the crew outgrows the row it overflows to a "+N" chip. Uses js/33 availability data. Tap the day
+   for the fuller detail. Visible to every role. */
+const CAL_CHIP_MAX=4;
+function calDayChips(ds){
+  const mem=(typeof schedMembers==="function")?schedMembers():[];
+  if(!mem.length||typeof availOn!=="function")return"";
+  const base="font-size:8px;font-weight:800;line-height:12px;height:12px;min-width:11px;padding:0 1px;border-radius:3px;text-align:center;flex:0 0 auto";
+  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":"background:var(--accent);color:var(--accent-ink)";
+  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":"available";
+  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":"available";
+  let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const st=norm(availOn(u,ds).status),ini=(String(u.username||"?").trim().charAt(0)||"?").toUpperCase();
+    return `<span style="${base};${sty(st)}" title="${esc(u.username)} — ${lbl(st)}">${esc(ini)}</span>`;}).join("");
+  if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;
+  return `<div style="display:flex;gap:2px;flex-wrap:nowrap;overflow:hidden;margin-top:1px">${chips}</div>`;
+}
 function renderCalendar(jobs){
   const t=today();const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
   const first=new Date(CALY,CALM,1);const startDow=first.getDay();
@@ -64,7 +83,8 @@ function renderCalendar(jobs){
   for(let i=0;i<startDow;i++)cells+=`<div class="calcell out"></div>`;
   for(let day=1;day<=dim;day++){
     const ds=CALY+"-"+String(CALM+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
-    const dj=byDate[ds]||[];let inner=`<div class="dnum">${day}</div>`;
+    const dj=byDate[ds]||[];
+    let inner=`<div class="dnum">${day}</div>`+calDayChips(ds);
     dj.slice(0,2).forEach(j=>{const conf=jobHasConflict(j),ini=crewInitials(j.crew);
       inner+=`<div class="caljob" style="${j.done?'opacity:.5;text-decoration:line-through':''}${conf?';background:var(--danger)':''}" title="${esc(j.title||'Job')}${ini?' · '+esc(ini):''}${conf?' · crew unavailable':''}">${esc(j.title||'Job')}${ini?` <span style="opacity:.85;font-weight:700">${esc(ini)}</span>`:""}</div>`;});
     if(dj.length>2)inner+=`<div class="calmore">+${dj.length-2} more</div>`;
@@ -80,7 +100,15 @@ window.calToday=function(){const d=new Date();CALY=d.getFullYear();CALM=d.getMon
 window.openDay=function(ds){
   const jobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
-  modal(fmtDate(ds),`<div class="card">${list}</div><button class="btn acc" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`);
+  const team=(typeof teamAvailListHTML==="function")?teamAvailListHTML(ds):"";
+  const cnt=(typeof teamAvailCounts==="function")?teamAvailCounts(ds):null,cntOff=cnt?(cnt.off+cnt.timeoff):0;
+  const hdr=(cnt&&cnt.total)?` · <span style="color:var(--accent)">${cnt.available} free</span>${cntOff?`, <span style="color:var(--danger)">${cntOff} off</span>`:""}`:"";
+  const dow=(typeof DOW!=="undefined"&&typeof dowOf==="function")?(DOW[dowOf(ds)]+" · "):"";
+  modal(dow+fmtDate(ds),`
+    <div class="secthd" style="margin-top:0"><h2>Jobs</h2><span class="ct">${jobs.length}</span></div>
+    <div class="card">${list}</div>
+    ${team?`<div class="secthd"><h2>Team availability</h2><span class="ct" style="font-weight:700">${hdr?hdr.replace(/^ · /,""):""}</span></div><div class="card">${team}</div>`:""}
+    <button class="btn acc" style="margin-top:6px" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`);
 };
 /* compact required-equipment line for a job row — count + a clear flag if any item is over-committed on its date */
 function jobEquipLine(j){
