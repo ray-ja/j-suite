@@ -31,7 +31,7 @@ Core: `index.html` · `services.html` · `service-area.html` · `about.html` · 
 Services: `soft-washing.html` · `pressure-washing-*` · `soft-washing-vs-pressure-washing.html` · `home-watch.html` · `home-watch-checklist.html` · `junk-removal-rental-estate-cleanout-obx.html` · `rental-turnover-cleanout-obx.html`
 Town pages: `corolla` `duck` `southern-shores` `kitty-hawk` `kill-devil-hills` `nags-head` `manteo` `rodanthe` `hatteras` `frisco` `buxton` `ocracoke` `avon`
 Blog/SEO: `how-often-wash-house-outer-banks` · `pressure-washing-cost-outer-banks` · `what-is-home-watch-obx` · `why-algae-comes-back-coastal-homes` · `outer-banks-storm-prep-checklist`
-> **Gap to build (task #7):** no `commercial-cleanup.html` yet, but the approved source copy has a **Commercial & Lot Cleanup** section (covers the old parking-lot/storefront/dumpster/roadside/event products). Build it so the old commercial ads have a real 1:1 target instead of dumping to `services.html`.
+> **✅ Built (2026-06-08):** `commercial-cleanup.html` now exists as the dedicated 1:1 target for the old parking-lot/storefront/dumpster/roadside/event commercial ads (was dumping to `services.html#commercial`). The 5 commercial product redirects in `_redirects` point at it. Also added this launch: `shed-demolition.html` and `moving-loading.html` (new services — no inbound legacy ad URLs, so no redirects needed).
 
 ### Jamieson Automation — `jamiesonautomation.com` (37 pages, built)
 Per web-presence memory, Jamieson has **no existing commerce/Squarespace site** → likely **no inbound ad URLs to redirect**. Fresh launch. **Confirm with Ray** there's no current `jamiesonautomation.com` taking ad traffic; if there is, send those Final URLs and I'll add a Jamieson block.
@@ -44,11 +44,11 @@ Per web-presence memory, Jamieson has **no existing commerce/Squarespace site** 
 |---|---|---|---|---|
 | 1 | `/` | `/` | 301 | Homepage. New hero leads washing + home-watch (old leads commercial litter). |
 | 2 | `/shop` or `/store` (store landing) | `/services.html` | 301 | Old commerce hub → new services overview. |
-| 3 | `/shop/p/parking-lot-cleanup` (+ any `-cleanup` product slugs) | `/commercial-cleanup.html` *(build)* → fallback `/services.html` | 301 | Old core commercial product. |
-| 4 | `/shop/p/storefront-walkway-cleanup` | `/commercial-cleanup.html` *(build)* | 301 | |
-| 5 | `/shop/p/dumpster-area-cleanup` | `/commercial-cleanup.html` *(build)* | 301 | New site also has a "dumpster pad wash" under soft-washing — pick one target with Ray. |
-| 6 | `/shop/p/roadside-cleanup` | `/commercial-cleanup.html` *(build)* | 301 | |
-| 7 | `/shop/p/event-cleanup` | `/commercial-cleanup.html` *(build)* | 301 | Event/festival cleanup = quote-only on new site. |
+| 3 | `/shop/p/parking-lot-cleanup` (+ any `-cleanup` product slugs) | `/commercial-cleanup.html` ✅ | 301 | Old core commercial product. |
+| 4 | `/shop/p/storefront-walkway-cleanup` | `/commercial-cleanup.html` ✅ | 301 | |
+| 5 | `/shop/p/dumpster-area-cleanup` | `/commercial-cleanup.html` ✅ | 301 | New site also has a "dumpster pad wash" under soft-washing — pick one target with Ray. |
+| 6 | `/shop/p/roadside-cleanup` | `/commercial-cleanup.html` ✅ | 301 | |
+| 7 | `/shop/p/event-cleanup` | `/commercial-cleanup.html` ✅ | 301 | Event/festival cleanup = quote-only on new site. |
 | 8 | `/shop/p/junk-removal` | `/junk-removal-rental-estate-cleanout-obx.html` | 301 | Was a $0 quote SKU; new page is fuller. |
 | 9 | `/about` | `/about.html` | 301 | |
 | 10 | `/contact` | `/contact.html` | 301 | |
@@ -67,6 +67,8 @@ Per web-presence memory, Jamieson has **no existing commerce/Squarespace site** 
 
 ## Implementation (Cloudflare Pages / Netlify)
 Both read a plaintext **`_redirects`** file at the site root. Starter for `obx-lot-solutions/_redirects` (to finalize once Ray confirms slugs):
+
+> **The live `obx-lot-solutions/_redirects` file now matches this** (commercial slugs → `commercial-cleanup.html`). The block below is the reference copy.
 
 ```
 # OBX Lot Solutions — Squarespace → new site (301s). Specific rules first, catch-all last.

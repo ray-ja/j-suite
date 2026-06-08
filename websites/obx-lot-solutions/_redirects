@@ -4,12 +4,12 @@
 #   Google Ads "Landing pages" Final-URL export before cutover (see websites/301-REDIRECT-MAP.md).
 # Targets on the right all exist in this build. Specific rules FIRST, catch-all LAST.
 
-# --- Commercial / litter products (the live Squarespace ad set) ---
-/shop/p/parking-lot-cleanup        /services.html#commercial    301
-/shop/p/storefront-walkway-cleanup /services.html#commercial    301
-/shop/p/dumpster-area-cleanup      /services.html#commercial    301
-/shop/p/roadside-cleanup           /services.html#commercial    301
-/shop/p/event-cleanup              /services.html#commercial    301
+# --- Commercial / litter products (the live Squarespace ad set) → dedicated 1:1 page ---
+/shop/p/parking-lot-cleanup        /commercial-cleanup.html    301
+/shop/p/storefront-walkway-cleanup /commercial-cleanup.html    301
+/shop/p/dumpster-area-cleanup      /commercial-cleanup.html    301
+/shop/p/roadside-cleanup           /commercial-cleanup.html    301
+/shop/p/event-cleanup              /commercial-cleanup.html    301
 
 # --- Other old products / pages ---
 /shop/p/junk-removal   /junk-removal-rental-estate-cleanout-obx.html   301
