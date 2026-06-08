@@ -87,6 +87,96 @@ function mergeState(stored, incoming) {
   return out;
 }
 
+/* ----- per-user iCalendar (.ics) subscription feed -----------------------------------------------
+   A one-way, READ-ONLY mirror of a user's upcoming assigned jobs. The feed URL carries an
+   unguessable per-account token (u.calToken), minted in the app and synced here on the user record,
+   so a calendar client can subscribe WITHOUT the sync token it can't supply — the calToken is the
+   capability. We only ever emit a VCALENDAR; nothing the calendar client sends is written back. */
+function userByCalToken(store, token) {
+  if (!token) return null;
+  return ((store && store.users) || []).find(u => u && !u.deleted && !u.kind && u.calToken && u.calToken === token) || null;
+}
+/* RFC 5547 §3.3.11 text escaping for property values */
+function icsEscape(s) { return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+/* fold content lines to <=75 octets (RFC 5545 §3.1); continuation lines begin with a single space */
+function icsFold(line) {
+  if (line.length <= 75) return line;
+  let out = line.slice(0, 75), rest = line.slice(75);
+  while (rest.length > 74) { out += "\r\n " + rest.slice(0, 74); rest = rest.slice(74); }
+  return out + "\r\n " + rest;
+}
+function pad2(n) { return String(n).padStart(2, "0"); }
+function icsUtcStamp(d) { return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z"; }
+function ymdCompact(ds) { return String(ds || "").replace(/-/g, ""); }
+function ymdPlus(ds, n) { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()); }
+function todayStr(d) { d = d || new Date(); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
+
+/* a user's upcoming (today-onward), non-deleted, not-done jobs across both businesses, time-sorted */
+function jobsForUser(store, userId, nowDate) {
+  const t = todayStr(nowDate), out = [];
+  for (const biz of BIZES) {
+    for (const j of ((store[biz] || {}).jobs || [])) {
+      if (!j || j.deleted || j.done || !j.date || j.date < t) continue;
+      if ((j.crew || []).indexOf(userId) < 0) continue;
+      out.push({ job: j, biz: biz });
+    }
+  }
+  return out.sort((a, b) => (a.job.date + (a.job.time || "")) < (b.job.date + (b.job.time || "")) ? -1 : 1);
+}
+function jobCustomer(store, biz, j) {
+  const c = j.customerId ? ((store[biz] || {}).customers || []).find(x => x && x.id === j.customerId) : null;
+  return c ? (c.name || c.company || "") : "";
+}
+function jobLocation(store, biz, j) {
+  if (j.address) return j.address;
+  const b = store[biz] || {};
+  if (j.propertyId) { const p = (b.properties || []).find(x => x && x.id === j.propertyId); if (p && p.address) return p.address; }
+  if (j.customerId) {
+    const c = (b.customers || []).find(x => x && x.id === j.customerId);
+    if (c && c.address) return c.address;
+    const p = (b.properties || []).find(x => x && (x.customerIds || []).indexOf(j.customerId) >= 0 && x.address);
+    if (p) return p.address;
+  }
+  return "";
+}
+function crewNames(store, ids) {
+  const us = (store && store.users) || [];
+  return (ids || []).map(id => { const u = us.find(x => x && x.id === id); return u ? u.username : ""; }).filter(Boolean);
+}
+function buildIcs(store, user, nowDate) {
+  const dtstamp = icsUtcStamp(nowDate || new Date());
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//j-Suite//Job Calendar//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "X-WR-CALNAME:" + icsEscape("j-Suite jobs — " + (user.username || "")), "X-WR-CALDESC:" + icsEscape("Your upcoming assigned jobs"), "X-PUBLISHED-TTL:PT1H", "REFRESH-INTERVAL;VALUE=DURATION:PT1H"];
+  for (const { job: j, biz } of jobsForUser(store, user.id, nowDate)) {
+    const cust = jobCustomer(store, biz, j), loc = jobLocation(store, biz, j), crew = crewNames(store, j.crew);
+    const desc = [];
+    if (cust) desc.push("Customer: " + cust);
+    if (loc) desc.push("Address: " + loc);
+    if (crew.length) desc.push("Crew: " + crew.join(", "));
+    if (j.notes) desc.push("Notes: " + j.notes);
+    L.push("BEGIN:VEVENT", "UID:job-" + j.id + "@jsuite", "DTSTAMP:" + dtstamp);
+    if (j.time) {
+      // floating local time (no Z / TZID): the OBX is a single timezone, so this shows correctly
+      // on the crew's own device without shipping a VTIMEZONE. Default a 2-hour block.
+      const sd = new Date(j.date + "T" + j.time + ":00"); sd.setHours(sd.getHours() + 2);
+      L.push("DTSTART:" + ymdCompact(j.date) + "T" + j.time.replace(":", "") + "00");
+      L.push("DTEND:" + sd.getFullYear() + pad2(sd.getMonth() + 1) + pad2(sd.getDate()) + "T" + pad2(sd.getHours()) + pad2(sd.getMinutes()) + "00");
+    } else {
+      L.push("DTSTART;VALUE=DATE:" + ymdCompact(j.date), "DTEND;VALUE=DATE:" + ymdPlus(j.date, 1));
+    }
+    L.push("SUMMARY:" + icsEscape((j.title || "Job") + (cust ? " — " + cust : "")));
+    if (loc) L.push("LOCATION:" + icsEscape(loc));
+    if (desc.length) L.push("DESCRIPTION:" + icsEscape(desc.join("\n")));
+    // reminders: 1 day + 1 hour before
+    const almDesc = icsEscape("Reminder: " + (j.title || "Job"));
+    L.push("BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + almDesc, "TRIGGER:-P1D", "END:VALARM");
+    L.push("BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + almDesc, "TRIGGER:-PT1H", "END:VALARM");
+    L.push("END:VEVENT");
+  }
+  L.push("END:VCALENDAR");
+  return L.map(icsFold).join("\r\n") + "\r\n";
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -105,6 +195,16 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: true, store: FILE }));
+  }
+
+  // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
+  if (req.method === "GET" && req.url.indexOf("/calendar/") === 0) {
+    const tok = decodeURIComponent((req.url.split("?")[0] || "").slice("/calendar/".length)).replace(/\.ics$/i, "");
+    const store = loadStore();
+    const user = userByCalToken(store, tok);
+    if (!user) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("calendar not found"); }
+    res.writeHead(200, { "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'inline; filename="jsuite-jobs.ics"', "Cache-Control": "no-cache" });
+    return res.end(buildIcs(store, user));
   }
 
   // login: verify credentials against the synced account records, hand back the sync token
@@ -186,4 +286,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold };

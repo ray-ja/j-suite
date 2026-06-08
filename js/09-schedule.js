@@ -10,6 +10,7 @@ function rSchedule(){
   const cu=(typeof curUser==="function")?curUser():null;
   let h=sub+`<div class="secthd"><h2>Schedule</h2>${cu?`<button class="btn ghost sm" onclick="openAvailability()">My availability</button>`:""}</div>`;
   if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
+  if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
   h+=renderCalendar(jobs);
   const groups={Today:[],Upcoming:[],Done:[]};
   jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
