@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OBX Lot Solutions | Pressure Washing, Home Watch & Cleanup on the Outer Banks</title>
-<meta name="description" content="Reliable exterior cleaning, soft &amp; pressure washing, home watch, and junk removal across the Outer Banks — Corolla to Manteo and lower Currituck. Local, insured, on schedule. Free estimates.">
+<meta name="description" content="Reliable exterior cleaning, soft &amp; pressure washing, home watch, and junk removal across the Outer Banks — Corolla to Manteo and Lower Currituck. Local, insured, on schedule. Free estimates.">
 <link rel="canonical" href="https://www.obxlotsolutions.com/">
 <meta property="og:title" content="OBX Lot Solutions — Outer Banks Exterior Cleaning & Home Watch">
 <meta property="og:description" content="Soft washing, pressure washing, home watch, and junk removal across the Outer Banks. Local, insured, reliable. Free estimates.">
@@ -15,7 +15,7 @@
 </script>
 </head>
 <body>
-<div class="topbar"><div class="wrap"><span>Serving Corolla to Manteo and lower Currituck</span><span>📞 <a href="tel:+12525648717">(252) 564-8717</a> · Mon–Sat 8a–6p</span></div></div>
+<div class="topbar"><div class="wrap"><span>Serving Corolla to Manteo and Lower Currituck</span><span>📞 <a href="tel:+12525648717">(252) 564-8717</a> · Mon–Sat 8a–6p</span></div></div>
 <header class="site">
   <input type="checkbox" id="nav-check">
   <div class="nav">
@@ -28,42 +28,45 @@
 </header>
 
 <section class="hero">
-  <div class="wrap hero-grid">
-    <div class="hero-copy">
-      <h1>Your Outer Banks property, cleaned and watched over — by people who actually show up.</h1>
-      <p class="lead">Soft washing, pressure washing, home watch, and cleanup from Corolla to Manteo and lower Currituck. Local, insured, and on schedule — with before-and-after photos every time.</p>
-      <div class="cta-row">
-        <a class="btn" href="estimate.html">Get my free estimate</a>
-        <a class="btn ghost" href="tel:+12525648717">📞 (252) 564-8717</a>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <h1>Your Outer Banks property, cleaned and watched over — by people who actually show up.</h1>
+        <p class="lead">Soft washing, pressure washing, home watch, and cleanup from Corolla to Manteo and Lower Currituck. Local, insured, and on schedule — with before-and-after photos every time.</p>
+        <div class="cta-row">
+          <a class="btn" href="estimate.html">Get my free estimate</a>
+          <a class="btn ghost" href="tel:+12525648717">📞 (252) 564-8717</a>
+        </div>
       </div>
-      <div class="features" role="tablist" aria-label="Why OBX Lot Solutions">
-        <button type="button" class="feat" data-feat="insured">Insured ✓</button>
-        <button type="button" class="feat" data-feat="local">📍 Locally owned</button>
-        <button type="button" class="feat" data-feat="photos">📸 Before &amp; after</button>
-        <button type="button" class="feat" data-feat="recurring">🔁 Recurring plans</button>
+      <div class="hero-panel">
+        <div class="hero-photo" role="img" aria-label="Hero photo placeholder — real photo coming soon">
+          <span class="ph-ico" aria-hidden="true">📷</span>
+          <b>Hero photo coming soon</b>
+          <small>Real crew, truck &amp; before/after shots drop in here — added once the uniforms arrive.</small>
+        </div>
       </div>
-      <p class="feat-hint">Tap any of the above to learn more →</p>
     </div>
-    <div class="hero-panel" id="heroPanel">
-      <div class="hero-photo" data-panel="default" role="img" aria-label="Hero photo placeholder — real photo coming soon">
-        <span class="ph-ico" aria-hidden="true">📷</span>
-        <b>Hero photo coming soon</b>
-        <small>Real crew, truck &amp; before/after shots drop in here — added once the uniforms arrive.</small>
-      </div>
-      <div class="panel-blurb" data-panel="insured" hidden><h3>Fully insured</h3><p>We carry general-liability insurance, so your property is covered while we work. Ask for our certificate any time.</p></div>
-      <div class="panel-blurb" data-panel="local" hidden><h3>Locally owned</h3><p>Owner-operated here on the Outer Banks — not a franchise or a call center. You deal with the same people doing the work.</p></div>
-      <div class="panel-blurb" data-panel="photos" hidden><h3>Before &amp; after photos</h3><p>We photograph every job, start to finish, so you can see exactly what we did — even when you are not there.</p></div>
-      <div class="panel-blurb" data-panel="recurring" hidden><h3>Recurring plans</h3><p>Put your wash, watch, or cleanup on a schedule and save 20%. We come back automatically, on time — nothing to remember.</p></div>
-      <button type="button" class="panel-back" hidden>← back to photo</button>
+    <div class="features" role="tablist" aria-label="Why OBX Lot Solutions">
+      <button type="button" class="feat" data-feat="insured" aria-pressed="false">Insured ✓</button>
+      <button type="button" class="feat" data-feat="local" aria-pressed="false">📍 Locally owned</button>
+      <button type="button" class="feat" data-feat="photos" aria-pressed="false">📸 Before &amp; after</button>
+      <button type="button" class="feat" data-feat="recurring" aria-pressed="false">🔁 Recurring plans</button>
     </div>
+    <div class="feat-panel" id="featPanel" aria-live="polite" hidden></div>
   </div>
   <svg class="wave" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true"><path fill="#8BC34A" d="M0 60c240 50 480 50 720 20s480-60 720-20v60H0z"/></svg>
 </section>
 <script>
-(function(){var p=document.getElementById('heroPanel');if(!p)return;var feats=document.querySelectorAll('.features .feat'),back=p.querySelector('.panel-back');
-function show(k){p.querySelectorAll('[data-panel]').forEach(function(el){el.hidden=el.getAttribute('data-panel')!==k;});if(back)back.hidden=(k==='default');feats.forEach(function(f){f.classList.toggle('on',f.getAttribute('data-feat')===k);f.setAttribute('aria-pressed',f.getAttribute('data-feat')===k);});}
-feats.forEach(function(f){f.addEventListener('click',function(){var k=f.getAttribute('data-feat');var cur=p.querySelector('[data-panel="'+k+'"]');show(cur&&cur.hidden?k:'default');});});
-if(back)back.addEventListener('click',function(){show('default');});})();
+(function(){var feats=document.querySelectorAll('.features .feat'),panel=document.getElementById('featPanel');if(!panel||!feats.length)return;
+var B={insured:['Fully insured','We carry general-liability insurance, so your property is covered while we work. Ask for our certificate any time.'],
+local:['Locally owned','Owner-operated here on the Outer Banks — not a franchise or a call center. You deal with the same people doing the work.'],
+photos:['Before &amp; after photos','We photograph every job, start to finish, so you can see exactly what we did — even when you are not there.'],
+recurring:['Recurring plans','Put your wash, watch, or cleanup on a schedule and save 20%. We come back automatically, on time — nothing to remember.']};
+var active=null;
+function show(k){if(!k||k===active){panel.hidden=true;active=null;feats.forEach(function(f){f.classList.remove('on');f.setAttribute('aria-pressed','false');});return;}
+active=k;var b=B[k];panel.innerHTML='<h3>'+b[0]+'</h3><p>'+b[1]+'</p>';panel.hidden=false;
+feats.forEach(function(f){var on=f.getAttribute('data-feat')===k;f.classList.toggle('on',on);f.setAttribute('aria-pressed',on?'true':'false');});}
+feats.forEach(function(f){f.addEventListener('click',function(){show(f.getAttribute('data-feat'));});});})();
 </script>
 
 <section class="alt">
@@ -71,7 +74,7 @@ if(back)back.addEventListener('click',function(){show('default');});})();
     <div class="trust">
       <div><div class="v">100%</div><div class="l">Local &amp; owner-operated</div></div>
       <div><div class="v">Insured</div><div class="l">Fully covered on your property</div></div>
-      <div><div class="v">Full OBX</div><div class="l">Corolla to Manteo and lower Currituck</div></div>
+      <div><div class="v">Full OBX</div><div class="l">Corolla to Manteo and Lower Currituck</div></div>
       <div><div class="v">📸 Proof</div><div class="l">Before &amp; after on every job</div></div>
     </div>
   </div>
@@ -87,10 +90,11 @@ if(back)back.addEventListener('click',function(){show('default');});})();
       <div class="card"><div class="ic">👁️</div><h3>Home watch</h3><p>Scheduled checks on your second home — leaks, storm damage, pests — with a photo report every visit. Peace of mind while you're away.</p><p class="price">From $59 / visit</p><a href="home-watch.html">Learn more →</a></div>
       <div class="card"><div class="ic">🚛</div><h3>Junk removal &amp; cleanup</h3><p>Rental turnovers, estate clean-outs, and storm debris — loaded, hauled away, swept clean. Priced on site by the load.</p><p class="price">Single items from $99</p><a href="services.html#junk">Learn more →</a></div>
       <div class="card"><div class="ic">🌿</div><h3>Yard work</h3><p>Mowing, trimming, edging, and leaf, brush &amp; storm-debris cleanup — one-time or recurring. Light limb trimming only; no large-tree removal.</p><p class="price">Mow &amp; trim from $45/visit</p><a href="yard-work.html">Learn more →</a></div>
-      <div class="card"><div class="ic">🏚️</div><h3>Shed &amp; structure demolition</h3><p>Old sheds, outbuildings, decks, and playsets torn down, hauled off, and disposed of properly. Lot left clear.</p><p class="price">From $350</p><a href="shed-demolition.html">Learn more →</a></div>
-      <div class="card"><div class="ic">💪</div><h3>Moving &amp; loading help</h3><p>A careful local crew to load and unload trucks and PODs and move heavy furniture — straps and blankets included.</p><p class="price">From $120/hour (2 crew)</p><a href="moving-loading.html">Learn more →</a></div>
-      <div class="card"><div class="ic">🅿️</div><h3>Commercial cleanup</h3><p>Recurring lot, storefront, and dumpster-area cleanup for property managers and businesses. Reliable, scheduled, documented.</p><p class="price">From $49 · recurring 20% off</p><a href="commercial-cleanup.html">Learn more →</a></div>
-      <div class="card"><div class="ic">🪟</div><h3>Window washing</h3><p>Exterior window washing — bundle it with a wash or watch plan and save 10%.</p><p class="price">From $11/window</p><a href="services.html#windows">Learn more →</a></div>
+      <div class="card"><div class="ic">🏚️</div><h3>Shed &amp; structure demolition</h3><p>Old sheds, outbuildings, decks, and playsets torn down. We haul off all the debris and leave it clean.</p><p class="price">From $350</p><a href="shed-demolition.html">Learn more →</a></div>
+      <div class="card"><div class="ic">💪</div><h3>Moving &amp; loading help</h3><p>Loading help only — we load and unload trucks, trailers &amp; PODs and move heavy furniture. You pack and pad your boxes; we do the heavy lifting.</p><p class="price">From $120/hour (2 crew)</p><a href="moving-loading.html">Learn more →</a></div>
+      <div class="card"><div class="ic">🅿️</div><h3>Commercial property cleanup</h3><p>Recurring <strong>parking-lot</strong>, storefront, and dumpster-area cleanup for property managers and businesses. Reliable, scheduled, documented.</p><p class="price">From $49 · recurring 20% off</p><a href="commercial-cleanup.html">Learn more →</a></div>
+      <div class="card"><div class="ic">🪟</div><h3>Window washing</h3><p>Exterior window glass, washed streak-free — inside-and-out available. Bundle with a wash or watch plan and save 10%.</p><p class="price">From $11/window</p><a href="services.html#windows">Learn more →</a></div>
+      <div class="card"><div class="ic">🌧️</div><h3>Gutter cleaning</h3><p>Clogged gutters cleared and flushed so water runs where it should — before it backs up under your roofline.</p><p class="price">From $129</p><a href="services.html#gutters">Learn more →</a></div>
     </div>
   </div>
 </section>
@@ -146,9 +150,9 @@ if(back)back.addEventListener('click',function(){show('default');});})();
         <p>One trusted local crew for your Outer Banks property — washing, watch, junk, yard work, demo, moving &amp; cleanup.</p>
         <p>📞 <a href="tel:+12525648717" style="display:inline">(252) 564-8717</a></p>
       </div>
-      <div><h4>Services</h4><a href="soft-washing.html">Soft &amp; pressure washing</a><a href="home-watch.html">Home watch</a><a href="yard-work.html">Yard work</a><a href="services.html#junk">Junk removal</a><a href="shed-demolition.html">Shed demolition</a><a href="moving-loading.html">Moving &amp; loading</a><a href="commercial-cleanup.html">Commercial cleanup</a></div>
+      <div><h4>Services</h4><a href="soft-washing.html">Soft &amp; pressure washing</a><a href="home-watch.html">Home watch</a><a href="yard-work.html">Yard work</a><a href="services.html#junk">Junk removal</a><a href="shed-demolition.html">Shed demolition</a><a href="moving-loading.html">Moving &amp; loading</a><a href="commercial-cleanup.html">Commercial property cleanup</a></div>
       <div><h4>Company</h4><a href="about.html">About</a><a href="home-watch-checklist.html">Free checklist</a><a href="faq.html">FAQ</a><a href="case-studies.html">Projects</a><a href="blog.html">Resources</a><a href="contact.html">Contact</a></div>
-      <div><h4>Service area</h4><p>Corolla · Duck · Southern Shores · Kitty Hawk · Kill Devil Hills · Nags Head · Manteo · lower Currituck</p></div>
+      <div><h4>Service area</h4><p>Corolla · Duck · Southern Shores · Kitty Hawk · Kill Devil Hills · Nags Head · Manteo · Lower Currituck</p></div>
     </div>
     <div class="fbar">© <span id="yr"></span> OBX Lot Solutions</div>
   </div>

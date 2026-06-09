@@ -18,7 +18,7 @@ p{margin:0 0 1em} .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px}
 .topbar .wrap{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 18px;flex-wrap:wrap}
 .topbar a{color:#fff;text-decoration:none;font-weight:700}
 /* header / nav */
-header.site{position:sticky;top:0;z-index:50;background:#fff;box-shadow:0 1px 0 var(--line)}
+header.site{position:sticky;top:0;z-index:50;background:var(--navy);box-shadow:0 1px 0 rgba(255,255,255,.08)}
 .nav{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;max-width:var(--maxw);margin:0 auto}
 .logo{display:flex;align-items:center;gap:10px;text-decoration:none}
 .logo .mark{width:38px;height:38px;flex:0 0 auto}
@@ -30,10 +30,10 @@ header.site{position:sticky;top:0;z-index:50;background:#fff;box-shadow:0 1px 0 
 .hero-photo b{font-size:1.05rem;color:#fff}
 .hero-photo small{color:#aebbd0;font-size:.85rem;max-width:42ch;line-height:1.4}
 .navlinks{display:none}
-.navlinks a{color:var(--navy);text-decoration:none;font-weight:700;margin-left:18px;font-size:.95rem}
-.navlinks a:hover{color:var(--green-d)}
+.navlinks a{color:#fff;text-decoration:none;font-weight:700;margin-left:18px;font-size:.95rem}
+.navlinks a:hover{color:var(--green)}
 .navcta{display:none}
-.menu-toggle{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-size:1.1rem;cursor:pointer}
+.menu-toggle{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:9px 12px;font-size:1.1rem;cursor:pointer}
 #nav-check{display:none}
 .mobilemenu{display:none;flex-direction:column;background:var(--navy);padding:8px 18px 16px}
 .mobilemenu a{color:#fff;text-decoration:none;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.12);font-weight:700}
@@ -95,23 +95,26 @@ body{padding-bottom:54px}
 /* --- hero: text left / panel right, with clickable feature explainers --- */
 .hero-grid{display:grid;grid-template-columns:1fr;gap:24px;align-items:center}
 .hero-copy h1{margin-top:0}
-.features{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
-.feat{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:30px;padding:9px 15px;font-size:.84rem;font-weight:700;color:#fff;cursor:pointer;transition:background .15s,color .15s}
+/* feature buttons: one line (no wrap); on narrow screens the row scrolls horizontally rather than wrapping */
+.features{display:flex;flex-wrap:nowrap;gap:10px;margin-top:26px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.feat{flex:0 0 auto;white-space:nowrap;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:30px;padding:9px 15px;font-size:.84rem;font-weight:700;color:#fff;cursor:pointer;transition:background .15s,color .15s}
 .feat:hover{background:rgba(255,255,255,.2)}
 .feat.on{background:var(--green);color:#13230a;border-color:var(--green)}
-.feat-hint{color:#aebbd0;font-size:.8rem;margin:10px 0 0}
+/* blurb panel BENEATH the hero — photo stays visible; no swap, no back button */
+.feat-panel{margin-top:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:18px 22px;color:#e7edf6;max-width:760px}
+.feat-panel h3{color:#fff;margin:0 0 6px;font-size:1.2rem} .feat-panel p{margin:0;line-height:1.6;color:#e7edf6}
 .hero-panel{position:relative;min-height:230px}
-.hero-panel [hidden]{display:none!important}   /* author display rules below would otherwise beat the UA [hidden] */
 .hero-panel .hero-photo{margin-top:0;min-height:230px;height:100%}
-.panel-blurb{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:26px;min-height:230px;display:flex;flex-direction:column;justify-content:center;color:#e7edf6}
-.panel-blurb h3{color:#fff;margin:0 0 8px;font-size:1.3rem} .panel-blurb p{margin:0;line-height:1.6;color:#e7edf6}
-.panel-back{position:absolute;bottom:8px;right:12px;background:none;border:0;color:#aebbd0;font-weight:700;cursor:pointer;font-size:.8rem}
-@media(min-width:860px){ .hero-grid{grid-template-columns:1.08fr .92fr;gap:34px} }
+@media(min-width:860px){ .hero-grid{grid-template-columns:1.08fr .92fr;gap:34px;align-items:center} }
 
-/* --- services: more contrast + clear hierarchy so visitors find their service fast --- */
-.services{background:var(--sand)}
-.services .card{border:1px solid #e7dcc4;border-top:4px solid var(--green);box-shadow:0 6px 18px rgba(27,42,78,.07);transition:transform .12s,box-shadow .12s}
-.services .card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(27,42,78,.13)}
+/* --- services: navy section, white cards — contrast + clear hierarchy so visitors find their service fast --- */
+.services{background:var(--navy)}
+.services .kicker{color:var(--green)}
+.services > .wrap > h2, .services .center h2{color:#fff}
+.services > .wrap > p, .services .center p{color:#e7edf6}
+.services .card{background:#fff;border:1px solid rgba(255,255,255,.08);border-top:4px solid var(--green);box-shadow:0 8px 22px rgba(0,0,0,.28);transition:transform .12s,box-shadow .12s}
+.services .card:hover{transform:translateY(-3px);box-shadow:0 16px 32px rgba(0,0,0,.38)}
 .services .card h3{font-size:1.22rem;color:var(--navy)}
+.services .card p{color:var(--ink,#2a2f3a)}
 .services .card a{font-weight:800;color:var(--green-d)}
 .reliability{max-width:760px}

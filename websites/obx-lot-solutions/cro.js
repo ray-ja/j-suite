@@ -32,7 +32,7 @@
    var ov=document.createElement('div');ov.className='cro-ov';
    ov.innerHTML='<div class="cro-modal" role="dialog" aria-modal="true"><button class="cro-x" aria-label="Close">×</button>'+
     '<h3>'+CFG.exitTitle+'</h3><p>'+CFG.exitBody+'</p>'+
-    '<form name="lead-magnet" method="POST" action="/thanks.html" class="cro-form">'+
+    '<form name="lead-magnet" method="POST" action="/lead" class="cro-form">'+
     '<input type="hidden" name="form-name" value="lead-magnet"><input type="hidden" name="magnet" value="'+CFG.magnet+'"><input type="hidden" name="variant" value="'+V+'"><input type="hidden" name="source" value="exit-intent">'+
     '<p style="display:none"><label>skip<input name="bot-field"></label></p>'+
     '<input name="email" type="email" required placeholder="you@email.com" class="cro-inp" aria-label="Email">'+
