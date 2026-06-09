@@ -1,19 +1,11 @@
 /* CRO layer — A/B hero, social proof, exit-intent lead capture, click-to-call. Static, no deps. */
 (function(){
- var CFG={"tel": "+12525648717", "telDisp": "(252) 564-8717", "accent": "#1B2A4E", "magnet": "home-watch-checklist.html", "heroH1": "Your Outer Banks home \u2014 watched, washed, and worry-free.", "heroLead": "Soft washing, home-watch, and cleanup for absentee owners and busy locals. Insured, and a photo report on every single visit.", "proof": "Trusted by Outer Banks homeowners & property managers.", "exitTitle": "Leaving already?", "exitBody": "Grab our free OBX Home-Watch Checklist \u2014 the exact list we run on every vacant-home visit, inside and out.", "exitCta": "Email me the free checklist"};
+ var CFG={"tel": "+12525648717", "telDisp": "(252) 564-8717", "accent": "#1B2A4E", "magnet": "home-watch-checklist.html", "exitTitle": "Leaving already?", "exitBody": "Grab our free OBX Home-Watch Checklist \u2014 the exact list we run on every vacant-home visit, inside and out.", "exitCta": "Email me the free checklist"};
  var V=localStorage.getItem('cro_v'); if(V!=='A'&&V!=='B'){V=Math.random()<0.5?'A':'B';localStorage.setItem('cro_v',V);}
  document.documentElement.setAttribute('data-cro',V);
  function ready(fn){if(document.readyState!='loading')fn();else document.addEventListener('DOMContentLoaded',fn);}
  ready(function(){
-  var p=location.pathname;
-  var isHome=p==='/'||p===''||/(^|\/)index\.html$/.test(p)||/\/$/.test(p);
-  // A/B hero (variant B only, home only)
-  if(isHome&&V==='B'){
-   var h1=document.querySelector('.hero h1'); if(h1&&CFG.heroH1)h1.textContent=CFG.heroH1;
-   var ld=document.querySelector('.hero .lead'); if(ld&&CFG.heroLead)ld.textContent=CFG.heroLead;
-   var row=document.querySelector('.hero .cta-row'); // variant B promotes click-to-call to primary
-   if(row){var call=row.querySelector('a[href^="tel:"]'); if(call){call.classList.remove('ghost'); var others=row.querySelectorAll('a:not([href^="tel:"])'); others.forEach(function(a){a.classList.add('ghost');}); row.insertBefore(call,row.firstChild);}}
-  }
+  // Hero copy lives in the HTML now (single broad residential+commercial tagline) — no A/B text swap.
   // (No fabricated social-proof strip — removed. Real reviews only, when they exist.)
   // Tag every form with the A/B variant for conversion attribution
   document.querySelectorAll('form').forEach(function(f){ if(!f.querySelector('[name="variant"]')){var i=document.createElement('input');i.type='hidden';i.name='variant';i.value=V;f.appendChild(i);} });

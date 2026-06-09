@@ -1,7 +1,7 @@
-/* OBX Lot Solutions — shared styles. Mobile-first. Brand: green #8BC34A / navy #1B2A4E / sand. */
+/* OBX Lot Solutions — shared styles. Mobile-first. Brand: navy #1B2A4E / white / green #8BC34A only. */
 :root{
-  --navy:#1B2A4E; --navy2:#24365f; --green:#8BC34A; --green-d:#6da82f; --sand:#f4ecdd;
-  --ink:#1b2330; --muted:#5c6675; --line:#e4e8ee; --bg:#ffffff; --soft:#f6f8fa; --red:#c0392b;
+  --navy:#1B2A4E; --navy2:#24365f; --green:#8BC34A; --green-d:#6da82f; --sand:#ffffff;
+  --ink:#1b2330; --muted:#5c6675; --line:#e4e8ee; --bg:#ffffff; --soft:#ffffff; --red:#c0392b;
   --maxw:1100px; --r:12px; --sh:0 4px 18px rgba(16,24,40,.08);
 }
 *{box-sizing:border-box} html{scroll-behavior:smooth}
@@ -14,9 +14,9 @@ p{margin:0 0 1em} .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px}
 .btn.navy{background:var(--navy);color:#fff} .btn.red{background:var(--red);color:#fff}
 .btn.block{display:block;width:100%}
 /* top bar */
-.topbar{background:var(--navy);color:#fff;font-size:.82rem}
+.topbar{background:#fff;color:var(--navy);font-size:.82rem;border-bottom:1px solid var(--line)}
 .topbar .wrap{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 18px;flex-wrap:wrap}
-.topbar a{color:#fff;text-decoration:none;font-weight:700}
+.topbar a{color:var(--navy);text-decoration:none;font-weight:700}
 /* header / nav */
 header.site{position:sticky;top:0;z-index:50;background:var(--navy);box-shadow:0 1px 0 rgba(255,255,255,.08)}
 .nav{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;max-width:var(--maxw);margin:0 auto}
@@ -47,12 +47,12 @@ header.site{position:sticky;top:0;z-index:50;background:var(--navy);box-shadow:0
 .badge{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:30px;padding:7px 14px;font-size:.82rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:6px}
 .hero .wave{position:absolute;bottom:-1px;left:0;width:100%;z-index:1;opacity:.13}
 /* sections */
-section{padding:42px 0} section.alt{background:var(--soft)} section.sand{background:var(--sand)}
+section{padding:42px 0} section.alt{background:#fff} section.sand{background:#fff}
 .kicker{color:var(--green-d);font-weight:800;text-transform:uppercase;letter-spacing:1px;font-size:.78rem;margin-bottom:6px}
 .center{text-align:center} .center p{margin-left:auto;margin-right:auto;max-width:60ch}
 .grid{display:grid;gap:18px;grid-template-columns:1fr}
 .card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:var(--sh)}
-.card .ic{width:46px;height:46px;background:var(--sand);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:12px}
+.card .ic{width:46px;height:46px;background:rgba(139,195,74,.14);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:12px}
 .card h3{margin-bottom:6px} .card .price{color:var(--green-d);font-weight:800}
 .steps{counter-reset:s;display:grid;gap:16px;grid-template-columns:1fr}
 .step{display:flex;gap:14px;align-items:flex-start} .step .n{flex:0 0 auto;width:38px;height:38px;border-radius:50%;background:var(--green);color:#13230a;font-weight:800;display:flex;align-items:center;justify-content:center}
@@ -69,7 +69,7 @@ label{display:block;font-weight:700;margin:14px 0 5px;font-size:.92rem}
 input,select,textarea{width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;font-size:1rem;font-family:inherit}
 textarea{min-height:90px} .req{color:var(--red)}
 .checkrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
-.checkrow label{display:flex;align-items:center;gap:7px;font-weight:600;background:var(--soft);border:1.5px solid var(--line);border-radius:9px;padding:9px 12px;margin:0;cursor:pointer}
+.checkrow label{display:flex;align-items:center;gap:7px;font-weight:600;background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:9px 12px;margin:0;cursor:pointer}
 .checkrow input{width:auto}
 /* footer */
 footer.site{background:var(--navy);color:#cdd6e6;padding:36px 0 24px;font-size:.92rem}
@@ -92,20 +92,17 @@ body{padding-bottom:54px}
   .split{display:grid;grid-template-columns:1.1fr .9fr;gap:30px;align-items:center}
 }
 
-/* --- hero: text left / panel right, with clickable feature explainers --- */
+/* --- hero: text left / photo panel right --- */
 .hero-grid{display:grid;grid-template-columns:1fr;gap:24px;align-items:center}
 .hero-copy h1{margin-top:0}
-/* feature buttons: one line (no wrap); on narrow screens the row scrolls horizontally rather than wrapping */
-.features{display:flex;flex-wrap:nowrap;gap:10px;margin-top:26px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
-.feat{flex:0 0 auto;white-space:nowrap;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:30px;padding:9px 15px;font-size:.84rem;font-weight:700;color:#fff;cursor:pointer;transition:background .15s,color .15s}
-.feat:hover{background:rgba(255,255,255,.2)}
-.feat.on{background:var(--green);color:#13230a;border-color:var(--green)}
-/* blurb panel BENEATH the hero — photo stays visible; no swap, no back button */
-.feat-panel{margin-top:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:18px 22px;color:#e7edf6;max-width:760px}
-.feat-panel h3{color:#fff;margin:0 0 6px;font-size:1.2rem} .feat-panel p{margin:0;line-height:1.6;color:#e7edf6}
 .hero-panel{position:relative;min-height:230px}
 .hero-panel .hero-photo{margin-top:0;min-height:230px;height:100%}
 @media(min-width:860px){ .hero-grid{grid-template-columns:1.08fr .92fr;gap:34px;align-items:center} }
+/* --- feature strip: clean white banner, navy text, bold keywords --- */
+.featstrip{background:#fff;border-bottom:1px solid var(--line);padding:0}
+.featstrip .wrap{padding:16px 18px}
+.featstrip p{margin:0;text-align:center;color:var(--navy);font-size:1.02rem;font-weight:500;line-height:1.5}
+.featstrip b{font-weight:800}
 
 /* --- services: navy section, white cards — contrast + clear hierarchy so visitors find their service fast --- */
 .services{background:var(--navy)}
