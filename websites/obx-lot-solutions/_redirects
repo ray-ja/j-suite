@@ -27,5 +27,7 @@
 # --- Google review link — MUST keep working post-cutover. ---
 /review   https://g.page/r/Cfra8psQX2FLEBM/review   301
 
-# --- Catch-all safety net (keep LAST so no old deep link 404s) ---
-/*   /   301
+# NO catch-all. A `/*  /  301` here is an infinite redirect loop: the splat matches the homepage
+# itself, so `/` 301s to `/` forever (ERR_TOO_MANY_REDIRECTS), and it bounces every new page to
+# home. The homepage and all new pages must render directly. Only the specific OLD Squarespace
+# slugs above redirect; any unmapped old deep link should fall through to a normal 404, not a loop.
