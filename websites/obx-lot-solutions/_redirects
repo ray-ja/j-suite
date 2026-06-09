@@ -1,33 +1,26 @@
-# OBX Lot Solutions — Squarespace → new site 301 redirects (Cloudflare Pages / Netlify syntax)
-# STAGED, NOT DEPLOYED. No DNS cutover without Ray's go.
-# ⚠ Left-side OLD paths are ASSUMED from Squarespace conventions — CONFIRM against the
-#   Google Ads "Landing pages" Final-URL export before cutover (see websites/301-REDIRECT-MAP.md).
-# Targets on the right all exist in this build. Specific rules FIRST, catch-all LAST.
+# OBX Lot Solutions — old Squarespace → new-site 301s (Cloudflare Pages).
+# STAGED. No DNS cutover without Ray's go. Confirm left-side OLD paths against the Google Ads
+# "Landing pages" Final-URL export before cutover (see websites/301-REDIRECT-MAP.md).
+#
+# IMPORTANT: targets are EXTENSIONLESS. Cloudflare Pages serves foo.html at /foo and canonicalizes
+# /foo.html -> /foo. So NEVER add a rule whose SOURCE is a real new page (e.g. /services, /contact,
+# /about) pointing at /x.html — that loops against the .html->clean-URL redirect (ERR_TOO_MANY_REDIRECTS).
+# Real pages (services, contact, about, …) are served directly; they must never appear on the left.
 
-# --- Commercial / litter products (the live Squarespace ad set) → dedicated 1:1 page ---
-/shop/p/parking-lot-cleanup        /commercial-cleanup.html    301
-/shop/p/storefront-walkway-cleanup /commercial-cleanup.html    301
-/shop/p/dumpster-area-cleanup      /commercial-cleanup.html    301
-/shop/p/roadside-cleanup           /commercial-cleanup.html    301
-/shop/p/event-cleanup              /commercial-cleanup.html    301
+# --- Old commercial/litter product slugs (the live ad set) -> the commercial page ---
+/shop/p/parking-lot-cleanup        /commercial-cleanup    301
+/shop/p/storefront-walkway-cleanup /commercial-cleanup    301
+/shop/p/dumpster-area-cleanup      /commercial-cleanup    301
+/shop/p/roadside-cleanup           /commercial-cleanup    301
+/shop/p/event-cleanup              /commercial-cleanup    301
+/shop/p/junk-removal               /junk-removal-rental-estate-cleanout-obx   301
 
-# --- Other old products / pages ---
-/shop/p/junk-removal   /junk-removal-rental-estate-cleanout-obx.html   301
-/shop                  /services.html      301
-/store                 /services.html      301
-/services              /services.html      301
-/about                 /about.html         301
-/contact               /contact.html       301
+# --- Old store / commerce paths (new site uses Stripe Checkout, no SQSP accounts) ---
+/shop        /services    301
+/store       /services    301
+/account/*   /contact     301
+/cart        /services    301
+/checkout    /services    301
 
-# --- Commerce / account paths (new site uses Stripe Checkout, no SQSP accounts) ---
-/account/*   /contact.html    301
-/cart        /services.html   301
-/checkout    /services.html   301
-
-# --- Google review link — MUST keep working post-cutover. ---
+# --- Google review shortlink — keep working post-cutover ---
 /review   https://g.page/r/Cfra8psQX2FLEBM/review   301
-
-# NO catch-all. A `/*  /  301` here is an infinite redirect loop: the splat matches the homepage
-# itself, so `/` 301s to `/` forever (ERR_TOO_MANY_REDIRECTS), and it bounces every new page to
-# home. The homepage and all new pages must render directly. Only the specific OLD Squarespace
-# slugs above redirect; any unmapped old deep link should fall through to a normal 404, not a loop.

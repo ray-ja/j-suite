@@ -91,3 +91,27 @@ body{padding-bottom:54px}
   .callbar{display:none} body{padding-bottom:0}
   .split{display:grid;grid-template-columns:1.1fr .9fr;gap:30px;align-items:center}
 }
+
+/* --- hero: text left / panel right, with clickable feature explainers --- */
+.hero-grid{display:grid;grid-template-columns:1fr;gap:24px;align-items:center}
+.hero-copy h1{margin-top:0}
+.features{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.feat{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.28);border-radius:30px;padding:9px 15px;font-size:.84rem;font-weight:700;color:#fff;cursor:pointer;transition:background .15s,color .15s}
+.feat:hover{background:rgba(255,255,255,.2)}
+.feat.on{background:var(--green);color:#13230a;border-color:var(--green)}
+.feat-hint{color:#aebbd0;font-size:.8rem;margin:10px 0 0}
+.hero-panel{position:relative;min-height:230px}
+.hero-panel [hidden]{display:none!important}   /* author display rules below would otherwise beat the UA [hidden] */
+.hero-panel .hero-photo{margin-top:0;min-height:230px;height:100%}
+.panel-blurb{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);border-radius:14px;padding:26px;min-height:230px;display:flex;flex-direction:column;justify-content:center;color:#e7edf6}
+.panel-blurb h3{color:#fff;margin:0 0 8px;font-size:1.3rem} .panel-blurb p{margin:0;line-height:1.6;color:#e7edf6}
+.panel-back{position:absolute;bottom:8px;right:12px;background:none;border:0;color:#aebbd0;font-weight:700;cursor:pointer;font-size:.8rem}
+@media(min-width:860px){ .hero-grid{grid-template-columns:1.08fr .92fr;gap:34px} }
+
+/* --- services: more contrast + clear hierarchy so visitors find their service fast --- */
+.services{background:var(--sand)}
+.services .card{border:1px solid #e7dcc4;border-top:4px solid var(--green);box-shadow:0 6px 18px rgba(27,42,78,.07);transition:transform .12s,box-shadow .12s}
+.services .card:hover{transform:translateY(-3px);box-shadow:0 14px 28px rgba(27,42,78,.13)}
+.services .card h3{font-size:1.22rem;color:var(--navy)}
+.services .card a{font-weight:800;color:var(--green-d)}
+.reliability{max-width:760px}
