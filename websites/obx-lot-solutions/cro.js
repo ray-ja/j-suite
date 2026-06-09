@@ -23,12 +23,17 @@
   }
   // Tag every form with the A/B variant for conversion attribution
   document.querySelectorAll('form').forEach(function(f){ if(!f.querySelector('[name="variant"]')){var i=document.createElement('input');i.type='hidden';i.name='variant';i.value=V;f.appendChild(i);} });
-  // Exit-intent / engagement modal (once per browser session)
-  var fired=sessionStorage.getItem('cro_exit');
+  // Exit-intent modal — once per browser session. TRUE exit intent ONLY: the cursor leaves the
+  // top edge of the viewport toward the browser chrome (tabs/address bar/close). No timer, no idle,
+  // no scroll trigger — those popped it while the user sat still. We arm only after the pointer has
+  // entered the page (so it can't fire on load), and require a fast upward exit at the very top.
+  var fired=sessionStorage.getItem('cro_exit'), armed=false, lastY=null;
   function showExit(){ if(fired||document.querySelector('.cro-ov'))return; fired=1; sessionStorage.setItem('cro_exit','1'); build(); }
-  document.addEventListener('mouseout',function(e){ if(e.clientY<=0&&!e.relatedTarget) showExit(); });
-  setTimeout(showExit,30000);
-  window.addEventListener('scroll',function(){ var d=document.body.scrollHeight-window.innerHeight; if(d>0&&window.scrollY/d>0.6) showExit(); },{passive:true});
+  document.addEventListener('mousemove',function(e){ if(e.clientY>40)armed=true; lastY=e.clientY; },{passive:true});
+  document.addEventListener('mouseout',function(e){
+    // mouse actually left the window (no element it moved into) via the top edge, while armed
+    if(armed && !e.relatedTarget && !e.toElement && e.clientY<=0) showExit();
+  });
   function build(){
    var ov=document.createElement('div');ov.className='cro-ov';
    ov.innerHTML='<div class="cro-modal" role="dialog" aria-modal="true"><button class="cro-x" aria-label="Close">×</button>'+
