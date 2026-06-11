@@ -108,6 +108,7 @@ window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}WZ.svc=k;WZ.in
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="junk")return wizJunkUI();
+  if(k==="shrubrem")return wizBrushUI();
   if(DEEP[k])return wizDeepUI(k);
   const hint=(r&&r.hint)?`<p class="muted" style="margin-bottom:8px">${esc(r.hint)}</p>`:"";
   const f=fields.map(fl=>{
