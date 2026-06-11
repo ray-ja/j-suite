@@ -71,6 +71,7 @@ function rData(){
     <h2>Pricing rates</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Edit every rate, modifier, and minimum behind the <b>deep line-item estimators</b> — with the source of each number shown so you know what you're changing. Flows straight into the Guided Quote.</p>
       <button class="btn acc" onclick="openDeepEditor()">⚙️ Edit deep quote rates</button>
+      ${S.biz==="obx"?`<div style="border-top:1px solid var(--line);margin:10px 0"></div><p class="muted" style="margin-bottom:8px">Brush / shrub / small-tree removal — per-item price bands + rental cost defaults.</p><button class="btn ghost" onclick="openBrushEditor()">🌳 Edit brush / tree removal rates</button>` : ""}
       <div style="border-top:1px solid var(--line);margin:10px 0"></div>
       <p class="muted" style="margin-bottom:8px">Legacy quick-builder rates (raw JSON, the older simple calculators).</p>
       <button class="btn ghost" onclick="openRatesEditor()">Edit legacy rates (JSON)</button></div>
