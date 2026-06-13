@@ -13,6 +13,8 @@ function junkHaulSuggest(c){const loads=c.eighths;
   if(loads<=4)return{method:"trailer",label:"Rental dump trailer",note:"a few loads"};
   return{method:"rolloff",label:(loads<=6?"20-yd":"30-yd")+" roll-off dumpster",note:"whole-house volume"};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
+const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line
+const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
 const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50,farcarry:0.20};
 const JUNK_LOC=[["ground","Ground floor (no add)"],["curbside","Curbside / outside (−15% labor)"],["upstairs","Upstairs (+25% labor)"],["basement","Basement (+30% labor)"],["attic","Attic / crawlspace (+50% labor)"],["farcarry","Long carry / no driveway (+20% labor)"]];
 // Home Depot rental reference. Trailers = 4-hr price as quoted. Trucks = per-75-min rate × 4 increments to cover a 4-hr job.
@@ -32,8 +34,9 @@ const JUNK_CAT=[
 ];
 function junkItem(key){for(const g of JUNK_CAT)for(const it of g[1])if(it[0]===key)return it;return null;}
 function calcJunk(){
-  const items=WZ.junk||[];let cuft=0,lbs=0,locLabor=0,special=0,counts={};
-  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;const q=li.qty||0,v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;locLabor+=(v/JUNK_EIGHTH*JUNK_PEREIGHTH)*(JUNK_LOCF[li.loc]||0);const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+  const items=WZ.junk||[];let cuft=0,lbs=0,locLabor=0,special=0,counts={},softGoods=false;
+  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;const q=li.qty||0,v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;locLabor+=(v/JUNK_EIGHTH*JUNK_PEREIGHTH)*(JUNK_LOCF[li.loc]||0);if(q>0&&JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+  const bedbug=(WZ.junkBedbug&&softGoods)?JUNK_BEDBUG_FEE:0;
   const eighths=cuft/JUNK_EIGHTH;
   const haul=cuft>0?JUNK_TRIPBASE+eighths*JUNK_PEREIGHTH:0;
   const overLbs=Math.max(0,lbs-cuft*JUNK_DENSITY);
@@ -42,8 +45,8 @@ function calcJunk(){
   const meth=WZ.junkHaul||"pickup";let rental=0,rentalName="";
   if(meth==="trailer"){const ro=JUNK_RENTAL.find(r=>r[0]===(WZ.junkRental||"t_d58"));rental=ro?ro[2]:0;rentalName=ro?ro[1]:"";}
   else if(meth==="rolloff"){rental=WZ.junkDump!=null?(+WZ.junkDump||0):JUNK_DUMP_DEFAULT;rentalName=(WZ.junkDumpSize||"20")+"-yd roll-off dumpster";}
-  let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+special+dump+rental)/25)*25);
-  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),special:special,dump:dump,rental:rental,rentalName:rentalName,total:total,counts:counts};
+  let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+special+dump+rental+bedbug)/25)*25);
+  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),special:special,dump:dump,rental:rental,rentalName:rentalName,total:total,counts:counts,softGoods:softGoods,bedbug:bedbug};
 }
 function wizJunkUI(){
   if(!WZ.junk)WZ.junk=[];
@@ -74,9 +77,20 @@ function wizJunkUI(){
     <div class="sub" style="margin-top:6px">${unit==="pickup"?`${Math.ceil(pickupLoads)} pickup trip(s) at ~60 cu ft each (multi-load). Heaped beds carry more — priced by the standard truck.`:`${boxLoads.toFixed(2)} of a full box-truck load.`}</div>
     <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b><br>Location labor (stairs/attic): <b>+${money(c.locLabor)}</b><br>Special-item disposal: <b>+${money(c.special)}</b>${c.dump?`<br>Heavy/dense-load surcharge: <b>+${money(c.dump)}</b>`:""}${c.rental?`<br>Haul (${esc(c.rentalName)}): <b>+${money(c.rental)}</b>`:""}</div></div>`;
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
-  h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(c.total)}</div></div>`;
+  // Bed-bug precaution — only surfaced when soft goods (mattresses/upholstery) are in the load
+  if(c.softGoods)h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Bed bugs present / suspected?</span></label>
+    ${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6"><b>Precaution — bag &amp; seal on site.</b> Wrap the infested mattress/upholstery in plastic before it leaves the room, keep it off your other gear, and disclose it at the transfer station. Adds a <b>${money(JUNK_BEDBUG_FEE)}</b> handling surcharge. <span class="sub">RAY: confirm the fee.</span></div>`:`<div class="sub" style="margin-top:4px">Mattresses/upholstery in this load — ask the customer before you load. If yes, flip this on to add the precaution note + surcharge.</div>`}</div>`;
+  // Travel — auto-added so the trip charge is never forgotten
+  h+=travelCardHTML();
+  const tc=travelCharge(wizTravelOpts()),grand=c.total+tc.charge;
+  h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div>
+    <div class="row" style="justify-content:space-between;font-size:13px;margin-top:6px"><span>Junk removal</span><b>${money(c.total)}</b></div>
+    <div class="row" style="justify-content:space-between;font-size:13px"><span>Travel (${esc(tc.short)})</span><b>${money(tc.charge)}</b></div>
+    <div style="font-size:32px;font-weight:800;line-height:1.1;margin-top:4px">${money(grand)}</div></div>`;
   if(typeof marketBandHTML==="function"&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)h+=marketBandHTML(c.total,MARKET_BANDS.junk.lo,MARKET_BANDS.junk.hi,MARKET_BANDS.junk.label);
-  h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(c.total)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
+  // Move-out protection — prints on the quote
+  h+=`<div class="card"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkCleared?"checked":""} onchange="wizJunkCleared(this.checked)"><span style="margin:0;font-weight:700">✔ Customer confirms all remaining items are cleared for disposal</span></label><div class="sub" style="margin-top:4px">Move-out protection — when checked, this prints on the quote as a record the customer OK'd hauling everything left behind.</div></div>`;
+  h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(grand)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
   return h;
 }
 function junkCatalogHTML(){
@@ -100,6 +114,8 @@ window.wizJSearch=function(){const e=document.getElementById("je_search");WZ.jun
 window.wizJunkToggle=function(gi,open){if(!WZ.junkOpen)WZ.junkOpen={};WZ.junkOpen[gi]=open;};
 window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;render();}};
+window.wizJunkBedbug=function(on){WZ.junkBedbug=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
+window.wizJunkCleared=function(on){WZ.junkCleared=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.openTrailerBuy=function(){
   // break-even line chart: used utility trailer ($1,500) vs renting, at 4 uses/mo over 24 months
   const P=1500,carryM=30,uses=4,rate=39,months=24,W=320,H=150,L=34,B=20,T=8,pw=W-L-8,ph=H-T-B;
@@ -149,7 +165,10 @@ window.wizAddJunk=function(){
   const itemCount=WZ.junk.reduce((s,x)=>s+(x.qty||0),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 of a standard truck ("+c.cuft+" cu ft, "+c.lbs+" lb)."+(c.dump?" Includes "+money(c.dump)+" heavy-load surcharge.":""));
-  var junkCost=(c.special||0)+(c.dump||0)+(c.rental||0); // hard cost: special-item disposal + heavy-load landfill + equipment rental (no labor; mileage added per-quote)
+  if(c.bedbug)notes.push("Bed bugs reported — "+money(c.bedbug)+" precaution surcharge included; items bagged/sealed on site and disclosed at the transfer station.");
+  if(WZ.junkCleared)notes.push("Customer confirmed all remaining items are cleared for disposal (move-out — nothing to be kept).");
+  var junkCost=(c.special||0)+(c.dump||0)+(c.rental||0); // hard cost: special-item disposal + heavy-load landfill + equipment rental (no labor; bed-bug fee is a handling premium; travel is its own line)
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:c.total,cost:junkCost,notes:notes,qty:1,unit:"job",serviceId:""});
-  WZ.junk=[];WZ.step="pick";render();
+  upsertTravelLine(WZ.items,wizTravelOpts()); // auto-add the travel line so the trip charge is never forgotten
+  WZ.junk=[];WZ.junkBedbug=false;WZ.junkCleared=false;WZ.step="pick";render();
 };
