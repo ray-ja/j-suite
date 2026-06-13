@@ -19,7 +19,7 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:""};WZON=true;TAB="quotes";render();};
 /* Open a saved quote (or a preset line / known customer) straight INTO the wizard — the
    single quote editor. Replaces the retired standalone modal that used to live in js/08. */
 window.openQuote=function(id,customerId,preset){
