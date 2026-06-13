@@ -3,8 +3,9 @@
    as SEPARATE, independently-selectable line items, so it outputs TWO quote
    lines: "Brush/shrub removal — cut & haul" and "Stump/root removal".
    Cost model (per CLAUDE.md): clean-veg disposal is FREE in Dare/Currituck → $0.
-   Hard costs = chainsaw rental + stump-grinder rental (only if a stump line is
-   selected) + optional trailer (passthrough) + round-trip mileage. NO labor line.
+   Hard costs = stump-grinder rental (only if a stump line is selected) + optional
+   trailer (passthrough). NO labor line, and NO chainsaw rental — the saw is owned.
+   Travel is its own auto-added line (js/41), so drive isn't folded into the work cost.
    Scope cap: ground-based shrubs/small trees up to ~30 ft, no climbing. Over that,
    or anything needing climbing/rigging/large-trunk felling → out of scope, refer. */
 
@@ -18,14 +19,14 @@ const BRUSH_BANDS_DEFAULT={
 const BRUSH_TIER_ORDER=["small","medium","large","xlarge"];
 // [value, label, multiplier] — applied to both cut and stump per item.
 const BRUSH_ACCESS=[["open","Open — clear drop zone",1.0],["near","Near structures (fence/shed) +15%",1.15],["tight","Tight access +30%",1.30]];
-const BRUSH_RENT_DEFAULT={chainsaw:50,grinder:100};
-const BRUSH_SRC="Value/undercut pricing for OBX shrub & small-tree removal; clean-veg disposal free in Dare/Currituck; chainsaw/grinder rental at Home Depot day rates (2026).";
+const BRUSH_RENT_DEFAULT={grinder:100}; // chainsaw rental removed — saw is owned; pole-saw rental can be added here if one is ever rented
+const BRUSH_SRC="Value/undercut pricing for OBX shrub & small-tree removal; clean-veg disposal free in Dare/Currituck; saw owned (no rental); stump-grinder rental at Home Depot day rates (2026).";
 
 // Editable-rate overlay (doc id "brushrates"), same pattern as deepOverrides / truckcap.
 function brushOverrides(){try{const d=D().docs.find(x=>x.id==="brushrates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return {};}
 function setBrushOverrides(o){let d=D().docs.find(x=>x.id==="brushrates");if(d){d.text=JSON.stringify(o);d.updatedAt=now();}else D().docs.push({id:"brushrates",text:JSON.stringify(o),updatedAt:now()});save();}
 function getBrushBands(){const base=JSON.parse(JSON.stringify(BRUSH_BANDS_DEFAULT));const ov=brushOverrides().bands||{};BRUSH_TIER_ORDER.forEach(t=>{if(ov[t]){if(ov[t].cut!=null)base[t].cut=ov[t].cut;if(ov[t].stump!=null)base[t].stump=ov[t].stump;}});return base;}
-function getBrushRent(){const base=Object.assign({},BRUSH_RENT_DEFAULT);const ov=brushOverrides().rent||{};if(ov.chainsaw!=null)base.chainsaw=ov.chainsaw;if(ov.grinder!=null)base.grinder=ov.grinder;return base;}
+function getBrushRent(){const base=Object.assign({},BRUSH_RENT_DEFAULT);const ov=brushOverrides().rent||{};if(ov.grinder!=null)base.grinder=ov.grinder;return base;}
 function brushAccessMult(a){const o=BRUSH_ACCESS.find(x=>x[0]===a);return o?o[2]:1;}
 
 function calcBrush(){
@@ -46,15 +47,13 @@ function calcBrush(){
   const cutLine=cutSub>0?rnd5(cutSub):0;
   const stumpLine=stumpSub>0?rnd5(stumpSub):0;
   const price=cutLine+stumpLine;
-  // Hard costs — disposal is $0 (clean veg free). Rentals only apply to the work selected.
+  // Hard costs — disposal is $0 (clean veg free); chainsaw is owned (no rental). Drive is the
+  // separate travel line (js/41), so it's not folded in here. Grinder applies only with a stump line.
   const trailer=Math.max(0,WZ.brushTrailer||0);
-  const miles=Math.max(0,WZ.brushMiles||0);
-  const chainsaw=cutLine>0?rent.chainsaw:0;
   const grinder=stumpLine>0?rent.grinder:0;
-  const drive=mileageCost(miles);
-  const cost=chainsaw+grinder+trailer+drive;
+  const cost=grinder+trailer;
   return {rows:rows,cutLine:cutLine,stumpLine:stumpLine,price:price,
-    chainsaw:chainsaw,grinder:grinder,trailer:trailer,drive:drive,miles:miles,cost:Math.round(cost*100)/100};
+    grinder:grinder,trailer:trailer,cost:Math.round(cost*100)/100};
 }
 
 function brushLineRow(li,i){
@@ -89,13 +88,14 @@ function wizBrushUI(){
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Add an item</div><div class="grid2">`+BRUSH_TIER_ORDER.map(t=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizBrushAdd('${t}')">+ ${esc(BRUSH_BANDS_DEFAULT[t].label)}</button>`).join("")+`</div>
     ${WZ.brush.length?WZ.brush.map(brushLineRow).join(""):`<div class="muted" style="font-size:13px">No items yet — tap a size above for each shrub or small tree.</div>`}</div>`;
 
-  // Cost inputs (rentals + miles)
+  // Cost inputs (rentals only — drive is the separate travel line)
   const rent=getBrushRent();
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:4px">Hard costs</div>
-    <div class="sub" style="margin-bottom:6px">Clean-veg disposal is <b>free</b> in Dare/Currituck → <b>$0 dump</b>. Chainsaw rental ${money(rent.chainsaw)} applies when cutting; the stump grinder ${money(rent.grinder)} only when a stump line is selected. Rentals are editable in the rate editor.</div>
+    <div class="sub" style="margin-bottom:6px">Clean-veg disposal is <b>free</b> in Dare/Currituck → <b>$0 dump</b>. The chainsaw is <b>owned — no rental</b>. The stump grinder ${money(rent.grinder)} applies only when a stump line is selected. Rentals are editable in the rate editor; travel is its own line below.</div>
     <label style="margin-top:0">Optional trailer rental (passthrough $)</label><input type="number" inputmode="decimal" value="${WZ.brushTrailer||0}" onchange="wizBrushCost('brushTrailer',this.value)">
-    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" inputmode="decimal" value="${WZ.brushMiles||0}" onchange="wizBrushCost('brushMiles',this.value)">
-    <div class="sub" style="margin-top:4px">Cost in this quote: chainsaw ${money(c.chainsaw)} + grinder ${money(c.grinder)} + trailer ${money(c.trailer)} + drive ${money(c.drive)}${c.miles?` (${c.miles} mi)`:""} = <b>${money(c.cost)}</b>. Miles flow to the review step so they're counted once.</div></div>`;
+    <div class="sub" style="margin-top:4px">Work cost in this quote: grinder ${money(c.grinder)} + trailer ${money(c.trailer)} = <b>${money(c.cost)}</b>. Travel is added as its own line so drive is counted once.</div></div>`;
+  // Travel — auto-added so the trip charge is never forgotten
+  h+=travelCardHTML();
 
   if(!oos){
     // Breakdown
@@ -110,13 +110,15 @@ function wizBrushUI(){
       h+=`<div class="card">${cogsStrip(c.price,c.cost)}<div class="sub">Hard cost only (rentals + drive); disposal is $0 and there's no labor line — the crew is paid from the revenue split.</div></div>`;
     }
 
-    // Green on-site quote — two distinct lines
+    // Green on-site quote — distinct lines (cut / stump) + travel
+    const tc=travelCharge(wizTravelOpts()),grand=c.price+tc.charge;
     h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink)"><div style="font-size:13px;font-weight:700;text-align:center">QUOTE TO GIVE ON SITE</div>
       ${c.cutLine>0?`<div class="row" style="justify-content:space-between;margin-top:6px"><span>Cut &amp; haul</span><b>${money(c.cutLine)}</b></div>`:""}
       ${c.stumpLine>0?`<div class="row" style="justify-content:space-between"><span>Stump / root removal</span><b>${money(c.stumpLine)}</b></div>`:""}
-      <div style="font-size:32px;font-weight:800;line-height:1.1;text-align:center;margin-top:4px">${money(c.price)}</div>
-      <div style="font-size:12px;opacity:.9;text-align:center">Two separate lines — the customer can take either or both.</div></div>`;
-    h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(c.price)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddBrush()">Add to quote</button></div>`;
+      <div class="row" style="justify-content:space-between"><span>Travel (${esc(tc.short)})</span><b>${money(tc.charge)}</b></div>
+      <div style="font-size:32px;font-weight:800;line-height:1.1;text-align:center;margin-top:4px">${money(grand)}</div>
+      <div style="font-size:12px;opacity:.9;text-align:center">Cut &amp; stump are separate — the customer can take either or both; travel applies to the trip.</div></div>`;
+    h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(grand)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddBrush()">Add to quote</button></div>`;
   } else {
     h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Refer out</span><b>—</b></div><button class="btn ghost grow" onclick="WZ.step='pick';render()">← Back</button></div>`;
   }
@@ -139,16 +141,15 @@ window.wizAddBrush=function(){
   const rent=getBrushRent(),trailer=Math.max(0,WZ.brushTrailer||0);
   const accNote=(WZ.brush||[]).some(l=>l.access!=="open")?" Some items have access adders (near structures / tight).":"";
   if(c.cutLine>0){
-    WZ.items.push({name:"Brush/shrub removal — cut & haul",price:c.cutLine,cost:rent.chainsaw+trailer,
-      notes:["Clean veg hauls free (no disposal cost)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:""});
+    WZ.items.push({name:"Brush/shrub removal — cut & haul",price:c.cutLine,cost:trailer,
+      notes:["Clean veg hauls free (no disposal cost); saw is owned (no rental)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:""});
   }
   if(c.stumpLine>0){
     WZ.items.push({name:"Stump/root removal",price:c.stumpLine,cost:rent.grinder+(c.cutLine>0?0:trailer),
       notes:["Stump/root grinding — separate, optional line."],qty:1,unit:"job",serviceId:""});
   }
-  // Seed quote-level miles once (review step adds the drive cost; avoid double counting in item cost).
-  if((WZ.brushMiles||0)>0&&!(WZ.miles>0))WZ.miles=WZ.brushMiles;
-  WZ.brush=[];WZ.brushTrailer=0;WZ.brushMiles=0;WZ.brushOOS=false;
+  upsertTravelLine(WZ.items,wizTravelOpts()); // auto-add the travel line so the trip charge is never forgotten
+  WZ.brush=[];WZ.brushTrailer=0;WZ.brushOOS=false;
   WZ.step="pick";render();
 };
 
@@ -161,8 +162,8 @@ function brushEditorHTML(){
     <div class="row" style="gap:10px;align-items:center;margin-top:4px"><div class="grow sub">Cut &amp; haul</div><span class="sub">$</span><input type="number" style="width:90px" value="${bands[t].cut}" onchange="setBrushBand('${t}','cut',this.value)"></div>
     <div class="row" style="gap:10px;align-items:center;margin-top:4px"><div class="grow sub">Stump / root add</div><span class="sub">$</span><input type="number" style="width:90px" value="${bands[t].stump}" onchange="setBrushBand('${t}','stump',this.value)"></div></div>`).join("");
   h+=`</div><div class="card"><div style="font-weight:800;margin-bottom:6px">Rental cost defaults (hard cost)</div>
-    <div class="row" style="gap:10px;align-items:center"><div class="grow sub">Chainsaw rental</div><span class="sub">$</span><input type="number" style="width:90px" value="${rent.chainsaw}" onchange="setBrushRent('chainsaw',this.value)"></div>
-    <div class="row" style="gap:10px;align-items:center;margin-top:4px"><div class="grow sub">Stump-grinder rental</div><span class="sub">$</span><input type="number" style="width:90px" value="${rent.grinder}" onchange="setBrushRent('grinder',this.value)"></div>
+    <div class="sub" style="margin-bottom:6px">The chainsaw is owned — no rental line. Add a pole-saw rental here if one is ever rented.</div>
+    <div class="row" style="gap:10px;align-items:center"><div class="grow sub">Stump-grinder rental</div><span class="sub">$</span><input type="number" style="width:90px" value="${rent.grinder}" onchange="setBrushRent('grinder',this.value)"></div>
     <div class="sub" style="margin-top:8px">Access multipliers (open ×1.0 · near structures ×1.15 · tight ×1.30) and the $0 clean-veg disposal are fixed by policy.</div></div>`;
   h+=`<button class="btn ghost" style="margin-top:6px" onclick="resetBrushRates()">↺ Reset to defaults</button>`;
   return h;
