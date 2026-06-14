@@ -65,9 +65,9 @@ function calDayChips(ds){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   if(!mem.length||typeof availOn!=="function")return"";
   const base="font-size:8px;font-weight:800;line-height:12px;height:12px;min-width:11px;padding:0 1px;border-radius:3px;text-align:center;flex:0 0 auto";
-  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":"background:var(--accent);color:var(--accent-ink)";
-  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":"available";
-  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":"available";
+  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":"background:var(--accent);color:var(--accent-ink)";
+  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":"available";
+  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":"available";
   let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const st=norm(availOn(u,ds).status),ini=(String(u.username||"?").trim().charAt(0)||"?").toUpperCase();
     return `<span style="${base};${sty(st)}" title="${esc(u.username)} — ${lbl(st)}">${esc(ini)}</span>`;}).join("");
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;

@@ -20,11 +20,21 @@ function availOn(u, ds) {
   const to = (u.timeoff || []).find(b => b && !b.deleted && ds >= b.start && ds <= (b.end || b.start));
   if (to) return { status: "timeoff", label: "Time off" + (to.note ? " · " + to.note : ""), cls: "off" };
   const av = u.avail;
+  // per-day override (scheduler calendar edit): wins over the weekday baseline for that date.
+  // value is "full" | "partial" | "off" (v1) or {s, start, end} (v2-safe, carries hours).
+  const ov = av && av.overrides && av.overrides[ds];
+  if (ov) {
+    const s = (typeof ov === "string") ? ov : ov.s;
+    const hrs = (ov && typeof ov === "object" && ov.start && ov.end) ? " " + ov.start + "–" + ov.end : "";
+    if (s === "off") return { status: "off", label: "Off (set for this day)", cls: "off" };
+    if (s === "partial") return { status: "partial", label: "Part of day" + hrs, cls: "partial" };
+    if (s === "full") return { status: "on", label: "Available all day" + hrs, cls: "on" };
+  }
   if (!av || !av.days) return { status: "unset", label: "Available · not set", cls: "unset" };
   if (av.days[dowOf(ds)]) return { status: "on", label: "Available" + (av.start && av.end ? " " + av.start + "–" + av.end : ""), cls: "on" };
   return { status: "off", label: "Off (" + DOW[dowOf(ds)] + ")", cls: "off" };
 }
-function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unset"; }
+function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unset" || s === "partial"; }
 /* one-line summary of a member's weekly availability + upcoming time-off, for the schedule header */
 function availSummary(u) {
   if (!u) return "";
@@ -39,11 +49,11 @@ function jobsForMemberOn(uid, ds) { return actJ().filter(j => j.date === ds && (
    Open to EVERY role to VIEW — every member sees every member's status. Members who haven't set
    availability yet fold into "available" (no restriction = available). */
 function teamAvailOn(ds) {
-  const mem = schedMembers(), out = { available: [], off: [], timeoff: [] };
-  mem.forEach(u => { const s = availOn(u, ds).status; if (s === "off") out.off.push(u); else if (s === "timeoff") out.timeoff.push(u); else out.available.push(u); });
+  const mem = schedMembers(), out = { available: [], partial: [], off: [], timeoff: [] };
+  mem.forEach(u => { const s = availOn(u, ds).status; if (s === "off") out.off.push(u); else if (s === "timeoff") out.timeoff.push(u); else if (s === "partial") out.partial.push(u); else out.available.push(u); });
   return out;
 }
-function teamAvailCounts(ds) { const t = teamAvailOn(ds); return { available: t.available.length, off: t.off.length, timeoff: t.timeoff.length, total: t.available.length + t.off.length + t.timeoff.length }; }
+function teamAvailCounts(ds) { const t = teamAvailOn(ds); return { available: t.available.length, partial: t.partial.length, off: t.off.length, timeoff: t.timeoff.length, total: t.available.length + t.partial.length + t.off.length + t.timeoff.length }; }
 /* per-member availability list for a day. VIEW is open to all roles; the Edit button shows only for
    self or owner — openAvailability() enforces the same rule, so viewing opens up while editing does not. */
 function teamAvailListHTML(ds) {
@@ -58,8 +68,8 @@ function teamAvailListHTML(ds) {
 }
 function availBadge(u, ds) {
   const a = availOn(u, ds);
-  const c = a.cls === "on" ? "background:var(--accent);color:var(--accent-ink)" : a.cls === "off" ? "background:var(--danger);color:#fff" : "background:var(--soft);color:var(--muted)";
-  const txt = a.status === "on" ? "Free" : a.status === "timeoff" ? "Time off" : a.status === "off" ? "Off" : "Free?";
+  const c = a.cls === "on" ? "background:var(--accent);color:var(--accent-ink)" : a.cls === "partial" ? "background:#e0a800;color:#1a1a1a" : a.cls === "off" ? "background:var(--danger);color:#fff" : "background:var(--soft);color:var(--muted)";
+  const txt = a.status === "on" ? "Free" : a.status === "partial" ? "Partial" : a.status === "timeoff" ? "Time off" : a.status === "off" ? "Off" : "Free?";
   return `<span class="badge" style="${c}">${txt}</span>`;
 }
 

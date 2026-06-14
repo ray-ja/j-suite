@@ -65,6 +65,27 @@ ok("job crew LWW-merges (newer assignment wins)", ((sc.obx.jobs.find(j => j.id =
 ok("member weekly availability persists on the account", !!(sc.users.find(u => u.id === "u1") || {}).avail, sc.users);
 ok("time-off blocks ride the account record", (((sc.users.find(u => u.id === "u1") || {}).timeoff) || []).length === 1, sc.users);
 
+console.log("— scheduler: per-day availability overrides ride the account merge (LWW), no field loss —");
+const ovr = t.mergeState(
+  { users: [{ id: "u1", username: "ray", role: "owner",
+      avail: { days: [false, true, true, true, true, true, false], start: "08:00", end: "17:00", overrides: { "2026-06-20": "off" } },
+      timeoff: [{ id: "b1", start: "2026-07-01", end: "2026-07-03", note: "PTO" }], updatedAt: 5 }] },
+  { users: [{ id: "u1", username: "ray", role: "owner",
+      avail: { days: [false, true, true, true, true, true, false], start: "08:00", end: "17:00", overrides: { "2026-06-20": "full", "2026-06-21": "partial" } },
+      timeoff: [{ id: "b1", start: "2026-07-01", end: "2026-07-03", note: "PTO" }], updatedAt: 9 }] }
+);
+const ou = ovr.users.find(u => u.id === "u1") || {};
+ok("per-day overrides ride the account record", !!(ou.avail && ou.avail.overrides), ou.avail);
+ok("newer overrides win, multi-day (20=full, 21=partial)", ou.avail.overrides["2026-06-20"] === "full" && ou.avail.overrides["2026-06-21"] === "partial", ou.avail.overrides);
+ok("baseline weekday pattern + hours preserved alongside overrides", Array.isArray(ou.avail.days) && ou.avail.start === "08:00", ou.avail);
+ok("time-off + role survive the overrides merge (no field loss)", (ou.timeoff || []).length === 1 && ou.role === "owner", ou);
+const ovrBc = t.mergeState(
+  { users: [{ id: "u2", username: "old", avail: { days: [true, true, true, true, true, true, true], start: "09:00", end: "17:00" }, updatedAt: 5 }] },
+  {}
+);
+ok("legacy account without overrides survives untouched (backward compatible)",
+  (() => { const u = ovrBc.users.find(x => x.id === "u2") || {}; return u.avail && !u.avail.overrides && u.avail.start === "09:00"; })(), ovrBc.users);
+
 console.log("— quote → job conversion: the link survives the merge (per-record LWW) —");
 const qj = t.mergeState(
   { obx: { quotes: [{ id: "q1", cust: "Acme", total: 400, accepted: false, updatedAt: 5 }],
