@@ -2,8 +2,9 @@
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set();
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
-  const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
+  const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
   if(SCHEDSUB==="crew"){view.innerHTML=sub+rCrewSchedule();return;}
+  if(SCHEDSUB==="myavail"){view.innerHTML=sub+(typeof renderMyAvailCalendar==="function"?renderMyAvailCalendar():"");return;}
   const t=today();
   if(CALY==null){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();}
   const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
