@@ -53,6 +53,7 @@ function wizJunkUI(){
   const qof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.qty:0;};
   const locof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.loc:"ground";};
   let h=wizHead(3,5,"Junk / move-out — build the load");
+  h+=crewAidCard("junk");
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px"><b>Walk every room with the customer.</b> Tap + on each item that's going, and set <b>where it is</b> — upstairs and attic cost more because they're harder to carry.<br><br><b>Reading the truck:</b> you don't have to eyeball it. The tool adds each item's real size. A <b>full load ≈ 450 cu ft</b> — about a 15-yard dump trailer, or a pickup bed stacked roughly 4 ft above the rails. Stuff stacked high still counts as volume, so just add everything.<br><br><b>When done:</b> read the total off the green bar, say it once, and stop talking.</div></details>`;
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💬 What to say to the customer (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">1. "Let's walk through everything that's going, room by room."<br>2. Add items as you go; confirm what stays vs. goes.<br>3. "Okay — for all of this, hauled away and disposed of properly, it's <b>[the number]</b>." Then stop talking.<br>4. If they hesitate: "That covers the labor, the hauling, the dump fees, and certified disposal of the appliances." Don't drop the price first.<br>5. "I can get this knocked out [today / this week] — want me to put you down?"<br>6. After: take before/after photos and text them the review link.</div></details>`;
   h+=`<div class="card" style="padding:10px"><input id="je_search" value="${esc(WZ.junkSearch||"")}" placeholder="🔎 Search items — type TV, carpet, fridge…" autocomplete="off" oninput="wizJSearch()" style="margin:0">${WZ.junkSearch?`<button class="btn ghost sm" style="margin-top:8px" onclick="WZ.junkSearch='';render()">✕ Clear search</button>`:""}</div>`;
@@ -87,6 +88,7 @@ function wizJunkUI(){
     <div class="row" style="justify-content:space-between;font-size:13px;margin-top:6px"><span>Junk removal</span><b>${money(c.total)}</b></div>
     <div class="row" style="justify-content:space-between;font-size:13px"><span>Travel (${esc(tc.short)})</span><b>${money(tc.charge)}</b></div>
     <div style="font-size:32px;font-weight:800;line-height:1.1;margin-top:4px">${money(grand)}</div></div>`;
+  h+=guardrailFlag("junk",c.total);
   if(typeof marketBandHTML==="function"&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)h+=marketBandHTML(c.total,MARKET_BANDS.junk.lo,MARKET_BANDS.junk.hi,MARKET_BANDS.junk.label);
   // Move-out protection — prints on the quote
   h+=`<div class="card"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkCleared?"checked":""} onchange="wizJunkCleared(this.checked)"><span style="margin:0;font-weight:700">✔ Customer confirms all remaining items are cleared for disposal</span></label><div class="sub" style="margin-top:4px">Move-out protection — when checked, this prints on the quote as a record the customer OK'd hauling everything left behind.</div></div>`;
@@ -113,7 +115,7 @@ function junkCatalogHTML(){
 window.wizJSearch=function(){const e=document.getElementById("je_search");WZ.junkSearch=e?e.value:"";const c=document.getElementById("je_catalog");if(c)c.innerHTML=junkCatalogHTML();};
 window.wizJunkToggle=function(gi,open){if(!WZ.junkOpen)WZ.junkOpen={};WZ.junkOpen[gi]=open;};
 window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
-window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;render();}};
+window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;}};
 window.wizJunkBedbug=function(on){WZ.junkBedbug=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJunkCleared=function(on){WZ.junkCleared=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.openTrailerBuy=function(){

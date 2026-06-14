@@ -1,0 +1,7 @@
+customer,address,zone,line,cadence,anchor_day,anchor_week,est_min,price,notes
+EXAMPLE - Smith,123 Ocean Dr,Duck,home-watch,weekly,Mon,,40,49,replace with real plans
+EXAMPLE - Jones,45 Sound Ct,Corolla,home-watch,biweekly,Mon,A,45,54,remote north - bundle
+EXAMPLE - Pinewood HOA,Pinewood Ln,Kill Devil Hills,mow,weekly,Wed,,50,65,common areas
+EXAMPLE - Lee,9 Bay St,Nags Head,mow,biweekly,Wed,B,45,60,
+EXAMPLE - Carter,12 Skyline Rd,Kitty Hawk,home-watch,monthly,Tue,1,40,50,
+EXAMPLE - Patel,77 Duck Rd,Duck,wash,seasonal,Fri,,180,399,annual soft-wash - May campaign

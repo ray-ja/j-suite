@@ -118,7 +118,7 @@ function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
     if(fl.t==="chk")return `<div class="toggle"><input type="checkbox" id="wf_${fl.k}" ${v?"checked":""} onchange="wizLive()"><label style="margin:0">${fl.label}</label></div>`;
     return "";
   }).join("");
-  return wizHead(3,5,(r?r.label:"Custom line"))+`<div class="card">${hint}${f}
+  return wizHead(3,5,(r?r.label:"Custom line"))+crewAidCard(k)+`<div class="card">${hint}${f}
     <div class="totbar" style="border-top-color:var(--accent)"><span class="lab">This line</span><span class="amt" id="wz_live">$0</span></div>
     <div id="wz_note" class="muted" style="font-size:13px"></div>
   </div>

@@ -1,0 +1,727 @@
+{
+  "schema": "obxls.crew-checklist.v1",
+  "source_of_truth": "OBX-Ops/Crew-Playbook/SOPs/*.md",
+  "note": "Generated view. Edit the SOP markdown, then re-run build-app-checklists.py. check=true items are tickable; check=false are informational (e.g. scope caps).",
+  "count": 8,
+  "checklists": [
+    {
+      "sections": [
+        {
+          "name": "Before you roll",
+          "items": [
+            {
+              "text": "Confirm address + gate/alarm codes + key/lockbox (log on the customer record, not loose paper)",
+              "check": true
+            },
+            {
+              "text": "Know the plan (what this owner pays for) + any add-ons (package pickup, contractor meet-in)",
+              "check": true
+            },
+            {
+              "text": "Phone charged — every visit ends in a photo/text report",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site checklist — walk it the same way every time",
+          "items": [
+            {
+              "text": "Walk the full perimeter — roof/eaves, siding, foundation, windows, doors",
+              "check": true
+            },
+            {
+              "text": "Storm/wind damage, fallen limbs, debris",
+              "check": true
+            },
+            {
+              "text": "Signs of pests/animals, wasp nests, standing water",
+              "check": true
+            },
+            {
+              "text": "Doors & windows secure; no break-in signs",
+              "check": true
+            },
+            {
+              "text": "Decks/rails, exterior lights, HVAC condenser unit",
+              "check": true
+            },
+            {
+              "text": "Each room: leaks/water stains (ceilings, under sinks, water heater), smell for mold/musty",
+              "check": true
+            },
+            {
+              "text": "Run water / flush toilets; check no slow drains",
+              "check": true
+            },
+            {
+              "text": "HVAC running, thermostat at the set point (humidity control matters off-season)",
+              "check": true
+            },
+            {
+              "text": "Breaker panel normal, no tripped breakers; fridge/freezer if owner asked",
+              "check": true
+            },
+            {
+              "text": "Pests (droppings, ants, roaches), any alarms/leak detectors",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Close out",
+          "items": [
+            {
+              "text": "Re-lock, reset alarm, return key to lockbox",
+              "check": true
+            },
+            {
+              "text": "Send the photo + text report (2–6 photos + a one-line \"all good\" or the issue found)",
+              "check": true
+            },
+            {
+              "text": "Found a problem? Note it, photograph it, and flag to Ray — do not authorize repairs (owner decision)",
+              "check": true
+            },
+            {
+              "text": "Mark visit complete in the app",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Anything that looks like real damage or a safety issue → document + escalate to Ray same day; don't try to fix it.",
+        "Keep codes/keys controlled — never leave them in the open or text them in plain view."
+      ],
+      "id": "01",
+      "tier": "SPINE",
+      "title": "Home-Watch",
+      "pricing_guardrail": "monthly $50/visit · bi-weekly $45 · weekly $40 · one-off $75 · storm check $95. Recurring = the goal. ~30–45 min/visit incl. drive. Near-zero materials.",
+      "line": "home-watch",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/01 Home-Watch.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Know the difference (lead with the right one)",
+          "items": [
+            {
+              "text": "Soft wash = low pressure (~100 PSI) + SH/surfactant mix. Roofs, siding, stucco, screens, painted surfaces. Kills algae/mildew, lasts longer.",
+              "check": false
+            },
+            {
+              "text": "Pressure wash = high pressure. Concrete only — driveways, sidewalks, dumpster pads, decks (carefully). Never pressure-wash shingles (strips the granules) — roofs are soft-wash, always.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Before you start",
+          "items": [
+            {
+              "text": "Walk the property; note surfaces + size (confirm the quote tier)",
+              "check": true
+            },
+            {
+              "text": "Plant protection: pre-wet + tarp/cover landscaping near the work; have the plant-rinse ready",
+              "check": true
+            },
+            {
+              "text": "Water source (customer spigot) + buffer tank if flow is weak",
+              "check": true
+            },
+            {
+              "text": "Mix the right ratio: siding ~2.5% SH; concrete/masonry steps up to ~4%; add surfactant ~1 oz/gal",
+              "check": true
+            },
+            {
+              "text": "2-story/roof: ladder footed on solid ground, stabilizer on, second crew member spotting the ladder — never solo on a ladder",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site sequence",
+          "items": [
+            {
+              "text": "Pre-rinse surface + surrounding plants",
+              "check": true
+            },
+            {
+              "text": "Apply solution low-pressure, work bottom-up, let it dwell (don't let it dry on the surface)",
+              "check": true
+            },
+            {
+              "text": "Agitate/spot-treat heavy stains",
+              "check": true
+            },
+            {
+              "text": "Rinse top-down; re-rinse all plants/landscaping thoroughly",
+              "check": true
+            },
+            {
+              "text": "Basic cleanup — coil hoses, no chemical containers left out",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Included vs. not",
+          "items": []
+        }
+      ],
+      "guards": [
+        "PPE on for SH: chem gloves, eye protection, and on roofs face shield + non-slip footwear. Mind overspray onto cars/neighbors.",
+        "3-story, steep, or anything past safe ladder reach → refer, don't improvise.",
+        "Recurring close: every one-off wash → offer the annual plan before you leave; log it for Ray."
+      ],
+      "id": "02",
+      "tier": "SPINE",
+      "title": "Soft / Pressure Washing",
+      "pricing_guardrail": "house soft-wash 1-story ≤1,500 sqft $299 · ≤2,500 $399 · 2-story 2,500–3,500 $549 · roof soft-wash from $399 · driveway $99/$149/$199 by size. Recurring 20% off. House wash 3–5 hrs; driveway 1–2 hrs.",
+      "line": "washing",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/02 Washing.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Standard visit",
+          "items": [
+            {
+              "text": "Mow at the right height (don't scalp coastal lawns)",
+              "check": true
+            },
+            {
+              "text": "String-trim fence lines, beds, obstacles",
+              "check": true
+            },
+            {
+              "text": "Edge hard surfaces (walks, driveway)",
+              "check": true
+            },
+            {
+              "text": "Blow clippings off all hardscape — leave it cleaner than found",
+              "check": true
+            },
+            {
+              "text": "Quick walk for trash/limbs; bag and haul what's there",
+              "check": true
+            },
+            {
+              "text": "Photo the finished yard for the route log",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Add-on work (within scope)",
+          "items": [
+            {
+              "text": "Hedge/shrub trimming, leaf/debris cleanup, mulch refresh (mulch billed as a materials line, cost + markup).",
+              "check": false
+            },
+            {
+              "text": "Limb/branch + small-tree work: in scope only if reachable from the ground or the 30-ft ladder — no climbing, no large trees. Use the AP chainsaw/pole saw. Anything bigger or up high → refer to a tree service (note it for Ray).",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Disposal — the margin edge",
+          "items": [
+            {
+              "text": "Clean vegetative debris (brush, leaves, grass, pine straw) dumps FREE at the Dare County C&D landfill / Public Works recycling. Keep green waste clean and separate — the second you mix in bagged trash or lumber you lose the free rate and pay $73.16/ton.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Before you commit a price",
+          "items": [
+            {
+              "text": "Lot size + slope + obstacle density (sizing the visit)",
+              "check": true
+            },
+            {
+              "text": "Travel/zone: remote north (Corolla/Carova) → higher minimum + travel line; bundle remote stops on one route day",
+              "check": true
+            },
+            {
+              "text": "Recurring vs one-off — push the recurring plan",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Ear + eye protection on all powered equipment; label gas cans (right mix — wrong fuel kills 2-strokes; AP tools are battery, but check any gas backups).",
+        "Over a crew-day or needs a third body (big overgrown lot) → price to sub / flag Ray, don't absorb it."
+      ],
+      "id": "03",
+      "tier": "SPINE",
+      "title": "Mowing / Yard Routes",
+      "pricing_guardrail": "mow + trim + edge from $45/visit (recurring 20% off) · hedge trimming from $89 · debris cleanup & haul from $99 · large/oversized lot from $69/visit. Flat per visit, never hourly.",
+      "line": "yard-mowing",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/03 Yard-Mowing.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Intake / before you roll",
+          "items": [
+            {
+              "text": "Bed-bug question (scripted, not rude): \"Standard question for anything with fabric — any history of bed bugs?\" Carry zip mattress/sofa bags + sealed contractor bags + gloves. Right to decline or surcharge infested items — one infestation can contaminate the truck and every job after it. Non-negotiable.",
+              "check": true
+            },
+            {
+              "text": "Furniture sizing — don't undersize. A \"love seat\" is a 2–3 seater; sofas/sectionals/recliners eat space. Confirm counts and real sizes so the load fits (the \"love seat = small chair\" miss cost us truck space).",
+              "check": true
+            },
+            {
+              "text": "Access assessment: stairs, floors, long carry, driveway blocked by cars → access-difficulty bump in the price.",
+              "check": true
+            },
+            {
+              "text": "Travel/zone: remote north → higher minimum + travel line; bundle remote stops.",
+              "check": true
+            },
+            {
+              "text": "One scheduled trip. Set up front: this clearing is one trip; extra trips are billed. (Repeat callbacks are the margin killer.)",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Move-outs — hard sequencing policy",
+          "items": [
+            {
+              "text": "Movers finish FIRST → then junk → then cleaners. Never work around active movers. Confirm the movers are DONE before we roll — no repeated callbacks while they're still going.",
+              "check": true
+            },
+            {
+              "text": "\"Authorized for disposal\" sign-off: get explicit confirmation (text/app) that everything remaining is cleared to toss. Removes keep-vs-toss guessing and protects us from \"you threw away my X.\" If there's no clear call on an item, set it aside, don't toss it.",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site work",
+          "items": [
+            {
+              "text": "Walk the full scope with the customer; confirm what's going",
+              "check": true
+            },
+            {
+              "text": "Protect floors/walls on the carry-out (blankets, straps)",
+              "check": true
+            },
+            {
+              "text": "Load smart; set aside resaleable items (log them — resale is real money, but never take anything not authorized)",
+              "check": true
+            },
+            {
+              "text": "Separate clean vegetative/recyclable from C&D where it saves dump fees",
+              "check": true
+            },
+            {
+              "text": "Sweep/broom the cleared space — leave it better than found",
+              "check": true
+            },
+            {
+              "text": "Before/after photos for the review ask",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Disposal",
+          "items": [
+            {
+              "text": "Price the dump fee into the job every time: estimate the load, add tonnage (~$73.16/ton mixed C&D, first 500 lb free; clean veg = free), then labor + margin on top. This is the line new haulers eat by accident.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Close out",
+          "items": [
+            {
+              "text": "Confirm the customer's happy with the cleared space (photo walk-through)",
+              "check": true
+            },
+            {
+              "text": "Invoice through the app + drop the review link",
+              "check": true
+            },
+            {
+              "text": "Note any resale items recovered",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Hazardous (paint, chemicals, propane, fuel) → don't haul; flag for separate handling.",
+        "Over the two-person ceiling (huge hoarder load, needs a third body / multiple days) → price to sub or stage over scheduled billed trips — flag to Ray, don't absorb it.",
+        "Disorganized customer pushing extra trips/scope → hold the line politely; one trip quoted, more is billed."
+      ],
+      "id": "04",
+      "tier": "SPINE",
+      "title": "Junk Removal / Clear-Outs",
+      "pricing_guardrail": "$350–850 typical · whole-house clear-out $1,200–2,500 · price on site by volume (truck/trailer-bed fraction) + dump fees + access. Flat per job, never hourly.",
+      "line": "junk",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/04 Junk.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Scope",
+          "items": [
+            {
+              "text": "Parking-lot & roadside litter, dumpster-area cleanup, storefront/sidewalk debris, post-event cleanup, light grounds policing.",
+              "check": false
+            },
+            {
+              "text": "Recurring is the play — sell the scheduled plan and document each visit with photos.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "On-site checklist",
+          "items": [
+            {
+              "text": "Walk the area; note hazards (broken glass, sharps, biohazard → gloves/grabber, don't hand-pick)",
+              "check": true
+            },
+            {
+              "text": "High-vis vest + cones if near traffic/lot drive lanes",
+              "check": true
+            },
+            {
+              "text": "Litter/debris pick + bag (contractor bags)",
+              "check": true
+            },
+            {
+              "text": "Dumpster area: pick stray debris, sweep pad, push-broom corners",
+              "check": true
+            },
+            {
+              "text": "Storefront: sidewalk sweep, entry debris, gum/stain spot-treat if quoted",
+              "check": true
+            },
+            {
+              "text": "Haul bagged waste; confirm where it goes (customer dumpster vs. our haul + dump fee)",
+              "check": true
+            },
+            {
+              "text": "Before/after photos → send with the visit log (this is what makes recurring sticky)",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Before you commit a price",
+          "items": [
+            {
+              "text": "Lot/area size + how trashed it is (frequency drives the recurring price)",
+              "check": true
+            },
+            {
+              "text": "Disposal: customer's dumpster (free) vs. we haul (add dump fee)",
+              "check": true
+            },
+            {
+              "text": "Travel/zone bump for remote sites; bundle into a route",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Biohazard/sharps/hazmat beyond basic litter → don't handle; flag to Ray.",
+        "One-off that balloons into a haul-off → re-quote as a junk job (SOP 04), don't eat it."
+      ],
+      "id": "05",
+      "tier": "SECONDARY",
+      "title": "Cleanup (Residential + Light-Commercial)",
+      "pricing_guardrail": "priced by lot size / scope · recurring plans 20% off (daily/weekly/monthly). Flat per visit.",
+      "line": "cleanup",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/05 Cleanup.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Hard scope cap (read first)",
+          "items": [
+            {
+              "text": "IN: ground-based brush, overgrowth, saplings, limbs/branches and small trees reachable from the ground or the 30-ft ladder.",
+              "check": false
+            },
+            {
+              "text": "OUT → refer: climbing, large trees / big trunks, anything above ~30 ft or needing a controlled drop. We are not a tree-removal service.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Before you start",
+          "items": [
+            {
+              "text": "Walk the area; identify property lines, utilities, septic, irrigation, anything to protect",
+              "check": true
+            },
+            {
+              "text": "Spot hazards: power lines (stay well clear), ground hornets/snakes, poison ivy, soft/wet ground",
+              "check": true
+            },
+            {
+              "text": "Confirm what stays vs. goes with the customer (mark keepers)",
+              "check": true
+            },
+            {
+              "text": "Gear: AP chainsaw/pole saw, loppers, machete, rakes, tarps; rent brush mower/chipper if the volume calls for it (pass-through line)",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site work",
+          "items": [
+            {
+              "text": "PPE: chainsaw chaps whenever the saw runs, eye + ear protection, gloves, boots; hard hat if overhead limbs",
+              "check": true
+            },
+            {
+              "text": "Cut low-to-high, drag to a staging pile, feed chipper or load for haul",
+              "check": true
+            },
+            {
+              "text": "Keep vegetative debris clean/separate → dumps FREE (don't mix with trash/C&D)",
+              "check": true
+            },
+            {
+              "text": "Rake and clear the worked area; haul off",
+              "check": true
+            },
+            {
+              "text": "Before/after photos",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Before you commit a price",
+          "items": [
+            {
+              "text": "Density + area (how thick, how big)",
+              "check": true
+            },
+            {
+              "text": "Rental needed? (brush mower / chipper / stump grinder — stump grinder still rented ~$85–160/day)",
+              "check": true
+            },
+            {
+              "text": "Disposal volume (free if clean veg; chipping cuts haul trips)",
+              "check": true
+            },
+            {
+              "text": "Access + travel/zone bump",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Anything past the reach cap, near power lines, or needing a climber → stop and refer. No exceptions.",
+        "Bigger than a crew-day or needs a third body → price to sub / flag Ray."
+      ],
+      "id": "06",
+      "tier": "SECONDARY",
+      "title": "Small / Medium Ground Brush",
+      "pricing_guardrail": "quote by area / crew-day (~$600–900/crew-day basis) + any rental + disposal. Flat per job.",
+      "line": "brush",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/06 Brush.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Hard scope cap (read first)",
+          "items": [
+            {
+              "text": "IN: small single-story sheds/outbuildings (≈ ≤10×12), wood/metal, hand-demo + haul.",
+              "check": false
+            },
+            {
+              "text": "OUT → refer/sub: anything with live electrical or plumbing still connected, structures on a slab needing breaking, anything requiring permits or asbestos/lead handling (older sheds/siding can contain it), multi-story, or attached to the house. If in doubt about age/materials → stop and flag Ray.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Before you start",
+          "items": [
+            {
+              "text": "Confirm utilities disconnected (power/water) — do NOT demo a shed with live service; flag to Ray to arrange disconnect",
+              "check": true
+            },
+            {
+              "text": "Check age/materials — pre-1990 or suspect siding/roofing → asbestos/lead risk → stop, refer for testing",
+              "check": true
+            },
+            {
+              "text": "Confirm the slab/foundation stays (we don't break concrete) or it's a refer",
+              "check": true
+            },
+            {
+              "text": "Locate property lines, septic, irrigation, buried utility (call 811 if any digging)",
+              "check": true
+            },
+            {
+              "text": "Permit check: small accessory-structure demo is usually fine, but if the customer/locale needs a permit, that's a Ray/owner call before we start",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site work",
+          "items": [
+            {
+              "text": "PPE: gloves, eye protection, hard hat, sturdy boots, dust mask (demo dust)",
+              "check": true
+            },
+            {
+              "text": "De-construct top-down: roof → walls → frame → floor; pull nails/screws, watch for hidden hazards",
+              "check": true
+            },
+            {
+              "text": "Sort: clean wood vs. mixed C&D vs. metal (metal may be resale/scrap)",
+              "check": true
+            },
+            {
+              "text": "Load + haul; C&D debris pays tonnage (~$73.16/ton) — price it in (this is NOT free veg)",
+              "check": true
+            },
+            {
+              "text": "Rake the pad/area clean; before/after photos",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Live utilities, slab-breaking, asbestos/lead suspicion, permits, or anything bigger than the cap → refer or escalate to Ray before touching it.",
+        "Over a crew-day or needs heavy equipment → price to sub."
+      ],
+      "id": "07",
+      "tier": "SECONDARY",
+      "title": "Small Shed Demo",
+      "pricing_guardrail": "quote by structure size + haul/disposal + access. Flat per job.",
+      "line": "shed-demo",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/07 Shed-Demo.md"
+    },
+    {
+      "sections": [
+        {
+          "name": "Hard scope cap (read first)",
+          "items": [
+            {
+              "text": "IN: 1- and 2-story gutters reachable from the 30-ft ladder or a water-fed pole.",
+              "check": false
+            },
+            {
+              "text": "OUT → refer: 3-story, steep/unsafe roof pitch, or anything past safe ladder reach. No working off the roof edge on a sketchy pitch.",
+              "check": false
+            }
+          ]
+        },
+        {
+          "name": "Ladder safety (non-negotiable — this is why it's a 2-person job)",
+          "items": [
+            {
+              "text": "Ladder on firm, level ground; stabilizer/standoff on so it rests off the gutter, not crushing it",
+              "check": true
+            },
+            {
+              "text": "Second crew member foots and holds the ladder the entire time someone is on it",
+              "check": true
+            },
+            {
+              "text": "3-point contact; never overreach — get down and move the ladder instead",
+              "check": true
+            },
+            {
+              "text": "Stay clear of power lines / service drops at the roofline",
+              "check": true
+            },
+            {
+              "text": "Wet/windy → reschedule; don't push it",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "On-site work",
+          "items": [
+            {
+              "text": "Lay tarps under work zones to catch debris (protect plantings/hardscape)",
+              "check": true
+            },
+            {
+              "text": "Scoop debris by hand/trowel into a bucket; bag it",
+              "check": true
+            },
+            {
+              "text": "Flush each run with the hose toward the downspout; confirm water flows through",
+              "check": true
+            },
+            {
+              "text": "Clear/confirm downspouts (snake or flush blockages); check splash blocks/extensions",
+              "check": true
+            },
+            {
+              "text": "Quick look for gutter damage, loose hangers, leaks → note for Ray (don't repair, that's quote-separate)",
+              "check": true
+            },
+            {
+              "text": "Rake up fallen debris; haul (clean veg = free disposal)",
+              "check": true
+            },
+            {
+              "text": "Before/after photos",
+              "check": true
+            }
+          ]
+        },
+        {
+          "name": "Before you commit a price",
+          "items": [
+            {
+              "text": "Linear feet + stories + roof pitch (safety = the cap)",
+              "check": true
+            },
+            {
+              "text": "Access + travel/zone bump",
+              "check": true
+            },
+            {
+              "text": "Offer the recurring/seasonal plan + bundle with washing",
+              "check": true
+            }
+          ]
+        }
+      ],
+      "guards": [
+        "Past ladder reach / 3-story / unsafe pitch → refer.",
+        "Gutter repair, guards install, fascia work = separate quote / possible refer (not a clean-out)."
+      ],
+      "id": "08",
+      "tier": "SECONDARY",
+      "title": "Gutter Cleaning",
+      "pricing_guardrail": "by linear footage / stories + access. Flat per job. Bundle with a wash for an easy upsell.",
+      "line": "gutters",
+      "source": "OBX-Ops/Crew-Playbook/SOPs/08 Gutters.md"
+    }
+  ]
+}
