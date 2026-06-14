@@ -347,6 +347,7 @@ function marketBandHTML(price,lo,hi,label){
 }
 function wizDeepUI(key){const cfg=getDeepCfg(key);const c=calcDeep(key);const mods=(WZ.deepMods&&WZ.deepMods[key])||{};
   let h=wizHead(3,5,cfg.label);
+  h+=crewAidCard(key);
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">${cfg.how}</div></details>`;
   if(cfg.script)h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💬 What to say to the customer (tap)</summary><div style="font-size:13px;line-height:1.7;margin-top:8px">${cfg.script.map((s,i)=>(i+1)+". "+s).join("<br>")}</div></details>`;
   h+=`<div class="card" style="padding:10px"><input id="dz_search" value="${esc(WZ.deepSearch||"")}" placeholder="🔎 Search items…" autocomplete="off" oninput="wizDSearch()" style="margin:0">${WZ.deepSearch?`<button class="btn ghost sm" style="margin-top:8px" onclick="WZ.deepSearch='';render()">✕ Clear search</button>`:""}</div>`;
@@ -359,6 +360,7 @@ function wizDeepUI(key){const cfg=getDeepCfg(key);const c=calcDeep(key);const mo
   if(cfg.glossary)h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📖 Plain-English glossary (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px">${cfg.glossary.map(g=>`<b>${esc(g[0])}:</b> ${esc(g[1])}`).join("<br><br>")}</div></details>`;
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Itemized breakdown</div><div style="font-size:13px;line-height:1.9" id="dz_break">${deepBreakHTML(c)}</div><div style="border-top:1px solid var(--line);margin:8px 0"></div><div class="row" style="justify-content:space-between;align-items:center"><span class="sub">Estimate</span><b id="dz_total" style="font-size:20px">${money(c.total)}</b></div>${c.unc?`<div class="sub" id="dz_range">Likely range ${money(c.total-c.unc)}–${money(c.total+c.unc)}</div>`:""}</div>`;
   h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(c.total)}</div>${c.unc?`<div style="font-size:12px;opacity:.9">± ${money(c.unc)} until confirmed on site</div>`:""}</div>`;
+  h+=guardrailFlag(key,c.total);
   if(MARKET_BANDS[key])h+=marketBandHTML(c.total,MARKET_BANDS[key].lo,MARKET_BANDS[key].hi,MARKET_BANDS[key].label);
   h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b id="dz_foot">${money(c.total)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddDeep('${key}')">Add to quote</button></div>`;
   return h;
