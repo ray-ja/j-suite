@@ -20,7 +20,11 @@ function threadById(tid) { return msgColl().find(m => m && m.kind === "thread" &
 function threadMsgs(tid) { return msgColl().filter(m => m && !m.kind && !m.deleted && m.threadId === tid).sort((a, b) => (a.ts || 0) - (b.ts || 0)); }
 function myUid() { const u = (typeof curUser === "function") ? curUser() : null; return u ? u.id : null; }
 function msgCanBroadcast() { const k = (typeof curRoleKey === "function") ? curRoleKey() : "crew"; return k === "owner" || k === "admin" || k === "ceo"; }
-function threadVisible(t, uid) { return msgCanBroadcast() || ((t.members || []).indexOf(uid) >= 0); }
+function threadVisible(t, uid) {
+  if (!uid) return false;
+  if (t.type === "broadcast") return true;   // a broadcast is for EVERYONE signed in (crew included) — not just the post-time member snapshot (a crew member who joins/logs-in later must still see it)
+  return msgCanBroadcast() || ((t.members || []).indexOf(uid) >= 0);   // DM / to-Strategy: participants (or a broadcaster) only
+}
 function readMarker(tid, uid) { return msgColl().find(m => m && m.kind === "read" && m.threadId === tid && m.userId === uid); }
 function unreadCount(tid, uid) { const rm = readMarker(tid, uid), last = rm ? (rm.lastReadTs || 0) : 0; return threadMsgs(tid).filter(m => (m.ts || 0) > last && m.senderId !== uid).length; }
 function totalUnread() { const uid = myUid(); if (!uid) return 0; return msgThreads().filter(t => threadVisible(t, uid)).reduce((n, t) => n + unreadCount(t.threadId, uid), 0); }
