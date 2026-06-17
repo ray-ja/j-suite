@@ -409,6 +409,10 @@ ok("read view=messages returns the thread with both the CEO message and the crew
   const thr = (mv.threads || []).find(x => x.threadId === built.threadId); return thr && thr.messages.length === 2 && thr.messages.some(m => m.senderLabel === "Strategy") && thr.messages.some(m => m.body === "Got it — handshake received.");
 })(), mv.threads);
 ok("read view=messages leaks no secrets (no passhash)", !/passhash|SECRET/.test(JSON.stringify(mv)), null);
+// per-user read markers surface (so the watcher can derive unread / read-no-reply / replied)
+const readStore = t.mergeState(replyStore, { obx: { messages: [{ id: "rd_" + built.threadId + "_u1", kind: "read", threadId: built.threadId, userId: "u1", lastReadTs: Date.now() + 5, updatedAt: Date.now() + 5 }] } });
+const thr2 = (t.ceoProjection(readStore, { view: "messages" }).threads || []).find(x => x.threadId === built.threadId);
+ok("read view=messages surfaces per-user read markers (userId/name/lastReadTs)", !!thr2 && Array.isArray(thr2.reads) && thr2.reads.some(r => r.userId === "u1" && r.name === "Ray" && r.lastReadTs > 0), thr2 && thr2.reads);
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

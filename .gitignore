@@ -13,6 +13,10 @@ qb-tokens.json
 # --- CEO read-path token (read-only sweep credential; never commit) ---
 ceo-config.json
 
+# --- Reply-watcher: dev-box tokens (read+write to prod) + cursor (THE SWITCH; never commit) ---
+watcher-config.json
+tools/.reply-watcher-cursor.json
+
 # --- Office lock & temp files ---
 ~$*
 .~lock.*#
