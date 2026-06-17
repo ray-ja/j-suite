@@ -86,4 +86,10 @@ Add new status `'partial'` (cls `partial`). Update: `availBadge` (+yellow), `cal
 3. Keep **time-off blocks distinct** (they carry notes + ranges) from per-day "off"? (Recommend keep distinct.)
 4. **Edit permission:** self + owner (current rule) — keep? (Recommend keep.)
 
+## Status & deferred work
+- **2026-06-17 — v1 SHIPPED & APPROVED (Strategy).** Account-level LWW (per-day `overrides` on the account record) is the v1 design. Migration fixture `fixtures/data-pre-scheduler.json` + `sync-server-tests.js` prove zero record loss + override persistence + field-preserving LWW (78/0).
+- **FUTURE TASK (deferred, not v1): per-`(crewId+date)` availability sub-records.** Move per-day overrides out of the account record into their own synced collection keyed by `crewId+date` (stable id), so concurrent edits dedupe per-date instead of clobbering at the account level.
+  - **Why it matters:** under account-level LWW, two devices editing the *same* account's availability at once field-clobber (e.g., the owner editing a crew member's calendar while that member edits their own — last full account write wins, losing the other's per-date edits). **Acceptable at 3 users; revisit if the crew grows or this bites in practice.**
+  - This is the availability analog of the messaging read-state question — same per-record-vs-per-field tradeoff.
+
 > Build on canonical `C:\dev\j-suite` with the verification bar + scoped commits; the live served tree is a separate sandbox — see [[j-suite-two-tree-split]].
