@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 4000;
 const TOKEN = process.env.TOKEN || "";
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }

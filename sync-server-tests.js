@@ -291,5 +291,50 @@ ok("untouched accounts (Pierce/Chase) ride through unchanged",
 // (full) Re-pull the merged store on a third device — still zero loss end to end.
 ok("second pull (third device) is still zero-loss end to end", sameIds(census(merged), census(t.mergeState(merged, {}))), null);
 
+console.log("— crew messaging: messages collection rides per-record LWW (new synced feature, data-safe) —");
+const mg = t.mergeState(
+  { obx: { messages: [
+      { id: "thr_crew", kind: "thread", threadId: "thr_crew", title: "Crew", type: "broadcast", members: ["u1", "u2", "u3"], createdBy: "u1", updatedAt: 5 },
+      { id: "msg_1", threadId: "thr_crew", senderId: "u1", senderLabel: "Ray", body: "Start at 8", ts: 100, updatedAt: 100 },
+      { id: "rd_thr_crew_u2", kind: "read", threadId: "thr_crew", userId: "u2", lastReadTs: 100, updatedAt: 110 }   // Pierce's read marker, device A
+    ] },
+    jam: { messages: [{ id: "msg_j1", threadId: "thr_j", senderId: "u1", senderLabel: "Ray", body: "jam note", ts: 50, updatedAt: 50 }] } },
+  { obx: { messages: [
+      { id: "msg_1", threadId: "thr_crew", senderId: "u1", senderLabel: "Ray", body: "Start at 8:30 (edited)", ts: 100, updatedAt: 200 },  // sender edited, newer wins
+      { id: "msg_2", threadId: "thr_crew", senderId: "u2", senderLabel: "Pierce", body: "On it", ts: 300, updatedAt: 300 },
+      { id: "rd_thr_crew_u3", kind: "read", threadId: "thr_crew", userId: "u3", lastReadTs: 300, updatedAt: 120 }   // Chase's read marker, device B (DIFFERENT recipient)
+    ] } }
+);
+ok("messages collection scaffolded on both businesses", Array.isArray(mg.obx.messages) && Array.isArray(mg.jam.messages), { obx: mg.obx.messages, jam: mg.jam.messages });
+ok("thread descriptor survives merge as a kind-discriminated record", (mg.obx.messages.find(m => m.id === "thr_crew") || {}).kind === "thread", mg.obx.messages.filter(m => m.kind === "thread"));
+ok("message LWW: edited body wins (newer updatedAt)", (mg.obx.messages.find(m => m.id === "msg_1") || {}).body === "Start at 8:30 (edited)", mg.obx.messages.find(m => m.id === "msg_1"));
+ok("new message from the other device merges in (append-union)", !!mg.obx.messages.find(m => m.id === "msg_2"), mg.obx.messages.map(m => m.id));
+// THE core proof: two recipients' read markers (distinct deterministic ids) must BOTH survive.
+// This is the test that FAILS under a readBy[] field on the message (cross-recipient clobber).
+const r2 = mg.obx.messages.find(m => m.id === "rd_thr_crew_u2"), r3 = mg.obx.messages.find(m => m.id === "rd_thr_crew_u3");
+ok("read-state does NOT clobber across recipients (both per-user markers survive)", !!r2 && !!r3 && r2.lastReadTs === 100 && r3.lastReadTs === 300, { r2, r3 });
+ok("messaging is per-business (jam message kept separate)", mg.jam.messages.length === 1 && mg.jam.messages[0].id === "msg_j1", mg.jam.messages);
+// one user's read marker, same deterministic id from two devices → monotonic LWW, no duplicate
+const rdU2 = t.mergeState(
+  { obx: { messages: [{ id: "rd_thr_crew_u2", kind: "read", threadId: "thr_crew", userId: "u2", lastReadTs: 100, updatedAt: 100 }] } },
+  { obx: { messages: [{ id: "rd_thr_crew_u2", kind: "read", threadId: "thr_crew", userId: "u2", lastReadTs: 500, updatedAt: 200 }] } }
+);
+ok("one user's read marker is monotonic LWW across devices (newer lastReadTs wins, no dup)",
+  (() => { const ms = rdU2.obx.messages.filter(m => m.id === "rd_thr_crew_u2"); return ms.length === 1 && ms[0].lastReadTs === 500; })(), rdU2.obx.messages);
+// retract a message → delete tombstone propagates
+const mgDel = t.mergeState(
+  { obx: { messages: [{ id: "msg_x", threadId: "thr_crew", body: "oops", ts: 10, updatedAt: 10 }] } },
+  { obx: { messages: [{ id: "msg_x", threadId: "thr_crew", deleted: true, updatedAt: 50 }] } }
+);
+ok("retracted message tombstone propagates", (mgDel.obx.messages.find(m => m.id === "msg_x") || {}).deleted === true, mgDel.obx.messages);
+// backward-compat: the pre-messages realistic fixture gains a messages push with ZERO loss of prior records
+const msgPush = { obx: { messages: [
+  { id: "thr_crew", kind: "thread", threadId: "thr_crew", title: "Crew", type: "broadcast", members: ["u1", "u2", "u3"], createdBy: "u1", updatedAt: 1717200000000 },
+  { id: "msg_a", threadId: "thr_crew", senderId: "u1", senderLabel: "Ray", body: "hello crew", ts: 1717200000000, updatedAt: 1717200000000 }
+] } };
+const mergedMsg = t.mergeState(pulled, msgPush);
+const expectMsg = census(pulled); expectMsg["obx.messages"] = ["msg_a", "thr_crew"].sort();
+ok("adding messages to a pre-messages store keeps every prior customer/quote/job/account (zero loss)", sameIds(expectMsg, census(mergedMsg)), { expected: expectMsg, got: census(mergedMsg) });
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);
