@@ -379,5 +379,34 @@ ok("shared resolver: per-day override wins over baseline", AR.status({ avail: { 
 ok("shared resolver: partial override", AR.status({ avail: { overrides: { "2026-06-20": "partial" } } }, "2026-06-20") === "partial", null);
 ok("shared resolver: no avail set => unset", AR.status({}, "2026-06-20") === "unset", null);
 
+console.log("— scoped CEO write path: messages-collection-ONLY (cannot touch any other record) —");
+const wStore = {
+  obx: {
+    customers: [{ id: "c1", name: "Seaside Mgmt", phone: "252-555-0101", updatedAt: 5 }],
+    quotes: [{ id: "q1", total: 480, updatedAt: 5 }],
+    jobs: [{ id: "j1", title: "Soft wash", updatedAt: 5 }],
+    messages: []
+  },
+  jam: { customers: [{ id: "jc1", name: "Sound Side", updatedAt: 5 }] },
+  users: [{ id: "u1", username: "Ray", passhash: "SECRET", role: "owner", updatedAt: 5 }]
+};
+const otherBefore = JSON.stringify({ obxC: wStore.obx.customers, obxQ: wStore.obx.quotes, obxJ: wStore.obx.jobs, jam: wStore.jam, users: wStore.users });
+const built = t.ceoBuildMessage({ biz: "obx", title: "Strategy", body: "Handshake — wire test.", senderLabel: "Strategy" }, wStore);
+ok("ceoBuildMessage produces ONLY message records (thread + message, all in messages)", built.records.length === 2 && built.records.every(r => r.kind === "thread" || (!r.kind && r.threadId)) && !!built.messageId, built.records.map(r => r.kind || "msg"));
+const wMerged = t.mergeState(wStore, { obx: { messages: built.records } });
+const otherAfter = JSON.stringify({ obxC: wMerged.obx.customers, obxQ: wMerged.obx.quotes, obxJ: wMerged.obx.jobs, jam: { customers: wMerged.jam.customers }, users: wMerged.users });
+ok("scoped write does NOT touch customers/quotes/jobs/accounts/other-biz (byte-identical)", otherBefore === otherAfter, { before: otherBefore.slice(0, 80), after: otherAfter.slice(0, 80) });
+ok("scoped write DID append the message + thread to obx.messages", wMerged.obx.messages.length === 2 && wMerged.obx.messages.some(m => m.id === built.messageId) && wMerged.obx.messages.some(m => m.kind === "thread"), wMerged.obx.messages.map(m => m.kind || "msg"));
+ok("CEO message is attributed to the sender label, senderId sentinel (not a real account)", (() => { const m = wMerged.obx.messages.find(x => x.id === built.messageId) || {}; return m.senderLabel === "Strategy" && m.senderId === "__ceo__"; })(), wMerged.obx.messages.find(x => x.id === built.messageId));
+// write token is independent of the read token (read key can never write; write key only via /api/ceo/message)
+ok("write token gate is independent (own token required)", t.ceoTokenOk("WTOK", "WTOK") === true && t.ceoTokenOk("RTOK", "WTOK") === false, null);
+// read view=messages surfaces threads + messages for the round-trip (Strategy reads the reply)
+const replyStore = t.mergeState(wMerged, { obx: { messages: [{ id: "msg_reply", threadId: built.threadId, senderId: "u1", senderLabel: "Ray", body: "Got it — handshake received.", ts: Date.now() + 1, updatedAt: Date.now() + 1 }] } });
+const mv = t.ceoProjection(replyStore, { view: "messages" });
+ok("read view=messages returns the thread with both the CEO message and the crew reply", (() => {
+  const thr = (mv.threads || []).find(x => x.threadId === built.threadId); return thr && thr.messages.length === 2 && thr.messages.some(m => m.senderLabel === "Strategy") && thr.messages.some(m => m.body === "Got it — handshake received.");
+})(), mv.threads);
+ok("read view=messages leaks no secrets (no passhash)", !/passhash|SECRET/.test(JSON.stringify(mv)), null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

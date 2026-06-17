@@ -29,6 +29,11 @@ const TOKEN = process.env.TOKEN || "";
 const CEO_READ_TOKEN = process.env.CEO_READ_TOKEN || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).token || ""; } catch (e) { return ""; }
 })();
+// SCOPED CEO write token — SEPARATE from the read token (read key stays read-only, always). Only the
+// /api/ceo/message route honors it, and that route can ONLY append to the messages collection.
+const CEO_WRITE_TOKEN = process.env.CEO_WRITE_TOKEN || (function () {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).writeToken || ""; } catch (e) { return ""; }
+})();
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages"];
@@ -151,11 +156,49 @@ function ceoProjection(store, opts) {
   });
   const counts = { crewOnJob: crew.filter(c => c.onJob).length, crewIdle: crew.filter(c => !c.onJob).length, openJobs: openJobs.length, openQuotes: openQuotes.length };
   const view = opts.view || "all";
+  if (view === "messages") {
+    // read-only comms view: threads + their messages, so the CEO can read crew replies (round-trip)
+    const threads = [];
+    bizes.forEach(b => {
+      const coll = ((store[b] || {}).messages) || [];
+      coll.filter(m => m && m.kind === "thread" && !m.deleted).forEach(tr => {
+        threads.push({
+          biz: b, threadId: tr.threadId, title: tr.title || "", type: tr.type || "", availAsk: !!tr.availAsk, members: tr.members || [],
+          messages: coll.filter(m => m && !m.kind && !m.deleted && m.threadId === tr.threadId).sort((a, b2) => (a.ts || 0) - (b2.ts || 0))
+            .map(m => ({ id: m.id, senderId: m.senderId, senderLabel: m.senderLabel, body: m.body, ts: m.ts }))
+        });
+      });
+    });
+    return { ok: true, asOf, biz: opts.biz || "all", threads };
+  }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };
   if (view === "jobs") return { ok: true, asOf, biz: full.biz, openJobs, counts };
   if (view === "quotes") return { ok: true, asOf, biz: full.biz, openQuotes, counts };
   return full;
+}
+
+/* ---------- SCOPED CEO write path: append to the messages collection ONLY ----------
+   ceoBuildMessage returns an `incoming` that contains NOTHING but message records. The route feeds
+   it through the SAME mergeState used by /sync — and mergeState merges per-collection — so a CEO
+   write can ONLY add/update `messages` records. It is structurally incapable of touching customers,
+   quotes, jobs, accounts, or any other collection. Per-record LWW (stable ids), no clobber. */
+function ceoBuildMessage(p, store) {
+  p = p || {}; store = store || {};
+  const biz = (BIZES.indexOf(p.biz) >= 0) ? p.biz : "obx";
+  const ts = Date.now();
+  const records = [];
+  let tid = p.threadId;
+  const existing = tid ? (((store[biz] || {}).messages) || []).find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted) : null;
+  if (!existing) {
+    tid = tid || ("thr_ceo_" + crypto.randomBytes(5).toString("hex"));
+    const members = (Array.isArray(p.members) && p.members.length) ? p.members
+      : (((store.users) || []).filter(u => u && !u.kind && !u.deleted).map(u => u.id));
+    records.push({ id: tid, kind: "thread", threadId: tid, title: String(p.title || "Strategy").slice(0, 60), type: (p.to && p.to !== "__crew__") ? "dm" : "broadcast", availAsk: !!p.availAsk, members: members, createdBy: "__ceo__", deleted: false, updatedAt: ts });
+  }
+  const mid = "msg_ceo_" + crypto.randomBytes(6).toString("hex");
+  records.push({ id: mid, threadId: tid, senderId: "__ceo__", senderLabel: String(p.senderLabel || "Strategy").slice(0, 80), body: String(p.body || "").slice(0, 4000), ts: ts, deleted: false, updatedAt: ts });
+  return { biz: biz, records: records, threadId: tid, messageId: mid };
 }
 
 /* ----- per-user iCalendar (.ics) subscription feed -----------------------------------------------
@@ -281,6 +324,26 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(proj));
   }
 
+  // SCOPED CEO write — POST /api/ceo/message. Token = CEO_WRITE_TOKEN (separate from the read token).
+  // Builds a messages-only `incoming` and merges it via mergeState — cannot touch any other record.
+  if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/message")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
+      if (!p || !String(p.body || "").trim()) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"empty body"}'); }
+      const store = loadStore();
+      const built = ceoBuildMessage(p, store);
+      saveStore(mergeState(store, { [built.biz]: { messages: built.records } }));   // ONLY messages in the incoming
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, biz: built.biz, threadId: built.threadId, messageId: built.messageId }));
+    });
+    return;
+  }
+
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
   if (req.method === "GET" && req.url.indexOf("/calendar/") === 0) {
     const tok = decodeURIComponent((req.url.split("?")[0] || "").slice("/calendar/".length)).replace(/\.ics$/i, "");
@@ -370,4 +433,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage };

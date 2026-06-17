@@ -6,9 +6,11 @@
    each other (see sync-server-tests). Availability replies write STRUCTURED data (flip the crew
    member's real availability) — not text Strategy must parse.
 
-   ROLLOUT GATE: MSG_ENABLED stays false until the meeting introduces it. While false the nav tab is
-   hidden + unreachable and nothing can be sent. Flip to true (here) to activate. */
-let MSG_ENABLED = false;
+   ROLLOUT GATE: OFF by default (production). While off the nav tab is hidden + unreachable and
+   nothing sends. DEV wire-test enables it via the dev-only shell flag window.DEV_MESSAGING (set in
+   the `dev` branch shell, like window.DEV_NO_LOGIN) — production never sets it, so prod stays OFF.
+   Production rollout = a deliberate change here (default true) on Strategy's go — NOT at deploy. */
+let MSG_ENABLED = (typeof window !== "undefined" && window.DEV_MESSAGING === true);
 function msgEnabled() { return MSG_ENABLED === true; }
 
 /* ----- accessors ----- */
