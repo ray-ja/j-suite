@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /* ---------- CREW REPLY WATCHER (Architecture A — dev-lane bridge over Tailscale) ----------
    Dumb, no-LLM poller of prod's CEO read endpoint + scoped writer. Content-gated: `watch` only
-   prints + exits when there's a NEW non-CEO message OR a read-marker change — empty polls are silent.
+   prints + exits on a NEW non-CEO message (a reply/question — when Cap needs to act). Read-marker
+   changes are PASSIVE (someone merely opening a thread) — tracked + surfaced in the wake payload and
+   via `status`, but never a wake trigger. Empty polls are silent.
    When it exits, the dev lane is woken (harness notifies on background-task completion), relays the
    surfaced payload to Cap, posts Cap's reply with `post`, then re-arms `watch`. Separate process from
    the 5-min Dispatch build timer.
@@ -94,12 +96,12 @@ async function cmdWatch() {
     try { threads = await fetchThreads(cfg); } catch (e) { await sleep(cfg.pollMs); continue; }   // network blip → keep looping
     const cursor = loadCursor();
     const ev = detect(cursor, threads);
-    if (ev.newMsgs.length || ev.readChanges.length) {
+    if (ev.newMsgs.length) {   // wake ONLY on new non-CEO messages; read-marker changes are surfaced (below) but never wake Cap
       saveCursor(snapshot(threads));
-      console.log(JSON.stringify({ event: true, at: Date.now(), newMessages: ev.newMsgs, readChanges: ev.readChanges, state: threads.map(t => ({ thread: t.title, threadId: t.threadId, reads: readState(t) })) }, null, 1));
+      console.log(JSON.stringify({ event: true, at: Date.now(), newMessages: ev.newMsgs, state: threads.map(t => ({ thread: t.title, threadId: t.threadId, reads: readState(t) })) }, null, 1));
       return;   // wake the dev lane
     }
-    saveCursor(snapshot(threads));   // baseline / capture Cap's own posts; stay silent
+    saveCursor(snapshot(threads));   // baseline + track read-state (for status / future read-no-reply alert); stay silent on passive opens
     await sleep(cfg.pollMs);
   }
   console.log(JSON.stringify({ event: false, idle: true, at: Date.now() }));
