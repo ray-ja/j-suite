@@ -243,5 +243,53 @@ for (let i = 0; i < 40; i++) { if (!t.rateCheck("1.2.3.4").ok) blocked = true; }
 ok("excess attempts get blocked (429)", blocked, null);
 ok("a fresh IP is not blocked", t.rateCheck("9.9.9.9").ok === true, null);
 
+console.log("— realistic pre-scheduler data.json: full load + sync round-trip, ZERO loss (CLAUDE.md migration fixture) —");
+// Load a realistic pre-change store (accounts with legacy u.avail {days,start,end} + timeoff, NO overrides).
+// Stand in real password hashes (the committed fixture carries placeholders, never secrets).
+const fx = JSON.parse(require("fs").readFileSync(require("path").join(__dirname, "fixtures", "data-pre-scheduler.json"), "utf8"));
+delete fx._note;
+fx.users.forEach(u => { if (u.passhash && /_PLACEHOLDER$/.test(u.passhash)) u.passhash = t.hashPw("pw-" + u.id); });
+// inventory of every record id we must never lose, by business+collection and the top-level accounts
+const census = s => {
+  const c = {};
+  for (const biz of ["obx", "jam"]) for (const k of Object.keys(s[biz] || {})) c[biz + "." + k] = (s[biz][k] || []).map(r => r.id).sort();
+  c["users"] = (s.users || []).map(r => r.id).sort();
+  return c;
+};
+const before = census(fx);
+const sameIds = (a, b) => Object.keys(a).every(k => b[k] && a[k].length === b[k].length && a[k].every((id, i) => id === b[k][i]));
+
+// (1) PULL round-trip — a fresh device pulls the whole store (server merges stored over empty incoming): every record survives.
+const pulled = t.mergeState(fx, {});
+ok("pull round-trip preserves every customer/property/quote/job/account (zero loss)", sameIds(before, census(pulled)), { before, after: census(pulled) });
+ok("legacy accounts arrive with avail but no overrides (backward compatible)",
+  (() => { const u = pulled.users.find(x => x.id === "u1") || {}; return u.avail && u.avail.start === "08:00" && !u.avail.overrides; })(), (pulled.users.find(x => x.id === "u1") || {}).avail);
+ok("the __roles__ config record survives the load", !!(pulled.users.find(x => x.id === "__roles__") || {}).kind, pulled.users.map(u => u.id));
+
+// (3) A device adds per-day overrides to one account + books a new job, then PUSHES. All prior records survive; overrides persist.
+const devicePush = {
+  obx: { jobs: [{ id: "j4", title: "Gutter clean", customerId: "c2", date: "2026-06-18", crew: ["u1"], updatedAt: 1717100000000 }] },
+  users: [{ id: "u1", username: "Ray", passhash: t.hashPw("pw-u1"), role: "owner",
+    avail: { days: [false, true, true, true, true, true, false], start: "08:00", end: "17:00",
+      overrides: { "2026-06-20": "full", "2026-06-21": "partial", "2026-06-22": "off" } },
+    timeoff: [{ id: "to1", start: "2026-07-01", end: "2026-07-03", note: "Family trip" }],
+    settings: { theme: "dark" }, calToken: "tok_ray_unguessable", updatedAt: 1717100000000 }]
+};
+const merged = t.mergeState(pulled, devicePush);
+const expectAfterPush = census(pulled); expectAfterPush["obx.jobs"] = [...expectAfterPush["obx.jobs"], "j4"].sort();
+ok("post-override merge keeps every prior record + adds the new job (no drop)", sameIds(expectAfterPush, census(merged)), { expected: expectAfterPush, got: census(merged) });
+const mu1 = merged.users.find(x => x.id === "u1") || {};
+ok("per-day overrides persist after the round-trip (full/partial/off)",
+  mu1.avail && mu1.avail.overrides && mu1.avail.overrides["2026-06-20"] === "full" && mu1.avail.overrides["2026-06-21"] === "partial" && mu1.avail.overrides["2026-06-22"] === "off", mu1.avail);
+// (4) LWW: the newer account record with overrides must NOT drop timeoff / role / passhash / settings / calToken.
+ok("LWW account merge keeps timeoff/role/passhash/settings/calToken alongside new overrides (no field loss)",
+  (mu1.timeoff || []).length === 1 && mu1.role === "owner" && !!mu1.passhash && (mu1.settings || {}).theme === "dark" && mu1.calToken === "tok_ray_unguessable", mu1);
+ok("untouched accounts (Pierce/Chase) ride through unchanged",
+  (() => { const p = merged.users.find(x => x.id === "u2") || {}, c = merged.users.find(x => x.id === "u3") || {};
+    return p.avail && p.avail.start === "07:30" && (c.timeoff || []).length === 1; })(), { u2: merged.users.find(x => x.id === "u2"), u3: merged.users.find(x => x.id === "u3") });
+
+// (full) Re-pull the merged store on a third device — still zero loss end to end.
+ok("second pull (third device) is still zero-loss end to end", sameIds(census(merged), census(t.mergeState(merged, {}))), null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

@@ -1,0 +1,62 @@
+{
+  "_note": "Synthetic, realistic PRE-scheduler-availability data.json fixture (no secrets). Shape mirrors a real store BEFORE per-day availability overrides existed: accounts carry only legacy u.avail {days,start,end} + u.timeoff, NO u.avail.overrides. Used by sync-server-tests.js to prove load()+sync round-trip is zero-loss and the scheduler change is backward compatible.",
+  "obx": {
+    "customers": [
+      { "id": "c1", "name": "Seaside Mgmt", "phone": "252-555-0101", "address": "100 Ocean Blvd, Corolla NC", "updatedAt": 1717000000000 },
+      { "id": "c2", "name": "Duck Realty Group", "phone": "252-555-0150", "address": "1208 Duck Rd, Duck NC", "updatedAt": 1717000100000 },
+      { "id": "c3", "name": "Hatteras Holdings LLC", "phone": "252-555-0199", "address": "40 Lighthouse Way, Buxton NC", "updatedAt": 1717000200000 }
+    ],
+    "properties": [
+      { "id": "p1", "address": "55 Duck Rd, Duck NC", "customerIds": ["c1"], "lotSize": "0.4ac", "updatedAt": 1717000300000 },
+      { "id": "p2", "address": "9 Sandpiper Ln, Corolla NC", "customerIds": ["c1"], "updatedAt": 1717000400000 },
+      { "id": "p3", "address": "300 Hatteras Ct, Buxton NC", "customerIds": ["c3"], "updatedAt": 1717000500000 }
+    ],
+    "quotes": [
+      { "id": "q1", "cust": "Seaside Mgmt", "customerId": "c1", "total": 480, "accepted": true, "jobId": "j1", "acceptedDate": "2026-06-05", "updatedAt": 1717000600000 },
+      { "id": "q2", "cust": "Duck Realty Group", "customerId": "c2", "total": 1250, "accepted": false, "updatedAt": 1717000700000 },
+      { "id": "q3", "cust": "Hatteras Holdings LLC", "customerId": "c3", "total": 900, "accepted": true, "jobId": "j3", "updatedAt": 1717000800000 }
+    ],
+    "jobs": [
+      { "id": "j1", "title": "Soft wash, house", "customerId": "c1", "propertyId": "p1", "date": "2026-06-10", "time": "09:00", "crew": ["u1"], "quoteId": "q1", "updatedAt": 1717000900000 },
+      { "id": "j2", "title": "House-watch check", "customerId": "c1", "propertyId": "p2", "date": "2026-06-12", "crew": ["u1", "u2"], "updatedAt": 1717001000000 },
+      { "id": "j3", "title": "Lot clear + haul", "customerId": "c3", "propertyId": "p3", "date": "2026-06-15", "crew": ["u2", "u3"], "quoteId": "q3", "updatedAt": 1717001100000 }
+    ],
+    "todos": [
+      { "id": "td1", "text": "Order disposal bags", "done": false, "updatedAt": 1717001200000 }
+    ],
+    "inventory": [
+      { "id": "inv-pressure-washer-gas-4-gpm", "name": "Pressure washer (gas 4gpm)", "have": true, "qty": "1", "updatedAt": 1717001300000 }
+    ],
+    "changelog": [
+      { "id": "e1", "ts": 1717000600000, "action": "create", "entity": "quote", "entityId": "q1", "user": "u1", "summary": "Quoted Seaside $480", "updatedAt": 1717000600000 }
+    ]
+  },
+  "jam": {
+    "customers": [
+      { "id": "jc1", "name": "Sound Side Vacation Rentals", "phone": "252-555-0900", "updatedAt": 1717002000000 }
+    ],
+    "properties": [
+      { "id": "jp1", "address": "12 Bayview Dr, Manteo NC", "customerIds": ["jc1"], "updatedAt": 1717002100000 }
+    ],
+    "quotes": [
+      { "id": "jq1", "cust": "Sound Side Vacation Rentals", "customerId": "jc1", "total": 1000, "accepted": true, "jobId": "jj1", "updatedAt": 1717002200000 }
+    ],
+    "jobs": [
+      { "id": "jj1", "title": "Starlink install", "customerId": "jc1", "propertyId": "jp1", "date": "2026-06-14", "time": "13:30", "crew": ["u1"], "quoteId": "jq1", "updatedAt": 1717002300000 }
+    ]
+  },
+  "users": [
+    { "id": "u1", "username": "Ray", "passhash": "RAYHASH_PLACEHOLDER", "role": "owner",
+      "avail": { "days": [false, true, true, true, true, true, false], "start": "08:00", "end": "17:00" },
+      "timeoff": [ { "id": "to1", "start": "2026-07-01", "end": "2026-07-03", "note": "Family trip" } ],
+      "settings": { "theme": "dark" }, "calToken": "tok_ray_unguessable", "updatedAt": 1717003000000 },
+    { "id": "u2", "username": "Pierce", "passhash": "PIERCEHASH_PLACEHOLDER", "role": "crew",
+      "avail": { "days": [false, true, true, true, true, true, true], "start": "07:30", "end": "16:30" },
+      "updatedAt": 1717003100000 },
+    { "id": "u3", "username": "Chase", "passhash": "CHASEHASH_PLACEHOLDER", "role": "crew",
+      "avail": { "days": [true, true, true, true, true, false, false], "start": "08:00", "end": "17:00" },
+      "timeoff": [ { "id": "to2", "start": "2026-06-20", "end": "2026-06-20", "note": "Doctor" } ],
+      "updatedAt": 1717003200000 },
+    { "id": "__roles__", "kind": "roles", "roles": [ { "key": "crew", "pages": ["today", "schedule", "quotes"] } ], "updatedAt": 1717003300000 }
+  ]
+}
