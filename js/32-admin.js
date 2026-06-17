@@ -13,6 +13,7 @@ const ROLES_ID = "__roles__";
 const ADMIN_PAGES = [
   { tab: "today", label: "CEO desk" }, { tab: "accounts", label: "Accounts" },
   { tab: "quotes", label: "Quotes" }, { tab: "schedule", label: "Schedule" },
+  { tab: "messages", label: "Messages" },
   { tab: "map", label: "Map" }, { tab: "sales", label: "Sales" },
   { tab: "todo", label: "To-Do" }, { tab: "plan", label: "Plan" },
   { tab: "training", label: "Train" }, { tab: "market", label: "Market" },
@@ -21,7 +22,7 @@ const ADMIN_PAGES = [
   { tab: "time", label: "Time" }, { tab: "finance", label: "Finance" }, { tab: "data", label: "Data" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
-const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "map", "sales", "todo", "inventory", "time"];
+const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "messages", "map", "sales", "todo", "inventory", "time"];
 /* owner is implicit "all access" (no pages list); admin/crew seed the editable defaults */
 const DEFAULT_ROLES = [
   { key: "owner", label: "Owner", builtin: true },
@@ -91,14 +92,17 @@ function adminMigrate() {
 /* ----- nav/render enforcement (called from render() in 03-routing) ----- */
 function applyAccess() {
   const navs = document.querySelectorAll("nav button");
-  navs.forEach(b => { b.style.display = canSee(b.dataset.tab) ? "" : "none"; });
-  if (!canSee(TAB)) {
+  // messaging rollout gate: while OFF, the Messages tab is hidden + unreachable for EVERYONE (incl. owner)
+  const msgOff = (typeof msgEnabled === "function") ? !msgEnabled() : true;
+  navs.forEach(b => { let show = canSee(b.dataset.tab); if (b.dataset.tab === "messages" && msgOff) show = false; b.style.display = show ? "" : "none"; });
+  if (!canSee(TAB) || (TAB === "messages" && msgOff)) {
     let dest = canSee("today") ? "today" : null;
     if (!dest) { const f = [...navs].find(b => b.dataset.tab !== "admin" && canSee(b.dataset.tab)); dest = f ? f.dataset.tab : "today"; }
     TAB = dest;
   }
   // never leave the user on a hidden destination (e.g. a misconfigured role with no pages)
   navs.forEach(b => { if (b.dataset.tab === TAB) b.style.display = ""; });
+  if (typeof updateMsgBadge === "function") updateMsgBadge();
 }
 window.applyAccess = applyAccess;
 
