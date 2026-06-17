@@ -203,7 +203,7 @@ function ceoBuildMessage(p, store) {
     records.push({ id: tid, kind: "thread", threadId: tid, title: String(p.title || "Strategy").slice(0, 60), type: (p.to && p.to !== "__crew__") ? "dm" : "broadcast", availAsk: !!p.availAsk, members: members, createdBy: "__ceo__", deleted: false, updatedAt: ts });
   }
   const mid = "msg_ceo_" + crypto.randomBytes(6).toString("hex");
-  records.push({ id: mid, threadId: tid, senderId: "__ceo__", senderLabel: String(p.senderLabel || "Strategy").slice(0, 80), body: String(p.body || "").slice(0, 4000), ts: ts, deleted: false, updatedAt: ts });
+  records.push({ id: mid, threadId: tid, senderId: "__ceo__", senderLabel: String(p.senderLabel || "Cap").slice(0, 80), body: String(p.body || "").slice(0, 4000), ts: ts, deleted: false, updatedAt: ts });
   return { biz: biz, records: records, threadId: tid, messageId: mid };
 }
 
