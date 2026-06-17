@@ -184,6 +184,8 @@ const store = {
   ]
 };
 ok("correct password verifies (case-insensitive username)", (t.verifyLogin(store, "ray", "hunter2") || {}).id === "u1", null);
+ok("UPPERCASE username verifies (case-insensitive)", (t.verifyLogin(store, "RAY", "hunter2") || {}).id === "u1", null);
+ok("whitespace-padded username verifies (trim, no lockout)", (t.verifyLogin(store, "  Ray  ", "hunter2") || {}).id === "u1", null);
 ok("wrong password rejected", t.verifyLogin(store, "ray", "nope") === null, null);
 ok("unknown user rejected", t.verifyLogin(store, "nobody", "x") === null, null);
 ok("soft-deleted account rejected", t.verifyLogin(store, "gone", "x") === null, null);

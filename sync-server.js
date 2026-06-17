@@ -71,9 +71,9 @@ function hashPw(pw) { return crypto.createHash("sha256").update(String(pw) + "::
 function hashPwFallback(pw) { let h = 5381; const s = String(pw) + "::jsuite"; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return "f" + h.toString(16); }
 function accountByName(store, username) {
   const us = (store && store.users) || [];
-  const lc = String(username || "").toLowerCase();
+  const lc = String(username || "").trim().toLowerCase();   // case-insensitive + whitespace-tolerant (no lockouts)
   // skip soft-deleted, deactivated (active:false), and non-account records (e.g. the roles config)
-  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.username || "").toLowerCase() === lc) || null;
+  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.username || "").trim().toLowerCase() === lc) || null;
 }
 function verifyLogin(store, username, password) {
   const u = accountByName(store, username);
