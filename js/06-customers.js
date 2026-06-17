@@ -45,7 +45,7 @@ window.openCustomer=function(id){
     propsH=`<h2 style="margin-top:14px">Properties</h2>`+(propsForCust(c.id).map(p=>`<div class="li" onclick="closeModal();openProperty('${p.id}')"><div class="grow"><div class="nm" style="font-size:15px">${esc(p.label||p.address||"Property")}</div><div class="sub">${esc(p.address||"")}</div></div></div>`).join("")||`<div class="muted">No properties yet.</div>`)
       +`<button class="btn ghost sm" style="margin-top:6px" onclick="saveCustomer('${c.id}',false);openProperty(null,'${c.id}')">+ Add property</button>`;
     const myQ=actQ().filter(q=>q.customerId===c.id);const myJ=actJ().filter(j=>j.customerId===c.id);
-    histH=`<h2 style="margin-top:16px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}${q.paid?" · paid":q.invoiced?" · invoiced":""}</div><div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
+    histH=`<h2 style="margin-top:16px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}${q.paid?" · paid":q.invoiced?" · invoiced":""}</div><div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)</div></div><button class="btn ghost sm" title="Invoice" onclick="event.stopPropagation();openInvoice('${q.id}')">🧾</button></div>`).join(""):`<div class="muted">None yet.</div>`)
       +`<h2 style="margin-top:16px">Jobs (${myJ.length})</h2>`+(myJ.length?myJ.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${fmtDate(j.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`);
   }
   modal(isNew?"New customer":"Customer",`
@@ -63,7 +63,8 @@ window.openCustomer=function(id){
     ${isNew?`<p class="muted" style="margin-top:8px">Save the customer, then reopen to add properties.</p>`:`${propsH}
       <div class="row" style="gap:8px;margin-top:12px">
        <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
-       <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button></div>
+       <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button>
+       <button class="btn ghost sm grow" onclick="openMessageComposer('${c.id}')">Message</button></div>
       <label>Add note</label><textarea id="f_note" placeholder="Call outcome, details…"></textarea>
       <button class="btn sm" style="margin-top:6px" onclick="addNote('${c.id}')">Add note</button>
       <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
