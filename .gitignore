@@ -10,6 +10,9 @@ qb-config.json
 qb-tokens.json
 .env
 
+# --- CEO read-path token (read-only sweep credential; never commit) ---
+ceo-config.json
+
 # --- Office lock & temp files ---
 ~$*
 .~lock.*#

@@ -20,9 +20,15 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 let QB = null; try { QB = require("./qb-bridge"); } catch (e) {}
+const AvailResolve = require("./availability-resolve");   // shared client/server availability logic
 
 const PORT = process.env.PORT || 4000;
 const TOKEN = process.env.TOKEN || "";
+// Read-only CEO sweep token — SEPARATE from the write TOKEN (a read key can never write), and kept
+// OUT of synced data.json. From env or a gitignored ceo-config.json ({"token":"…"}). Empty = endpoint off.
+const CEO_READ_TOKEN = process.env.CEO_READ_TOKEN || (function () {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).token || ""; } catch (e) { return ""; }
+})();
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages"];
@@ -85,6 +91,71 @@ function mergeState(stored, incoming) {
   }
   out.users = mergeColl((stored && stored.users) || [], (incoming && incoming.users) || []);
   return out;
+}
+
+/* ---------- CEO read path: a READ-ONLY, whitelisted projection of operational state ----------
+   Pure: reads the store, returns NEW objects, never mutates, never writes. The HTTP route only ever
+   calls this (after loadStore) — there is no path to saveStore. Whitelisted fields only: no
+   passhash / calToken / tokens / customer phone+email. */
+function ceoTokenOk(provided, expected) { return !!expected && provided === expected; }   // empty expected always rejects
+function ceoDateStr(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function ceoCustName(store, b, cid) {
+  if (!cid) return "";
+  const c = (((store[b] || {}).customers) || []).find(x => x && x.id === cid);
+  return c ? (c.name || c.company || "") : "";
+}
+function ceoProjection(store, opts) {
+  opts = opts || {};
+  store = store || {};
+  const bizes = (opts.biz && opts.biz !== "all" && BIZES.indexOf(opts.biz) >= 0) ? [opts.biz] : BIZES;
+  const asOf = Date.now();
+  const today = ceoDateStr(new Date(asOf));
+  const members = ((store.users) || []).filter(u => u && !u.deleted && !u.kind);
+  // open timeclock entries (clockOut null) → who is on a job right now
+  const openTC = [];
+  bizes.forEach(b => (((store[b] || {}).timeclock) || []).forEach(e => { if (e && !e.deleted && (e.clockOut == null)) openTC.push({ biz: b, userId: e.userId, jobId: e.jobId, since: e.clockIn || null }); }));
+  const jobById = {};
+  bizes.forEach(b => (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobById[b + ":" + j.id] = j; }));
+  const crew = members.map(u => {
+    const tc = openTC.find(e => e.userId === u.id);
+    const job = tc ? jobById[tc.biz + ":" + tc.jobId] : null;
+    return {
+      id: u.id, name: u.username || "", role: u.role || "crew",
+      clockedIn: !!tc,
+      onJob: tc ? { jobId: tc.jobId, title: job ? (job.title || "") : "", biz: tc.biz, since: tc.since } : null,
+      todayStatus: AvailResolve.status(u, today)
+    };
+  });
+  // next 7 days availability glance
+  const availabilityWeek = [];
+  for (let i = 0; i < 7; i++) {
+    const ds = ceoDateStr(new Date(asOf + i * 86400000));
+    const bucket = { date: ds, available: [], partial: [], off: [], timeoff: [] };
+    members.forEach(u => {
+      const s = AvailResolve.status(u, ds);
+      if (s === "timeoff") bucket.timeoff.push(u.id);
+      else if (s === "off") bucket.off.push(u.id);
+      else if (s === "partial") bucket.partial.push(u.id);
+      else bucket.available.push(u.id);   // "on" + "unset" => available
+    });
+    availabilityWeek.push(bucket);
+  }
+  const openJobs = [], openQuotes = [];
+  bizes.forEach(b => {
+    (((store[b] || {}).jobs) || []).forEach(j => {
+      if (j && !j.deleted && !j.done) openJobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", customer: ceoCustName(store, b, j.customerId), address: j.address || "", crew: j.crew || [], done: false });
+    });
+    (((store[b] || {}).quotes) || []).forEach(q => {
+      if (q && !q.deleted && !q.accepted) openQuotes.push({ id: q.id, biz: b, customer: q.cust || ceoCustName(store, b, q.customerId), total: q.total || 0, date: q.date || "", accepted: false, invoiced: !!q.invoiced, paid: !!q.paid });
+    });
+  });
+  const counts = { crewOnJob: crew.filter(c => c.onJob).length, crewIdle: crew.filter(c => !c.onJob).length, openJobs: openJobs.length, openQuotes: openQuotes.length };
+  const view = opts.view || "all";
+  const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
+  if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };
+  if (view === "jobs") return { ok: true, asOf, biz: full.biz, openJobs, counts };
+  if (view === "quotes") return { ok: true, asOf, biz: full.biz, openQuotes, counts };
+  return full;
 }
 
 /* ----- per-user iCalendar (.ics) subscription feed -----------------------------------------------
@@ -197,6 +268,19 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ok: true, store: FILE }));
   }
 
+  // CEO read path — GET /api/ceo (read-only sweep, token-gated). Reached via the on-host bridge
+  // (Mechanism A) or any tailnet node. Only ever loadStore()s + projects whitelisted fields; it has
+  // no write path. Auth = the read-only CEO_READ_TOKEN (Bearer header or ?token=), separate from the
+  // write TOKEN. Tailnet-private transport is the first layer; the token is the second.
+  if (req.method === "GET" && (req.url.split("?")[0] === "/api/ceo")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_READ_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const proj = ceoProjection(loadStore(), { biz: q.searchParams.get("biz") || "all", view: q.searchParams.get("view") || "all" });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(proj));
+  }
+
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
   if (req.method === "GET" && req.url.indexOf("/calendar/") === 0) {
     const tok = decodeURIComponent((req.url.split("?")[0] || "").slice("/calendar/".length)).replace(/\.ics$/i, "");
@@ -286,4 +370,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk };

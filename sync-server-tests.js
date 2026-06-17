@@ -336,5 +336,48 @@ const mergedMsg = t.mergeState(pulled, msgPush);
 const expectMsg = census(pulled); expectMsg["obx.messages"] = ["msg_a", "thr_crew"].sort();
 ok("adding messages to a pre-messages store keeps every prior customer/quote/job/account (zero loss)", sameIds(expectMsg, census(mergedMsg)), { expected: expectMsg, got: census(mergedMsg) });
 
+console.log("— CEO read path: read-only, whitelisted projection (no mutation, no secrets/PII) —");
+const ceoStore = {
+  obx: {
+    customers: [{ id: "c1", name: "Seaside Mgmt", phone: "252-555-0101", email: "sea@x.com" }],
+    jobs: [
+      { id: "j1", title: "Soft wash", customerId: "c1", address: "100 Ocean Blvd", date: "2026-06-18", crew: ["u1"], done: false, updatedAt: 5 },
+      { id: "j2", title: "Done job", customerId: "c1", date: "2026-06-10", done: true, updatedAt: 5 }
+    ],
+    quotes: [
+      { id: "q1", cust: "Seaside Mgmt", total: 480, accepted: true, updatedAt: 5 },
+      { id: "q2", cust: "Duck Realty", total: 1250, accepted: false, updatedAt: 5 }
+    ],
+    timeclock: [{ id: "tc1", jobId: "j1", userId: "u1", clockIn: 1000, clockOut: null, updatedAt: 5 }]   // u1 on a job right now
+  },
+  jam: { jobs: [], quotes: [], timeclock: [] },
+  users: [
+    { id: "u1", username: "Ray", passhash: "SECRET_HASH", role: "owner", calToken: "tok_secret", avail: { days: [false, true, true, true, true, true, false], start: "08:00", end: "17:00" }, updatedAt: 5 },
+    { id: "u2", username: "Pierce", passhash: "SECRET2", role: "crew", avail: { days: [true, true, true, true, true, true, true] }, updatedAt: 5 },
+    { id: "__roles__", kind: "roles", roles: [], updatedAt: 5 }
+  ]
+};
+const ceoSnap = JSON.stringify(ceoStore);
+const proj = t.ceoProjection(ceoStore, { biz: "all", view: "all" });
+ok("projection does NOT mutate the store (read-only by construction)", JSON.stringify(ceoStore) === ceoSnap, null);
+const pjs = JSON.stringify(proj);
+ok("projection leaks no secrets/PII (no passhash/calToken/phone/email)", !/passhash|calToken|SECRET_HASH|tok_secret|252-555-0101|sea@x\.com/.test(pjs), pjs.slice(0, 160));
+ok("crew on an open job shows onJob + title", (() => { const c = proj.crew.find(x => x.id === "u1") || {}; return c.clockedIn === true && c.onJob && c.onJob.jobId === "j1" && c.onJob.title === "Soft wash"; })(), proj.crew.find(x => x.id === "u1"));
+ok("idle crew shows onJob null", (() => { const c = proj.crew.find(x => x.id === "u2") || {}; return c.clockedIn === false && c.onJob === null; })(), proj.crew.find(x => x.id === "u2"));
+ok("roles config record is not surfaced as crew", !proj.crew.find(x => x.id === "__roles__"), proj.crew.map(c => c.id));
+ok("open jobs exclude done jobs", proj.openJobs.length === 1 && proj.openJobs[0].id === "j1", proj.openJobs.map(j => j.id));
+ok("open quotes exclude accepted quotes", proj.openQuotes.length === 1 && proj.openQuotes[0].id === "q2", proj.openQuotes.map(q => q.id));
+ok("counts reflect on-job / idle / open", proj.counts.crewOnJob === 1 && proj.counts.crewIdle === 1 && proj.counts.openJobs === 1 && proj.counts.openQuotes === 1, proj.counts);
+ok("availabilityWeek = 7 days with buckets", proj.availabilityWeek.length === 7 && Array.isArray(proj.availabilityWeek[0].available), proj.availabilityWeek[0]);
+ok("view=jobs returns only openJobs (+counts), not crew/quotes", (() => { const p = t.ceoProjection(ceoStore, { view: "jobs" }); return !!p.openJobs && !p.crew && !p.openQuotes; })(), null);
+ok("CEO token: correct accepted", t.ceoTokenOk("abc", "abc") === true, null);
+ok("CEO token: wrong rejected", t.ceoTokenOk("abc", "xyz") === false, null);
+ok("CEO token: empty configured token always rejects (endpoint off)", t.ceoTokenOk("", "") === false && t.ceoTokenOk("x", "") === false, null);
+const AR = require("./availability-resolve");
+ok("shared resolver: timeoff wins", AR.status({ timeoff: [{ start: "2026-06-20", end: "2026-06-20" }], avail: { days: [true, true, true, true, true, true, true] } }, "2026-06-20") === "timeoff", null);
+ok("shared resolver: per-day override wins over baseline", AR.status({ avail: { days: [false, false, false, false, false, false, false], overrides: { "2026-06-20": "full" } } }, "2026-06-20") === "on", null);
+ok("shared resolver: partial override", AR.status({ avail: { overrides: { "2026-06-20": "partial" } } }, "2026-06-20") === "partial", null);
+ok("shared resolver: no avail set => unset", AR.status({}, "2026-06-20") === "unset", null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

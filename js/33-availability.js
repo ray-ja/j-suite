@@ -15,24 +15,13 @@ function schedMembers() {
 function dowOf(ds) { return new Date(ds + "T00:00:00").getDay(); }
 function addDays(ds, n) { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
 
-/* availability status of a member on a given YYYY-MM-DD */
+/* availability status of a member on a given YYYY-MM-DD.
+   Delegates to the shared resolver (availability-resolve.js, loaded before this file) so the client
+   and the server CEO read path use identical logic — single source, no drift. */
 function availOn(u, ds) {
-  const to = (u.timeoff || []).find(b => b && !b.deleted && ds >= b.start && ds <= (b.end || b.start));
-  if (to) return { status: "timeoff", label: "Time off" + (to.note ? " · " + to.note : ""), cls: "off" };
-  const av = u.avail;
-  // per-day override (scheduler calendar edit): wins over the weekday baseline for that date.
-  // value is "full" | "partial" | "off" (v1) or {s, start, end} (v2-safe, carries hours).
-  const ov = av && av.overrides && av.overrides[ds];
-  if (ov) {
-    const s = (typeof ov === "string") ? ov : ov.s;
-    const hrs = (ov && typeof ov === "object" && ov.start && ov.end) ? " " + ov.start + "–" + ov.end : "";
-    if (s === "off") return { status: "off", label: "Off (set for this day)", cls: "off" };
-    if (s === "partial") return { status: "partial", label: "Part of day" + hrs, cls: "partial" };
-    if (s === "full") return { status: "on", label: "Available all day" + hrs, cls: "on" };
-  }
-  if (!av || !av.days) return { status: "unset", label: "Available · not set", cls: "unset" };
-  if (av.days[dowOf(ds)]) return { status: "on", label: "Available" + (av.start && av.end ? " " + av.start + "–" + av.end : ""), cls: "on" };
-  return { status: "off", label: "Off (" + DOW[dowOf(ds)] + ")", cls: "off" };
+  return (typeof AvailResolve !== "undefined")
+    ? AvailResolve.resolve(u, ds)
+    : { status: "unset", label: "Available · not set", cls: "unset" };
 }
 function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unset" || s === "partial"; }
 /* one-line summary of a member's weekly availability + upcoming time-off, for the schedule header */
