@@ -9,8 +9,9 @@
    ROLLOUT GATE: OFF by default (production). While off the nav tab is hidden + unreachable and
    nothing sends. DEV wire-test enables it via the dev-only shell flag window.DEV_MESSAGING (set in
    the `dev` branch shell, like window.DEV_NO_LOGIN) — production never sets it, so prod stays OFF.
-   Production rollout = a deliberate change here (default true) on Strategy's go — NOT at deploy. */
-let MSG_ENABLED = (typeof window !== "undefined" && window.DEV_MESSAGING === true);
+   Production activation (no redeploy): set MESSAGING_ON=1 (env) / ceo-config.json {messagingOn:true}
+   + restart — the server injects window.JSUITE_MESSAGING=true into the shell. DEV uses window.DEV_MESSAGING. */
+let MSG_ENABLED = (typeof window !== "undefined" && (window.JSUITE_MESSAGING === true || window.DEV_MESSAGING === true));
 function msgEnabled() { return MSG_ENABLED === true; }
 
 /* ----- accessors ----- */

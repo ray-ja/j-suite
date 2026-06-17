@@ -36,6 +36,12 @@ const CEO_WRITE_TOKEN = process.env.CEO_WRITE_TOKEN || (function () {
 })();
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
+// Messaging rollout flag — OFF by default. Activate in prod WITHOUT a code change/redeploy:
+// set env MESSAGING_ON=1 (or ceo-config.json {"messagingOn":true}) and restart. The shell route
+// then injects window.JSUITE_MESSAGING=true so the client's gate (js/47) turns the feature on.
+const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
+})();
 const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages"];
 const BIZES = ["obx", "jam"];
 
@@ -302,6 +308,7 @@ const server = http.createServer((req, res) => {
     return fs.readFile(APP_FILE, (err, buf) => {
       if (err) { res.writeHead(404); return res.end("app file not found next to sync-server.js"); }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      if (MESSAGING_ON) { return res.end(buf.toString("utf8").replace("</head>", '<script>window.JSUITE_MESSAGING=true;</script></head>')); }
       res.end(buf);
     });
   }
