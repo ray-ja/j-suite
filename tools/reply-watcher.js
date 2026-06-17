@@ -22,14 +22,15 @@ const ROOT = path.join(__dirname, "..");
 const CFG_PATH = path.join(ROOT, "watcher-config.json");
 const CURSOR_PATH = path.join(__dirname, ".reply-watcher-cursor.json");
 
+function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8").replace(/^﻿/, "")); }   // tolerate a UTF-8 BOM (hand-created files)
 function loadCfg() {
-  let c; try { c = JSON.parse(fs.readFileSync(CFG_PATH, "utf8")); } catch (e) { die("No watcher-config.json at " + CFG_PATH + " — drop { prodUrl, readToken, writeToken } there (gitignored)."); }
+  let c; try { c = readJson(CFG_PATH); } catch (e) { die("watcher-config.json at " + CFG_PATH + " missing or invalid (" + e.message + ") — needs { prodUrl, readToken, writeToken }."); }
   if (!c.prodUrl || !c.readToken) die("watcher-config.json needs prodUrl + readToken.");
   c.pollMs = c.pollMs || 90000;
   return c;
 }
 function die(m) { console.error("reply-watcher: " + m); process.exit(1); }
-function loadCursor() { try { return JSON.parse(fs.readFileSync(CURSOR_PATH, "utf8")); } catch (e) { return null; } }
+function loadCursor() { try { return readJson(CURSOR_PATH); } catch (e) { return null; } }
 function saveCursor(c) { try { fs.writeFileSync(CURSOR_PATH, JSON.stringify(c)); } catch (e) {} }
 
 function req(method, url, headers, body) {
