@@ -60,7 +60,9 @@ function rMessages() {
     const la = threadMsgs(a.threadId).slice(-1)[0], lb = threadMsgs(b.threadId).slice(-1)[0];
     return ((lb ? lb.ts : b.updatedAt || 0) - (la ? la.ts : a.updatedAt || 0));
   });
-  let h = `<div class="secthd"><h2>Messages</h2>${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div>`;
+  let h = `<div class="secthd"><h2>Messages</h2><div style="display:flex;gap:6px">
+    <button class="btn acc sm" onclick="msgToStrategy()">✉️ Strategy</button>
+    ${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div></div>`;
   if (!mine.length) h += `<div class="empty"><div class="big">💬</div>No messages yet.</div>`;
   else h += mine.map(t => {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
@@ -121,6 +123,24 @@ window.availQuickSet = function (tid, ds, v) {
   const when = ds === today() ? "today" : (DOW[dowOf(ds)] + " " + fmtDate(ds));
   msgPost(tid, "✅ I'm " + word + " " + when + ".");   // structured confirmation back into the thread
   render();
+};
+
+/* ----- user-initiated: anyone (crew + owner) starts/opens their thread TO Strategy -----
+   The missing half of two-way: crew can reach Strategy unprompted. The thread is availAsk so the
+   structured availability quick-replies appear too — crew can send availability without being asked.
+   Strategy reads it via GET /api/ceo?view=messages and replies via the scoped write path. */
+window.msgToStrategy = function () {
+  if (!msgEnabled()) return;
+  const u = (typeof curUser === "function") ? curUser() : null;
+  if (!u) { alert("Sign in first."); return; }
+  let t = msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
+  if (!t) {
+    const tid = "thr_" + uid();
+    msgColl().push({ id: tid, kind: "thread", threadId: tid, title: "Strategy", type: "dm", toStrategy: true, availAsk: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
+    save();
+    t = { threadId: tid };
+  }
+  msgOpen(t.threadId);
 };
 
 /* ----- compose (broadcaster only) ----- */
