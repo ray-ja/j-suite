@@ -66,7 +66,7 @@ function rMessages() {
     return ((lb ? lb.ts : b.updatedAt || 0) - (la ? la.ts : a.updatedAt || 0));
   });
   let h = `<div class="secthd"><h2>Messages</h2><div style="display:flex;gap:6px">
-    <button class="btn acc sm" onclick="msgToStrategy()">✉️ Strategy</button>
+    <button class="btn acc sm" onclick="msgToStrategy()">✉️ Message Cap</button>
     ${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div></div>`;
   if (!mine.length) h += `<div class="empty"><div class="big">💬</div>No messages yet.</div>`;
   else h += mine.map(t => {
@@ -134,18 +134,20 @@ window.availQuickSet = function (tid, ds, v) {
    The missing half of two-way: crew can reach Strategy unprompted. The thread is availAsk so the
    structured availability quick-replies appear too — crew can send availability without being asked.
    Strategy reads it via GET /api/ceo?view=messages and replies via the scoped write path. */
+/* the (existing or new) private DM thread between this user and Cap (participant-scoped: [user]; Cap reads via the read path) */
+function ensureCapThread(u) {
+  const t = msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
+  if (t) return t.threadId;
+  const tid = "thr_" + uid();
+  msgColl().push({ id: tid, kind: "thread", threadId: tid, title: "Cap", type: "dm", toStrategy: true, availAsk: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
+  save();
+  return tid;
+}
 window.msgToStrategy = function () {
   if (!msgEnabled()) return;
   const u = (typeof curUser === "function") ? curUser() : null;
   if (!u) { alert("Sign in first."); return; }
-  let t = msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
-  if (!t) {
-    const tid = "thr_" + uid();
-    msgColl().push({ id: tid, kind: "thread", threadId: tid, title: "Strategy", type: "dm", toStrategy: true, availAsk: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
-    save();
-    t = { threadId: tid };
-  }
-  msgOpen(t.threadId);
+  msgOpen(ensureCapThread(u));
 };
 
 /* ----- compose (broadcaster only) ----- */
@@ -156,7 +158,7 @@ window.msgNew = function () {
   const dmOpts = crew.filter(x => !u || x.id !== u.id).map(x => `<option value="${x.id}">${esc(x.username)}</option>`).join("");
   modal("New message", `
     <label>Send to</label>
-    <select id="mn_to"><option value="__crew__">📣 All crew (broadcast)</option>${dmOpts}</select>
+    <select id="mn_to"><option value="__cap__">💬 Cap (private)</option><option value="__crew__">📣 All crew (broadcast)</option>${dmOpts}</select>
     <label style="margin-top:8px"><input type="checkbox" id="mn_avail"> Availability check (adds tap-to-update chips for the crew)</label>
     <label style="margin-top:8px">As</label>
     <select id="mn_as"><option value="me">${esc((u && u.username) || "Me")}</option><option value="biz">${esc(BIZ[S.biz] ? BIZ[S.biz].name : "The business")}</option></select>
@@ -170,6 +172,12 @@ window.msgCreate = function () {
   const u = (typeof curUser === "function") ? curUser() : null;
   const asBiz = val("mn_as") === "biz";
   if (!body && !availAsk) { alert("Write a message."); return; }
+  if (to === "__cap__") {   // private DM to Cap — reuse the user's existing Cap thread (no duplicates)
+    if (!u) { alert("Sign in first."); return; }
+    const tid = ensureCapThread(u);
+    if (body) msgPost(tid, body);
+    closeModal(); msgOpen(tid); return;
+  }
   const crew = (typeof realAccounts === "function" ? realAccounts() : (S.users || []).filter(x => x && !x.kind && !x.deleted)).filter(x => x.active !== false);
   let members, title;
   if (to === "__crew__") { members = crew.map(x => x.id); title = "Crew" + (availAsk ? " — availability" : ""); }
