@@ -22,6 +22,12 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 - **Search on more lists** — only Customers + Inventory have a search box; Jobs/Schedule + Quotes don't. `(Dev-noticed)` `⏳` `S`.
 - **"On my way" one-tap from a job** — Message Templates has the copy, but it lives in the customer modal; a one-tap from the job itself would be slicker for the crew. `(Dev-noticed)` `⏳` `S`.
 
+## 🎯 CAP'S RANKED LIST (revenue leads polish — work top-down, ergonomics are fill-ins between)
+1. **"Who owes me money" — overdue/unbilled view** `[Cap #1]` `✅ shipped to dev` `S` — Finance › 💸 Owed. *Mike Green & Michelle were unbilled; this surfaces them so Ray sends + collects.*
+2. **Review-on-completion prompt** `[Cap #2]` `⏳` — prompt for a Google review when a job is marked done.
+3. **Per-job P&L + expense logging** `[Cap #3]` `⏳` — log job expenses; show Cost/Price/Profit/Margin per job.
+4. **Phase C wiring** `[Cap #4]` `🔨` — ops-brain wake→relay + 07/12/17 scheduling (in NOW).
+
 ## 🔨 NOW (in flight, on `dev`)
 - **Ops-scanning brain Phase A** — `last-active` + `job.completedAt/By` capture. `[Cap]` `✅` on **main** `1556efa` (deployed to prod).
 - **Ops-brain Phase B** — `view=ops` + `ops-sweep.js` gap-rule scanner (overdue/at-risk job, coverage gap, overdue/stale task, forgot-to-clock-out, unscheduled accepted quote, equipment double-book, crew-quiet), cursor-deduped, severity-ranked. `[Cap]` `🔨` on **dev** `e82d948` (live after Ray deploys; fixture-tested 136/0).

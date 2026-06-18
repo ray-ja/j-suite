@@ -33,7 +33,9 @@ function rFinance() {
   const sub = `<div class="subnav">
     <button class="subbtn ${FINSUB === "payouts" ? "on" : ""}" onclick="finSub('payouts')">💵 Payouts</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
-    <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button></div>`;
+    <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
+    <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 Owed</button></div>`;
+  if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }
   if (FINSUB === "expenses") { view.innerHTML = sub + rFinExpenses(); return; }
   view.innerHTML = sub + rFinPayouts();
