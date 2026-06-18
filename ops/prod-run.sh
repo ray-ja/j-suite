@@ -9,10 +9,9 @@ set -uo pipefail
 REPO_DIR="$HOME/j-suite"
 DEPLOY="$HOME/deploy.sh"
 LOG="$HOME/j-suite-ops.log"
-# RESTART_CMD: privileged restart for the standalone `restart` op. CONFIRM with Ray; must match the
-# NOPASSWD sudoers rule. (deploy.sh does its OWN restart, so `deploy` doesn't use this.)
-RESTART_CMD="sudo systemctl restart jsuite"
-SERVER_LOG="$HOME/j-suite-server.log"
+# Privileged restart for the standalone `restart` op — matches deploy.sh + the NOPASSWD sudoers rule.
+# (deploy.sh does its OWN restart, so `deploy` doesn't use this.)
+RESTART_CMD="sudo systemctl restart j-suite-sync"
 
 req="${SSH_ORIGINAL_COMMAND:-$*}"
 # shellcheck disable=SC2086
@@ -37,16 +36,17 @@ case "$cmd" in
     ;;
   read_log)
     case "$arg" in
-      ops) f="$LOG" ;;
-      server) f="$SERVER_LOG" ;;
+      ops) [ -f "$LOG" ] && tail -n 120 "$LOG" || echo "(no ops log yet)" ;;
+      server) journalctl -u j-suite-sync -n 200 --no-pager 2>&1 || echo "(journalctl unavailable for this user)" ;;
       *) echo "REFUSE: unknown log '$arg' (allowed: ops | server)"; exit 1 ;;
     esac
-    if [ -f "$f" ]; then tail -n 120 "$f"; else echo "(no log at $f)"; fi; exit 0
+    exit 0
     ;;
   snapshot_data)
-    src="$REPO_DIR/data.json"; dst="$REPO_DIR/business-app-backup-$(date +%Y%m%d-%H%M%S).json"
+    src="$REPO_DIR/data.json"; mkdir -p "$HOME/data-backups"
+    dst="$HOME/data-backups/data-$(date +%F-%H%M%S).json"   # same convention as deploy.sh
     [ -f "$src" ] || { echo "ERROR: no $src"; exit 1; }
-    cp "$src" "$dst"; echo "snapshot: $dst"; log "snapshot $dst"; exit 0
+    cp -a "$src" "$dst"; echo "snapshot: $dst"; log "snapshot $dst"; exit 0
     ;;
   *)
     echo "REFUSE: '$cmd' not allowed. Allowed: deploy <commit> | restart | read_log <ops|server> | snapshot_data"
