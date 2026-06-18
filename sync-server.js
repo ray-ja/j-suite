@@ -195,6 +195,18 @@ function ceoProjection(store, opts) {
     });
     return { ok: true, asOf, biz: opts.biz || "all", threads };
   }
+  if (view === "ops") {
+    // consolidated operational snapshot for the ops-sweep (read-only). Reuses crew (with lastActive)
+    // + availabilityWeek; adds jobs (with done/completedAt), todos, open shifts, accepted-unscheduled quotes.
+    const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [];
+    bizes.forEach(b => {
+      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", crew: j.crew || [], done: !!j.done, completedAt: j.completedAt || 0, completedBy: j.completedBy || "", customer: ceoCustName(store, b, j.customerId), equipment: (j.equipment || []).map(e => e && e.itemId).filter(Boolean) }); });
+      (((store[b] || {}).todos) || []).forEach(td => { if (td && !td.deleted) todos.push({ id: td.id, biz: b, title: td.title || "", due: td.due || "", done: !!td.done, priority: td.priority || "", assignee: td.assignee || "", updatedAt: td.updatedAt || 0 }); });
+      (((store[b] || {}).timeclock) || []).forEach(e => { if (e && !e.deleted && e.clockOut == null) openShifts.push({ id: e.id, biz: b, userId: e.userId, jobId: e.jobId, clockIn: e.clockIn || 0 }); });
+      (((store[b] || {}).quotes) || []).forEach(q => { if (q && !q.deleted && q.accepted && !q.jobId) unscheduledQuotes.push({ id: q.id, biz: b, customer: q.cust || ceoCustName(store, b, q.customerId), total: q.total || 0, acceptedDate: q.acceptedDate || q.date || "" }); });
+    });
+    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes };
+  }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };
   if (view === "jobs") return { ok: true, asOf, biz: full.biz, openJobs, counts };

@@ -447,5 +447,31 @@ const cj = t.mergeState(
 ok("completed job keeps completedAt/completedBy via job LWW (newer wins, other fields intact)", (() => { const j = cj.obx.jobs.find(x => x.id === "j1") || {}; return j.done === true && j.completedAt === 1718600000000 && j.completedBy === "u1" && j.title === "Wash" && (j.crew || []).length === 1; })(), cj.obx.jobs.find(x => x.id === "j1"));
 ok("pre-capture job (no completedAt) round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j2", title: "Old", done: false, updatedAt: 5 }] } }, {}); const j = m.obx.jobs.find(x => x.id === "j2") || {}; return j.title === "Old" && !("completedAt" in j); })(), null);
 
+console.log("— ops-brain Phase B: view=ops projection + opsFindings gap rules —");
+const opsmod = require("./tools/ops-sweep");
+const opsView = t.ceoProjection({
+  obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], done: false, updatedAt: 5 }], todos: [{ id: "t1", title: "Bags", due: "2026-06-10", done: false, priority: "High", updatedAt: 5 }], quotes: [{ id: "q1", cust: "Acme", total: 400, accepted: true, updatedAt: 5 }], timeclock: [] },
+  jam: {}, users: [{ id: "u1", username: "Ray", role: "owner", updatedAt: 5 }]
+}, { view: "ops" });
+ok("view=ops returns jobs/todos/openShifts/unscheduledQuotes/crew arrays", ["jobs", "todos", "openShifts", "unscheduledQuotes", "crew"].every(k => Array.isArray(opsView[k])), Object.keys(opsView));
+ok("view=ops jobs carry done + completedAt (Phase A capture surfaced)", (() => { const j = opsView.jobs.find(x => x.id === "j1") || {}; return "done" in j && "completedAt" in j; })(), opsView.jobs[0]);
+ok("view=ops surfaces accepted-but-unscheduled quote", opsView.unscheduledQuotes.some(q => q.id === "q1"), opsView.unscheduledQuotes);
+const synthOps = {
+  today: "2026-06-15", asOf: Date.parse("2026-06-15T12:00:00Z"),
+  jobs: [{ id: "j1", title: "Overdue wash", date: "2026-06-10", crew: ["u1"], done: false }, { id: "j2", title: "Done", date: "2026-06-10", done: true }, { id: "j3", title: "Cover", date: "2026-06-15", crew: ["u2"], done: false }],
+  todos: [{ id: "t1", title: "Bags", due: "2026-06-10", done: false, priority: "High" }],
+  openShifts: [{ id: "s1", userId: "u1", jobId: "jX", clockIn: Date.parse("2026-06-15T00:00:00Z") }],
+  unscheduledQuotes: [{ id: "q1", customer: "Acme", total: 400, acceptedDate: "2026-06-09" }],
+  crew: [{ id: "u1", name: "Ray", today: "on", lastActive: 0 }, { id: "u2", name: "Chase", today: "off" }]
+};
+const F = opsmod.opsFindings(synthOps), keys = F.map(f => f.key);
+ok("opsFindings: overdue job flagged high", keys.indexOf("missedjob:j1") >= 0 && (F.find(f => f.key === "missedjob:j1") || {}).sev === "high", keys);
+ok("opsFindings: done job NOT flagged", keys.indexOf("missedjob:j2") < 0, keys);
+ok("opsFindings: coverage gap (all crew off) flagged", keys.indexOf("coverage:j3") >= 0, keys);
+ok("opsFindings: overdue task flagged", keys.indexOf("overduetask:t1") >= 0, keys);
+ok("opsFindings: forgot-to-clock-out flagged", keys.indexOf("openshift:s1") >= 0, keys);
+ok("opsFindings: accepted-unscheduled quote flagged", keys.indexOf("unschedquote:q1") >= 0, keys);
+ok("opsFindings: high severity sorts first", F.length > 0 && F[0].sev === "high", F[0]);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);
