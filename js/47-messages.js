@@ -24,7 +24,10 @@ function msgCanBroadcast() { const k = (typeof curRoleKey === "function") ? curR
 function threadVisible(t, uid) {
   if (!uid) return false;
   if (t.type === "broadcast") return true;   // a broadcast is for EVERYONE signed in (crew included) — not just the post-time member snapshot (a crew member who joins/logs-in later must still see it)
-  return msgCanBroadcast() || ((t.members || []).indexOf(uid) >= 0);   // DM / to-Strategy: participants (or a broadcaster) only
+  // EVERYTHING else (DM / availability / ops) is PARTICIPANT-STRICT: only members can see it.
+  // Owner/admin do NOT pierce a private DM — role grants the ability to BROADCAST (msgCanBroadcast,
+  // used for composing), never the ability to READ someone's private thread. (Cap privacy fix.)
+  return (t.members || []).indexOf(uid) >= 0;
 }
 function readMarker(tid, uid) { return msgColl().find(m => m && m.kind === "read" && m.threadId === tid && m.userId === uid); }
 function unreadCount(tid, uid) { const rm = readMarker(tid, uid), last = rm ? (rm.lastReadTs || 0) : 0; return threadMsgs(tid).filter(m => (m.ts || 0) > last && m.senderId !== uid).length; }
