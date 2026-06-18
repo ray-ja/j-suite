@@ -14,6 +14,8 @@ The watcher is a 90s poller that just *wakes* a human lane — laggy, and it sil
 - **Listener:** the agent subscribes to new messages (tails the store via the read path / a local hook on the sync-server's message-append), so there is **no separate polling loop — the agent IS the listener.** The reply-watcher + daemon are retired once this is live and proven.
 
 ## Bounded scope (the core safety surface)
+**PRIME DIRECTIVE (the single rule that covers most edge cases): on ANY uncertainty, Haiku acks + escalates — it never improvises.** Every other bound below is a refinement of this. If Haiku is not near-certain a message is a pure allowlisted intent, it does not answer — it sends a warm holding ack and hands to Cap-Opus.
+
 Haiku may ONLY act inside an allowlist; everything else escalates. Two-gate decision per inbound message: (1) a **classifier** labels intent; (2) an **allowlist** maps safe intents to safe actions.
 
 **Haiku CAN (handle directly):**
@@ -53,8 +55,11 @@ Haiku is under the **same gate as Cap**: **no accountability, no management, no 
 - **Allowlist enforcement in code, not prompt:** the SDK tool layer exposes ONLY: `read_ops` (read-only projection), `log_availability` (writes an availability override, the single mutation it's allowed), `post_ack` (post a bounded ack as Cap), `escalate` (hand to Opus). No general "post arbitrary message" tool — Haiku literally cannot send a substantive message; only `post_ack` (short, templated/bounded) and `escalate` exist. This makes oversharing structurally hard, not just prompt-discouraged.
 - **Ack templates:** a small set of approved ack phrasings; Haiku selects, lightly fills, never free-forms a substantive claim.
 
+## Audit trail (Cap-Opus oversight — mandatory)
+**Cap-Opus keeps a full audit trail of every message Haiku posts.** Each Haiku action is logged with: the inbound message, the classifier's label + confidence, the action taken (`post_ack` text / `log_availability` write / `escalate`), and a timestamp. Cap-Opus reviews this stream to catch **identity drift** (Haiku sounding off-voice) and **gate leaks** (Haiku acting outside bounds or pre-meeting). The audit is the safety backstop behind the structural tool-layer bounds — if anything slips through the allowlist, the trail surfaces it for correction (tighten the classifier / templates / allowlist). Retain the log; surface anomalies to Ray via the existing alert path.
+
 ## Failure modes + mitigations
-- **Misclassify → overshares / answers something with stakes.** Mitigation: structural — no arbitrary-post tool; `post_ack` is bounded; substantive replies physically require `escalate`→Opus. Plus confidence-floor → ESCALATE on doubt. Plus a post-hoc audit: log every Haiku action; Cap reviews.
+- **Misclassify → overshares / answers something with stakes.** Mitigation: the PRIME DIRECTIVE (uncertainty → ack + escalate, never improvise) + structural bounds — no arbitrary-post tool; `post_ack` is bounded; substantive replies physically require `escalate`→Opus. Plus confidence-floor → ESCALATE on doubt. Plus the full audit trail (above): Cap-Opus reviews every post.
 - **Escalation lag (Opus slow / pod asleep).** Mitigation: Haiku's holding ack sets expectation; a watchdog re-pings if Opus hasn't answered in N minutes; the watcher-monitor alert path reused to flag a stuck escalation to Ray.
 - **Identity drift (Haiku "sounds different" than Cap / breaks the single-voice).** Mitigation: shared voice spec in both layers' prompts; bounded ack templates; periodic transcript review; the deep layer always owns substance so tone-on-substance is always Opus.
 - **Agent down (service crash).** Mitigation: `Restart=always`; **keep the reply-watcher + daemon as the fallback listener until the agent is proven**, then retire.
