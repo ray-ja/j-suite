@@ -58,8 +58,10 @@ function hasAnyAccount() { return realAccounts().length > 0; }
 const NO_SESSION_ROLE = "__nosession__";
 function curRoleKey() {
   const u = (typeof curUser === "function") ? curUser() : null;
-  if (u && u.role) return u.role;
-  return hasAnyAccount() ? NO_SESSION_ROLE : "owner";
+  const real = (u && u.role) ? u.role : (hasAnyAccount() ? NO_SESSION_ROLE : "owner");
+  // Owner "view-as" preview (js/48): downgrade only, and only for a real owner — never escalates.
+  if (window.VIEW_AS && real === "owner" && window.VIEW_AS !== "owner") return window.VIEW_AS;
+  return real;
 }
 function isOwner() { return curRoleKey() === "owner"; }
 function roleAllows(key, tab) {
