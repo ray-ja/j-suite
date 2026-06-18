@@ -472,6 +472,8 @@ ok("opsFindings: overdue task flagged", keys.indexOf("overduetask:t1") >= 0, key
 ok("opsFindings: forgot-to-clock-out flagged", keys.indexOf("openshift:s1") >= 0, keys);
 ok("opsFindings: accepted-unscheduled quote flagged", keys.indexOf("unschedquote:q1") >= 0, keys);
 ok("opsFindings: high severity sorts first", F.length > 0 && F[0].sev === "high", F[0]);
+ok("formatBrief renders a prioritized digest (counts + icons)", (() => { const b = opsmod.formatBrief(F, "Sweep"); return /high/.test(b) && b.indexOf("🔴") >= 0 && b.split("\n").length > 1; })(), null);
+ok("formatBrief on no findings = all clear", /all clear/.test(opsmod.formatBrief([])), null);
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

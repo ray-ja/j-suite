@@ -51,6 +51,17 @@ function opsFindings(ops) {
   return out;
 }
 
+/* PURE: findings → human-readable prioritized brief (Phase C: what wakes Cap, relays to Ray pre-meeting) */
+function formatBrief(findings, label) {
+  findings = findings || [];
+  if (!findings.length) return (label ? label + " — " : "") + "all clear, no ops gaps.";
+  const ICON = { high: "🔴", med: "🟡", low: "⚪" };
+  const lines = findings.map(f => (ICON[f.sev] || "•") + " " + f.summary);
+  const n = { high: 0, med: 0, low: 0 }; findings.forEach(f => { n[f.sev] = (n[f.sev] || 0) + 1; });
+  const head = (label ? label + " — " : "") + findings.length + " item(s): " + n.high + " high · " + n.med + " med · " + n.low + " low";
+  return head + "\n" + lines.join("\n");
+}
+
 async function main() {
   const cfg = loadCfg();
   let ops; try { ops = await fetchOps(cfg); } catch (e) { die("read view=ops failed: " + e.message); }
@@ -58,7 +69,8 @@ async function main() {
   const cursor = loadCursor();
   const fresh = findings.filter(f => !cursor.seen[f.key]);
   saveCursor({ seen: findings.reduce((m, f) => { m[f.key] = 1; return m; }, {}) });   // only NEW fire next time; resolved ones drop
+  if (process.argv.indexOf("--brief") >= 0) { console.log(formatBrief(findings, "Ops sweep " + ops.today)); return; }
   console.log(JSON.stringify({ event: fresh.length > 0, at: Date.now(), sweep: ops.today, openFindings: findings.length, newFindings: fresh, allFindings: findings }, null, 1));
 }
 if (require.main === module) main();
-module.exports = { opsFindings };
+module.exports = { opsFindings, formatBrief };
