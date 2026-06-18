@@ -39,6 +39,7 @@ npm-debug.log*
 
 _sync_probe.txt
 *.bak
+.devserver.log
 
 # --- Dev-only overrides (bypass + seeder; dev-box only, NEVER prod/committed) ---
 dev-overrides/
