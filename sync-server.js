@@ -16,6 +16,7 @@
  * Use the SAME token on every device. Keep the token long and private.
  */
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -34,6 +35,11 @@ const CEO_READ_TOKEN = process.env.CEO_READ_TOKEN || (function () {
 const CEO_WRITE_TOKEN = process.env.CEO_WRITE_TOKEN || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).writeToken || ""; } catch (e) { return ""; }
 })();
+// Web Push (VAPID, "tickle" pattern — contentless push, no RFC-8291 encryption). Keys in gitignored
+// vapid-config.json {publicKey, privateKey, subject}. Absent → push is INERT (pubkey 404s, no sends).
+// Public key is served to clients via GET /api/push/pubkey (it's not a secret).
+let VAPID = null;
+try { VAPID = JSON.parse(fs.readFileSync(path.join(__dirname, "vapid-config.json"), "utf8")); } catch (e) {}
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 // Messaging rollout flag — OFF by default. Activate in prod WITHOUT a code change/redeploy:
@@ -213,6 +219,55 @@ function ceoBuildMessage(p, store) {
   return { biz: biz, records: records, threadId: tid, messageId: mid };
 }
 
+/* ---------- WEB PUSH (VAPID-JWT "tickle" — contentless push; no payload encryption) ----------
+   Only crypto used is ES256 VAPID-JWT (Node-native). A contentless push wakes the SW, which shows a
+   generic "Cap: new message — tap to open" (no token/fetch in the SW). Inert without vapid-config.json. */
+function b64url(buf) { return Buffer.from(buf).toString("base64url"); }
+function vapidJwt(audience) {
+  if (!VAPID || !VAPID.privateKey) return null;
+  try {
+    const header = b64url(JSON.stringify({ typ: "JWT", alg: "ES256" }));
+    const payload = b64url(JSON.stringify({ aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: VAPID.subject || "mailto:admin@obxlotsolutions.com" }));
+    const signingInput = header + "." + payload;
+    const key = crypto.createPrivateKey({ key: Buffer.from(VAPID.privateKey, "base64url"), format: "der", type: "pkcs8" });
+    const sig = crypto.sign("sha256", Buffer.from(signingInput), { key: key, dsaEncoding: "ieee-p1363" });
+    return signingInput + "." + b64url(sig);
+  } catch (e) { return null; }
+}
+function webPushTickle(endpoint) {   // contentless POST to the push service; resolves the HTTP status (0 on failure)
+  return new Promise(resolve => {
+    let u; try { u = new URL(endpoint); } catch (e) { return resolve(0); }
+    const jwt = vapidJwt(u.origin); if (!jwt) return resolve(0);
+    const lib = u.protocol === "https:" ? https : http;
+    const r = lib.request({ method: "POST", hostname: u.hostname, port: u.port || (u.protocol === "https:" ? 443 : 80), path: u.pathname + u.search,
+      headers: { "Authorization": "vapid t=" + jwt + ", k=" + VAPID.publicKey, "TTL": "86400", "Content-Length": 0 } },
+      res => { res.resume(); resolve(res.statusCode || 0); });
+    r.on("error", () => resolve(0)); r.setTimeout(10000, () => r.destroy());
+    r.end();
+  });
+}
+async function pushNotify(store, biz, threadId, exceptUserId) {   // best-effort; prunes stale (404/410) subs
+  if (!VAPID || !VAPID.publicKey) return;
+  const coll = ((store[biz] || {}).messages) || [];
+  const thread = coll.find(m => m && m.kind === "thread" && m.threadId === threadId && !m.deleted);
+  if (!thread) return;
+  const recipients = (thread.members || []).filter(id => id && id !== exceptUserId);
+  const users = (store.users || []);
+  let pruned = false;
+  for (const uid of recipients) {
+    const u = users.find(x => x && x.id === uid && !x.deleted);
+    if (!u || !Array.isArray(u.pushSubs) || !u.pushSubs.length) continue;
+    const keep = [];
+    for (const sub of u.pushSubs) {
+      const code = await webPushTickle(sub && sub.endpoint);
+      if (code === 404 || code === 410) { pruned = true; continue; }   // gone → drop the dead sub
+      keep.push(sub);
+    }
+    if (keep.length !== u.pushSubs.length) { u.pushSubs = keep; u.updatedAt = Date.now(); }
+  }
+  if (pruned) { try { saveStore(store); } catch (e) {} }   // persist pruned subs (rides account-LWW on next sync)
+}
+
 /* ----- per-user iCalendar (.ics) subscription feed -----------------------------------------------
    A one-way, READ-ONLY mirror of a user's upcoming assigned jobs. The feed URL carries an
    unguessable per-account token (u.calToken), minted in the app and synced here on the user record,
@@ -350,11 +405,20 @@ const server = http.createServer((req, res) => {
       if (!p || !String(p.body || "").trim()) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"empty body"}'); }
       const store = loadStore();
       const built = ceoBuildMessage(p, store);
-      saveStore(mergeState(store, { [built.biz]: { messages: built.records } }));   // ONLY messages in the incoming
+      const merged = mergeState(store, { [built.biz]: { messages: built.records } });   // ONLY messages in the incoming
+      saveStore(merged);
+      pushNotify(merged, built.biz, built.threadId, "__ceo__").catch(() => {});   // best-effort tickle to recipients (non-blocking)
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, biz: built.biz, threadId: built.threadId, messageId: built.messageId }));
     });
     return;
+  }
+
+  // Web Push public key (VAPID) — clients fetch this to subscribe. Not a secret. 404 when push is off.
+  if (req.method === "GET" && req.url === "/api/push/pubkey") {
+    const on = !!(VAPID && VAPID.publicKey);
+    res.writeHead(on ? 200 : 404, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(on ? { key: VAPID.publicKey } : { error: "push not configured" }));
   }
 
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)

@@ -414,5 +414,23 @@ const readStore = t.mergeState(replyStore, { obx: { messages: [{ id: "rd_" + bui
 const thr2 = (t.ceoProjection(readStore, { view: "messages" }).threads || []).find(x => x.threadId === built.threadId);
 ok("read view=messages surfaces per-user read markers (userId/name/lastReadTs)", !!thr2 && Array.isArray(thr2.reads) && thr2.reads.some(r => r.userId === "u1" && r.name === "Ray" && r.lastReadTs > 0), thr2 && thr2.reads);
 
+console.log("— web push: u.pushSubs rides account LWW (data-layer — zero account loss, non-negotiable) —");
+const psBase = { users: [
+  { id: "u1", username: "Ray", passhash: t.hashPw("pw"), role: "owner", avail: { days: [true, true, true, true, true, true, true] }, updatedAt: 5 },
+  { id: "u2", username: "Pierce", passhash: t.hashPw("pw2"), role: "crew", updatedAt: 5 },
+  { id: "__roles__", kind: "roles", roles: [], updatedAt: 5 }
+] };
+// (1) a device adds a pushSub to u2 (newer record) — must merge without dropping any account or u2's other fields
+const psMerged = t.mergeState(psBase, { users: [
+  { id: "u2", username: "Pierce", passhash: t.hashPw("pw2"), role: "crew", pushSubs: [{ endpoint: "https://push.example/abc", keys: { p256dh: "x", auth: "y" } }], updatedAt: 9 }
+] });
+ok("all accounts survive the pushSubs merge (zero account loss)", ["u1", "u2", "__roles__"].every(id => psMerged.users.find(u => u.id === id)), psMerged.users.map(u => u.id));
+ok("pushSubs persists on the account after merge", (() => { const u = psMerged.users.find(x => x.id === "u2") || {}; return Array.isArray(u.pushSubs) && u.pushSubs.length === 1 && u.pushSubs[0].endpoint === "https://push.example/abc"; })(), psMerged.users.find(x => x.id === "u2"));
+ok("pushSubs LWW keeps the account's other fields (role + passhash)", (() => { const u = psMerged.users.find(x => x.id === "u2") || {}; return u.role === "crew" && !!u.passhash; })(), null);
+ok("untouched account (u1 owner + avail) unaffected by the merge", (() => { const u = psMerged.users.find(x => x.id === "u1") || {}; return u.role === "owner" && !!u.avail && !!u.passhash; })(), null);
+// (2) backward-compat: a pre-push store (no pushSubs anywhere) round-trips with zero account loss
+const psRt = t.mergeState(psBase, {});
+ok("pre-push accounts round-trip zero-loss + no pushSubs field (backward compatible)", ["u1", "u2", "__roles__"].every(id => psRt.users.find(u => u.id === id)) && !(psRt.users.find(u => u.id === "u1") || {}).pushSubs, null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

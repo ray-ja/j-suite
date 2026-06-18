@@ -21,11 +21,28 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET") return;                                          // never touch writes (sync/login POST)
-  if (BYPASS.indexOf(url.pathname) >= 0 || url.pathname.indexOf("/qb/") === 0) return;  // API stays live
+  if (BYPASS.indexOf(url.pathname) >= 0 || url.pathname.indexOf("/qb/") === 0 || url.pathname.indexOf("/api/") === 0) return;  // API stays live
   e.respondWith(
     fetch(e.request).then(resp => {
       if (resp && resp.ok && /^https?:$/.test(url.protocol)) { const cp = resp.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); }
       return resp;
     }).catch(() => caches.match(e.request).then(hit => hit || (e.request.mode === "navigate" ? caches.match("./") : undefined)))
   );
+});
+
+/* ---- Web Push (tickle pattern) ---- contentless push wakes us; show a generic notification.
+   iOS requires every push to result in showNotification; this always does. */
+self.addEventListener("push", e => {
+  e.waitUntil(self.registration.showNotification("Cap", {
+    body: "New message — tap to open",
+    icon: "assets/icon-192.png", badge: "assets/icon-192.png",
+    tag: "jsuite-msg", renotify: true, data: { url: "./" }
+  }));
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => {
+    for (const c of cs) { if ("focus" in c) return c.focus(); }                      // focus an open tab if there is one
+    if (self.clients.openWindow) return self.clients.openWindow("./");               // else open the app
+  }));
 });
