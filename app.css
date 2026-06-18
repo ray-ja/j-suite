@@ -177,6 +177,13 @@
     .empty{padding:60px 16px}
   }
   @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:1fr 1fr 1fr} }
+  /* DEV env banner (js/55) — fixed 24px top bar; shift the sticky header + fixed desktop sidebar + body
+     down by its height so they stay aligned. Rules apply ONLY when body.has-dev-banner is set (dev-only;
+     prod never gets the class, so zero prod impact). */
+  #envbanner{position:fixed;top:0;left:0;right:0;height:24px;z-index:60;background:#b26a00;color:#fff;font:700 12px/24px -apple-system,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px}
+  body.has-dev-banner{padding-top:24px}
+  body.has-dev-banner header{top:24px}
+  @media(min-width:900px){ body.has-dev-banner nav{top:84px} }
   /* in-use soft-lock banner (js/35-locks.js) */
   .lockbanner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-left:4px solid var(--danger);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:14px}
   .lockbanner .btn{width:auto;flex:0 0 auto}

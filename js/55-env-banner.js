@@ -1,25 +1,19 @@
 /* ---------- ENV GUARDRAIL BANNER ----------
-   Shows a 🟡 DEV marker on any host that is NOT confirmed production, so a dev instance can never be
-   mistaken for prod (Ray hit exactly that — logged into dev, no indicator, thought it was prod).
-   Host-based + FAIL-TOWARD-DEV: only the known prod box is treated as prod; everything else (the dev
-   Tailscale host, localhost, file://, previews) shows the banner. This is COMMITTED code (not the
-   gitignored bypass) because it's a safety guardrail, not a dev-only convenience — it must show even
-   when logging in normally (the bypass-tied banner did not). */
+   Renders a 🟡 DEV bar on any non-prod host so a dev instance can't be mistaken for prod (Ray hit
+   exactly that). The env is decided in js/00-preamble (single source of truth); this just renders.
+   Adds body.has-dev-banner so app.css shifts the sticky header + fixed desktop sidebar + body down
+   to make room — keeping them aligned (the earlier in-flow banner decoupled them). Committed (not the
+   gitignored bypass): a safety guardrail that must show even on a normal login. */
 (function () {
-  // Production = the deployed Ubuntu box, by Tailscale hostname AND raw IP (served either way).
-  var PROD_HOSTS = ["rzy-ubuntu-workstation-1.taila3fda5.ts.net", "100.103.109.41"];
-  var host = (typeof location !== "undefined" && location.hostname || "").toLowerCase();
-  // SINGLE SOURCE OF TRUTH for the host-based environment. Both the DEV banner and the dev
-  // auto-login (js/56) read these — so "is this dev or prod?" is decided in exactly one place.
-  window.JSUITE_IS_PROD_HOST = PROD_HOSTS.indexOf(host) >= 0;
-  window.jsIsDevHost = function () { return !window.JSUITE_IS_PROD_HOST; };
-  if (window.JSUITE_IS_PROD_HOST) return;   // confirmed prod → no banner
+  if (typeof window === "undefined" || typeof window.jsIsDevHost !== "function" || !window.jsIsDevHost()) return;
+  var host = (typeof location !== "undefined" && location.hostname) || "local";
   function show() {
-    if (!document.body || document.getElementById("envbanner")) return;
+    if (!document.body) return;
+    document.body.classList.add("has-dev-banner");
+    if (document.getElementById("envbanner")) return;
     var b = document.createElement("div");
     b.id = "envbanner";
-    b.textContent = "🟡 DEV — " + (host || "local") + " · not production";
-    b.style.cssText = "background:#b26a00;color:#fff;font:700 12px/1.4 system-ui,sans-serif;text-align:center;padding:5px 10px;letter-spacing:.3px";
+    b.textContent = "🟡 DEV — " + host + " · not production";
     document.body.insertBefore(b, document.body.firstChild);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", show); else show();
