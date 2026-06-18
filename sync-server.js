@@ -40,6 +40,10 @@ const CEO_WRITE_TOKEN = process.env.CEO_WRITE_TOKEN || (function () {
 // Public key is served to clients via GET /api/push/pubkey (it's not a secret).
 let VAPID = null;
 try { VAPID = JSON.parse(fs.readFileSync(path.join(__dirname, "vapid-config.json"), "utf8")); } catch (e) {}
+// Last-active per user (ops-brain Layer-1 capture). IN-MEMORY ONLY — never written to data.json, so
+// it can't churn the sync layer. Stamped (throttled ~60s/user) on /sync; surfaced read-only on /api/ceo.
+const lastActive = {};
+function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) lastActive[userId] = n; }
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 // Messaging rollout flag — OFF by default. Activate in prod WITHOUT a code change/redeploy:
@@ -141,7 +145,8 @@ function ceoProjection(store, opts) {
       clockedIn: !!tc,
       onJob: tc ? { jobId: tc.jobId, title: job ? (job.title || "") : "", biz: tc.biz, since: tc.since } : null,
       todayStatus: AvailResolve.status(u, today),
-      pushSubs: Array.isArray(u.pushSubs) ? u.pushSubs.length : 0   // count only (no endpoints/keys) — who's subscribed, for verification/timing
+      pushSubs: Array.isArray(u.pushSubs) ? u.pushSubs.length : 0,  // count only (no endpoints/keys) — who's subscribed, for verification/timing
+      lastActive: lastActive[u.id] || 0   // ms epoch of last /sync (0 = unknown); ops-brain "active Xm ago"
     };
   });
   // next 7 days availability glance
@@ -464,6 +469,7 @@ const server = http.createServer((req, res) => {
       let payload;
       try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       if (TOKEN && payload.token !== TOKEN) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
+      noteActive(payload.userId);   // ops-brain last-active (in-memory; doesn't affect the merge)
       const merged = mergeState(loadStore(), payload.state || {});
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -517,4 +523,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, vapidJwt };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, vapidJwt, noteActive };

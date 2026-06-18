@@ -140,7 +140,7 @@ async function syncRun(mode){
   const sentSig=JSON.stringify({obx:S.obx,jam:S.jam,users:S.users});
   try{
     const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:S.sync.token,state:{obx:S.obx,jam:S.jam,users:S.users}})});
+      body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),state:{obx:S.obx,jam:S.jam,users:S.users}})});
     if(res.status===401){window.AUTH_401=true;S.sync.token="";save();_syncInflight=false;setSyncState("offline");syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();

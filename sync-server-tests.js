@@ -432,5 +432,20 @@ ok("untouched account (u1 owner + avail) unaffected by the merge", (() => { cons
 const psRt = t.mergeState(psBase, {});
 ok("pre-push accounts round-trip zero-loss + no pushSubs field (backward compatible)", ["u1", "u2", "__roles__"].every(id => psRt.users.find(u => u.id === id)) && !(psRt.users.find(u => u.id === "u1") || {}).pushSubs, null);
 
+console.log("— ops-brain Phase A: last-active (read-only, not in data.json) + job.completedAt rides LWW —");
+// last-active: noteActive stamps an in-memory map; surfaced read-only on the CEO read path crew[]
+t.noteActive("u1");
+const laProj = t.ceoProjection({ obx: { jobs: [], quotes: [], timeclock: [] }, jam: {}, users: [{ id: "u1", username: "Ray", role: "owner", updatedAt: 5 }] }, { view: "crew" });
+ok("last-active surfaced on the read path (crew[].lastActive > 0 after noteActive)", (() => { const c = (laProj.crew || []).find(x => x.id === "u1") || {}; return c.lastActive > 0; })(), (laProj.crew || []).find(x => x.id === "u1"));
+ok("last-active is in-memory only — NOT written into data.json by the merge", (() => { const m = t.mergeState({ users: [{ id: "u1", username: "Ray", updatedAt: 5 }] }, {}); return !("lastActive" in (m.users.find(u => u.id === "u1") || {})); })(), null);
+ok("extra /sync payload field (userId) doesn't pollute the merged state", (() => { const m = t.mergeState({ obx: { customers: [{ id: "c1", updatedAt: 5 }] } }, {}); return !("userId" in m) && Array.isArray(m.obx.customers); })(), null);
+// job.completedAt/completedBy ride per-record job LWW (jobs collection — no schema change), zero loss
+const cj = t.mergeState(
+  { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], done: false, updatedAt: 5 }] } },
+  { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], done: true, completedAt: 1718600000000, completedBy: "u1", updatedAt: 9 }] } }
+);
+ok("completed job keeps completedAt/completedBy via job LWW (newer wins, other fields intact)", (() => { const j = cj.obx.jobs.find(x => x.id === "j1") || {}; return j.done === true && j.completedAt === 1718600000000 && j.completedBy === "u1" && j.title === "Wash" && (j.crew || []).length === 1; })(), cj.obx.jobs.find(x => x.id === "j1"));
+ok("pre-capture job (no completedAt) round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j2", title: "Old", done: false, updatedAt: 5 }] } }, {}); const j = m.obx.jobs.find(x => x.id === "j2") || {}; return j.title === "Old" && !("completedAt" in j); })(), null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

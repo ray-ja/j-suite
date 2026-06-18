@@ -217,7 +217,9 @@ window.saveJob=function(id,isNew){
   if(typeof logChange==="function")logChange(isNew?"create":"update","job",j.id,(isNew?"Scheduled ":"Updated ")+(j.title||"job")+(j.date?" · "+fmtDate(j.date):""));
   save();closeModal();render();
 };
-window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done;if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();};
+window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done;
+  if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);}else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
+  if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();};
 window.delJob=function(id){if(!confirm("Delete this job?"))return;
   const j=D().jobs.find(x=>x.id===id);j.deleted=true;touch(j);if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+(j.title||"job"));save();closeModal();render();};
 
