@@ -487,5 +487,21 @@ ok("opsFindings: high severity sorts first", F.length > 0 && F[0].sev === "high"
 ok("formatBrief renders a prioritized digest (counts + icons)", (() => { const b = opsmod.formatBrief(F, "Sweep"); return /high/.test(b) && b.indexOf("🔴") >= 0 && b.split("\n").length > 1; })(), null);
 ok("formatBrief on no findings = all clear", /all clear/.test(opsmod.formatBrief([])), null);
 
+console.log("— ops-brain Phase C: autonomous voice (gap-report + Cap's read + Ray-only audience gate) —");
+const briefmod = require("./tools/ops-brief");
+ok("capRead maps each finding type to a recommendation (no generic fallback for known keys)", (() => {
+  const keys = ["missedjob:j1", "coverage:j2", "overduetask:t1", "staletask:t2", "openshift:s1", "unschedquote:q1", "eqconflict:k", "quiet:u1"];
+  return keys.every(k => { const r = opsmod.capRead({ key: k }); return r && r !== "Review and resolve."; });
+})(), null);
+ok("capRead falls back gracefully on an unknown key", opsmod.capRead({ key: "mystery:x" }) === "Review and resolve.", null);
+const gr = opsmod.buildGapReport(F, "2026-06-15");
+ok("buildGapReport: digest has the date label, counts, per-finding Cap's read (↳), severity icons", /2026-06-15/.test(gr) && /high/.test(gr) && gr.indexOf("↳") >= 0 && gr.indexOf("🔴") >= 0, null);
+ok("buildGapReport: empty findings = all clear", /All clear/.test(opsmod.buildGapReport([])), null);
+// THE GATE: pre-meeting the brief is Ray-only; crew-facing is built but OFF
+ok("audience=ray → posts to the private Cap (Ray-only) thread", (() => { const t = briefmod.audienceTarget("ray", briefmod.CREW_FACING_ENABLED); return !t.blocked && t.post.title === "Cap"; })(), null);
+ok("audience=crew is BLOCKED while the switch is off (CREW_FACING_ENABLED=false)", (() => { const t = briefmod.audienceTarget("crew", briefmod.CREW_FACING_ENABLED); return t.blocked === true && /GATED OFF/.test(t.reason); })(), null);
+ok("the switch is shipped OFF (crew not yet initiated)", briefmod.CREW_FACING_ENABLED === false, briefmod.CREW_FACING_ENABLED);
+ok("audience=crew WOULD broadcast once the switch is flipped on (path is built)", (() => { const t = briefmod.audienceTarget("crew", true); return !t.blocked && t.post.title === "Crew"; })(), null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

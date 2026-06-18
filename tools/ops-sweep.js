@@ -62,6 +62,34 @@ function formatBrief(findings, label) {
   return head + "\n" + lines.join("\n");
 }
 
+/* PURE: a finding → Cap's one-line read (deterministic recommendation, keyed by finding type).
+   This is "Cap composes" for the autonomous Phase-C brief — no LLM, same gap-rule discipline. */
+function capRead(f) {
+  const k = String((f && f.key) || "").split(":")[0];
+  const M = {
+    missedjob: "Confirm it actually happened, then close it out or reschedule — an open past job skews the schedule and the P&L.",
+    coverage: "No available crew on this job — reassign, call someone in, or move the date.",
+    overduetask: "Past due — knock it out today or push the due date so the list stays honest.",
+    staletask: "Untouched a while — still relevant? Close it or re-prioritize.",
+    openshift: "Someone likely forgot to clock out — fix the entry so payroll + mileage are right.",
+    unschedquote: "Accepted money sitting unscheduled — book it before it goes cold.",
+    eqconflict: "Two jobs want the same gear that day — rent/buy one or stagger them.",
+    quiet: "Quiet a while — a quick check-in keeps everyone in sync."
+  };
+  return M[k] || "Review and resolve.";
+}
+
+/* PURE: findings → the Ray-facing gap-report digest ("sweep caught: X" + Cap's read on each). */
+function buildGapReport(findings, label) {
+  findings = findings || [];
+  const head = "🧭 Ops sweep" + (label ? " — " + label : "");
+  if (!findings.length) return head + "\n\nAll clear — no gaps caught.";
+  const ICON = { high: "🔴", med: "🟡", low: "⚪" };
+  const n = { high: 0, med: 0, low: 0 }; findings.forEach(f => { n[f.sev] = (n[f.sev] || 0) + 1; });
+  const lines = findings.map((f, i) => (i + 1) + ". " + (ICON[f.sev] || "•") + " " + f.summary + "\n   ↳ " + capRead(f));
+  return head + "\n" + findings.length + " item(s): " + n.high + " high · " + n.med + " med · " + n.low + " low\n\n" + lines.join("\n\n");
+}
+
 async function main() {
   const cfg = loadCfg();
   let ops; try { ops = await fetchOps(cfg); } catch (e) { die("read view=ops failed: " + e.message); }
@@ -73,4 +101,4 @@ async function main() {
   console.log(JSON.stringify({ event: fresh.length > 0, at: Date.now(), sweep: ops.today, openFindings: findings.length, newFindings: fresh, allFindings: findings }, null, 1));
 }
 if (require.main === module) main();
-module.exports = { opsFindings, formatBrief };
+module.exports = { opsFindings, formatBrief, capRead, buildGapReport };

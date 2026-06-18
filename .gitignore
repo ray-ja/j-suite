@@ -17,6 +17,7 @@ ceo-config.json
 watcher-config.json
 tools/.reply-watcher-cursor.json
 tools/.ops-sweep-cursor.json
+tools/.ops-brief-cursor.json
 
 # --- Office lock & temp files ---
 ~$*

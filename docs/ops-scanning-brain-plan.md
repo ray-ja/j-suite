@@ -70,6 +70,8 @@ A **dumb, scheduled scanner** (no LLM) that reads `view=ops`, applies gap rules,
 
 **Safety/discipline:** read side stays read-only (read token); write side is the existing messages-only scoped path (write token, prod-local or dev per the bridge decision); no new mutation surface. The sweep is deterministic (no LLM) — the LLM (Cap) only engages on real findings.
 
+**STATUS — Phase C SHIPPED on `dev` (`tools/ops-brief.js`):** sweep findings → `buildGapReport()` = a Ray-facing digest ("sweep caught: X" + a deterministic **Cap's read** per gap via `capRead()`). **Audience switch (`audienceTarget`)**: pre-meeting → **RAY ONLY** (the private "Cap" thread); **crew-facing path is built but GATED OFF** via `CREW_FACING_ENABLED=false` — flip that one constant post-crossroads to initiate the crew. **Dry-run by default** (prints, posts nothing — a 3am run can't buzz anyone); `--post` writes only when there are NEW findings (cursor-deduped). Remaining: live `--post` enablement + the 07:00/12:00/17:00 cron (the "Schedule the ops-sweep" item) — those are runtime/scheduling, not code. Unit-tested: capRead mapping, digest format, and the Ray-only/crew-gated audience switch.
+
 ---
 
 ## Build order (AFTER Cap approves this plan)

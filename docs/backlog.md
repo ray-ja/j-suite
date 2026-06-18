@@ -25,12 +25,12 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 1. **"Who owes me money" — overdue/unbilled view** `[Cap #1]` `✅ shipped to dev` `S` — Finance › 💸 Owed. *Mike Green & Michelle were unbilled; this surfaces them so Ray sends + collects.*
 2. **Review-on-completion prompt** `[Cap #2]` `✅ shipped to dev` `S` — done-transition fires a one-tap "ask for a Google review" (reuses the saved review link; OBX-only; SMS prefilled).
 3. **Per-job P&L + expense logging** `[Cap #3]` `✅ shipped to dev` `M` — `job.expenses[]` (additive, migration fixture + load() backfill); inline "+ Expense" on the job (disposal·mileage·materials·equipment·misc, **NO labor line**, mileage ×72.5¢); Finance › 💹 P&L weekly view reusing js/39, **worst-margin first**, 🔴 35% floor flag. (plan: `docs/per-job-pl-plan.md`)
-4. **Phase C wiring** `[Cap #4]` `🔨` — ops-brain wake→relay + 07/12/17 scheduling (in NOW).
+4. **Phase C autonomous voice** `[Cap #4]` `✅ shipped to dev` `M` — `tools/ops-brief.js`: sweep findings → Ray-only gap-report digest (each gap + **Cap's read**), crew-facing path built but **GATED OFF** (`CREW_FACING_ENABLED=false`), **dry-run by default** (no 3am buzz). Live `--post` + 07/12/17 cron = the "Schedule the ops-sweep" item.
 
 ## 🔨 NOW (in flight, on `dev`)
 - **Ops-scanning brain Phase A** — `last-active` + `job.completedAt/By` capture. `[Cap]` `✅` on **main** `1556efa` (deployed to prod).
 - **Ops-brain Phase B** — `view=ops` + `ops-sweep.js` gap-rule scanner (overdue/at-risk job, coverage gap, overdue/stale task, forgot-to-clock-out, unscheduled accepted quote, equipment double-book, crew-quiet), cursor-deduped, severity-ranked. `[Cap]` `🔨` on **dev** `e82d948` (live after Ray deploys; fixture-tested 136/0).
-- **Ops-brain Phase C** — autonomous voice: `formatBrief()` digest started; wake→relay pipeline + 07/12/17 scheduling next. Pre-meeting = Ray-only; crew-facing gated post-meeting. `[Cap]` `🔨` on **dev** `9ee7e54`.
+- **Ops-brain Phase C** — autonomous voice SHIPPED on **dev**: `tools/ops-brief.js` composes the Ray-only gap-report (gap + Cap's read), crew-facing path **gated OFF**, dry-run-safe. `[Cap]` `✅ dev`. Remaining: live `--post` + 07/12/17 cron (= "Schedule the ops-sweep").
 
 ## ⏳ NEXT (queued, near-term)
 - **Recurring-route revenue engine** — home-watch / washing / mowing routes; recurring jobs + scheduling + billing cadence. `[Cap #4]` `❓plan-first` `L` — Cap reviews data-model before build.
