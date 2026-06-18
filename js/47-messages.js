@@ -68,7 +68,6 @@ function rMessages() {
   let h = `<div class="secthd"><h2>Messages</h2><div style="display:flex;gap:6px">
     <button class="btn acc sm" onclick="msgToStrategy()">✉️ Message Cap</button>
     ${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div></div>`;
-  if (typeof pushPromptHTML === "function") h += pushPromptHTML();   // "turn on notifications" nudge until push is enabled
   if (!mine.length) h += `<div class="empty"><div class="big">💬</div>No messages yet.</div>`;
   else h += mine.map(t => {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
