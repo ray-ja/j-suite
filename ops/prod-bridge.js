@@ -15,8 +15,21 @@ const KEY = process.env.PROD_KEY || path.join(os.homedir(), ".ssh", "jsuite_brid
 const argv = process.argv.slice(2);
 let confirm = false;
 const i = argv.indexOf("--confirm"); if (i >= 0) { confirm = true; argv.splice(i, 1); }
-const op = argv.join(" ").trim();
-if (!op) { console.error("usage: prod-bridge.js [--confirm] <op> [arg]\n  ops: deploy <commit> | restart | read_log <ops|server> | snapshot_data"); process.exit(2); }
+let op = argv.join(" ").trim();
+if (!op) { console.error("usage: prod-bridge.js [--confirm] <op>\n  ops: deploy | restart | read_log <ops|server> | snapshot_data"); process.exit(2); }
+
+// `deploy` (no SHA) = deploy the CURRENT origin/main tip. The SHA is internal accounting — Ray
+// approves the DEPLOY decision ("Deploy to prod? Y/N"), never a specific commit. We resolve the tip
+// right before SSH and pass it to the wrapper, whose commit-verify stays as an internal safety net.
+if (op === "deploy") {
+  const { execSync } = require("child_process");
+  try {
+    execSync("git fetch origin -q", { stdio: "ignore" });
+    const sha = execSync("git rev-parse --short origin/main", { encoding: "utf8" }).trim();
+    op = "deploy " + sha;
+    console.log("(internal: origin/main → " + sha + ")");
+  } catch (e) { console.error("could not resolve origin/main:", e.message); process.exit(1); }
+}
 
 console.log("PLAN  → ssh " + HOST + "  ::  prod-run.sh " + op);
 if (!confirm) { console.log("(dry run — add --confirm to execute; surface this plan to Ray for Y/N first)"); process.exit(0); }
