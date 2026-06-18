@@ -18,7 +18,7 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 ### Ergonomic gaps (Dev-noticed brainstorm — overnight)
 - **Tappable contact + one-tap Directions on the customer card** — phone → `tel:`/`sms:`, address → Google Maps. `(Dev-noticed)` `✅ shipped to dev` `S` — crew on phones couldn't tap to call/text/navigate before.
 - **One-tap Directions + tap-to-Call/Text the customer from a JOB** (job detail; best address property→job→customer). `(Dev-noticed)` `✅ shipped to dev` `S` — extends the customer win to the schedule (the crew-driving case).
-- **Search on more lists** — Quotes search `✅ shipped to dev` (filters by customer/date/invoice#/amount/status; also hardened `q.items` null-guard). Schedule/Jobs search still `⏳`. `(Dev-noticed)` `S`.
+- **Search on more lists** — Quotes search `✅` + Schedule/Jobs search `✅ shipped to dev` (flat filtered list by name/customer/date; calendar hides while searching). Gap closed. `(Dev-noticed)` `S`.
 - **"On my way" one-tap from a job** — Message Templates has the copy, but it lives in the customer modal; a one-tap from the job itself would be slicker for the crew. `(Dev-noticed)` `⏳` `S`.
 
 ## 🎯 CAP'S RANKED LIST (revenue leads polish — work top-down, ergonomics are fill-ins between)

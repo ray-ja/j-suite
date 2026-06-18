@@ -1,5 +1,5 @@
 /* ---------- SCHEDULE ---------- */
-let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set();
+let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
   const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
@@ -10,16 +10,25 @@ function rSchedule(){
   const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
   const cu=(typeof curUser==="function")?curUser():null;
   let h=sub+`<div class="secthd"><h2>Schedule</h2>${cu?`<button class="btn ghost sm" onclick="openAvailability()">My availability</button>`:""}</div>`;
-  if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
-  if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
-  h+=renderCalendar(jobs);
-  if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials by status — <b style="color:var(--accent)">available</b>, <b style="color:#b26a00">time-off</b>, <b style="color:var(--danger)">off</b>. Tap a day for the full picture.</div>`;
-  const groups={Today:[],Upcoming:[],Done:[]};
-  jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
-  if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
-  ["Today","Upcoming","Done"].forEach(g=>{if(!groups[g].length)return;
-    h+=`<div class="secthd"><h2>${g}</h2><span class="ct">${groups[g].length}</span></div><div class="card">`+groups[g].map(liJob).join("")+`</div>`;});
+  if(jobs.length)h+=`<input class="search" id="jsearch" placeholder="Search jobs (name, customer, date)…" value="${esc(JSEARCH)}">`;
+  if(JSEARCH){
+    const q=JSEARCH.toLowerCase();
+    const res=jobs.filter(j=>((j.title||"")+" "+(j.customerId&&typeof custName==="function"?custName(j.customerId):"")+" "+(j.date||"")+" "+(j.done?"done":"")).toLowerCase().includes(q));
+    h+=res.length?`<div class="card">`+res.map(liJob).join("")+`</div>`:`<div class="empty">No matching jobs.</div>`;
+  }else{
+    if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
+    if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
+    h+=renderCalendar(jobs);
+    if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials by status — <b style="color:var(--accent)">available</b>, <b style="color:#b26a00">time-off</b>, <b style="color:var(--danger)">off</b>. Tap a day for the full picture.</div>`;
+    const groups={Today:[],Upcoming:[],Done:[]};
+    jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
+    if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
+    ["Today","Upcoming","Done"].forEach(g=>{if(!groups[g].length)return;
+      h+=`<div class="secthd"><h2>${g}</h2><span class="ct">${groups[g].length}</span></div><div class="card">`+groups[g].map(liJob).join("")+`</div>`;});
+  }
   view.innerHTML=h;
+  const s=document.getElementById("jsearch");
+  if(s)s.oninput=e=>{JSEARCH=e.target.value;const p=s.selectionStart;rSchedule();const n=document.getElementById("jsearch");if(n){n.focus();n.setSelectionRange(p,p);}};
 }
 window.schedSub=function(s){SCHEDSUB=s;render();};
 window.schedDate=function(v){SCHED_DATE=v;render();};
