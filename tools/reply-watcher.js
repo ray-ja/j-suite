@@ -106,8 +106,12 @@ async function cmdWatch() {
     if (ev.newMsgs.length) {   // wake ONLY on new non-CEO messages; read-marker changes are surfaced (below) but never wake Cap
       saveCursor(snapshot(threads));
       beat({ status: "event", poll: i });
-      console.log(JSON.stringify({ event: true, at: Date.now(), newMessages: ev.newMsgs, state: threads.map(t => ({ thread: t.title, threadId: t.threadId, reads: readState(t) })) }, null, 1));
-      return;   // wake the dev lane
+      const payload = { event: true, at: Date.now(), newMessages: ev.newMsgs, state: threads.map(t => ({ thread: t.title, threadId: t.threadId, reads: readState(t) })) };
+      // DURABLE relay queue: append every detection so it is NEVER lost even if stdout is discarded
+      // (e.g. run under a detached supervisor). The lane drains this file and relays to Cap.
+      try { fs.appendFileSync(path.join(__dirname, ".reply-watcher-events.jsonl"), JSON.stringify({ at: payload.at, newMessages: ev.newMsgs }) + "\n"); } catch (e) {}
+      console.log(JSON.stringify(payload, null, 1));
+      return;   // wake the dev lane (harness notifies on background-task exit)
     }
     saveCursor(snapshot(threads));   // baseline + track read-state (for status / future read-no-reply alert); stay silent on passive opens
     await sleep(cfg.pollMs);
