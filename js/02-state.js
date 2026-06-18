@@ -21,6 +21,7 @@ function load(){
     if(!S[b].income)S[b].income=[];
     if(!S[b].expenses)S[b].expenses=[];
     if(!S[b].messages)S[b].messages=[];
+    (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });

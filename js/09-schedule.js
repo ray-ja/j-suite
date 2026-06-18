@@ -152,12 +152,51 @@ window.openJob=function(id,customerId,presetDate){
     <label style="margin-top:12px">Required equipment</label>
     <div id="j_equip"></div>
     <div class="sub" id="j_equip_note" style="margin-top:6px"></div>
+    ${!isNew?`<label style="margin-top:12px">Job expenses — hard cost (no labor line)</label><div id="j_exp"></div>`:""}
     <label style="margin-top:12px">Notes</label><textarea id="j_notes">${esc(j.notes||"")}</textarea>
     <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
-  renderJobCrew();renderJobEquip();
+  renderJobCrew();renderJobEquip();if(!isNew)renderJobExpenses(j.id);
   if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
+};
+/* ---- per-job expenses (hard cost; Cap #3). Writes straight to job.expenses[] (rides job LWW) so a
+   crew member logging a cost in the field persists immediately. Categories per the cost model —
+   NO labor line, ever. Mileage enters miles → auto-costed at the IRS rate. ---- */
+let JOBEXP_CAT="materials";
+const JOBEXP_CATS=[["disposal","🗑 Disposal"],["mileage","🚗 Mileage"],["materials","🧴 Materials"],["equipment","🔧 Equipment rental"],["misc","• Misc"]];
+function jobExpenses(j){return Array.isArray(j&&j.expenses)?j.expenses:[];}
+function expCatLabel(k){const c=JOBEXP_CATS.find(x=>x[0]===k);return c?c[1]:(k||"Misc");}
+function expFmt(n){n=Math.round((+n||0)*100)/100;return "$"+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function renderJobExpenses(jobId){
+  const box=document.getElementById("j_exp");if(!box)return;
+  const j=D().jobs.find(x=>x.id===jobId);if(!j)return;
+  const list=jobExpenses(j),isMi=JOBEXP_CAT==="mileage";
+  const rows=list.map(e=>`<div class="li" style="align-items:center"><div class="grow"><div class="nm" style="font-size:15px">${esc(expCatLabel(e.cat))} · ${expFmt(e.amount)}${e.cat==="mileage"&&e.miles?` <span class="sub">(${e.miles} mi)</span>`:""}</div>${e.note?`<div class="sub" style="white-space:normal">${esc(e.note)}</div>`:""}</div><button class="btn ghost sm" style="flex:0 0 auto" onclick="expJobDel('${jobId}','${e.id}')" title="Remove">✕</button></div>`).join("");
+  const adder=`<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
+    <select id="exp_cat" onchange="JOBEXP_CAT=this.value;renderJobExpenses('${jobId}')" style="flex:1 1 130px">${JOBEXP_CATS.map(c=>`<option value="${c[0]}" ${JOBEXP_CAT===c[0]?"selected":""}>${c[1]}</option>`).join("")}</select>
+    ${isMi?`<input id="exp_miles" type="number" min="0" step="0.1" inputmode="decimal" placeholder="miles" style="flex:0 0 90px;padding:8px">`:`<input id="exp_amt" type="number" min="0" step="0.01" inputmode="decimal" placeholder="$ amount" style="flex:0 0 110px;padding:8px">`}
+    <input id="exp_note" placeholder="note (optional)" style="flex:1 1 130px;padding:8px">
+    <button class="btn acc sm" style="flex:0 0 auto" onclick="expJobAdd('${jobId}')">+ Add</button></div>
+    ${isMi?`<div class="sub" style="margin-top:4px">Mileage auto-costs at ${MILEAGE_RATE_LABEL}/mi (IRS).</div>`:""}`;
+  box.innerHTML=(rows||`<div class="muted">No expenses logged.</div>`)+adder
+    +(list.length?`<div class="row" style="justify-content:space-between;margin-top:8px;font-weight:700"><span>Hard cost</span><span>${expFmt(list.reduce((s,e)=>s+(+e.amount||0),0))}</span></div>`:"");
+}
+window.expJobAdd=function(jobId){
+  const j=D().jobs.find(x=>x.id===jobId);if(!j)return;
+  if(!Array.isArray(j.expenses))j.expenses=[];
+  let amount=0,miles=null;
+  if(JOBEXP_CAT==="mileage"){miles=Math.max(0,+val("exp_miles")||0);if(!miles){alert("Enter the miles driven.");return;}amount=Math.round(miles*MILEAGE_RATE*100)/100;}
+  else{amount=Math.round((Math.max(0,+val("exp_amt")||0))*100)/100;if(!amount){alert("Enter an amount.");return;}}
+  const e={id:"ex_"+uid(),cat:JOBEXP_CAT,amount:amount,note:val("exp_note")||"",addedAt:now(),addedBy:((typeof curUser==="function"&&curUser())?curUser().id:null)};
+  if(miles!=null)e.miles=miles;
+  j.expenses.push(e);touch(j);
+  if(typeof logChange==="function")logChange("update","job",jobId,"Expense +"+expFmt(amount)+" ("+JOBEXP_CAT+") · "+(j.title||"job"));
+  save();renderJobExpenses(jobId);
+};
+window.expJobDel=function(jobId,exId){
+  const j=D().jobs.find(x=>x.id===jobId);if(!j)return;
+  j.expenses=jobExpenses(j).filter(e=>e.id!==exId);touch(j);save();renderJobExpenses(jobId);
 };
 /* required-equipment picker — quantity-aware, with live conflict flags for the chosen date.
    Reads the master inventory (js/31) and the date the owner is placing the job against, then asks

@@ -447,6 +447,18 @@ const cj = t.mergeState(
 ok("completed job keeps completedAt/completedBy via job LWW (newer wins, other fields intact)", (() => { const j = cj.obx.jobs.find(x => x.id === "j1") || {}; return j.done === true && j.completedAt === 1718600000000 && j.completedBy === "u1" && j.title === "Wash" && (j.crew || []).length === 1; })(), cj.obx.jobs.find(x => x.id === "j1"));
 ok("pre-capture job (no completedAt) round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j2", title: "Old", done: false, updatedAt: 5 }] } }, {}); const j = m.obx.jobs.find(x => x.id === "j2") || {}; return j.title === "Old" && !("completedAt" in j); })(), null);
 
+console.log("— per-job P&L: job.expenses[] on-job array rides job LWW (Cap #3, additive) —");
+// (a) a newer job record adds an expense line; all other job fields intact, zero loss
+const exA = t.mergeState(
+  { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], expenses: [{ id: "ex1", cat: "disposal", amount: 73.16, note: "C&D", addedAt: 5, addedBy: "u1" }], updatedAt: 5 }] } },
+  { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], expenses: [{ id: "ex1", cat: "disposal", amount: 73.16, note: "C&D", addedAt: 5, addedBy: "u1" }, { id: "ex2", cat: "mileage", amount: 14.5, miles: 20, addedAt: 9, addedBy: "u1" }], updatedAt: 9 }] } }
+);
+ok("job.expenses LWW-merges (newer record adds a line; title/crew intact)", (() => { const j = exA.obx.jobs.find(x => x.id === "j1") || {}; return (j.expenses || []).length === 2 && j.expenses.some(e => e.cat === "mileage" && e.miles === 20 && e.amount === 14.5) && j.title === "Wash" && (j.crew || []).length === 1; })(), exA.obx.jobs.find(x => x.id === "j1"));
+// (b) pre-expenses job (no expenses array) round-trips zero-loss — backward compatible
+ok("pre-expenses job (no expenses array) round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j7", title: "Old", done: false, updatedAt: 5 }] } }, {}); const j = m.obx.jobs.find(x => x.id === "j7") || {}; return j.title === "Old" && !("expenses" in j); })(), null);
+// (c) deleting an expense line: newer shorter list wins, no resurrection of the removed line
+ok("deleting an expense line LWW-merges (newer wins, removed line does not resurrect)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j8", expenses: [{ id: "e1", cat: "misc", amount: 5 }, { id: "e2", cat: "misc", amount: 9 }], updatedAt: 5 }] } }, { obx: { jobs: [{ id: "j8", expenses: [{ id: "e2", cat: "misc", amount: 9 }], updatedAt: 9 }] } }); const j = m.obx.jobs.find(x => x.id === "j8") || {}; return (j.expenses || []).length === 1 && j.expenses[0].id === "e2"; })(), null);
+
 console.log("— ops-brain Phase B: view=ops projection + opsFindings gap rules —");
 const opsmod = require("./tools/ops-sweep");
 const opsView = t.ceoProjection({
