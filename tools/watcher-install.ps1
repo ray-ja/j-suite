@@ -4,8 +4,8 @@
 #   1) watcher-daemon.js  — supervises reply-watcher (instant restart on watcher crash). Launched now,
 #                           detached, so it survives this shell. Supervises ONLY the watcher, never the
 #                           sync-server (Ray's call: the server stays non-durable to surface crashes).
-#   2) JSuiteWatcherMonitor scheduled task — runs watcher-monitor.js every 5 min: if the heartbeat is
-#                           stale >5m it RELAUNCHES the daemon (self-heal, covers daemon death + reboot
+#   2) JSuiteWatcherMonitor scheduled task — runs watcher-monitor.js every 2 min: if the heartbeat is
+#                           stale >3m it RELAUNCHES the daemon (self-heal, covers daemon death + reboot
 #                           after logon) AND alerts Ray on the private Cap thread.
 # Re-run anytime. Uninstall: tools/watcher-uninstall.ps1
 $ErrorActionPreference = "Stop"
@@ -18,10 +18,10 @@ if (-not (Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object
   Write-Output "started watcher-daemon (detached)"
 } else { Write-Output "watcher-daemon already running" }
 
-# 2) monitor task every 5 min (per-user; no admin). Self-heals the daemon + alerts if stale.
+# 2) monitor task every 2 min (per-user; no admin). Self-heals the daemon + alerts if stale >3m.
 $mon = "`"$node`" `"$root\tools\watcher-monitor.js`""
-schtasks /Create /TN "JSuiteWatcherMonitor" /TR $mon /SC MINUTE /MO 5 /F | Out-Null
-Write-Output "registered JSuiteWatcherMonitor (every 5 min)"
+schtasks /Create /TN "JSuiteWatcherMonitor" /TR $mon /SC MINUTE /MO 2 /F | Out-Null
+Write-Output "registered JSuiteWatcherMonitor (every 2 min)"
 
 # 3) OPTIONAL, needs an ELEVATED shell: a logon task that starts the daemon instantly on boot/logon
 #    (without it, the 5-min monitor still relaunches the daemon within <=5 min of logon).
