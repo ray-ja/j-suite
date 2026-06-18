@@ -24,8 +24,8 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 
 ## 🎯 CAP'S RANKED LIST (revenue leads polish — work top-down, ergonomics are fill-ins between)
 1. **"Who owes me money" — overdue/unbilled view** `[Cap #1]` `✅ shipped to dev` `S` — Finance › 💸 Owed. *Mike Green & Michelle were unbilled; this surfaces them so Ray sends + collects.*
-2. **Review-on-completion prompt** `[Cap #2]` `⏳` — prompt for a Google review when a job is marked done.
-3. **Per-job P&L + expense logging** `[Cap #3]` `⏳` — log job expenses; show Cost/Price/Profit/Margin per job.
+2. **Review-on-completion prompt** `[Cap #2]` `✅ shipped to dev` `S` — done-transition fires a one-tap "ask for a Google review" (reuses the saved review link; OBX-only; SMS prefilled).
+3. **Per-job P&L + expense logging** `[Cap #3]` `❓awaiting Cap confirm, spec'd` `M` — `job.expenses[]` (additive, **migration fixture required**); categories disposal·mileage·materials·equipment·misc, **NO labor line**, mileage ×$0.725; inline "+ Expense" on the job; P&L sub-view reusing js/39 split, **worst-margin jobs first**, 35% floor flag.
 4. **Phase C wiring** `[Cap #4]` `🔨` — ops-brain wake→relay + 07/12/17 scheduling (in NOW).
 
 ## 🔨 NOW (in flight, on `dev`)
