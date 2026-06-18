@@ -162,11 +162,12 @@ window.openJob=function(id,customerId,presetDate){
     <div id="j_equip"></div>
     <div class="sub" id="j_equip_note" style="margin-top:6px"></div>
     ${!isNew?`<label style="margin-top:12px">Job expenses — hard cost (no labor line)</label><div id="j_exp"></div>`:""}
+    ${!isNew?`<label style="margin-top:12px">Resale (items pulled to flip)</label><div id="j_resale"></div>`:""}
     <label style="margin-top:12px">Notes</label><textarea id="j_notes">${esc(j.notes||"")}</textarea>
     <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
-  renderJobCrew();renderJobEquip();if(!isNew)renderJobExpenses(j.id);
+  renderJobCrew();renderJobEquip();if(!isNew){renderJobExpenses(j.id);renderJobResale(j.id);}
   if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
 };
 /* ---- per-job expenses (hard cost; Cap #3). Writes straight to job.expenses[] (rides job LWW) so a

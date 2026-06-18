@@ -22,6 +22,13 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 - **"On my way" one-tap from a job** — Message Templates has the copy, but it lives in the customer modal; a one-tap from the job itself would be slicker for the crew. `(Dev-noticed)` `⏳` `S`.
 
 ## 🎯 CAP'S RANKED LIST (revenue leads polish — work top-down, ergonomics are fill-ins between)
+**Round 2 (#5–#7):**
+- **#5 Resale tracker** `[Cap #5]` `✅ shipped to dev` `M` — first-class `resale[]` collection (junk-pulled items: pulled→to-list→posted→sold), ♻️ nav tab + inline capture on the job + ops-sweep "unposted resale aging" flag. *Data-model call: collection (not on-job array) — independent multi-week lifecycle + cross-job aggregation + clean ops projection; flagged for Cap.*
+- **#6 Push content** `[Cap #6]` `⏳` `M` — SW shows the real message body (iOS-safe, where supported).
+- **#7 Scheduling sanity-aid** `[Cap #7]` `⏳` `S` — warn on mixed-job-type / heavy-driving days.
+- **Recurring routes** — MORNING item (Ray supervises the build; revenue spine, LARGE — not unsupervised overnight).
+
+
 1. **"Who owes me money" — overdue/unbilled view** `[Cap #1]` `✅ shipped to dev` `S` — Finance › 💸 Owed. *Mike Green & Michelle were unbilled; this surfaces them so Ray sends + collects.*
 2. **Review-on-completion prompt** `[Cap #2]` `✅ shipped to dev` `S` — done-transition fires a one-tap "ask for a Google review" (reuses the saved review link; OBX-only; SMS prefilled).
 3. **Per-job P&L + expense logging** `[Cap #3]` `✅ shipped to dev` `M` — `job.expenses[]` (additive, migration fixture + load() backfill); inline "+ Expense" on the job (disposal·mileage·materials·equipment·misc, **NO labor line**, mileage ×72.5¢); Finance › 💹 P&L weekly view reusing js/39, **worst-margin first**, 🔴 35% floor flag. (plan: `docs/per-job-pl-plan.md`)

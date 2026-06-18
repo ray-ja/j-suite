@@ -46,6 +46,14 @@ function opsFindings(ops) {
   const eqDay = {}; (ops.jobs || []).forEach(j => { if (j.done || !j.date) return; (j.equipment || []).forEach(it => { const k = j.date + "|" + it; (eqDay[k] = eqDay[k] || []).push(j.id); }); });
   Object.keys(eqDay).forEach(k => { if (eqDay[k].length > 1) out.push({ key: "eqconflict:" + k, sev: "med", summary: "Equipment double-booked " + k.replace("|", " · ") + " across " + eqDay[k].length + " jobs" }); });
   (ops.crew || []).forEach(c => { if (c.lastActive && (now - c.lastActive) > QUIET_HOURS * HOUR) out.push({ key: "quiet:" + c.id, sev: "low", summary: c.name + " not active in " + Math.round((now - c.lastActive) / HOUR) + "h" }); });
+  const RESALE_TOLIST_DAYS = 7, RESALE_POSTED_DAYS = 21;
+  (ops.resale || []).forEach(r => {
+    if (!r || r.status === "sold") return;
+    const since = r.status === "posted" ? (r.listedDate ? Date.parse(r.listedDate + "T00:00:00") : r.updatedAt) : r.updatedAt;
+    const ageD = since ? Math.round((now - since) / DAY) : 0;
+    if (r.status === "to-list" && ageD > RESALE_TOLIST_DAYS) out.push({ key: "resaleaging:" + r.id, sev: "med", summary: "Resale not posted (" + ageD + "d): \"" + r.item + "\" still on the to-list" });
+    else if (r.status === "posted" && ageD > RESALE_POSTED_DAYS) out.push({ key: "resaleaging:" + r.id, sev: "low", summary: "Resale posted " + ageD + "d, unsold: \"" + r.item + "\"" + (r.platform ? " on " + r.platform : "") });
+  });
   const rank = { high: 0, med: 1, low: 2 };
   out.sort((a, b) => (rank[a.sev] - rank[b.sev]));
   return out;
@@ -74,7 +82,8 @@ function capRead(f) {
     openshift: "Someone likely forgot to clock out — fix the entry so payroll + mileage are right.",
     unschedquote: "Accepted money sitting unscheduled — book it before it goes cold.",
     eqconflict: "Two jobs want the same gear that day — rent/buy one or stagger them.",
-    quiet: "Quiet a while — a quick check-in keeps everyone in sync."
+    quiet: "Quiet a while — a quick check-in keeps everyone in sync.",
+    resaleaging: "Pulled inventory only pays once it sells — get it posted, repriced, or relisted."
   };
   return M[k] || "Review and resolve.";
 }

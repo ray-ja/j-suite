@@ -459,13 +459,33 @@ ok("pre-expenses job (no expenses array) round-trips zero-loss (backward compati
 // (c) deleting an expense line: newer shorter list wins, no resurrection of the removed line
 ok("deleting an expense line LWW-merges (newer wins, removed line does not resurrect)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j8", expenses: [{ id: "e1", cat: "misc", amount: 5 }, { id: "e2", cat: "misc", amount: 9 }], updatedAt: 5 }] } }, { obx: { jobs: [{ id: "j8", expenses: [{ id: "e2", cat: "misc", amount: 9 }], updatedAt: 9 }] } }); const j = m.obx.jobs.find(x => x.id === "j8") || {}; return (j.expenses || []).length === 1 && j.expenses[0].id === "e2"; })(), null);
 
+console.log("— resale tracker: first-class resale[] collection (Cap #5, LWW + zero-loss) —");
+// (a) scaffolds on both businesses; two devices union-merge resale items
+const rsM = t.mergeState(
+  { obx: { resale: [{ id: "rs1", item: "Oak dresser", status: "to-list", jobId: "j1", createdAt: 5, updatedAt: 5 }] } },
+  { obx: { resale: [{ id: "rs2", item: "Bike", status: "posted", platform: "Facebook Marketplace", listedDate: "2026-06-12", updatedAt: 7 }] }, jam: { resale: [] } }
+);
+ok("resale[] scaffolded on both businesses", Array.isArray(rsM.obx.resale) && Array.isArray(rsM.jam.resale), { obx: Object.keys(rsM.obx) });
+ok("resale items from both devices union-merge", rsM.obx.resale.length === 2 && rsM.obx.resale.some(r => r.id === "rs1") && rsM.obx.resale.some(r => r.id === "rs2"), rsM.obx.resale.map(r => r.id));
+// (b) status advance LWW: posted→sold (newer wins, price/buyer captured, other fields intact)
+const rsSold = t.mergeState(
+  { obx: { resale: [{ id: "rs3", item: "Couch", status: "posted", platform: "OfferUp", listedDate: "2026-06-10", updatedAt: 5 }] } },
+  { obx: { resale: [{ id: "rs3", item: "Couch", status: "sold", platform: "OfferUp", price: 120, buyer: "Dana", soldDate: "2026-06-15", updatedAt: 9 }] } }
+);
+ok("resale status advance LWW-merges (sold + price/buyer win, item intact)", (() => { const r = rsSold.obx.resale.find(x => x.id === "rs3") || {}; return r.status === "sold" && r.price === 120 && r.buyer === "Dana" && r.item === "Couch"; })(), rsSold.obx.resale[0]);
+// (c) delete tombstone survives
+ok("resale delete tombstone LWW-merges", (() => { const m = t.mergeState({ obx: { resale: [{ id: "rs4", item: "Lamp", status: "to-list", updatedAt: 5 }] } }, { obx: { resale: [{ id: "rs4", item: "Lamp", status: "to-list", deleted: true, updatedAt: 9 }] } }); const r = m.obx.resale.find(x => x.id === "rs4") || {}; return r.deleted === true; })(), null);
+// (d) a pre-resale store (no resale key) round-trips zero-loss + scaffolds resale empty
+ok("pre-resale store: every customer/quote/job survives + resale scaffolds (zero loss)", (() => { const m = t.mergeState({ obx: { customers: [{ id: "c1", updatedAt: 5 }], quotes: [{ id: "q1", updatedAt: 5 }], jobs: [{ id: "j1", updatedAt: 5 }] } }, {}); return m.obx.customers.length === 1 && m.obx.quotes.length === 1 && m.obx.jobs.length === 1 && Array.isArray(m.obx.resale); })(), null);
+
 console.log("— ops-brain Phase B: view=ops projection + opsFindings gap rules —");
 const opsmod = require("./tools/ops-sweep");
 const opsView = t.ceoProjection({
-  obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], done: false, updatedAt: 5 }], todos: [{ id: "t1", title: "Bags", due: "2026-06-10", done: false, priority: "High", updatedAt: 5 }], quotes: [{ id: "q1", cust: "Acme", total: 400, accepted: true, updatedAt: 5 }], timeclock: [] },
+  obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], done: false, updatedAt: 5 }], todos: [{ id: "t1", title: "Bags", due: "2026-06-10", done: false, priority: "High", updatedAt: 5 }], quotes: [{ id: "q1", cust: "Acme", total: 400, accepted: true, updatedAt: 5 }], timeclock: [], resale: [{ id: "rs1", item: "Dresser", status: "to-list", jobId: "j1", updatedAt: 5 }, { id: "rsSold", item: "Bike", status: "sold", price: 50, updatedAt: 5 }] },
   jam: {}, users: [{ id: "u1", username: "Ray", role: "owner", updatedAt: 5 }]
 }, { view: "ops" });
-ok("view=ops returns jobs/todos/openShifts/unscheduledQuotes/crew arrays", ["jobs", "todos", "openShifts", "unscheduledQuotes", "crew"].every(k => Array.isArray(opsView[k])), Object.keys(opsView));
+ok("view=ops returns jobs/todos/openShifts/unscheduledQuotes/crew/resale arrays", ["jobs", "todos", "openShifts", "unscheduledQuotes", "crew", "resale"].every(k => Array.isArray(opsView[k])), Object.keys(opsView));
+ok("view=ops surfaces open resale items but EXCLUDES sold", opsView.resale.some(r => r.id === "rs1") && !opsView.resale.some(r => r.id === "rsSold"), opsView.resale.map(r => r.id));
 ok("view=ops jobs carry done + completedAt (Phase A capture surfaced)", (() => { const j = opsView.jobs.find(x => x.id === "j1") || {}; return "done" in j && "completedAt" in j; })(), opsView.jobs[0]);
 ok("view=ops surfaces accepted-but-unscheduled quote", opsView.unscheduledQuotes.some(q => q.id === "q1"), opsView.unscheduledQuotes);
 const synthOps = {
@@ -474,7 +494,8 @@ const synthOps = {
   todos: [{ id: "t1", title: "Bags", due: "2026-06-10", done: false, priority: "High" }],
   openShifts: [{ id: "s1", userId: "u1", jobId: "jX", clockIn: Date.parse("2026-06-15T00:00:00Z") }],
   unscheduledQuotes: [{ id: "q1", customer: "Acme", total: 400, acceptedDate: "2026-06-09" }],
-  crew: [{ id: "u1", name: "Ray", today: "on", lastActive: 0 }, { id: "u2", name: "Chase", today: "off" }]
+  crew: [{ id: "u1", name: "Ray", today: "on", lastActive: 0 }, { id: "u2", name: "Chase", today: "off" }],
+  resale: [{ id: "rs1", item: "Oak dresser", status: "to-list", updatedAt: Date.parse("2026-06-01T00:00:00Z") }, { id: "rs2", item: "Fresh chair", status: "to-list", updatedAt: Date.parse("2026-06-14T00:00:00Z") }]
 };
 const F = opsmod.opsFindings(synthOps), keys = F.map(f => f.key);
 ok("opsFindings: overdue job flagged high", keys.indexOf("missedjob:j1") >= 0 && (F.find(f => f.key === "missedjob:j1") || {}).sev === "high", keys);
@@ -483,6 +504,7 @@ ok("opsFindings: coverage gap (all crew off) flagged", keys.indexOf("coverage:j3
 ok("opsFindings: overdue task flagged", keys.indexOf("overduetask:t1") >= 0, keys);
 ok("opsFindings: forgot-to-clock-out flagged", keys.indexOf("openshift:s1") >= 0, keys);
 ok("opsFindings: accepted-unscheduled quote flagged", keys.indexOf("unschedquote:q1") >= 0, keys);
+ok("opsFindings: aging to-list resale flagged (>7d), fresh one not", keys.indexOf("resaleaging:rs1") >= 0 && keys.indexOf("resaleaging:rs2") < 0, keys);
 ok("opsFindings: high severity sorts first", F.length > 0 && F[0].sev === "high", F[0]);
 ok("formatBrief renders a prioritized digest (counts + icons)", (() => { const b = opsmod.formatBrief(F, "Sweep"); return /high/.test(b) && b.indexOf("🔴") >= 0 && b.split("\n").length > 1; })(), null);
 ok("formatBrief on no findings = all clear", /all clear/.test(opsmod.formatBrief([])), null);
@@ -490,7 +512,7 @@ ok("formatBrief on no findings = all clear", /all clear/.test(opsmod.formatBrief
 console.log("— ops-brain Phase C: autonomous voice (gap-report + Cap's read + Ray-only audience gate) —");
 const briefmod = require("./tools/ops-brief");
 ok("capRead maps each finding type to a recommendation (no generic fallback for known keys)", (() => {
-  const keys = ["missedjob:j1", "coverage:j2", "overduetask:t1", "staletask:t2", "openshift:s1", "unschedquote:q1", "eqconflict:k", "quiet:u1"];
+  const keys = ["missedjob:j1", "coverage:j2", "overduetask:t1", "staletask:t2", "openshift:s1", "unschedquote:q1", "eqconflict:k", "quiet:u1", "resaleaging:rs1"];
   return keys.every(k => { const r = opsmod.capRead({ key: k }); return r && r !== "Review and resolve."; });
 })(), null);
 ok("capRead falls back gracefully on an unknown key", opsmod.capRead({ key: "mystery:x" }) === "Review and resolve.", null);
