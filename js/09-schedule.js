@@ -133,7 +133,13 @@ window.openJob=function(id,customerId,presetDate){
   JOBEQUIP=(typeof jobEquip==="function")?jobEquip(j):[];JOBEQUIP_JID=j.id;   // live required-equipment list for this modal
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
-  modal(isNew?"Schedule job":"Job",`
+  /* crew-on-phone: tap-to-call/text the customer + one-tap Directions to the job (best address: property → job → customer) */
+  const _c=j.customerId?d.customers.find(x=>x.id===j.customerId):null;
+  const _tel=((_c&&_c.phone)||"").replace(/[^0-9+]/g,"");
+  const _p=(j.propertyId&&typeof actProps==="function")?actProps().find(p=>p.id===j.propertyId):null;
+  const _addr=(_p&&_p.address)||j.address||(_c&&_c.address)||(_c&&typeof propsForCust==="function"&&(propsForCust(_c.id)[0]||{}).address)||"";
+  const _contact=(!isNew&&(_tel||_addr))?`<div class="row" style="gap:8px;margin:0 0 12px">${_tel?`<a class="btn ghost sm grow" href="tel:${_tel}" style="text-align:center">📞 Call</a><a class="btn ghost sm grow" href="sms:${_tel}" style="text-align:center">💬 Text</a>`:""}${_addr?`<a class="btn ghost sm grow" href="https://maps.google.com/?q=${encodeURIComponent(_addr)}" target="_blank" rel="noopener" style="text-align:center">🗺️ Directions</a>`:""}</div>`:"";
+  modal(isNew?"Schedule job":"Job",`${_contact}
     <label>Job / service</label><input id="j_title" value="${esc(j.title||"")}" placeholder="e.g. Power wash — driveway">
     <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
     <label>Customer</label><select id="j_cust">${opts}</select>
