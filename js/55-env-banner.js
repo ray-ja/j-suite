@@ -9,7 +9,11 @@
   // Production = the deployed Ubuntu box, by Tailscale hostname AND raw IP (served either way).
   var PROD_HOSTS = ["rzy-ubuntu-workstation-1.taila3fda5.ts.net", "100.103.109.41"];
   var host = (typeof location !== "undefined" && location.hostname || "").toLowerCase();
-  if (PROD_HOSTS.indexOf(host) >= 0) return;   // confirmed prod → no banner
+  // SINGLE SOURCE OF TRUTH for the host-based environment. Both the DEV banner and the dev
+  // auto-login (js/56) read these — so "is this dev or prod?" is decided in exactly one place.
+  window.JSUITE_IS_PROD_HOST = PROD_HOSTS.indexOf(host) >= 0;
+  window.jsIsDevHost = function () { return !window.JSUITE_IS_PROD_HOST; };
+  if (window.JSUITE_IS_PROD_HOST) return;   // confirmed prod → no banner
   function show() {
     if (!document.body || document.getElementById("envbanner")) return;
     var b = document.createElement("div");
