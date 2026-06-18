@@ -41,7 +41,9 @@ if (noPost) { console.log("(--no-post — self-healed, skipping the Ray alert)")
 
 let cfg; try { cfg = readJson(CFG); } catch (e) { console.error("no watcher-config.json — cannot post alert"); process.exit(2); }
 if (!cfg.writeToken) { console.error("watcher-config has no writeToken — cannot post alert"); process.exit(2); }
-const payload = JSON.stringify({ title: "Cap", senderLabel: "Cap", body: msg });   // private Cap thread = Ray-only
+if (!cfg.ownerId) { console.error("watcher-config has no ownerId — refusing to post (would land in a crew-visible thread); printed alert only"); process.exit(2); }
+// Ray-only OPS thread (system alerts must NEVER look like a crew conversation): threadId + members:[owner] + to:"ops" → dm
+const payload = JSON.stringify({ threadId: cfg.opsThreadId || "thr_ops_capray", members: [cfg.ownerId], to: "ops", senderLabel: "Cap", body: msg });
 const u = new URL(cfg.prodUrl.replace(/\/+$/, "") + "/api/ceo/message"), lib = u.protocol === "https:" ? https : http;
 const r = lib.request({ method: "POST", hostname: u.hostname, port: u.port || (u.protocol === "https:" ? 443 : 80), path: u.pathname, headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload), Authorization: "Bearer " + cfg.writeToken } },
   res => { let d = ""; res.on("data", c => d += c); res.on("end", () => { console.log("alert POST " + res.statusCode); process.exit(2); }); });

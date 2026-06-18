@@ -36,15 +36,17 @@ function loadCfg() { let c; try { c = readJson(CFG_PATH); } catch (e) { die("no 
 function loadCursor() { try { return readJson(CURSOR); } catch (e) { return { seen: {} }; } }
 function saveCursor(c) { try { fs.writeFileSync(CURSOR, JSON.stringify(c)); } catch (e) {} }
 
-/* PURE: resolve where a brief goes. Ray → private "Cap" thread. Crew → broadcast, but only when
-   the switch is enabled; otherwise blocked. Exported so the gate is unit-tested. */
+/* PURE: resolve WHERE a brief goes (logical target). Ray → the dedicated Ray-only ops thread (never a
+   crew-visible thread). Crew → the broadcast, but only when the switch is enabled; else blocked.
+   The actual thread payload is built in main() from config (ops thread id + owner id). Exported so
+   the gate + routing are unit-tested. */
 function audienceTarget(audience, crewEnabled) {
   audience = audience || "ray";
   if (audience === "crew") {
-    if (!crewEnabled) return { blocked: true, reason: "crew-facing path is GATED OFF until the meeting", post: null };
-    return { blocked: false, post: { title: "Crew", senderLabel: "Cap" } };   // broadcast thread (post-meeting)
+    if (!crewEnabled) return { blocked: true, reason: "crew-facing path is GATED OFF until the meeting", target: null };
+    return { blocked: false, target: "crew" };   // broadcast thread (post-meeting)
   }
-  return { blocked: false, post: { title: "Cap", senderLabel: "Cap" } };       // Ray-only private Cap channel
+  return { blocked: false, target: "ops" };       // Ray-only ops thread (NOT a crew-visible thread)
 }
 
 function req(method, url, headers, body) {
@@ -78,15 +80,24 @@ async function main() {
   const brief = buildGapReport(findings, ops.today);   // full open picture, with Cap's read on each
 
   if (!doPost) {   // dry-run: print, post nothing
-    console.log(JSON.stringify({ dryRun: true, audience, thread: tgt.post.title, event: fresh.length > 0, openFindings: findings.length, newFindings: fresh.length, brief }, null, 1));
+    console.log(JSON.stringify({ dryRun: true, audience, target: tgt.target, event: fresh.length > 0, openFindings: findings.length, newFindings: fresh.length, brief }, null, 1));
     return;
   }
   if (!fresh.length) { console.log(JSON.stringify({ posted: false, reason: "no new findings", openFindings: findings.length })); return; }
   if (!cfg.writeToken) die("watcher-config needs writeToken to post");
-  const payload = JSON.stringify({ title: tgt.post.title, senderLabel: tgt.post.senderLabel, body: brief });
+  // Build the thread payload from config. OPS → the dedicated Ray-only ops thread (NEVER a crew-visible
+  // thread): requires ownerId so the thread is created members:[owner], type:dm. Refuse rather than leak.
+  let body = { senderLabel: "Cap", body: brief };
+  if (tgt.target === "ops") {
+    if (!cfg.ownerId) die("watcher-config needs ownerId to post the Ray-only ops brief (refusing — would otherwise default to a crew-visible thread)");
+    Object.assign(body, { threadId: cfg.opsThreadId || "thr_ops_capray", members: [cfg.ownerId], to: "ops" });
+  } else {   // crew broadcast (post-meeting only)
+    Object.assign(body, { threadId: cfg.broadcastThreadId, to: "__crew__", title: "Crew — Broadcast" });
+  }
+  const payload = JSON.stringify(body);
   const r = await req("POST", cfg.prodUrl.replace(/\/+$/, "") + "/api/ceo/message", { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload), Authorization: "Bearer " + cfg.writeToken }, payload);
   if (r.status >= 200 && r.status < 300) saveCursor({ seen: findings.reduce((m, f) => { m[f.key] = 1; return m; }, {}) });
-  console.log("POST " + r.status + " " + r.body + " (audience=" + audience + ", thread=" + tgt.post.title + ", new=" + fresh.length + ")");
+  console.log("POST " + r.status + " " + r.body + " (audience=" + audience + ", target=" + tgt.target + ", new=" + fresh.length + ")");
 }
 
 if (require.main === module) main();

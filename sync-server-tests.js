@@ -329,6 +329,21 @@ const mgDel = t.mergeState(
   { obx: { messages: [{ id: "msg_x", threadId: "thr_crew", deleted: true, updatedAt: 50 }] } }
 );
 ok("retracted message tombstone propagates", (mgDel.obx.messages.find(m => m.id === "msg_x") || {}).deleted === true, mgDel.obx.messages);
+// thread-IA cleanup: relabel an existing thread + add new threads (avail/ops) rides LWW with ZERO message loss
+const iaMerge = t.mergeState(
+  { obx: { messages: [
+    { id: "thr_bc", kind: "thread", threadId: "thr_bc", title: "Strategy", type: "broadcast", members: ["u1", "u2", "u3"], updatedAt: 5 },
+    { id: "m_keep1", threadId: "thr_bc", senderId: "u2", body: "im here", ts: 10, updatedAt: 10 },
+    { id: "m_keep2", threadId: "thr_bc", senderId: "__ceo__", body: "Cap reply", ts: 11, updatedAt: 11 } ] } },
+  { obx: { messages: [
+    { id: "thr_bc", kind: "thread", threadId: "thr_bc", title: "Crew — Broadcast", type: "broadcast", members: ["u1", "u2", "u3"], updatedAt: 99 },         // relabel (newer wins)
+    { id: "thr_avail_u2", kind: "thread", threadId: "thr_avail_u2", title: "Chase — Availability", type: "dm", availChannel: true, members: ["u2"], updatedAt: 99 },  // new per-crew avail channel
+    { id: "thr_ops_capray", kind: "thread", threadId: "thr_ops_capray", title: "Cap ops", type: "dm", members: ["u1"], updatedAt: 99 } ] } }                  // new Ray-only ops thread
+);
+ok("thread-IA: broadcast relabel wins (Strategy → Crew — Broadcast) via LWW", (iaMerge.obx.messages.find(m => m.id === "thr_bc") || {}).title === "Crew — Broadcast", iaMerge.obx.messages.filter(m => m.kind === "thread").map(m => m.title));
+ok("thread-IA: both prior crew messages survive the relabel (ZERO message loss)", !!iaMerge.obx.messages.find(m => m.id === "m_keep1") && !!iaMerge.obx.messages.find(m => m.id === "m_keep2"), iaMerge.obx.messages.filter(m => !m.kind).map(m => m.id));
+ok("thread-IA: new per-crew availability channel merges in (members-scoped dm)", (() => { const a = iaMerge.obx.messages.find(m => m.id === "thr_avail_u2") || {}; return a.availChannel === true && a.type === "dm" && (a.members || []).length === 1; })(), null);
+ok("thread-IA: new Ray-only ops thread is a dm scoped to the owner (NOT broadcast)", (() => { const o = iaMerge.obx.messages.find(m => m.id === "thr_ops_capray") || {}; return o.type === "dm" && (o.members || [])[0] === "u1"; })(), null);
 // backward-compat: the pre-messages realistic fixture gains a messages push with ZERO loss of prior records
 const msgPush = { obx: { messages: [
   { id: "thr_crew", kind: "thread", threadId: "thr_crew", title: "Crew", type: "broadcast", members: ["u1", "u2", "u3"], createdBy: "u1", updatedAt: 1717200000000 },
@@ -519,11 +534,11 @@ ok("capRead falls back gracefully on an unknown key", opsmod.capRead({ key: "mys
 const gr = opsmod.buildGapReport(F, "2026-06-15");
 ok("buildGapReport: digest has the date label, counts, per-finding Cap's read (↳), severity icons", /2026-06-15/.test(gr) && /high/.test(gr) && gr.indexOf("↳") >= 0 && gr.indexOf("🔴") >= 0, null);
 ok("buildGapReport: empty findings = all clear", /All clear/.test(opsmod.buildGapReport([])), null);
-// THE GATE: pre-meeting the brief is Ray-only; crew-facing is built but OFF
-ok("audience=ray → posts to the private Cap (Ray-only) thread", (() => { const t = briefmod.audienceTarget("ray", briefmod.CREW_FACING_ENABLED); return !t.blocked && t.post.title === "Cap"; })(), null);
+// THE GATE: pre-meeting the brief routes to the Ray-only OPS thread; crew-facing is built but OFF
+ok("audience=ray → routes to the Ray-only ops thread (never a crew-visible thread)", (() => { const t = briefmod.audienceTarget("ray", briefmod.CREW_FACING_ENABLED); return !t.blocked && t.target === "ops"; })(), null);
 ok("audience=crew is BLOCKED while the switch is off (CREW_FACING_ENABLED=false)", (() => { const t = briefmod.audienceTarget("crew", briefmod.CREW_FACING_ENABLED); return t.blocked === true && /GATED OFF/.test(t.reason); })(), null);
 ok("the switch is shipped OFF (crew not yet initiated)", briefmod.CREW_FACING_ENABLED === false, briefmod.CREW_FACING_ENABLED);
-ok("audience=crew WOULD broadcast once the switch is flipped on (path is built)", (() => { const t = briefmod.audienceTarget("crew", true); return !t.blocked && t.post.title === "Crew"; })(), null);
+ok("audience=crew WOULD broadcast once the switch is flipped on (path is built)", (() => { const t = briefmod.audienceTarget("crew", true); return !t.blocked && t.target === "crew"; })(), null);
 
 console.log("— push content: SW peek returns the real latest inbound message (Cap #6) —");
 const peekStore = {

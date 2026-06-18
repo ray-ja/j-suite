@@ -37,6 +37,7 @@ function load(){
   if(!S.marketingV2){appendMarketing();S.marketingV2=true;save();}
   if(!S.ceoV1){seedCeo();S.ceoV1=true;save();}
   if(!S.ceoV3){seedCeo();S.ceoV3=true;save();}   // refresh the CEO-desk note to current reality (crew-run, real customers) + Cap rename — overwrites the stale first-jobs/uniforms text and any prior sign-off
+  if(!S.msgIAv1&&typeof migrateThreadIA==="function"){migrateThreadIA();S.msgIAv1=true;save();}   // Messages IA cleanup: clear labels, per-crew availability channels, no system noise in crew view
   /* inventory master — seeded/refreshed from js/31-inventory.js (its INV_SEED is the import of OBX-Ops/Inventory/master-inventory.md); preserves the user's Have?/Qty marks. Runs at boot after all modules parse. */
   if(typeof seedInventory==="function")seedInventory();
   /* admin/roles — backfill roles + the synced access-map record on accounts (js/32-admin.js) */

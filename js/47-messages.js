@@ -135,11 +135,12 @@ window.availQuickSet = function (tid, ds, v) {
    structured availability quick-replies appear too — crew can send availability without being asked.
    Strategy reads it via GET /api/ceo?view=messages and replies via the scoped write path. */
 /* the (existing or new) private DM thread between this user and Cap (participant-scoped: [user]; Cap reads via the read path) */
+function capDmTitle(u) { return ((typeof userName === "function" && userName(u.id)) || u.username || "Crew") + " ↔ Cap"; }
 function ensureCapThread(u) {
   const t = msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
   if (t) return t.threadId;
   const tid = "thr_" + uid();
-  msgColl().push({ id: tid, kind: "thread", threadId: tid, title: "Cap", type: "dm", toStrategy: true, availAsk: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
+  msgColl().push({ id: tid, kind: "thread", threadId: tid, title: capDmTitle(u), type: "dm", toStrategy: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
   save();
   return tid;
 }
@@ -180,7 +181,7 @@ window.msgCreate = function () {
   }
   const crew = (typeof realAccounts === "function" ? realAccounts() : (S.users || []).filter(x => x && !x.kind && !x.deleted)).filter(x => x.active !== false);
   let members, title;
-  if (to === "__crew__") { members = crew.map(x => x.id); title = "Crew" + (availAsk ? " — availability" : ""); }
+  if (to === "__crew__") { members = crew.map(x => x.id); title = "Crew — Broadcast"; }
   else { const m = crew.find(x => x.id === to); members = [u ? u.id : null, to].filter(Boolean); title = m ? m.username : "Direct"; }
   const tid = "thr_" + uid();
   msgColl().push({ id: tid, kind: "thread", threadId: tid, title: title, type: to === "__crew__" ? "broadcast" : "dm", availAsk: availAsk, members: members, createdBy: u ? u.id : null, deleted: false, updatedAt: now() });
@@ -188,3 +189,43 @@ window.msgCreate = function () {
   else { save(); }
   closeModal(); TAB = "messages"; render();
 };
+
+/* ----- Messages information-architecture cleanup (Cap, one-time; guarded by S.msgIAv1 in load) -----
+   Clear, unmistakable labels + no system noise in the crew's view. Idempotent + NON-DESTRUCTIVE:
+   only edits thread titles/flags and tombstones the malformed all-member "Cap" ops broadcast — never
+   touches a message record. Runs on the client, so the relabels ride the normal sync up to prod. */
+function migrateThreadIA() {
+  ["obx", "jam"].forEach(b => {
+    const Sb = S[b]; if (!Sb || !Array.isArray(Sb.messages)) return;
+    const coll = Sb.messages;
+    coll.forEach(t => {
+      if (!t || t.kind !== "thread" || t.deleted) return;
+      // the malformed all-member "Cap" broadcast = system/ops alerts that leaked into the crew view → kill it.
+      // (ONLY title "Cap" — the REAL crew broadcast is titled "Strategy"/"Crew" and must be relabeled, not killed.)
+      if (t.type === "broadcast" && t.title === "Cap") { t.deleted = true; t.updatedAt = now(); return; }
+      // the real crew broadcast (incl. the leftover "Strategy" name) → one unmistakable label
+      if (t.type === "broadcast") { if (t.title !== "Crew — Broadcast") { t.title = "Crew — Broadcast"; t.updatedAt = now(); } return; }
+      // a person's DM with Cap → labeled by who; kill the bare "Cap"/"Strategy"; drop the stray availability tag
+      if (t.toStrategy || t.title === "Cap" || t.title === "Strategy") {
+        const who = (typeof userName === "function" && userName((t.members || [])[0])) || "Crew";
+        const nt = who + " ↔ Cap";
+        if (t.title !== nt) { t.title = nt; t.updatedAt = now(); }
+        if (!t.toStrategy) { t.toStrategy = true; t.updatedAt = now(); }
+        if (t.availAsk && !t.availChannel) { t.availAsk = false; t.updatedAt = now(); }   // a DM is not an availability channel
+        return;
+      }
+    });
+    // ensure a dedicated per-crew Availability channel (obx = the crew-comms business) where Cap logs scheduling
+    if (b === "obx") {
+      const crew = (S.users || []).filter(u => u && !u.kind && !u.deleted && u.role === "crew");
+      crew.forEach(u => {
+        const has = coll.some(t => t.kind === "thread" && !t.deleted && t.availChannel && (t.members || []).indexOf(u.id) >= 0);
+        if (!has) {
+          const tid = "thr_avail_" + u.id;
+          coll.push({ id: tid, kind: "thread", threadId: tid, title: ((typeof userName === "function" && userName(u.id)) || "Crew") + " — Availability", type: "dm", availAsk: true, availChannel: true, members: [u.id], createdBy: "__ceo__", deleted: false, updatedAt: now() });
+        }
+      });
+    }
+  });
+}
+window.migrateThreadIA = migrateThreadIA;
