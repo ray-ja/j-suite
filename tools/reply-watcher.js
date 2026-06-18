@@ -89,22 +89,30 @@ function detect(prev, threads) {
   return { newMsgs, readChanges };
 }
 
+const HEARTBEAT_PATH = path.join(__dirname, ".watcher-heartbeat.json");
+/* liveness beacon — written every poll so watcher-monitor.js can detect a silent stall (>5m stale) */
+function beat(extra) { try { fs.writeFileSync(HEARTBEAT_PATH, JSON.stringify(Object.assign({ ts: Date.now(), pid: process.pid }, extra || {}))); } catch (e) {} }
+
 async function cmdWatch() {
   const cfg = loadCfg();
   const maxPolls = cfg.maxPolls || 160;   // ~4h at 90s, then exit "idle" (re-armable)
+  beat({ status: "armed" });
   for (let i = 0; i < maxPolls; i++) {
     let threads;
-    try { threads = await fetchThreads(cfg); } catch (e) { await sleep(cfg.pollMs); continue; }   // network blip → keep looping
+    try { threads = await fetchThreads(cfg); } catch (e) { beat({ status: "neterr", poll: i }); await sleep(cfg.pollMs); continue; }   // network blip → keep looping (still beats: process is alive)
     const cursor = loadCursor();
     const ev = detect(cursor, threads);
+    beat({ status: "polling", poll: i });   // proves we completed a real fetch this cycle
     if (ev.newMsgs.length) {   // wake ONLY on new non-CEO messages; read-marker changes are surfaced (below) but never wake Cap
       saveCursor(snapshot(threads));
+      beat({ status: "event", poll: i });
       console.log(JSON.stringify({ event: true, at: Date.now(), newMessages: ev.newMsgs, state: threads.map(t => ({ thread: t.title, threadId: t.threadId, reads: readState(t) })) }, null, 1));
       return;   // wake the dev lane
     }
     saveCursor(snapshot(threads));   // baseline + track read-state (for status / future read-no-reply alert); stay silent on passive opens
     await sleep(cfg.pollMs);
   }
+  beat({ status: "idle" });
   console.log(JSON.stringify({ event: false, idle: true, at: Date.now() }));
 }
 async function cmdStatus() {

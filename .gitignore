@@ -18,6 +18,9 @@ watcher-config.json
 tools/.reply-watcher-cursor.json
 tools/.ops-sweep-cursor.json
 tools/.ops-brief-cursor.json
+tools/.watcher-heartbeat.json
+.reply-watcher.log
+.watcher-daemon.log
 
 # --- Office lock & temp files ---
 ~$*
