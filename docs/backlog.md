@@ -15,6 +15,13 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 - **Native wrapper** — iOS app shell wrapping the PWA for **reliable push / lock-screen / background** (addresses the web-push limits + iOS Scheduled-Summary batching we hit). `[Ray]` `❓scope` `L` — Capacitor/WKWebView shell + APNs; biggest reliability win for crew notifications.
 - **This backlog doc** — `[Ray]` `✅` (you're reading it).
 
+### Ergonomic gaps (Dev-noticed brainstorm — overnight)
+- **Tappable contact + one-tap Directions on the customer card** — phone → `tel:`/`sms:`, address → Google Maps. `(Dev-noticed)` `✅ shipped to dev` `S` — crew on phones couldn't tap to call/text/navigate before.
+- **One-tap Directions from a JOB** (crew driving to a scheduled job; job has customer/property address). `(Dev-noticed)` `⏳` `S` — extends the customer win to the schedule.
+- **Tap-to-call the customer from a job card** (Today/Schedule). `(Dev-noticed)` `⏳` `S`.
+- **Search on more lists** — only Customers + Inventory have a search box; Jobs/Schedule + Quotes don't. `(Dev-noticed)` `⏳` `S`.
+- **"On my way" one-tap from a job** — Message Templates has the copy, but it lives in the customer modal; a one-tap from the job itself would be slicker for the crew. `(Dev-noticed)` `⏳` `S`.
+
 ## 🔨 NOW (in flight, on `dev`)
 - **Ops-scanning brain Phase A** — `last-active` + `job.completedAt/By` capture. `[Cap]` `✅` on **main** `1556efa` (deployed to prod).
 - **Ops-brain Phase B** — `view=ops` + `ops-sweep.js` gap-rule scanner (overdue/at-risk job, coverage gap, overdue/stale task, forgot-to-clock-out, unscheduled accepted quote, equipment double-book, crew-quiet), cursor-deduped, severity-ranked. `[Cap]` `🔨` on **dev** `e82d948` (live after Ray deploys; fixture-tested 136/0).

@@ -61,6 +61,7 @@ window.openCustomer=function(id){
     <label>Next follow-up date</label><input id="f_next" type="date" value="${c.next||""}">
     <button class="btn acc" style="margin-top:14px" onclick="saveCustomer('${c.id}',${isNew})">Save</button>
     ${isNew?`<p class="muted" style="margin-top:8px">Save the customer, then reopen to add properties.</p>`:`${propsH}
+      ${(()=>{const tel=(c.phone||"").replace(/[^0-9+]/g,"");const ap=propsForCust(c.id)[0];const addr=c.address||(ap&&ap.address)||"";return (tel||addr)?`<div class="row" style="gap:8px;margin-top:10px">${tel?`<a class="btn ghost sm grow" href="tel:${tel}" style="text-align:center">📞 Call</a><a class="btn ghost sm grow" href="sms:${tel}" style="text-align:center">💬 Text</a>`:""}${addr?`<a class="btn ghost sm grow" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" style="text-align:center">🗺️ Directions</a>`:""}</div>`:"";})()}
       <div class="row" style="gap:8px;margin-top:12px">
        <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
        <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button>
