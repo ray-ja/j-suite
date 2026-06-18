@@ -1,4 +1,5 @@
 /* ---------- QUOTES ---------- */
+let QSEARCH="";
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
@@ -7,14 +8,19 @@ function rQuotes(){
   h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>
     <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>
     <button class="btn ghost" style="margin-bottom:10px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
-  const list=actQ();
-  if(!list.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
+  const all=actQ();let list=all;
+  if(QSEARCH){const qq=QSEARCH.toLowerCase();list=all.filter(q=>((q.cust||custName(q.customerId)||"")+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+(q.paid?"paid":q.invoiced?"invoiced":"")).toLowerCase().includes(qq));}
+  if(all.length)h+=`<input class="search" id="qsearch" placeholder="Search quotes…" value="${esc(QSEARCH)}">`;
+  if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
+  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
   else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
     <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
     <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
-    <div class="sub">${fmtDate(q.date)} · ${q.items.length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
+    <div class="sub">${fmtDate(q.date)} · ${(q.items||[]).length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
     <div style="font-weight:800;color:var(--brand)">${money(q.total)}</div></div>`).join("")+`</div>`;
   view.innerHTML=h;
+  const s=document.getElementById("qsearch");
+  if(s)s.oninput=e=>{QSEARCH=e.target.value;const p=s.selectionStart;rQuotes();const n=document.getElementById("qsearch");if(n){n.focus();n.setSelectionRange(p,p);}};
 }
 let QITEMS=[];let CURQ=null;
 /* The standalone quote modal has been RETIRED — saved quotes now open INTO the guided
