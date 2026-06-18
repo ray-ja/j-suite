@@ -140,7 +140,8 @@ function ceoProjection(store, opts) {
       id: u.id, name: u.username || "", role: u.role || "crew",
       clockedIn: !!tc,
       onJob: tc ? { jobId: tc.jobId, title: job ? (job.title || "") : "", biz: tc.biz, since: tc.since } : null,
-      todayStatus: AvailResolve.status(u, today)
+      todayStatus: AvailResolve.status(u, today),
+      pushSubs: Array.isArray(u.pushSubs) ? u.pushSubs.length : 0   // count only (no endpoints/keys) — who's subscribed, for verification/timing
     };
   });
   // next 7 days availability glance
@@ -510,4 +511,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, vapidJwt };

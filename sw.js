@@ -36,7 +36,7 @@ self.addEventListener("push", e => {
   e.waitUntil(self.registration.showNotification("Cap", {
     body: "New message — tap to open",
     icon: "assets/icon-192.png", badge: "assets/icon-192.png",
-    tag: "jsuite-msg", renotify: true, data: { url: "./" }
+    tag: "jsuite-" + Date.now(), data: { url: "./" }   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
   }));
 });
 self.addEventListener("notificationclick", e => {
