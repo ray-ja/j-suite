@@ -241,7 +241,7 @@ function webPushTickle(endpoint) {   // contentless POST to the push service; re
     const jwt = vapidJwt(u.origin); if (!jwt) return resolve(0);
     const lib = u.protocol === "https:" ? https : http;
     const r = lib.request({ method: "POST", hostname: u.hostname, port: u.port || (u.protocol === "https:" ? 443 : 80), path: u.pathname + u.search,
-      headers: { "Authorization": "vapid t=" + jwt + ", k=" + VAPID.publicKey, "TTL": "86400", "Content-Length": 0 } },
+      headers: { "Authorization": "vapid t=" + jwt + ", k=" + VAPID.publicKey, "TTL": "86400", "Urgency": "high", "Content-Length": 0 } },
       res => { res.resume(); resolve(res.statusCode || 0); });
     r.on("error", () => resolve(0)); r.setTimeout(10000, () => r.destroy());
     r.end();
@@ -252,8 +252,14 @@ async function pushNotify(store, biz, threadId, exceptUserId) {   // best-effort
   const coll = ((store[biz] || {}).messages) || [];
   const thread = coll.find(m => m && m.kind === "thread" && m.threadId === threadId && !m.deleted);
   if (!thread) return;
-  const recipients = (thread.members || []).filter(id => id && id !== exceptUserId);
   const users = (store.users || []);
+  // Broadcast fans out to EVERY real account (crew + owner) — same widen as the read-side broadcast
+  // fix (53e9e1f), not the post-time member snapshot (which can miss accounts created/subscribed later).
+  // DMs stay scoped to the thread's participants.
+  const recipients = (thread.type === "broadcast"
+    ? users.filter(u => u && !u.kind && !u.deleted && u.active !== false).map(u => u.id)
+    : (thread.members || [])
+  ).filter(id => id && id !== exceptUserId);
   let pruned = false;
   for (const uid of recipients) {
     const u = users.find(x => x && x.id === uid && !x.deleted);
