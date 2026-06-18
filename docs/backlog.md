@@ -25,7 +25,7 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 **Round 2 (#5–#7):**
 - **#5 Resale tracker** `[Cap #5]` `✅ shipped to dev` `M` — first-class `resale[]` collection (junk-pulled items: pulled→to-list→posted→sold), ♻️ nav tab + inline capture on the job + ops-sweep "unposted resale aging" flag. *Data-model call: collection (not on-job array) — independent multi-week lifecycle + cross-job aggregation + clean ops projection; flagged for Cap.*
 - **#6 Push content** `[Cap #6]` `✅ shipped to dev` `M` — SW fetches `/api/push/peek` on wake (device id'd by its own sub endpoint, no token in SW) → shows the real sender + body; always falls back to generic so every push fires (iOS-safe). Returns only the owner's latest inbound preview (no cross-user leak).
-- **#7 Scheduling sanity-aid** `[Cap #7]` `⏳` `S` — warn on mixed-job-type / heavy-driving days.
+- **#7 Scheduling sanity-aid** `[Cap #7]` `✅ shipped to dev` `S` — `js/54`: day modal shows a ⚠ heads-up when a day mixes ≥3 service types (gear/context-switching) or spans ≥3 towns (heavy driving). Non-blocking, pure read.
 - **Recurring routes** — MORNING item (Ray supervises the build; revenue spine, LARGE — not unsupervised overnight).
 
 

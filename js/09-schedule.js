@@ -115,6 +115,7 @@ window.openDay=function(ds){
   const hdr=(cnt&&cnt.total)?` · <span style="color:var(--accent)">${cnt.available} free</span>${cntOff?`, <span style="color:var(--danger)">${cntOff} off</span>`:""}`:"";
   const dow=(typeof DOW!=="undefined"&&typeof dowOf==="function")?(DOW[dowOf(ds)]+" · "):"";
   modal(dow+fmtDate(ds),`
+    ${typeof daySanityBanner==="function"?daySanityBanner(ds):""}
     <div class="secthd" style="margin-top:0"><h2>Jobs</h2><span class="ct">${jobs.length}</span></div>
     <div class="card">${list}</div>
     ${team?`<div class="secthd"><h2>Team availability</h2><span class="ct" style="font-weight:700">${hdr?hdr.replace(/^ · /,""):""}</span></div><div class="card">${team}</div>`:""}
