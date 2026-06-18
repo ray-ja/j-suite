@@ -293,6 +293,37 @@ async function pushNotify(store, biz, threadId, exceptUserId) {   // best-effort
   if (pruned) { try { saveStore(store); } catch (e) {} }   // persist pruned subs (rides account-LWW on next sync)
 }
 
+/* PUSH PEEK — the SW fetches this on a (contentless) push wake to show the REAL message body.
+   The device identifies itself by ITS OWN push-subscription endpoint (the browser handed the SW
+   that endpoint; the server already stored it on the account). That endpoint is the capability —
+   a long, unguessable push-service URL — so no token lives in the service worker. We return ONLY
+   the owning user's latest INBOUND message preview (never their own, only threads they're in) —
+   no cross-user leak. Falls back to a generic line so the SW can always show something. */
+function pushPeek(store, endpoint) {
+  store = store || {};
+  if (!endpoint) return { ok: false };
+  const users = (store.users || []);
+  const user = users.find(u => u && !u.deleted && Array.isArray(u.pushSubs) && u.pushSubs.some(s => s && s.endpoint === endpoint));
+  if (!user) return { ok: false };
+  let best = null;
+  for (const b of Object.keys(store)) {
+    const biz = store[b];
+    if (!biz || typeof biz !== "object" || !Array.isArray(biz.messages)) continue;
+    const msgs = biz.messages, threads = {};
+    msgs.forEach(m => { if (m && m.kind === "thread" && !m.deleted) threads[m.threadId] = m; });
+    msgs.forEach(m => {
+      if (!m || m.kind || m.deleted || m.senderId === user.id) return;        // skip thread records, deleted, and the user's own
+      const tr = threads[m.threadId]; if (!tr) return;
+      const inThread = tr.type === "broadcast" ? true : ((tr.members || []).indexOf(user.id) >= 0);
+      if (!inThread) return;
+      if (!best || (m.ts || 0) > (best.ts || 0)) best = { ts: m.ts || 0, label: m.senderLabel || tr.title || "Cap", body: m.body || "" };
+    });
+  }
+  if (!best) return { ok: true, title: "Cap", body: "New message — tap to open" };
+  const preview = String(best.body || "").replace(/\s+/g, " ").trim().slice(0, 140);
+  return { ok: true, title: best.label || "Cap", body: preview || "New message" };
+}
+
 /* ----- per-user iCalendar (.ics) subscription feed -----------------------------------------------
    A one-way, READ-ONLY mirror of a user's upcoming assigned jobs. The feed URL carries an
    unguessable per-account token (u.calToken), minted in the app and synced here on the user record,
@@ -439,6 +470,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // PUSH PEEK — SW fetches the real message body on wake (device id'd by its own sub endpoint).
+  if (req.method === "POST" && req.url === "/api/push/peek") {
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"ok":false,"error":"bad json"}'); }
+      const out = pushPeek(loadStore(), p && p.endpoint);
+      res.writeHead(out.ok ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(out));
+    });
+    return;
+  }
+
   // Web Push public key (VAPID) — clients fetch this to subscribe. Not a secret. 404 when push is off.
   if (req.method === "GET" && req.url === "/api/push/pubkey") {
     const on = !!(VAPID && VAPID.publicKey);
@@ -536,4 +580,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, pushPeek, vapidJwt, noteActive };

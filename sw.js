@@ -2,7 +2,7 @@
    fallback. On install it precaches a minimal app shell so a cold offline launch still renders.
    Only registers on secure contexts (https / localhost) — see js/29-boot.js. Over a raw http
    Tailscale IP there is no secure context, so this never runs and nothing breaks. */
-const CACHE = "jsuite-v3";
+const CACHE = "jsuite-v4";
 /* shell = the navigation document + styles + manifest/icons; relative URLs resolve against the
    SW scope (served root). JS modules are picked up by the network-first runtime cache on first load. */
 const SHELL = ["./", "app.css", "manifest.webmanifest", "assets/icon-192.png", "assets/icon-512.png"];
@@ -30,14 +30,28 @@ self.addEventListener("fetch", e => {
   );
 });
 
-/* ---- Web Push (tickle pattern) ---- contentless push wakes us; show a generic notification.
-   iOS requires every push to result in showNotification; this always does. */
+/* ---- Web Push (tickle + fetch-on-wake) ---- the push is contentless; on wake we fetch the REAL
+   message body from /api/push/peek (identifying this device by its own subscription endpoint — no
+   token in the SW) and show it. ANY failure (offline, timeout, push off) falls back to the generic
+   line, so every push still results in a showNotification — iOS requires that, and this always does. */
 self.addEventListener("push", e => {
-  e.waitUntil(self.registration.showNotification("Cap", {
-    body: "New message — tap to open",
-    icon: "assets/icon-192.png", badge: "assets/icon-192.png",
-    tag: "jsuite-" + Date.now(), data: { url: "./" }   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
-  }));
+  e.waitUntil((async () => {
+    let title = "Cap", body = "New message — tap to open";
+    try {
+      const sub = await self.registration.pushManager.getSubscription();
+      if (sub && sub.endpoint) {
+        const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 3000);
+        const r = await fetch("./api/push/peek", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }), signal: ctrl.signal });
+        clearTimeout(to);
+        if (r && r.ok) { const j = await r.json(); if (j && j.ok) { if (j.title) title = j.title; if (j.body) body = j.body; } }
+      }
+    } catch (_) { /* keep the generic fallback */ }
+    return self.registration.showNotification(title, {
+      body: body,
+      icon: "assets/icon-192.png", badge: "assets/icon-192.png",
+      tag: "jsuite-" + Date.now(), data: { url: "./" }   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
+    });
+  })());
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();

@@ -525,5 +525,27 @@ ok("audience=crew is BLOCKED while the switch is off (CREW_FACING_ENABLED=false)
 ok("the switch is shipped OFF (crew not yet initiated)", briefmod.CREW_FACING_ENABLED === false, briefmod.CREW_FACING_ENABLED);
 ok("audience=crew WOULD broadcast once the switch is flipped on (path is built)", (() => { const t = briefmod.audienceTarget("crew", true); return !t.blocked && t.post.title === "Crew"; })(), null);
 
+console.log("— push content: SW peek returns the real latest inbound message (Cap #6) —");
+const peekStore = {
+  users: [
+    { id: "u1", username: "Ray", pushSubs: [{ endpoint: "https://push.example/RAY" }], updatedAt: 5 },
+    { id: "u2", username: "Chase", pushSubs: [{ endpoint: "https://push.example/CHASE" }], updatedAt: 5 },
+    { id: "u3", username: "Lonely", pushSubs: [{ endpoint: "https://push.example/LONELY" }], updatedAt: 5 }
+  ],
+  obx: { messages: [
+    { id: "thrA", kind: "thread", threadId: "tA", type: "dm", members: ["u1", "u2"], title: "Cap", updatedAt: 5 },
+    { id: "m1", threadId: "tA", senderId: "u1", senderLabel: "Ray", body: "first", ts: 100 },
+    { id: "m2", threadId: "tA", senderId: "__ceo__", senderLabel: "Cap", body: "Pierce double-booked Saturday — sort it?", ts: 200 },
+    { id: "thrB", kind: "thread", threadId: "tB", type: "broadcast", members: [], title: "Crew", updatedAt: 5 },
+    { id: "m3", threadId: "tB", senderId: "u2", senderLabel: "Chase", body: "on my way", ts: 300 }
+  ] }
+};
+ok("pushPeek: Ray gets the latest inbound (broadcast incl.) — Chase's 'on my way'", (() => { const r = t.pushPeek(peekStore, "https://push.example/RAY"); return r.ok && r.title === "Chase" && r.body === "on my way"; })(), t.pushPeek(peekStore, "https://push.example/RAY"));
+ok("pushPeek: Chase gets the Cap DM, NOT his own broadcast message", (() => { const r = t.pushPeek(peekStore, "https://push.example/CHASE"); return r.ok && r.title === "Cap" && /double-booked/.test(r.body); })(), t.pushPeek(peekStore, "https://push.example/CHASE"));
+ok("pushPeek: unknown endpoint → ok:false (no leak)", t.pushPeek(peekStore, "https://push.example/NOPE").ok === false, null);
+ok("pushPeek: broadcast reaches everyone — Lonely also gets the broadcast", (() => { const r = t.pushPeek(peekStore, "https://push.example/LONELY"); return r.ok && r.body === "on my way"; })(), null);
+ok("pushPeek: user in no thread → generic fallback (always shows something)", (() => { const iso = { users: [{ id: "u9", pushSubs: [{ endpoint: "e9" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "dm", members: ["uX", "uY"], title: "DM", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "uX", senderLabel: "X", body: "private", ts: 1 }] } }; const r = t.pushPeek(iso, "e9"); return r.ok && /New message/.test(r.body) && !/private/.test(r.body); })(), null);
+ok("pushPeek: body is truncated to a short preview", (() => { const big = { users: [{ id: "u1", pushSubs: [{ endpoint: "e" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "broadcast", title: "Crew", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "x", senderLabel: "X", body: "y".repeat(500), ts: 1 }] } }; return t.pushPeek(big, "e").body.length <= 140; })(), null);
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

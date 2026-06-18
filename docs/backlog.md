@@ -24,7 +24,7 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 ## 🎯 CAP'S RANKED LIST (revenue leads polish — work top-down, ergonomics are fill-ins between)
 **Round 2 (#5–#7):**
 - **#5 Resale tracker** `[Cap #5]` `✅ shipped to dev` `M` — first-class `resale[]` collection (junk-pulled items: pulled→to-list→posted→sold), ♻️ nav tab + inline capture on the job + ops-sweep "unposted resale aging" flag. *Data-model call: collection (not on-job array) — independent multi-week lifecycle + cross-job aggregation + clean ops projection; flagged for Cap.*
-- **#6 Push content** `[Cap #6]` `⏳` `M` — SW shows the real message body (iOS-safe, where supported).
+- **#6 Push content** `[Cap #6]` `✅ shipped to dev` `M` — SW fetches `/api/push/peek` on wake (device id'd by its own sub endpoint, no token in SW) → shows the real sender + body; always falls back to generic so every push fires (iOS-safe). Returns only the owner's latest inbound preview (no cross-user leak).
 - **#7 Scheduling sanity-aid** `[Cap #7]` `⏳` `S` — warn on mixed-job-type / heavy-driving days.
 - **Recurring routes** — MORNING item (Ray supervises the build; revenue spine, LARGE — not unsupervised overnight).
 
@@ -43,7 +43,7 @@ over-capture. **Source tags:** [Ray]=Ray asked · [Cap]=Strategy/Cap · [Dev]=J-
 - **Recurring-route revenue engine** — home-watch / washing / mowing routes; recurring jobs + scheduling + billing cadence. `[Cap #4]` `❓plan-first` `L` — Cap reviews data-model before build.
 - **Daily morning brief** ("here's your day") — per-crew/owner 06:30–07:00 dispatch off the ops-sweep. `[Cap]` `⏳` `M` (depends on Phase C + a deploy).
 - **Schedule the ops-sweep** — 07:00/12:00/17:00 local, separate from reply-watcher + Dispatch timer (cron on dev box, or pod scheduler). `[Cap]` `⏳` `S`.
-- **Push content** — SW shows the actual message text (not "Cap: new message"). `[Cap/Ray]` `❓scope` `M` — needs a token-in-SW design (security); tickle stays the safe fallback.
+- **Push content** — `✅ shipped to dev` (Cap #6): SW fetch-on-wake `/api/push/peek` shows the real body; no token in SW (sub endpoint = capability); generic fallback keeps it iOS-safe.
 - **Last-seen surfacing in UI** — show "active Xm ago" per crew in-app (Schedule/Admin). `[Cap]` `❓scope` `M` — `lastActive` is currently CEO-read-path/server-only (not synced to the client); needs a delivery path to the app.
 - **Crew→crew / crew→Cap push** — push currently fires only on the CEO message route; crew sends don't notify. `[Dev]` `⏳` `S–M`.
 - **In-field SOP troubleshooting flows** — guided "what to do when X" for the crew on-site. `[Cap]` `❓scope` `M`.
