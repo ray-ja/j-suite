@@ -493,6 +493,55 @@ ok("resale delete tombstone LWW-merges", (() => { const m = t.mergeState({ obx: 
 // (d) a pre-resale store (no resale key) round-trips zero-loss + scaffolds resale empty
 ok("pre-resale store: every customer/quote/job survives + resale scaffolds (zero loss)", (() => { const m = t.mergeState({ obx: { customers: [{ id: "c1", updatedAt: 5 }], quotes: [{ id: "q1", updatedAt: 5 }], jobs: [{ id: "j1", updatedAt: 5 }] } }, {}); return m.obx.customers.length === 1 && m.obx.quotes.length === 1 && m.obx.jobs.length === 1 && Array.isArray(m.obx.resale); })(), null);
 
+console.log("— Step 2 data spine: pendingChanges approval queue (synced collection, LWW, zero-loss migration) —");
+// (a) scaffolds on both businesses; proposals from two devices union-merge
+const pc1 = t.mergeState(
+  { obx: { pendingChanges: [{ id: "pc1", proposedBy: "finance", type: "create", collection: "todos", targetId: null, before: null, after: { id: "td_new", title: "Follow up Mike re: 3rd-tree pricing" }, summary: "Add to-do: follow up Mike", status: "pending", createdAt: 5, updatedAt: 5 }] } },
+  { obx: { pendingChanges: [{ id: "pc2", proposedBy: "ops", type: "create", collection: "todos", after: { id: "td_2", title: "Order bags" }, summary: "Add to-do: order bags", status: "pending", createdAt: 7, updatedAt: 7 }] }, jam: { pendingChanges: [] } }
+);
+ok("pendingChanges scaffolded on both businesses", Array.isArray(pc1.obx.pendingChanges) && Array.isArray(pc1.jam.pendingChanges), { obx: Object.keys(pc1.obx) });
+ok("proposals from both devices union-merge", pc1.obx.pendingChanges.length === 2 && pc1.obx.pendingChanges.some(p => p.id === "pc1") && pc1.obx.pendingChanges.some(p => p.id === "pc2"), pc1.obx.pendingChanges.map(p => p.id));
+ok("proposal carries before/after snapshot + summary (diff + undo)", (() => { const p = pc1.obx.pendingChanges.find(x => x.id === "pc1") || {}; return p.before === null && (p.after || {}).id === "td_new" && p.summary === "Add to-do: follow up Mike"; })(), pc1.obx.pendingChanges.find(x => x.id === "pc1"));
+// (b) status advance LWW: pending → applied (newer wins, after/before intact, no field loss)
+const pcApplied = t.mergeState(
+  { obx: { pendingChanges: [{ id: "pc3", collection: "todos", type: "create", before: null, after: { id: "td_3", title: "X" }, summary: "add X", status: "pending", createdAt: 5, updatedAt: 5 }] } },
+  { obx: { pendingChanges: [{ id: "pc3", collection: "todos", type: "create", before: null, after: { id: "td_3", title: "X" }, summary: "add X", status: "applied", decidedBy: "u1", decidedAt: 9, updatedAt: 9 }] } }
+);
+ok("proposal status advance LWW-merges (applied wins, after intact, decidedBy captured)", (() => { const p = pcApplied.obx.pendingChanges.find(x => x.id === "pc3") || {}; return p.status === "applied" && p.decidedBy === "u1" && (p.after || {}).id === "td_3"; })(), pcApplied.obx.pendingChanges[0]);
+// (c) reject/discard tombstone propagates (soft-delete only — no hard deletes)
+ok("rejected proposal tombstone LWW-merges (soft-delete)", (() => { const m = t.mergeState({ obx: { pendingChanges: [{ id: "pc4", status: "pending", updatedAt: 5 }] } }, { obx: { pendingChanges: [{ id: "pc4", status: "rejected", deleted: true, updatedAt: 9 }] } }); const p = m.obx.pendingChanges.find(x => x.id === "pc4") || {}; return p.deleted === true && p.status === "rejected"; })(), null);
+// (d) THE migration fixture: a fresh device pulling the pre-Step2 store scaffolds pendingChanges empty (clean init)
+ok("pre-Step2 store scaffolds pendingChanges empty on pull (blank()/load()/COLLECTIONS init clean)", (() => { const m = t.mergeState(fx, {}); return Array.isArray(m.obx.pendingChanges) && Array.isArray(m.jam.pendingChanges) && m.obx.pendingChanges.length === 0 && m.jam.pendingChanges.length === 0; })(), null);
+// (e) THE zero-loss proof: adding a proposal to the realistic pre-change store keeps EVERY prior record
+const pcPush = { obx: { pendingChanges: [{ id: "pc_seed", proposedBy: "finance", type: "create", collection: "todos", targetId: null, before: null, after: { id: "td_seed", title: "Follow up Mike re: 3rd-tree pricing" }, summary: "Add to-do", status: "pending", createdAt: 1717300000000, updatedAt: 1717300000000 }] } };
+const pcMerged = t.mergeState(pulled, pcPush);
+const expectPc = census(pulled); expectPc["obx.pendingChanges"] = ["pc_seed"];
+ok("adding pendingChanges to the realistic store keeps every prior customer/property/quote/job/account (ZERO loss)", sameIds(expectPc, census(pcMerged)), { expected: expectPc["obx.pendingChanges"], got: census(pcMerged)["obx.pendingChanges"] });
+ok("the proposal landed in the queue (and nowhere else)", (() => { const c = census(pcMerged); return c["obx.pendingChanges"].length === 1 && c["obx.pendingChanges"][0] === "pc_seed"; })(), census(pcMerged)["obx.pendingChanges"]);
+
+console.log("— Step 2 scoped CEO propose path: writes pendingChanges ONLY, whitelist-enforced (cannot touch business data) —");
+const propStore = {
+  obx: { customers: [{ id: "c1", name: "Seaside", updatedAt: 5 }], quotes: [{ id: "q1", total: 480, updatedAt: 5 }], jobs: [{ id: "j1", title: "Wash", updatedAt: 5 }], todos: [{ id: "t0", title: "existing", updatedAt: 5 }], pendingChanges: [] },
+  jam: { customers: [{ id: "jc1", name: "Sound Side", updatedAt: 5 }] },
+  users: [{ id: "u1", username: "Ray", passhash: "SECRET", role: "owner", updatedAt: 5 }]
+};
+const propBefore = JSON.stringify({ c: propStore.obx.customers, q: propStore.obx.quotes, j: propStore.obx.jobs, td: propStore.obx.todos, jam: propStore.jam, users: propStore.users });
+const builtP = t.ceoBuildProposal({ biz: "obx", proposedBy: "finance", type: "create", collection: "todos", after: { id: "td_mike", title: "Follow up Mike re: 3rd-tree pricing", priority: "Medium" }, summary: "Add to-do: follow up Mike re: 3rd-tree pricing" }, propStore);
+ok("ceoBuildProposal produces ONE pending pendingChanges record (status=pending, todos)", builtP.ok && builtP.record && builtP.record.status === "pending" && builtP.record.collection === "todos" && !!builtP.proposalId, builtP);
+const pwMerged = t.mergeState(propStore, { obx: { pendingChanges: [builtP.record] } });
+const propAfter = JSON.stringify({ c: pwMerged.obx.customers, q: pwMerged.obx.quotes, j: pwMerged.obx.jobs, td: pwMerged.obx.todos, jam: { customers: pwMerged.jam.customers }, users: pwMerged.users });
+ok("propose does NOT touch customers/quotes/jobs/todos/accounts/other-biz (byte-identical)", propBefore === propAfter, { before: propBefore.slice(0, 70), after: propAfter.slice(0, 70) });
+ok("propose appended exactly one proposal to pendingChanges", pwMerged.obx.pendingChanges.length === 1 && pwMerged.obx.pendingChanges[0].id === builtP.proposalId, pwMerged.obx.pendingChanges.map(p => p.id));
+ok("proposal carries the pre-allocated target id (idempotent client apply) + summary", (pwMerged.obx.pendingChanges[0].after || {}).id === "td_mike" && /follow up Mike/i.test(pwMerged.obx.pendingChanges[0].summary), pwMerged.obx.pendingChanges[0]);
+// whitelist enforcement (defense in depth — Cap cannot escape the lane even if it tries)
+ok("propose REJECTS a non-whitelisted collection (quotes)", t.ceoBuildProposal({ biz: "obx", type: "update", collection: "quotes", targetId: "q1", after: { id: "q1", paid: true }, summary: "mark paid" }, propStore).ok === false, null);
+ok("propose REJECTS a non-whitelisted type (hard delete)", t.ceoBuildProposal({ biz: "obx", type: "delete", collection: "todos", targetId: "t0", summary: "remove" }, propStore).ok === false, null);
+ok("propose REJECTS empty summary", t.ceoBuildProposal({ biz: "obx", type: "create", collection: "todos", after: { id: "x" }, summary: "   " }, propStore).ok === false, null);
+ok("propose create without after rejected", t.ceoBuildProposal({ biz: "obx", type: "create", collection: "todos", summary: "x" }, propStore).ok === false, null);
+ok("propose update/softDelete require a targetId", t.ceoBuildProposal({ biz: "obx", type: "update", collection: "todos", after: { title: "x" }, summary: "x" }, propStore).ok === false && t.ceoBuildProposal({ biz: "obx", type: "softDelete", collection: "todos", summary: "x" }, propStore).ok === false, null);
+ok("propose generates a stable td_ id when create omits after.id (idempotent apply)", (() => { const r = t.ceoBuildProposal({ biz: "obx", type: "create", collection: "todos", after: { title: "no id" }, summary: "add" }, propStore); return r.ok && /^td_/.test((r.record.after || {}).id); })(), null);
+ok("propose uses the WRITE token gate (independent of the read token)", t.ceoTokenOk("WTOK", "WTOK") === true && t.ceoTokenOk("RTOK", "WTOK") === false, null);
+
 console.log("— ops-brain Phase B: view=ops projection + opsFindings gap rules —");
 const opsmod = require("./tools/ops-sweep");
 const opsView = t.ceoProjection({

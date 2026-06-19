@@ -52,7 +52,7 @@ const APP_FILE = path.join(__dirname, "Business App (v1).html");
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -238,6 +238,44 @@ function ceoBuildMessage(p, store) {
   return { biz: biz, records: records, threadId: tid, messageId: mid };
 }
 
+/* ---------- SCOPED CEO propose path: append to the pendingChanges queue ONLY ----------
+   Step 2 approval queue. ceoBuildProposal returns a single pendingChanges record; the route merges
+   { [biz]: { pendingChanges: [record] } } via the SAME mergeState — so a propose can ONLY add a
+   queued proposal. It is structurally incapable of touching todos/customers/quotes/jobs/accounts.
+   The whitelist below is enforced HERE (defense in depth): a buggy/compromised Cap still cannot
+   propose outside the lane, and APPLY is never the model — it's deterministic client code on approval. */
+const PROPOSE_COLLECTIONS = ["todos"];                     // Step 2: todos only (first gated write)
+const PROPOSE_TYPES = ["create", "update", "softDelete"];  // no hard delete, ever
+function ceoBuildProposal(p, store) {
+  p = p || {}; store = store || {};
+  const biz = (BIZES.indexOf(p.biz) >= 0) ? p.biz : "obx";
+  const type = String(p.type || "");
+  const collection = String(p.collection || "");
+  if (PROPOSE_TYPES.indexOf(type) < 0) return { ok: false, error: "type not allowed: " + type };
+  if (PROPOSE_COLLECTIONS.indexOf(collection) < 0) return { ok: false, error: "collection not allowed: " + collection };
+  const summary = String(p.summary || "").trim();
+  if (!summary) return { ok: false, error: "summary required" };
+  const after = (p.after && typeof p.after === "object") ? p.after : null;
+  if (type === "create" && !after) return { ok: false, error: "create requires after" };
+  const targetId = p.targetId || (after && after.id) || null;
+  if ((type === "update" || type === "softDelete") && !targetId) return { ok: false, error: type + " requires targetId" };
+  // pre-allocate a stable target id for create so the client apply is idempotent across re-sync
+  const afterOut = (type === "create" && after && !after.id) ? Object.assign({}, after, { id: "td_" + crypto.randomBytes(5).toString("hex") }) : after;
+  const ts = Date.now();
+  const id = "pc_" + crypto.randomBytes(6).toString("hex");
+  const record = {
+    id: id, createdAt: ts, updatedAt: ts,
+    proposedBy: (["ops", "finance", "cap"].indexOf(String(p.proposedBy)) >= 0) ? p.proposedBy : "cap",
+    type: type, collection: collection,
+    targetId: (type === "create") ? null : targetId,
+    before: (p.before !== undefined ? p.before : null),
+    after: afterOut || null,
+    summary: summary.slice(0, 500),
+    status: "pending", decidedBy: null, decidedAt: null, note: "", deleted: false
+  };
+  return { ok: true, biz: biz, record: record, proposalId: id };
+}
+
 /* ---------- WEB PUSH (VAPID-JWT "tickle" — contentless push; no payload encryption) ----------
    Only crypto used is ES256 VAPID-JWT (Node-native). A contentless push wakes the SW, which shows a
    generic "Cap: new message — tap to open" (no token/fetch in the SW). Inert without vapid-config.json. */
@@ -291,6 +329,26 @@ async function pushNotify(store, biz, threadId, exceptUserId) {   // best-effort
     if (keep.length !== u.pushSubs.length) { u.pushSubs = keep; u.updatedAt = Date.now(); }
   }
   if (pruned) { try { saveStore(store); } catch (e) {} }   // persist pruned subs (rides account-LWW on next sync)
+}
+// Notify the owner account(s) of a new proposal awaiting approval. Mirrors pushNotify's prune-on-dead
+// logic but targets owners directly (no thread needed) — the approval inbox is owner-only.
+async function pushNotifyOwner(store, exceptUserId) {   // best-effort
+  if (!VAPID || !VAPID.publicKey) return;
+  const users = (store.users || []);
+  const recipients = users.filter(u => u && !u.kind && !u.deleted && u.active !== false && u.role === "owner").map(u => u.id).filter(id => id && id !== exceptUserId);
+  let pruned = false;
+  for (const uid of recipients) {
+    const u = users.find(x => x && x.id === uid && !x.deleted);
+    if (!u || !Array.isArray(u.pushSubs) || !u.pushSubs.length) continue;
+    const keep = [];
+    for (const sub of u.pushSubs) {
+      const code = await webPushTickle(sub && sub.endpoint);
+      if (code === 404 || code === 410) { pruned = true; continue; }
+      keep.push(sub);
+    }
+    if (keep.length !== u.pushSubs.length) { u.pushSubs = keep; u.updatedAt = Date.now(); }
+  }
+  if (pruned) { try { saveStore(store); } catch (e) {} }
 }
 
 /* PUSH PEEK — the SW fetches this on a (contentless) push wake to show the REAL message body.
@@ -470,6 +528,28 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // SCOPED CEO write — POST /api/ceo/propose. Token = CEO_WRITE_TOKEN. Queues an approval (pendingChanges)
+  // ONLY — whitelist-enforced, cannot apply or touch any business collection. Owner approves in-app.
+  if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/propose")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
+      const store = loadStore();
+      const built = ceoBuildProposal(p, store);
+      if (!built.ok) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: built.error })); }
+      const merged = mergeState(store, { [built.biz]: { pendingChanges: [built.record] } });   // ONLY pendingChanges in the incoming
+      saveStore(merged);
+      pushNotifyOwner(merged, "__ceo__").catch(() => {});   // best-effort tickle to the owner (non-blocking)
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, biz: built.biz, proposalId: built.proposalId }));
+    });
+    return;
+  }
+
   // PUSH PEEK — SW fetches the real message body on wake (device id'd by its own sub endpoint).
   if (req.method === "POST" && req.url === "/api/push/peek") {
     let body = "";
@@ -580,4 +660,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, pushNotify, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

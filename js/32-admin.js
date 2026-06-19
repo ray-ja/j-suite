@@ -67,7 +67,7 @@ function curRoleKey() {
 function isOwner() { return curRoleKey() === "owner"; }
 function roleAllows(key, tab) {
   if (key === "owner") return true;            // owner sees everything, incl. the admin panel
-  if (tab === "admin") return false;           // admin panel is owner-only, always
+  if (tab === "admin" || tab === "approvals") return false;   // admin panel + approvals inbox are owner-only, always (hard-gated: hidden AND coerced-away)
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user

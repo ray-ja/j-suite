@@ -10,7 +10,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   document.querySelectorAll("nav button").forEach(btn=>btn.classList.toggle("on",btn.dataset.tab===TAB));
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,admin:rAdmin}[TAB])||rToday)();
+  (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
 }
