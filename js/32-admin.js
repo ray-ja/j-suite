@@ -134,6 +134,7 @@ function rAdmin() {
         <div class="sub">${roleBadge(u.role || "crew")} ${active ? `<span class="badge" style="background:var(--soft);color:var(--muted)">Active</span>` : `<span class="badge" style="background:var(--danger);color:#fff">Deactivated</span>`}</div></div>
         <select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:110px">${roleOpts(u.role || "crew")}</select></div>
       <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn ghost sm" onclick="adminSetEmail('${u.id}')">✉ ${u.email ? esc(u.email) : "Set email (SSO)"}</button>
         <button class="btn ghost sm" onclick="adminResetPw('${u.id}')">Reset password</button>
         <button class="btn ghost sm" onclick="adminToggleActive('${u.id}')">${active ? "Deactivate" : "Reactivate"}</button>
         <button class="btn danger sm" onclick="adminRemove('${u.id}')">Remove</button>
@@ -164,8 +165,9 @@ function rAdmin() {
 window.adminOpenCreate = function () {
   const roles = allRoles();
   modal("New account", `
-    <p class="muted" style="margin-bottom:8px">Username + password (no email). Pick the role this person signs in as.</p>
+    <p class="muted" style="margin-bottom:8px">Username + password + role. Add the person's email to enable one-tap Cloudflare Access sign-in.</p>
     <label>Username</label><input id="ac_name" autocomplete="off">
+    <label>Email (for Access SSO)</label><input id="ac_email" autocomplete="off" placeholder="name@obxlotsolutions.com">
     <label>Password</label><input id="ac_pw" type="password" autocomplete="new-password">
     <label>Role</label><select id="ac_role">${roles.map(r => `<option value="${esc(r.key)}" ${r.key === "crew" ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>
     <button class="btn acc" style="margin-top:14px" onclick="adminCreateAccount()">Create account</button>`);
@@ -175,9 +177,17 @@ window.adminCreateAccount = async function () {
   if (!un || !pw) { alert("Username and password required."); return; }
   if (users().some(u => u.username.toLowerCase() === un.toLowerCase())) { alert("That username is taken."); return; }
   if (!S.users) S.users = [];
-  S.users.push({ id: uid(), username: un, passhash: await hashPw(pw), role: role, active: true, settings: { theme: (typeof themePref === "function" ? themePref() : "light") }, updatedAt: now() });
+  S.users.push({ id: uid(), username: un, email: (val("ac_email") || "").trim().toLowerCase(), passhash: await hashPw(pw), role: role, active: true, settings: { theme: (typeof themePref === "function" ? themePref() : "light") }, updatedAt: now() });
   if (typeof logChange === "function") logChange("create", "account", "", "Created account " + un + " (" + role + ")");
   save(); closeModal(); render();
+};
+window.adminSetEmail = function (id) {
+  const u = (S.users || []).find(x => x.id === id); if (!u) return;
+  const e = prompt("Email for Cloudflare Access SSO (must match their Access login email):", u.email || "");
+  if (e === null) return;
+  u.email = e.trim().toLowerCase(); touch(u);
+  if (typeof logChange === "function") logChange("update", "account", u.id, "Set SSO email " + (u.email || "(cleared)"));
+  save(); render();
 };
 window.adminSetRole = function (id, key) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;

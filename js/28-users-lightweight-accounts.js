@@ -7,8 +7,9 @@ function users(){return (S.users||[]).filter(u=>!u.deleted&&!u.kind);}
 function curUser(){const id=localStorage.getItem("jra_session");return users().find(u=>u.id===id)||null;}
 function userName(id){const u=(S.users||[]).find(x=>x.id===id);return u?u.username:"";}
 window.openCreateAccount=function(){modal("New account",`
-  <p class="muted" style="margin-bottom:8px">No email needed — just a username and password. This is lightweight identity for your team (for assigning to-dos), not bank-grade security.</p>
+  <p class="muted" style="margin-bottom:8px">Username + password. Add the person's email to enable one-tap sign-in through Cloudflare Access (optional).</p>
   <label>Username</label><input id="u_name" autocomplete="off">
+  <label>Email (optional — for Access SSO)</label><input id="u_email" autocomplete="off" placeholder="name@obxlotsolutions.com">
   <label>Password</label><input id="u_pw" type="password" autocomplete="new-password">
   <button class="btn acc" style="margin-top:14px" onclick="createAccount()">Create account</button>`);};
 window.createAccount=async function(){
@@ -17,7 +18,7 @@ window.createAccount=async function(){
   if(users().some(u=>u.username.toLowerCase()===un.toLowerCase())){alert("That username is taken.");return;}
   if(!S.users)S.users=[];
   const isFirst=users().length===0;   // first account on a fresh setup is the owner; others default to crew
-  S.users.push({id:uid(),username:un,passhash:await hashPw(pw),role:isFirst?"owner":"crew",active:true,settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
+  S.users.push({id:uid(),username:un,email:(val("u_email")||"").trim().toLowerCase(),passhash:await hashPw(pw),role:isFirst?"owner":"crew",active:true,settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
   const u=S.users[S.users.length-1];localStorage.setItem("jra_session",u.id);
   save();closeModal();render();
 };
@@ -89,6 +90,24 @@ window.appBootstrapToken=async function(){
   render();
 };
 window.useOffline=function(){localStorage.setItem("jra_offline_ok","1");render();};
+/* Cloudflare Access SSO — when served behind Access, fetch the sync token by VERIFIED email (no password).
+   Falls through on file:// / local (no Access JWT) or an unmatched email, so password login still works. */
+async function attemptAccessLogin(){
+  if(!needLogin())return false;                              // already connected
+  if(location.protocol.indexOf("http")!==0)return false;     // file:// — no Access in front
+  const base=defaultServerUrl().replace(/\/+$/,"");if(!base)return false;
+  try{
+    const r=await fetch(base+"/login/access",{headers:{"Accept":"application/json"},credentials:"include"});
+    if(!r.ok)return false;
+    const d=await r.json();if(!d||!d.token||!d.user)return false;
+    S.sync.url=defaultServerUrl();S.sync.token=d.token;S.sync.auto=true;
+    localStorage.setItem("jra_session",d.user.id);
+    window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
+    if(typeof syncRun==="function")await syncRun("pull");
+    if(typeof applyUserSettings==="function")applyUserSettings();
+    return true;
+  }catch(e){return false;}
+}
 /* apply the signed-in user's synced settings (e.g. theme) on this device */
 function applyUserSettings(){const u=(typeof curUser==="function")?curUser():null;if(u&&u.settings&&u.settings.theme)localStorage.setItem("jra_theme",u.settings.theme);if(typeof applyTheme==="function")applyTheme();}
 window.delUser=function(id){

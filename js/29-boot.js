@@ -8,6 +8,8 @@ load();
   try{history.replaceState(null,"",location.pathname+location.search);}catch(e){}})();
 /* if the app is served from the sync server, default the sync URL to that origin */
 if(!S.sync.url && location.protocol.indexOf("http")===0){S.sync.url=location.origin;save();}
+/* Cloudflare Access SSO — silently sign in via the verified email when served behind Access */
+if(typeof attemptAccessLogin==="function" && needLogin()){attemptAccessLogin().then(function(ok){if(ok)render();});}
 applyTheme();
 setBiz(S.biz);
 if(typeof applyUserSettings==="function")applyUserSettings();
