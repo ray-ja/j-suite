@@ -35,6 +35,11 @@ const CEO_READ_TOKEN = process.env.CEO_READ_TOKEN || (function () {
 const CEO_WRITE_TOKEN = process.env.CEO_WRITE_TOKEN || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).writeToken || ""; } catch (e) { return ""; }
 })();
+// Cloudflare Access SSO — the team domain (e.g. wispy-meadow-393e.cloudflareaccess.com) whose SIGNED
+// Access JWT we verify to auto-issue the sync token by email. From env or ceo-config.json. Empty = SSO off.
+const ACCESS_TEAM_DOMAIN = process.env.CF_ACCESS_TEAM_DOMAIN || (function () {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).accessTeamDomain || ""; } catch (e) { return ""; }
+})();
 // Web Push (VAPID, "tickle" pattern — contentless push, no RFC-8291 encryption). Keys in gitignored
 // vapid-config.json {publicKey, privateKey, subject}. Absent → push is INERT (pubkey 404s, no sends).
 // Public key is served to clients via GET /api/push/pubkey (it's not a secret).
@@ -90,6 +95,40 @@ function verifyLogin(store, username, password) {
   if (!u || !u.passhash) return null;
   const ph = String(u.passhash);
   return (ph === hashPw(password) || ph === hashPwFallback(password)) ? u : null;
+}
+/* ----- Cloudflare Access SSO: verify the SIGNED Access JWT (NOT a spoofable header) and map email->account.
+   The JWT (Cf-Access-Jwt-Assertion, injected by Cloudflare on requests it proxies) is RS256-signed by the
+   team. We verify signature + issuer + expiry against the team's published JWKS, so a client reaching :4000
+   directly (Tailscale/localhost) cannot forge it. On a match we issue the same sync TOKEN /login returns. */
+let _accessCerts = { keys: [], at: 0 };
+async function accessCerts(domain) {
+  if (!domain) return [];
+  if (_accessCerts.keys.length && Date.now() - _accessCerts.at < 3600000) return _accessCerts.keys;
+  try { const r = await fetch("https://" + domain + "/cdn-cgi/access/certs"); const j = await r.json(); _accessCerts = { keys: j.keys || [], at: Date.now() }; } catch (e) {}
+  return _accessCerts.keys;
+}
+function b64urlJson(s) { return JSON.parse(Buffer.from(String(s).replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")); }
+async function verifyAccessJwt(token, opts) {
+  opts = opts || {};
+  const domain = opts.domain || ACCESS_TEAM_DOMAIN;
+  if (!token || !domain) return null;
+  const parts = String(token).split("."); if (parts.length !== 3) return null;
+  let header, payload;
+  try { header = b64urlJson(parts[0]); payload = b64urlJson(parts[1]); } catch (e) { return null; }
+  if (payload.iss !== "https://" + domain) return null;                         // must be OUR team
+  if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;  // not expired
+  const keys = opts.keys || await accessCerts(domain);
+  const jwk = keys.find(k => k && k.kid === header.kid && k.kty === "RSA"); if (!jwk) return null;
+  let pub; try { pub = crypto.createPublicKey({ key: jwk, format: "jwk" }); } catch (e) { return null; }
+  const sig = Buffer.from(parts[2].replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  let ok = false; try { ok = crypto.verify("RSA-SHA256", Buffer.from(parts[0] + "." + parts[1]), pub, sig); } catch (e) { ok = false; }
+  return ok ? payload : null;   // signature good → the verified claims (incl. email)
+}
+function accountByEmail(store, email) {
+  const us = (store && store.users) || [];
+  const lc = String(email || "").trim().toLowerCase();
+  if (!lc) return null;
+  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.email || "").trim().toLowerCase() === lc) || null;
 }
 /* light per-IP rate limit on /login — a brute-force speed bump, not a fortress */
 const LOGIN_WINDOW_MS = 5 * 60 * 1000, LOGIN_MAX = 20;
@@ -599,6 +638,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // SSO — GET /login/access. Cloudflare Access already verified the user; we verify its SIGNED JWT and
+  // issue the same sync token by matching the email to an account. No password. Falls through (401/403)
+  // on local/file:// (no Access header) or unmatched email, so the password login still works everywhere.
+  if (req.method === "GET" && req.url === "/login/access") {
+    (async () => {
+      const jwt = req.headers["cf-access-jwt-assertion"] || (req.headers.cookie && (String(req.headers.cookie).match(/CF_Authorization=([^;]+)/) || [])[1]) || "";
+      const claims = await verifyAccessJwt(jwt);
+      if (!claims || !claims.email) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"no valid access identity"}'); }
+      const store = loadStore();
+      const u = accountByEmail(store, claims.email);
+      if (!u) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no account mapped to this email", email: claims.email })); }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, token: TOKEN, user: { id: u.id, username: u.username, settings: u.settings || null }, email: claims.email, via: "access" }));
+    })();
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/sync") {
     let body = "";
     req.on("data", c => { body += c; if (body.length > 8e6) req.destroy(); });
@@ -660,4 +716,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

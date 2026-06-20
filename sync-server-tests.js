@@ -195,6 +195,20 @@ ok("djb2 fallback hash (file://-created account) also verifies",
   !!t.verifyLogin({ users: [{ id: "u3", username: "leg", passhash: t.hashPwFallback("legacy"), updatedAt: 1 }] }, "leg", "legacy"), null);
 ok("empty store rejects (bootstrap: no accounts yet)", t.verifyLogin({ users: [] }, "ray", "hunter2") === null, null);
 
+console.log("— Access SSO: email->account mapping + account.email rides the merge (zero loss) —");
+const ssoStore = { users: [
+  { id: "u1", username: "Ray", email: "ray@obxlotsolutions.com", role: "owner", passhash: t.hashPw("x"), updatedAt: 1 },
+  { id: "u2", username: "Pierce", email: "PIERCE@obxlotsolutions.com", role: "crew", passhash: t.hashPw("x"), updatedAt: 1 },
+  { id: "u3", username: "gone", email: "gone@x.com", deleted: true, updatedAt: 1 },
+  { id: "u4", username: "off", email: "off@x.com", active: false, updatedAt: 1 },
+  { id: "__roles__", kind: "roles", roles: [], updatedAt: 1 }
+] };
+ok("accountByEmail matches (case-insensitive)", (t.accountByEmail(ssoStore, "ray@obxlotsolutions.com") || {}).id === "u1" && (t.accountByEmail(ssoStore, "pierce@obxlotsolutions.com") || {}).id === "u2", null);
+ok("accountByEmail skips deleted/deactivated/roles + unknown -> null", t.accountByEmail(ssoStore, "gone@x.com") === null && t.accountByEmail(ssoStore, "off@x.com") === null && t.accountByEmail(ssoStore, "nobody@x.com") === null && t.accountByEmail(ssoStore, "") === null, null);
+const emMerge = t.mergeState({ users: [{ id: "u1", username: "Ray", role: "owner", passhash: "x", updatedAt: 1 }] }, { users: [{ id: "u1", username: "Ray", role: "owner", passhash: "x", email: "ray@obxlotsolutions.com", updatedAt: 2 }] });
+ok("account.email LWW-merges onto the account (newer wins, no field loss)", (() => { const u = emMerge.users.find(x => x.id === "u1") || {}; return u.email === "ray@obxlotsolutions.com" && u.role === "owner" && !!u.passhash; })(), emMerge.users[0]);
+ok("legacy account WITHOUT email round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ users: [{ id: "u9", username: "a", passhash: "x", updatedAt: 5 }] }, {}); const u = m.users.find(x => x.id === "u9") || {}; return u.username === "a" && !("email" in u); })(), null);
+
 console.log("— calendar feed: per-user .ics of upcoming assigned jobs —");
 const fixed = new Date("2026-06-08T12:00:00Z");   // "now" for deterministic upcoming/past filtering
 const calStore = {
@@ -611,5 +625,27 @@ ok("pushPeek: broadcast reaches everyone — Lonely also gets the broadcast", ((
 ok("pushPeek: user in no thread → generic fallback (always shows something)", (() => { const iso = { users: [{ id: "u9", pushSubs: [{ endpoint: "e9" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "dm", members: ["uX", "uY"], title: "DM", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "uX", senderLabel: "X", body: "private", ts: 1 }] } }; const r = t.pushPeek(iso, "e9"); return r.ok && /New message/.test(r.body) && !/private/.test(r.body); })(), null);
 ok("pushPeek: body is truncated to a short preview", (() => { const big = { users: [{ id: "u1", pushSubs: [{ endpoint: "e" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "broadcast", title: "Crew", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "x", senderLabel: "X", body: "y".repeat(500), ts: 1 }] } }; return t.pushPeek(big, "e").body.length <= 140; })(), null);
 
-console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
-process.exit(fail ? 1 : 0);
+console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
+(async function () {
+  const c2 = require("crypto");
+  const { publicKey, privateKey } = c2.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = publicKey.export({ format: "jwk" }); jwk.kid = "testkid";   // stand-in for Cloudflare's signing key
+  const DOMAIN = "team.cloudflareaccess.com";
+  const b64url = b => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const mkJwt = (payload, opt) => { opt = opt || {}; const h = b64url(JSON.stringify({ alg: "RS256", kid: "testkid", typ: "JWT" })); const p = b64url(JSON.stringify(payload)); const sig = c2.sign("RSA-SHA256", Buffer.from(h + "." + p), opt.key || privateKey); return h + "." + p + "." + b64url(sig); };
+  const n = Math.floor(Date.now() / 1000), opt = { domain: DOMAIN, keys: [jwk] };
+  const good = mkJwt({ iss: "https://" + DOMAIN, email: "ray@obxlotsolutions.com", exp: n + 300 });
+  const v = await t.verifyAccessJwt(good, opt);
+  ok("SSO: a genuine Cloudflare-signed token verifies -> email claim", !!v && v.email === "ray@obxlotsolutions.com", v);
+  const parts = good.split(".");
+  const forged = parts[0] + "." + b64url(JSON.stringify({ iss: "https://" + DOMAIN, email: "attacker@evil.com", exp: n + 300 })) + "." + parts[2];
+  ok("SSO: tampered payload (email swapped, old signature) -> REJECTED", (await t.verifyAccessJwt(forged, opt)) === null, null);
+  const atk = c2.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  ok("SSO: token signed by a NON-Cloudflare key (header spoof) -> REJECTED", (await t.verifyAccessJwt(mkJwt({ iss: "https://" + DOMAIN, email: "ray@obxlotsolutions.com", exp: n + 300 }, { key: atk.privateKey }), opt)) === null, null);
+  ok("SSO: wrong issuer -> REJECTED", (await t.verifyAccessJwt(mkJwt({ iss: "https://evil.cloudflareaccess.com", email: "ray@obxlotsolutions.com", exp: n + 300 }), opt)) === null, null);
+  ok("SSO: expired token -> REJECTED", (await t.verifyAccessJwt(mkJwt({ iss: "https://" + DOMAIN, email: "ray@obxlotsolutions.com", exp: n - 10 }), opt)) === null, null);
+  ok("SSO: empty token / SSO-off (no domain) -> null", (await t.verifyAccessJwt("", opt)) === null && (await t.verifyAccessJwt(good, { domain: "", keys: [jwk] })) === null, null);
+
+  console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
+  process.exit(fail ? 1 : 0);
+})();
