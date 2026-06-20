@@ -244,7 +244,10 @@ function ceoBuildMessage(p, store) {
    queued proposal. It is structurally incapable of touching todos/customers/quotes/jobs/accounts.
    The whitelist below is enforced HERE (defense in depth): a buggy/compromised Cap still cannot
    propose outside the lane, and APPLY is never the model — it's deterministic client code on approval. */
-const PROPOSE_COLLECTIONS = ["todos"];                     // Step 2: todos only (first gated write)
+// "Everything proposable" — all BUSINESS collections. EXCLUDES system/meta plumbing: messages (own
+// scoped path), pendingChanges (the queue itself), changelog (audit log), locks (soft-lock heartbeats).
+// Widening what Cap may PROPOSE never widens its authority — every proposal still needs owner approval.
+const PROPOSE_COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale"];
 const PROPOSE_TYPES = ["create", "update", "softDelete"];  // no hard delete, ever
 function ceoBuildProposal(p, store) {
   p = p || {}; store = store || {};
@@ -260,7 +263,7 @@ function ceoBuildProposal(p, store) {
   const targetId = p.targetId || (after && after.id) || null;
   if ((type === "update" || type === "softDelete") && !targetId) return { ok: false, error: type + " requires targetId" };
   // pre-allocate a stable target id for create so the client apply is idempotent across re-sync
-  const afterOut = (type === "create" && after && !after.id) ? Object.assign({}, after, { id: "td_" + crypto.randomBytes(5).toString("hex") }) : after;
+  const afterOut = (type === "create" && after && !after.id) ? Object.assign({}, after, { id: collection.slice(0, 3) + "_" + crypto.randomBytes(5).toString("hex") }) : after;
   const ts = Date.now();
   const id = "pc_" + crypto.randomBytes(6).toString("hex");
   const record = {

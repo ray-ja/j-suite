@@ -5,6 +5,8 @@
    roleAllows() (js/32) + re-checked here. Step 2 ships todos only. */
 
 const APPR_BIZES = ["obx", "jam"];
+// business collections Cap may propose into (mirror of server PROPOSE_COLLECTIONS) — excludes system/meta
+const APPR_WRITABLE = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale"];
 function apprCanView() { return (typeof isOwner === "function") ? isOwner() : false; }
 
 // every non-deleted proposal across both businesses, tagged with its biz
@@ -17,14 +19,17 @@ function apprPending() { return apprAll().filter(x => x.pc.status === "pending")
 function apprResolved() { return apprAll().filter(x => x.pc.status !== "pending").sort((a, b) => (b.pc.decidedAt || 0) - (a.pc.decidedAt || 0)); }
 
 // plain-language "what this does" — the human-readable diff. Step 2: todos.
+const APPR_NOUNS = { customers: "customer", quotes: "quote", jobs: "job", todos: "to-do", properties: "property", inventory: "inventory item", income: "income", expenses: "expense", resale: "resale item", docs: "doc", places: "place", mktTracker: "marketing entry", timeclock: "time entry" };
+function apprLabel(pc) { const a = pc.after || {}, b = pc.before || {}; return esc(a.title || a.name || a.cust || a.item || a.label || a.note || b.title || b.name || b.cust || b.item || pc.targetId || "(record)"); }
 function apprWhat(pc) {
-  const a = pc.after || {}, title = esc(a.title || (pc.before && pc.before.title) || pc.targetId || "");
-  if (pc.collection === "todos") {
-    if (pc.type === "create") return `Add to-do: <b>${title}</b>${a.due ? ` · due ${esc(a.due)}` : ""}${a.priority ? ` · ${esc(a.priority)}` : ""}`;
-    if (pc.type === "update") return `Update to-do <b>${title}</b>`;
-    if (pc.type === "softDelete") return `Remove to-do <b>${title}</b>`;
-  }
-  return `${esc(pc.type)} on ${esc(pc.collection)}`;
+  const verb = pc.type === "create" ? "Add" : pc.type === "softDelete" ? "Remove" : "Update";
+  const noun = APPR_NOUNS[pc.collection] || esc(pc.collection);
+  const a = pc.after || {};
+  let extra = "";
+  if (pc.collection === "todos" && a.due) extra = ` · due ${esc(a.due)}`;
+  const amt = (a.total != null ? a.total : (a.amount != null ? a.amount : null));
+  if (amt != null && ["quotes", "income", "expenses"].indexOf(pc.collection) >= 0) extra = ` · ${typeof money === "function" ? money(amt) : "$" + amt}`;
+  return `${verb} ${noun}: <b>${apprLabel(pc)}</b>${extra}`;
 }
 function apprStatusBadge(pc) {
   const s = pc.status;
@@ -74,22 +79,25 @@ window.apprApprove = function (biz, id) {
   if (!pc || pc.status !== "pending") return;
   let applied = false, err = "";
   try {
-    if (pc.collection === "todos") {
-      const coll = (S[biz].todos || (S[biz].todos = []));
+    // generic apply — works for ANY whitelisted business collection (everything proposable). Still owner-gated.
+    // Mirrors the server PROPOSE_COLLECTIONS list (defense in depth: refuse system/meta here too).
+    if (APPR_WRITABLE.indexOf(pc.collection) < 0) { err = "collection not allowed: " + pc.collection; }
+    else {
+      const coll = (S[biz][pc.collection] || (S[biz][pc.collection] = []));
       if (pc.type === "create") {
-        const rec = Object.assign({ done: false }, pc.after, { updatedAt: now() });
+        const rec = Object.assign({}, pc.after, { updatedAt: now() });
         if (!rec.id) rec.id = uid();
-        const ix = coll.findIndex(t => t.id === rec.id);   // idempotent: LWW-replace if it already exists
+        const ix = coll.findIndex(r => r && r.id === rec.id);   // idempotent: LWW-replace if it already exists
         if (ix >= 0) coll[ix] = rec; else coll.push(rec);
         applied = true;
       } else if (pc.type === "update") {
-        const tgt = coll.find(t => t.id === pc.targetId);
-        if (!tgt) err = "target to-do not found"; else { Object.assign(tgt, pc.after || {}, { id: pc.targetId, updatedAt: now() }); applied = true; }
+        const tgt = coll.find(r => r && r.id === pc.targetId);
+        if (!tgt) err = "target record not found in " + pc.collection; else { Object.assign(tgt, pc.after || {}, { id: pc.targetId, updatedAt: now() }); applied = true; }
       } else if (pc.type === "softDelete") {
-        const tgt = coll.find(t => t.id === pc.targetId);
-        if (!tgt) err = "target to-do not found"; else { tgt.deleted = true; touch(tgt); applied = true; }
+        const tgt = coll.find(r => r && r.id === pc.targetId);
+        if (!tgt) err = "target record not found in " + pc.collection; else { tgt.deleted = true; touch(tgt); applied = true; }
       } else err = "unsupported type: " + pc.type;
-    } else err = "unsupported collection: " + pc.collection;
+    }
   } catch (e) { err = String((e && e.message) || e); }
   pc.status = applied ? "applied" : "failed";
   pc.decidedBy = (typeof curUser === "function" && curUser()) ? curUser().id : "owner";
