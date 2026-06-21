@@ -524,7 +524,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && (req.url === "/" || req.url === "/index.html" || req.url === "/app")) {
     return fs.readFile(APP_FILE, (err, buf) => {
       if (err) { res.writeHead(404); return res.end("app file not found next to sync-server.js"); }
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
       if (MESSAGING_ON) { return res.end(buf.toString("utf8").replace("</head>", '<script>window.JSUITE_MESSAGING=true;</script></head>')); }
       res.end(buf);
     });
@@ -705,7 +705,13 @@ const server = http.createServer((req, res) => {
     if (rel && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
       const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
-      res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream" });
+      // no-cache = the browser must revalidate before reusing, so a deploy shows up on the next load
+      // (no stale code); the ETag makes unchanged files return a fast 304. Without this, browsers
+      // heuristically cached old js — which is exactly why a deploy didn't update the app.
+      const st = fs.statSync(full);
+      const etag = '"' + st.size.toString(16) + "-" + Math.round(st.mtimeMs).toString(16) + '"';
+      if (req.headers["if-none-match"] === etag) { res.writeHead(304, { "Cache-Control": "no-cache", "ETag": etag }); return res.end(); }
+      res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "no-cache", "ETag": etag });
       return res.end(fs.readFileSync(full));
     }
   }
