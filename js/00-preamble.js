@@ -6,7 +6,7 @@
    FAIL-TOWARD-DEV: only the known prod box counts as prod; everything else is dev. js/55 (banner)
    and js/56 (auto-login) reuse window.jsIsDevHost so "dev or prod?" is decided in exactly one place. */
 (function () {
-  var PROD_HOSTS = ["rzy-ubuntu-workstation-1.taila3fda5.ts.net", "100.103.109.41"];
+  var PROD_HOSTS = ["app.jsuite.dev", "rzy-ubuntu-workstation-1.taila3fda5.ts.net", "100.103.109.41"];
   var host = (typeof location !== "undefined" && location.hostname || "").toLowerCase();
   window.JSUITE_IS_PROD_HOST = PROD_HOSTS.indexOf(host) >= 0;
   window.jsIsDevHost = function () { return !window.JSUITE_IS_PROD_HOST; };
