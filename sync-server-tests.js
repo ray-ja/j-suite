@@ -202,6 +202,8 @@ ok("scryptVerify accepts the right password, rejects the wrong one", t.scryptVer
 ok("scryptVerify rejects malformed/legacy/degenerate hashes (incl. empty-hash field that would else match any pw)", t.scryptVerify("x", "deadbeef") === false && t.scryptVerify("x", "scrypt$bad") === false && t.scryptVerify("anything", "scrypt$16384$8$1$" + "ab".repeat(16) + "$") === false, null);
 const scStore = { users: [{ id: "u1", username: "Ray", passhash: t.scryptHash("s3cret"), updatedAt: 1 }] };
 ok("verifyLogin works on a scrypt account (right pw), rejects wrong pw", (t.verifyLogin(scStore, "ray", "s3cret") || {}).id === "u1" && t.verifyLogin(scStore, "ray", "wrong") === null, null);
+const emStore = { users: [{ id: "e1", username: "Ray", email: "ray@jamiesonautomation.com", passhash: t.scryptHash("pw12345678"), updatedAt: 1 }] };
+ok("login by USERNAME or EMAIL both work (email case-insensitive); bad identifier rejected", (t.verifyLogin(emStore, "Ray", "pw12345678") || {}).id === "e1" && (t.verifyLogin(emStore, "RAY@JamiesonAutomation.com", "pw12345678") || {}).id === "e1" && t.verifyLogin(emStore, "nobody@x.com", "pw12345678") === null, null);
 const legStore = { users: [{ id: "l1", username: "Sha", passhash: t.hashPw("legacy1"), updatedAt: 1 }, { id: "l2", username: "Djb", passhash: t.hashPwFallback("legacy2"), updatedAt: 1 }] };
 ok("legacy SHA-256 + djb2 accounts STILL log in (no forced resets)", (t.verifyLogin(legStore, "sha", "legacy1") || {}).id === "l1" && (t.verifyLogin(legStore, "djb", "legacy2") || {}).id === "l2", null);
 const upStore = { users: [{ id: "u9", username: "Up", passhash: t.hashPw("pw9"), role: "owner", email: "up@x.com", settings: { theme: "dark" }, updatedAt: 5 }] };

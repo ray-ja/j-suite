@@ -108,7 +108,7 @@ function scryptVerify(pw, stored) {
   return dk.length === hash.length && crypto.timingSafeEqual(dk, hash);
 }
 function verifyLogin(store, username, password) {
-  const u = accountByName(store, username);
+  const u = accountByName(store, username) || accountByEmail(store, username);   // accept username OR email in the login field
   if (!u || !u.passhash) return null;
   const ph = String(u.passhash);
   if (isScrypt(ph)) return scryptVerify(password, ph) ? u : null;

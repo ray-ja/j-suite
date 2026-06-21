@@ -16,8 +16,8 @@ function jsResetBase(){
 window.appForgotPw=function(){
   view.innerHTML=`<div class="card" style="max-width:420px;margin:40px auto;border-top:4px solid var(--accent)">
     <h2 style="margin-top:0">Reset password</h2>
-    <p class="muted">Enter your username. If an account exists, we'll email a reset link.</p>
-    <label>Username</label><input id="fp_user" autocomplete="username">
+    <p class="muted">Enter your username or email. If an account exists, we'll email a reset link.</p>
+    <label>Username or email</label><input id="fp_user" autocomplete="username">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="appSendReset()">Send reset link</button>
     <p class="muted" id="fp_msg" style="margin-top:8px;min-height:16px"></p>
     <p style="margin-top:6px;text-align:center"><a href="#" onclick="render();return false" class="muted">Back to sign in</a></p>

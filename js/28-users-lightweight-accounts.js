@@ -55,7 +55,7 @@ function renderLogin(){
   const hasLocal=!!users().length;
   view.innerHTML=`<div class="card" style="max-width:420px;margin:40px auto;border-top:4px solid var(--accent)">
     <h2 style="margin-top:0">Sign in</h2>
-    <label>Username</label><input id="lg_user" autocomplete="username">
+    <label>Username or email</label><input id="lg_user" autocomplete="username">
     <label>Password</label><input id="lg_pw" type="password" autocomplete="current-password">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="appLogin()">Sign in</button>
     <p class="muted" id="lg_msg" style="margin-top:8px;min-height:16px"></p>
