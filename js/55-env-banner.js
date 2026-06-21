@@ -6,6 +6,7 @@
    gitignored bypass): a safety guardrail that must show even on a normal login. */
 (function () {
   if (typeof window === "undefined" || typeof window.jsIsDevHost !== "function" || !window.jsIsDevHost()) return;
+  try { document.title = "🟡 J-Suite (dev)"; } catch (e) {}   // distinguish the dev tab from prod at a glance
   var host = (typeof location !== "undefined" && location.hostname) || "local";
   function show() {
     if (!document.body) return;
