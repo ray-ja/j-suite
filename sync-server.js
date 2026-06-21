@@ -137,6 +137,41 @@ function noteFailedLogin(username) {
   h.n++;
 }
 function clearFailedLogin(username) { failedLogins.delete(lockKey(username)); }
+/* ----- self-service password reset: one-time, 30-min, in-memory tokens (NOT synced/persisted — a
+   restart just invalidates outstanding links and the user re-requests). Email via Resend's HTTPS API
+   (zero-dep); with no key configured, sendEmail is a no-op so the flow still works minus the email. */
+const resetTokens = new Map();
+const RESET_TTL_MS = 30 * 60 * 1000;
+function makeResetToken(userId) {
+  const tok = crypto.randomBytes(32).toString("hex");
+  resetTokens.set(tok, { userId: userId, exp: Date.now() + RESET_TTL_MS });
+  return tok;
+}
+function consumeResetToken(tok) {
+  const r = resetTokens.get(String(tok || ""));
+  if (!r) return null;
+  resetTokens.delete(String(tok || ""));            // one-time use (deleted even if expired)
+  return Date.now() > r.exp ? null : r.userId;      // expired → reject
+}
+function emailCfg() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) { return {}; } }
+function sendEmail(to, subject, html) {
+  return new Promise((resolve) => {
+    const cfg = emailCfg(), key = cfg.resendKey || "", from = cfg.resendFrom || "J-Suite <noreply@jsuite.dev>";
+    if (!key || !to) { console.log("[email] not configured (resendKey/recipient) — skipping send"); return resolve({ ok: false, skipped: true }); }
+    const payload = JSON.stringify({ from: from, to: [to], subject: subject, html: html });
+    const r = https.request("https://api.resend.com/emails", { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, (resp) => {
+      let d = ""; resp.on("data", c => d += c); resp.on("end", () => { const ok = resp.statusCode >= 200 && resp.statusCode < 300; if (!ok) console.log("[email] resend " + resp.statusCode + ": " + d.slice(0, 200)); resolve({ ok: ok, status: resp.statusCode }); });
+    });
+    r.on("error", (e) => { console.log("[email] send error: " + e.message); resolve({ ok: false, error: e.message }); });
+    r.write(payload); r.end();
+  });
+}
+// per-site base for the reset link, from an ALLOWLISTED Host (prevents Host-header injection into the email)
+function resetBaseUrl(req) {
+  const allow = ["app.jsuite.dev", "dev.jsuite.dev"];
+  const host = String((req.headers && req.headers.host) || "").toLowerCase().split(":")[0];
+  return allow.indexOf(host) >= 0 ? ("https://" + host) : ((emailCfg().appUrl) || "https://app.jsuite.dev");
+}
 /* ----- Cloudflare Access SSO: verify the SIGNED Access JWT (NOT a spoofable header) and map email->account.
    The JWT (Cf-Access-Jwt-Assertion, injected by Cloudflare on requests it proxies) is RS256-signed by the
    team. We verify signature + issuer + expiry against the team's published JWKS, so a client reaching :4000
@@ -686,6 +721,57 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // FORGOT PASSWORD — POST /forgot {username}. ALWAYS 200 (no account enumeration); if the account
+  // exists and has an email, mail a one-time reset link. Rate-limited per IP.
+  if (req.method === "POST" && req.url === "/forgot") {
+    const ip = req.socket && req.socket.remoteAddress || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
+      if (!p || typeof p !== "object") p = {};
+      const store = loadStore();
+      const u = accountByName(store, p.username) || accountByEmail(store, p.username);
+      if (u && u.email) {
+        const link = resetBaseUrl(req) + "/?reset=" + makeResetToken(u.id);
+        const html = '<p>Tap below to set a new J-Suite password. This link expires in 30 minutes and can be used once.</p>' +
+          '<p><a href="' + link + '">Reset my password</a></p>' +
+          '<p>If you did not request this, ignore this email — your password will not change.</p>';
+        sendEmail(u.email, "Reset your J-Suite password", html).catch(() => {});
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });   // identical response whether or not the account exists
+      res.end('{"ok":true}');
+    });
+    return;
+  }
+
+  // RESET PASSWORD — POST /reset {token,password}. Consumes a one-time token, sets a fresh scrypt hash.
+  if (req.method === "POST" && req.url === "/reset") {
+    const ip = req.socket && req.socket.remoteAddress || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
+      if (!p || typeof p !== "object") p = {};
+      if (!p.password || String(p.password).length < 8) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"password must be at least 8 characters"}'); }
+      const userId = consumeResetToken(p.token);
+      if (!userId) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"this reset link is invalid or has expired"}'); }
+      const store = loadStore();
+      const u = ((store && store.users) || []).find(x => x && x.id === userId && !x.deleted);
+      if (!u) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"account not found"}'); }
+      u.passhash = scryptHash(String(p.password)); u.updatedAt = Date.now();
+      try { saveStore(store); } catch (e) {}
+      clearFailedLogin(u.username);   // a successful reset clears any lockout
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"ok":true}');
+    });
+    return;
+  }
+
   // SSO — GET /login/access. Cloudflare Access already verified the user; we verify its SIGNED JWT and
   // issue the same sync token by matching the email to an account. No password. Falls through (401/403)
   // on local/file:// (no Access header) or unmatched email, so the password login still works everywhere.
@@ -770,4 +856,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

@@ -215,6 +215,16 @@ ok("account locks after 8 failed attempts (case-insensitive), others unaffected"
 t.clearFailedLogin("victim");
 ok("a successful login (clearFailedLogin) resets the lock", t.accountLocked("victim") === false, null);
 
+console.log("— password reset: one-time tokens + scrypt set —");
+const rstore = { users: [{ id: "rr1", username: "Reset", passhash: t.hashPw("oldpw"), email: "r@x.com", updatedAt: 1 }] };
+const rtok = t.makeResetToken("rr1");
+const ruid = t.consumeResetToken(rtok);
+const ru = rstore.users.find(x => x.id === "rr1");
+if (ruid === "rr1") ru.passhash = t.scryptHash("brandnewpw8");   // mirrors the /reset handler's set
+ok("reset: valid token -> userId; new scrypt password verifies; old password no longer works", ruid === "rr1" && t.scryptVerify("brandnewpw8", ru.passhash) && !t.scryptVerify("oldpw", ru.passhash), null);
+ok("reset token is ONE-TIME (second consume returns null)", t.consumeResetToken(rtok) === null, null);
+ok("reset rejects an unknown/empty token", t.consumeResetToken("deadbeef") === null && t.consumeResetToken("") === null, null);
+
 console.log("— Access SSO: email->account mapping + account.email rides the merge (zero loss) —");
 const ssoStore = { users: [
   { id: "u1", username: "Ray", email: "ray@obxlotsolutions.com", role: "owner", passhash: t.hashPw("x"), updatedAt: 1 },
