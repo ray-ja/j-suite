@@ -353,7 +353,7 @@ function rTraining(){
   const pct=mods.length?Math.round(done/mods.length*100):0;
   const bizName=S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation";
   let h=`<div class="secthd"><h2>Training · ${bizName}</h2></div>`;
-  h+=`<div class="card"><div class="row"><div class="grow"><strong>Your progress</strong><div class="sub">${curUser()?esc(curUser().username)+" — ":""}${done} of ${mods.length} modules signed off</div></div><div style="font-size:24px;font-weight:800;color:var(--brand)">${pct}%</div></div>
+  h+=`<div class="card"><div class="row"><div class="grow"><strong>Your progress</strong><div class="sub">${curUser()?esc(curUser().username)+" — ":""}${done} of ${mods.length} modules signed off</div></div><div style="font-size:24px;font-weight:800;color:var(--brand-text)">${pct}%</div></div>
     <div style="height:9px;background:var(--line);border-radius:6px;margin-top:10px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .3s"></div></div></div>`;
   if(!curUser())h+=`<div class="card" style="border-left:4px solid var(--accent)"><strong>Sign in to record your sign-off.</strong><div class="sub">Open the Data tab and sign in (or create an account) so completed modules save under your name. You and each brother track your own.</div></div>`;
   h+=`<div class="card">`+mods.map((m,i)=>{const st=trStat(m.key);

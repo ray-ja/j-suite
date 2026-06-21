@@ -59,7 +59,7 @@ function mReport(r){
   h+=mAcc(`Comparable companies (${r.comparables.length}) — templates to grow into`,(r.compNote?`<p class="muted" style="margin:0 0 6px">${esc(r.compNote)}</p>`:"")+`<strong style="font-size:12px">Side-by-side</strong>`+mCompTable(r.comparables)+`<div class="sub" style="margin:8px 0 4px">Full profiles below.</div>`+r.comparables.map(mComp).join(""),false);
   h+=mAcc(`How money comes in (${r.streams.length} streams)`,r.streams.map(mStream).join(""),false);
   h+=mAcc(`How it grows (${r.levers.length} levers)`,r.levers.map(mLever).join(""),false);
-  h+=mAcc("Revenue examples — real-size operators",r.examples.map(e=>`<div class="mcard"><div class="mt">${esc(e.tier)} <span class="mu" style="color:var(--brand);font-weight:800">${esc(e.rev)}</span></div><div style="font-size:13px;margin-top:4px;white-space:pre-wrap;line-height:1.5">${esc(e.detail)}</div></div>`).join(""),false);
+  h+=mAcc("Revenue examples — real-size operators",r.examples.map(e=>`<div class="mcard"><div class="mt">${esc(e.tier)} <span class="mu" style="color:var(--brand-text);font-weight:800">${esc(e.rev)}</span></div><div style="font-size:13px;margin-top:4px;white-space:pre-wrap;line-height:1.5">${esc(e.detail)}</div></div>`).join(""),false);
   if(r.sources)h+=mAcc("All sources",mSrc(r.sources),false);
   return h;
 }

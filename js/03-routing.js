@@ -2,8 +2,8 @@
 let TAB="today";
 const view=document.getElementById("view");
 function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
-  document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:40px;width:auto;max-width:220px;object-fit:contain;display:block">';
-  document.getElementById("bizsel").value=b;render()}
+  document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:54px;width:auto;max-width:248px;object-fit:contain;display:block">';
+  var _bs=document.getElementById("bizsel");if(_bs)_bs.value=b;render()}
 function render(){
   if(typeof jsResetToken==="function"&&jsResetToken()&&typeof renderResetPw==="function"){   // an emailed ?reset= link always wins, even if already logged in
     document.body.classList.add("signedout");renderResetPw();return;
@@ -20,7 +20,7 @@ function render(){
   renderSyncPill();
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;render()});
-document.getElementById("bizsel").onchange=e=>setBiz(e.target.value);
+var _bz=document.getElementById("bizsel");if(_bz)_bz.onchange=e=>setBiz(e.target.value);
 document.getElementById("fab").onclick=()=>{
   if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="map"||TAB==="data"||TAB==="sales"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
 };

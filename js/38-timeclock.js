@@ -192,7 +192,7 @@ function tcClockHTML() {
     const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
     const veh = (typeof schedMembers === "function") ? schedMembers().map(u => u.username) : [];
     if (!jobs.length) {
-      h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand);font-weight:700">Schedule a job</a> first.</div></div>`;
+      h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
     } else {
       h += `<div class="card" style="border-top:4px solid var(--accent)">
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
@@ -224,9 +224,9 @@ function tcReportHTML() {
   const totHrs = all.reduce((s, e) => s + tcHours(e), 0), totMi = all.reduce((s, e) => s + tcMiles(e), 0);
   const unconf = all.filter(e => !e.milesConfirmed).length;
   let h = `<div class="card" style="display:flex;gap:6px;text-align:center">
-    <div class="grow"><div style="font-size:22px;font-weight:800;color:var(--brand)">${totHrs.toFixed(1)}h</div><div class="sub">logged hours</div></div>
-    <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand)">${tcRound(totMi)} mi</div><div class="sub">miles (est)</div></div>
-    <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand)">${money(totMi * TC_RATE)}</div><div class="sub">mileage @ $${TC_RATE}</div></div>
+    <div class="grow"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${totHrs.toFixed(1)}h</div><div class="sub">logged hours</div></div>
+    <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${tcRound(totMi)} mi</div><div class="sub">miles (est)</div></div>
+    <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${money(totMi * TC_RATE)}</div><div class="sub">mileage @ $${TC_RATE}</div></div>
   </div>`;
   if (unconf) h += `<div class="card" style="border-left:4px solid #E1A100;background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${unconf} entr${unconf === 1 ? "y has" : "ies have"} estimated (GPS) mileage not yet confirmed. Tap an entry to verify the real driven miles before payroll.</div></div>`;
   if (open.length) h += `<div class="secthd"><h2>On the clock now</h2><span class="ct">${open.length}</span></div><div class="card">` +

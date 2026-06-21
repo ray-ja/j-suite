@@ -1,10 +1,10 @@
 
   :root{
     --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee; --soft:#f7f9fb; --danger-soft:#fdecea;
-    --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b;
+    --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b; --brand-text:#1B2A4E;
   }
-  body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; }
-  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#aab7c7; --line:#33404e; --soft:#262f3b; --danger:#e8705f; --danger-soft:#3a2125; }
+  body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; --brand-text:#002052; }
+  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#aab7c7; --line:#33404e; --soft:#262f3b; --danger:#e8705f; --danger-soft:#3a2125; --brand-text:#8fb4e8; }
   body.dark[data-biz="jam"]{ --accent:#37b0f0; }
   /* Dark mode: ghost buttons (e.g. wizard service tiles) used --brand for text+border, which stays dark navy in dark mode → invisible. Lift to readable ink. */
   body.dark .btn.ghost{ color:var(--ink); border-color:#4a5a6e; }
@@ -43,7 +43,7 @@
   .p-High{background:#fdecec;color:#c0392b}.p-Medium{background:#fff4e5;color:#b26a00}.p-Low{background:#eef2ff;color:#3b46c4}
   .subnav{display:flex;gap:6px;margin:0 4px 12px;flex-wrap:wrap}
   .subbtn{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:7px 14px;font-size:13px;font-weight:600}
-  .subbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .subbtn.on{background:var(--brand);color:#fff;border-color:var(--brand-text)}
   .mbars{margin:8px 0}
   .mbar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
   .mbl{flex:0 0 40%;color:var(--ink);font-weight:600;line-height:1.2}
@@ -57,18 +57,18 @@
   .mcard{border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:9px 0;background:var(--card)}
   .mcard .mt{font-weight:700;font-size:14px}
   .mcard .mu{font-size:12px;word-break:break-all}
-  .mcard .mu a{color:var(--brand)}
+  .mcard .mu a{color:var(--brand-text)}
   .mtag{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;background:var(--accent);color:var(--accent-ink);margin-left:6px;vertical-align:middle}
   .mtag.gap{background:#e0a800;color:#3a2c00}
   .mtag.warn{background:var(--danger);color:#fff}
   .msrc{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
-  .msrc a{color:var(--brand)}
+  .msrc a{color:var(--brand-text)}
   .kpi{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
   .kpi .k{flex:1 1 28%;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 8px;text-align:center}
-  .kpi .kn{font-size:17px;font-weight:800;color:var(--brand);line-height:1.1}
+  .kpi .kn{font-size:17px;font-weight:800;color:var(--brand-text);line-height:1.1}
   .kpi .kl{font-size:10.5px;color:var(--muted);margin-top:3px}
   .macc{border:1px solid var(--line);border-radius:10px;margin:8px 0;background:var(--card);overflow:hidden}
-  .macc>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:800;font-size:14.5px;color:var(--brand);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .macc>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:800;font-size:14.5px;color:var(--brand-text);display:flex;align-items:center;justify-content:space-between;gap:8px}
   .macc>summary::-webkit-details-marker{display:none}
   .macc>summary::after{content:"+";font-size:20px;color:var(--muted);font-weight:700}
   .macc[open]>summary::after{content:"\2013"}
@@ -96,7 +96,7 @@
   .pill.qw{background:#1b7f4d;color:#fff} .pill.lp{background:#0070b8;color:#fff} .pill.risk{background:var(--danger);color:#fff}
   .tline{display:flex;gap:4px;margin:8px 0}
   .tline .seg{flex:1;border-radius:8px;padding:7px 6px;color:#fff;font-size:10.5px;font-weight:700;text-align:center}
-  .xlink{background:transparent;color:var(--brand);border:1.5px solid var(--brand);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700;width:auto;margin:4px 4px 4px 0}
+  .xlink{background:transparent;color:var(--brand-text);border:1.5px solid var(--brand);border-radius:8px;padding:7px 11px;font-size:12px;font-weight:700;width:auto;margin:4px 4px 4px 0}
   .m-Planned{background:#eef2ff;color:#3b46c4}.m-Active{background:#e7f7ea;color:#1d8a3a}.m-Paused{background:#fff4e5;color:#b26a00}.m-Done{background:#eceff3;color:#5b6677}
   .maptop{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
   #map,#smap{height:60vh;min-height:320px;border-radius:12px;border:1px solid var(--line);z-index:1}
@@ -108,7 +108,7 @@
   button{font-family:inherit;cursor:pointer}
   .btn{background:var(--brand);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;width:100%}
   .btn.acc{background:var(--accent);color:var(--accent-ink)}
-  .btn.ghost{background:transparent;color:var(--brand);border:1.5px solid var(--brand)}
+  .btn.ghost{background:transparent;color:var(--brand-text);border:1.5px solid var(--brand)}
   .btn.sm{width:auto;padding:9px 13px;font-size:14px}
   .btn.danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger)}
   input,select,textarea{font-family:inherit;font-size:16px;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
@@ -117,7 +117,7 @@
   .search{margin-bottom:10px}
   nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;z-index:30;overflow-x:auto;-webkit-overflow-scrolling:touch}
   nav button{flex:1 0 auto;min-width:62px;background:none;border:none;padding:9px 4px 8px;color:var(--muted);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
-  nav button.on{color:var(--brand)}
+  nav button.on{color:var(--brand-text)}
   nav .ic{font-size:20px;line-height:1}
   .fab{position:fixed;right:16px;bottom:84px;width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:none;font-size:30px;font-weight:700;box-shadow:0 6px 16px rgba(0,0,0,.22);z-index:25;display:flex;align-items:center;justify-content:center}
   .overlay{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:40;display:none;align-items:flex-end;justify-content:center}
@@ -139,10 +139,10 @@
   .qline input.pr{width:84px;text-align:right}
   .qline .rm{background:none;border:none;color:var(--danger);font-size:20px;padding:0 4px}
   .totbar{position:sticky;bottom:0;background:var(--card);border-top:2px solid var(--accent);padding:12px 2px;margin-top:8px;display:flex;align-items:center}
-  .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:22px;font-weight:800;color:var(--brand)}
+  .totbar .lab{font-weight:700}.totbar .amt{margin-left:auto;font-size:22px;font-weight:800;color:var(--brand-text)}
   .wizfoot{position:sticky;bottom:72px;z-index:26;display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-top:2px solid var(--accent);border-radius:12px;padding:10px 12px;margin-top:10px;box-shadow:0 -3px 12px rgba(0,0,0,.12)}
   .wizfoot .wf-amt{white-space:nowrap}.wizfoot .wf-lab{color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
-  .wizfoot .wf-amt b{font-size:21px;color:var(--brand);margin-left:5px}
+  .wizfoot .wf-amt b{font-size:21px;color:var(--brand-text);margin-left:5px}
   .wizfoot .btn{width:auto}.wizfoot .btn.grow{flex:1}
   body.wizon .fab{display:none}
   /* signed-out / login screen: show only the login form — hide the whole header (logo/sync/biz), nav, FAB, push banner */
@@ -152,7 +152,7 @@
   .secthd{display:flex;align-items:center;margin:18px 4px 6px}
   .secthd h2{margin:0}
   .secthd .ct{margin-left:auto;color:var(--muted);font-size:13px}
-  .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none;cursor:pointer;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .syncpill{font-size:12px;font-weight:600;padding:5px 10px;border-radius:20px;background:rgba(255,255,255,.15);color:#fff;border:none;cursor:pointer;margin-left:auto;flex-shrink:0;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .syncpill.ok{background:rgba(139,195,74,.30)}
   .syncpill.busy{background:rgba(255,255,255,.28)}
   .syncpill.warn{background:rgba(232,112,95,.85)}
@@ -166,7 +166,7 @@
   .calcell.out{background:transparent;border-color:transparent;cursor:default}
   .calcell.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
   .calcell .dnum{font-size:12px;font-weight:700;color:var(--muted)}
-  .calcell.today .dnum{color:var(--brand)}
+  .calcell.today .dnum{color:var(--brand-text)}
   .caljob{background:var(--brand);color:#fff;border-radius:4px;font-size:10px;line-height:1.3;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .calmore{font-size:10px;color:var(--muted)}
   @media(min-width:900px){.calcell{min-height:92px}.caljob{font-size:11px}}
@@ -178,9 +178,10 @@
     .logo{font-size:22px}
     nav{top:60px;bottom:0;left:0;right:auto;width:224px;flex-direction:column;border-top:none;border-right:1px solid var(--line);padding-top:16px}
     nav button{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:14px;padding:15px 24px;font-size:15px;width:100%}
-    nav button.on{color:var(--brand);background:rgba(0,0,0,.035);box-shadow:inset 4px 0 0 var(--brand)}
+    nav button.on{color:var(--brand-text);background:rgba(127,141,160,.14);box-shadow:inset 4px 0 0 var(--brand-text)}
     nav .ic{font-size:20px}
     .wrap{margin-left:224px;max-width:1180px;padding:26px 40px}
+    #pushbanner{margin-left:224px}
     h2{font-size:14px}
     .nm{font-size:17px}.sub{font-size:14px}
     .card{padding:18px 22px;margin-bottom:12px}

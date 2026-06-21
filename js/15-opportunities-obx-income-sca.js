@@ -114,7 +114,7 @@ function oppCard(o,rank){
   let h=`<div class="mcard">`;
   h+=`<div class="mt">${rank?`<span class="orank">${rank}</span>`:""}${esc(o.name)} <span class="mtag">${esc(OCAT[o.cat])}</span>${oppPill(o)}${passive?`<span class="mtag good">low-maintenance</span>`:""}</div>`;
   h+=`<div class="ochips"><span class="ochip ${o.maint<2?"good":""}">💤 ${o.maint} hr/wk</span><span class="ochip ${o.setupCost<1000?"good":""}">💵 ${fmtK(o.setupCost)} setup</span><span class="ochip">📈 ${fmtK(o.revLow)}-${fmtK(o.revUp)}/mo</span><span class="ochip ${o.ai>=4?"good":""}">🤖 AI ${o.ai}/5</span><span class="ochip">⏱ ${esc(o.ttr)}</span></div>`;
-  h+=`<details><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:700">Details &amp; first 3 actions</summary><div style="font-size:12.5px;line-height:1.5;margin-top:6px">`;
+  h+=`<details><summary style="cursor:pointer;font-size:12.5px;color:var(--brand-text);font-weight:700">Details &amp; first 3 actions</summary><div style="font-size:12.5px;line-height:1.5;margin-top:6px">`;
   h+=`<div>${esc(o.what)}</div>`;
   h+=`<div style="margin-top:5px"><b>Why OBX:</b> ${esc(o.why)}</div>`;
   h+=`<div style="margin-top:5px"><b>Setup:</b> ${fmtK(o.setupCost)} + ~${o.setupHours} hrs · <b>First revenue:</b> ${esc(o.ttr)} · <b>Maint:</b> ${o.maint} hr/wk</div>`;
@@ -148,7 +148,7 @@ const OCASES=[
 ];
 function mCases(){
   let h=`<div class="card" style="border-left:5px solid var(--accent)"><strong>Proof these work — real, named operators</strong><div class="sub">Figures are self- or press-reported, so treat them as directional. Note the honest reality-checks too.</div></div>`;
-  h+=OCASES.map(g=>mAcc(g.cat,g.items.map(c=>`<div class="mcard"><div class="mt">${esc(c.who)}</div><div class="mu" style="color:var(--brand);font-weight:800">${esc(c.rev)}</div><div style="font-size:12.5px;margin-top:4px;line-height:1.5">${esc(c.note)}</div><div class="msrc"><a href="https://${esc(c.u)}" target="_blank" rel="noopener">${esc(c.t)}</a></div></div>`).join(""),true)).join("");
+  h+=OCASES.map(g=>mAcc(g.cat,g.items.map(c=>`<div class="mcard"><div class="mt">${esc(c.who)}</div><div class="mu" style="color:var(--brand-text);font-weight:800">${esc(c.rev)}</div><div style="font-size:12.5px;margin-top:4px;line-height:1.5">${esc(c.note)}</div><div class="msrc"><a href="https://${esc(c.u)}" target="_blank" rel="noopener">${esc(c.t)}</a></div></div>`).join(""),true)).join("");
   return h;
 }
 const OLAUNCH=[

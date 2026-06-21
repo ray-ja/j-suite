@@ -17,7 +17,7 @@ function rQuotes(){
     <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
     <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
     <div class="sub">${fmtDate(q.date)} · ${(q.items||[]).length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
-    <div style="font-weight:800;color:var(--brand)">${money(q.total)}</div></div>`).join("")+`</div>`;
+    <div style="font-weight:800;color:var(--brand-text)">${money(q.total)}</div></div>`).join("")+`</div>`;
   view.innerHTML=h;
   const s=document.getElementById("qsearch");
   if(s)s.oninput=e=>{QSEARCH=e.target.value;const p=s.selectionStart;rQuotes();const n=document.getElementById("qsearch");if(n){n.focus();n.setSelectionRange(p,p);}};

@@ -337,7 +337,7 @@ function wizDone(){
   return `<div class="card" style="text-align:center;padding:30px 18px">
     <div style="font-size:40px">✅</div>
     <div class="nm" style="font-size:22px;margin:6px 0">Quote ready</div>
-    <div style="font-size:34px;font-weight:800;color:var(--brand)">${money(WZ.savedTotal)}</div>
+    <div style="font-size:34px;font-weight:800;color:var(--brand-text)">${money(WZ.savedTotal)}</div>
     <div class="muted">for ${esc(WZ.cust.name)}</div>
     <div class="row" style="gap:8px;margin-top:18px"><button class="btn acc grow" onclick="printQuote()">🖨 Print / share</button><button class="btn ghost grow" onclick="copyQuote()">Copy text</button></div>
     <button class="btn ghost" style="margin-top:8px" onclick="startWizard()">+ New guided quote</button>

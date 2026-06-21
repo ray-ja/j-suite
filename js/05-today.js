@@ -17,9 +17,9 @@ function rToday(){
     <div class="card row"><div class="grow"><div class="nm">${actC().length} customers · ${actQ().length} quotes · ${won} won</div>
     <div class="sub">${BIZ[S.biz].phone||"Jamieson Automation"}</div></div></div>
     <div class="card" style="display:flex;gap:6px;text-align:center">
-      <div class="grow"><div style="font-size:20px;font-weight:800;color:var(--brand)">${money(pipeline)}</div><div class="sub">open pipeline</div></div>
-      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand)">${money(outstanding)}</div><div class="sub">unpaid</div></div>
-      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand)">${jobsWeek}</div><div class="sub">jobs this week</div></div>
+      <div class="grow"><div style="font-size:20px;font-weight:800;color:var(--brand-text)">${money(pipeline)}</div><div class="sub">open pipeline</div></div>
+      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand-text)">${money(outstanding)}</div><div class="sub">unpaid</div></div>
+      <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:20px;font-weight:800;color:var(--brand-text)">${jobsWeek}</div><div class="sub">jobs this week</div></div>
     </div>`;
   const dueT=sortTodos(actTodo().filter(x=>!x.done&&x.due&&x.due<=t));
   if(dueT.length)h+=`<div class="secthd"><h2>To-do — due now</h2><span class="ct">${dueT.length}</span></div><div class="card">`+dueT.map(td=>liTodo(td,t)).join("")+`</div>`;

@@ -33,6 +33,19 @@ window.loginUser=async function(){
   if(u.active===false){alert("This account is deactivated. Ask an owner to reactivate it.");return;}
   localStorage.setItem("jra_session",u.id);closeModal();render();
 };
+window.profileMenu=function(){
+  var u=curUser(), dk=(typeof themePref==="function"&&themePref()==="dark");
+  modal("Account", `
+    <div class="card"><div class="sub">Signed in as</div><div style="font-weight:800;font-size:17px">${u?esc(u.username):"—"}</div></div>
+    <div class="card"><label style="margin-top:0">Business</label>
+      <select onchange="setBiz(this.value);closeModal()">
+        <option value="obx" ${S.biz==="obx"?"selected":""}>OBX Lot Solutions</option>
+        <option value="jam" ${S.biz==="jam"?"selected":""}>Jamieson Automation</option>
+      </select></div>
+    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>Dark mode</strong></div><input type="checkbox" style="width:auto;flex:0 0 auto" ${dk?"checked":""} onchange="toggleTheme()"></div></div>
+    <button class="btn" style="width:100%;margin-top:6px;background:var(--danger);color:#fff" onclick="closeModal();logoutUser()">Sign out</button>
+  `);
+};
 window.logoutUser=function(){
   if(!confirm("Sign out?"))return;
   localStorage.removeItem("jra_session");localStorage.removeItem("jra_offline_ok");
