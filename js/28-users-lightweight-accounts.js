@@ -37,10 +37,7 @@ window.logoutUser=function(){
   if(!confirm("Sign out?"))return;
   localStorage.removeItem("jra_session");localStorage.removeItem("jra_offline_ok");
   if(S.sync)S.sync.token="";save();
-  // On the Cloudflare Access sites, fully sign out of Access too, so the next visit re-runs the whole login.
-  var h=(typeof location!=="undefined"&&location.hostname||"").toLowerCase();
-  if(/(^|\.)jsuite\.dev$/.test(h)){location.href="/cdn-cgi/access/logout";return;}
-  render();
+  render();   // back to the app's own username/password login (the Cloudflare Access gate is retired)
 };
 
 /* ===== connection gate + login (login fetches the sync token from the server) ===== */
