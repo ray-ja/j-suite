@@ -59,7 +59,7 @@ function renderLogin(){
     <label>Password</label><input id="lg_pw" type="password" autocomplete="current-password">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="appLogin()">Sign in</button>
     <p class="muted" id="lg_msg" style="margin-top:8px;min-height:16px"></p>
-    <details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">Advanced — server URL &amp; manual token</summary>
+    <details style="margin-top:14px"><summary class="sub" style="cursor:pointer;font-weight:700;opacity:.5;font-size:13px">Advanced</summary>
       <label>Sync server URL</label><input id="lg_url" value="${esc(url)}" placeholder="http://your-server:4000">
       <label>Access token (bootstrap / manual)</label><input id="lg_token" placeholder="paste the server token">
       <button class="btn ghost sm" style="margin-top:8px" onclick="appBootstrapToken()">Use token (bootstrap)</button>

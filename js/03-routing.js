@@ -5,8 +5,9 @@ function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:40px;width:auto;max-width:220px;object-fit:contain;display:block">';
   document.getElementById("bizsel").value=b;render()}
 function render(){
-  var _lb=document.getElementById("logoutbtn");if(_lb)_lb.style.display=(typeof needLogin==="function"&&needLogin())?"none":"";
-  if(typeof needLogin==="function"&&needLogin()){renderLogin();renderSyncPill();return;}
+  var _out=(typeof needLogin==="function"&&needLogin());
+  document.body.classList.toggle("signedout",_out);   // CSS hides nav / sync pill / biz selector / FAB / logout → clean login page
+  if(_out){renderLogin();return;}
   if(typeof applyAccess==="function")applyAccess();   // role-gate: hide nav + coerce TAB to an allowed page
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
