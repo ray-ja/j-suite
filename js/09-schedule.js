@@ -33,7 +33,8 @@ function rSchedule(){
 window.schedSub=function(s){SCHEDSUB=s;render();};
 window.schedDate=function(v){SCHED_DATE=v;render();};
 /* compact crew initials for a tight space (calendar cells) */
-function crewInitials(ids){return (ids||[]).map(id=>{const u=(S.users||[]).find(x=>x.id===id);if(!u)return"";const p=String(u.username||"").trim().split(/\s+/).filter(Boolean);return (p.length>1?(p[0][0]+p[1][0]):(u.username||"").slice(0,2)).toUpperCase();}).filter(Boolean).join(" ");}
+function userInitials(u){if(!u)return"?";var src=String(u.name||u.username||"").trim();var p=src.split(/\s+/).filter(Boolean);return ((p.length>1?(p[0][0]+p[p.length-1][0]):src.slice(0,2))||"?").toUpperCase();}
+function crewInitials(ids){return (ids||[]).map(id=>{const u=(S.users||[]).find(x=>x.id===id);return u?userInitials(u):"";}).filter(Boolean).join(" ");}
 /* true if any assigned crew member is off/time-off on the job's date */
 function jobHasConflict(j){return (j.crew||[]).some(id=>{const u=(S.users||[]).find(x=>x.id===id);return u&&typeof isFree==="function"&&!isFree(u,j.date);});}
 /* who's assigned to a job, with a conflict flag for anyone not free on the job's date */
@@ -74,14 +75,14 @@ const CAL_CHIP_MAX=4;
 function calDayChips(ds){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   if(!mem.length||typeof availOn!=="function")return"";
-  const base="font-size:8px;font-weight:800;line-height:12px;height:12px;min-width:11px;padding:0 1px;border-radius:3px;text-align:center;flex:0 0 auto";
+  const base="font-size:10px;font-weight:800;line-height:17px;height:17px;min-width:17px;padding:0 3px;border-radius:4px;text-align:center;flex:0 0 auto";
   const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":"background:var(--accent);color:var(--accent-ink)";
   const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":"available";
   const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":"available";
-  let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const st=norm(availOn(u,ds).status),ini=(String(u.username||"?").trim().charAt(0)||"?").toUpperCase();
-    return `<span style="${base};${sty(st)}" title="${esc(u.username)} — ${lbl(st)}">${esc(ini)}</span>`;}).join("");
+  let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const av=availOn(u,ds),st=norm(av.status),ini=userInitials(u);
+    return `<span style="${base};${sty(st)}" title="${esc(u.name||u.username)} — ${esc(av.label||lbl(st))}">${esc(ini)}</span>`;}).join("");
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;
-  return `<div style="display:flex;gap:2px;flex-wrap:nowrap;overflow:hidden;margin-top:1px">${chips}</div>`;
+  return `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">${chips}</div>`;
 }
 function renderCalendar(jobs){
   const t=today();const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
