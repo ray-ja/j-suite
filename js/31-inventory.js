@@ -352,7 +352,7 @@ function invRenderAvail(){
   h+='<div class="card" style="padding:6px 10px">'+rows.map(function(r){
     var i=r.item, nm=i?i.name:"(removed item)";
     var col=r.conflict?"var(--danger)":(r.free<=0?"var(--muted)":"var(--accent)");
-    return '<div class="li" style="align-items:flex-start'+(r.conflict?";background:#fdecea;border-radius:8px":"")+'">'
+    return '<div class="li" style="align-items:flex-start'+(r.conflict?";background:var(--danger-soft);border-radius:8px":"")+'">'
       +'<div class="grow"><div class="nm">'+esc(nm)+(i?invCatBadge(i.cat):"")+'</div>'
       +'<div class="sub" style="white-space:normal">'+r.jobs.map(function(x){return esc(x.job.title||"Job")+" ×"+x.qty;}).join(" · ")+'</div></div>'
       +'<div style="text-align:right;flex:0 0 auto;min-width:64px">'

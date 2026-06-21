@@ -1,14 +1,26 @@
 
   :root{
-    --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee; --soft:#f7f9fb;
+    --bg:#f4f6f8; --card:#fff; --ink:#1b2330; --muted:#6b7280; --line:#e2e7ee; --soft:#f7f9fb; --danger-soft:#fdecea;
     --brand:#1B2A4E; --accent:#8BC34A; --accent-ink:#2c4a00; --danger:#c0392b;
   }
   body[data-biz="jam"]{ --brand:#002052; --accent:#0099e5; --accent-ink:#003a66; }
-  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#aab7c7; --line:#33404e; --soft:#262f3b; --danger:#e8705f; }
+  body.dark{ --bg:#0f141b; --card:#1a212b; --ink:#e7ecf2; --muted:#aab7c7; --line:#33404e; --soft:#262f3b; --danger:#e8705f; --danger-soft:#3a2125; }
   body.dark[data-biz="jam"]{ --accent:#37b0f0; }
   /* Dark mode: ghost buttons (e.g. wizard service tiles) used --brand for text+border, which stays dark navy in dark mode → invisible. Lift to readable ink. */
   body.dark .btn.ghost{ color:var(--ink); border-color:#4a5a6e; }
+  body.dark .xlink{ color:var(--ink); border-color:#4a5a6e; }
   body.dark .badge{ color:var(--ink); }
+  /* Dark mode: status / priority / milestone chips were fixed pastel bg + dark text → jarring + low-contrast on a dark page. Re-tint to dark chips with light text. */
+  body.dark .s-Lead,body.dark .p-Low,body.dark .m-Planned{ background:#262c4d; color:#b4bcff; }
+  body.dark .s-Contacted,body.dark .p-Medium,body.dark .m-Paused{ background:#3a2e18; color:#eab867; }
+  body.dark .s-Quoted{ background:#1b3052; color:#8fb8ff; }
+  body.dark .s-Won,body.dark .m-Active{ background:#163a27; color:#86dca0; }
+  body.dark .s-Lost,body.dark .p-High{ background:#3c2024; color:#f4a39b; }
+  body.dark .m-Done{ background:#2a313b; color:#aab7c7; }
+  body.dark .mtag.gap{ background:#5a4a12; color:#ffd97a; }
+  /* stop long unbreakable strings (urls / emails / ids) from overflowing their card or row, and let flex text shrink instead of pushing siblings off-screen */
+  .card,.mcard,.li,.sheet{ overflow-wrap:anywhere; }
+  .grow{ min-width:0; }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;padding-bottom:72px}
   header{background:var(--brand);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px}

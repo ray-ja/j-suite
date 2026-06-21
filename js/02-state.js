@@ -117,7 +117,7 @@ function cogsStrip(price, cost){
     <div class="kp"><b>${money(price)}</b><span class="kl">Price</span></div>
     <div class="kp"><b>${money(profit)}</b><span class="kl">Profit</span></div>
     <div class="kp" style="${warn?'color:#c0392b':''}"><b>${pct(margin)}</b><span class="kl">Margin</span></div>
-  </div>${warn?`<div class="note" style="border-left:4px solid #c0392b;background:#fdecea;color:#922;padding:8px;border-radius:6px">
+  </div>${warn?`<div class="note" style="border-left:4px solid var(--danger);background:var(--danger-soft);color:var(--ink);padding:8px;border-radius:6px">
     ⚠ Margin ${pct(margin)} is under the ${Math.round(MARGIN_FLOOR*100)}% floor — this discount is eating your profit. Hold the price or trim scope.</div>`:""}`;
 }
 function itemsCost(items){let c=0;(items||[]).forEach(it=>c+=(+it.cost||0)*(it.qty||1));return c;}

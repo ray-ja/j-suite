@@ -224,7 +224,7 @@ function renderJobEquip(){
       const info=r.conflict
         ?`<div class="sub" style="color:var(--danger);white-space:normal">⚠ ${esc(eqConflictMsg(r))}</div>`
         :`<div class="sub">${r.owned} owned · ${r.committedOther} committed elsewhere on ${fmtDate(ds)}</div>`;
-      return `<div class="li" style="align-items:flex-start${r.conflict?";background:#fdecea;border-radius:8px":""}">
+      return `<div class="li" style="align-items:flex-start${r.conflict?";background:var(--danger-soft);border-radius:8px":""}">
         <div class="grow"><div class="nm">${esc(i.name)}${invCatBadge(i.cat)}</div>${info}</div>
         <input type="number" min="1" value="${e.qty}" style="width:54px;text-align:center;padding:6px;flex:0 0 auto" onchange="eqJobSetQty('${e.itemId}',this.value)" onclick="event.stopPropagation()">
         <button class="btn ghost sm" style="flex:0 0 auto" onclick="eqJobDetach('${e.itemId}')" title="Remove">✕</button></div>`;
