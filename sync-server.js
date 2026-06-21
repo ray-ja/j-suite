@@ -90,12 +90,53 @@ function accountByName(store, username) {
   // skip soft-deleted, deactivated (active:false), and non-account records (e.g. the roles config)
   return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.username || "").trim().toLowerCase() === lc) || null;
 }
+/* ----- password hashing: scrypt (slow, salted, built-in — no deps) is the at-rest format. Legacy
+   SHA-256/djb2 hashes still verify and are transparently re-hashed to scrypt on the next successful
+   login (maybeUpgradeHash), so existing accounts upgrade with no password resets. */
+function scryptHash(pw) {
+  const N = 16384, r = 8, p = 1, salt = crypto.randomBytes(16);
+  const dk = crypto.scryptSync(String(pw), salt, 32, { N: N, r: r, p: p, maxmem: 64 * 1024 * 1024 });
+  return "scrypt$" + N + "$" + r + "$" + p + "$" + salt.toString("hex") + "$" + dk.toString("hex");
+}
+function isScrypt(h) { return typeof h === "string" && h.slice(0, 7) === "scrypt$"; }
+function scryptVerify(pw, stored) {
+  const a = String(stored).split("$");
+  if (a[0] !== "scrypt" || a.length !== 6) return false;
+  let salt, hash; try { salt = Buffer.from(a[4], "hex"); hash = Buffer.from(a[5], "hex"); } catch (e) { return false; }
+  if (hash.length < 16 || salt.length < 8) return false;   // reject degenerate records — an empty-hash field would otherwise match any password
+  let dk; try { dk = crypto.scryptSync(String(pw), salt, hash.length, { N: +a[1], r: +a[2], p: +a[3], maxmem: 64 * 1024 * 1024 }); } catch (e) { return false; }
+  return dk.length === hash.length && crypto.timingSafeEqual(dk, hash);
+}
 function verifyLogin(store, username, password) {
   const u = accountByName(store, username);
   if (!u || !u.passhash) return null;
   const ph = String(u.passhash);
-  return (ph === hashPw(password) || ph === hashPwFallback(password)) ? u : null;
+  if (isScrypt(ph)) return scryptVerify(password, ph) ? u : null;
+  return (ph === hashPw(password) || ph === hashPwFallback(password)) ? u : null;   // legacy SHA-256 / djb2
 }
+// re-hash a legacy account to scrypt after a successful login; mutates the store user. Returns true if upgraded.
+function maybeUpgradeHash(store, userId, password) {
+  const u = ((store && store.users) || []).find(x => x && x.id === userId);
+  if (!u || !u.passhash || isScrypt(String(u.passhash))) return false;
+  u.passhash = scryptHash(password); u.updatedAt = Date.now();
+  return true;
+}
+/* per-ACCOUNT lockout (on top of the per-IP rateCheck): LOCK_MAX failures in a window locks that username */
+const failedLogins = new Map();
+const LOCK_MAX = 8, LOCK_WINDOW_MS = 15 * 60 * 1000;
+function lockKey(u) { return String(u || "").trim().toLowerCase(); }
+function accountLocked(username) {
+  const h = failedLogins.get(lockKey(username));
+  if (!h) return false;
+  if (Date.now() - h.t0 > LOCK_WINDOW_MS) { failedLogins.delete(lockKey(username)); return false; }
+  return h.n >= LOCK_MAX;
+}
+function noteFailedLogin(username) {
+  const k = lockKey(username), t = Date.now(); let h = failedLogins.get(k);
+  if (!h || t - h.t0 > LOCK_WINDOW_MS) { h = { n: 0, t0: t }; failedLogins.set(k, h); }
+  h.n++;
+}
+function clearFailedLogin(username) { failedLogins.delete(lockKey(username)); }
 /* ----- Cloudflare Access SSO: verify the SIGNED Access JWT (NOT a spoofable header) and map email->account.
    The JWT (Cf-Access-Jwt-Assertion, injected by Cloudflare on requests it proxies) is RS256-signed by the
    team. We verify signature + issuer + expiry against the team's published JWKS, so a client reaching :4000
@@ -633,8 +674,12 @@ const server = http.createServer((req, res) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       const store = loadStore();
       const accounts = (((store && store.users) || []).filter(u => u && !u.deleted && !u.kind)).length;
+      if (!p || typeof p !== "object") p = {};   // tolerate a null / non-object JSON body — no crash
+      if (accountLocked(p.username)) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "900" }); return res.end('{"error":"account temporarily locked — try again later"}'); }
       const u = verifyLogin(store, p.username, p.password);
-      if (!u) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "unauthorized", accounts: accounts })); }
+      if (!u) { noteFailedLogin(p && p.username); res.writeHead(401, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "unauthorized", accounts: accounts })); }
+      clearFailedLogin(p.username);
+      if (maybeUpgradeHash(store, u.id, p.password)) { try { saveStore(store); } catch (e) {} }   // legacy hash -> scrypt on successful login
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, token: TOKEN, user: { id: u.id, username: u.username, settings: u.settings || null } }));
     });
@@ -725,4 +770,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

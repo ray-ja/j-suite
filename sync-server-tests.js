@@ -195,6 +195,26 @@ ok("djb2 fallback hash (file://-created account) also verifies",
   !!t.verifyLogin({ users: [{ id: "u3", username: "leg", passhash: t.hashPwFallback("legacy"), updatedAt: 1 }] }, "leg", "legacy"), null);
 ok("empty store rejects (bootstrap: no accounts yet)", t.verifyLogin({ users: [] }, "ray", "hunter2") === null, null);
 
+console.log("— hardened login: scrypt at rest, legacy upgrade-on-login, per-account lockout —");
+const sh = t.scryptHash("hunter2");
+ok("scryptHash produces a scrypt$ record", t.isScrypt(sh), sh.slice(0, 12));
+ok("scryptVerify accepts the right password, rejects the wrong one", t.scryptVerify("hunter2", sh) === true && t.scryptVerify("nope", sh) === false, null);
+ok("scryptVerify rejects malformed/legacy/degenerate hashes (incl. empty-hash field that would else match any pw)", t.scryptVerify("x", "deadbeef") === false && t.scryptVerify("x", "scrypt$bad") === false && t.scryptVerify("anything", "scrypt$16384$8$1$" + "ab".repeat(16) + "$") === false, null);
+const scStore = { users: [{ id: "u1", username: "Ray", passhash: t.scryptHash("s3cret"), updatedAt: 1 }] };
+ok("verifyLogin works on a scrypt account (right pw), rejects wrong pw", (t.verifyLogin(scStore, "ray", "s3cret") || {}).id === "u1" && t.verifyLogin(scStore, "ray", "wrong") === null, null);
+const legStore = { users: [{ id: "l1", username: "Sha", passhash: t.hashPw("legacy1"), updatedAt: 1 }, { id: "l2", username: "Djb", passhash: t.hashPwFallback("legacy2"), updatedAt: 1 }] };
+ok("legacy SHA-256 + djb2 accounts STILL log in (no forced resets)", (t.verifyLogin(legStore, "sha", "legacy1") || {}).id === "l1" && (t.verifyLogin(legStore, "djb", "legacy2") || {}).id === "l2", null);
+const upStore = { users: [{ id: "u9", username: "Up", passhash: t.hashPw("pw9"), role: "owner", email: "up@x.com", settings: { theme: "dark" }, updatedAt: 5 }] };
+const upgraded = t.maybeUpgradeHash(upStore, "u9", "pw9");
+const u9 = upStore.users.find(x => x.id === "u9");
+ok("upgrade-on-login: legacy account re-hashed to scrypt, password still verifies, role/email/settings intact", upgraded === true && t.isScrypt(u9.passhash) && t.scryptVerify("pw9", u9.passhash) && u9.role === "owner" && u9.email === "up@x.com" && (u9.settings || {}).theme === "dark", u9 && u9.passhash.slice(0, 8));
+ok("upgrade is a no-op on an already-scrypt account", t.maybeUpgradeHash({ users: [{ id: "a", passhash: t.scryptHash("x"), updatedAt: 1 }] }, "a", "x") === false, null);
+t.clearFailedLogin("victim");
+for (let i = 0; i < 8; i++) t.noteFailedLogin("victim");
+ok("account locks after 8 failed attempts (case-insensitive), others unaffected", t.accountLocked("victim") === true && t.accountLocked("VICTIM") === true && t.accountLocked("bystander") === false, null);
+t.clearFailedLogin("victim");
+ok("a successful login (clearFailedLogin) resets the lock", t.accountLocked("victim") === false, null);
+
 console.log("— Access SSO: email->account mapping + account.email rides the merge (zero loss) —");
 const ssoStore = { users: [
   { id: "u1", username: "Ray", email: "ray@obxlotsolutions.com", role: "owner", passhash: t.hashPw("x"), updatedAt: 1 },
