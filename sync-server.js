@@ -597,7 +597,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
 
   // serve the app itself so any device on the network can load it
-  if (req.method === "GET" && (req.url === "/" || req.url === "/index.html" || req.url === "/app")) {
+  if (req.method === "GET" && ["/", "/index.html", "/app"].indexOf(req.url.split("?")[0]) >= 0) {   // match the PATH (ignore ?query, e.g. /?reset=TOKEN)
     return fs.readFile(APP_FILE, (err, buf) => {
       if (err) { res.writeHead(404); return res.end("app file not found next to sync-server.js"); }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
