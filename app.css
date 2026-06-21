@@ -16,6 +16,7 @@
   .logo .ac{color:var(--accent)}
   .bizsel{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:600}
   .bizsel option{color:#1b2330;background:#fff;font-weight:600}
+  .hdrbtn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 9px;font-size:16px;line-height:1;cursor:pointer}
   .wrap{max-width:780px;margin:0 auto;padding:14px}
   h2{font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 4px 8px}
   h2:first-child{margin-top:4px}
