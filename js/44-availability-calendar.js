@@ -53,16 +53,31 @@ function avQuickEdit(ds){
   const u = avTargetUser(); if (!u){ alert("Sign in to set your availability."); return; }
   const ov = u.avail && u.avail.overrides && u.avail.overrides[ds];
   const curS = (typeof ov === "string") ? ov : (ov && ov.s) || "";
+  const ovObj = (ov && typeof ov === "object") ? ov : {};
+  const curStart = ovObj.start || "08:00", curEnd = ovObj.end || "12:00";
   const who = (typeof curUser === "function" && curUser() && curUser().id === u.id) ? "your" : (esc(u.username) + "’s");
   modal("Availability — " + fmtDate(ds), `
     <p class="muted" style="margin-bottom:10px">Set ${who} availability for <b>${fmtDate(ds)}</b>.</p>
     <div class="row" style="gap:8px;flex-wrap:wrap">
       <button class="btn ${curS === "full" ? "acc" : "ghost"} grow" onclick="avQuickSet('${ds}','full')">🟢 Full day</button>
-      <button class="btn grow" style="${curS === "partial" ? "background:#e0a800;color:#1a1a1a" : "background:var(--soft);color:var(--ink)"}" onclick="avQuickSet('${ds}','partial')">🟡 Part of day</button>
       <button class="btn ${curS === "off" ? "danger" : "ghost"} grow" onclick="avQuickSet('${ds}','off')">🔴 Off</button>
+    </div>
+    <div class="card" style="margin-top:10px;border-color:#e0a800">
+      <div style="font-weight:700;margin-bottom:4px">🟡 Part of day${curS === "partial" ? " · current" : ""}</div>
+      <div class="row" style="gap:8px">
+        <div class="grow"><label style="margin-top:0">From</label><input type="time" id="av_start" value="${curStart}"></div>
+        <div class="grow"><label style="margin-top:0">To</label><input type="time" id="av_end" value="${curEnd}"></div>
+      </div>
+      <button class="btn" style="margin-top:10px;width:100%;background:#e0a800;color:#1a1a1a" onclick="avSetPartial('${ds}')">Save part of day</button>
     </div>
     <button class="btn ghost sm" style="margin-top:12px;width:100%" onclick="avQuickSet('${ds}','default')">↩ Use my normal schedule (clear this day)</button>`);
 }
+window.avSetPartial = function(ds){
+  const u = avTargetUser(); if (!u) return;
+  const s = val("av_start") || "08:00", e = val("av_end") || "12:00";
+  avSetDay(u, ds, { s: "partial", start: s, end: e });
+  if (typeof closeModal === "function") closeModal(); avCommit();
+};
 window.avQuickSet = function(ds, val){ const u = avTargetUser(); avSetDay(u, ds, val); if (typeof closeModal === "function") closeModal(); avCommit(); };
 
 function avCalGrid(u){
