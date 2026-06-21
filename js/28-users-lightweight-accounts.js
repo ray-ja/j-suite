@@ -52,9 +52,8 @@ function loginMsg(t){const e=document.getElementById("lg_msg");if(e)e.textConten
 function defaultServerUrl(){return (S.sync&&S.sync.url)||((location.protocol.indexOf("http")===0)?location.origin:"");}
 function renderLogin(){
   const hasLocal=!!users().length;
-  view.innerHTML=`<div class="card" style="max-width:420px;margin:18px auto;border-top:4px solid var(--accent)">
-    <h2 style="margin-top:0">Not connected — sign in</h2>
-    <p class="muted">Sign in to load your business. Your username and password fetch this device's sync access from the server.</p>
+  view.innerHTML=`<div class="card" style="max-width:420px;margin:40px auto;border-top:4px solid var(--accent)">
+    <h2 style="margin-top:0">Sign in</h2>
     <label>Username</label><input id="lg_user" autocomplete="username">
     <label>Password</label><input id="lg_pw" type="password" autocomplete="current-password">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="appLogin()">Sign in</button>
