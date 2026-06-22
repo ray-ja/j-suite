@@ -82,12 +82,25 @@ function rMessages() {
   else h += mine.map(t => {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
     const snip = last ? (esc(last.senderLabel) + ": " + esc((last.body || "").slice(0, 60))) : `<span class="muted">No messages</span>`;
+    const capTick = last ? (last.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : last.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : "") : "";
     return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(t.title || "Thread")}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
-      <div class="sub" style="white-space:normal">${snip}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${fmtDate(new Date(last.ts).toISOString().slice(0, 10))}</span>` : ``)}</div>`;
+      <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${fmtDate(new Date(last.ts).toISOString().slice(0, 10))}</span>` : ``)}</div>`;
   }).join("");
   view.innerHTML = h;
 }
 
+/* who has read message m in thread tid — Cap (capRead) + crew whose read-marker is at/after m.ts (i.e. they opened the thread after it). Shown on hover; never on the inbox (seeing a preview ≠ opening). */
+function msgReadersTip(tid, m) {
+  const t = threadById(tid); if (!t || !m) return "";
+  const names = [];
+  if (m.capRead) names.push("Cap");
+  (t.members || []).forEach(uid => {
+    if (uid === m.senderId) return;
+    const rm = readMarker(tid, uid);
+    if (rm && (rm.lastReadTs || 0) >= (m.ts || 0)) names.push((typeof userName === "function" && userName(uid)) || uid);
+  });
+  return names.length ? ("Read by " + names.join(", ")) : "Not read yet";
+}
 /* ----- thread view ----- */
 function renderThread(tid) {
   const t = threadById(tid); if (!t) { MSG_OPEN = null; rMessages(); return; }
@@ -95,7 +108,7 @@ function renderThread(tid) {
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
-    return `<div class="li" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
+    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
   let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
