@@ -14,7 +14,7 @@
   function resolve(u, ds) {
     u = u || {};
     var to = (u.timeoff || []).find(function (b) { return b && !b.deleted && ds >= b.start && ds <= (b.end || b.start); });
-    if (to) return { status: "timeoff", label: "Time off" + (to.note ? " · " + to.note : ""), cls: "off" };
+    if (to) return { status: "timeoff", label: "Time off" + (to.note ? " · " + to.note : ""), cls: "off", confirmed: true };
     var av = u.avail;
     // per-day override (scheduler calendar edit) wins over the weekday baseline for that date.
     // value is "full" | "partial" | "off" (v1) or {s, start, end} (v2-safe, carries hours).
@@ -22,13 +22,14 @@
     if (ov) {
       var s = (typeof ov === "string") ? ov : ov.s;
       var hrs = (ov && typeof ov === "object" && ov.start && ov.end) ? " " + ov.start + "–" + ov.end : "";
-      if (s === "off") return { status: "off", label: "Off (set for this day)", cls: "off" };
-      if (s === "partial") return { status: "partial", label: "Part of day" + hrs, cls: "partial" };
-      if (s === "full") return { status: "on", label: "Available all day" + hrs, cls: "on" };
+      if (s === "off") return { status: "off", label: "Off (set for this day)", cls: "off", confirmed: true };
+      if (s === "partial") return { status: "partial", label: "Part of day" + hrs, cls: "partial", confirmed: true };
+      if (s === "full") return { status: "on", label: "Available all day" + hrs, cls: "on", confirmed: true };
     }
-    if (!av || !av.days) return { status: "unset", label: "Available · not set", cls: "unset" };
-    if (av.days[dow(ds)]) return { status: "on", label: "Available" + (av.start && av.end ? " " + av.start + "–" + av.end : ""), cls: "on" };
-    return { status: "off", label: "Off (" + DOW[dow(ds)] + ")", cls: "off" };
+    // No explicit confirmation for this date → UNKNOWN (gray). The weekday baseline is only a HINT of
+    // whether the person is EXPECTED to work — it does NOT turn the day green until they confirm it.
+    var expected = !!(av && av.days && av.days[dow(ds)]);
+    return { status: "unknown", label: expected ? "Not confirmed (normally works " + DOW[dow(ds)] + ")" : "Not confirmed", cls: "unknown", confirmed: false, expected: expected };
   }
   /* convenience: just the canonical status string */
   function status(u, ds) { return resolve(u, ds).status; }

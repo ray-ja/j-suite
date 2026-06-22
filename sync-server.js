@@ -264,17 +264,18 @@ function ceoProjection(store, opts) {
       lastActive: lastActive[u.id] || 0   // ms epoch of last /sync (0 = unknown); ops-brain "active Xm ago"
     };
   });
-  // next 7 days availability glance
+  // next 14 days availability glance — the 2-week window Cap keeps confirmed
   const availabilityWeek = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 14; i++) {
     const ds = ceoDateStr(new Date(asOf + i * 86400000));
-    const bucket = { date: ds, available: [], partial: [], off: [], timeoff: [] };
+    const bucket = { date: ds, available: [], partial: [], off: [], timeoff: [], unknown: [] };
     members.forEach(u => {
       const s = AvailResolve.status(u, ds);
       if (s === "timeoff") bucket.timeoff.push(u.id);
       else if (s === "off") bucket.off.push(u.id);
       else if (s === "partial") bucket.partial.push(u.id);
-      else bucket.available.push(u.id);   // "on" + "unset" => available
+      else if (s === "on") bucket.available.push(u.id);
+      else bucket.unknown.push(u.id);   // not confirmed → Cap chases these to fill the 2 weeks
     });
     availabilityWeek.push(bucket);
   }

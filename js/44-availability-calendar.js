@@ -89,8 +89,8 @@ function avCalGrid(u){
   for (let day = 1; day <= dim; day++){
     const ds = AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     const a = (typeof availOn === "function") ? availOn(u, ds) : { status: "unset" };
-    const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : "";
-    const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : "transparent";
+    const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : a.status === "unknown" ? "background:rgba(130,140,155,.15)" : "";
+    const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
     const sel = !!(AVCAL_SEL && AVCAL_SEL.has(ds));
     const selSty = sel ? ";outline:3px solid var(--brand);outline-offset:-3px;border-radius:8px" : "";
     cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayTap('${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">

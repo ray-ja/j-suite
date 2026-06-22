@@ -431,7 +431,7 @@ ok("roles config record is not surfaced as crew", !proj.crew.find(x => x.id === 
 ok("open jobs exclude done jobs", proj.openJobs.length === 1 && proj.openJobs[0].id === "j1", proj.openJobs.map(j => j.id));
 ok("open quotes exclude accepted quotes", proj.openQuotes.length === 1 && proj.openQuotes[0].id === "q2", proj.openQuotes.map(q => q.id));
 ok("counts reflect on-job / idle / open", proj.counts.crewOnJob === 1 && proj.counts.crewIdle === 1 && proj.counts.openJobs === 1 && proj.counts.openQuotes === 1, proj.counts);
-ok("availabilityWeek = 7 days with buckets", proj.availabilityWeek.length === 7 && Array.isArray(proj.availabilityWeek[0].available), proj.availabilityWeek[0]);
+ok("availabilityWeek = 14 days (2-week window) with buckets incl. unknown", proj.availabilityWeek.length === 14 && Array.isArray(proj.availabilityWeek[0].available) && Array.isArray(proj.availabilityWeek[0].unknown), proj.availabilityWeek[0]);
 ok("view=jobs returns only openJobs (+counts), not crew/quotes", (() => { const p = t.ceoProjection(ceoStore, { view: "jobs" }); return !!p.openJobs && !p.crew && !p.openQuotes; })(), null);
 ok("CEO token: correct accepted", t.ceoTokenOk("abc", "abc") === true, null);
 ok("CEO token: wrong rejected", t.ceoTokenOk("abc", "xyz") === false, null);
@@ -440,7 +440,10 @@ const AR = require("./availability-resolve");
 ok("shared resolver: timeoff wins", AR.status({ timeoff: [{ start: "2026-06-20", end: "2026-06-20" }], avail: { days: [true, true, true, true, true, true, true] } }, "2026-06-20") === "timeoff", null);
 ok("shared resolver: per-day override wins over baseline", AR.status({ avail: { days: [false, false, false, false, false, false, false], overrides: { "2026-06-20": "full" } } }, "2026-06-20") === "on", null);
 ok("shared resolver: partial override", AR.status({ avail: { overrides: { "2026-06-20": "partial" } } }, "2026-06-20") === "partial", null);
-ok("shared resolver: no avail set => unset", AR.status({}, "2026-06-20") === "unset", null);
+ok("shared resolver: no avail set => unknown (gray, NOT assumed available)", AR.status({}, "2026-06-20") === "unknown", null);
+ok("shared resolver: baseline workday WITHOUT confirmation => unknown, not auto-green", AR.status({ avail: { days: [true, true, true, true, true, true, true] } }, "2026-06-22") === "unknown", null);
+ok("shared resolver: explicit full-day = confirmed available (green)", (function () { var r = AR.resolve({ avail: { overrides: { "2026-06-20": "full" } } }, "2026-06-20"); return r.status === "on" && r.confirmed === true; })(), null);
+ok("shared resolver: unconfirmed expected day carries confirmed=false + expected=true", (function () { var r = AR.resolve({ avail: { days: [true, true, true, true, true, true, true] } }, "2026-06-22"); return r.confirmed === false && r.expected === true; })(), null);
 
 console.log("— scoped CEO write path: messages-collection-ONLY (cannot touch any other record) —");
 const wStore = {

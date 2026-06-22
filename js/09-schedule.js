@@ -19,7 +19,7 @@ function rSchedule(){
     if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
     if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
     h+=renderCalendar(jobs);
-    if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials by status — <b style="color:var(--accent)">available</b>, <b style="color:#b26a00">time-off</b>, <b style="color:var(--danger)">off</b>. Tap a day for the full picture.</div>`;
+    if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
     const groups={Today:[],Upcoming:[],Done:[]};
     jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
     if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
@@ -76,9 +76,9 @@ function calDayChips(ds){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   if(!mem.length||typeof availOn!=="function")return"";
   const base="font-size:10px;font-weight:800;line-height:17px;height:17px;min-width:17px;padding:0 3px;border-radius:4px;text-align:center;flex:0 0 auto";
-  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":"background:var(--accent);color:var(--accent-ink)";
-  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":"available";
-  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":"available";
+  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":st==="available"?"background:var(--accent);color:var(--accent-ink)":"background:var(--line);color:var(--muted)";
+  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":st==="available"?"available":"not confirmed";
+  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":s==="on"?"available":"unknown";
   let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const av=availOn(u,ds),st=norm(av.status),ini=userInitials(u);
     return `<span style="${base};${sty(st)}" title="${esc(u.name||u.username)} — ${esc(av.label||lbl(st))}">${esc(ini)}</span>`;}).join("");
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;
