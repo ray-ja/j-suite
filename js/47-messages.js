@@ -90,7 +90,7 @@ window.msgOpen = function (tid) {
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
-    return `<div class="li" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
+    return `<div class="li" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
   let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="TAB='messages';render()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);

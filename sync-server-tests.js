@@ -459,6 +459,11 @@ const wStore = {
 const otherBefore = JSON.stringify({ obxC: wStore.obx.customers, obxQ: wStore.obx.quotes, obxJ: wStore.obx.jobs, jam: wStore.jam, users: wStore.users });
 const built = t.ceoBuildMessage({ biz: "obx", title: "Strategy", body: "Handshake — wire test.", senderLabel: "Strategy" }, wStore);
 ok("ceoBuildMessage produces ONLY message records (thread + message, all in messages)", built.records.length === 2 && built.records.every(r => r.kind === "thread" || (!r.kind && r.threadId)) && !!built.messageId, built.records.map(r => r.kind || "msg"));
+const rcStore = { obx: { messages: [{ id: "m1", threadId: "t1", senderId: "u1", body: "hi", ts: 1, updatedAt: 1 }] } };
+const rc1 = t.ceoSetReceipt(rcStore, "obx", "m1", "received");
+ok("receipt: 'received' stamps capReceived + bumps updatedAt", rc1.ok && rcStore.obx.messages[0].capReceived > 0 && rcStore.obx.messages[0].updatedAt > 1, rcStore.obx.messages[0]);
+ok("receipt: 'read' stamps capRead (and implies received)", t.ceoSetReceipt(rcStore, "obx", "m1", "read").ok && rcStore.obx.messages[0].capRead > 0 && rcStore.obx.messages[0].capReceived > 0, null);
+ok("receipt: unknown message id → ok:false (no crash)", t.ceoSetReceipt(rcStore, "obx", "nope", "read").ok === false, null);
 const wMerged = t.mergeState(wStore, { obx: { messages: built.records } });
 const otherAfter = JSON.stringify({ obxC: wMerged.obx.customers, obxQ: wMerged.obx.quotes, obxJ: wMerged.obx.jobs, jam: { customers: wMerged.jam.customers }, users: wMerged.users });
 ok("scoped write does NOT touch customers/quotes/jobs/accounts/other-biz (byte-identical)", otherBefore === otherAfter, { before: otherBefore.slice(0, 80), after: otherAfter.slice(0, 80) });

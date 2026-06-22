@@ -354,6 +354,20 @@ function ceoBuildMessage(p, store) {
   return { biz: biz, records: records, threadId: tid, messageId: mid };
 }
 
+/* Cap read receipts: stamp capReceived/capRead on a message in the messages collection. Touches ONLY
+   those two timestamps + updatedAt (rides the per-record LWW sync). 'read' implies 'received'. */
+function ceoSetReceipt(store, biz, msgId, kind) {
+  const b = (biz === "jam") ? "jam" : "obx";
+  const coll = ((store[b] || {}).messages) || [];
+  const m = coll.find(x => x && x.id === msgId && !x.kind && !x.deleted);
+  if (!m) return { ok: false, error: "message not found" };
+  const t = Date.now();
+  if (kind === "read") { m.capRead = t; if (!m.capReceived) m.capReceived = t; }
+  else m.capReceived = t;
+  m.updatedAt = t;
+  return { ok: true, biz: b };
+}
+
 /* ---------- SCOPED CEO propose path: append to the pendingChanges queue ONLY ----------
    Step 2 approval queue. ceoBuildProposal returns a single pendingChanges record; the route merges
    { [biz]: { pendingChanges: [record] } } via the SAME mergeState — so a propose can ONLY add a
@@ -647,6 +661,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // SCOPED CEO write — POST /api/ceo/receipt {biz,msgId,kind}. Stamps Cap's read receipts
+  // (capReceived/capRead) on ONE message. Token = CEO_WRITE_TOKEN. Cannot touch anything else.
+  if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/receipt")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
+      if (!p || typeof p !== "object") p = {};
+      const store = loadStore();
+      const r = ceoSetReceipt(store, p.biz, p.msgId, p.kind);
+      if (!r.ok) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: r.error })); }
+      saveStore(store);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"ok":true}');
+    });
+    return;
+  }
+
   // SCOPED CEO write — POST /api/ceo/propose. Token = CEO_WRITE_TOKEN. Queues an approval (pendingChanges)
   // ONLY — whitelist-enforced, cannot apply or touch any business collection. Owner approves in-app.
   if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/propose")) {
@@ -857,4 +892,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
