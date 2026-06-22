@@ -13,6 +13,8 @@
    + restart — the server injects window.JSUITE_MESSAGING=true into the shell. DEV uses window.DEV_MESSAGING. */
 let MSG_ENABLED = (typeof window !== "undefined" && (window.JSUITE_MESSAGING === true || window.DEV_MESSAGING === true));
 function msgEnabled() { return MSG_ENABLED === true; }
+let MSG_OPEN = null;   // open thread id (null = inbox list). Persisted so a sync re-render keeps you IN the thread (no kick-back).
+window.msgResetOpen = function () { MSG_OPEN = null; };
 
 /* ----- accessors ----- */
 function msgColl() { return (D().messages || (D().messages = [])); }
@@ -57,12 +59,17 @@ function markRead(tid) {
   const id = "rd_" + tid + "_" + uid2;   // deterministic → one record per user×thread, monotonic LWW
   let rm = msgColl().find(m => m && m.id === id);
   if (!rm) { rm = { id: id, kind: "read", threadId: tid, userId: uid2, lastReadTs: 0, updatedAt: 0 }; msgColl().push(rm); }
-  if (last >= (rm.lastReadTs || 0)) { rm.lastReadTs = last; rm.updatedAt = now(); }
+  if (last > (rm.lastReadTs || 0)) { rm.lastReadTs = last; rm.updatedAt = now(); }   // strict: don't churn updatedAt (and sync) on a no-op re-render
 }
 
 /* ----- inbox ----- */
 function rMessages() {
   if (!msgEnabled()) { view.innerHTML = `<div class="card"><div class="nm">Messages</div><div class="sub">Not active yet.</div></div>`; return; }
+  if (MSG_OPEN) {   // a thread is open → keep rendering IT across sync re-renders (the kick-back fix)
+    const ot = threadById(MSG_OPEN);
+    if (ot && threadVisible(ot, myUid())) { renderThread(MSG_OPEN); return; }
+    MSG_OPEN = null;   // thread gone/invisible → fall back to the inbox
+  }
   const uid2 = myUid();
   const mine = msgThreads().filter(t => threadVisible(t, uid2)).sort((a, b) => {
     const la = threadMsgs(a.threadId).slice(-1)[0], lb = threadMsgs(b.threadId).slice(-1)[0];
@@ -82,22 +89,28 @@ function rMessages() {
 }
 
 /* ----- thread view ----- */
-window.msgOpen = function (tid) {
-  if (!msgEnabled()) return;
-  const t = threadById(tid); if (!t) { rMessages(); return; }
+function renderThread(tid) {
+  const t = threadById(tid); if (!t) { MSG_OPEN = null; rMessages(); return; }
   const uid2 = myUid();
-  if (!threadVisible(t, uid2)) { alert("You're not on this thread."); TAB = "today"; render(); return; }
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
     return `<div class="li" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
-  let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="TAB='messages';render()">← Inbox</button></div>${list}`;
+  let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
   h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>
     <button class="btn acc" style="margin-top:8px" onclick="msgSendReply('${tid}')">Send</button>`;
   view.innerHTML = h;
+}
+window.msgOpen = function (tid) {
+  if (!msgEnabled()) return;
+  const t = threadById(tid); if (!t) { MSG_OPEN = null; rMessages(); return; }
+  if (!threadVisible(t, myUid())) { alert("You're not on this thread."); TAB = "today"; render(); return; }
+  MSG_OPEN = tid;
+  renderThread(tid);
 };
+window.msgBack = function () { MSG_OPEN = null; render(); };
 window.msgSendReply = function (tid) { const b = val("msg_reply"); if (!b) return; msgPost(tid, b); render(); };
 
 /* ----- availability quick-replies: write STRUCTURED availability data, not text ----- */
@@ -190,7 +203,7 @@ window.msgCreate = function () {
   msgColl().push({ id: tid, kind: "thread", threadId: tid, title: title, type: to === "__crew__" ? "broadcast" : "dm", availAsk: availAsk, members: members, createdBy: u ? u.id : null, deleted: false, updatedAt: now() });
   if (body) msgPost(tid, body, asBiz ? (BIZ[S.biz] ? BIZ[S.biz].name : "The business") : null);
   else { save(); }
-  closeModal(); TAB = "messages"; render();
+  closeModal(); if (typeof msgResetOpen === "function") msgResetOpen(); TAB = "messages"; render();
 };
 
 /* ----- Messages information-architecture cleanup (Cap, one-time; guarded by S.msgIAv1 in load) -----
