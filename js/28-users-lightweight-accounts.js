@@ -91,6 +91,8 @@ window.appLogin=async function(){
     S.sync.url=base;if(d.token)S.sync.token=d.token;S.sync.auto=true;
     if(d.user&&d.user.id)localStorage.setItem("jra_session",d.user.id);
     window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
+    // SPA login doesn't navigate, so explicitly ask the browser to save the credential (Credential Mgmt API; Chromium). Safari/extensions use the <form> instead.
+    try{ if(window.PasswordCredential && navigator.credentials && navigator.credentials.store){ await navigator.credentials.store(new PasswordCredential({id:un,password:pw,name:un})); } }catch(e){}
     if(typeof syncRun==="function")await syncRun("pull");   // pull their data silently (no empty-store confirm)
     if(typeof applyUserSettings==="function")applyUserSettings();
     render();
