@@ -19,6 +19,32 @@ function finCanView() { return (typeof canSee === "function") ? canSee("finance"
 function finCfg() { const d = D(); d.docs = d.docs || []; let c = d.docs.find(x => x.id === "financeConfig"); if (!c) { c = { id: "financeConfig", text: "", adminMemberId: "", updatedAt: now() }; d.docs.push(c); } return c; }
 function finAdminMember() { return finCfg().adminMemberId || ""; }
 window.finSetAdmin = function (id) { const c = finCfg(); c.adminMemberId = id || ""; touch(c); save(); render(); };
+/* a PAID job auto-syncs an income record (idempotent id keyed to the quote) so payouts reflect it in
+   real time. amount = final price (or quote total); crew/date/sales-credit come from the linked job + customer.
+   Un-paying tombstones it. This is what connects the Jobs flow to the payout engine. */
+window.syncQuoteIncome = function (q) {
+  if (!q || !q.id) return;
+  const d = D(); d.income = d.income || [];
+  const incId = "inc_q_" + q.id;
+  let e = d.income.find(x => x && x.id === incId);
+  if (q.paid) {
+    const job = q.jobId ? (d.jobs || []).find(j => j && j.id === q.jobId && !j.deleted) : null;
+    const cust = q.customerId ? (d.customers || []).find(c => c && c.id === q.customerId) : null;
+    const fields = {
+      quoteId: q.id, jobId: q.jobId || "", fromQuote: true,
+      amount: (q.finalPrice || q.total || 0),
+      date: (job && job.date) || q.acceptedDate || q.date || (typeof today === "function" ? today() : ""),
+      crew: (job && Array.isArray(job.crew)) ? job.crew.slice() : [],
+      originator: (cust && cust.soldBy) || "",
+      bookedAt: q.acceptedDate || q.date || "",
+      houseAccount: false, deleted: false
+    };
+    if (e) Object.assign(e, fields); else { e = Object.assign({ id: incId }, fields); d.income.push(e); }
+    if (typeof touch === "function") touch(e);
+  } else if (e && !e.deleted) {
+    e.deleted = true; if (typeof touch === "function") touch(e);
+  }
+};
 
 /* ---- period (a chosen month; aligns with the monthly admin cap) ---- */
 function finMonth() { return FIN_MONTH || today().slice(0, 7); }
