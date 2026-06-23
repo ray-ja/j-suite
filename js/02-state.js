@@ -66,27 +66,28 @@ function setResearchDocs(){
   set("jam","JAMIESON AUTOMATION — Market Research (updated overnight)\n\nTHE BIG PICTURE\nThe OBX is absentee-owner and rental-heavy: ~60% second homes, 8,000-10,000+ vacation rentals in Dare alone, a ~$100B US vacation-rental market, and a US smart-home market of ~$28-36B growing 17-27%/yr (41% of US households already have smart-home tech). These owners want reliable guest wifi, keyless entry, cameras, and systems that just work — and there are few skilled, reliable local integrators. Premium, relationship-sold work is wide open.\n\nWHAT TO PUSH FIRST\n1) Starlink + vacation-rental tech packages.\n2) Commercial AV / Q-Sys for restaurants & bars (your deepest edge).\n3) Permanent outdoor LED lighting (high-ticket bet).\nPlus: security cameras/smart home as cross-sell; EV/generators with a license workaround; boat fiberglass as a wildcard.\n\nSTARLINK + RENTAL-TECH PACKAGES (push now)\n71% of travelers prefer keyless entry; rentals need reliable wifi; Starlink's own installs carry $100-1,500 demand surcharges in busy areas (supply gap). You've done 3 installs already. Bundle Starlink + mesh wifi + smart lock + thermostat + cameras into a flat-rate 'rental-ready' package sold per door to PMs and owners. One PM = many doors.\n\nCOMMERCIAL AV / Q-SYS (your edge)\nThe OBX is dense with restaurants/bars, and you have real Q-Sys/QSC expertise — the exact platform for multi-zone hospitality audio, paging, and control. Few true pros compete locally. High-ticket installs + recurring support/programming. Relationship-sold: walk into venues, lead with Q-Sys. Hard for others to copy.\n\nPERMANENT OUTDOOR LED LIGHTING (high-ticket bet)\nTrimlight/Jellyfish/Gemstone-style systems are year-round (holiday + accent + security in one app), sold to affluent homes — the OBX is full of them, with likely little local competition. $1,800-2,500+ per home, $18-35/linear ft, ~$650 controller; margins like holiday lighting. It's technical (LED channels, controllers, app/network) = your wheelhouse, and it bridges OBX Lot Solutions' seasonal lighting into a premium product. Become a dealer this summer; sell in the fall.\n\nSECURITY CAMERAS + SMART HOME (cross-sell)\nSmart-home market ~$28-36B, growing fast, 41% household adoption. Cameras/locks/thermostats attach naturally to the rental package and any home you're already in.\n\nEV CHARGERS & GENERATORS (demand yes, license constraint)\nStrong demand (NC EV charging +39% YoY; coastal NC wants Generac standby generators, which book up before hurricane season). BUT both hardwire into the panel = NC licensed electrician required, which you're not yet. Options: partner with a licensed electrician (own mounting/config/automation + the customer), do plug-in EV chargers only (no license needed), or pursue a Limited electrical license later (2 yrs experience, up to $60k jobs). Secondary until you pick a path.\n\nWILDCARD: MOBILE BOAT FIBERGLASS/GELCOAT REPAIR\nYou have rare structural fiberglass skill; the OBX is boat-dense; NC sun cracks/fades gelcoat (recurring). Shops charge ~$110/hr, $450-500 for small repairs. A mobile service is a high-margin niche with thin competition. Worth a low-cost test (marina drop-bys).\n\nHOW IT CONNECTS TO OBX LOT SOLUTIONS\nSame customers. OBX Lot Solutions' house-watch/washing relationships become warm leads for Jamieson's high-margin Starlink/AV/lighting work. Keep brands separate (you own 100% of Jamieson) but work one shared PM list.\n\n(Full report with all numbers + sources: see 'Market Research & Strategy.md' in the project folder.)");
 }
 function seedTodos(){
-  const mk=(title,priority,due)=>({id:uid(),title,priority,due,done:false,notes:"",updatedAt:now()});
-  S.obx.todos.push(
-    mk("Call the top 5 property managers on the call list","High","2026-06-02"),
-    mk("Pick up uniforms when they arrive","High","2026-06-05"),
-    mk("Sort out a trailer (buy or rent) for hauling","High","2026-06-09"),
-    mk("Train the brothers on the power washer","Medium","2026-06-12"),
-    mk("Order yard signs / vehicle magnets","Medium","2026-06-16"),
-    mk("Polish the Squarespace site (header logo + copy)","Medium","2026-06-09"),
-    mk("Set up Google Business Profile for local SEO","Low","2026-06-20"),
-    mk("Build a recurring-route schedule template","Low","2026-06-23")
-  );
-  S.jam.todos.push(
-    mk("Create Intuit Developer app + get QuickBooks OAuth keys (Client ID/Secret; redirect http://localhost:4000/qb/callback)","High","2026-06-03"),
-    mk("Get a business phone line (Google Voice / Nextiva) to replace personal cell","High","2026-06-06"),
-    mk("Register a domain + publish the Jamieson website","High","2026-06-09"),
-    mk("Finalize Starlink flat-rate install package + pricing","Medium","2026-06-10"),
-    mk("Make a one-page Jamieson line card / leave-behind","Medium","2026-06-12"),
-    mk("Add an online booking link for flat-rate installs","Medium","2026-06-20"),
-    mk("Reach out to 3 property managers re: rental tech (wifi/Starlink/smart locks)","Low","2026-06-16"),
-    mk("List on Google Business Profile + local directories","Low","2026-06-23")
-  );
+  // STABLE ids + low updatedAt: re-seeds (every fresh device) dedupe via sync LWW instead of duplicating,
+  // and never override a user's later edit/delete. (Was random uid()+now() → 32× duplication across devices.)
+  const mk=(id,title,priority,due)=>({id:id,title,priority,due,done:false,notes:"",updatedAt:1});
+  const up=(arr,seeds)=>{const have=new Set((arr||[]).map(t=>t&&t.id));seeds.forEach(t=>{if(!have.has(t.id))arr.push(t);});};
+  up(S.obx.todos,[
+    mk("seed_obx_trailer","Sort out a trailer (buy or rent) for hauling","High","2026-06-09"),
+    mk("seed_obx_replacesite","Replace the Squarespace site with the new sites","High","2026-06-23"),
+    mk("seed_obx_feedersites","Build per-service feeder sites (parking-lot cleaning, junk hauling) under the OBX umbrella","High","2026-06-23"),
+    mk("seed_obx_yardsigns","Order yard signs (ask Mike Green about one for his yard)","Medium","2026-06-16"),
+    mk("seed_obx_seo","Set up Google Business Profile for local SEO","Medium","2026-06-20"),
+    mk("seed_obx_pms","Call the top 5 property managers on the call list","Low","2026-06-02")
+  ]);
+  up(S.jam.todos,[
+    mk("seed_jam_qbo","Create Intuit Developer app + get QuickBooks OAuth keys (Client ID/Secret; redirect http://localhost:4000/qb/callback)","High","2026-06-03"),
+    mk("seed_jam_phone","Get a business phone line (Google Voice / Nextiva) to replace personal cell","High","2026-06-06"),
+    mk("seed_jam_site","Register a domain + publish the Jamieson website","High","2026-06-09"),
+    mk("seed_jam_starlink","Finalize Starlink flat-rate install package + pricing","Medium","2026-06-10"),
+    mk("seed_jam_linecard","Make a one-page Jamieson line card / leave-behind","Medium","2026-06-12"),
+    mk("seed_jam_booking","Add an online booking link for flat-rate installs","Medium","2026-06-20"),
+    mk("seed_jam_pmreach","Reach out to 3 property managers re: rental tech (wifi/Starlink/smart locks)","Low","2026-06-16"),
+    mk("seed_jam_gbp","List on Google Business Profile + local directories","Low","2026-06-23")
+  ]);
 }
 function seedDocs(){
   const d=(id,text)=>({id,text,updatedAt:now()});
