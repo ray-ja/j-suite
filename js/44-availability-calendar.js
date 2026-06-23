@@ -7,7 +7,7 @@
    Permission mirrors openAvailability: you may edit YOUR OWN availability in any view (incl. crew
    preview); an owner may pick any member to edit. Reuses the calendar grid styling from js/09. */
 
-let AVCAL_Y = null, AVCAL_M = null, AVCAL_TARGET = null, AVCAL_SEL = null, AVCAL_MULTI = false, AVCAL_SUPPRESS = false, _avLongTimer = null;
+let AVCAL_Y = null, AVCAL_M = null, AVCAL_TARGET = null, AVCAL_SEL = null, AVCAL_MULTI = false, AVCAL_SUPPRESS = false, _avLongTimer = null, AVCAL_ANCHOR = null;
 
 /* the member being edited: an owner may pick anyone; everyone else edits themselves */
 function avTargetUser(){
@@ -47,6 +47,24 @@ window.avDayTap = function(ds){
   if (AVCAL_SUPPRESS){ AVCAL_SUPPRESS = false; return; }   // this "click" was the end of a long-press
   if (AVCAL_MULTI){ window.avToggleSel(ds); return; }
   avQuickEdit(ds);
+};
+/* all YYYY-MM-DD dates between a and b inclusive (string compare orders YYYY-MM-DD correctly) */
+function avDateRange(a, b){ if (a > b){ const t = a; a = b; b = t; } const out = [], d = new Date(a + "T00:00:00"), end = new Date(b + "T00:00:00"); while (d <= end){ out.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")); d.setDate(d.getDate() + 1); } return out; }
+/* desktop bulk-select: Ctrl/⌘-click toggles a day into the group; Shift-click selects the range from the anchor */
+window.avDayClick = function(e, ds){
+  if (e && (e.ctrlKey || e.metaKey)){
+    if (e.preventDefault) e.preventDefault();
+    if (!AVCAL_MULTI){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); }
+    if (AVCAL_SEL.has(ds)) AVCAL_SEL.delete(ds); else AVCAL_SEL.add(ds);
+    AVCAL_ANCHOR = ds; if (typeof render === "function") render(); return;
+  }
+  if (e && e.shiftKey){
+    if (e.preventDefault) e.preventDefault();
+    if (!AVCAL_MULTI){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); }
+    avDateRange(AVCAL_ANCHOR || ds, ds).forEach(d => AVCAL_SEL.add(d));
+    AVCAL_ANCHOR = ds; if (typeof render === "function") render(); return;
+  }
+  AVCAL_ANCHOR = ds; avDayTap(ds);
 };
 
 function avQuickEdit(ds){
@@ -93,7 +111,7 @@ function avCalGrid(u){
     const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
     const sel = !!(AVCAL_SEL && AVCAL_SEL.has(ds));
     const selSty = sel ? ";outline:3px solid var(--brand);outline-offset:-3px;border-radius:8px" : "";
-    cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayTap('${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">
+    cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayClick(event,'${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">
       <div class="dnum">${day}</div><div style="margin:4px auto 0;width:10px;height:10px;border-radius:50%;background:${dot}${dot === "transparent" ? ";border:1px solid var(--line)" : ""}"></div></div>`;
   }
   const head = `<div class="calhead"><button class="calnav" onclick="avMonthShift(-1)">‹</button><div class="mtitle">${mname} ${AVCAL_Y}</div><button class="calnav" onclick="avMonthShift(1)">›</button><button class="btn ghost sm" style="margin-left:auto" onclick="avMonthToday()">Today</button></div>`;
@@ -124,7 +142,7 @@ function renderMyAvailCalendar(){
       <select onchange="avPickTarget(this.value)" style="font-size:14px">${mem.map(m => `<option value="${esc(m.id)}" ${m.id === u.id ? "selected" : ""}>${esc(m.username)}${m.id === meId ? " (you)" : ""}</option>`).join("")}</select></div>`;
   }
   if (AVCAL_Y == null){ const d = new Date(); AVCAL_Y = d.getFullYear(); AVCAL_M = d.getMonth(); }
-  h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> to select several, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · ○ normal</div></div>`;
+  h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> (or <b>Ctrl/⌘-click</b>) to multi-select, <b>Shift-click</b> for a range, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · ○ normal</div></div>`;
   h += avCalGrid(u);
   return h;
 }
