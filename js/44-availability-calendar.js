@@ -67,10 +67,11 @@ window.avDayClick = function(e, ds){
   AVCAL_ANCHOR = ds; avDayTap(ds);
 };
 /* click a weekday header → select that whole column (all those weekdays) in the visible month */
-window.avSelectDow = function(dow){
+window.avSelectDow = function(dow, y, m){
+  if (y == null) y = AVCAL_Y; if (m == null) m = AVCAL_M;
   if (!AVCAL_MULTI){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); }
-  const dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate(), days = [];
-  for (let day = 1; day <= dim; day++){ if (new Date(AVCAL_Y, AVCAL_M, day).getDay() === dow){ days.push(AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0")); } }
+  const dim = new Date(y, m + 1, 0).getDate(), days = [];
+  for (let day = 1; day <= dim; day++){ if (new Date(y, m, day).getDay() === dow){ days.push(y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0")); } }
   const allSel = days.length && days.every(d => AVCAL_SEL.has(d));
   days.forEach(d => allSel ? AVCAL_SEL.delete(d) : AVCAL_SEL.add(d));   // toggle: deselect the column if it's already fully selected
   AVCAL_ANCHOR = null; if (typeof render === "function") render();
@@ -107,14 +108,28 @@ window.avSetPartial = function(ds){
 };
 window.avQuickSet = function(ds, val){ const u = avTargetUser(); avSetDay(u, ds, val); if (typeof closeModal === "function") closeModal(); avCommit(); };
 
-function avCalGrid(u){
-  const first = new Date(AVCAL_Y, AVCAL_M, 1), startDow = first.getDay(), dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate();
+/* how many days in the next 28 are explicitly posted — the 2-week minimum is 14 (you can post further) */
+function avCoverage(u){
+  const t = (typeof today === "function") ? today() : "";
+  const base = new Date(t + "T00:00:00"); if (isNaN(base.getTime())) return 0;
+  let posted = 0;
+  for (let i = 0; i < 28; i++){
+    const d = new Date(base); d.setDate(d.getDate() + i);
+    const ds = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const st = (typeof availOn === "function") ? availOn(u, ds).status : "unknown";
+    if (st === "on" || st === "partial" || st === "off" || st === "timeoff") posted++;
+  }
+  return posted;
+}
+/* one month's grid (header + cells). showNav puts the ‹ › / Today controls on it; the second month is title-only. */
+function avMonthGrid(u, y, m, showNav){
+  const first = new Date(y, m, 1), startDow = first.getDay(), dim = new Date(y, m + 1, 0).getDate();
   const mname = first.toLocaleString(undefined, { month: "long" }), t = (typeof today === "function") ? today() : "";
   const dows = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-  let cells = dows.map((d, i) => `<div class="caldow" style="cursor:pointer" title="Select all ${d} this month" onclick="avSelectDow(${i})">${d}</div>`).join("");
+  let cells = dows.map((d, i) => `<div class="caldow" style="cursor:pointer" title="Select all ${d} this month" onclick="avSelectDow(${i},${y},${m})">${d}</div>`).join("");
   for (let i = 0; i < startDow; i++) cells += `<div class="calcell out"></div>`;
   for (let day = 1; day <= dim; day++){
-    const ds = AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    const ds = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     const a = (typeof availOn === "function") ? availOn(u, ds) : { status: "unset" };
     const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : a.status === "unknown" ? "background:rgba(130,140,155,.15)" : "";
     const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
@@ -123,20 +138,23 @@ function avCalGrid(u){
     cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayClick(event,'${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">
       <div class="dnum">${day}</div><div style="margin:4px auto 0;width:10px;height:10px;border-radius:50%;background:${dot}${dot === "transparent" ? ";border:1px solid var(--line)" : ""}"></div></div>`;
   }
-  const head = `<div class="calhead"><button class="calnav" onclick="avMonthShift(-1)">‹</button><div class="mtitle">${mname} ${AVCAL_Y}</div><button class="calnav" onclick="avMonthShift(1)">›</button><button class="btn ghost sm" style="margin-left:auto" onclick="avMonthToday()">Today</button></div>`;
-  let bar;
+  const nav = showNav
+    ? `<button class="calnav" onclick="avMonthShift(-1)">‹</button><div class="mtitle">${mname} ${y}</div><button class="calnav" onclick="avMonthShift(1)">›</button><button class="btn ghost sm" style="margin-left:auto" onclick="avMonthToday()">Today</button>`
+    : `<div class="mtitle">${mname} ${y}</div>`;
+  return `<div class="calhead">${nav}</div><div class="calgrid">${cells}</div>`;
+}
+/* the shared action / multi-select bar (one set of controls for both months) */
+function avCalBar(){
   if (AVCAL_MULTI){
     const n = AVCAL_SEL ? AVCAL_SEL.size : 0;
-    bar = `<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Selected</span><b>${n}</b></div>
+    return `<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Selected</span><b>${n}</b></div>
       <button class="btn acc grow" onclick="avApplyBulk('full')">🟢 Full</button>
       <button class="btn grow" style="background:#e0a800;color:#1a1a1a" onclick="avApplyBulk('partial')">🟡 Part</button>
       <button class="btn danger grow" onclick="avApplyBulk('off')">🔴 Off</button>
       <button class="btn ghost sm" onclick="avApplyBulk('default')" title="Clear to normal schedule">↩</button>
       <button class="btn ghost sm" onclick="avCancelMulti()">✕</button></div>`;
-  } else {
-    bar = `<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="avEnterMulti()">☑ Select multiple days</button><button class="btn acc grow" onclick="avTodayFull()">🟢 Available all day today</button></div>`;
   }
-  return head + `<div class="calgrid">${cells}</div>` + bar;
+  return `<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="avEnterMulti()">☑ Select multiple days</button><button class="btn acc grow" onclick="avTodayFull()">🟢 Available all day today</button></div>`;
 }
 
 /* click anywhere outside the calendar grid / bulk bar clears a pending multi-selection */
@@ -163,7 +181,16 @@ function renderMyAvailCalendar(){
       <select onchange="avPickTarget(this.value)" style="font-size:14px">${mem.map(m => `<option value="${esc(m.id)}" ${m.id === u.id ? "selected" : ""}>${esc(m.username)}${m.id === meId ? " (you)" : ""}</option>`).join("")}</select></div>`;
   }
   if (AVCAL_Y == null){ const d = new Date(); AVCAL_Y = d.getFullYear(); AVCAL_M = d.getMonth(); }
+  const cov = avCoverage(u), ok = cov >= 14, accent = ok ? "#1a7f37" : "#e0a800";
+  h += `<div class="card" style="padding:12px;border-left:4px solid ${accent}">
+    <div class="row" style="align-items:baseline"><div class="grow"><b style="font-size:18px">${cov} / 14</b> <span class="sub">days posted · 2-week minimum</span></div>
+      <div style="font-weight:800;color:${accent}">${ok ? "✓ covered" : (14 - cov) + " to go"}</div></div>
+    <div style="height:8px;border-radius:5px;background:var(--line);margin-top:8px;overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.round(cov / 14 * 100))}%;background:${accent}"></div></div>
+    <div class="sub" style="margin-top:6px">${ok ? (cov > 14 ? "Nice — you're posted " + cov + " days out." : "You're 2 weeks out. Go further anytime.") : "Keep at least 14 days posted ahead — you can go to 3+ weeks."}</div></div>`;
   h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> (or <b>Ctrl/⌘-click</b>) to multi-select, <b>Shift-click</b> for a range, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · ○ normal</div></div>`;
-  h += avCalGrid(u);
+  let ny = AVCAL_Y, nm = AVCAL_M + 1; if (nm > 11){ nm = 0; ny++; }
+  h += avMonthGrid(u, AVCAL_Y, AVCAL_M, true);
+  h += `<div style="height:14px"></div>` + avMonthGrid(u, ny, nm, false);
+  h += avCalBar();
   return h;
 }
