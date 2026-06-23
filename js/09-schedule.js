@@ -2,6 +2,7 @@
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
+  if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ view.innerHTML=rJobPage(_j); return; } window.JOB_OPEN=null; }
   const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
   if(SCHEDSUB==="crew"){view.innerHTML=sub+rCrewSchedule();return;}
   if(SCHEDSUB==="myavail"){view.innerHTML=sub+(typeof renderMyAvailCalendar==="function"?renderMyAvailCalendar():"");return;}
@@ -50,7 +51,7 @@ function rCrewSchedule(){
     <div class="sub" style="margin-top:6px">${DOW[dowOf(ds)]} · ${fmtDate(ds)}</div></div>`;
   const dayJobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   h+=`<div class="secthd"><h2>Jobs this day</h2><span class="ct">${dayJobs.length}</span></div>`;
-  h+=dayJobs.length?`<div class="card">`+dayJobs.map(j=>`<div class="li"><div class="grow" onclick="openJob('${j.id}')" style="cursor:pointer"><div class="nm">${esc(j.title||"Job")}</div><div class="sub">${j.time?esc(j.time)+" · ":""}${j.customerId?esc(custName(j.customerId))+" · ":""}</div><div style="margin-top:4px">${crewChips(j)}</div></div></div>`).join("")+`</div>`
+  h+=dayJobs.length?`<div class="card">`+dayJobs.map(j=>`<div class="li"><div class="grow" onclick="openJobPage('${j.id}')" style="cursor:pointer"><div class="nm">${esc(j.title||"Job")}</div><div class="sub">${j.time?esc(j.time)+" · ":""}${j.customerId?esc(custName(j.customerId))+" · ":""}</div><div style="margin-top:4px">${crewChips(j)}</div></div></div>`).join("")+`</div>`
     :`<div class="card"><div class="muted">No jobs scheduled. <a href="#" onclick="closeModal();openJob(null,'','${ds}');return false" style="color:var(--brand-text);font-weight:700">Add one</a>.</div></div>`;
   h+=`<div class="secthd"><h2>Crew availability</h2><span class="ct">${mem.length}</span></div>`;
   if(!mem.length)h+=`<div class="card"><div class="muted">No team accounts yet — add them in Admin.</div></div>`;
@@ -110,7 +111,7 @@ window.calShift=function(n){CALM+=n;if(CALM<0){CALM=11;CALY--;}if(CALM>11){CALM=
 window.calToday=function(){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();render();};
 window.openDay=function(ds){
   const jobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
-  const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
+  const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJobPage('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
   const team=(typeof teamAvailListHTML==="function")?teamAvailListHTML(ds):"";
   const cnt=(typeof teamAvailCounts==="function")?teamAvailCounts(ds):null,cntOff=cnt?(cnt.off+cnt.timeoff):0;
   const hdr=(cnt&&cnt.total)?` · <span style="color:var(--accent)">${cnt.available} free</span>${cntOff?`, <span style="color:var(--danger)">${cntOff} off</span>`:""}`:"";
@@ -132,7 +133,7 @@ function jobEquipLine(j){
 }
 function liJob(j){
   const crew=(j.crew&&j.crew.length)?`<div style="margin-top:4px">${crewChips(j)}</div>`:"";
-  return `<div class="li"><div class="grow" onclick="openJob('${j.id}')">
+  return `<div class="li"><div class="grow" onclick="openJobPage('${j.id}')">
     <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
     <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}</div>${crew}${jobEquipLine(j)}</div>
     <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
