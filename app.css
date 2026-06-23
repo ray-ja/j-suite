@@ -146,7 +146,7 @@
   .wizfoot .btn{width:auto}.wizfoot .btn.grow{flex:1}
   body.wizon .fab{display:none}
   /* signed-out / login screen: show only the login form — hide the whole header (logo/sync/biz), nav, FAB, push banner */
-  body.signedout header,body.signedout nav,body.signedout .fab,body.signedout #pushbanner{display:none!important}
+  body.signedout header,body.signedout nav,body.signedout #subnav,body.signedout .fab,body.signedout #pushbanner{display:none!important}
   .toggle{display:flex;align-items:center;gap:10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
   .toggle input{width:auto}
   .secthd{display:flex;align-items:center;margin:18px 4px 6px}

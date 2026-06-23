@@ -94,17 +94,12 @@ function adminMigrate() {
 
 /* ----- nav/render enforcement (called from render() in 03-routing) ----- */
 function applyAccess() {
-  const navs = document.querySelectorAll("nav button");
-  // messaging rollout gate: while OFF, the Messages tab is hidden + unreachable for EVERYONE (incl. owner)
+  // The grouped nav (renderNav in js/03) already hides any group with no accessible tab, so visibility
+  // is handled there. Here we only COERCE TAB away from a page this role can't see (incl. the messaging
+  // rollout gate) so a hidden page is never reachable.
   const msgOff = (typeof msgEnabled === "function") ? !msgEnabled() : true;
-  navs.forEach(b => { let show = canSee(b.dataset.tab); if (b.dataset.tab === "messages" && msgOff) show = false; b.style.display = show ? "" : "none"; });
-  if (!canSee(TAB) || (TAB === "messages" && msgOff)) {
-    let dest = canSee("today") ? "today" : null;
-    if (!dest) { const f = [...navs].find(b => b.dataset.tab !== "admin" && canSee(b.dataset.tab)); dest = f ? f.dataset.tab : "today"; }
-    TAB = dest;
-  }
-  // never leave the user on a hidden destination (e.g. a misconfigured role with no pages)
-  navs.forEach(b => { if (b.dataset.tab === TAB) b.style.display = ""; });
+  const allowed = t => (t === "messages" && msgOff) ? false : canSee(t);
+  if (!allowed(TAB)) TAB = allowed("today") ? "today" : (ALL_TABS.filter(allowed)[0] || "today");
   if (typeof updateMsgBadge === "function") updateMsgBadge();
 }
 window.applyAccess = applyAccess;
