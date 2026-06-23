@@ -30,7 +30,22 @@ if(typeof syncRun==="function"){
   setInterval(function(){syncRun("pull");},60000);
 }
 if("serviceWorker" in navigator && window.isSecureContext){
-  navigator.serviceWorker.register("sw.js").catch(function(){});
+  var _hadCtrl=!!navigator.serviceWorker.controller, _refreshing=false;
+  navigator.serviceWorker.register("sw.js").then(function(reg){
+    /* an open tab (esp. iOS Safari) never notices a new build on its own — actively poll for one */
+    setInterval(function(){ try{ reg.update(); }catch(e){} }, 60000);
+    window.addEventListener("focus", function(){ try{ reg.update(); }catch(e){} });
+  }).catch(function(){});
+  /* when the new SW takes control, reload to the fresh build — but never yank the page out from under
+     active typing or an open modal; defer until they refocus / finish */
+  function _safeReload(){ var ae=document.activeElement; if(ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA"||ae.isContentEditable))return false; var ov=document.getElementById("overlay"); return !(ov&&ov.classList.contains("show")); }
+  function _applyUpdate(){ if(_refreshing)return; if(_safeReload()){ _refreshing=true; location.reload(); } }
+  navigator.serviceWorker.addEventListener("controllerchange", function(){
+    if(!_hadCtrl)return;   // first control on a brand-new visit isn't an update — don't spuriously reload
+    _applyUpdate();
+    window.addEventListener("focus", _applyUpdate);
+    document.addEventListener("visibilitychange", function(){ if(!document.hidden)_applyUpdate(); });
+  });
   /* the SW posts {type:"navigate",tab} when a notification is clicked while the app is already open */
   navigator.serviceWorker.addEventListener("message",function(e){
     if(e.data && e.data.type==="navigate" && e.data.tab){
