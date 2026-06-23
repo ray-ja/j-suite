@@ -77,12 +77,14 @@ window.avSelectDow = function(dow, y, m){
   AVCAL_ANCHOR = null; if (typeof render === "function") render();
 };
 
+/* last partial hours this member saved → the default for the next part-of-day edit (single or bulk) */
+function avLastPart(u){ const lp = (u && u.avail && u.avail.lastPartial) || {}; return { start: lp.start || "08:00", end: lp.end || "12:00" }; }
 function avQuickEdit(ds){
   const u = avTargetUser(); if (!u){ alert("Sign in to set your availability."); return; }
   const ov = u.avail && u.avail.overrides && u.avail.overrides[ds];
   const curS = (typeof ov === "string") ? ov : (ov && ov.s) || "";
   const ovObj = (ov && typeof ov === "object") ? ov : {};
-  const curStart = ovObj.start || "08:00", curEnd = ovObj.end || "12:00";
+  const lp = avLastPart(u); const curStart = ovObj.start || lp.start, curEnd = ovObj.end || lp.end;
   const who = (typeof curUser === "function" && curUser() && curUser().id === u.id) ? "your" : (esc(u.username) + "’s");
   modal("Availability — " + fmtDate(ds), `
     <p class="muted" style="margin-bottom:10px">Set ${who} availability for <b>${fmtDate(ds)}</b>.</p>
@@ -105,6 +107,28 @@ window.avSetPartial = function(ds){
   const u = avTargetUser(); if (!u) return;
   const s = val("av_start") || "08:00", e = val("av_end") || "12:00";
   avSetDay(u, ds, { s: "partial", start: s, end: e });
+  if (!u.avail) u.avail = {}; u.avail.lastPartial = { start: s, end: e }; if (typeof touch === "function") touch(u);
+  if (typeof closeModal === "function") closeModal(); avCommit();
+};
+/* bulk "Part of day": prompt once for the hours, then apply them to every selected day (was silently defaulting) */
+window.avBulkPartial = function(){
+  const u = avTargetUser(); if (!u){ alert("Sign in to set availability."); return; }
+  const n = AVCAL_SEL ? AVCAL_SEL.size : 0; if (!n) return;
+  const lp = avLastPart(u);
+  modal("Part of day — " + n + " day" + (n === 1 ? "" : "s"), `
+    <p class="muted" style="margin-bottom:10px">Set the same hours for all <b>${n}</b> selected day${n === 1 ? "" : "s"}.</p>
+    <div class="row" style="gap:8px">
+      <div class="grow"><label style="margin-top:0">From</label><input type="time" id="av_start" value="${lp.start}"></div>
+      <div class="grow"><label style="margin-top:0">To</label><input type="time" id="av_end" value="${lp.end}"></div>
+    </div>
+    <button class="btn" style="margin-top:12px;width:100%;background:#e0a800;color:#1a1a1a" onclick="avApplyBulkPartial()">Apply to ${n} day${n === 1 ? "" : "s"}</button>`);
+};
+window.avApplyBulkPartial = function(){
+  const u = avTargetUser(); if (!u || !AVCAL_SEL) return;
+  const s = val("av_start") || "08:00", e = val("av_end") || "12:00";
+  AVCAL_SEL.forEach(ds => avSetDay(u, ds, { s: "partial", start: s, end: e }));
+  if (!u.avail) u.avail = {}; u.avail.lastPartial = { start: s, end: e }; if (typeof touch === "function") touch(u);
+  AVCAL_SEL.clear(); AVCAL_MULTI = false;
   if (typeof closeModal === "function") closeModal(); avCommit();
 };
 window.avQuickSet = function(ds, val){ const u = avTargetUser(); avSetDay(u, ds, val); if (typeof closeModal === "function") closeModal(); avCommit(); };
@@ -150,7 +174,7 @@ function avCalBar(){
     const n = AVCAL_SEL ? AVCAL_SEL.size : 0;
     return `<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Selected</span><b>${n}</b></div>
       <button class="btn acc grow" onclick="avApplyBulk('full')">🟢 Full</button>
-      <button class="btn grow" style="background:#e0a800;color:#1a1a1a" onclick="avApplyBulk('partial')">🟡 Part</button>
+      <button class="btn grow" style="background:#e0a800;color:#1a1a1a" onclick="avBulkPartial()">🟡 Part</button>
       <button class="btn danger grow" onclick="avApplyBulk('off')">🔴 Off</button>
       <button class="btn grow" style="background:#2f6fed;color:#fff" onclick="avApplyBulk('oncall')">🔵 On call</button>
       <button class="btn ghost sm" onclick="avApplyBulk('default')" title="Clear to normal schedule">↩</button>
@@ -165,7 +189,7 @@ if (typeof document !== "undefined" && !window.__avClickAway){
   document.addEventListener("click", function(e){
     if (!AVCAL_MULTI) return;
     const tgt = e.target;
-    if (tgt && tgt.closest && (tgt.closest(".calgrid") || tgt.closest(".calhead") || tgt.closest(".wizfoot"))) return;
+    if (tgt && tgt.closest && (tgt.closest(".calgrid") || tgt.closest(".calhead") || tgt.closest(".wizfoot") || tgt.closest("#overlay"))) return;
     AVCAL_MULTI = false; if (AVCAL_SEL) AVCAL_SEL.clear(); AVCAL_ANCHOR = null;
     if (typeof render === "function") render();
   }, true);
