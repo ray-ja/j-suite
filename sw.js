@@ -2,7 +2,7 @@
    fallback. On install it precaches a minimal app shell so a cold offline launch still renders.
    Only registers on secure contexts (https / localhost) — see js/29-boot.js. Over a raw http
    Tailscale IP there is no secure context, so this never runs and nothing breaks. */
-const CACHE = "jsuite-v30";
+const CACHE = "jsuite-v31";
 /* shell = the navigation document + styles + manifest/icons; relative URLs resolve against the
    SW scope (served root). JS modules are picked up by the network-first runtime cache on first load. */
 const SHELL = ["./", "app.css", "manifest.webmanifest", "assets/icon-192.png", "assets/icon-512.png"];
@@ -49,14 +49,16 @@ self.addEventListener("push", e => {
     return self.registration.showNotification(title, {
       body: body,
       icon: "assets/icon-192.png", badge: "assets/icon-192.png",
-      tag: "jsuite-" + Date.now(), data: { url: "./" }   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
+      tag: "jsuite-" + Date.now(), data: { url: "./?tab=messages", tab: "messages" }   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
     });
   })());
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();
+  const tab = (e.notification.data && e.notification.data.tab) || "messages";
+  const target = (e.notification.data && e.notification.data.url) || ("./?tab=" + tab);
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => {
-    for (const c of cs) { if ("focus" in c) return c.focus(); }                      // focus an open tab if there is one
-    if (self.clients.openWindow) return self.clients.openWindow("./");               // else open the app
+    for (const c of cs) { if ("focus" in c) { try { c.postMessage({ type: "navigate", tab: tab }); } catch (_) {} return c.focus(); } }   // tell an open tab to switch, then focus it
+    if (self.clients.openWindow) return self.clients.openWindow(target);             // else open the app at that tab
   }));
 });

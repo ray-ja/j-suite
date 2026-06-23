@@ -10,6 +10,14 @@ load();
 if(!S.sync.url && location.protocol.indexOf("http")===0){S.sync.url=location.origin;save();}
 /* Cloudflare Access SSO — silently sign in via the verified email when served behind Access */
 if(typeof attemptAccessLogin==="function" && needLogin()){attemptAccessLogin().then(function(ok){if(ok)render();});}
+/* deep-link: a notification (or a ?tab= link) opens straight to that tab */
+(function(){try{
+  var t=new URLSearchParams(location.search).get("tab");
+  if(t && ["today","messages","schedule","quotes","accounts","time","todo"].indexOf(t)>=0){
+    TAB=t; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen();
+    try{history.replaceState(null,"",location.pathname);}catch(e){}   // strip the param so a refresh doesn't re-pin it
+  }
+}catch(e){}})();
 applyTheme();
 setBiz(S.biz);
 if(typeof applyUserSettings==="function")applyUserSettings();
@@ -21,5 +29,14 @@ if(typeof syncRun==="function"){
   window.addEventListener("online",function(){_retryN=0;syncRun(SYNC_DIRTY?"auto":"pull");});
   setInterval(function(){syncRun("pull");},60000);
 }
-if("serviceWorker" in navigator && window.isSecureContext){navigator.serviceWorker.register("sw.js").catch(function(){});}
+if("serviceWorker" in navigator && window.isSecureContext){
+  navigator.serviceWorker.register("sw.js").catch(function(){});
+  /* the SW posts {type:"navigate",tab} when a notification is clicked while the app is already open */
+  navigator.serviceWorker.addEventListener("message",function(e){
+    if(e.data && e.data.type==="navigate" && e.data.tab){
+      TAB=e.data.tab; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen();
+      if(typeof render==="function")render();
+    }
+  });
+}
 /* v2 */
