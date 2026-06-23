@@ -23,7 +23,7 @@ function availOn(u, ds) {
     ? AvailResolve.resolve(u, ds)
     : { status: "unset", label: "Available · not set", cls: "unset" };
 }
-function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unknown" || s === "partial"; }   // unknown = not blocked (can still schedule)
+function isFree(u, ds) { const s = availOn(u, ds).status; return s === "on" || s === "unknown" || s === "partial" || s === "oncall"; }   // unknown = not blocked; oncall = tentatively available (may get pulled to the fire station)
 /* one-line summary of a member's weekly availability + upcoming time-off, for the schedule header */
 function availSummary(u) {
   if (!u) return "";
@@ -38,11 +38,11 @@ function jobsForMemberOn(uid, ds) { return actJ().filter(j => j.date === ds && (
    Open to EVERY role to VIEW — every member sees every member's status. Members who haven't set
    availability yet fold into "available" (no restriction = available). */
 function teamAvailOn(ds) {
-  const mem = schedMembers(), out = { available: [], partial: [], off: [], timeoff: [], unknown: [] };
-  mem.forEach(u => { const s = availOn(u, ds).status; if (s === "off") out.off.push(u); else if (s === "timeoff") out.timeoff.push(u); else if (s === "partial") out.partial.push(u); else if (s === "on") out.available.push(u); else out.unknown.push(u); });
+  const mem = schedMembers(), out = { available: [], partial: [], oncall: [], off: [], timeoff: [], unknown: [] };
+  mem.forEach(u => { const s = availOn(u, ds).status; if (s === "off") out.off.push(u); else if (s === "timeoff") out.timeoff.push(u); else if (s === "partial") out.partial.push(u); else if (s === "oncall") out.oncall.push(u); else if (s === "on") out.available.push(u); else out.unknown.push(u); });
   return out;
 }
-function teamAvailCounts(ds) { const t = teamAvailOn(ds); return { available: t.available.length, partial: t.partial.length, off: t.off.length, timeoff: t.timeoff.length, unknown: t.unknown.length, total: t.available.length + t.partial.length + t.off.length + t.timeoff.length + t.unknown.length }; }
+function teamAvailCounts(ds) { const t = teamAvailOn(ds); return { available: t.available.length, partial: t.partial.length, oncall: t.oncall.length, off: t.off.length, timeoff: t.timeoff.length, unknown: t.unknown.length, total: t.available.length + t.partial.length + t.oncall.length + t.off.length + t.timeoff.length + t.unknown.length }; }
 /* per-member availability list for a day. VIEW is open to all roles; the Edit button shows only for
    self or owner — openAvailability() enforces the same rule, so viewing opens up while editing does not. */
 function teamAvailListHTML(ds) {
@@ -57,8 +57,8 @@ function teamAvailListHTML(ds) {
 }
 function availBadge(u, ds) {
   const a = availOn(u, ds);
-  const c = a.cls === "on" ? "background:var(--accent);color:var(--accent-ink)" : a.cls === "partial" ? "background:#e0a800;color:#1a1a1a" : a.cls === "off" ? "background:var(--danger);color:#fff" : "background:var(--soft);color:var(--muted)";
-  const txt = a.status === "on" ? "Free" : a.status === "partial" ? "Partial" : a.status === "timeoff" ? "Time off" : a.status === "off" ? "Off" : "Unknown";
+  const c = a.cls === "on" ? "background:var(--accent);color:var(--accent-ink)" : a.cls === "partial" ? "background:#e0a800;color:#1a1a1a" : a.cls === "oncall" ? "background:#2f6fed;color:#fff" : a.cls === "off" ? "background:var(--danger);color:#fff" : "background:var(--soft);color:var(--muted)";
+  const txt = a.status === "on" ? "Free" : a.status === "partial" ? "Partial" : a.status === "oncall" ? "On call" : a.status === "timeoff" ? "Time off" : a.status === "off" ? "Off" : "Unknown";
   return `<span class="badge" style="${c}">${txt}</span>`;
 }
 

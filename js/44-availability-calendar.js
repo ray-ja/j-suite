@@ -89,6 +89,7 @@ function avQuickEdit(ds){
     <div class="row" style="gap:8px;flex-wrap:wrap">
       <button class="btn ${curS === "full" ? "acc" : "ghost"} grow" onclick="avQuickSet('${ds}','full')">🟢 Full day</button>
       <button class="btn ${curS === "off" ? "danger" : "ghost"} grow" onclick="avQuickSet('${ds}','off')">🔴 Off</button>
+      <button class="btn grow" style="${curS === "oncall" ? "background:#2f6fed;color:#fff" : ""}" onclick="avQuickSet('${ds}','oncall')">🔵 On call</button>
     </div>
     <div class="card" style="margin-top:10px;border-color:#e0a800">
       <div style="font-weight:700;margin-bottom:4px">🟡 Part of day${curS === "partial" ? " · current" : ""}</div>
@@ -117,7 +118,7 @@ function avCoverage(u){
     const d = new Date(base); d.setDate(d.getDate() + i);
     const ds = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
     const st = (typeof availOn === "function") ? availOn(u, ds).status : "unknown";
-    if (st === "on" || st === "partial" || st === "off" || st === "timeoff") posted++;
+    if (st === "on" || st === "partial" || st === "oncall" || st === "off" || st === "timeoff") posted++;
   }
   return posted;
 }
@@ -131,8 +132,8 @@ function avMonthGrid(u, y, m, showNav){
   for (let day = 1; day <= dim; day++){
     const ds = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     const a = (typeof availOn === "function") ? availOn(u, ds) : { status: "unset" };
-    const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : a.status === "unknown" ? "background:rgba(130,140,155,.15)" : "";
-    const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
+    const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : a.status === "oncall" ? "background:rgba(47,111,237,.20)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : a.status === "unknown" ? "background:rgba(130,140,155,.15)" : "";
+    const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : a.status === "oncall" ? "#2f6fed" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
     const sel = !!(AVCAL_SEL && AVCAL_SEL.has(ds));
     const selSty = sel ? ";outline:3px solid #4da6ff;outline-offset:-3px;border-radius:8px;box-shadow:inset 0 0 0 999px rgba(77,166,255,.32)" : "";
     cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayClick(event,'${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">
@@ -151,6 +152,7 @@ function avCalBar(){
       <button class="btn acc grow" onclick="avApplyBulk('full')">🟢 Full</button>
       <button class="btn grow" style="background:#e0a800;color:#1a1a1a" onclick="avApplyBulk('partial')">🟡 Part</button>
       <button class="btn danger grow" onclick="avApplyBulk('off')">🔴 Off</button>
+      <button class="btn grow" style="background:#2f6fed;color:#fff" onclick="avApplyBulk('oncall')">🔵 On call</button>
       <button class="btn ghost sm" onclick="avApplyBulk('default')" title="Clear to normal schedule">↩</button>
       <button class="btn ghost sm" onclick="avCancelMulti()">✕</button></div>`;
   }
@@ -187,7 +189,7 @@ function renderMyAvailCalendar(){
       <div style="font-weight:800;color:${accent}">${ok ? "✓ covered" : (14 - cov) + " to go"}</div></div>
     <div style="height:8px;border-radius:5px;background:var(--line);margin-top:8px;overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.round(cov / 14 * 100))}%;background:${accent}"></div></div>
     <div class="sub" style="margin-top:6px">${ok ? (cov > 14 ? "Nice — you're posted " + cov + " days out." : "You're 2 weeks out. Go further anytime.") : "Keep at least 14 days posted ahead — you can go to 3+ weeks."}</div></div>`;
-  h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> (or <b>Ctrl/⌘-click</b>) to multi-select, <b>Shift-click</b> for a range, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · ○ normal</div></div>`;
+  h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> (or <b>Ctrl/⌘-click</b>) to multi-select, <b>Shift-click</b> for a range, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · <span style="color:#2f6fed;font-weight:800">●</span> on call · ○ normal</div></div>`;
   let ny = AVCAL_Y, nm = AVCAL_M + 1; if (nm > 11){ nm = 0; ny++; }
   h += avMonthGrid(u, AVCAL_Y, AVCAL_M, true);
   h += `<div style="height:14px"></div>` + avMonthGrid(u, ny, nm, false);

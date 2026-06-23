@@ -268,12 +268,13 @@ function ceoProjection(store, opts) {
   const availabilityWeek = [];
   for (let i = 0; i < 14; i++) {
     const ds = ceoDateStr(new Date(asOf + i * 86400000));
-    const bucket = { date: ds, available: [], partial: [], off: [], timeoff: [], unknown: [] };
+    const bucket = { date: ds, available: [], partial: [], oncall: [], off: [], timeoff: [], unknown: [] };
     members.forEach(u => {
       const s = AvailResolve.status(u, ds);
       if (s === "timeoff") bucket.timeoff.push(u.id);
       else if (s === "off") bucket.off.push(u.id);
       else if (s === "partial") bucket.partial.push(u.id);
+      else if (s === "oncall") bucket.oncall.push(u.id);
       else if (s === "on") bucket.available.push(u.id);
       else bucket.unknown.push(u.id);   // not confirmed → Cap chases these to fill the 2 weeks
     });

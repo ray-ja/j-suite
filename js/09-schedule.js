@@ -76,9 +76,9 @@ function calDayChips(ds){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   if(!mem.length||typeof availOn!=="function")return"";
   const base="font-size:10px;font-weight:800;line-height:17px;height:17px;min-width:17px;padding:0 3px;border-radius:4px;text-align:center;flex:0 0 auto";
-  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":st==="available"?"background:var(--accent);color:var(--accent-ink)":"background:var(--line);color:var(--muted)";
-  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":st==="available"?"available":"not confirmed";
-  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":s==="on"?"available":"unknown";
+  const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":st==="oncall"?"background:#2f6fed;color:#fff":st==="available"?"background:var(--accent);color:var(--accent-ink)":"background:var(--line);color:var(--muted)";
+  const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":st==="oncall"?"on call":st==="available"?"available":"not confirmed";
+  const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":s==="oncall"?"oncall":s==="on"?"available":"unknown";
   let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const av=availOn(u,ds),st=norm(av.status),ini=userInitials(u);
     return `<span style="${base};${sty(st)}" title="${esc(u.name||u.username)} — ${esc(av.label||lbl(st))}">${esc(ini)}</span>`;}).join("");
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;

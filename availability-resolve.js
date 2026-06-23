@@ -25,6 +25,7 @@
       if (s === "off") return { status: "off", label: "Off (set for this day)", cls: "off", confirmed: true };
       if (s === "partial") return { status: "partial", label: "Part of day" + hrs, cls: "partial", confirmed: true };
       if (s === "full") return { status: "on", label: "Available all day" + hrs, cls: "on", confirmed: true };
+      if (s === "oncall") return { status: "oncall", label: "On call (fire station)" + hrs, cls: "oncall", confirmed: true };
     }
     // No explicit confirmation for this date → UNKNOWN (gray). The weekday baseline is only a HINT of
     // whether the person is EXPECTED to work — it does NOT turn the day green until they confirm it.
