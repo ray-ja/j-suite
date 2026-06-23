@@ -69,8 +69,10 @@ window.avDayClick = function(e, ds){
 /* click a weekday header → select that whole column (all those weekdays) in the visible month */
 window.avSelectDow = function(dow){
   if (!AVCAL_MULTI){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); }
-  const dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate();
-  for (let day = 1; day <= dim; day++){ if (new Date(AVCAL_Y, AVCAL_M, day).getDay() === dow){ AVCAL_SEL.add(AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0")); } }
+  const dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate(), days = [];
+  for (let day = 1; day <= dim; day++){ if (new Date(AVCAL_Y, AVCAL_M, day).getDay() === dow){ days.push(AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0")); } }
+  const allSel = days.length && days.every(d => AVCAL_SEL.has(d));
+  days.forEach(d => allSel ? AVCAL_SEL.delete(d) : AVCAL_SEL.add(d));   // toggle: deselect the column if it's already fully selected
   AVCAL_ANCHOR = null; if (typeof render === "function") render();
 };
 
