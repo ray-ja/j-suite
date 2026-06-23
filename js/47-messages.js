@@ -19,6 +19,10 @@ window.msgResetOpen = function () { MSG_OPEN = null; };
 /* ----- accessors ----- */
 function msgColl() { return (D().messages || (D().messages = [])); }
 function msgThreads() { return msgColl().filter(m => m && m.kind === "thread" && !m.deleted); }
+/* viewer-relative title: who you're talking to — "Broadcast" / "Cap" / the other member's name(s). */
+function threadTitle(t){ if(!t) return "Thread"; if(t.type==="broadcast") return "Broadcast"; const me=myUid(); const o=(t.members||[]).filter(id=>id!==me).map(id=>userName(id)).filter(Boolean); return o.length?o.join(", "):"Cap"; }
+/* one canonical crew broadcast thread — reuse, never spawn a new one. */
+function ensureBroadcastThread(){ const t=msgThreads().find(x=>x.type==="broadcast"); if(t) return t.threadId; const tid="thr_crew_broadcast"; const crew=(typeof realAccounts==="function"?realAccounts():(S.users||[]).filter(x=>x&&!x.kind&&!x.deleted)).filter(x=>x.active!==false).map(x=>x.id); msgColl().push({id:tid,kind:"thread",threadId:tid,title:"Broadcast",type:"broadcast",members:crew,createdBy:myUid(),deleted:false,updatedAt:now()}); return tid; }
 function threadById(tid) { return msgColl().find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted); }
 function threadMsgs(tid) { return msgColl().filter(m => m && !m.kind && !m.deleted && m.threadId === tid).sort((a, b) => (a.ts || 0) - (b.ts || 0)); }
 function myUid() { const u = (typeof curUser === "function") ? curUser() : null; return u ? u.id : null; }
@@ -83,7 +87,7 @@ function rMessages() {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
     const snip = last ? (esc(last.senderLabel) + ": " + esc((last.body || "").slice(0, 60))) : `<span class="muted">No messages</span>`;
     const capTick = last ? (last.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : last.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : "") : "";
-    return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(t.title || "Thread")}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
+    return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(threadTitle(t))}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
       <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${relTime(last.ts)}</span>` : ``)}</div>`;
   }).join("");
   view.innerHTML = h;
@@ -113,7 +117,7 @@ function renderThread(tid) {
     const mineMsg = m.senderId === uid2;
     return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
-  let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
+  let h = `<div class="secthd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
   h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>
     <button class="btn acc" style="margin-top:8px" onclick="msgSendReply('${tid}')">Send</button>`;
@@ -214,11 +218,13 @@ window.msgCreate = function () {
     closeModal(); msgOpen(tid); return;
   }
   const crew = (typeof realAccounts === "function" ? realAccounts() : (S.users || []).filter(x => x && !x.kind && !x.deleted)).filter(x => x.active !== false);
-  let members, title;
-  if (to === "__crew__") { members = crew.map(x => x.id); title = "Crew — Broadcast"; }
-  else { const m = crew.find(x => x.id === to); members = [u ? u.id : null, to].filter(Boolean); title = m ? m.username : "Direct"; }
-  const tid = "thr_" + uid();
-  msgColl().push({ id: tid, kind: "thread", threadId: tid, title: title, type: to === "__crew__" ? "broadcast" : "dm", availAsk: availAsk, members: members, createdBy: u ? u.id : null, deleted: false, updatedAt: now() });
+  let tid;
+  if (to === "__crew__") { tid = ensureBroadcastThread(); }
+  else {
+    const m = crew.find(x => x.id === to); const members = [u ? u.id : null, to].filter(Boolean); const title = m ? m.username : "Direct";
+    tid = "thr_" + uid();
+    msgColl().push({ id: tid, kind: "thread", threadId: tid, title: title, type: "dm", availAsk: availAsk, members: members, createdBy: u ? u.id : null, deleted: false, updatedAt: now() });
+  }
   if (body) msgPost(tid, body, asBiz ? (BIZ[S.biz] ? BIZ[S.biz].name : "The business") : null);
   else { save(); }
   closeModal(); if (typeof msgResetOpen === "function") msgResetOpen(); TAB = "messages"; render();
