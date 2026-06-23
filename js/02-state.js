@@ -123,6 +123,17 @@ function cogsStrip(price, cost){
 function itemsCost(items){let c=0;(items||[]).forEach(it=>c+=(+it.cost||0)*(it.qty||1));return c;}
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function fmtDate(d){if(!d)return"";const p=d.split("-");return `${p[1]}/${p[2]}/${p[0].slice(2)}`}
+function relTime(ts){
+  if(!ts)return"";
+  let s=Math.floor((Date.now()-ts)/1000); if(s<0)s=0;
+  if(s<45)return"just now";
+  const m=Math.floor(s/60); if(m<60)return m+" minute"+(m===1?"":"s")+" ago";
+  const h=Math.floor(m/60); if(h<24)return h+" hour"+(h===1?"":"s")+" ago";
+  const d=Math.floor(h/24); if(d===1)return"yesterday"; if(d<7)return d+" days ago";
+  if(d<14)return"1 week ago"; if(d<30)return Math.floor(d/7)+" weeks ago";
+  const mo=Math.floor(d/30); if(mo<12)return mo+" month"+(mo===1?"":"s")+" ago";
+  const y=Math.floor(d/365); return y+" year"+(y===1?"":"s")+" ago";
+}
 /* active (non-deleted) accessors */
 function actC(){return D().customers.filter(c=>!c.deleted)}
 function actQ(){return D().quotes.filter(q=>!q.deleted)}

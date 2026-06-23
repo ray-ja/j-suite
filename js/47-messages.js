@@ -84,7 +84,7 @@ function rMessages() {
     const snip = last ? (esc(last.senderLabel) + ": " + esc((last.body || "").slice(0, 60))) : `<span class="muted">No messages</span>`;
     const capTick = last ? (last.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : last.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : "") : "";
     return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(t.title || "Thread")}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
-      <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${fmtDate(new Date(last.ts).toISOString().slice(0, 10))}</span>` : ``)}</div>`;
+      <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${relTime(last.ts)}</span>` : ``)}</div>`;
   }).join("");
   view.innerHTML = h;
 }
@@ -105,16 +105,21 @@ function msgReadersTip(tid, m) {
 function renderThread(tid) {
   const t = threadById(tid); if (!t) { MSG_OPEN = null; rMessages(); return; }
   const uid2 = myUid();
+  const _prev = document.getElementById("msg_reply");   // preserve an in-progress reply across sync re-renders
+  const _draft = _prev ? _prev.value : "", _focused = !!_prev && document.activeElement === _prev;
+  const _selS = _prev ? _prev.selectionStart : 0, _selE = _prev ? _prev.selectionEnd : 0;
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
-    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${fmtDate(new Date(m.ts).toISOString().slice(0, 10))}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
+    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
   let h = `<div class="secthd"><h2>${esc(t.title || "Thread")}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
   h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>
     <button class="btn acc" style="margin-top:8px" onclick="msgSendReply('${tid}')">Send</button>`;
   view.innerHTML = h;
+  const _ta = document.getElementById("msg_reply");
+  if (_ta) { if (_draft) _ta.value = _draft; if (_focused) { _ta.focus(); try { _ta.setSelectionRange(_selS, _selE); } catch (e) {} } }
 }
 window.msgOpen = function (tid) {
   if (!msgEnabled()) return;
