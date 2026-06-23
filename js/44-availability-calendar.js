@@ -100,8 +100,7 @@ function avQuickEdit(ds){
         <div class="grow"><label style="margin-top:0">To</label><input type="time" id="av_end" value="${curEnd}"></div>
       </div>
       <button class="btn" style="margin-top:10px;width:100%;background:#e0a800;color:#1a1a1a" onclick="avSetPartial('${ds}')">Save part of day</button>
-    </div>
-    <button class="btn ghost sm" style="margin-top:12px;width:100%" onclick="avQuickSet('${ds}','default')">↩ Use my normal schedule (clear this day)</button>`);
+    </div>`);
 }
 window.avSetPartial = function(ds){
   const u = avTargetUser(); if (!u) return;
@@ -180,7 +179,7 @@ function avCalBar(){
       <button class="btn ghost sm" onclick="avApplyBulk('default')" title="Clear to normal schedule">↩</button>
       <button class="btn ghost sm" onclick="avCancelMulti()">✕</button></div>`;
   }
-  return `<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="avEnterMulti()">☑ Select multiple days</button><button class="btn acc grow" onclick="avTodayFull()">🟢 Available all day today</button></div>`;
+  return `<div class="row" style="margin:2px 0 10px"><button class="btn ghost grow" onclick="avEnterMulti()">☑ Select multiple days</button></div>`;
 }
 
 /* click anywhere outside the calendar grid / bulk bar clears a pending multi-selection */
@@ -213,10 +212,9 @@ function renderMyAvailCalendar(){
       <div style="font-weight:800;color:${accent}">${ok ? "✓ covered" : (14 - cov) + " to go"}</div></div>
     <div style="height:8px;border-radius:5px;background:var(--line);margin-top:8px;overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.round(cov / 14 * 100))}%;background:${accent}"></div></div>
     <div class="sub" style="margin-top:6px">${ok ? (cov > 14 ? "Nice — you're posted " + cov + " days out." : "You're 2 weeks out. Go further anytime.") : "Keep at least 14 days posted ahead — you can go to 3+ weeks."}</div></div>`;
-  h += `<div class="card" style="padding:10px 12px"><div class="sub" style="white-space:normal">Tap a day to set it · <b>press &amp; hold</b> (or <b>Ctrl/⌘-click</b>) to multi-select, <b>Shift-click</b> for a range, then bulk-set. &nbsp; <span style="color:#1a7f37;font-weight:800">●</span> all day · <span style="color:#e0a800;font-weight:800">●</span> part of day · <span style="color:#c0392b;font-weight:800">●</span> off · <span style="color:#2f6fed;font-weight:800">●</span> on call · ○ normal</div></div>`;
+  h += avCalBar();   // select-multiple / bulk-apply bar near the top (easy to reach)
   let ny = AVCAL_Y, nm = AVCAL_M + 1; if (nm > 11){ nm = 0; ny++; }
   h += avMonthGrid(u, AVCAL_Y, AVCAL_M, true);
   h += `<div style="height:14px"></div>` + avMonthGrid(u, ny, nm, false);
-  h += avCalBar();
   return h;
 }

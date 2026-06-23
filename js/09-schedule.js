@@ -3,33 +3,15 @@ let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JS
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
   if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ view.innerHTML=rJobPage(_j); return; } window.JOB_OPEN=null; }
-  const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button><button class="subbtn ${SCHEDSUB==="crew"?"on":""}" onclick="schedSub('crew')">👥 Crew availability</button></div>`;
-  if(SCHEDSUB==="crew"){view.innerHTML=sub+rCrewSchedule();return;}
+  if(SCHEDSUB==="crew")SCHEDSUB="calendar";   // crew-availability tab retired (Ray's request)
+  const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button></div>`;
   if(SCHEDSUB==="myavail"){view.innerHTML=sub+(typeof renderMyAvailCalendar==="function"?renderMyAvailCalendar():"");return;}
-  const t=today();
+  // Calendar = just the month calendar. Scheduled jobs live on the Jobs tab + the Today page; tap a day here for that day's jobs.
   if(CALY==null){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();}
   const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
-  const cu=(typeof curUser==="function")?curUser():null;
-  let h=sub+`<div class="secthd"><h2>Schedule</h2>${cu?`<button class="btn ghost sm" onclick="openAvailability()">My availability</button>`:""}</div>`;
-  if(jobs.length)h+=`<input class="search" id="jsearch" placeholder="Search jobs (name, customer, date)…" value="${esc(JSEARCH)}">`;
-  if(JSEARCH){
-    const q=JSEARCH.toLowerCase();
-    const res=jobs.filter(j=>((j.title||"")+" "+(j.customerId&&typeof custName==="function"?custName(j.customerId):"")+" "+(j.date||"")+" "+(j.done?"done":"")).toLowerCase().includes(q));
-    h+=res.length?`<div class="card">`+res.map(liJob).join("")+`</div>`:`<div class="empty">No matching jobs.</div>`;
-  }else{
-    if(cu&&typeof availSummary==="function")h+=`<div class="card" style="padding:10px 12px;cursor:pointer" onclick="openAvailability()"><div class="sub" style="white-space:normal">🗓 <b>Your availability</b> — ${esc(availSummary(cu))}</div></div>`;
-    if(cu&&typeof calFeedCard==="function")h+=calFeedCard();
-    h+=renderCalendar(jobs);
-    if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
-    const groups={Today:[],Upcoming:[],Done:[]};
-    jobs.forEach(j=>{if(j.done)groups.Done.push(j);else if(j.date>t)groups.Upcoming.push(j);else groups.Today.push(j);});
-    if(!jobs.length)h+=`<div class="empty" style="padding:18px">No jobs yet — tap a day above or the + button.</div>`;
-    ["Today","Upcoming","Done"].forEach(g=>{if(!groups[g].length)return;
-      h+=`<div class="secthd"><h2>${g}</h2><span class="ct">${groups[g].length}</span></div><div class="card">`+groups[g].map(liJob).join("")+`</div>`;});
-  }
+  let h=sub+renderCalendar(jobs);
+  if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
   view.innerHTML=h;
-  const s=document.getElementById("jsearch");
-  if(s)s.oninput=e=>{JSEARCH=e.target.value;const p=s.selectionStart;rSchedule();const n=document.getElementById("jsearch");if(n){n.focus();n.setSelectionRange(p,p);}};
 }
 window.schedSub=function(s){SCHEDSUB=s;render();};
 window.schedDate=function(v){SCHED_DATE=v;render();};

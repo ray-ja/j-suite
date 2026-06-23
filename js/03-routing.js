@@ -22,12 +22,13 @@ function render(){
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","schedule","time","map"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","schedule","time","resale"] },
   { key:"customers", label:"Customers", icon:"👥", tabs:["accounts","sales"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
-  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training"] },
-  { key:"more",      label:"More",      icon:"⚙️", tabs:["todo","inventory","resale","data","admin"] }
+  { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
+  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","todo"] },
+  { key:"more",      label:"More",      icon:"⚙️", tabs:["data","admin"] }
 ];
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, quotes:{l:"Jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
