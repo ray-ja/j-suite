@@ -66,6 +66,13 @@ window.avDayClick = function(e, ds){
   }
   AVCAL_ANCHOR = ds; avDayTap(ds);
 };
+/* click a weekday header → select that whole column (all those weekdays) in the visible month */
+window.avSelectDow = function(dow){
+  if (!AVCAL_MULTI){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); }
+  const dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate();
+  for (let day = 1; day <= dim; day++){ if (new Date(AVCAL_Y, AVCAL_M, day).getDay() === dow){ AVCAL_SEL.add(AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0")); } }
+  AVCAL_ANCHOR = null; if (typeof render === "function") render();
+};
 
 function avQuickEdit(ds){
   const u = avTargetUser(); if (!u){ alert("Sign in to set your availability."); return; }
@@ -102,7 +109,7 @@ function avCalGrid(u){
   const first = new Date(AVCAL_Y, AVCAL_M, 1), startDow = first.getDay(), dim = new Date(AVCAL_Y, AVCAL_M + 1, 0).getDate();
   const mname = first.toLocaleString(undefined, { month: "long" }), t = (typeof today === "function") ? today() : "";
   const dows = ["Su","Mo","Tu","We","Th","Fr","Sa"];
-  let cells = dows.map(d => `<div class="caldow">${d}</div>`).join("");
+  let cells = dows.map((d, i) => `<div class="caldow" style="cursor:pointer" title="Select all ${d} this month" onclick="avSelectDow(${i})">${d}</div>`).join("");
   for (let i = 0; i < startDow; i++) cells += `<div class="calcell out"></div>`;
   for (let day = 1; day <= dim; day++){
     const ds = AVCAL_Y + "-" + String(AVCAL_M + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
@@ -110,7 +117,7 @@ function avCalGrid(u){
     const bg = a.status === "on" ? "background:rgba(26,127,55,.16)" : a.status === "partial" ? "background:rgba(224,168,0,.24)" : (a.status === "off" || a.status === "timeoff") ? "background:rgba(192,57,43,.14)" : a.status === "unknown" ? "background:rgba(130,140,155,.15)" : "";
     const dot = a.status === "on" ? "#1a7f37" : a.status === "partial" ? "#e0a800" : (a.status === "off" || a.status === "timeoff") ? "#c0392b" : a.status === "unknown" ? "#97a0ad" : "transparent";
     const sel = !!(AVCAL_SEL && AVCAL_SEL.has(ds));
-    const selSty = sel ? ";outline:3px solid var(--brand);outline-offset:-3px;border-radius:8px" : "";
+    const selSty = sel ? ";outline:3px solid #4da6ff;outline-offset:-3px;border-radius:8px;box-shadow:inset 0 0 0 999px rgba(77,166,255,.32)" : "";
     cells += `<div class="calcell${ds === t ? " today" : ""}" style="${bg}${selSty}" onclick="avDayClick(event,'${ds}')" ontouchstart="avLongStart('${ds}')" ontouchend="avLongEnd()" ontouchmove="avLongCancel()">
       <div class="dnum">${day}</div><div style="margin:4px auto 0;width:10px;height:10px;border-radius:50%;background:${dot}${dot === "transparent" ? ";border:1px solid var(--line)" : ""}"></div></div>`;
   }
@@ -128,6 +135,18 @@ function avCalGrid(u){
     bar = `<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="avEnterMulti()">☑ Select multiple days</button><button class="btn acc grow" onclick="avTodayFull()">🟢 Available all day today</button></div>`;
   }
   return head + `<div class="calgrid">${cells}</div>` + bar;
+}
+
+/* click anywhere outside the calendar grid / bulk bar clears a pending multi-selection */
+if (typeof document !== "undefined" && !window.__avClickAway){
+  window.__avClickAway = true;
+  document.addEventListener("click", function(e){
+    if (!AVCAL_MULTI) return;
+    const tgt = e.target;
+    if (tgt && tgt.closest && (tgt.closest(".calgrid") || tgt.closest(".calhead") || tgt.closest(".wizfoot"))) return;
+    AVCAL_MULTI = false; if (AVCAL_SEL) AVCAL_SEL.clear(); AVCAL_ANCHOR = null;
+    if (typeof render === "function") render();
+  }, true);
 }
 
 function renderMyAvailCalendar(){
