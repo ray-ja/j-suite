@@ -189,10 +189,10 @@
     .fab{right:34px;bottom:34px;width:60px;height:60px}
     .overlay{align-items:center}
     .sheet{max-width:620px;max-height:88vh;border-radius:16px;padding:24px}
-    .grid2{grid-template-columns:1fr 1fr;gap:0 28px}
+    .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 28px}
     .empty{padding:60px 16px}
   }
-  @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:1fr 1fr 1fr} }
+  @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)} }
   /* DEV env banner (js/55) — fixed 24px top bar; shift the sticky header + fixed desktop sidebar + body
      down by its height so they stay aligned. Rules apply ONLY when body.has-dev-banner is set (dev-only;
      prod never gets the class, so zero prod impact). */
