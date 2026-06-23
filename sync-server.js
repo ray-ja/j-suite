@@ -442,6 +442,14 @@ function webPushTickle(endpoint) {   // contentless POST to the push service; re
     r.end();
   });
 }
+/* should a freshly-synced message tickle its thread's recipients? real, new, recent, not Cap's own voice. */
+function pushWorthy(m, hadIds, nowMs) {
+  if (!m || m.kind || m.deleted || !m.threadId || !m.senderId) return false;
+  if (hadIds && hadIds.has(m.id)) return false;                            // already on the server → not new
+  if (m.senderId === "__ceo__" || m.senderId === "__cap__") return false;  // Cap's posts notify via the /api/ceo path
+  if (m.ts && nowMs - m.ts > 6 * 3600000) return false;                    // stale / backfilled → don't ping
+  return true;
+}
 async function pushNotify(store, biz, threadId, exceptUserId) {   // best-effort; prunes stale (404/410) subs
   if (!VAPID || !VAPID.publicKey) return;
   const coll = ((store[biz] || {}).messages) || [];
@@ -839,10 +847,19 @@ const server = http.createServer((req, res) => {
       try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       if (TOKEN && payload.token !== TOKEN) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
       noteActive(payload.userId);   // ops-brain last-active (in-memory; doesn't affect the merge)
-      const merged = mergeState(loadStore(), payload.state || {});
+      const pre = loadStore();
+      const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
+      const merged = mergeState(pre, payload.state || {});
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, state: merged }));
+      // best-effort push: tickle recipients of genuinely-new human messages (DMs + broadcasts) synced in
+      try {
+        const nowMs = Date.now(), incoming = payload.state || {};
+        BIZES.forEach(b => (((incoming[b] || {}).messages) || []).forEach(m => {
+          if (pushWorthy(m, hadMsg[b], nowMs)) pushNotify(merged, b, m.threadId, m.senderId).catch(() => {});
+        }));
+      } catch (e) {}
     });
     return;
   }
@@ -898,4 +915,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

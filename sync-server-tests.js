@@ -674,6 +674,14 @@ ok("pushPeek: broadcast reaches everyone — Lonely also gets the broadcast", ((
 ok("pushPeek: user in no thread → generic fallback (always shows something)", (() => { const iso = { users: [{ id: "u9", pushSubs: [{ endpoint: "e9" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "dm", members: ["uX", "uY"], title: "DM", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "uX", senderLabel: "X", body: "private", ts: 1 }] } }; const r = t.pushPeek(iso, "e9"); return r.ok && /New message/.test(r.body) && !/private/.test(r.body); })(), null);
 ok("pushPeek: body is truncated to a short preview", (() => { const big = { users: [{ id: "u1", pushSubs: [{ endpoint: "e" }], updatedAt: 5 }], obx: { messages: [{ id: "th", kind: "thread", threadId: "t", type: "broadcast", title: "Crew", updatedAt: 5 }, { id: "m", threadId: "t", senderId: "x", senderLabel: "X", body: "y".repeat(500), ts: 1 }] } }; return t.pushPeek(big, "e").body.length <= 140; })(), null);
 
+console.log("— DM push: a freshly-synced human message tickles its thread (the /sync gate) —");
+const _pwNow = 1700000000000;
+ok("pushWorthy: new human DM → notify", t.pushWorthy({ id: "m1", threadId: "t1", senderId: "ray", ts: _pwNow }, new Set(), _pwNow) === true, null);
+ok("pushWorthy: message already on server → skip (no re-ping)", t.pushWorthy({ id: "m1", threadId: "t1", senderId: "ray", ts: _pwNow }, new Set(["m1"]), _pwNow) === false, null);
+ok("pushWorthy: Cap's own post → skip (notified via /api/ceo)", t.pushWorthy({ id: "m2", threadId: "t1", senderId: "__ceo__", ts: _pwNow }, new Set(), _pwNow) === false, null);
+ok("pushWorthy: thread/read record → skip (not a message)", t.pushWorthy({ id: "t1", kind: "thread", threadId: "t1", senderId: "ray", ts: _pwNow }, new Set(), _pwNow) === false, null);
+ok("pushWorthy: stale/backfilled message → skip", t.pushWorthy({ id: "m3", threadId: "t1", senderId: "ray", ts: _pwNow - 7 * 3600000 }, new Set(), _pwNow) === false, null);
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");
