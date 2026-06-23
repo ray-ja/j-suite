@@ -608,6 +608,13 @@ ok("view=ops returns jobs/todos/openShifts/unscheduledQuotes/crew/resale arrays"
 ok("view=ops surfaces open resale items but EXCLUDES sold", opsView.resale.some(r => r.id === "rs1") && !opsView.resale.some(r => r.id === "rsSold"), opsView.resale.map(r => r.id));
 ok("view=ops jobs carry done + completedAt (Phase A capture surfaced)", (() => { const j = opsView.jobs.find(x => x.id === "j1") || {}; return "done" in j && "completedAt" in j; })(), opsView.jobs[0]);
 ok("view=ops surfaces accepted-but-unscheduled quote", opsView.unscheduledQuotes.some(q => q.id === "q1"), opsView.unscheduledQuotes);
+const revStore = t.ceoProjection({
+  obx: { jobs: [{ id: "j2", title: "Junk haul", crew: ["u1", "u2"], done: true, updatedAt: 5 }], quotes: [{ id: "qPaid", cust: "Virginia Tucker", total: 275, finalPrice: 280, jobId: "j2", accepted: true, invoiced: true, paid: true, updatedAt: 5 }], timeclock: [] },
+  jam: {}, users: [{ id: "u1", username: "Ray", role: "owner", updatedAt: 5 }]
+}, { view: "ops" });
+ok("view=ops exposes revenue for paid jobs (Cap sees money made)", Array.isArray(revStore.revenue) && revStore.revenue.some(r => r.id === "qPaid"), revStore.revenue);
+const rev1 = (revStore.revenue || []).find(r => r.id === "qPaid") || {};
+ok("view=ops revenue uses finalPrice over quote total + carries job crew", rev1.amount === 280 && rev1.quoted === 275 && Array.isArray(rev1.crew) && rev1.crew.indexOf("u2") >= 0, rev1);
 const synthOps = {
   today: "2026-06-15", asOf: Date.parse("2026-06-15T12:00:00Z"),
   jobs: [{ id: "j1", title: "Overdue wash", date: "2026-06-10", crew: ["u1"], done: false }, { id: "j2", title: "Done", date: "2026-06-10", done: true }, { id: "j3", title: "Cover", date: "2026-06-15", crew: ["u2"], done: false }],

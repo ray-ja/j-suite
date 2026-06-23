@@ -3,21 +3,21 @@ let QSEARCH="";
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
-  let h=`<h2>Quotes</h2>`;
+  let h=`<h2>Jobs</h2>`;
   if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
   h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>
     <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>
     <button class="btn ghost" style="margin-bottom:10px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
   const all=actQ();let list=all;
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=all.filter(q=>((q.cust||custName(q.customerId)||"")+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+(q.paid?"paid":q.invoiced?"invoiced":"")).toLowerCase().includes(qq));}
-  if(all.length)h+=`<input class="search" id="qsearch" placeholder="Search quotes…" value="${esc(QSEARCH)}">`;
+  if(all.length)h+=`<input class="search" id="qsearch" placeholder="Search jobs…" value="${esc(QSEARCH)}">`;
   if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   else if(!list.length)h+=`<div class="empty">No matches.</div>`;
   else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
     <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
     <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
     <div class="sub">${fmtDate(q.date)} · ${(q.items||[]).length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
-    <div style="font-weight:800;color:var(--brand-text)">${money(q.total)}</div></div>`).join("")+`</div>`;
+    <div style="font-weight:800;color:var(--brand-text);text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`).join("")+`</div>`;
   view.innerHTML=h;
   const s=document.getElementById("qsearch");
   if(s)s.oninput=e=>{QSEARCH=e.target.value;const p=s.selectionStart;rQuotes();const n=document.getElementById("qsearch");if(n){n.focus();n.setSelectionRange(p,p);}};

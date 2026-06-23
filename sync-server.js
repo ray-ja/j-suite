@@ -314,15 +314,20 @@ function ceoProjection(store, opts) {
   if (view === "ops") {
     // consolidated operational snapshot for the ops-sweep (read-only). Reuses crew (with lastActive)
     // + availabilityWeek; adds jobs (with done/completedAt), todos, open shifts, accepted-unscheduled quotes.
-    const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [], resale = [];
+    const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [], resale = [], revenue = [];
     bizes.forEach(b => {
       (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", crew: j.crew || [], done: !!j.done, completedAt: j.completedAt || 0, completedBy: j.completedBy || "", customer: ceoCustName(store, b, j.customerId), equipment: (j.equipment || []).map(e => e && e.itemId).filter(Boolean) }); });
       (((store[b] || {}).todos) || []).forEach(td => { if (td && !td.deleted) todos.push({ id: td.id, biz: b, title: td.title || "", due: td.due || "", done: !!td.done, priority: td.priority || "", assignee: td.assignee || "", updatedAt: td.updatedAt || 0 }); });
       (((store[b] || {}).timeclock) || []).forEach(e => { if (e && !e.deleted && e.clockOut == null) openShifts.push({ id: e.id, biz: b, userId: e.userId, jobId: e.jobId, clockIn: e.clockIn || 0 }); });
-      (((store[b] || {}).quotes) || []).forEach(q => { if (q && !q.deleted && q.accepted && !q.jobId) unscheduledQuotes.push({ id: q.id, biz: b, customer: q.cust || ceoCustName(store, b, q.customerId), total: q.total || 0, acceptedDate: q.acceptedDate || q.date || "" }); });
+      (((store[b] || {}).quotes) || []).forEach(q => {
+        if (!q || q.deleted) return;
+        if (q.accepted && !q.jobId) unscheduledQuotes.push({ id: q.id, biz: b, customer: q.cust || ceoCustName(store, b, q.customerId), total: q.total || 0, acceptedDate: q.acceptedDate || q.date || "" });
+        // completed/charged work — Cap sees money made + who earned it (revenue split / payout). amount uses the final charged price when set.
+        if (q.paid || q.invoiced) { const job = q.jobId ? ((((store[b] || {}).jobs) || []).find(j => j && j.id === q.jobId && !j.deleted)) : null; revenue.push({ id: q.id, biz: b, customer: q.cust || ceoCustName(store, b, q.customerId), amount: (q.finalPrice || q.total || 0), quoted: q.total || 0, invoiced: !!q.invoiced, paid: !!q.paid, date: q.acceptedDate || q.date || "", crew: (job && job.crew) || [], title: (job && job.title) || (q.cust || "") }); }
+      });
       (((store[b] || {}).resale) || []).forEach(r => { if (r && !r.deleted && r.status !== "sold") resale.push({ id: r.id, biz: b, item: r.item || "", status: r.status || "pulled", jobId: r.jobId || "", platform: r.platform || "", listedDate: r.listedDate || "", createdAt: r.createdAt || 0, updatedAt: r.updatedAt || 0 }); });
     });
-    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale };
+    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue };
   }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };

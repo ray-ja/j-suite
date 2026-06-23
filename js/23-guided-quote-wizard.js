@@ -19,7 +19,7 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:"",finalPrice:0,adjNote:""};WZON=true;TAB="quotes";render();};
 /* Open a saved quote (or a preset line / known customer) straight INTO the wizard — the
    single quote editor. Replaces the retired standalone modal that used to live in js/08. */
 window.openQuote=function(id,customerId,preset){
@@ -32,7 +32,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.items=JSON.parse(JSON.stringify(q.items||[]));
     WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
-    WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";
+    WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
     WZ.step="review";
   } else {
@@ -248,8 +248,13 @@ function wizReview(){
         <button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Accept &amp; schedule job →</button>`;
     }
     h+=`</div>`;
+    let _qsub=0;WZ.items.forEach(it=>_qsub+=(it.price||0)*(it.qty||1));const _qtot=Math.max(0,_qsub-((WZ.recurring&&BIZ[S.biz].recurring)?_qsub*0.2:0)-(WZ.disc||0));
     h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
-      <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>`;
+      <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>
+      <label style="margin-top:10px">Final price charged <span class="sub">— if different from the ${money(_qtot)} quote (add-ons, discount)</span></label>
+      <div class="row" style="gap:8px"><input type="number" id="wz_final" inputmode="decimal" placeholder="${_qtot}" value="${WZ.finalPrice||''}" style="flex:1"><button class="btn ghost sm" onclick="wizSetFinal()">Save</button></div>
+      <input id="wz_adjnote" placeholder="Reason (e.g. added interior door, gave a discount)" value="${esc(WZ.adjNote||'')}" style="margin-top:6px">
+      ${WZ.finalPrice?`<div class="note" style="margin-top:6px">Charging <b>${money(WZ.finalPrice)}</b> (quote was ${money(_qtot)})${WZ.adjNote?" · "+esc(WZ.adjNote):""}</div>`:""}`;
     if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
     else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
     h+=`</div><button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
@@ -308,7 +313,7 @@ window.wizPersist=function(){
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown})),
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
-    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,hours:+WZ.hours||0,haul:WZ.haul||base.haul||"pickup"
+    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
   if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);
@@ -319,7 +324,8 @@ window.wizPersist=function(){
 };
 window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
 window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();};
-window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.total)+(q.cust?" · "+q.cust:""));render();};
+window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
+window.wizSetFinal=function(){if(wizLockedAlert())return;const v=val("wz_final");WZ.finalPrice=(v===""||v==null)?0:Math.max(0,parseFloat(v)||0);WZ.adjNote=val("wz_adjnote")||"";const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,"Final price "+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetPayLink=function(){if(wizLockedAlert())return;const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
 window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(wizLockedAlert())return;if(!confirm("Delete this quote?"))return;const q=D().quotes.find(x=>x.id===WZ.id);if(q){q.deleted=true;touch(q);if(typeof logChange==="function")logChange("delete","quote",q.id,"Deleted quote"+(q.cust?" · "+q.cust:""));save();}wizClearDraft();exitWizard();};
 /* feed the shared print/copy helpers (js/08) from the wizard's state */
