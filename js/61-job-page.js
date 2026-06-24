@@ -44,7 +44,7 @@ function rJobPage(j) {
     const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null;
     h += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`;
   } else {
-    h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Vehicle (optional)</label><input id="tc_vehicle" placeholder="e.g. Ray's truck" autocomplete="off"><button class="btn acc" style="margin-top:8px;width:100%" onclick="tcClockIn()">Clock in to this job</button>`;
+    h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Vehicle (required)</label><input id="tc_vehicle" placeholder="e.g. Ray's truck" autocomplete="off"><label>Odometer — start (required)</label><input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now"><button class="btn acc" style="margin-top:8px;width:100%" onclick="tcClockIn()">Clock in to this job</button>`;
   }
   h += `</div>`;
 

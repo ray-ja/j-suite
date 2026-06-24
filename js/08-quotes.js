@@ -9,8 +9,7 @@ function rQuotes(){
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
   let h=`<h2>Jobs</h2>`;
   if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
-  h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>
-    <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>`;
+  h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>`;
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
   if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);

@@ -91,7 +91,10 @@ window.tcClockIn = async function () {
   if (!jobId) { alert("Pick the job you're working on."); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
-  const vehicle = val("tc_vehicle");
+  const vehicle = (val("tc_vehicle") || "").trim();
+  if (!vehicle) { alert("Enter which vehicle you're driving."); return; }
+  const odoStart = parseFloat(val("tc_odo_start"));
+  if (!(odoStart >= 0)) { alert("Enter your starting odometer reading."); return; }
   const btn = document.getElementById("tc_inbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
   const loc = await tcGetPos();
   const e = {
@@ -99,21 +102,34 @@ window.tcClockIn = async function () {
     clockIn: now(), clockOut: null,
     inLoc: loc, outLoc: null, pings: [],
     computedMiles: 0, miles: null, milesConfirmed: false,
-    vehicle: vehicle || "", rate: TC_RATE, updatedAt: now()
+    odoStart: odoStart, odoEnd: null,
+    vehicle: vehicle, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
   save(); tcPingStart(); render();
 };
-window.tcClockOut = async function (id) {
+window.tcClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
-  const btn = document.getElementById("tc_outbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
+  modal("Clock out — odometer", `
+    <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>.</p>
+    <label>End odometer</label>
+    <input id="tc_odo_end" type="number" inputmode="decimal" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcFinishClockOut('${id}')">📍 Clock out</button>`);
+};
+window.tcFinishClockOut = async function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  const odoEnd = parseFloat(val("tc_odo_end"));
+  if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading."); return; }
+  if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
+  if (typeof closeModal === "function") closeModal();
   const loc = await tcGetPos();
-  e.outLoc = loc; e.clockOut = now();
+  e.outLoc = loc; e.clockOut = now(); e.odoEnd = odoEnd;
   e.computedMiles = tcComputeMiles(e);
-  if (e.miles == null) e.miles = tcRound(e.computedMiles);   // seed the editable value from the estimate
+  if (e.odoStart != null) { e.miles = Math.max(0, odoEnd - e.odoStart); e.milesConfirmed = true; }   // odometer is the truth → auto-confirmed for payout
+  else if (e.miles == null) { e.miles = tcRound(e.computedMiles); }
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi (est) · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
   save(); render();
 };
 
@@ -198,9 +214,11 @@ function tcClockHTML() {
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
         <label>Job</label>
         <select id="tc_job">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
-        <label>Whose vehicle (optional)</label>
+        <label>Vehicle (required)</label>
         <input id="tc_vehicle" list="tc_vehlist" value="${esc(veh.length && veh.indexOf(who.name) >= 0 ? who.name + "'s vehicle" : "")}" placeholder="e.g. Ray's truck">
         <datalist id="tc_vehlist">${veh.map(n => `<option value="${esc(n)}'s vehicle">`).join("")}</datalist>
+        <label>Odometer — start (required)</label>
+        <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
         <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>
         <div class="sub" style="margin-top:8px;white-space:normal">Asks for location permission to stamp where you started. Time tracks even if you decline GPS.</div>
       </div>`;
