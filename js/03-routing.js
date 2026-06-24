@@ -22,7 +22,8 @@ function render(){
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","schedule","time","resale"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","resale"] },
+  { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
   { key:"customers", label:"Customers", icon:"👥", tabs:["accounts","sales"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
