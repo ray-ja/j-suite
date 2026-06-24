@@ -15,6 +15,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
+  if(window.GCALL && typeof rGuidedCall==="function"){ rGuidedCall(); if(typeof renderSyncPill==="function")renderSyncPill(); return; }   // live call helper takes over the view
   (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
@@ -22,10 +23,10 @@ function render(){
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","resale"] },
-  { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
-  { key:"customers", label:"Customers", icon:"👥", tabs:["accounts","sales"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
+  { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
+  { key:"customers", label:"Sales",     icon:"👥", tabs:["accounts","sales"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","resale"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
   { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","todo","playbook"] },
