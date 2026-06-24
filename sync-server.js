@@ -659,9 +659,10 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
+    const _ch = []; let _bl = 0;
+    req.on("data", c => { _ch.push(c); _bl += c.length; if (_bl > 1e5) req.destroy(); });
     req.on("end", () => {
+      const body = Buffer.concat(_ch).toString("utf8");   // decode the FULL body as UTF-8 — per-chunk body+=c mangles emoji/em-dash split across chunk boundaries (the ��� bug)
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       if (!p || !String(p.body || "").trim()) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"empty body"}'); }
       const store = loadStore();
@@ -840,9 +841,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === "POST" && req.url === "/sync") {
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 8e6) req.destroy(); });
+    const _ch = []; let _bl = 0;
+    req.on("data", c => { _ch.push(c); _bl += c.length; if (_bl > 8e6) req.destroy(); });
     req.on("end", () => {
+      const body = Buffer.concat(_ch).toString("utf8");   // full-body UTF-8 decode — per-chunk body+=c mangles multi-byte chars at chunk boundaries (the ��� bug)
       let payload;
       try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       if (TOKEN && payload.token !== TOKEN) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
