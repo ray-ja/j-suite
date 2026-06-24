@@ -7,6 +7,11 @@ const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for 
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
 const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
+const JUNK_MAXLOAD=250;      // cu ft we can pull in ONE dump run (8-ft bed + 5×14 open-channel trailer) — TUNE to your real average fill
+/* one full dump run's cost — the 55-mi round trip: mileage + 80 min of drive time at $45/hr-loaded ($93.75/hr) */
+function junkDumpRunCost(){ const mi=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55); return mi*QE.MILEAGE + (80/60)*(QE.TAKE_HOME/QE.FIELD_SPLIT); }
+/* this job's SHARE of a dump run, amortized by volume — junk is stashed + batched, so we always dump a full load */
+function junkDumpAmort(cuft){ return JUNK_MAXLOAD>0 ? (cuft/JUNK_MAXLOAD)*junkDumpRunCost() : 0; }
 /* suggest the cheapest adequate haul method from the load volume (eighths ≈ 60-cu-ft pickup loads) */
 function junkHaulSuggest(c){const loads=c.eighths;
   if(loads<=1.5)return{method:"pickup",label:"Pickup (self-haul)",note:loads<=1?"one trip":"1–2 trips"};
@@ -76,13 +81,11 @@ function junkSiteDrive(){
   if(pid){const p=(D().properties||[]).find(x=>x.id===pid);if(p&&p.lat!=null&&typeof driveFromBase==="function"){const d=driveFromBase(p.lat,p.lng);if(d)return {rt:d.roundMiles,min:d.min*2};}}
   return {rt:20,min:30};                                                                                     // fallback until the address is geocoded
 }
-/* STATIC drive charge — fixed by the address (round trips to the site + the dump), NOT the load. Covers
-   the miles (IRS rate) + the drive time paid at $45/hr take-home ($93.75/hr). Site = whole crew; dump run = 1. */
-function junkDriveCharge(mode,crew){
+/* STATIC site drive — fixed by the address (round trip to the customer only). Miles (IRS rate) + the crew's
+   drive time at $45/hr-loaded ($93.75/hr). The dump run is NOT here — junk is stashed + amortized by volume. */
+function junkDriveCharge(crew){
   const dr=junkSiteDrive(),loaded=QE.TAKE_HOME/QE.FIELD_SPLIT;
-  let miles=dr.rt, hrs=(crew||2)*(dr.min/60);
-  if(mode!=="stash"){miles+=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);hrs+=80/60;}
-  return Math.round(miles*QE.MILEAGE + hrs*loaded);
+  return Math.round(dr.rt*QE.MILEAGE + (crew||2)*(dr.min/60)*loaded);
 }
 /* the engine object for the take-home CHECK: loading person-hours + auto drive + the known dump run */
 function junkEngineObj(c){
@@ -98,16 +101,15 @@ function wizJunkUI(){
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
-  // PRICE = volume (premium band, incl. access & modifiers) + STATIC drive charge + special-item disposal
-  const _crew=WZ.junkCrew||2,_mode=WZ.junkMode||"dump",_dr=junkSiteDrive();
-  const drive=junkDriveCharge(_mode,_crew), work=c.haul+c.locLabor+c.modLabor;
-  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
-  // $/hr each CHECK — job time = 20-min baseline + item load times + drive (load times feed THIS, not the price)
+  // PRICE = volume + STATIC site drive + this job's amortized DUMP SHARE (by volume) + special-item disposal
+  const _crew=WZ.junkCrew||2,_dr=junkSiteDrive();
+  const drive=junkDriveCharge(_crew), dumpAmort=Math.round(junkDumpAmort(c.cuft)), work=c.haul+c.locLabor+c.modLabor;
+  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
+  // $/hr each CHECK — STASHED, so NO dump run on this job; job time = 20-min baseline + load + site drive
   const onsiteHrs=(20+(c.loadMin||0))/60;
-  const drivePH=_crew*(_dr.min/60)+(_mode!=="stash"?80/60:0);
-  const totalPH=_crew*onsiteHrs+drivePH;
-  const totalMi=Math.round(_dr.rt+(_mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55):0));
-  const hourly=totalPH>0?Math.round((price-c.special-totalMi*QE.MILEAGE)*QE.FIELD_SPLIT/totalPH):0, okHr=hourly>=QE.TAKE_HOME;
+  const totalPH=_crew*onsiteHrs+_crew*(_dr.min/60);
+  const reserved=c.special+dumpAmort+Math.round(_dr.rt*QE.MILEAGE);   // passthrough + the dump-run reserve (paid out on the eventual batched run)
+  const hourly=totalPH>0?Math.round((price-reserved)*QE.FIELD_SPLIT/totalPH):0, okHr=hourly>=QE.TAKE_HOME;
   // sticky bottom bar — truck fill · market band · price · volume(cu ft) + drive(mi) · $/hr each · crew · dump/stash
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
   const bandLo=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.lo:150,bandHi=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.hi:800;
@@ -116,7 +118,7 @@ function wizJunkUI(){
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:3px 8px">
     <div style="flex-basis:100%">
       <div style="height:11px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:1px">📦 ${barPct}% of a box truck · volume ${money(work)} (${c.cuft} cu ft) + drive ${money(drive)} (${totalMi} mi · static)${c.special?` + disposal ${money(c.special)}`:""}</div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📦 ${barPct}% of a box truck · volume ${money(work)} (${c.cuft} cu ft) + site drive ${money(drive)} + dump share ${money(dumpAmort)}${c.special?` + disposal ${money(c.special)}`:""}</div>
     </div>
     <div style="flex-basis:100%">
       <div style="position:relative;height:11px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
@@ -124,7 +126,6 @@ function wizJunkUI(){
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
-    <button class="btn ghost sm" style="white-space:nowrap" onclick="WZ.junkMode='${_mode==="dump"?"stash":"dump"}';render()">${_mode==="dump"?"🚛 Dump":"📦 Stash"}</button>
     <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
     <button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button>
   </div>`;
@@ -202,15 +203,15 @@ window.openTrailerBuy=function(){
 window.wizAddJunk=function(){
   if(!WZ.junk||!WZ.junk.length){alert("Add at least one item first.");return;}
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
-  const c=calcJunk(),mode=WZ.junkMode||"dump",crew=WZ.junkCrew||2;
-  const drive=junkDriveCharge(mode,crew),work=c.haul+c.locLabor+c.modLabor;
-  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
+  const c=calcJunk(),crew=WZ.junkCrew||2,_dr=junkSiteDrive();
+  const drive=junkDriveCharge(crew),dumpAmort=Math.round(junkDumpAmort(c.cuft)),work=c.haul+c.locLabor+c.modLabor;
+  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
-  notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(mode==="dump"?"straight to dump":"stash at warehouse")+" · volume "+money(work)+" + static drive "+money(drive)+(c.special?" + disposal "+money(c.special):"")+".");
-  const cost=Math.round((c.special+junkSiteDrive().rt*QE.MILEAGE+(mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)*QE.MILEAGE:0))*100)/100;   // hard cost: disposal fees + mileage
-  // estimate the job time so the review's pay check is real (not "?"): 20-min on-site baseline + load times + drive
-  const _dr=junkSiteDrive(), totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60)+(mode!=="stash"?80/60:0);
+  notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
+  const cost=Math.round((c.special+dumpAmort+_dr.rt*QE.MILEAGE)*100)/100;   // reserved/passthrough: disposal + dump-run reserve + site mileage
+  // job time for the pay check — STASHED, no dump run on this job: 20-min on-site baseline + load times + site drive
+  const totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60);
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:""});
   WZ.crewN=crew; WZ.hours=Math.round(totalPH/crew*10)/10;   // carry crew + hours-each into the review
   WZ.step="review";render();   // keep WZ.junk/junkCrew/junkMode so the review's ← back button returns to the live load
