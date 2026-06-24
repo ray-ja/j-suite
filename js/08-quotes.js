@@ -3,6 +3,11 @@ let QSEARCH="",QSTAGE_FILTER="all";
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
 function quoteType(q){ const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
+/* stable human job number (#0001) + the next one to hand out */
+function nextQuoteNum(){ return (D().quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0)+1; }
+function quoteNum(q){ return (q&&q.num)?("#"+String(q.num).padStart(4,"0")):""; }
+/* "today" / "yesterday" / "3 days ago" / "in 2 days" for a YYYY-MM-DD date */
+function agoStr(dateStr){ if(!dateStr)return ""; const d=new Date(dateStr+"T00:00:00"); if(isNaN(d))return ""; const t=new Date(); t.setHours(0,0,0,0); const days=Math.round((t-d)/86400000); if(days===0)return "today"; if(days===1)return "yesterday"; if(days===-1)return "tomorrow"; return days>1?(days+" days ago"):("in "+(-days)+" days"); }
 window.quoteFilter=function(k){ QSTAGE_FILTER=k; rQuotes(); };
 let QCREW_FILTER="";
 function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }

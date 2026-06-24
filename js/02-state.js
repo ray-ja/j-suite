@@ -29,6 +29,8 @@ function load(){
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
+    // stable per-biz job numbers: number any quote lacking one, deterministically (by date+id) so every device agrees without syncing
+    (function(){ const ql=(S[b].quotes||[]).filter(q=>!q.num); if(ql.length){ let mx=(S[b].quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0); ql.sort((x,y)=>(((x.date||"")+(x.id||""))<((y.date||"")+(y.id||""))?-1:1)).forEach(q=>{q.num=++mx;}); } })();
   });
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);

@@ -327,6 +327,7 @@ window.wizPersist=function(){
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
+  if(!q.num){ const _ex=WZ.id?d.quotes.find(x=>x.id===WZ.id):null; q.num=(_ex&&_ex.num)||(typeof nextQuoteNum==="function"?nextQuoteNum():0); }
   if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);
     if(typeof logChange==="function")logChange("update","quote",q.id,"Updated quote "+money(total)+(q.cust?" · "+q.cust:""));}
   else{d.quotes.push(q);WZ.id=q.id;if(typeof logChange==="function")logChange("create","quote",q.id,"Quoted "+money(total)+(q.cust?" · "+q.cust:""));}

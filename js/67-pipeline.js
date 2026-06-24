@@ -19,6 +19,8 @@ function rPipeline() {
   });
   const who = q => esc(q.cust || (q.customerId && typeof custName === "function" ? custName(q.customerId) : "") || "—");
   const amt = q => money(q.finalPrice || q.total || 0);
+  const numP = q => (typeof quoteNum === "function" && quoteNum(q)) ? quoteNum(q) + " · " : "";
+  const tyAgo = q => { const ty = (typeof quoteType === "function" && quoteType(q)) || ""; const ago = q.date ? ((typeof agoStr === "function" ? agoStr(q.date) : "") || fmtDate(q.date)) : ""; return [ty, ago].filter(Boolean).join(" · "); };
 
   // the flow, drawn linear at the top
   const flow = [["🎯", "Sales", leads.length], ["📝", "Quote", G.quote.length], ["🔧", "Job", G.job.length], ["📤", "Invoice", G.bill.length], ["💸", "Paid", G.pay.length], ["⭐", "Review", G.review.length]];
@@ -32,19 +34,19 @@ function rPipeline() {
     `<button class="btn acc" style="width:100%;margin-bottom:8px;padding:13px;font-size:16px" onclick="openGuidedCall()">📞 New call / lead</button>`);
 
   sect("📝", "Quote — sent, awaiting yes", G.quote.length,
-    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${who(q)} · ${amt(q)}</div><div class="sub">${typeof quoteType === "function" ? esc(quoteType(q)) : ""}${q.date ? " · " + fmtDate(q.date) : ""}</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""));
+    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""));
 
   sect("🔧", "Job — accepted, to do", G.job.length,
-    G.job.map(q => { const j = jobById(q.jobId); const go = j ? `openJobPage('${j.id}')` : `openQuote('${q.id}')`; return `<div class="li" onclick="${go}" style="cursor:pointer"><div class="grow"><div class="nm">${who(q)} · ${amt(q)}</div><div class="sub">${j ? (j.date ? fmtDate(j.date) : "not yet scheduled") : "no job linked yet"}</div></div><button class="btn acc sm" onclick="event.stopPropagation();${go}">Open →</button></div>`; }).join(""));
+    G.job.map(q => { const j = jobById(q.jobId); const go = j ? `openJobPage('${j.id}')` : `openQuote('${q.id}')`; return `<div class="li" onclick="${go}" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}${j && !j.date ? " · not scheduled" : ""}${!j ? " · no job linked" : ""}</div></div><button class="btn acc sm" onclick="event.stopPropagation();${go}">Open →</button></div>`; }).join(""));
 
   sect("📤", "Invoice — work done, bill it", G.bill.length,
-    G.bill.map(q => `<div class="li"><div class="grow"><div class="nm">${who(q)} · ${amt(q)}</div><div class="sub">job done — send the invoice</div></div><button class="btn acc sm" onclick="openInvoice('${q.id}')">Bill →</button></div>`).join(""));
+    G.bill.map(q => `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))} · job done</div></div><button class="btn acc sm" onclick="openInvoice('${q.id}')">Bill →</button></div>`).join(""));
 
   sect("💸", "Paid — collect it", G.pay.length,
-    G.pay.map(q => { const bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(q) : (q.finalPrice || q.total || 0); return `<div class="li"><div class="grow"><div class="nm">${who(q)} · ${money(bal)} owed</div><div class="sub">invoiced${q.invoicedDate ? " " + fmtDate(q.invoicedDate) : ""}</div></div><button class="btn acc sm" onclick="recordPayment('${q.id}')">Payment →</button></div>`; }).join(""));
+    G.pay.map(q => { const bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(q) : (q.finalPrice || q.total || 0); return `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${money(bal)} owed</div><div class="sub">${esc(tyAgo(q))} · invoiced${q.invoicedDate ? " " + fmtDate(q.invoicedDate) : ""}</div></div><button class="btn acc sm" onclick="recordPayment('${q.id}')">Payment →</button></div>`; }).join(""));
 
   sect("⭐", "Review — the after-action (required)", G.review.length,
-    G.review.map(q => `<div class="li"><div class="grow"><div class="nm">${who(q)} · ${amt(q)}</div><div class="sub">paid — do the review so Cap learns</div></div><button class="btn acc sm" onclick="plReview('${q.id}')">Review →</button></div>`).join(""));
+    G.review.map(q => `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))} · paid — review so Cap learns</div></div><button class="btn acc sm" onclick="plReview('${q.id}')">Review →</button></div>`).join(""));
 
   view.innerHTML = h;
 }

@@ -145,6 +145,7 @@ window.saveDemoQuote=function(){
   const q={id:uid(),customerId:null,cust:nm,propertyId:null,address:"",date:today(),
     items:items,
     recurring:false,subtotal:grand,discount:0,total:grand,cost:d.cost||0,kind:"demo",notes:notes,updatedAt:now()};
+  if(!q.num&&typeof nextQuoteNum==="function")q.num=nextQuoteNum();
   S.obx.quotes.push(q);save();
   if(typeof logEvent==="function")logEvent("Demo quote created — "+money(grand)+" · "+nm,"quote");
   closeModal();

@@ -48,6 +48,7 @@ window.saveJunkQuote=function(){
   const nm=val("je_name")||"Move-out junk quote",total=window._jeTotal||0;
   const br=document.getElementById("je_break"),notes=br?br.innerText:"";
   const q={id:uid(),customerId:null,cust:nm,propertyId:null,address:"",date:today(),items:[{serviceId:"",name:"Junk / move-out removal",unit:"job",price:total,qty:1}],recurring:false,subtotal:total,discount:0,total:total,kind:"junk",notes:notes,updatedAt:now()};
+  if(!q.num&&typeof nextQuoteNum==="function")q.num=nextQuoteNum();
   S.obx.quotes.push(q);save();closeModal();
   alert("Saved "+money(total)+" quote for "+nm+" to OBX Lot Solutions. Find it in the Quotes tab (switch to OBX).");
   render();
