@@ -15,7 +15,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin}[TAB])||rToday)();
+  (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
 }
@@ -27,7 +27,7 @@ const NAV_GROUPS = [
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
-  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","todo"] },
+  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","todo","playbook"] },
   { key:"more",      label:"More",      icon:"⚙️", tabs:["data","admin"] }
 ];
 const TAB_META = {
@@ -35,7 +35,7 @@ const TAB_META = {
   accounts:{l:"Accounts",i:"👥"}, sales:{l:"Sales",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   finance:{l:"Finance",i:"💰"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !msgEnabled() : true)) return false; return (typeof canSee==="function") ? canSee(t) : true; }

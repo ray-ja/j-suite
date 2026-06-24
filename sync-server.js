@@ -57,7 +57,7 @@ const APP_FILE = path.join(__dirname, "Business App (v1).html");
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -315,10 +315,11 @@ function ceoProjection(store, opts) {
   if (view === "ops") {
     // consolidated operational snapshot for the ops-sweep (read-only). Reuses crew (with lastActive)
     // + availabilityWeek; adds jobs (with done/completedAt), todos, open shifts, accepted-unscheduled quotes.
-    const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [], resale = [], revenue = [];
+    const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [], resale = [], revenue = [], knowledge = [];
     bizes.forEach(b => {
       (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", crew: j.crew || [], done: !!j.done, completedAt: j.completedAt || 0, completedBy: j.completedBy || "", customer: ceoCustName(store, b, j.customerId), address: j.address || "", equipment: (j.equipment || []).map(e => e && e.itemId).filter(Boolean), equipmentNames: (j.equipment || []).map(e => { const it = ((store[b] || {}).inventory || []).find(x => x && x.id === (e && e.itemId)); return it ? (it.name || e.itemId) : (e && e.itemId); }).filter(Boolean), expenses: (j.expenses || []).filter(x => x && !x.deleted).map(e => ({ amount: e.amount || 0, desc: e.desc || "" })), notes: String(j.notes || "").slice(0, 1200) }); });
       (((store[b] || {}).todos) || []).forEach(td => { if (td && !td.deleted) todos.push({ id: td.id, biz: b, title: td.title || "", due: td.due || "", done: !!td.done, priority: td.priority || "", assignee: td.assignee || "", updatedAt: td.updatedAt || 0 }); });
+      (((store[b] || {}).knowledge) || []).forEach(k => { if (k && !k.deleted) knowledge.push({ topic: k.topic || "", fact: k.fact || "", tags: k.tags || "" }); });
       (((store[b] || {}).timeclock) || []).forEach(e => { if (e && !e.deleted && e.clockOut == null) openShifts.push({ id: e.id, biz: b, userId: e.userId, jobId: e.jobId, clockIn: e.clockIn || 0 }); });
       (((store[b] || {}).quotes) || []).forEach(q => {
         if (!q || q.deleted) return;
@@ -328,7 +329,7 @@ function ceoProjection(store, opts) {
       });
       (((store[b] || {}).resale) || []).forEach(r => { if (r && !r.deleted && r.status !== "sold") resale.push({ id: r.id, biz: b, item: r.item || "", status: r.status || "pulled", jobId: r.jobId || "", platform: r.platform || "", listedDate: r.listedDate || "", createdAt: r.createdAt || 0, updatedAt: r.updatedAt || 0 }); });
     });
-    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue };
+    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue, knowledge };
   }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };
@@ -383,7 +384,7 @@ function ceoSetReceipt(store, biz, msgId, kind) {
 // "Everything proposable" — all BUSINESS collections. EXCLUDES system/meta plumbing: messages (own
 // scoped path), pendingChanges (the queue itself), changelog (audit log), locks (soft-lock heartbeats).
 // Widening what Cap may PROPOSE never widens its authority — every proposal still needs owner approval.
-const PROPOSE_COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale"];
+const PROPOSE_COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale", "knowledge"];
 const PROPOSE_TYPES = ["create", "update", "softDelete"];  // no hard delete, ever
 function ceoBuildProposal(p, store) {
   p = p || {}; store = store || {};

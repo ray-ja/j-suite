@@ -21,6 +21,13 @@ ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") 
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);
 ok("incoming-only collection merged", m.obx.quotes.length === 1, m.obx.quotes);
 
+console.log("— knowledge (Cap's Playbook) is a synced collection + survives merge with zero loss —");
+const kbStored = { obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", title: "Job", updatedAt: 10 }], properties: [{ id: "p1", address: "X", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }] } };   // legacy: NO knowledge key
+const km = t.mergeState(kbStored, { obx: { knowledge: [{ id: "k1", topic: "Currituck", fact: "Free for brush", updatedAt: 5 }] } });
+ok("knowledge collection scaffolded on a legacy biz (no knowledge key)", Array.isArray(km.obx.knowledge), Object.keys(km.obx));
+ok("knowledge record round-trips through the merge", (km.obx.knowledge.find(x => x.id === "k1") || {}).fact === "Free for brush", km.obx.knowledge);
+ok("every pre-existing record survives the knowledge migration (customer/job/property/quote)", !!(km.obx.customers.find(x => x.id === "c1") && km.obx.jobs.find(x => x.id === "j1") && km.obx.properties.find(x => x.id === "p1") && km.obx.quotes.find(x => x.id === "q1")), km.obx);
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
