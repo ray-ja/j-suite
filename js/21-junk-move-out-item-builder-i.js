@@ -17,6 +17,8 @@ const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested 
 const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
 const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50,farcarry:0.20};
 const JUNK_LOC=[["ground","Ground floor (no add)"],["curbside","Curbside / outside (−15% labor)"],["upstairs","Upstairs (+25% labor)"],["basement","Basement (+30% labor)"],["attic","Attic / crawlspace (+50% labor)"],["farcarry","Long carry / no driveway (+20% labor)"]];
+/* per-item modifiers (checkboxes) — each adds LOADING TIME, which the engine prices at $45/hr */
+const JUNK_MODS=[{k:"heavy",short:"🏋️ Heavy",timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatMin:8}];
 // Home Depot rental reference. Trailers = 4-hr price as quoted. Trucks = per-75-min rate × 4 increments to cover a 4-hr job.
 const JUNK_RENTAL=[["none","No rental — using my own truck",0],["t_lg","Lawn & garden trailer 3×5 (4 hr)",25],["t_cf","Channel-frame trailer 5×8 (4 hr)",39],["t_sw","Solid-wall trailer 5×8 (4 hr)",42],["t_d58","Dump trailer 5×8 (4 hr)",157],["t_d610","Dump trailer 6×10 (4 hr)",172],["t_d714","Dump trailer 7×14 (4 hr)",187],["k_pickup","8-ft pickup truck (4 hr = 4×$18)",72],["k_flat8","8-ft flatbed truck (4 hr = 4×$19)",76],["k_flat10","10-ft flatbed truck (4 hr = 4×$19)",76],["k_van","Cargo van (4 hr = 4×$19)",76],["k_box","Box truck (4 hr = 4×$29)",116]];
 function getTruckCap(){try{const d=S.obx.docs.find(x=>x.id==="truckcap"&&!x.deleted);if(d)return parseFloat(d.text)||95;}catch(e){}return 95;}
@@ -37,7 +39,7 @@ function junkItem(key){for(const g of JUNK_CAT)for(const it of g[1])if(it[0]===k
 function junkItemMin(cuft){ return 0.5 + 0.15 * cuft; }
 function calcJunk(){
   const items=WZ.junk||[];let cuft=0,lbs=0,locLabor=0,special=0,counts={},softGoods=false,loadMin=0;
-  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;const q=li.qty||0,v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;locLabor+=(v/JUNK_EIGHTH*JUNK_PEREIGHTH)*(JUNK_LOCF[li.loc]||0);loadMin+=q*junkItemMin(it[2])*(1+(JUNK_LOCF[li.loc]||0));if(q>0&&JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;const q=li.qty||0,v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;locLabor+=(v/JUNK_EIGHTH*JUNK_PEREIGHTH)*(JUNK_LOCF[li.loc]||0);let _m=1,_f=0;JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)_m*=md.timeMult;if(md.flatMin)_f+=md.flatMin;}});loadMin+=q*junkItemMin(it[2])*_m*(1+(JUNK_LOCF[li.loc]||0))+_f*q;if(q>0&&JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
   const bedbug=(WZ.junkBedbug&&softGoods)?JUNK_BEDBUG_FEE:0;
   const eighths=cuft/JUNK_EIGHTH;
   const haul=cuft>0?JUNK_TRIPBASE+eighths*JUNK_PEREIGHTH:0;
@@ -108,9 +110,10 @@ function junkCatalogHTML(){
   const qof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.qty:0;};
   const locof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.loc:"ground";};
   const row=it=>{const q=qof(it[0]),loc=locof(it[0]);let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:40px" onclick="wizJQ('${it[0]}',-1)">−</button><b style="min-width:20px;text-align:center">${q}</b><button class="btn ghost sm" style="width:40px" onclick="wizJQ('${it[0]}',1)">+</button></div></div>`;
-    if(q>0){const share=(it[2]*q/JUNK_EIGHTH)*JUNK_PEREIGHTH,added=share*(JUNK_LOCF[loc]||0);
+    if(q>0){const li=(WZ.junk||[]).find(x=>x.key===it[0])||{};let mult=1,flat=0;JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)mult*=md.timeMult;if(md.flatMin)flat+=md.flatMin;}});const itemMin=q*junkItemMin(it[2])*mult*(1+(JUNK_LOCF[loc]||0))+flat*q;
       r+=`<div style="margin-top:6px"><select onchange="wizJL('${it[0]}',this.value)" style="font-size:13px">${JUNK_LOC.map(l=>`<option value="${l[0]}" ${loc===l[0]?"selected":""}>📍 ${l[1]}</option>`).join("")}</select></div>`;
-      r+=`<div class="sub" style="margin-top:4px">${q}×${it[2]} = ${q*it[2]} cu ft · haul ${money(Math.round(share))}${loc!=="ground"?` · ${added>=0?"+":"−"}${money(Math.abs(Math.round(added)))} ${loc} labor`:""}${it[4]?` · +${money(JUNK_FEE[it[4]]*q)} ${esc(it[4])} disposal`:""}</div>`;}
+      r+=`<div class="row" style="gap:12px;margin-top:5px;flex-wrap:wrap">${JUNK_MODS.map(md=>`<label class="toggle" style="margin:0;font-size:13px"><input type="checkbox" ${li[md.k]?"checked":""} onchange="wizJMod('${it[0]}','${md.k}',this.checked)"><span style="margin:0">${md.short}</span></label>`).join("")}</div>`;
+      r+=`<div class="sub" style="margin-top:4px">${q}×${it[2]} = ${q*it[2]} cu ft · ~${Math.round(itemMin)} min to load${it[4]?` · +${money(JUNK_FEE[it[4]]*q)} ${esc(it[4])} disposal`:""}</div>`;}
     return r+`</div>`;};
   const s=(WZ.junkSearch||"").trim().toLowerCase();
   if(s){
@@ -124,6 +127,7 @@ window.wizJSearch=function(){const e=document.getElementById("je_search");WZ.jun
 window.wizJunkToggle=function(gi,open){if(!WZ.junkOpen)WZ.junkOpen={};WZ.junkOpen[gi]=open;};
 window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;}};
+window.wizJMod=function(key,mk,on){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li[mk]=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;}};
 window.wizJunkBedbug=function(on){WZ.junkBedbug=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJunkCleared=function(on){WZ.junkCleared=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.openTrailerBuy=function(){
