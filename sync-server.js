@@ -299,7 +299,7 @@ function ceoProjection(store, opts) {
       const acctName = id => { const u = ((store.users) || []).find(x => x && x.id === id); return u ? (u.username || "") : ""; };
       coll.filter(m => m && m.kind === "thread" && !m.deleted).forEach(tr => {
         threads.push({
-          biz: b, threadId: tr.threadId, title: tr.title || "", type: tr.type || "", availAsk: !!tr.availAsk, members: tr.members || [],
+          biz: b, threadId: tr.threadId, title: tr.title || "", type: tr.type || "", availAsk: !!tr.availAsk, jobId: tr.jobId || "", members: tr.members || [],
           messages: coll.filter(m => m && !m.kind && !m.deleted && m.threadId === tr.threadId).sort((a, b2) => (a.ts || 0) - (b2.ts || 0))
             .map(m => ({ id: m.id, senderId: m.senderId, senderLabel: m.senderLabel, body: m.body, ts: m.ts })),
           // per-MEMBER read state (named) so the watcher can derive unread / read-no-reply / replied
@@ -317,7 +317,7 @@ function ceoProjection(store, opts) {
     // + availabilityWeek; adds jobs (with done/completedAt), todos, open shifts, accepted-unscheduled quotes.
     const jobs = [], todos = [], openShifts = [], unscheduledQuotes = [], resale = [], revenue = [];
     bizes.forEach(b => {
-      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", crew: j.crew || [], done: !!j.done, completedAt: j.completedAt || 0, completedBy: j.completedBy || "", customer: ceoCustName(store, b, j.customerId), equipment: (j.equipment || []).map(e => e && e.itemId).filter(Boolean), notes: String(j.notes || "").slice(0, 1200) }); });
+      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) jobs.push({ id: j.id, biz: b, title: j.title || "", date: j.date || "", time: j.time || "", crew: j.crew || [], done: !!j.done, completedAt: j.completedAt || 0, completedBy: j.completedBy || "", customer: ceoCustName(store, b, j.customerId), address: j.address || "", equipment: (j.equipment || []).map(e => e && e.itemId).filter(Boolean), equipmentNames: (j.equipment || []).map(e => { const it = ((store[b] || {}).inventory || []).find(x => x && x.id === (e && e.itemId)); return it ? (it.name || e.itemId) : (e && e.itemId); }).filter(Boolean), expenses: (j.expenses || []).filter(x => x && !x.deleted).map(e => ({ amount: e.amount || 0, desc: e.desc || "" })), notes: String(j.notes || "").slice(0, 1200) }); });
       (((store[b] || {}).todos) || []).forEach(td => { if (td && !td.deleted) todos.push({ id: td.id, biz: b, title: td.title || "", due: td.due || "", done: !!td.done, priority: td.priority || "", assignee: td.assignee || "", updatedAt: td.updatedAt || 0 }); });
       (((store[b] || {}).timeclock) || []).forEach(e => { if (e && !e.deleted && e.clockOut == null) openShifts.push({ id: e.id, biz: b, userId: e.userId, jobId: e.jobId, clockIn: e.clockIn || 0 }); });
       (((store[b] || {}).quotes) || []).forEach(q => {

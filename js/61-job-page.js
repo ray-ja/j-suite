@@ -82,6 +82,16 @@ function rJobPage(j) {
     <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
     <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
 
+  // 6b) Ask Cap about THIS job — context-aware (Cap pulls the job's customer/address/notes/equipment)
+  const me2 = (typeof curUser === "function") ? curUser() : null;
+  const capTid = "thr_job_" + j.id + "_" + (me2 ? me2.id : "x");
+  const capMsgs = (D().messages || []).filter(m => m && !m.kind && !m.deleted && m.threadId === capTid).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap about this job</div>`;
+  h += capMsgs.length
+    ? capMsgs.slice(-6).map(m => { const isCap = m.senderId === "__ceo__" || m.senderId === "__cap__"; return `<div class="li" style="${isCap ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${isCap ? "🤖 Cap" : esc(m.senderLabel || "You")} <span style="font-weight:400">· ${typeof relTime === "function" ? relTime(m.ts) : ""}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`; }).join("")
+    : `<div class="muted">Ask Cap anything about this job — he knows the customer, address, notes &amp; equipment. e.g. "Are we providing the pavers, or is it client-provided?"</div>`;
+  h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap…"></textarea><button class="btn acc sm" style="margin-top:8px;width:100%" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div>`;
+
   // 7) Change orders
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change orders${coTotal ? ` · <span style="color:var(--accent)">${money(coTotal)}</span>` : ""}</div>`;
   h += cos.length ? cos.map(c => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(c.desc || "")}</div><div class="sub">${c.by ? esc(c.by) + " · " : ""}${c.ts && typeof relTime === "function" ? relTime(c.ts) : ""}</div></div><div class="row" style="gap:8px">${c.amount ? `<div class="nm" style="font-size:15px">${money(c.amount)}</div>` : ""}<button class="btn ghost sm" onclick="jobDelChangeOrder('${j.id}','${c.id}')">✕</button></div></div>`).join("") : `<div class="muted">Nothing changed yet.</div>`;
@@ -148,4 +158,19 @@ window.jobAddPhoto = function (jobId, input) {
     j.attachments.push({ id: id, name: file.name || "photo", ts: now() });
     if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
   }).catch(function (e) { alert("Upload failed: " + (e.message || e)); });
+};
+/* Ask Cap a question scoped to this job — posts to a per-user, jobId-tagged Cap thread (1 member so Cap
+   converses; toStrategy so it's a Cap channel). The server tags the projection with jobId → Cap pulls
+   the job's customer/address/notes/equipment as context when he answers. His reply syncs back here. */
+window.jobAskCap = function (jobId) {
+  const q = val("jobcap_q"); if (!q) return;
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) { alert("Sign in first."); return; }
+  const tid = "thr_job_" + jobId + "_" + me.id;
+  const coll = D().messages || (D().messages = []);
+  let thr = coll.find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted);
+  if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: "Cap · " + (j.title || "Job"), type: "dm", toStrategy: true, jobId: jobId, members: [me.id], createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
+  else if (!thr.jobId) { thr.jobId = jobId; thr.updatedAt = now(); }
+  coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q, ts: now(), deleted: false, updatedAt: now() });
+  if (typeof save === "function") save(); if (typeof render === "function") render();
 };
