@@ -117,20 +117,22 @@ window.tcClockOut = function (id) {
     <input id="tc_odo_end" type="number" inputmode="decimal" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcFinishClockOut('${id}')">📍 Clock out</button>`);
 };
-window.tcFinishClockOut = async function (id) {
+window.tcFinishClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
   const odoEnd = parseFloat(val("tc_odo_end"));
   if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading."); return; }
   if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
   if (typeof closeModal === "function") closeModal();
-  const loc = await tcGetPos();
-  e.outLoc = loc; e.clockOut = now(); e.odoEnd = odoEnd;
+  // clock out IMMEDIATELY — never block on GPS (it hangs at the dump / when location is off). The odometer is the truth.
+  e.clockOut = now(); e.odoEnd = odoEnd;
   e.computedMiles = tcComputeMiles(e);
-  if (e.odoStart != null) { e.miles = Math.max(0, odoEnd - e.odoStart); e.milesConfirmed = true; }   // odometer is the truth → auto-confirmed for payout
+  if (e.odoStart != null) { e.miles = Math.max(0, odoEnd - e.odoStart); e.milesConfirmed = true; }   // odometer = auto-confirmed for payout
   else if (e.miles == null) { e.miles = tcRound(e.computedMiles); }
   touch(e); tcPingStop();
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
   save(); render();
+  // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out
+  try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
 
 /* ===== owner: edit / confirm an entry's mileage + vehicle ===== */
