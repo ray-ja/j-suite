@@ -33,7 +33,7 @@ window.syncQuoteIncome = function (q) {
     const fields = {
       quoteId: q.id, jobId: q.jobId || "", fromQuote: true,
       amount: (q.finalPrice || q.total || 0),
-      date: (job && job.date) || q.acceptedDate || q.date || (typeof today === "function" ? today() : ""),
+      date: q.paidDate || (job && job.date) || q.acceptedDate || q.date || (typeof today === "function" ? today() : ""),
       crew: (job && Array.isArray(job.crew)) ? job.crew.slice() : [],
       originator: (cust && cust.soldBy) || "",
       bookedAt: q.acceptedDate || q.date || "",

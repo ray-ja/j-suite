@@ -74,9 +74,10 @@ window.invMark = function (quoteId) {
   save(); openInvoice(quoteId);
 };
 window.invMarkPaid = function (quoteId) {
+  if (typeof recordPayment === "function") { recordPayment(quoteId); return; }   // proper payment flow (records + syncs income)
   const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
   q.paid = true; q.paidDate = (typeof today === "function") ? today() : "";
-  touch(q);
+  touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);
   if (typeof logChange === "function") logChange("update", "quote", q.id, "Marked paid · " + money(q.total || 0));
   save(); openInvoice(quoteId);
 };
