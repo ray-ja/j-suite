@@ -111,15 +111,16 @@ function wizJunkUI(){
   // sticky bottom bar — truck fill · market band · price · volume(cu ft) + drive(mi) · $/hr each · crew · dump/stash
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
   const bandLo=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.lo:150,bandHi=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.hi:800;
-  const pPct=Math.min(100,Math.max(0,(price-bandLo)/(bandHi-bandLo)*100)),inBand=price>=bandLo&&price<=bandHi;
+  const bMid=(bandLo+bandHi)/2,bMax=bandHi*1.3,z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,price/bMax*100);
+  const zone=price<bandLo?["underpriced","#c1121f"]:price<bMid?["good value","#1a7f37"]:price<=bandHi?["premium","#b8860b"]:["above market","#c1121f"];
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:3px 8px">
     <div style="flex-basis:100%">
       <div style="height:11px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
       <div class="sub" style="font-size:11px;margin-top:1px">📦 ${barPct}% of a box truck · volume ${money(work)} (${c.cuft} cu ft) + drive ${money(drive)} (${totalMi} mi · static)${c.special?` + disposal ${money(c.special)}`:""}</div>
     </div>
     <div style="flex-basis:100%">
-      <div style="position:relative;height:11px;background:linear-gradient(90deg,#e7f4ea,#e7f4ea 90%,#fff3d6);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:var(--brand-text)"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:1px">📊 ${money(bandLo)}–${money(bandHi)} band — <b style="color:${inBand?"#1a7f37":"var(--muted)"}">${inBand?"in band":price>bandHi?"above band":"below band"}</b> · <b style="color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each ${okHr?"✓":"⚠"}</b></div>
+      <div style="position:relative;height:11px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> (${money(bandLo)}–${money(bandHi)} band) · <b style="color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each ${okHr?"✓":"⚠"}</b></div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
