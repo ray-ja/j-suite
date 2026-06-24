@@ -102,22 +102,24 @@ function wizJunkUI(){
   const _crew=WZ.junkCrew||2,_mode=WZ.junkMode||"dump",_dr=junkSiteDrive();
   const drive=junkDriveCharge(_mode,_crew), work=c.haul+c.locLabor+c.modLabor;
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
-  h+=`<div class="card"><div style="font-size:13px;line-height:1.9">📦 Volume (${c.eighths.toFixed(1)}/8 truck, incl. access &amp; heavy/etc.): <b>${money(work)}</b>${c.special?`<br>♻️ Special-item disposal: <b>+${money(c.special)}</b>`:""}<br>🚗 Drive — <b>static</b> (~${_dr.rt} mi RT to site${_mode!=="stash"?` + ${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi dump run`:`, no dump run — stashing`}): <b>+${money(drive)}</b></div></div>`;
   // $/hr each CHECK — job time = 20-min baseline + item load times + drive (load times feed THIS, not the price)
   const onsiteHrs=(20+(c.loadMin||0))/60;
   const drivePH=_crew*(_dr.min/60)+(_mode!=="stash"?80/60:0);
   const totalPH=_crew*onsiteHrs+drivePH;
-  const mileageJ=(_dr.rt+(_mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55):0))*QE.MILEAGE;
-  const hourly=totalPH>0?Math.round((price-c.special-mileageJ)*QE.FIELD_SPLIT/totalPH):0;
-  const okHr=hourly>=QE.TAKE_HOME;
-  const atMin=(work+drive+c.special)<=JUNK_MIN, cuftToMin=Math.round(Math.max(0,((JUNK_MIN-drive-c.special)-JUNK_TRIPBASE)/JUNK_PEREIGHTH)*JUNK_EIGHTH);
-  h+=`<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start"><div style="font-weight:800;font-size:17px;color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each${okHr?" ✓":" ⚠"}</div><div class="sub" style="text-align:right">${totalPH.toFixed(1)} person-hrs<br>20-min base + load + drive</div></div><div class="sub" style="margin-top:6px">${atMin?`At your ${money(JUNK_MIN)} minimum${cuftToMin>c.cuft?` — scales by volume past ~${cuftToMin} cu ft`:""}.`:`Above the minimum — scaling with the load.`}</div></div>`;
-  if(typeof marketBandHTML==="function"&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)h+=marketBandHTML(price,MARKET_BANDS.junk.lo,MARKET_BANDS.junk.hi,MARKET_BANDS.junk.label);
+  const totalMi=Math.round(_dr.rt+(_mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55):0));
+  const hourly=totalPH>0?Math.round((price-c.special-totalMi*QE.MILEAGE)*QE.FIELD_SPLIT/totalPH):0, okHr=hourly>=QE.TAKE_HOME;
+  // sticky bottom bar — truck fill · market band · price · volume(cu ft) + drive(mi) · $/hr each · crew · dump/stash
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
-  h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
+  const bandLo=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.lo:150,bandHi=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.hi:800;
+  const pPct=Math.min(100,Math.max(0,(price-bandLo)/(bandHi-bandLo)*100)),inBand=price>=bandLo&&price<=bandHi;
+  h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:3px 8px">
     <div style="flex-basis:100%">
-      <div style="height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${barPct}% of a truck · volume ${money(work)} + drive ${money(drive)}${c.special?` + disposal ${money(c.special)}`:""}</div>
+      <div style="height:11px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📦 ${barPct}% of a box truck · volume ${money(work)} (${c.cuft} cu ft) + drive ${money(drive)} (${totalMi} mi · static)${c.special?` + disposal ${money(c.special)}`:""}</div>
+    </div>
+    <div style="flex-basis:100%">
+      <div style="position:relative;height:11px;background:linear-gradient(90deg,#e7f4ea,#e7f4ea 90%,#fff3d6);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:var(--brand-text)"></div></div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📊 ${money(bandLo)}–${money(bandHi)} band — <b style="color:${inBand?"#1a7f37":"var(--muted)"}">${inBand?"in band":price>bandHi?"above band":"below band"}</b> · <b style="color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each ${okHr?"✓":"⚠"}</b></div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
