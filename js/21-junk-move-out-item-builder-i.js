@@ -2,7 +2,7 @@
 const JUNK_FULL=480;      // cu ft in a standard 18-cu-yd junk truck = industry "full load"
 const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
 const JUNK_TRIPBASE=60;   // $ base (drive + dump minimum)
-const JUNK_PEREIGHTH=90;  // $ per 1/8-truck of volume (OBX premium; tune to taste)
+const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + disposal margin); the drive is added separately. Tune to taste.
 const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
@@ -74,6 +74,14 @@ function junkSiteDrive(){
   if(pid){const p=(D().properties||[]).find(x=>x.id===pid);if(p&&p.lat!=null&&typeof driveFromBase==="function"){const d=driveFromBase(p.lat,p.lng);if(d)return {rt:d.roundMiles,min:d.min*2};}}
   return {rt:20,min:30};                                                                                     // fallback until the address is geocoded
 }
+/* STATIC drive charge — fixed by the address (round trips to the site + the dump), NOT the load. Covers
+   the miles (IRS rate) + the drive time paid at $45/hr take-home ($93.75/hr). Site = whole crew; dump run = 1. */
+function junkDriveCharge(mode,crew){
+  const dr=junkSiteDrive(),loaded=QE.TAKE_HOME/QE.FIELD_SPLIT;
+  let miles=dr.rt, hrs=(crew||2)*(dr.min/60);
+  if(mode!=="stash"){miles+=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);hrs+=80/60;}
+  return Math.round(miles*QE.MILEAGE + hrs*loaded);
+}
 /* the engine object for the take-home CHECK: loading person-hours + auto drive + the known dump run */
 function junkEngineObj(c){
   const crew=WZ.junkCrew||2,mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
@@ -85,33 +93,23 @@ function wizJunkUI(){
   h+=`<div class="card" style="padding:10px"><input id="je_search" value="${esc(WZ.junkSearch||"")}" placeholder="🔎 Search items — type TV, carpet, fridge…" autocomplete="off" oninput="wizJSearch()" style="margin:0">${WZ.junkSearch?`<button class="btn ghost sm" style="margin-top:8px" onclick="WZ.junkSearch='';render()">✕ Clear search</button>`:""}</div>`;
   h+=`<div id="je_catalog">`+junkCatalogHTML()+`</div>`;
   const c=calcJunk(),cap=getTruckCap();
-  // volume — pickup loads (F-150 bed ≈ 1/8 box-truck) vs box-truck loads
-  const unit=WZ.junkUnit||"pickup",pickupLoads=c.eighths,boxLoads=c.eighths/8,fillPct=Math.min(100,Math.round(c.eighths/8*100));
-  h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow" style="font-weight:800">${unit==="pickup"?`≈ ${pickupLoads.toFixed(1)} pickup loads`:`≈ ${boxLoads.toFixed(2)} box-truck loads`}</div><button class="btn ghost sm" onclick="WZ.junkUnit='${unit==="pickup"?"box":"pickup"}';render()">${unit==="pickup"?"↔ box truck":"↔ my pickup"}</button></div>
-    <div class="sub">${c.cuft} cu ft · ${c.lbs} lb · F-150 8-ft bed ≈ 1/8 box-truck load (60 cu ft) · box truck ≈ 480 cu ft (18 cu yd)</div>
-    <div style="height:12px;background:var(--soft);border-radius:7px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${fillPct}%;background:var(--accent)"></div></div>
-    <div class="sub" style="margin-top:6px">${unit==="pickup"?`${Math.ceil(pickupLoads)} pickup trip(s) at ~60 cu ft each (multi-load). Heaped beds carry more — priced by the standard truck.`:`${boxLoads.toFixed(2)} of a full box-truck load.`}</div>
-    <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b>${c.locLabor?`<br>Access / long-carry labor: <b>+${money(c.locLabor)}</b>`:""}${c.modLabor?`<br>Heavy / disassembly / mounted: <b>+${money(c.modLabor)}</b>`:""}${c.special?`<br>Special-item disposal: <b>+${money(c.special)}</b>`:""}</div></div>`;
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
-  // Crew + disposal — drive is auto-figured from the address; junk is priced by VOLUME (above), engine just checks take-home
+  // PRICE = volume (premium band, incl. access & modifiers) + STATIC drive charge + special-item disposal
   const _crew=WZ.junkCrew||2,_mode=WZ.junkMode||"dump",_dr=junkSiteDrive();
-  h+=`<div class="sub" style="margin:6px 2px;white-space:normal">🚗 Drive auto-figured from the address: ~${_dr.rt} mi round-trip${_mode!=="stash"?` · + ~${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi dump run`:` · no dump run (stashing)`}</div>`;
-  // ENGINE: price = max(volume, the $45/hr floor incl. drive)
-  const o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
-  // sticky bottom bar — truck fill + distance↔volume marker + price + take-home + crew + dump/stash + add
+  const drive=junkDriveCharge(_mode,_crew), work=c.haul+c.locLabor+c.modLabor;
+  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
+  h+=`<div class="card"><div style="font-size:13px;line-height:1.9">📦 Volume (${c.eighths.toFixed(1)}/8 truck, incl. access &amp; heavy/etc.): <b>${money(work)}</b>${c.special?`<br>♻️ Special-item disposal: <b>+${money(c.special)}</b>`:""}<br>🚗 Drive — <b>static</b> (~${_dr.rt} mi RT to site${_mode!=="stash"?` + ${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi dump run`:`, no dump run — stashing`}): <b>+${money(drive)}</b></div></div>`;
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
-  const driveBound=price>c.total+1;   // the $45/hr floor (labor + drive) edged above the volume rate
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
     <div style="flex-basis:100%">
       <div style="height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${barPct}% of a truck${driveBound?" · held at your $45/hr minimum":""}</div>
+      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${barPct}% of a truck · volume ${money(work)} + drive ${money(drive)}${c.special?` + disposal ${money(c.special)}`:""}</div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
-    <span style="font-size:12px;font-weight:700;color:#1a7f37;white-space:nowrap">~${money(ev.takeHome)}/hr ✓</span>
-    <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${o.crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
-    <button class="btn ghost sm" style="white-space:nowrap" onclick="WZ.junkMode='${o.mode==="dump"?"stash":"dump"}';render()">${o.mode==="dump"?"🚛 Dump":"📦 Stash"}</button>
+    <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
+    <button class="btn ghost sm" style="white-space:nowrap" onclick="WZ.junkMode='${_mode==="dump"?"stash":"dump"}';render()">${_mode==="dump"?"🚛 Dump":"📦 Stash"}</button>
     <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
     <button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button>
   </div>`;
@@ -189,10 +187,13 @@ window.openTrailerBuy=function(){
 window.wizAddJunk=function(){
   if(!WZ.junk||!WZ.junk.length){alert("Add at least one item first.");return;}
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
-  const c=calcJunk(),o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
+  const c=calcJunk(),mode=WZ.junkMode||"dump",crew=WZ.junkCrew||2;
+  const drive=junkDriveCharge(mode,crew),work=c.haul+c.locLabor+c.modLabor;
+  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
-  notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(o.mode==="dump"?"straight to dump":"stash at warehouse")+" · take-home "+money(ev.takeHome)+"/hr each.");
-  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:Math.round(ev.hard*100)/100,notes:notes,qty:1,unit:"job",serviceId:""});
+  notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(mode==="dump"?"straight to dump":"stash at warehouse")+" · volume "+money(work)+" + static drive "+money(drive)+(c.special?" + disposal "+money(c.special):"")+".");
+  const cost=Math.round((c.special+junkSiteDrive().rt*QE.MILEAGE+(mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)*QE.MILEAGE:0))*100)/100;   // hard cost: disposal fees + mileage
+  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:""});
   WZ.junk=[];WZ.junkBedbug=false;WZ.junkCrew=null;WZ.junkMode=null;WZ.step="pick";render();
 };
