@@ -20,10 +20,10 @@ function junkHaulSuggest(c){const loads=c.eighths;
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
 const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line
 const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
-const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50};
-const JUNK_LOC=[["ground","Ground floor"],["curbside","Curbside / outside (−15%)"],["upstairs","Upstairs (+25%)"],["basement","Basement (+30%)"],["attic","Attic (+50%)"]];
-/* realistic LOAD-TIME multiplier per location (feeds the $/hr check, not the price) — upstairs roughly doubles the time */
-const JUNK_LOC_TIME={ground:1,curbside:0.85,upstairs:2,basement:2,attic:2.5};
+const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,floor3:0.50,basement:0.30,attic:0.50};
+const JUNK_LOC=[["ground","Ground / drive level"],["curbside","Curbside / outside (−15%)"],["upstairs","2nd floor · 1 flight (+25%)"],["floor3","3rd floor · 2 flights (+50%)"],["basement","Basement (+30%)"],["attic","Attic (+50%)"]];
+/* realistic LOAD-TIME multiplier per location (feeds the $/hr check, not the price) — each flight up roughly +1× the time */
+const JUNK_LOC_TIME={ground:1,curbside:0.85,upstairs:2,floor3:3,basement:2,attic:2.5};
 /* per-item modifiers (checkboxes). Long carry is a +20% labor bump separate from the floor (a long
    driveway can be any floor). Heavy/disasm/bolted add to BOTH the volume price and the load-time check. */
 const JUNK_MODS=[{k:"longcarry",short:"📏 Long carry",locf:0.20,timeMult:1.5},{k:"heavy",short:"🏋️ Heavy",priceMult:0.5,timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatD:20,flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatD:12,flatMin:8}];
@@ -135,7 +135,7 @@ function junkCatalogHTML(){
   if(!WZ.junk)WZ.junk=[];
   const lineOf=k=>WZ.junk.find(x=>x.key===k);
   const row=it=>{const li=lineOf(it[0])||{};const locs=li.locs||{};const q=junkLineQty(li);
-    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:""}<button class="btn ${q>0?"ghost":"acc"} sm" onclick="wizJQ('${it[0]}','ground',1)">${q>0?"+":"+ Add"}</button></div></div>`;
+    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:`<select onchange="if(this.value){wizJQ('${it[0]}',this.value,1);this.value=''}" style="font-size:13px;padding:6px 8px;border-radius:8px;background:var(--accent);color:var(--accent-ink);font-weight:700;border:none;cursor:pointer"><option value="">＋ Add — where?</option>${JUNK_LOC.map(l=>`<option value="${l[0]}" style="background:var(--bg);color:var(--text)">${esc(l[1])}</option>`).join("")}</select>`}</div></div>`;
     if(q>0){
       r+=`<div style="margin-top:6px">`+JUNK_LOC.filter(l=>(+locs[l[0]]||0)>0).map(l=>{const lq=+locs[l[0]]||0;return `<div class="row" style="align-items:center;gap:8px;margin:3px 0"><span class="grow" style="font-size:13px">📍 ${esc(l[1])}</span><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',-1)">−</button><b style="min-width:18px;text-align:center">${lq}</b><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',1)">+</button></div>`;}).join("")+`</div>`;
       r+=`<select onchange="if(this.value)wizJQ('${it[0]}',this.value,1)" style="font-size:13px;margin-top:2px"><option value="">📍 ＋ add at another spot…</option>${JUNK_LOC.map(l=>`<option value="${l[0]}">${esc(l[1])}</option>`).join("")}</select>`;
