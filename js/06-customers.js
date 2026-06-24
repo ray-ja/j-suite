@@ -28,9 +28,12 @@ function rProperties(){
 }
 function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}</div></div></div>`;}
 function liCustomer(c){
+  const tel=(c.phone||"").replace(/[^0-9+]/g,"");
+  const parts=[]; const meta=[c.company&&c.name?c.company:"",c.town].filter(Boolean).join(" · "); if(meta)parts.push(esc(meta));
+  if(c.phone)parts.push(`<a href="tel:${tel}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">📞 ${esc(c.phone)}</a>`);
   return `<div class="li" onclick="openCustomer('${c.id}')">
     <div class="grow"><div class="nm">${esc(c.name||c.company||"Unnamed")}</div>
-    <div class="sub">${esc([c.company&&c.name?c.company:"",c.town,c.phone].filter(Boolean).join(" · "))||"&nbsp;"}</div></div>
+    <div class="sub" style="white-space:normal">${parts.join(" · ")||"&nbsp;"}</div></div>
     <span class="badge s-${c.status||"Lead"}">${c.status||"Lead"}</span></div>`;
 }
 const SOURCES=["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"];

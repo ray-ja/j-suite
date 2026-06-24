@@ -59,6 +59,7 @@ function rJobPage(j) {
   h += `</div>`;
 
   if (j.notes) h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">Notes</div><div class="sub" style="white-space:pre-wrap">${esc(j.notes)}</div></div>`;
+  if (typeof reviewAsk === "function") h += `<button class="btn ghost" style="width:100%;margin:4px 0 0" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost" style="width:100%;margin:4px 0 10px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
   return h;
 }

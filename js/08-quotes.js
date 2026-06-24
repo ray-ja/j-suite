@@ -1,23 +1,34 @@
 /* ---------- QUOTES ---------- */
-let QSEARCH="";
+let QSEARCH="",QSTAGE_FILTER="all";
+function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
+const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
+function quoteType(q){ const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
+window.quoteFilter=function(k){ QSTAGE_FILTER=k; rQuotes(); };
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
   let h=`<h2>Jobs</h2>`;
   if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
   h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>
-    <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>
-    <button class="btn ghost" style="margin-bottom:10px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
-  const all=actQ();let list=all;
-  if(QSEARCH){const qq=QSEARCH.toLowerCase();list=all.filter(q=>((q.cust||custName(q.customerId)||"")+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+(q.paid?"paid":q.invoiced?"invoiced":"")).toLowerCase().includes(qq));}
-  if(all.length)h+=`<input class="search" id="qsearch" placeholder="Search jobs…" value="${esc(QSEARCH)}">`;
-  if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No quotes yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
+    <button class="btn ghost" style="margin-bottom:10px" onclick="openDemoEst()">🏚️ Shed / Structure Demolition</button>`;
+  const all=actQ();let list=all.slice();
+  if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
+  if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);
+  list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
+  if(all.length){
+    h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}">`;
+    const stages=[["all","All"],["quoted","Quoted"],["scheduled","Scheduled"],["invoiced","Invoiced"],["paid","Paid"]];
+    h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+  }
+  if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   else if(!list.length)h+=`<div class="empty">No matches.</div>`;
-  else h+=`<div class="card grid2">`+list.slice().reverse().map(q=>`
-    <div class="li" onclick="openQuote('${q.id}')"><div class="grow">
-    <div class="nm">${esc(q.cust||custName(q.customerId))}</div>
-    <div class="sub">${fmtDate(q.date)} · ${(q.items||[]).length} item(s)${q.recurring?" · recurring":""}${q.paid?" · ✓ paid":q.invoiced?" · invoiced":""}</div></div>
-    <div style="font-weight:800;color:var(--brand-text);text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`).join("")+`</div>`;
+  else h+=`<div class="card grid2">`+list.map(q=>{
+    const st=quoteStage(q),m=QSTAGE_META[st],cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
+    return `<div class="li" onclick="openQuote('${q.id}')" style="border-left:4px solid ${m.color};padding-left:10px">
+      <div class="grow"><div class="nm" style="white-space:normal">${cust}${type?` <span style="font-weight:600;color:var(--muted)">· ${esc(type)}</span>`:""}</div>
+      <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${m.label}</span>${q.recurring?" · recurring":""}</div></div>
+      <div style="font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"};text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`;
+  }).join("")+`</div>`;
   view.innerHTML=h;
   const s=document.getElementById("qsearch");
   if(s)s.oninput=e=>{QSEARCH=e.target.value;const p=s.selectionStart;rQuotes();const n=document.getElementById("qsearch");if(n){n.focus();n.setSelectionRange(p,p);}};
