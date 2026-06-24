@@ -28,7 +28,30 @@
 <div class="wrap" id="view"></div>
 <button class="fab" id="fab" title="Add">+</button>
 
-<nav><!-- built dynamically by renderNav() in js/03-routing.js (grouped nav) --></nav>
+<!-- Static fallback nav (data-tab) so the menu is NEVER empty even on a stale-JS device. renderNav() in
+     js/03 replaces this with the grouped nav when the current JS loads; older cached JS wires these directly. -->
+<nav>
+  <button data-tab="today" class="on"><span class="ic">🧭</span>Today</button>
+  <button data-tab="quotes"><span class="ic">🧾</span>Jobs</button>
+  <button data-tab="schedule"><span class="ic">📅</span>Schedule</button>
+  <button data-tab="accounts"><span class="ic">👥</span>Customers</button>
+  <button data-tab="messages"><span class="ic">💬</span>Messages<span id="msgbadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px"></span></button>
+  <button data-tab="time"><span class="ic">⏱️</span>Time</button>
+  <button data-tab="finance"><span class="ic">💰</span>Finance</button>
+  <button data-tab="inventory"><span class="ic">🧰</span>Inventory</button>
+  <button data-tab="resale"><span class="ic">♻️</span>Resale</button>
+  <button data-tab="todo"><span class="ic">✅</span>To-Do</button>
+  <button data-tab="sales"><span class="ic">🚗</span>Sales</button>
+  <button data-tab="map"><span class="ic">🗺️</span>Map</button>
+  <button data-tab="plan"><span class="ic">📈</span>Plan</button>
+  <button data-tab="market"><span class="ic">📊</span>Market</button>
+  <button data-tab="opps"><span class="ic">💡</span>Opps</button>
+  <button data-tab="sites"><span class="ic">💻</span>Sites</button>
+  <button data-tab="buildplan"><span class="ic">🏗️</span>Build</button>
+  <button data-tab="training"><span class="ic">🎓</span>Train</button>
+  <button data-tab="data"><span class="ic">⚙️</span>Data</button>
+  <button data-tab="admin"><span class="ic">🛡️</span>Admin</button>
+</nav>
 
 <div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
 
