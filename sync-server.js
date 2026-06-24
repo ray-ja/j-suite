@@ -301,7 +301,7 @@ function ceoProjection(store, opts) {
         threads.push({
           biz: b, threadId: tr.threadId, title: tr.title || "", type: tr.type || "", availAsk: !!tr.availAsk, jobId: tr.jobId || "", members: tr.members || [],
           messages: coll.filter(m => m && !m.kind && !m.deleted && m.threadId === tr.threadId).sort((a, b2) => (a.ts || 0) - (b2.ts || 0))
-            .map(m => ({ id: m.id, senderId: m.senderId, senderLabel: m.senderLabel, body: m.body, ts: m.ts })),
+            .map(m => ({ id: m.id, senderId: m.senderId, senderLabel: m.senderLabel, body: m.body, ts: m.ts, attachments: (m.attachments || []).map(a => a && a.id).filter(Boolean) })),
           // per-MEMBER read state (named) so the watcher can derive unread / read-no-reply / replied
           reads: (tr.members || []).map(uid => {
             const rm = coll.find(m => m && m.kind === "read" && !m.deleted && m.threadId === tr.threadId && m.userId === uid);
