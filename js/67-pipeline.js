@@ -34,7 +34,8 @@ function rPipeline() {
     `<button class="btn acc" style="width:100%;margin-bottom:8px;padding:13px;font-size:16px" onclick="openGuidedCall()">📞 New call / lead</button>`);
 
   sect("📝", "Quote — sent, awaiting yes", G.quote.length,
-    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""));
+    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""),
+    `<button class="btn acc" style="width:100%;margin-bottom:8px;padding:13px;font-size:16px" onclick="startWizard()">➕ New quote / job</button>`);
 
   sect("🔧", "Job — accepted, to do", G.job.length,
     G.job.map(q => { const j = jobById(q.jobId); const go = j ? `openJobPage('${j.id}')` : `openQuote('${q.id}')`; return `<div class="li" onclick="${go}" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}${j && !j.date ? " · not scheduled" : ""}${!j ? " · no job linked" : ""}</div></div><button class="btn acc sm" onclick="event.stopPropagation();${go}">Open →</button></div>`; }).join(""));
