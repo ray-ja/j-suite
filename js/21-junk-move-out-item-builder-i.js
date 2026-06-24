@@ -104,13 +104,13 @@ function wizJunkUI(){
   // ENGINE: price = max(volume, the $45/hr floor incl. drive)
   const o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
   // sticky bottom bar — truck fill + distance↔volume marker + price + take-home + crew + dump/stash + add
-  const fullCuft=480,fillPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
+  const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
   const flipCuft=Math.max(0,(q.floor-JUNK_TRIPBASE)/(JUNK_PEREIGHTH/JUNK_EIGHTH)),flipPct=Math.min(100,Math.round(flipCuft/fullCuft*100));
   const volBound=c.total>=q.floor;
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
     <div style="flex-basis:100%">
-      <div style="position:relative;height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${fillPct}%;background:var(--accent)"></div>${(flipPct>0&&flipPct<100)?`<div style="position:absolute;top:-3px;bottom:-3px;left:${flipPct}%;width:3px;background:var(--brand-text)" title="pricing flips to volume here"></div>`:""}</div>
-      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${fillPct}% of a truck · <b style="color:${volBound?"var(--accent)":"var(--brand-text)"}">${volBound?"priced by volume":"priced by the drive"}</b>${(!volBound&&flipPct<100)?` — flips to volume at ~${Math.round(flipCuft)} cu ft`:""}</div>
+      <div style="position:relative;height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div>${(flipPct>0&&flipPct<100)?`<div style="position:absolute;top:-3px;bottom:-3px;left:${flipPct}%;width:3px;background:var(--brand-text)" title="pricing flips to volume here"></div>`:""}</div>
+      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${barPct}% of a truck · <b style="color:${volBound?"var(--accent)":"var(--brand-text)"}">${volBound?"priced by volume":"priced by the drive"}</b>${(!volBound&&flipPct<100)?` — flips to volume at ~${Math.round(flipCuft)} cu ft`:""}</div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="font-size:12px;font-weight:700;color:#1a7f37;white-space:nowrap">~${money(ev.takeHome)}/hr ✓</span>
