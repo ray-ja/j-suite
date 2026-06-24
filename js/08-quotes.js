@@ -4,6 +4,9 @@ function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
 function quoteType(q){ const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
 window.quoteFilter=function(k){ QSTAGE_FILTER=k; rQuotes(); };
+let QCREW_FILTER="";
+function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }
+window.quoteCrewFilter=function(id){ QCREW_FILTER=id; rQuotes(); };
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
@@ -13,11 +16,14 @@ function rQuotes(){
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
   if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);
+  if(QCREW_FILTER)list=list.filter(q=>quoteCrew(q).indexOf(QCREW_FILTER)>=0);
   list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
   if(all.length){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}">`;
     const stages=[["all","All"],["quoted","Quoted"],["scheduled","Scheduled"],["invoiced","Invoiced"],["paid","Paid"]];
     h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+    const crewM=(typeof realAccounts==="function"?realAccounts():[]);
+    if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
   }
   if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   else if(!list.length)h+=`<div class="empty">No matches.</div>`;
