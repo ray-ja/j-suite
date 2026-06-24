@@ -6,7 +6,7 @@
 
 const APPR_BIZES = ["obx", "jam"];
 // business collections Cap may propose into (mirror of server PROPOSE_COLLECTIONS) — excludes system/meta
-const APPR_WRITABLE = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale"];
+const APPR_WRITABLE = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale", "knowledge"];
 function apprCanView() { return (typeof isOwner === "function") ? isOwner() : false; }
 
 // every non-deleted proposal across both businesses, tagged with its biz
