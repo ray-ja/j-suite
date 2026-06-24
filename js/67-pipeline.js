@@ -64,15 +64,14 @@ window.plReview = function (quoteId) {
   modal("⭐ Job review — " + esc(q.cust || ""), `
     <div class="sub" style="white-space:normal;margin-bottom:10px">The last step — and it's required. Keep it short and honest; Cap reads this to quote &amp; run the next one better.</div>
     <label style="margin-top:0">What went well?</label><textarea id="rv_good" placeholder="…"></textarea>
-    <label>What would we do differently?</label><textarea id="rv_diff" placeholder="access, time, crew size, the dump run, pricing, gotchas…"></textarea>
-    <label>Any lesson worth saving?</label><textarea id="rv_lesson" placeholder="e.g. that backyard needs 3 people; price the haul next time"></textarea>
+    <label>What would we do differently next time?</label><textarea id="rv_diff" placeholder="access, time, crew size, the dump run, pricing, gotchas…"></textarea>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="plSaveReview('${quoteId}')">Save review — mark done ✓</button>`);
 };
 window.plSaveReview = function (quoteId) {
   const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
-  const good = val("rv_good"), diff = val("rv_diff"), lesson = val("rv_lesson");
-  if (!(good || diff || lesson)) { if (!confirm("Empty review — mark done anyway?")) return; }
-  const text = "⭐ REVIEW — " + [good ? "Went well: " + good : "", diff ? "Do differently: " + diff : "", lesson ? "Lesson: " + lesson : ""].filter(Boolean).join(" · ");
+  const good = val("rv_good"), diff = val("rv_diff");
+  if (!(good || diff)) { if (!confirm("Empty review — mark done anyway?")) return; }
+  const text = "⭐ REVIEW — " + [good ? "Went well: " + good : "", diff ? "Do differently: " + diff : ""].filter(Boolean).join(" · ");
   const j = q.jobId ? (D().jobs || []).find(x => x.id === q.jobId) : null;
   if (j) { j.notes = (j.notes ? j.notes + "\n\n" : "") + text; j.reviewed = true; if (typeof touch === "function") touch(j); }
   q.reviewed = true; if (typeof touch === "function") touch(q);
