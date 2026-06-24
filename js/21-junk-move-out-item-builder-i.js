@@ -100,14 +100,25 @@ function wizJunkUI(){
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
   // Crew + disposal — drive is auto-figured from the address; junk is priced by VOLUME (above), engine just checks take-home
   const _crew=WZ.junkCrew||2,_mode=WZ.junkMode||"dump",_dr=junkSiteDrive();
-  h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Crew &amp; disposal</div>
-    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Crew (people)</label><input type="number" value="${_crew}" min="1" onchange="WZ.junkCrew=parseFloat(this.value)||2;render()"></div><div class="grow"><label style="margin-top:0">Where does it go?</label><select onchange="WZ.junkMode=this.value;render()"><option value="dump" ${_mode!=="stash"?"selected":""}>Straight to the dump</option><option value="stash" ${_mode==="stash"?"selected":""}>Stash at the warehouse</option></select></div></div>
-    <div class="sub" style="margin-top:6px">🚗 Drive auto-figured from the address: ~${_dr.rt} mi round-trip${_mode!=="stash"?` · dump run ~${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi RT (1 person)`:` · no dump run (stashing)`}</div></div>`;
-  // the REAL minimum = whatever pays $45/hr each — the engine floor INCLUDES the drive, so a far job costs more
-  const o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o),driveBound=price>c.total+1;
-  h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">PRICE TO GIVE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(price)}</div><div style="font-size:12px;opacity:.85">${c.cuft} cu ft · ${c.eighths.toFixed(1)}/8 truck · ${c.lbs} lb · ${qePersonHours(o).toFixed(1)} person-hrs</div></div>`;
-  h+=`<div class="sub" style="text-align:center;margin:6px 2px;font-size:13px;font-weight:700;color:#1a7f37">Each person takes home ~${money(ev.takeHome)}/hr ✓${driveBound?" · the drive set this price (far job — covers your miles)":""}</div>`;
-  h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
+  h+=`<div class="sub" style="margin:6px 2px;white-space:normal">🚗 Drive auto-figured from the address: ~${_dr.rt} mi round-trip${_mode!=="stash"?` · + ~${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi dump run`:` · no dump run (stashing)`}</div>`;
+  // ENGINE: price = max(volume, the $45/hr floor incl. drive)
+  const o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
+  // sticky bottom bar — truck fill + distance↔volume marker + price + take-home + crew + dump/stash + add
+  const fullCuft=480,fillPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
+  const flipCuft=Math.max(0,(q.floor-JUNK_TRIPBASE)/(JUNK_PEREIGHTH/JUNK_EIGHTH)),flipPct=Math.min(100,Math.round(flipCuft/fullCuft*100));
+  const volBound=c.total>=q.floor;
+  h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
+    <div style="flex-basis:100%">
+      <div style="position:relative;height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${fillPct}%;background:var(--accent)"></div>${(flipPct>0&&flipPct<100)?`<div style="position:absolute;top:-3px;bottom:-3px;left:${flipPct}%;width:3px;background:var(--brand-text)" title="pricing flips to volume here"></div>`:""}</div>
+      <div class="sub" style="font-size:11px;margin-top:2px">${c.cuft} cu ft · ${fillPct}% of a truck · <b style="color:${volBound?"var(--accent)":"var(--brand-text)"}">${volBound?"priced by volume":"priced by the drive"}</b>${(!volBound&&flipPct<100)?` — flips to volume at ~${Math.round(flipCuft)} cu ft`:""}</div>
+    </div>
+    <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
+    <span style="font-size:12px;font-weight:700;color:#1a7f37;white-space:nowrap">~${money(ev.takeHome)}/hr ✓</span>
+    <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${o.crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
+    <button class="btn ghost sm" style="white-space:nowrap" onclick="WZ.junkMode='${o.mode==="dump"?"stash":"dump"}';render()">${o.mode==="dump"?"🚛 Dump":"📦 Stash"}</button>
+    <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
+    <button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button>
+  </div>`;
   return h;
 }
 function junkCatalogHTML(){
