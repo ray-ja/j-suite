@@ -18,6 +18,7 @@ function render(){
   (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
+  if(typeof renderClockPill==="function")renderClockPill();
 }
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [

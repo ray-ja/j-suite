@@ -33,6 +33,25 @@ function tcWho() {
 }
 function tcOpenShift(userId) { return actTC().find(e => e.userId === userId && !e.clockOut); }
 function tcMyOpen() { return tcOpenShift(tcWho().userId); }
+/* persistent header indicator: are you clocked in, on which job, for how long, in which vehicle —
+   so a forgotten clock-out (or a missing vehicle) is impossible to miss. Ticks via a 30s interval. */
+function renderClockPill() {
+  const el = document.getElementById("clockpill"); if (!el) return;
+  const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null;
+  if (!open) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const j = (typeof actJ === "function") ? actJ().find(x => x && x.id === open.jobId) : null;
+  const dur = (typeof tcFmtDur === "function") ? tcFmtDur(Date.now() - (open.clockIn || Date.now())) : "";
+  const noVeh = !open.vehicle;
+  el.style.cssText = "display:inline-flex;align-items:center;gap:5px;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:none;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;" + (noVeh ? "background:var(--danger);color:#fff" : "background:var(--accent);color:var(--accent-ink)");
+  el.title = "Clocked in — tap to open the job";
+  el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + (open.vehicle ? " · 🚚 " + esc(open.vehicle) : " · ⚠ no vehicle");
+}
+window.clockPillTap = function () {
+  const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null; if (!open) return;
+  if (open.jobId && typeof openJobPage === "function") openJobPage(open.jobId);
+  else { TAB = "schedule"; if (typeof render === "function") render(); }
+};
+try { setInterval(function () { if (typeof renderClockPill === "function") renderClockPill(); }, 30000); } catch (e) {}
 function tcJob(id) { return (D().jobs || []).find(j => j.id === id) || null; }
 function tcJobTitle(id) { const j = tcJob(id); return j ? (j.title || "Job") : "—"; }
 
