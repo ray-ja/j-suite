@@ -102,8 +102,12 @@ function wizJunkUI(){
   const o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
   // sticky bottom bar — truck fill + distance↔volume marker + price + take-home + crew + dump/stash + add
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
-  const flipCuft=Math.max(0,(q.floor-JUNK_TRIPBASE)/(JUNK_PEREIGHTH/JUNK_EIGHTH)),flipPct=Math.min(100,Math.round(flipCuft/fullCuft*100));
-  const volBound=c.total>=q.floor;
+  const Vraw=c.haul+c.locLabor+c.modLabor+c.special;                                       // unrounded volume price (same inputs as the real price)
+  const volBound=Vraw>=q.rawFloor;                                                          // smooth crossover — no $25-rounding flicker
+  const margPerCuft=c.cuft>0?Math.max(0.5,(Vraw-JUNK_TRIPBASE)/c.cuft):(JUNK_PEREIGHTH/JUNK_EIGHTH);
+  let flipPct=Math.min(100,Math.max(0,(q.rawFloor-JUNK_TRIPBASE)/margPerCuft/fullCuft*100));
+  flipPct=Math.round(volBound?Math.min(flipPct,barPct):Math.max(flipPct,barPct));           // marker stays on the correct side of the fill, so it can't contradict the label
+  const flipCuft=Math.round(flipPct/100*fullCuft);
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
     <div style="flex-basis:100%">
       <div style="position:relative;height:14px;background:var(--soft);border-radius:7px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div>${(flipPct>0&&flipPct<100)?`<div style="position:absolute;top:-3px;bottom:-3px;left:${flipPct}%;width:3px;background:var(--brand-text)" title="pricing flips to volume here"></div>`:""}</div>
