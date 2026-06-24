@@ -213,5 +213,5 @@ window.wizAddJunk=function(){
   const _dr=junkSiteDrive(), totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60)+(mode!=="stash"?80/60:0);
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:""});
   WZ.crewN=crew; WZ.hours=Math.round(totalPH/crew*10)/10;   // carry crew + hours-each into the review
-  WZ.junk=[];WZ.junkBedbug=false;WZ.junkCrew=null;WZ.junkMode=null;WZ.step="review";render();
+  WZ.step="review";render();   // keep WZ.junk/junkCrew/junkMode so the review's ← back button returns to the live load
 };
