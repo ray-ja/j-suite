@@ -30,7 +30,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.cust={id:q.customerId||"",name:q.cust||(q.customerId?custName(q.customerId):""),phone:"",address:q.address||"",source:"",soldBy:"",notes:"",propertyId:q.propertyId||""};
     if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c){WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";}}
     WZ.items=JSON.parse(JSON.stringify(q.items||[]));
-    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.haul=q.haul||"pickup";
+    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.disposalTrip=!!q.disposalTrip;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
@@ -212,7 +212,7 @@ function wizReview(){
   if(!WZ.items.length)h+=`<div class="empty">No items yet — add a service or a manual line below.</div>`;
   else h+=WZ.items.map((it,i)=>{
     const lineTot=(it.price||0)*(it.qty||1);
-    const junkish=/junk|haul|debris|clear|cleanout|clean-?out|dump|move-?out|demo|storm|brush/i.test(it.name||"");
+    const junkish=/junk|haul|debris|clear|cleanout|clean-?out|dump|move-?out|demo|storm|brush|tree|shrub|bush|stump|veget|yard|limb|land.?clear/i.test(it.name||"");
     let r=`<div class="card" style="padding:10px;margin-bottom:8px">
       <input value="${esc(it.name||"")}" placeholder="Line description" oninput="wizItemField(${i},'name',this.value)" style="font-weight:600;margin:0">
       <div class="row" style="gap:6px;align-items:center;margin-top:6px"><select style="flex:1;font-size:12px" onchange="wizLineSvc(${i},this.value)">${svcOpts(i)}</select><button class="rm" onclick="wizRemItem(${i})" title="remove">×</button></div>
@@ -224,9 +224,9 @@ function wizReview(){
       <div class="sub" style="margin-top:4px">Line total: <b id="lt_${i}">${money(lineTot)}</b>${it.notes&&it.notes.length?` · ${esc((it.notes||[]).join("; "))}`:""}</div>`;
     if(junkish)r+=`<details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">⚖ Add dump fee from load weight</summary>
       <label style="margin-top:6px">Estimated load weight (lbs)</label><input id="df_lbs_${i}" type="number" inputmode="decimal" value="2000" placeholder="pickup load ≈ 1,500–2,500">
-      <div class="toggle"><input type="checkbox" id="df_veg_${i}"><label style="margin:0">Clean vegetative debris (yard/brush) — free in Dare County</label></div>
-      <button class="btn ghost sm" style="margin-top:6px" onclick="wizDumpFee(${i})">Add dump-fee line</button>
-      <div class="sub" style="margin-top:4px">Mixed C&amp;D: $${DISPOSAL_RATE_PER_TON}/ton, first ${DISPOSAL_FREE_LBS} lbs free.</div></details>`;
+      <div class="toggle"><input type="checkbox" id="df_veg_${i}"><label style="margin:0">Clean vegetative debris (yard/brush) — billed ~$${VEG_RATE_PER_TON}/ton (NOT free)</label></div>
+      <button class="btn ghost sm" style="margin-top:6px" onclick="wizDumpFee(${i})">Add dump fee + dump-run drive</button>
+      <div class="sub" style="margin-top:4px">Mixed C&amp;D $${DISPOSAL_RATE_PER_TON}/ton (first ${DISPOSAL_FREE_LBS} lbs free) · brush/veg $${VEG_RATE_PER_TON}/ton. Also adds the ~${DISPOSAL_TRIP_MILES}-mi round-trip drive to the transfer station (@ ${MILEAGE_RATE_LABEL}/mi).</div></details>`;
     return r+`</div>`;
   }).join("");
   h+=`</div>`;
@@ -285,7 +285,7 @@ window.wizItemField=function(i,field,v){if(!WZ.items[i])return;
   wizReviewTotals();};
 window.wizAddBlankLine=function(){WZ.items.push({serviceId:"",name:"",unit:"flat",price:0,qty:1,cost:0});render();};
 window.wizLineSvc=function(i,sid){const s=cat().find(x=>x.id===sid);if(!s){WZ.items[i].serviceId="";render();return;}WZ.items[i]=Object.assign({},WZ.items[i],{serviceId:s.id,name:s.name,unit:s.unit,price:s.price,qty:WZ.items[i].qty||1});render();};
-window.wizDumpFee=function(i){const e=document.getElementById("df_lbs_"+i);const lbs=parseFloat(e?e.value:"")||0;if(!lbs){alert("Enter a load weight in pounds first.");return;}const veg=!!(document.getElementById("df_veg_"+i)||{}).checked;WZ.items.splice(i+1,0,disposalLine(lbs,veg));render();};
+window.wizDumpFee=function(i){const e=document.getElementById("df_lbs_"+i);const lbs=parseFloat(e?e.value:"")||0;if(!lbs){alert("Enter a load weight in pounds first.");return;}const veg=!!(document.getElementById("df_veg_"+i)||{}).checked;WZ.items.splice(i+1,0,disposalLine(lbs,veg));if(!WZ.disposalTrip){WZ.miles=(WZ.miles||0)+DISPOSAL_TRIP_MILES;WZ.disposalTrip=true;}render();};
 /* upsert WZ -> quotes (create or update), resolving customer + property */
 function wizResolveCust(){
   const d=D();
@@ -322,7 +322,7 @@ window.wizPersist=function(){
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown})),
-    recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),total:total,
+    recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });

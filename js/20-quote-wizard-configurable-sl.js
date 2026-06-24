@@ -78,6 +78,8 @@ function calcQuote(key,inp){
 var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (Dare County C&D, Manns Harbor)
 var DISPOSAL_FREE_LBS     = 500;     // residential free allowance
 var LBS_PER_TON           = 2000;
+var VEG_RATE_PER_TON      = 58.46;   // $/ton brush/veg — Currituck transfer station ($38 / 1,300 lb). NOT free.
+var DISPOSAL_TRIP_MILES   = 55;      // round-trip miles to the transfer station (Point Harbor base → Maple, OSRM)
 var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
 var MILEAGE_RATE          = 0.725;   // $/mi round-trip vehicle cost — 2026 IRS rate 72.5¢ (absorbs fuel; no separate gas line, no hourly wage)
 var MILEAGE_RATE_LABEL    = "72.5¢"; // display form (avoids $0.725 rounding to $0.72)
@@ -163,9 +165,10 @@ function calcCost(key, inp, costs){
       return 0;
   }
 }
+function vegDisposalCost(lbs){ lbs = Math.max(0, +lbs || 0); return Math.round((lbs / LBS_PER_TON) * VEG_RATE_PER_TON * 100) / 100; }
 function disposalLine(lbs, veg){
-  var c = veg ? 0 : disposalCost(lbs);
-  return { serviceId: "", name: "Dump fee — " + lbs + " lbs " + (veg ? "(clean vegetative debris — free, Dare County)" : "(mixed C&D, first 500 lbs free)"),
+  var c = veg ? vegDisposalCost(lbs) : disposalCost(lbs);
+  return { serviceId: "", name: "Dump fee — " + lbs + " lbs " + (veg ? "(brush/veg @ $" + VEG_RATE_PER_TON + "/ton)" : "(mixed C&D, first 500 lbs free)"),
            unit: "cost", price: 0, qty: 1, cost: c, costLine: true };
 }
 
