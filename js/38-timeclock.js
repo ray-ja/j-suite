@@ -38,7 +38,10 @@ function tcMyOpen() { return tcOpenShift(tcWho().userId); }
 function renderClockPill() {
   const el = document.getElementById("clockpill"); if (!el) return;
   const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null;
-  if (!open) { el.style.display = "none"; el.innerHTML = ""; return; }
+  if (!open) {
+    el.style.cssText = "display:inline-flex;align-items:center;gap:5px;border:none;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;background:var(--soft);color:var(--muted)";
+    el.title = "You're clocked out — tap to clock in"; el.innerHTML = "⏱️ Clocked out"; return;
+  }
   const j = (typeof actJ === "function") ? actJ().find(x => x && x.id === open.jobId) : null;
   const dur = (typeof tcFmtDur === "function") ? tcFmtDur(Date.now() - (open.clockIn || Date.now())) : "";
   const noVeh = !open.vehicle;
@@ -47,7 +50,8 @@ function renderClockPill() {
   el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + (open.vehicle ? " · 🚚 " + esc(open.vehicle) : " · ⚠ no vehicle");
 }
 window.clockPillTap = function () {
-  const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null; if (!open) return;
+  const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null;
+  if (!open) { TAB = "today"; if (typeof render === "function") render(); return; }   // clocked out → Today (clock in from a job)
   if (open.jobId && typeof openJobPage === "function") openJobPage(open.jobId);
   else { TAB = "schedule"; if (typeof render === "function") render(); }
 };
