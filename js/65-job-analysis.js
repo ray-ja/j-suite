@@ -49,5 +49,9 @@ function rJobAnalysis() {
   h += `<div class="secthd"><h2>🏆 Best &amp; worst job</h2></div><div class="card">`;
   [["🏆 Best", best], ["⚠️ Worst", worst]].forEach(pair => { const x = pair[1]; if (!x) return; h += `<div class="li" onclick="if(typeof closeModal==='function')closeModal();openJob('${x.j.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px">${pair[0]} · ${esc(x.j.title || "Job")}</div><div class="sub" style="white-space:normal">${esc(x.cust)} · ${plMoney(x.price)} → ${plMoney(x.profit)} profit</div></div><b style="${x.price > 0 && x.margin < plFloor() ? "color:var(--danger)" : ""}">${x.price > 0 ? plPct(x.margin) : "—"}</b></div>`; });
   h += `</div>`;
+
+  // 💵 effective pay — $/hr each, for jobs with time/travel logged (the cost-effectiveness chart)
+  const hourly = rows.map(x => ({ r: x, h: jobHourly(x.j) })).filter(x => x.h.perHr != null).sort((a, b) => a.h.perHr - b.h.perHr);
+  if (hourly.length) h += `<div class="secthd"><h2>💵 Effective pay — $/hr each (lowest first)</h2></div><div class="card">` + hourly.slice(0, 12).map(x => `<div class="li" onclick="if(typeof closeModal==='function')closeModal();openJob('${x.r.j.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;${x.h.perHr < 35 ? "color:var(--danger)" : ""}">${x.h.perHr < 35 ? "🔴 " : ""}${esc(x.r.j.title || "Job")}</div><div class="sub" style="white-space:normal">${esc(x.r.cust)} · ${plMoney(x.r.price)} · ${x.h.crew}p × ${(x.h.onsite + x.h.driveH).toFixed(1)}h${x.h.driveH ? " (incl. drive)" : ""}</div></div><b style="${x.h.perHr < 35 ? "color:var(--danger)" : x.h.perHr >= 45 ? "color:var(--accent)" : ""}">${plMoney(x.h.perHr)}/hr</b></div>`).join("") + `</div>`;
   return h;
 }

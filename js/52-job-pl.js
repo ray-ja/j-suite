@@ -34,6 +34,17 @@ function jobProfit(j) {
   const cust = (q && q.cust) || (j.customerId && typeof custName === "function" ? custName(j.customerId) : "") || "—";
   return { j: j, q: q, price: price, expCost: expCost, milCost: milCost, cost: cost, profit: profit, margin: margin, type: type, cust: cust };
 }
+/* effective field-work pay $/hr each — the number that says if a job was worth it.
+   person-hours = crew × (on-site hrs + round-trip drive hrs). Uses the job's manual time/travel fields
+   (j.crewN/onSiteHrs/driveMin/driveMiles) for reconstruction; mileage cost prefers confirmed time-clock. */
+function jobHourly(j) {
+  const p = jobProfit(j), rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725);
+  const milCost = p.milCost > 0 ? p.milCost : (+j.driveMiles || 0) * rate;
+  const cost = p.expCost + milCost, profit = p.price - cost, fieldPool = p.price * 0.48;
+  const crew = (+j.crewN || (j.crew || []).length || 1);
+  const onsite = +j.onSiteHrs || 0, driveH = (+j.driveMin || 0) / 60, personHrs = crew * (onsite + driveH);
+  return { price: p.price, cost: cost, milCost: milCost, expCost: p.expCost, profit: profit, fieldPool: fieldPool, crew: crew, onsite: onsite, driveH: driveH, personHrs: personHrs, perHr: personHrs > 0 ? fieldPool / personHrs : null, margin: p.price > 0 ? profit / p.price : 0 };
+}
 function plJobRow(j) {
   const p = jobProfit(j);
   const split = (typeof finSplitAmount === "function") ? finSplitAmount(finCents(p.price)) : null;

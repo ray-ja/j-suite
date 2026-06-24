@@ -77,6 +77,19 @@ function rJobPage(j) {
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_desc" placeholder="What for — dump fee, materials…" style="flex:2"></div>`;
   h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt</span></button><button class="btn acc grow" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
 
+  // 5b) Time & travel — reconstruct/log for the real effective $/hr (drive time is the silent cost)
+  const hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
+  const _hb = (typeof homeBase === "function") ? homeBase() : null;
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">⏱ Time &amp; travel <span class="sub" style="font-weight:400">· drives the real $/hr</span></div>
+    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Crew</label><input id="jt_crew" type="number" inputmode="numeric" min="1" value="${(+j.crewN || (j.crew || []).length || 1)}"></div>
+      <div class="grow"><label style="margin-top:0">On-site hrs each</label><input id="jt_onsite" type="number" inputmode="decimal" step="0.25" value="${j.onSiteHrs || ""}" placeholder="0"></div></div>
+    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Drive min (round trip)</label><input id="jt_drivemin" type="number" inputmode="numeric" value="${j.driveMin || ""}" placeholder="0"></div>
+      <div class="grow"><label style="margin-top:0">Drive miles (round trip)</label><input id="jt_drivemiles" type="number" inputmode="decimal" value="${j.driveMiles || ""}" placeholder="0"></div></div>
+    <div class="row" style="gap:8px;margin-top:8px">${_ll ? `<button class="btn ghost grow" onclick="jobEstimateDrive('${j.id}')">📍 Estimate from base</button>` : ""}${(addr && _hb && _hb.address) ? `<a class="btn ghost grow" href="https://www.google.com/maps/dir/${encodeURIComponent(_hb.address)}/${encodeURIComponent(addr)}/${encodeURIComponent(_hb.address)}" target="_blank" rel="noopener">🗺️ Google Maps</a>` : ""}</div>
+    <button class="btn acc sm" style="margin-top:8px;width:100%" onclick="jobSaveTravel('${j.id}')">Save time &amp; travel</button>`;
+  if (hh && hh.perHr != null) h += `<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div class="row" style="align-items:center"><div class="grow"><div class="sub" style="white-space:normal">${hh.crew}p × ${(hh.onsite + hh.driveH).toFixed(1)}h = ${hh.personHrs.toFixed(1)} crew-hrs · cost ${money(hh.cost)} · profit ${money(hh.profit)}</div></div><b style="font-size:17px;${hh.perHr < 35 ? "color:var(--danger)" : hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(hh.perHr)}/hr ea</b></div></div>`;
+  h += `</div>`;
+
   // 6) Notes
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
     <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
@@ -173,4 +186,20 @@ window.jobAskCap = function (jobId) {
   else if (!thr.jobId) { thr.jobId = jobId; thr.updatedAt = now(); }
   coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q, ts: now(), deleted: false, updatedAt: now() });
   if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobSaveTravel = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  j.crewN = Math.max(1, parseInt(val("jt_crew")) || 1);
+  j.onSiteHrs = parseFloat(val("jt_onsite")) || 0;
+  j.driveMin = parseFloat(val("jt_drivemin")) || 0;
+  j.driveMiles = parseFloat(val("jt_drivemiles")) || 0;
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobEstimateDrive = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const ll = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
+  const d = (ll && typeof driveFromBase === "function") ? driveFromBase(ll.lat, ll.lng) : null;
+  if (!d) { alert("Need the job's location + a home base set to estimate."); return; }
+  const dm = document.getElementById("jt_drivemin"); if (dm) dm.value = Math.round(d.min * 2);   // round trip
+  const mi = document.getElementById("jt_drivemiles"); if (mi) mi.value = d.roundMiles;
 };
