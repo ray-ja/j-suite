@@ -2,7 +2,7 @@
    fallback. On install it precaches a minimal app shell so a cold offline launch still renders.
    Only registers on secure contexts (https / localhost) — see js/29-boot.js. Over a raw http
    Tailscale IP there is no secure context, so this never runs and nothing breaks. */
-const CACHE = "jsuite-v90";
+const CACHE = "jsuite-v91";
 /* shell = the navigation document + styles + manifest/icons; relative URLs resolve against the
    SW scope (served root). JS modules are picked up by the network-first runtime cache on first load. */
 const SHELL = ["./", "app.css", "manifest.webmanifest", "assets/icon-192.png", "assets/icon-512.png"];
