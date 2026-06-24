@@ -28,47 +28,50 @@ function rJobPage(j) {
   const coTotal = cos.reduce((s, c) => s + (+c.amount || 0), 0);
   const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 
-  let h = `<div class="secthd"><h2 style="margin:0">${esc(j.title || "Job")}</h2><button class="btn ghost sm" onclick="jobPageBack()">← Schedule</button></div>`;
+  let h = `<div class="secthd"><h2 style="margin:0">${esc(j.title || "Job")}</h2><button class="btn ghost sm" onclick="jobPageBack()">← Back</button></div>`;
 
-  h += `<div class="card"><div class="nm" style="font-size:17px">${esc(cust || "—")}</div>`;
-  h += addr
-    ? `<div class="sub" style="white-space:normal;margin-top:4px">${esc(addr)}</div>${_drive ? `<div class="sub" style="margin-top:4px;font-weight:600;color:var(--brand-text)">${_drive}</div>` : ""}<a class="btn ghost sm" style="margin-top:8px;display:inline-block" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">🗺️ Directions</a>`
-    : `<div class="muted" style="margin-top:4px">No address on file.</div>`;
+  // 1) Where & when — one clean card
+  h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
+  h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px">${esc(addr)}</div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
+  if (_drive) h += `<div class="sub" style="margin-top:3px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;
+  h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
+  if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
+  if (addr) h += `<a class="btn ghost" style="margin-top:10px;width:100%" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">🗺️ Directions</a>`;
   h += `</div>`;
 
-  h += `<div class="card"><div class="row" style="align-items:flex-start"><div class="grow"><div class="sub">When</div><div class="nm" style="font-size:15px">${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}</div></div><div class="grow"><div class="sub">Crew</div><div class="nm" style="font-size:15px;white-space:normal">${esc(crewNames || "—")}</div></div></div>${j.done ? `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:700">✓ Completed</div>` : ""}</div>`;
-
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
-  if (openThis) {
-    h += `<div class="sub">Clocked in since <b>${hhmm(openThis.clockIn)}</b></div><button class="btn danger" style="margin-top:8px;width:100%" onclick="tcClockOut('${openThis.id}')">Clock out</button>`;
-  } else if (openOther) {
-    const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null;
-    h += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`;
-  } else {
-    h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Vehicle (required)</label><input id="tc_vehicle" placeholder="e.g. Ray's truck" autocomplete="off"><label>Odometer — start (required)</label><input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now"><button class="btn acc" style="margin-top:8px;width:100%" onclick="tcClockIn()">Clock in to this job</button>`;
-  }
+  // 2) Time clock — the primary action
+  h += `<div class="card" style="border-left:5px solid var(--accent)"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
+  if (openThis) h += `<div class="sub">Clocked in since <b>${hhmm(openThis.clockIn)}</b></div><button class="btn danger" style="margin-top:8px;width:100%;padding:13px" onclick="tcClockOut('${openThis.id}')">Clock out</button>`;
+  else if (openOther) { const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null; h += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`; }
+  else h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Vehicle</label><input id="tc_vehicle" placeholder="e.g. Ray's truck" autocomplete="off"><label>Odometer — start</label><input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now"><button class="btn acc" style="margin-top:10px;width:100%;padding:13px" onclick="tcClockIn()">⏱️ Clock in</button>`;
   h += `</div>`;
 
+  // 3) Photos & receipts — prominent, right after the clock
+  const atts = (j.attachments || []).filter(a => a && !a.deleted);
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:8px">📸 Photos &amp; receipts</div>`;
+  if (atts.length) h += `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">` + atts.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>`;
+  h += `<input type="file" id="job_photo" accept="image/*" capture="environment" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo / receipt</button></div>`;
+
+  // 4) Notes
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
+    <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
+    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
+
+  // 5) Secondary: equipment + change orders
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Equipment</div>`;
-  h += equip.length ? equip.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(e.name)}</div></div><div class="sub">×${e.qty}</div></div>`).join("") : `<div class="muted">None assigned to this job.</div>`;
+  h += equip.length ? equip.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(e.name)}</div></div><div class="sub">×${e.qty}</div></div>`).join("") : `<div class="muted">None assigned.</div>`;
   h += `</div>`;
 
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Change orders${coTotal ? ` · <span style="color:var(--accent)">${money(coTotal)}</span>` : ""}</div>`;
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change orders${coTotal ? ` · <span style="color:var(--accent)">${money(coTotal)}</span>` : ""}</div>`;
   h += cos.length ? cos.map(c => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(c.desc || "")}</div><div class="sub">${c.by ? esc(c.by) + " · " : ""}${c.ts && typeof relTime === "function" ? relTime(c.ts) : ""}</div></div><div class="row" style="gap:8px">${c.amount ? `<div class="nm" style="font-size:15px">${money(c.amount)}</div>` : ""}<button class="btn ghost sm" onclick="jobDelChangeOrder('${j.id}','${c.id}')">✕</button></div></div>`).join("") : `<div class="muted">Nothing changed yet.</div>`;
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="co_desc" placeholder="What changed on-site…" style="flex:2"><input id="co_amt" type="number" inputmode="decimal" placeholder="$ +/-" style="flex:0 0 92px"></div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobAddChangeOrder('${j.id}')">+ Add change order</button>`;
   if (j.quoteId && coTotal) h += `<div class="note" style="margin-top:8px">Update the <b>Final price</b> on the quote to bill these.</div>`;
   h += `</div>`;
 
-  const atts = (j.attachments || []).filter(a => a && !a.deleted);
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Receipts &amp; photos</div>`;
-  h += atts.length ? `<div class="row" style="flex-wrap:wrap;gap:8px">` + atts.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>` : `<div class="muted">No receipts attached.</div>`;
-  h += `<input type="file" id="job_photo" accept="image/*" capture="environment" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="document.getElementById('job_photo').click()">📎 Add receipt / photo</button></div>`;
-
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Job notes <span class="sub" style="font-weight:400">· Cap reads these to learn from the job</span></div>
-    <textarea id="job_notes" style="min-height:72px" placeholder="What happened, access notes, gotchas, what to do differently next time…">${esc(j.notes || "")}</textarea>
-    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
-  if (typeof reviewAsk === "function") h += `<button class="btn ghost" style="width:100%;margin:4px 0 0" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
-  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost" style="width:100%;margin:4px 0 10px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
+  // 6) Done + actions
+  h += `<button class="btn ${j.done ? "ghost" : "acc"}" style="width:100%;margin-top:4px" onclick="toggleJob('${j.id}')">${j.done ? "↩ Reopen job" : "✓ Mark job done"}</button>`;
+  if (typeof reviewAsk === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
+  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 10px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
   return h;
 }
 
