@@ -18,6 +18,9 @@ function junkHaulSuggest(c){const loads=c.eighths;
   if(loads<=4)return{method:"trailer",label:"Rental dump trailer",note:"a few loads"};
   return{method:"rolloff",label:(loads<=6?"20-yd":"30-yd")+" roll-off dumpster",note:"whole-house volume"};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
+const JUNK_CD_TON=120;   // heavy/C&D disposal — the transfer station bills by WEIGHT (~$73-94/ton) + handling; estimate the tonnage from the item's pounds
+/* per-ITEM disposal fee. "cd" (heavy/construction debris) is weight-based; everything else is a flat fee. Fixes the old "+$undefined". */
+function junkItemFee(it){ const fl=it&&it[4]; if(!fl)return 0; if(fl==="cd")return Math.round(it[3]/2000*JUNK_CD_TON); return JUNK_FEE[fl]||0; }
 const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line
 const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
 const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,floor3:0.50,basement:0.30,attic:0.50};
@@ -37,8 +40,8 @@ const JUNK_CAT=[
  ["Mattresses",[["mat_t","Mattress – twin / full",12,45,"mattress"],["mat_q","Mattress – queen / king",18,75,"mattress"],["box","Box spring",12,40,"mattress"]]],
  ["Appliances",[["fridge","Refrigerator",32,220,"freon"],["freezer","Chest freezer",25,150,"freon"],["wac","Window AC unit",4,60,"freon"],["dehum","Dehumidifier",4,40,"freon"],["washer","Washer",16,160,"appliance"],["dryer","Dryer",16,110,"appliance"],["stove","Stove / oven",18,150,"appliance"],["dish","Dishwasher",12,80,"appliance"],["wh","Water heater",14,120,"appliance"],["micro","Microwave",2,35,""]]],
  ["Electronics",[["tv_flat","TV – flat screen",5,35,"ewaste"],["tv_crt","TV – old / CRT",8,80,"ewaste"],["computer","Computer / monitor",3,20,"ewaste"],["e_misc","Box of electronics",3,25,"ewaste"]]],
- ["Outdoor / garage",[["grill","Grill",14,70,""],["mower","Lawn mower",14,80,""],["tire","Tire (each)",4,25,"tire"],["bike","Bicycle",8,25,""],["patio","Patio set (per piece)",16,70,""],["hottub","Hot tub",110,600,"heavy"],["propane","Propane tank",3,30,"paint"]]],
- ["Construction / debris",[["debris","Bag of debris",4,50,""],["carpet","Carpet – per room",18,90,""],["wood","Wood / lumber pile",24,260,"heavy"],["drywall","Drywall pile",20,400,"heavy"],["concrete","Concrete / brick (per load)",10,500,"heavy"],["fixture","Toilet / sink",10,80,""]]],
+ ["Outdoor / garage",[["grill","Grill",14,70,""],["mower","Lawn mower",14,80,""],["tire","Tire (each)",4,25,"tire"],["bike","Bicycle",8,25,""],["patio","Patio set (per piece)",16,70,""],["hottub","Hot tub",110,600,"cd","heavy & awkward — 2-person, often a long carry; weight-billed at the dump"],["propane","Propane tank",3,30,"paint"]]],
+ ["Construction / debris",[["debris","Bag of debris",4,50,""],["carpet","Carpet – per room",18,90,""],["wood","Wood / lumber pile",24,260,"cd","bulky construction wood — weight-billed"],["drywall","Drywall pile",20,400,"cd","heavy debris — weight-billed; big pile → suggest a dumpster"],["concrete","Concrete / brick (per load)",10,500,"cd","very dense — weight-billed; 2-3+ loads → suggest a dumpster"],["fixture","Toilet / sink",10,80,""]]],
  ["Boxes / bags",[["box_s","Small box",1.5,20,""],["box_l","Large box",3,30,""],["bag","Trash bag",4,25,""],["tote","Tote / bin",3.5,30,""]]],
  ["Hazardous / special",[["paint","Paint can",1,12,"paint"],["chem","Chemical / solvent",1,12,"paint"]]]
 ];
@@ -67,7 +70,7 @@ function calcJunk(){
       locLabor+=share*locf;                                                                                 // access + long-carry labor
       modLabor+=share*(pMult-1)+pFlat*q;                                                                     // heavy % · volume + disasm/bolted flat
       if(JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;
-      const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+      const fl=it[4],fee=junkItemFee(it);if(fee>0){special+=fee*q;counts[fl]=(counts[fl]||0)+q;}});
     loadMin+=junkLineLoadMin(it,li);
   });
   const eighths=cuft/JUNK_EIGHTH;
@@ -99,6 +102,7 @@ function wizJunkUI(){
   h+=`<div id="je_catalog">`+junkCatalogHTML()+`</div>`;
   const c=calcJunk(),cap=getTruckCap();
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
+  if(c.counts.cd)h+=`<div class="card" style="border-left:4px solid #b8860b;font-size:12.5px;line-height:1.5">🧱 Heavy / C&amp;D in this load — the transfer station bills by <b>weight</b>, so the price includes an estimated tipping fee.${c.loadMin>30?` <b>Big debris load (~${Math.round(c.loadMin)} min to load)</b> — for anything this size, recommend a <b>dumpster rental</b>; that's really a construction-debris job, not a junk haul.`:""}</div>`;
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
   // PRICE = volume + STATIC site drive + this job's amortized DUMP SHARE (by volume) + special-item disposal
@@ -135,7 +139,7 @@ function junkCatalogHTML(){
   if(!WZ.junk)WZ.junk=[];
   const lineOf=k=>WZ.junk.find(x=>x.key===k);
   const row=it=>{const li=lineOf(it[0])||{};const locs=li.locs||{};const q=junkLineQty(li);
-    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:(WZ.junkPick===it[0]?"":`<button class="btn acc sm" onclick="WZ.junkPick='${it[0]}';render()">+ Add</button>`)}</div></div>`;
+    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${it[4]==="cd"?"heavy/C&amp;D":esc(it[4])} +$${junkItemFee(it)}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each${it[5]?` · <span style="color:var(--muted)">${esc(it[5])}</span>`:""}</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:(WZ.junkPick===it[0]?"":`<button class="btn acc sm" onclick="WZ.junkPick='${it[0]}';render()">+ Add</button>`)}</div></div>`;
     if(q===0&&WZ.junkPick===it[0])r+=`<div class="row" style="gap:5px;flex-wrap:wrap;margin-top:6px"><span class="sub" style="width:100%;font-size:11px">📍 Where is it?</span>${JUNK_LOC.map(l=>`<button class="btn ghost sm" style="font-size:12px;padding:5px 10px" onclick="WZ.junkPick=null;wizJQ('${it[0]}','${l[0]}',1)">${esc(l[2])}</button>`).join("")}<button class="btn ghost sm" style="font-size:12px;padding:5px 10px" onclick="WZ.junkPick=null;render()">✕</button></div>`;
     if(q>0){
       r+=`<div style="margin-top:6px">`+JUNK_LOC.filter(l=>(+locs[l[0]]||0)>0).map(l=>{const lq=+locs[l[0]]||0;return `<div class="row" style="align-items:center;gap:8px;margin:3px 0"><span class="grow" style="font-size:13px">📍 ${esc(l[1])}</span><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',-1)">−</button><b style="min-width:18px;text-align:center">${lq}</b><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',1)">+</button></div>`;}).join("")+`</div>`;
@@ -209,6 +213,7 @@ window.wizAddJunk=function(){
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
+  if(c.counts.cd)notes.push("Heavy / C&D items — weight-billed at the transfer station; tipping fee included.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
   const cost=Math.round((c.special+dumpAmort+_dr.rt*QE.MILEAGE)*100)/100;   // reserved/passthrough: disposal + dump-run reserve + site mileage
   // job time for the pay check — STASHED, no dump run on this job: 20-min on-site baseline + load times + site drive
