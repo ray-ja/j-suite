@@ -1,6 +1,6 @@
 /* ---------- CUSTOMERS ---------- */
 let CSEARCH="",PSEARCH="",ACCTSUB="customers";
-function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button></div>`;}
+function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button></div>`;}
 window.switchAcct=function(s){ACCTSUB=s;render();};
 function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
 function rCustomers(){

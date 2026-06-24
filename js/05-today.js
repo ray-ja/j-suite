@@ -7,6 +7,14 @@ function rToday(){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   let h="";
 
+  // 0) Approvals waiting (admin only) — above everything
+  if(owner && typeof apprPending==="function"){
+    const _pend=apprPending();
+    if(_pend.length){
+      h+=`<div class="secthd"><h2>📥 Approvals waiting</h2><span class="ct">${_pend.length}</span></div><div class="card" style="border-left:4px solid var(--accent)">`+_pend.map(x=>{const pc=x.pc;return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(pc.summary||pc.collection||"Change")}</div><div class="sub">Cap wants your okay · ${esc(pc.collection||"")}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn acc sm" onclick="apprApprove('${x.biz}','${pc.id}')">✓</button><button class="btn ghost sm" onclick="apprReject('${x.biz}','${pc.id}')">✕</button></div></div>`;}).join("")+`</div>`;
+    }
+  }
+
   // 1) Notice board — at the very top
   const dir=(D().docs.find(x=>x.id==="ceo"&&!x.deleted)||{}).text||"";
   h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>

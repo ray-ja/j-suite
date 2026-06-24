@@ -24,11 +24,13 @@ const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts","resale"] },
-  { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
-  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","sales","todo","playbook"] },
-  { key:"more",      label:"More",      icon:"⚙️", tabs:["data","admin"] }
+  { key:"money",     label:"Money",     icon:"💰", tabs:["finance"] },
+  { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
+  { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
+  { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo"] },
+  { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data","admin"] }
 ];
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, pipeline:{l:"Pipeline",i:"🔀"}, quotes:{l:"All jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
