@@ -17,9 +17,11 @@ const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested 
 const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
 const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50};
 const JUNK_LOC=[["ground","Ground floor"],["curbside","Curbside / outside (−15%)"],["upstairs","Upstairs (+25%)"],["basement","Basement (+30%)"],["attic","Attic (+50%)"]];
+/* realistic LOAD-TIME multiplier per location (feeds the $/hr check, not the price) — upstairs roughly doubles the time */
+const JUNK_LOC_TIME={ground:1,curbside:0.85,upstairs:2,basement:2,attic:2.5};
 /* per-item modifiers (checkboxes). Long carry is a +20% labor bump separate from the floor (a long
    driveway can be any floor). Heavy/disasm/bolted add to BOTH the volume price and the load-time check. */
-const JUNK_MODS=[{k:"longcarry",short:"📏 Long carry",locf:0.20},{k:"heavy",short:"🏋️ Heavy",priceMult:0.5,timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatD:20,flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatD:12,flatMin:8}];
+const JUNK_MODS=[{k:"longcarry",short:"📏 Long carry",locf:0.20,timeMult:1.5},{k:"heavy",short:"🏋️ Heavy",priceMult:0.5,timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatD:20,flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatD:12,flatMin:8}];
 // Home Depot rental reference. Trailers = 4-hr price as quoted. Trucks = per-75-min rate × 4 increments to cover a 4-hr job.
 const JUNK_RENTAL=[["none","No rental — using my own truck",0],["t_lg","Lawn & garden trailer 3×5 (4 hr)",25],["t_cf","Channel-frame trailer 5×8 (4 hr)",39],["t_sw","Solid-wall trailer 5×8 (4 hr)",42],["t_d58","Dump trailer 5×8 (4 hr)",157],["t_d610","Dump trailer 6×10 (4 hr)",172],["t_d714","Dump trailer 7×14 (4 hr)",187],["k_pickup","8-ft pickup truck (4 hr = 4×$18)",72],["k_flat8","8-ft flatbed truck (4 hr = 4×$19)",76],["k_flat10","10-ft flatbed truck (4 hr = 4×$19)",76],["k_van","Cargo van (4 hr = 4×$19)",76],["k_box","Box truck (4 hr = 4×$29)",116]];
 function getTruckCap(){try{const d=S.obx.docs.find(x=>x.id==="truckcap"&&!x.deleted);if(d)return parseFloat(d.text)||95;}catch(e){}return 95;}
@@ -41,9 +43,9 @@ function junkItemMin(cuft){ return 0.5 + 0.15 * cuft; }
 /* a line's total quantity across all its locations, and its total load minutes */
 function junkLineQty(li){ return (li&&li.locs) ? Object.keys(li.locs).reduce((s,k)=>s+(+li.locs[k]||0),0) : 0; }
 function junkLineLoadMin(it,li){
-  let tMult=1,tFlat=0,extraLocf=0;
-  JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.locf)extraLocf+=md.locf;if(md.timeMult)tMult*=md.timeMult;if(md.flatMin)tFlat+=md.flatMin;}});
-  let m=0;const locs=li.locs||{};Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;const locf=(JUNK_LOCF[loc]||0)+extraLocf;m+=q*junkItemMin(it[2])*tMult*(1+locf)+tFlat*q;});
+  let tMult=1,tFlat=0;
+  JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)tMult*=md.timeMult;if(md.flatMin)tFlat+=md.flatMin;}});
+  let m=0;const locs=li.locs||{};Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;const lt=(JUNK_LOC_TIME[loc]!=null?JUNK_LOC_TIME[loc]:1);m+=q*junkItemMin(it[2])*tMult*lt+tFlat*q;});
   return m;
 }
 /* JUNK IS PRICED BY VOLUME (industry truck-fraction). Quantities are tracked PER LOCATION (a sofa
@@ -101,6 +103,16 @@ function wizJunkUI(){
   const drive=junkDriveCharge(_mode,_crew), work=c.haul+c.locLabor+c.modLabor;
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+c.special)/25)*25);
   h+=`<div class="card"><div style="font-size:13px;line-height:1.9">📦 Volume (${c.eighths.toFixed(1)}/8 truck, incl. access &amp; heavy/etc.): <b>${money(work)}</b>${c.special?`<br>♻️ Special-item disposal: <b>+${money(c.special)}</b>`:""}<br>🚗 Drive — <b>static</b> (~${_dr.rt} mi RT to site${_mode!=="stash"?` + ${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi dump run`:`, no dump run — stashing`}): <b>+${money(drive)}</b></div></div>`;
+  // $/hr each CHECK — job time = 20-min baseline + item load times + drive (load times feed THIS, not the price)
+  const onsiteHrs=(20+(c.loadMin||0))/60;
+  const drivePH=_crew*(_dr.min/60)+(_mode!=="stash"?80/60:0);
+  const totalPH=_crew*onsiteHrs+drivePH;
+  const mileageJ=(_dr.rt+(_mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55):0))*QE.MILEAGE;
+  const hourly=totalPH>0?Math.round((price-c.special-mileageJ)*QE.FIELD_SPLIT/totalPH):0;
+  const okHr=hourly>=QE.TAKE_HOME;
+  const atMin=(work+drive+c.special)<=JUNK_MIN, cuftToMin=Math.round(Math.max(0,((JUNK_MIN-drive-c.special)-JUNK_TRIPBASE)/JUNK_PEREIGHTH)*JUNK_EIGHTH);
+  h+=`<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start"><div style="font-weight:800;font-size:17px;color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each${okHr?" ✓":" ⚠"}</div><div class="sub" style="text-align:right">${totalPH.toFixed(1)} person-hrs<br>20-min base + load + drive</div></div><div class="sub" style="margin-top:6px">${atMin?`At your ${money(JUNK_MIN)} minimum${cuftToMin>c.cuft?` — scales by volume past ~${cuftToMin} cu ft`:""}.`:`Above the minimum — scaling with the load.`}</div></div>`;
+  if(typeof marketBandHTML==="function"&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)h+=marketBandHTML(price,MARKET_BANDS.junk.lo,MARKET_BANDS.junk.hi,MARKET_BANDS.junk.label);
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:5px 8px">
     <div style="flex-basis:100%">
