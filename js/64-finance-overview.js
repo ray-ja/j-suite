@@ -96,3 +96,83 @@ window.finExportCSV = function(ym){
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   } catch (e) { alert("Export failed: " + (e.message || e)); }
 };
+
+/* ---------- CASH & ACCOUNTS — running balances over time + runway ----------
+   Each income splits 25/15/60 into the accounts (inflows). Outflows: expenses + mileage (business fund),
+   and recorded DISBURSEMENTS (payouts paid / tax payments / owner draws). Balance = inflow − outflow.
+   Cash on hand = sum of the three accounts = total income − expenses − all disbursements. */
+function finAvgMonthlyBurn(){
+  const t = today(); let y = +t.slice(0, 4), m = +t.slice(5, 7), total = 0;
+  for (let i = 0; i < 3; i++) { m--; if (m < 1) { m = 12; y--; } const ym = y + "-" + String(m).padStart(2, "0"), b = monthBounds(ym);
+    total += actExpenses().filter(e => e.date >= b.from && e.date <= b.to).reduce((s, e) => s + finCents(e.amount), 0);
+    total += finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true }).total;
+  }
+  return Math.round(total / 3);
+}
+function finAccountBalances(){
+  const roll = finRollup(actIncome(), { adminMemberId: (typeof finAdminMember === "function" ? finAdminMember() : "") });
+  const mil = finMileage(D().timeclock || [], { confirmedOnly: true });
+  const expCents = actExpenses().reduce((s, e) => s + finCents(e.amount), 0);
+  const disb = (typeof actDisb === "function") ? actDisb() : [];
+  const byType = tp => disb.filter(d => d.type === tp).reduce((s, d) => s + finCents(d.amount), 0);
+  const taxPaid = byType("tax"), payoutPaid = byType("payout"), drawPaid = byType("draw");
+  const t = roll.totals, allocatedLabor = t.field + t.sales + t.admin;
+  const taxBal = t.tax - taxPaid;
+  const businessBal = t.business + t.unallocatedField - expCents - mil.total - drawPaid;
+  const owedBal = allocatedLabor + mil.total - payoutPaid;
+  const cash = taxBal + businessBal + owedBal;
+  const burn = finAvgMonthlyBurn();
+  return { taxBal, businessBal, owedBal, cash, taxIn: t.tax, taxPaid, businessIn: t.business, unalloc: t.unallocatedField, expCents, mileage: mil.total, drawPaid, allocatedLabor, payoutPaid, burn, runwayMonths: burn > 0 ? Math.round((cash / burn) * 10) / 10 : null };
+}
+
+function rFinCash(){
+  const a = finAccountBalances();
+  let h = `<div class="card" style="text-align:center"><div class="sub">Cash on hand</div>
+    <div style="font-size:30px;font-weight:800;color:${a.cash < 0 ? "var(--danger)" : "var(--accent)"}">${fm(a.cash)}</div>
+    <div class="sub">${a.runwayMonths != null ? `~${a.runwayMonths} months runway · ${fm(a.burn)}/mo overhead` : "runway needs a few months of history"}</div></div>`;
+
+  h += `<div class="secthd"><h2>Accounts</h2></div><div class="card">
+    <div class="li"><div class="grow"><div class="nm">🏦 Tax reserve</div><div class="sub" style="white-space:normal">25% set aside ${fm(a.taxIn)} − paid ${fm(a.taxPaid)}</div></div><b style="${a.taxBal < 0 ? "color:var(--danger)" : ""}">${fm(a.taxBal)}</b></div>
+    <div class="li"><div class="grow"><div class="nm">🏢 Business fund</div><div class="sub" style="white-space:normal">15% ${fm(a.businessIn)}${a.unalloc ? " + unassigned " + fm(a.unalloc) : ""} − expenses ${fm(a.expCents)} − mileage ${fm(a.mileage)}${a.drawPaid ? " − draws " + fm(a.drawPaid) : ""}</div></div><b style="${a.businessBal < 0 ? "color:var(--danger)" : ""}">${fm(a.businessBal)}</b></div>
+    <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
+
+  h += `<div class="secthd"><h2>Record money paid out</h2></div><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">
+    <button class="btn ghost grow" onclick="recordDisbursement('payout')">👷 Payout paid</button>
+    <button class="btn ghost grow" onclick="recordDisbursement('tax')">🏦 Tax payment</button>
+    <button class="btn ghost grow" onclick="recordDisbursement('draw')">🏢 Owner draw</button></div></div>`;
+
+  const disb = (typeof actDisb === "function" ? actDisb() : []).slice().sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 12);
+  if (disb.length) h += `<div class="secthd"><h2>Recent</h2></div><div class="card">` + disb.map(d => {
+    const lbl = d.type === "tax" ? "🏦 Tax payment" : d.type === "payout" ? ("👷 Payout" + (d.memberId ? " · " + finName(d.memberId) : "")) : "🏢 Owner draw";
+    return `<div class="li" onclick="recordDisbursement('${d.type}','${d.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${money(d.amount)} <span class="sub" style="font-weight:400">${esc(lbl)}</span></div><div class="sub">${fmtDate(d.date)}${d.note ? " · " + esc(d.note) : ""}</div></div></div>`;
+  }).join("") + `</div>`;
+  return h;
+}
+
+window.recordDisbursement = function(type, id){
+  const d = D(); const ex = id ? (d.disbursements || []).find(x => x && x.id === id) : null;
+  const t0 = ex ? ex.type : type, members = finMembers();
+  const title = t0 === "tax" ? "Tax payment" : t0 === "payout" ? "Payout paid" : "Owner draw";
+  modal((ex ? "Edit " : "Record ") + title, `
+    <div class="row" style="gap:8px"><div class="grow"><label>Amount ($)</label><input id="db_amt" type="number" inputmode="decimal" value="${ex ? ex.amount : ""}"></div>
+      <div class="grow"><label>Date</label><input id="db_date" type="date" value="${ex ? ex.date : today()}"></div></div>
+    ${t0 === "payout" ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${ex && ex.memberId === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
+    <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "payout" ? "e.g. June payout" : "what for"}">
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveDisbursement('${t0}','${ex ? ex.id : ""}')">Save</button>
+    ${ex ? `<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delDisbursement('${ex.id}')">Delete</button>` : ""}`);
+};
+window.saveDisbursement = function(type, id){
+  const amt = parseFloat(val("db_amt")) || 0; if (amt <= 0) { alert("Enter the amount."); return; }
+  const d = D(); if (!Array.isArray(d.disbursements)) d.disbursements = [];
+  let e = id ? d.disbursements.find(x => x && x.id === id) : null;
+  if (!e) { e = { id: uid() }; d.disbursements.push(e); }
+  e.type = type; e.amount = amt; e.date = val("db_date") || today(); e.memberId = (document.getElementById("db_member") ? val("db_member") : e.memberId) || ""; e.note = val("db_note") || ""; e.deleted = false; e.updatedAt = now();
+  if (typeof touch === "function") touch(e);
+  if (typeof logChange === "function") logChange(id ? "update" : "create", "disbursement", e.id, (type === "tax" ? "Tax payment " : type === "payout" ? "Payout " : "Draw ") + money(amt));
+  save(); closeModal(); render();
+};
+window.delDisbursement = function(id){
+  const d = D(); const e = (d.disbursements || []).find(x => x && x.id === id); if (!e) return;
+  if (!confirm("Delete this entry?")) return;
+  e.deleted = true; e.updatedAt = now(); if (typeof touch === "function") touch(e); save(); closeModal(); render();
+};

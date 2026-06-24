@@ -57,7 +57,7 @@ const APP_FILE = path.join(__dirname, "Business App (v1).html");
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -341,6 +341,16 @@ function ceoProjection(store, opts) {
     finance.net = Math.round((finance.revenue - finance.expenses) * 100) / 100;
     finance.arOutstanding = Math.round(finance.arOutstanding * 100) / 100;
     finance.margin = finance.revenue > 0 ? Math.round((finance.net / finance.revenue) * 1000) / 10 : 0;
+    // all-time cash position so Cap knows what's actually in the bank + set aside for taxes
+    let _inc = 0, _exp = 0, _taxD = 0, _payD = 0, _drawD = 0;
+    bizes.forEach(b => {
+      (((store[b] || {}).income) || []).forEach(e => { if (e && !e.deleted) _inc += (+e.amount || 0); });
+      (((store[b] || {}).expenses) || []).forEach(e => { if (e && !e.deleted) _exp += (+e.amount || 0); });
+      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) (j.expenses || []).forEach(x => { if (x && !x.deleted) _exp += (+x.amount || 0); }); });
+      (((store[b] || {}).disbursements) || []).forEach(d => { if (d && !d.deleted) { const a = (+d.amount || 0); if (d.type === "tax") _taxD += a; else if (d.type === "payout") _payD += a; else _drawD += a; } });
+    });
+    finance.cashOnHand = Math.round((_inc - _exp - _taxD - _payD - _drawD) * 100) / 100;
+    finance.taxReserveBalance = Math.round((_inc * 0.25 - _taxD) * 100) / 100;
     return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue, knowledge, finance };
   }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };

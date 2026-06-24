@@ -58,12 +58,14 @@ function rFinance() {
   if (!finCanView()) { view.innerHTML = `<div class="card"><div class="nm">Owner / Admin only</div><div class="sub">The Finance page is restricted to Owner and Admin roles.</div></div>`; return; }
   const sub = `<div class="subnav">
     <button class="subbtn ${FINSUB === "overview" ? "on" : ""}" onclick="finSub('overview')">📊 Overview</button>
+    <button class="subbtn ${FINSUB === "cash" ? "on" : ""}" onclick="finSub('cash')">🏦 Cash</button>
     <button class="subbtn ${FINSUB === "payouts" ? "on" : ""}" onclick="finSub('payouts')">💵 Payouts</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
     <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
     <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 A/R</button>
     <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 Job P&L</button></div>`;
   if (FINSUB === "overview" && typeof rFinOverview === "function") { view.innerHTML = sub + rFinOverview(); return; }
+  if (FINSUB === "cash" && typeof rFinCash === "function") { view.innerHTML = sub + rFinCash(); return; }
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }

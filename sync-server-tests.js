@@ -28,6 +28,11 @@ ok("knowledge collection scaffolded on a legacy biz (no knowledge key)", Array.i
 ok("knowledge record round-trips through the merge", (km.obx.knowledge.find(x => x.id === "k1") || {}).fact === "Free for brush", km.obx.knowledge);
 ok("every pre-existing record survives the knowledge migration (customer/job/property/quote)", !!(km.obx.customers.find(x => x.id === "c1") && km.obx.jobs.find(x => x.id === "j1") && km.obx.properties.find(x => x.id === "p1") && km.obx.quotes.find(x => x.id === "q1")), km.obx);
 
+console.log("— disbursements (account payouts/taxes paid) is a synced collection + survives merge —");
+const dm = t.mergeState({ obx: { income: [{ id: "in1", amount: 100, date: "2026-06-01", updatedAt: 10 }] } }, { obx: { disbursements: [{ id: "db1", type: "payout", amount: 50, date: "2026-06-02", updatedAt: 5 }] } });
+ok("disbursements scaffolded + record round-trips through the merge", Array.isArray(dm.obx.disbursements) && (dm.obx.disbursements.find(x => x.id === "db1") || {}).type === "payout", dm.obx.disbursements);
+ok("income survives the disbursements-collection migration", (dm.obx.income.find(x => x.id === "in1") || {}).amount === 100, dm.obx.income);
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },

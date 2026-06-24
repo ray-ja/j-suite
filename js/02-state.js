@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -24,6 +24,7 @@ function load(){
     if(!S[b].resale)S[b].resale=[];   // resale tracker: first-class collection (junk-pulled items, own lifecycle)
     if(!S[b].pendingChanges)S[b].pendingChanges=[];   // Step 2: approval queue — Cap PROPOSES here; Ray approves; code applies (synced, per-biz)
     if(!S[b].knowledge)S[b].knowledge=[];   // Cap's Playbook — synced facts Cap references when answering
+    if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
@@ -142,6 +143,7 @@ function actQ(){return D().quotes.filter(q=>!q.deleted)}
 function actJ(){return D().jobs.filter(j=>!j.deleted)}
 function actTodo(){return D().todos.filter(t=>!t.deleted)}
 function actKnow(){return (D().knowledge||[]).filter(k=>!k.deleted)}
+function actDisb(){return (D().disbursements||[]).filter(x=>!x.deleted)}
 function actProps(){return (D().properties||[]).filter(p=>!p.deleted)}
 function propsForCust(cid){return actProps().filter(p=>(p.customerIds||[]).indexOf(cid)>=0)}
 function custsForProp(p){return (p.customerIds||[]).map(id=>D().customers.find(c=>c.id===id&&!c.deleted)).filter(Boolean)}
