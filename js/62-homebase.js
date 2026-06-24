@@ -12,8 +12,10 @@ function jobLatLng(j){ if(!j)return null; const p=(j.propertyId&&typeof actProps
 
 function hbGeocode(hb){
   if(!hb||!hb.address)return;
-  fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(hb.address))
-    .then(r=>r.json()).then(g=>{ if(g&&g[0]){ hb.lat=+g[0].lat; hb.lng=+g[0].lon; if(typeof touch==="function")touch(hb); save(); if(typeof render==="function")render(); } }).catch(function(){});
+  const g1=q=>fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(q)).then(r=>r.json());
+  const coarse=hb.address.split(",").slice(1).join(",").trim();   // drop the street line → "town, ST zip" when an exact street isn't in OSM
+  g1(hb.address).then(g=>(g&&g[0])?g:(coarse&&coarse!==hb.address?g1(coarse):null))
+    .then(g=>{ if(g&&g[0]){ hb.lat=+g[0].lat; hb.lng=+g[0].lon; if(typeof touch==="function")touch(hb); save(); if(typeof render==="function")render(); } }).catch(function(){});
 }
 window.setHomeBase=function(){
   const hb=homeBase();
