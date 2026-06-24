@@ -114,6 +114,7 @@ function rJobPage(j) {
 
   // 8) Done + actions
   h += `<button class="btn ${j.done ? "ghost" : "acc"}" style="width:100%;margin-top:4px" onclick="toggleJob('${j.id}')">${j.done ? "↩ Reopen job" : "✓ Mark job done"}</button>`;
+  if (typeof jobTemplates === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobSaveAsTemplate('${j.id}')">⭐ Save as a common job (reuse this)</button>`;
   if (typeof reviewAsk === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 10px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
   return h;
@@ -202,4 +203,12 @@ window.jobEstimateDrive = function (jobId) {
   if (!d) { alert("Need the job's location + a home base set to estimate."); return; }
   const dm = document.getElementById("jt_drivemin"); if (dm) dm.value = Math.round(d.min * 2);   // round trip
   const mi = document.getElementById("jt_drivemiles"); if (mi) mi.value = d.roundMiles;
+};
+window.jobSaveAsTemplate = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || typeof jobTemplates !== "function") return;
+  const addr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
+  const tdoc = jobTemplates();
+  const item = { id: uid(), label: String(j.title || "Common job").slice(0, 30), title: j.title || "Job", address: addr, crewN: (+j.crewN || (j.crew || []).length || 1), onSiteHrs: +j.onSiteHrs || 0, driveMin: +j.driveMin || 0, driveMiles: +j.driveMiles || 0, deleted: false };
+  tdoc.list.push(item); tdoc.updatedAt = now(); if (typeof touch === "function") touch(tdoc); save();
+  alert('Saved "' + item.label + '" as a common job — tap "+ Add" on Today to reuse it in one tap.');
 };

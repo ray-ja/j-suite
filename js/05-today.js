@@ -85,7 +85,9 @@ function payoutDate(ym){
 window.openQuickTask=function(){
   const crew=(typeof schedMembers==="function")?schedMembers():[];
   const me=(typeof curUser==="function")?curUser():null;
+  const tpls=jobTemplates().list.filter(x=>x&&!x.deleted);
   modal("Add a task / job",`
+    ${tpls.length?`<label style="margin-top:0">Common jobs — one tap</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:4px">${tpls.map(t=>`<button class="btn ghost sm" onclick="applyJobTemplate('${t.id}')">🔁 ${esc(t.label||t.title||"Job")}</button>`).join("")}<button class="btn ghost sm" onclick="newJobTemplate()">+ New</button></div><div style="border-top:1px solid var(--line);margin:8px 0"></div>`:`<button class="btn ghost sm" style="margin-bottom:8px;width:100%" onclick="newJobTemplate()">⭐ Save a common job (like a dump run)</button>`}
     <label>What needs doing?</label><input id="qt_title" placeholder="e.g. Clean the chainsaw, sharpen blades…" autocomplete="off">
     <label>Date</label><input id="qt_date" type="date" value="${today()}">
     <label>Assign to</label>
@@ -110,3 +112,34 @@ function notifyAssignee(assigneeId,text){
   if(thr)tid=thr.threadId; else { tid="thr_"+uid(); coll.push({id:tid,kind:"thread",threadId:tid,title:(typeof userName==="function"?userName(assigneeId):"")||"Crew",type:"dm",members:[u.id,assigneeId],createdBy:u.id,deleted:false,updatedAt:now()}); }
   coll.push({id:"msg_"+uid(),threadId:tid,senderId:u.id,senderLabel:u.username||"—",body:text,ts:now(),deleted:false,updatedAt:now()});
 }
+
+/* ---------- COMMON JOBS (templates) — frequent non-scheduled jobs like a dump run. One tap = a real,
+   trackable job pre-filled with the address + known drive time/miles + hours. Stored in a docs sentinel. */
+function jobTemplates(){ const d=D(); d.docs=d.docs||[]; let t=d.docs.find(x=>x&&x.id==="jobTemplates"); if(!t){t={id:"jobTemplates",list:[],updatedAt:now()};d.docs.push(t);} if(!Array.isArray(t.list))t.list=[]; return t; }
+window.applyJobTemplate=function(id){
+  const t=jobTemplates().list.find(x=>x&&x.id===id); if(!t)return;
+  const me=(typeof curUser==="function")?curUser():null;
+  const j={id:uid(),title:t.title||t.label||"Job",date:today(),address:t.address||"",crew:me?[me.id]:[],crewN:t.crewN||1,onSiteHrs:t.onSiteHrs||0,driveMin:t.driveMin||0,driveMiles:t.driveMiles||0,equipment:[],fromTemplate:t.id,done:false,updatedAt:now()};
+  if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof touch==="function")touch(j); save();
+  if(typeof closeModal==="function")closeModal();
+  if(typeof openJobPage==="function")openJobPage(j.id); else render();
+};
+window.newJobTemplate=function(id){
+  const t=id?jobTemplates().list.find(x=>x&&x.id===id):null;
+  modal(t?"Edit common job":"New common job",`
+    <label style="margin-top:0">Name (the button)</label><input id="jt_label" value="${t?esc(t.label||t.title||""):""}" placeholder="e.g. Dump run" autocomplete="off">
+    <label>Job title</label><input id="jt_title" value="${t?esc(t.title||""):""}" placeholder="e.g. Transfer station dump run" autocomplete="off">
+    <label>Address</label><input id="jt_addr" value="${t?esc(t.address||""):""}" placeholder="transfer station address" autocomplete="off">
+    <div class="row" style="gap:8px"><div class="grow"><label>Crew</label><input id="jt_crewN" type="number" inputmode="numeric" min="1" value="${t?(t.crewN||1):1}"></div><div class="grow"><label>On-site hrs</label><input id="jt_onsite" type="number" inputmode="decimal" step="0.25" value="${t&&t.onSiteHrs?t.onSiteHrs:""}" placeholder="0"></div></div>
+    <div class="row" style="gap:8px"><div class="grow"><label>Drive min (round trip)</label><input id="jt_dmin" type="number" inputmode="numeric" value="${t&&t.driveMin?t.driveMin:""}" placeholder="0"></div><div class="grow"><label>Drive miles (round trip)</label><input id="jt_dmiles" type="number" inputmode="decimal" value="${t&&t.driveMiles?t.driveMiles:""}" placeholder="0"></div></div>
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveJobTemplate('${t?t.id:""}')">Save common job</button>
+    ${t?`<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delJobTemplate('${t.id}')">Delete</button>`:""}`);
+};
+window.saveJobTemplate=function(id){
+  const label=val("jt_label")||val("jt_title"); if(!label){alert("Give it a name.");return;}
+  const tdoc=jobTemplates(); let item=id?tdoc.list.find(x=>x&&x.id===id):null;
+  if(!item){item={id:uid()};tdoc.list.push(item);}
+  item.label=label; item.title=val("jt_title")||label; item.address=val("jt_addr"); item.crewN=Math.max(1,parseInt(val("jt_crewN"))||1); item.onSiteHrs=parseFloat(val("jt_onsite"))||0; item.driveMin=parseFloat(val("jt_dmin"))||0; item.driveMiles=parseFloat(val("jt_dmiles"))||0; item.deleted=false;
+  tdoc.updatedAt=now(); if(typeof touch==="function")touch(tdoc); save(); if(typeof closeModal==="function")closeModal(); openQuickTask();
+};
+window.delJobTemplate=function(id){ const tdoc=jobTemplates(); const item=tdoc.list.find(x=>x&&x.id===id); if(item)item.deleted=true; tdoc.updatedAt=now(); if(typeof touch==="function")touch(tdoc); save(); if(typeof closeModal==="function")closeModal(); openQuickTask(); };
