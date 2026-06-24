@@ -63,7 +63,6 @@ function rData(){
     </div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
-    ${typeof pwaInstallCard==="function"?`<h2>Install</h2>`+pwaInstallCard():""}
     <h2>Team</h2>
     <div class="card">
       <div class="row"><div class="grow"><div class="nm">${curUser()?esc(curUser().username):"Not signed in"}</div><div class="sub">${curUser()?"signed in on this device":"sign in to tag your work"}</div></div>

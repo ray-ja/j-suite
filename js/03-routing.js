@@ -24,12 +24,12 @@ const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
-  { key:"money",     label:"Money",     icon:"💰", tabs:["finance"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts"] },
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
-  { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
+  { key:"money",     label:"Money",     icon:"💰", tabs:["finance"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo"] },
+  { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data","admin"] }
 ];
 const TAB_META = {
