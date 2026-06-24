@@ -59,6 +59,11 @@ function rJobPage(j) {
   if (j.quoteId && coTotal) h += `<div class="note" style="margin-top:8px">Update the <b>Final price</b> on the quote to bill these.</div>`;
   h += `</div>`;
 
+  const atts = (j.attachments || []).filter(a => a && !a.deleted);
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Receipts &amp; photos</div>`;
+  h += atts.length ? `<div class="row" style="flex-wrap:wrap;gap:8px">` + atts.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>` : `<div class="muted">No receipts attached.</div>`;
+  h += `<input type="file" id="job_photo" accept="image/*" capture="environment" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="document.getElementById('job_photo').click()">📎 Add receipt / photo</button></div>`;
+
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Job notes <span class="sub" style="font-weight:400">· Cap reads these to learn from the job</span></div>
     <textarea id="job_notes" style="min-height:72px" placeholder="What happened, access notes, gotchas, what to do differently next time…">${esc(j.notes || "")}</textarea>
     <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
@@ -85,4 +90,14 @@ window.jobSaveNotes = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   j.notes = val("job_notes") || "";
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobAddPhoto = function (jobId, input) {
+  const file = input && input.files && input.files[0]; if (!file) return;
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (typeof jsUpload !== "function") { alert("Photo upload needs a connection."); return; }
+  jsUpload(file).then(function (id) {
+    if (!Array.isArray(j.attachments)) j.attachments = [];
+    j.attachments.push({ id: id, name: file.name || "photo", ts: now() });
+    if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+  }).catch(function (e) { alert("Upload failed: " + (e.message || e)); });
 };

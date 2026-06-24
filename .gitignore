@@ -22,6 +22,9 @@ tools/.watcher-heartbeat.json
 .reply-watcher.log
 .watcher-daemon.log
 
+# --- User-uploaded photos / receipts (server-only blobs; never commit) ---
+uploads/
+
 # --- Office lock & temp files ---
 ~$*
 .~lock.*#

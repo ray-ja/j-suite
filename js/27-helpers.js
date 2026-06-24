@@ -17,4 +17,20 @@ window.toggleTheme=function(){
     if(S.sync&&S.sync.url&&S.sync.token&&S.sync.auto&&typeof syncNow==="function")syncNow();}
   applyTheme();
 };
+/* upload an image file → resolves the stored blob id. The bytes live as a server file (uploads/<id>),
+   the record only keeps the small id — so the synced JSON store never bloats. */
+window.jsUpload=function(file){
+  return new Promise(function(resolve,reject){
+    if(!file||!/^image\//.test(file.type||"")){reject(new Error("Pick an image"));return;}
+    const fr=new FileReader();
+    fr.onload=function(){
+      const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,""),tok=(S.sync&&S.sync.token)||"";
+      fetch(base+"/api/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},body:JSON.stringify({dataUrl:fr.result})})
+        .then(function(r){return r.json();}).then(function(d){if(d&&d.ok)resolve(d.id);else reject(new Error((d&&d.error)||"upload failed"));}).catch(reject);
+    };
+    fr.onerror=function(){reject(new Error("couldn't read the file"));};
+    fr.readAsDataURL(file);
+  });
+};
+window.jsUploadUrl=function(id){if(!id)return"";const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,"");return base+"/uploads/"+encodeURIComponent(id);};
 

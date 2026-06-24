@@ -890,13 +890,35 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  // photo/receipt upload → stored as a server-side blob (uploads/<id>.<ext>), referenced by id in records.
+  // Auth = the sync TOKEN. Image-only, size-capped, random id (no path traversal). Served by the static handler below.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/upload") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const chunks = []; let blen = 0;
+    req.on("data", c => { chunks.push(c); blen += c.length; if (blen > 9e6) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
+      const m = /^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String((p && p.dataUrl) || ""));
+      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image png/jpg/webp only"}'); }
+      let buf; try { buf = Buffer.from(m[2], "base64"); } catch (e) { res.writeHead(400); return res.end('{"error":"bad data"}'); }
+      if (!buf.length || buf.length > 7e6) { res.writeHead(413, { "Content-Type": "application/json" }); return res.end('{"error":"image too big (max 7MB)"}'); }
+      const dir = path.join(__dirname, "uploads"); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+      const id = crypto.randomBytes(12).toString("hex") + "." + (m[1] === "jpeg" ? "jpg" : m[1]);
+      try { fs.writeFileSync(path.join(dir, id), buf); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id, url: "/uploads/" + id }));
+    });
+    return;
+  }
+
   // static files (logos, manifest, service worker) from the server folder
   if (req.method === "GET") {
     const rel = decodeURIComponent((req.url.split("?")[0] || "").replace(/^\/+/, ""));
     const full = path.normalize(path.join(__dirname, rel));
     if (rel && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
-      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
+      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
       // no-cache = the browser must revalidate before reusing, so a deploy shows up on the next load
       // (no stale code); the ETag makes unchanged files return a fast 304. Without this, browsers
       // heuristically cached old js — which is exactly why a deploy didn't update the app.
