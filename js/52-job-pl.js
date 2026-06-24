@@ -23,12 +23,18 @@ function plQuoteFor(j) {
 function plExpenses(j) { return Array.isArray(j.expenses) ? j.expenses : []; }
 /* confirmed mileage cost attributed to this job (timeclock miles × IRS rate) */
 function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
+/* sub-jobs (e.g. a dump run filed under a bigger job) — their costs + hours roll up into the parent */
+function subJobsOf(jobId) { return jobId ? (typeof actJ === "function" ? actJ() : []).filter(x => x && x.parentJobId === jobId) : []; }
+/* one job's mileage cost: confirmed time-clock miles if any, else the manual driveMiles estimate */
+function jobMilesCost(j) { const tc = jobMileageCost(j); if (tc > 0) return tc; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (+j.driveMiles || 0) * rate; }
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line */
 function jobProfit(j) {
   const q = plQuoteFor(j);
   const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
-  const expCost = plExpenses(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
-  const milCost = jobMileageCost(j), cost = expCost + milCost, profit = price - cost;
+  let expCost = plExpenses(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
+  let milCost = jobMileageCost(j);
+  subJobsOf(j.id).forEach(sj => { expCost += plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0); milCost += jobMileageCost(sj); });
+  const cost = expCost + milCost, profit = price - cost;
   const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
   const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");
   const cust = (q && q.cust) || (j.customerId && typeof custName === "function" ? custName(j.customerId) : "") || "—";
@@ -38,11 +44,13 @@ function jobProfit(j) {
    person-hours = crew × (on-site hrs + round-trip drive hrs). Uses the job's manual time/travel fields
    (j.crewN/onSiteHrs/driveMin/driveMiles) for reconstruction; mileage cost prefers confirmed time-clock. */
 function jobHourly(j) {
-  const p = jobProfit(j), rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725);
-  const milCost = p.milCost > 0 ? p.milCost : (+j.driveMiles || 0) * rate;
+  const p = jobProfit(j), subs = subJobsOf(j.id);
+  let milCost = jobMilesCost(j); subs.forEach(sj => { milCost += jobMilesCost(sj); });
   const cost = p.expCost + milCost, profit = p.price - cost, fieldPool = p.price * 0.48;
   const crew = (+j.crewN || (j.crew || []).length || 1);
-  const onsite = +j.onSiteHrs || 0, driveH = (+j.driveMin || 0) / 60, personHrs = crew * (onsite + driveH);
+  const onsite = +j.onSiteHrs || 0, driveH = (+j.driveMin || 0) / 60;
+  let personHrs = crew * (onsite + driveH);
+  subs.forEach(sj => { const sc = (+sj.crewN || (sj.crew || []).length || 1); personHrs += sc * ((+sj.onSiteHrs || 0) + (+sj.driveMin || 0) / 60); });
   return { price: p.price, cost: cost, milCost: milCost, expCost: p.expCost, profit: profit, fieldPool: fieldPool, crew: crew, onsite: onsite, driveH: driveH, personHrs: personHrs, perHr: personHrs > 0 ? fieldPool / personHrs : null, margin: p.price > 0 ? profit / p.price : 0 };
 }
 function plJobRow(j) {
@@ -52,7 +60,7 @@ function plJobRow(j) {
 }
 function plRows() {
   const ws = plWeek(), we = plAddDays(ws, 6);
-  return (typeof actJ === "function" ? actJ() : []).filter(j => j.date && j.date >= ws && j.date <= we)
+  return (typeof actJ === "function" ? actJ() : []).filter(j => j.date && !j.parentJobId && j.date >= ws && j.date <= we)
     .map(plJobRow).filter(r => r.revenue > 0 || r.hard > 0)
     .sort((a, b) => a.margin - b.margin);   // worst margin first
 }

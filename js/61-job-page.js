@@ -51,6 +51,14 @@ function rJobPage(j) {
   }
   h += `</div>`;
 
+  // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up
+  const _subs = (typeof subJobsOf === "function") ? subJobsOf(j.id) : [];
+  const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && x.parentJobId !== j.id && !x.parentJobId);
+  h += `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${j.parentJobId === x.id ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
+  if (j.parentJobId) h += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
+  if (_subs.length) h += `<div class="sub" style="margin-top:8px;font-weight:700">Sub-jobs rolled into this one:</div>` + _subs.map(sj => `<div class="li" onclick="openJobPage('${sj.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↳ ${esc(sj.title || "Job")}${sj.date ? " · " + fmtDate(sj.date) : ""}</div></div><span class="sub">open →</span></div>`).join("");
+  h += `</div>`;
+
   // 2) Load checklist — load the truck before you drive
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Load checklist <span class="sub" style="font-weight:400">· check off as you load</span></div>`;
   h += (j.equipment && j.equipment.length) ? j.equipment.map(e => { const it = (typeof eqItemById === "function") ? eqItemById(e.itemId) : null; const nm = it ? (it.name || e.itemId) : e.itemId; return `<label class="li" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal;${e.loaded ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(nm)}</div></div><div class="row" style="gap:10px;align-items:center"><span class="sub">×${e.qty || 1}</span><input type="checkbox" style="width:22px;height:22px" ${e.loaded ? "checked" : ""} onchange="jobToggleLoaded('${j.id}','${esc(e.itemId)}')"></div></label>`; }).join("") : `<div class="muted">No equipment assigned to this job.</div>`;
@@ -120,6 +128,10 @@ function rJobPage(j) {
   return h;
 }
 
+window.jobSetParent = function (jobId, parentId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  j.parentJobId = parentId || ""; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
 window.jobToggleLoaded = function (jobId, itemId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const e = (j.equipment || []).find(x => x.itemId === itemId); if (!e) return;
