@@ -15,10 +15,11 @@ function junkHaulSuggest(c){const loads=c.eighths;
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
 const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line
 const JUNK_SOFT_KEYS=["mat_t","mat_q","box","sofa","sectional","loveseat","recliner"]; // soft goods that can carry bed bugs
-const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50,farcarry:0.20};
-const JUNK_LOC=[["ground","Ground floor (no add)"],["curbside","Curbside / outside (−15% labor)"],["upstairs","Upstairs (+25% labor)"],["basement","Basement (+30% labor)"],["attic","Attic / crawlspace (+50% labor)"],["farcarry","Long carry / no driveway (+20% labor)"]];
-/* per-item modifiers (checkboxes) — each adds LOADING TIME, which the engine prices at $45/hr */
-const JUNK_MODS=[{k:"heavy",short:"🏋️ Heavy",timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatMin:8}];
+const JUNK_LOCF={ground:0,curbside:-0.15,upstairs:0.25,basement:0.30,attic:0.50};
+const JUNK_LOC=[["ground","Ground floor"],["curbside","Curbside / outside (−15%)"],["upstairs","Upstairs (+25%)"],["basement","Basement (+30%)"],["attic","Attic (+50%)"]];
+/* per-item modifiers (checkboxes). Long carry is a +20% labor bump separate from the floor (a long
+   driveway can be any floor). Heavy/disasm/bolted add to BOTH the volume price and the load-time check. */
+const JUNK_MODS=[{k:"longcarry",short:"📏 Long carry",locf:0.20},{k:"heavy",short:"🏋️ Heavy",priceMult:0.5,timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatD:20,flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatD:12,flatMin:8}];
 // Home Depot rental reference. Trailers = 4-hr price as quoted. Trucks = per-75-min rate × 4 increments to cover a 4-hr job.
 const JUNK_RENTAL=[["none","No rental — using my own truck",0],["t_lg","Lawn & garden trailer 3×5 (4 hr)",25],["t_cf","Channel-frame trailer 5×8 (4 hr)",39],["t_sw","Solid-wall trailer 5×8 (4 hr)",42],["t_d58","Dump trailer 5×8 (4 hr)",157],["t_d610","Dump trailer 6×10 (4 hr)",172],["t_d714","Dump trailer 7×14 (4 hr)",187],["k_pickup","8-ft pickup truck (4 hr = 4×$18)",72],["k_flat8","8-ft flatbed truck (4 hr = 4×$19)",76],["k_flat10","10-ft flatbed truck (4 hr = 4×$19)",76],["k_van","Cargo van (4 hr = 4×$19)",76],["k_box","Box truck (4 hr = 4×$29)",116]];
 function getTruckCap(){try{const d=S.obx.docs.find(x=>x.id==="truckcap"&&!x.deleted);if(d)return parseFloat(d.text)||95;}catch(e){}return 95;}
@@ -37,24 +38,35 @@ const JUNK_CAT=[
 function junkItem(key){for(const g of JUNK_CAT)for(const it of g[1])if(it[0]===key)return it;return null;}
 /* per-unit load time (min): ~5 for a couch (30 cu ft), ~1 for a microwave (2 cu ft), × access bump */
 function junkItemMin(cuft){ return 0.5 + 0.15 * cuft; }
-/* JUNK IS PRICED BY VOLUME (industry truck-fraction) — that's what makes a sofa worth its real money,
-   not the 5 min to load it. The $45/hr engine is the floor + the take-home CHECK, not the price. */
+/* a line's total quantity across all its locations, and its total load minutes */
+function junkLineQty(li){ return (li&&li.locs) ? Object.keys(li.locs).reduce((s,k)=>s+(+li.locs[k]||0),0) : 0; }
+function junkLineLoadMin(it,li){
+  let tMult=1,tFlat=0,extraLocf=0;
+  JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.locf)extraLocf+=md.locf;if(md.timeMult)tMult*=md.timeMult;if(md.flatMin)tFlat+=md.flatMin;}});
+  let m=0;const locs=li.locs||{};Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;const locf=(JUNK_LOCF[loc]||0)+extraLocf;m+=q*junkItemMin(it[2])*tMult*(1+locf)+tFlat*q;});
+  return m;
+}
+/* JUNK IS PRICED BY VOLUME (industry truck-fraction). Quantities are tracked PER LOCATION (a sofa
+   upstairs + a sofa in the basement). The $45/hr engine is the floor / take-home CHECK, not the price. */
 function calcJunk(){
   const items=WZ.junk||[];let cuft=0,lbs=0,locLabor=0,modLabor=0,special=0,counts={},softGoods=false,loadMin=0;
-  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;const q=li.qty||0,v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;
-    const share=(v/JUNK_EIGHTH)*JUNK_PEREIGHTH;                                                              // this item's volume $ value
-    locLabor+=share*(JUNK_LOCF[li.loc]||0);                                                                  // access labor add
-    if(li.heavy)modLabor+=share*0.5; if(li.disasm)modLabor+=20*q; if(li.bolted)modLabor+=12*q;               // modifier adds (heavy %·volume, disasm/bolted flat)
-    let _m=1,_f=0;JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)_m*=md.timeMult;if(md.flatMin)_f+=md.flatMin;}});
-    loadMin+=q*junkItemMin(it[2])*_m*(1+(JUNK_LOCF[li.loc]||0))+_f*q;                                        // load time → only feeds the take-home check
-    if(q>0&&JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;
-    const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+  items.forEach(li=>{const it=junkItem(li.key);if(!it)return;
+    let pMult=1,pFlat=0,extraLocf=0;
+    JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.locf)extraLocf+=md.locf;if(md.priceMult)pMult+=md.priceMult;if(md.flatD)pFlat+=md.flatD;}});
+    const locs=li.locs||{};
+    Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;
+      const v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;
+      const share=(v/JUNK_EIGHTH)*JUNK_PEREIGHTH, locf=(JUNK_LOCF[loc]||0)+extraLocf;
+      locLabor+=share*locf;                                                                                 // access + long-carry labor
+      modLabor+=share*(pMult-1)+pFlat*q;                                                                     // heavy % · volume + disasm/bolted flat
+      if(JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;
+      const fl=it[4];if(fl&&JUNK_FEE[fl]){special+=JUNK_FEE[fl]*q;counts[fl]=(counts[fl]||0)+q;}});
+    loadMin+=junkLineLoadMin(it,li);
+  });
   const eighths=cuft/JUNK_EIGHTH;
   const haul=cuft>0?JUNK_TRIPBASE+eighths*JUNK_PEREIGHTH:0;                                                  // the volume rate
-  const overLbs=Math.max(0,lbs-cuft*JUNK_DENSITY);
-  const dump=Math.round(overLbs/2000*JUNK_TON);                                                              // heavy/dense weight surcharge
-  let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+modLabor+special+dump)/25)*25);
-  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),modLabor:Math.round(modLabor),special:special,dump:dump,total:total,counts:counts,softGoods:softGoods,loadMin:loadMin};
+  let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+modLabor+special)/25)*25);          // residential: NO weight surcharge
+  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),modLabor:Math.round(modLabor),special:special,total:total,counts:counts,softGoods:softGoods,loadMin:loadMin};
 }
 /* round-trip drive to the job, auto-figured from the customer's address → home base */
 function junkSiteDrive(){
@@ -69,8 +81,6 @@ function junkEngineObj(c){
 }
 function wizJunkUI(){
   if(!WZ.junk)WZ.junk=[];
-  const qof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.qty:0;};
-  const locof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.loc:"ground";};
   let h=wizHead(3,5,"Junk / move-out — build the load");
   h+=crewAidCard("junk");
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px"><b>Walk every room with the customer.</b> Tap + on each item that's going, and set <b>where it is</b> — upstairs and attic cost more because they're harder to carry.<br><br><b>Reading the truck:</b> you don't have to eyeball it. The tool adds each item's real size. A <b>full load ≈ 450 cu ft</b> — about a 15-yard dump trailer, or a pickup bed stacked roughly 4 ft above the rails. Stuff stacked high still counts as volume, so just add everything.<br><br><b>When done:</b> read the total off the green bar, say it once, and stop talking.</div></details>`;
@@ -78,14 +88,13 @@ function wizJunkUI(){
   h+=`<div class="card" style="padding:10px"><input id="je_search" value="${esc(WZ.junkSearch||"")}" placeholder="🔎 Search items — type TV, carpet, fridge…" autocomplete="off" oninput="wizJSearch()" style="margin:0">${WZ.junkSearch?`<button class="btn ghost sm" style="margin-top:8px" onclick="WZ.junkSearch='';render()">✕ Clear search</button>`:""}</div>`;
   h+=`<div id="je_catalog">`+junkCatalogHTML()+`</div>`;
   const c=calcJunk(),cap=getTruckCap();
-  h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💵 How the price is built (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px"><b>Volume — industry standard:</b> priced by fraction of a standard junk truck. A <b>full truck ≈ 480 cu ft (18 cu yd)</b> — the size 1-800-GOT-JUNK and the big guys use; one eighth ≈ 60 cu ft. <b>$${JUNK_TRIPBASE} base + $${JUNK_PEREIGHTH} per 1/8 truck.</b><br><b>Location labor</b> adds to each item: curbside −15%, upstairs +25%, basement +30%, attic +50%, long carry +20%.<br><b>Special items</b> are flat disposal fees: Freon $45, mattress $25, tire $8, e-waste $30, paint $10, other appliance $25.<br><b>Heavy/dense loads</b> (concrete, drywall, piles of appliances) add a landfill surcharge by weight.<br>Rounds up to the nearest $25; $${JUNK_MIN} minimum.</div></details>`;
   // volume — pickup loads (F-150 bed ≈ 1/8 box-truck) vs box-truck loads
   const unit=WZ.junkUnit||"pickup",pickupLoads=c.eighths,boxLoads=c.eighths/8,fillPct=Math.min(100,Math.round(c.eighths/8*100));
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow" style="font-weight:800">${unit==="pickup"?`≈ ${pickupLoads.toFixed(1)} pickup loads`:`≈ ${boxLoads.toFixed(2)} box-truck loads`}</div><button class="btn ghost sm" onclick="WZ.junkUnit='${unit==="pickup"?"box":"pickup"}';render()">${unit==="pickup"?"↔ box truck":"↔ my pickup"}</button></div>
     <div class="sub">${c.cuft} cu ft · ${c.lbs} lb · F-150 8-ft bed ≈ 1/8 box-truck load (60 cu ft) · box truck ≈ 480 cu ft (18 cu yd)</div>
     <div style="height:12px;background:var(--soft);border-radius:7px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${fillPct}%;background:var(--accent)"></div></div>
     <div class="sub" style="margin-top:6px">${unit==="pickup"?`${Math.ceil(pickupLoads)} pickup trip(s) at ~60 cu ft each (multi-load). Heaped beds carry more — priced by the standard truck.`:`${boxLoads.toFixed(2)} of a full box-truck load.`}</div>
-    <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b>${c.locLabor?`<br>Access labor: <b>+${money(c.locLabor)}</b>`:""}${c.modLabor?`<br>Heavy / disassembly / mounted: <b>+${money(c.modLabor)}</b>`:""}${c.special?`<br>Special-item disposal: <b>+${money(c.special)}</b>`:""}${c.dump?`<br>Heavy/dense surcharge: <b>+${money(c.dump)}</b>`:""}</div></div>`;
+    <div style="font-size:13px;line-height:1.9;margin-top:10px">Volume (${c.eighths.toFixed(1)}/8 truck): <b>${money(c.haul)}</b>${c.locLabor?`<br>Access / long-carry labor: <b>+${money(c.locLabor)}</b>`:""}${c.modLabor?`<br>Heavy / disassembly / mounted: <b>+${money(c.modLabor)}</b>`:""}${c.special?`<br>Special-item disposal: <b>+${money(c.special)}</b>`:""}</div></div>`;
   if(c.counts.freon)h+=`<div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.5">❄️ ${c.counts.freon} Freon unit(s): refrigerant must be recovered by an EPA-certified tech before the Dare County landfill will take them. The price includes the fee — line up your recovery plan before hauling.</div>`;
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
@@ -103,13 +112,15 @@ function wizJunkUI(){
 }
 function junkCatalogHTML(){
   if(!WZ.junk)WZ.junk=[];
-  const qof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.qty:0;};
-  const locof=k=>{const li=WZ.junk.find(x=>x.key===k);return li?li.loc:"ground";};
-  const row=it=>{const q=qof(it[0]),loc=locof(it[0]);let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:40px" onclick="wizJQ('${it[0]}',-1)">−</button><b style="min-width:20px;text-align:center">${q}</b><button class="btn ghost sm" style="width:40px" onclick="wizJQ('${it[0]}',1)">+</button></div></div>`;
-    if(q>0){const li=(WZ.junk||[]).find(x=>x.key===it[0])||{};let mult=1,flat=0;JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)mult*=md.timeMult;if(md.flatMin)flat+=md.flatMin;}});const itemMin=q*junkItemMin(it[2])*mult*(1+(JUNK_LOCF[loc]||0))+flat*q;
-      r+=`<div style="margin-top:6px"><select onchange="wizJL('${it[0]}',this.value)" style="font-size:13px">${JUNK_LOC.map(l=>`<option value="${l[0]}" ${loc===l[0]?"selected":""}>📍 ${l[1]}</option>`).join("")}</select></div>`;
-      r+=`<div class="row" style="gap:12px;margin-top:5px;flex-wrap:wrap">${JUNK_MODS.map(md=>`<label class="toggle" style="margin:0;font-size:13px"><input type="checkbox" ${li[md.k]?"checked":""} onchange="wizJMod('${it[0]}','${md.k}',this.checked)"><span style="margin:0">${md.short}</span></label>`).join("")}</div>`;
-      r+=`<div class="sub" style="margin-top:4px">${q}×${it[2]} = ${q*it[2]} cu ft · ~${Math.round(itemMin)} min to load${it[4]?` · +${money(JUNK_FEE[it[4]]*q)} ${esc(it[4])} disposal`:""}</div>`;}
+  const lineOf=k=>WZ.junk.find(x=>x.key===k);
+  const row=it=>{const li=lineOf(it[0])||{};const locs=li.locs||{};const q=junkLineQty(li);
+    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(it[4])} +$${JUNK_FEE[it[4]]}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:""}<button class="btn ${q>0?"ghost":"acc"} sm" onclick="wizJQ('${it[0]}','ground',1)">${q>0?"+":"+ Add"}</button></div></div>`;
+    if(q>0){
+      r+=`<div style="margin-top:6px">`+JUNK_LOC.filter(l=>(+locs[l[0]]||0)>0).map(l=>{const lq=+locs[l[0]]||0;return `<div class="row" style="align-items:center;gap:8px;margin:3px 0"><span class="grow" style="font-size:13px">📍 ${esc(l[1])}</span><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',-1)">−</button><b style="min-width:18px;text-align:center">${lq}</b><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',1)">+</button></div>`;}).join("")+`</div>`;
+      r+=`<select onchange="if(this.value)wizJQ('${it[0]}',this.value,1)" style="font-size:13px;margin-top:2px"><option value="">📍 ＋ add at another spot…</option>${JUNK_LOC.map(l=>`<option value="${l[0]}">${esc(l[1])}</option>`).join("")}</select>`;
+      r+=`<div class="row" style="gap:12px;margin-top:6px;flex-wrap:wrap">${JUNK_MODS.map(md=>`<label class="toggle" style="margin:0;font-size:13px"><input type="checkbox" ${li[md.k]?"checked":""} onchange="wizJMod('${it[0]}','${md.k}',this.checked)"><span style="margin:0">${md.short}</span></label>`).join("")}</div>`;
+      r+=`<div class="sub" style="margin-top:4px">${q}×${it[2]} = ${q*it[2]} cu ft · ~${Math.round(junkLineLoadMin(it,li))} min${it[4]?` · +${money(JUNK_FEE[it[4]]*q)} ${esc(it[4])} disposal`:""}</div>`;
+    }
     return r+`</div>`;};
   const s=(WZ.junkSearch||"").trim().toLowerCase();
   if(s){
@@ -121,8 +132,7 @@ function junkCatalogHTML(){
 }
 window.wizJSearch=function(){const e=document.getElementById("je_search");WZ.junkSearch=e?e.value:"";const c=document.getElementById("je_catalog");if(c)c.innerHTML=junkCatalogHTML();};
 window.wizJunkToggle=function(gi,open){if(!WZ.junkOpen)WZ.junkOpen={};WZ.junkOpen[gi]=open;};
-window.wizJQ=function(key,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li&&d>0){li={key:key,qty:0,loc:"ground"};WZ.junk.push(li);}if(li){li.qty=Math.max(0,(li.qty||0)+d);if(li.qty===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);}const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
-window.wizJL=function(key,v){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li.loc=v;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;}};
+window.wizJQ=function(key,loc,d){if(!WZ.junk)WZ.junk=[];let li=WZ.junk.find(x=>x.key===key);if(!li){if(d<=0)return;li={key:key,locs:{}};WZ.junk.push(li);}if(!li.locs)li.locs={};li.locs[loc]=Math.max(0,(+li.locs[loc]||0)+d);if(!li.locs[loc])delete li.locs[loc];if(junkLineQty(li)===0)WZ.junk=WZ.junk.filter(x=>x.key!==key);const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJMod=function(key,mk,on){const li=(WZ.junk||[]).find(x=>x.key===key);if(li){li[mk]=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;}};
 window.wizJunkBedbug=function(on){WZ.junkBedbug=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
 window.wizJunkCleared=function(on){WZ.junkCleared=!!on;const _y=(document.scrollingElement||document.documentElement).scrollTop;render();(document.scrollingElement||document.documentElement).scrollTop=_y;};
@@ -173,7 +183,7 @@ window.wizAddJunk=function(){
   if(!WZ.junk||!WZ.junk.length){alert("Add at least one item first.");return;}
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
   const c=calcJunk(),o=junkEngineObj(c),q=qeQuote(o),price=Math.max(c.total,q.floor),ev=qeEval(price,o);
-  const itemCount=WZ.junk.reduce((s,x)=>s+(x.qty||0),0),notes=[];
+  const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(o.mode==="dump"?"straight to dump":"stash at warehouse")+" · take-home "+money(ev.takeHome)+"/hr each.");
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:Math.round(ev.hard*100)/100,notes:notes,qty:1,unit:"job",serviceId:""});
