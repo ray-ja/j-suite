@@ -15,7 +15,6 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  if(window.GCALL && typeof rGuidedCall==="function"){ rGuidedCall(); if(typeof renderSyncPill==="function")renderSyncPill(); return; }   // live call helper takes over the view
   (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
