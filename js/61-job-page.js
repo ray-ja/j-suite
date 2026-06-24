@@ -58,7 +58,9 @@ function rJobPage(j) {
   if (j.quoteId && coTotal) h += `<div class="note" style="margin-top:8px">Update the <b>Final price</b> on the quote to bill these.</div>`;
   h += `</div>`;
 
-  if (j.notes) h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">Notes</div><div class="sub" style="white-space:pre-wrap">${esc(j.notes)}</div></div>`;
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Job notes <span class="sub" style="font-weight:400">· Cap reads these to learn from the job</span></div>
+    <textarea id="job_notes" style="min-height:72px" placeholder="What happened, access notes, gotchas, what to do differently next time…">${esc(j.notes || "")}</textarea>
+    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
   if (typeof reviewAsk === "function") h += `<button class="btn ghost" style="width:100%;margin:4px 0 0" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost" style="width:100%;margin:4px 0 10px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
   return h;
@@ -77,4 +79,9 @@ window.jobDelChangeOrder = function (jobId, coId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.changeOrders)) return;
   const c = j.changeOrders.find(x => x && x.id === coId); if (!c) return;
   c.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobSaveNotes = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  j.notes = val("job_notes") || "";
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };

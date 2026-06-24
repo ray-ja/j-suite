@@ -2,7 +2,7 @@
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
-  if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ view.innerHTML=rJobPage(_j); return; } window.JOB_OPEN=null; }
+  if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ const _pn=document.getElementById("job_notes"),_pd=_pn?_pn.value:null,_pf=_pn&&document.activeElement===_pn,_ps=_pn?_pn.selectionStart:0,_pe=_pn?_pn.selectionEnd:0; view.innerHTML=rJobPage(_j); const _nn=document.getElementById("job_notes"); if(_nn&&_pd!=null){ _nn.value=_pd; if(_pf){ _nn.focus(); try{_nn.setSelectionRange(_ps,_pe);}catch(e){} } } return; } window.JOB_OPEN=null; }
   if(SCHEDSUB==="crew")SCHEDSUB="calendar";   // crew-availability tab retired (Ray's request)
   const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button></div>`;
   if(SCHEDSUB==="myavail"){view.innerHTML=sub+(typeof renderMyAvailCalendar==="function"?renderMyAvailCalendar():"");return;}
