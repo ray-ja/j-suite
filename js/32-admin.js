@@ -11,8 +11,8 @@ const ROLES_ID = "__roles__";
 
 /* canonical page registry — mirrors the nav tabs (the admin tab itself is owner-only and excluded) */
 const ADMIN_PAGES = [
-  { tab: "today", label: "CEO desk" }, { tab: "accounts", label: "Accounts" },
-  { tab: "quotes", label: "Jobs" }, { tab: "schedule", label: "Schedule" },
+  { tab: "today", label: "CEO desk" }, { tab: "pipeline", label: "Pipeline" }, { tab: "accounts", label: "Customers" },
+  { tab: "quotes", label: "All jobs" }, { tab: "schedule", label: "Schedule" },
   { tab: "messages", label: "Messages" },
   { tab: "map", label: "Map" }, { tab: "sales", label: "Sales" },
   { tab: "todo", label: "To-Do" }, { tab: "plan", label: "Plan" },

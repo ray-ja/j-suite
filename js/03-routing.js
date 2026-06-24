@@ -15,7 +15,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
+  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
 }
@@ -24,16 +24,15 @@ const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
-  { key:"customers", label:"Sales",     icon:"👥", tabs:["accounts","sales"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["quotes","resale"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts","resale"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","approvals"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
-  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","todo","playbook"] },
+  { key:"grow",      label:"Grow",      icon:"📈", tabs:["plan","market","opps","sites","buildplan","training","map","sales","todo","playbook"] },
   { key:"more",      label:"More",      icon:"⚙️", tabs:["data","admin"] }
 ];
 const TAB_META = {
-  today:{l:"Today",i:"🧭"}, quotes:{l:"Jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
-  accounts:{l:"Accounts",i:"👥"}, sales:{l:"Sales",i:"🚗"}, messages:{l:"Messages",i:"💬"},
+  today:{l:"Today",i:"🧭"}, pipeline:{l:"Pipeline",i:"🔀"}, quotes:{l:"All jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
+  accounts:{l:"Customers",i:"👥"}, sales:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   finance:{l:"Finance",i:"💰"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
   todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}
