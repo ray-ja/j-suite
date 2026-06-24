@@ -30,7 +30,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.cust={id:q.customerId||"",name:q.cust||(q.customerId?custName(q.customerId):""),phone:"",address:q.address||"",source:"",soldBy:"",notes:"",propertyId:q.propertyId||""};
     if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c){WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";}}
     WZ.items=JSON.parse(JSON.stringify(q.items||[]));
-    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.haul=q.haul||"pickup";
+    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
@@ -173,7 +173,17 @@ function reviewSummaryHTML(){
         <div class="sub" style="margin-top:6px">Field-Work share only (80% of the 60% pool); Sales credit (15%) + Admin (5%) are separate. Hard out-of-pocket (dump/rental) comes from the 15% Business Fund. Industry margins for this kind of work run ~40–65% — but the take-home above is your real number.</div>
       </div>
     </details>`;
-  if(WZ.hours)h+=`<div class="sub" style="margin-top:4px">⏱ Planned ~${WZ.hours} hr on site${total>0?` · solo take-home ≈ ${money(fieldPool/Math.max(1,WZ.hours))}/hr`:""}.</div>`;
+  // ⏱ Hour & pay estimator — what each person actually nets if the job takes the expected time
+  const crewN=Math.max(1,WZ.crewN||1), hrs=WZ.hours||0, personHrs=crewN*hrs;
+  const perPersonField=fieldPool/crewN, perHr=hrs>0?perPersonField/hrs:0, TGT=45;
+  let est=`<div class="card" style="border-left:4px solid var(--accent);margin-top:10px"><div style="font-weight:800">⏱ Hour &amp; pay estimator</div>`;
+  est+=`<div class="sub" style="margin-top:2px;white-space:normal">If this takes <b>${crewN}</b> ${crewN===1?"person":"people"} × <b>${hrs||"?"}</b> hr${hrs===1?"":"s"} each${personHrs?` (${personHrs} crew-hours)`:""}, here's the real field-work pay:</div>`;
+  if(total>0&&hrs>0){
+    est+=`<div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap"><div class="grow"><div class="sub">Each person earns</div><div class="nm" style="font-size:18px">${money(perPersonField)}</div></div><div class="grow"><div class="sub">Per hour each</div><div class="nm" style="font-size:18px;${perHr<35?"color:var(--danger)":perHr>=TGT?"color:var(--accent)":""}">${money(perHr)}/hr</div></div></div>`;
+    if(perHr<TGT){ const need=Math.ceil((TGT*personHrs/0.48)/5)*5; est+=`<div class="note" style="margin-top:8px;white-space:normal">${perHr<35?"🔴 Low":"⚠️ Light"} — to pay <b>${money(TGT)}/hr</b> each at these hours, price this around <b>${money(need)}</b> (now ${money(total)}).</div>`; }
+    else est+=`<div class="sub" style="margin-top:6px;color:var(--accent)">✓ Solid hourly at this price.</div>`;
+  } else est+=`<div class="sub" style="margin-top:6px">Set the crew size + hours (incl. driving/hauls) above to see the per-person hourly.</div>`;
+  h+=est+`</div>`;
   if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
   return h;
 }
@@ -227,8 +237,9 @@ function wizReview(){
   h+=`<label>Discount</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">${[5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${WZ.discPct===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p}%</button>`).join("")}<button class="btn ghost sm" onclick="WZ.disc=0;WZ.discPct=null;render()">Clear</button></div>
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" oninput="wizDiscFlat(this.value)"></div></div>
     <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" oninput="WZ.miles=parseFloat(this.value)||0;wizReviewTotals()">
-    <label>Hours on site (planning)</label><input type="number" id="wz_hours" inputmode="decimal" min="0" step="0.5" value="${WZ.hours||0}" oninput="WZ.hours=parseFloat(this.value)||0;wizReviewTotals()">
-    <div class="sub">For scheduling only — labor is paid from the revenue split, so it isn't a cost line.</div></div>`;
+    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">People on the job</label><input type="number" id="wz_crewn" inputmode="numeric" min="1" step="1" value="${WZ.crewN||1}" oninput="WZ.crewN=Math.max(1,parseInt(this.value)||1);wizReviewTotals()"></div>
+      <div class="grow"><label style="margin-top:0">Hours each (incl. hauls)</label><input type="number" id="wz_hours" inputmode="decimal" min="0" step="0.5" value="${WZ.hours||0}" oninput="WZ.hours=parseFloat(this.value)||0;wizReviewTotals()"></div></div>
+    <div class="sub">Feeds the ⏱ pay estimator below — punch in crew + hours (count the driving/hauls!) and check the per-person rate before you send. Labor isn't a cost line.</div></div>`;
   // live summary region (partial-updated to preserve input focus)
   h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
   // collateral
@@ -313,7 +324,7 @@ window.wizPersist=function(){
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown})),
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
-    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,haul:WZ.haul||base.haul||"pickup"
+    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
   if(WZ.id){const i=d.quotes.findIndex(x=>x.id===WZ.id);if(i>=0)d.quotes[i]=q;else d.quotes.push(q);
