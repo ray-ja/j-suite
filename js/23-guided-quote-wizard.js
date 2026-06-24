@@ -104,7 +104,7 @@ function wizPick(){const list=WZ_SVC[S.biz];
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
     <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
-window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="junk"){openJunkTool();return;}if(k==="parking"){WZON=false;TAB="map";if(typeof render==="function")render();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};
+window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="parking"){WZON=false;TAB="map";if(typeof render==="function")render();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="junk")return wizJunkUI();
