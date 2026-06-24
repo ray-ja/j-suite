@@ -195,7 +195,7 @@ OBX SPECIFICS
 • The Wright Memorial Bridge and Currituck Sound are WINDY — crosswinds shove a loaded trailer. Slow down, both hands.
 • Summer 158 traffic stops short — more following distance.
 • Soft sand shoulders everywhere — do NOT pull onto soft ground with a load.
-• Transfer-station runs: clean brush/veg is FREE at Currituck and Dare. Tie the load, plan the route — the DRIVE is the cost, not the dump.`,
+• Transfer-station runs: brush/veg dumping COSTS money — we paid $38 for 1,300 lb (~$58/ton), and it's 40+ min each way. Tie the load, plan the route, and price BOTH the dump fee and the drive time.`,
 quiz:[
 {q:"How much of the load's weight should sit on the trailer tongue?",opts:["As little as possible","Roughly 10-15%","Half","All of it at the very back"],a:1},
 {q:"The trailer starts swaying/fishtailing. What do you do?",opts:["Slam the brakes hard","Ease off the gas and hold the wheel straight","Speed up to pull it straight","Jerk the wheel to correct"],a:1},
@@ -225,11 +225,11 @@ FELLING SMALL TREES (only if it's clearly safe)
 
 THE MONEY LESSON
 • Cutting is FAST. The DRAG (through tight side-yards, around the house, past parked cars) and the HAUL (40 min each way) eat the hours — that's where jobs get underpriced.
-• Brush/veg dumps FREE at Currituck/Dare, so the cost isn't disposal — it's your TIME and the drive. Use the ⏱ hour estimator on the quote: count the drag distance, the access, and the number of hauls, not just the cutting.`,
+• Brush/veg dumping COSTS money (~$58/ton — we paid $38 for 1,300 lb) AND the haul is ~40 min each way, so BOTH the dump fee and your drive time are real costs. Use the ⏱ hour estimator on the quote: count the dump fee, the drag distance, the access, and the number of hauls — not just the cutting.`,
 quiz:[
 {q:"Where is the chainsaw's kickback danger zone?",opts:["The bottom of the bar","The upper tip of the bar nose","The rear handle","The muffler"],a:1},
 {q:"Before making a cut you should always…",opts:["Cut as fast as possible","Clear an escape path and call out before pieces drop","Cut above your head for leverage","Work alone so no one's in the way"],a:1},
-{q:"Where do clean brush and limbs go for free near us?",opts:["The landfill at $73/ton","The Currituck or Dare County transfer station","Nowhere — it always costs","The neighbor's yard"],a:1},
+{q:"What does dumping brush/veg at the transfer station actually cost?",opts:["It's free","Real money — about $58/ton (we paid $38 for 1,300 lb), so price a dump fee","Exactly $73/ton always","Nothing if you go early"],a:1},
 {q:"On a tight backyard tree, what usually takes the most time and should drive the price?",opts:["The actual cutting","Dragging it out and hauling it away","Sharpening the saw","Filling out the quote"],a:1},
 {q:"A tree leans toward the house or there are power lines nearby. What do you do?",opts:["Drop it fast and hope","Section it down by hand/rope, or walk away — don't fell it whole","Cut above your shoulders for reach","Pull it over with the truck"],a:1}
 ]}
