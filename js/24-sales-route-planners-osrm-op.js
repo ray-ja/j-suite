@@ -1,5 +1,5 @@
 /* ---------- SALES: route planners (OSRM-optimized) ---------- */
-let SALESSUB="prospect",SMAP=null,SLAYER=null,SORDERED=[],SADDED=[],JOBDATE="";
+let SALESSUB="prospect",SMAP=null,SLAYER=null,SORDERED=[],SADDED=[],JOBDATE="",SLAST=null;
 function rSales(){
   if(!JOBDATE)JOBDATE=today();
   const subs=[["prospect","Prospecting route"],["jobs","Job route"]];
@@ -18,7 +18,7 @@ function rSales(){
       <div style="margin-top:8px" class="muted">${jobs.length} job(s) on ${fmtDate(JOBDATE)}. A job needs a property with a saved location (set the property's address to map it).</div>
       ${jobs.map(j=>{const p=j.propertyId?(D().properties||[]).find(x=>x.id===j.propertyId):null;const ok=p&&p.lat!=null;return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(j.title)}</div><div class="sub">${p?esc(p.label||p.address||""):"no property linked"}${ok?"":' · <span style="color:var(--danger)">⚠ no location</span>'}</div></div></div>`;}).join("")}</div>`;
   }
-  h+=`<div class="card"><label>Start / home base (optional — defaults to first stop)</label><div class="acwrap"><input id="s_home" value="${esc(localStorage.getItem("jra_home")||"")}" placeholder="Your start address" oninput="addrSuggest('s_home','s_hbox')" onchange="localStorage.setItem('jra_home',this.value)"><div class="acbox" id="s_hbox"></div></div>
+  h+=`<div class="card"><label>Start / home base (round trip starts &amp; ends here)</label><div class="acwrap"><input id="s_home" value="${esc(localStorage.getItem("jra_home")||((typeof homeBase==="function"&&homeBase())?homeBase().address:"")||"")}" placeholder="Your start address" oninput="addrSuggest('s_home','s_hbox')" onchange="localStorage.setItem('jra_home',this.value)"><div class="acbox" id="s_hbox"></div></div>
     <button class="btn acc" style="margin-top:10px" onclick="salesOptimize()">⚡ Optimize route</button>
     <div id="s_result" style="margin-top:10px"><span class="muted">Build your stops, then optimize.</span></div></div>
     <div id="smap"></div>
@@ -39,7 +39,7 @@ window.salesAddAddr=function(){const v=val("s_addr");if(!v){alert("Type an addre
 function renderAdded(){const el=document.getElementById("s_added");if(!el)return;el.innerHTML=SADDED.map((s,i)=>`<div class="li"><div class="grow">📍 ${esc(s.name)}</div><button class="rm" onclick="SADDED.splice(${i},1);renderAdded()">×</button></div>`).join("");}
 function collectStops(){let stops=[];
   if(SALESSUB==="prospect"){document.querySelectorAll(".sstop:checked").forEach(cb=>{const la=parseFloat(cb.getAttribute("data-lat")),ln=parseFloat(cb.getAttribute("data-lng"));if(!isNaN(la)&&!isNaN(ln))stops.push({name:cb.getAttribute("data-name"),lat:la,lng:ln});});SADDED.forEach(s=>stops.push(s));}
-  else{actJ().filter(j=>!j.done&&j.date===JOBDATE).forEach(j=>{const p=j.propertyId?(D().properties||[]).find(x=>x.id===j.propertyId):null;if(p&&p.lat!=null)stops.push({name:j.title,lat:p.lat,lng:p.lng});});}
+  else{actJ().filter(j=>!j.done&&j.date===JOBDATE).forEach(j=>{const p=j.propertyId?(D().properties||[]).find(x=>x.id===j.propertyId):null;if(p&&p.lat!=null)stops.push({name:j.title,lat:p.lat,lng:p.lng,jobId:j.id});});}
   return stops;}
 window.salesOptimize=function(){
   const stops=collectStops();const home=val("s_home");const res=document.getElementById("s_result");
@@ -57,10 +57,22 @@ function drawRoute(d,all){const trip=d.trips[0];const ordered=[];d.waypoints.for
   if(SLAYER){SLAYER.clearLayers();L.geoJSON(trip.geometry,{style:{color:"#2A6CF0",weight:5,opacity:.8}}).addTo(SLAYER);
     SORDERED.forEach((s,i)=>L.marker([s.lat,s.lng]).addTo(SLAYER).bindPopup((i+1)+". "+esc(s.name)));
     try{SMAP.fitBounds(L.geoJSON(trip.geometry).getBounds(),{padding:[30,30]});}catch(e){}}
-  const mi=(trip.distance/1609.34).toFixed(1),min=Math.round(trip.duration/60);
+  const mi=+(trip.distance/1609.34).toFixed(1),min=Math.round(trip.duration/60),njob=SORDERED.filter(s=>s.jobId).length;
+  SLAST={min:min,mi:mi};
   document.getElementById("s_result").innerHTML=`<div class="nm">${SORDERED.length} stops · ${mi} mi · ~${min} min driving</div>
     <ol style="margin:8px 0 8px 18px;font-size:14px">${SORDERED.map(s=>`<li>${esc(s.name)}</li>`).join("")}</ol>
-    <button class="btn acc sm" onclick="salesNavigate()">🧭 Navigate (Google Maps)</button>`;}
+    <button class="btn acc sm" onclick="salesNavigate()">🧭 Navigate (Google Maps)</button>${njob>1?`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="applyRouteToJobs()">⬇ Split this drive across the ${njob} jobs (cost + $/hr)</button>`:""}`;}
 window.salesNavigate=function(){if(!SORDERED.length)return;const o=SORDERED[0];const wp=SORDERED.slice(1).map(s=>s.lat+","+s.lng).join("|");
   window.open("https://www.google.com/maps/dir/?api=1&origin="+o.lat+","+o.lng+"&destination="+o.lat+","+o.lng+(wp?"&waypoints="+encodeURIComponent(wp):""),"_blank");};
+/* split the optimized day's drive evenly across its jobs → each job's driveMin/driveMiles (feeds cost + $/hr) */
+window.applyRouteToJobs=function(){
+  const jobIds=SORDERED.map(s=>s.jobId).filter(Boolean);
+  if(!jobIds.length||!SLAST){alert("Optimize a job route first.");return;}
+  const n=jobIds.length,perMin=Math.round(SLAST.min/n),perMi=Math.round(SLAST.mi/n*10)/10;
+  if(!confirm("Set ~"+perMin+" min + "+perMi+" mi drive on each of "+n+" job(s)? The day's total split evenly — feeds each job's cost + effective $/hr."))return;
+  const d=D();
+  jobIds.forEach(id=>{const j=(d.jobs||[]).find(x=>x.id===id);if(j){j.driveMin=perMin;j.driveMiles=perMi;if(typeof touch==="function")touch(j);}});
+  if(typeof save==="function")save();
+  alert("Done — each job now carries ~"+perMin+" min / "+perMi+" mi of drive.");
+};
 

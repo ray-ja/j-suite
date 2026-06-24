@@ -170,6 +170,68 @@ quiz:[
 {q:"Why do reviews matter so much to us?",opts:["They feel nice","They make us rank on Google = more free leads forever","They let us raise prices","They replace doing good work"],a:1},
 {q:"A customer is unhappy with a spot we missed. Best response?",opts:["Argue that it's fine","Apologize and fix it fast without getting defensive","Ignore them","Offer no solution"],a:1},
 {q:"What turns a one-time wash into a long-term account?",opts:["Doing nothing after","Asking for the review/referral, offering recurring, and following up later","Lowering the price each time","Never contacting them again"],a:1}
+]},
+{key:"trailer",title:"Pulling a trailer (OBX)",mins:8,body:`Most of our hauling rides on the 14-ft dual-axle trailer. Pulling it wrong wrecks the truck, the load, or someone on 158. Here's how we do it.
+
+BEFORE YOU PULL OUT — every time
+• Coupler seated on the ball and the latch PINNED (drop the pin/clip — a coupler can bounce off).
+• Safety chains CROSSED under the tongue (they cradle it if the tongue drops).
+• Breakaway cable hooked to the truck (not to the chains).
+• Lights working — brake, turn, running. Have someone stand behind and check.
+• Tires aired up — trailer tires run high PSI (~50-65); under-inflated ones blow out.
+• Load tied DOWN. Brush flies out at 50 mph — a hazard and a ticket. Straps or a cargo net, every time.
+
+LOADING IT RIGHT
+• ~10-15% of the weight on the TONGUE. Too little = sway; too much squats the truck. Heavy stuff over and just ahead of the axles, not piled at the back.
+• Don't overload — know the trailer rating and the truck's tow rating. Wet brush is heavier than it looks.
+
+DRIVING IT
+• Everything takes longer — braking, passing, accelerating. Leave room.
+• Wide turns: the trailer cuts the corner inside the truck. Swing wider than feels right.
+• Backing up: hand at the BOTTOM of the wheel, move it the way you want the trailer to go. Small inputs; pull forward to reset when crooked.
+• Sway/fishtail: ease OFF the gas and hold the wheel straight — do NOT slam the brakes.
+
+OBX SPECIFICS
+• The Wright Memorial Bridge and Currituck Sound are WINDY — crosswinds shove a loaded trailer. Slow down, both hands.
+• Summer 158 traffic stops short — more following distance.
+• Soft sand shoulders everywhere — do NOT pull onto soft ground with a load.
+• Transfer-station runs: clean brush/veg is FREE at Currituck and Dare. Tie the load, plan the route — the DRIVE is the cost, not the dump.`,
+quiz:[
+{q:"How much of the load's weight should sit on the trailer tongue?",opts:["As little as possible","Roughly 10-15%","Half","All of it at the very back"],a:1},
+{q:"The trailer starts swaying/fishtailing. What do you do?",opts:["Slam the brakes hard","Ease off the gas and hold the wheel straight","Speed up to pull it straight","Jerk the wheel to correct"],a:1},
+{q:"Which is NOT optional before pulling out?",opts:["Coupler pinned, safety chains crossed, lights working","A full tank of gas","The A/C on","A coffee in the cup holder"],a:0},
+{q:"Why tie down a brush load even for a short trip?",opts:["It looks nicer","Loose brush blows out at speed — a hazard and a ticket","It makes the trailer lighter","No reason"],a:1},
+{q:"Backing the trailer, to move the trailer to the right you…",opts:["Turn the wheel hard right, fast","Hand at the bottom of the wheel, move it right with small inputs","Close your eyes and hope","Only ever pull forward"],a:1}
+]},
+{key:"chainsaw",title:"Chainsaw & tree / brush work (OBX)",mins:10,body:`Cutting is the fast, fun part. It's also where people get hurt and where we lose money if we misjudge the job. Respect the saw and price the LOGISTICS.
+
+GEAR — non-negotiable
+• Chaps (or cut-resistant pants), eye protection, ear protection, gloves, sturdy boots. Helmet if anything's overhead.
+• Never run a saw with nobody knowing where you are.
+
+THE SAW
+• Two hands, always. Thumb WRAPPED around the front handle.
+• Chain brake ON whenever you take more than a step or two.
+• KICKBACK is the danger: the upper tip of the bar nose grabs and throws the saw back at your face. Never cut with the tip; keep your body to the SIDE of the bar, not directly behind it.
+• Don't cut above shoulder height — that's a ladder/pole/rope job, or a no.
+
+CUTTING SAFE
+• Clear an ESCAPE PATH before you cut, and call out before a piece drops.
+• Watch for BIND/PINCH — the log closing on the bar. Cut partway from the top, finish from the bottom, or use a wedge.
+• Look up and around first: power lines (call the utility — never assume), ground hornets, snakes, poison ivy, wet/soft ground.
+
+FELLING SMALL TREES (only if it's clearly safe)
+• Notch on the fall side, back-cut leaving a hinge, get out on your escape path ~45° back. ANY doubt — tight space, lean toward a house, power lines — section it down by hand/rope instead. Backyard trees are usually rope-and-section, not drop-the-whole-thing.
+
+THE MONEY LESSON
+• Cutting is FAST. The DRAG (through tight side-yards, around the house, past parked cars) and the HAUL (40 min each way) eat the hours — that's where jobs get underpriced.
+• Brush/veg dumps FREE at Currituck/Dare, so the cost isn't disposal — it's your TIME and the drive. Use the ⏱ hour estimator on the quote: count the drag distance, the access, and the number of hauls, not just the cutting.`,
+quiz:[
+{q:"Where is the chainsaw's kickback danger zone?",opts:["The bottom of the bar","The upper tip of the bar nose","The rear handle","The muffler"],a:1},
+{q:"Before making a cut you should always…",opts:["Cut as fast as possible","Clear an escape path and call out before pieces drop","Cut above your head for leverage","Work alone so no one's in the way"],a:1},
+{q:"Where do clean brush and limbs go for free near us?",opts:["The landfill at $73/ton","The Currituck or Dare County transfer station","Nowhere — it always costs","The neighbor's yard"],a:1},
+{q:"On a tight backyard tree, what usually takes the most time and should drive the price?",opts:["The actual cutting","Dragging it out and hauling it away","Sharpening the saw","Filling out the quote"],a:1},
+{q:"A tree leans toward the house or there are power lines nearby. What do you do?",opts:["Drop it fast and hope","Section it down by hand/rope, or walk away — don't fell it whole","Cut above your shoulders for reach","Pull it over with the truck"],a:1}
 ]}
 ],
 jam:[
