@@ -1,7 +1,7 @@
 /* ---------- JUNK / MOVE-OUT ITEM BUILDER (inside the wizard) ---------- */
 const JUNK_FULL=480;      // cu ft in a standard 18-cu-yd junk truck = industry "full load"
 const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
-const JUNK_TRIPBASE=60;   // $ base (drive + dump minimum)
+const JUNK_TRIPBASE=0;    // retired — "the truck is moving" is the static drive + the $175 minimum, NOT a volume base
 const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + disposal margin); the drive is added separately. Tune to taste.
 const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
@@ -66,7 +66,7 @@ function calcJunk(){
     loadMin+=junkLineLoadMin(it,li);
   });
   const eighths=cuft/JUNK_EIGHTH;
-  const haul=cuft>0?JUNK_TRIPBASE+eighths*JUNK_PEREIGHTH:0;                                                  // the volume rate
+  const haul=cuft>0?eighths*JUNK_PEREIGHTH:0;                                                               // PURE volume — no base (the static drive + $175 min already cover "the truck is moving")
   let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+modLabor+special)/25)*25);          // residential: NO weight surcharge
   return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),modLabor:Math.round(modLabor),special:special,total:total,counts:counts,softGoods:softGoods,loadMin:loadMin};
 }
@@ -208,6 +208,9 @@ window.wizAddJunk=function(){
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(mode==="dump"?"straight to dump":"stash at warehouse")+" · volume "+money(work)+" + static drive "+money(drive)+(c.special?" + disposal "+money(c.special):"")+".");
   const cost=Math.round((c.special+junkSiteDrive().rt*QE.MILEAGE+(mode!=="stash"?(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)*QE.MILEAGE:0))*100)/100;   // hard cost: disposal fees + mileage
+  // estimate the job time so the review's pay check is real (not "?"): 20-min on-site baseline + load times + drive
+  const _dr=junkSiteDrive(), totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60)+(mode!=="stash"?80/60:0);
   WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:""});
-  WZ.junk=[];WZ.junkBedbug=false;WZ.junkCrew=null;WZ.junkMode=null;WZ.step="pick";render();
+  WZ.crewN=crew; WZ.hours=Math.round(totalPH/crew*10)/10;   // carry crew + hours-each into the review
+  WZ.junk=[];WZ.junkBedbug=false;WZ.junkCrew=null;WZ.junkMode=null;WZ.step="review";render();
 };

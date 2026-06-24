@@ -140,7 +140,7 @@ window.wizAddItem=function(){const inp=wizReadInp();let res;
   if(WZ.svc==="custom"){if(!inp.name||!inp.price){alert("Add a description and price.");return;}res={name:inp.name,price:rnd5(inp.price),notes:[]};}
   else{if(!inp.qty&&!inp.count&&!inp.hours&&WZ.svc!=="housewatch"&&WZ.svc!=="starlink"&&WZ.svc!=="network"){alert("Enter the amount of work first.");return;}res=calcQuote(WZ.svc,inp);}
   WZ.items.push({name:res.name,price:res.price,cost:(res.cost||0),notes:res.notes||[],qty:1,unit:"quote",serviceId:""});
-  WZ.step="pick";render();
+  WZ.step="review";render();
 };
 window.wizRemItem=function(i){WZ.items.splice(i,1);render();};
 /* discount: chips re-render (to re-highlight); the live %/flat inputs update in place to keep focus */
@@ -151,41 +151,22 @@ window.wizDiscFlat=function(v){WZ.disc=parseFloat(v)||0;WZ.discPct=null;wizRevie
 /* ---- the single editable review/edit screen ---- */
 function reviewSummaryHTML(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const mc=mileageCost(WZ.miles);
-  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;
-  const total=Math.max(0,sub-recDisc-(WZ.disc||0));
-  const cost=itemsCost(WZ.items)+mc;
-  const profit=total-cost,margin=total>0?profit/total:0;
-  const floorPrice=cost>0?cost/(1-MARGIN_FLOOR):0;
-  const maxDisc=Math.max(0,sub-floorPrice),maxDiscPct=sub>0?(maxDisc/sub*100):0;
-  const fieldPool=total*0.60*0.80;
-  const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
-  let h=`<div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${recDisc?"<br>Recurring −"+money(recDisc):""}${WZ.disc?"<br>Discount −"+money(WZ.disc)+(WZ.discPct?" ("+WZ.discPct+"%)":""):""}</div>`;
-  h+=cogsStrip(total,cost);
-  h+=`<div class="sub" style="margin-top:4px">Cost includes ${money(itemsCost(WZ.items))} job hard cost${WZ.miles?" + "+money(mc)+" drive ("+WZ.miles+" mi × "+MILEAGE_RATE_LABEL+")":""}.</div>`;
-  if(cost>0)h+=`<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div style="font-weight:800;font-size:13px">🛑 Walk-away floor</div><div class="sub" style="margin-top:2px">Lowest price before you drop under the ${Math.round(MARGIN_FLOOR*100)}% floor: <b>${money(floorPrice)}</b>. Room to discount: <b>${money(maxDisc)} (${maxDiscPct.toFixed(0)}%)</b> off the ${money(sub)} subtotal.</div></div>`;
-  h+=`<details class="card" style="margin-top:8px"><summary style="font-weight:800;cursor:pointer">💰 Why this margin + your take-home (tap)</summary>
-      <div style="font-size:13px;line-height:1.7;margin-top:8px">
-        <b>Margin = price vs. hard cost.</b> Price ${money(total)} − cost ${money(cost)} (job ${money(itemsCost(WZ.items))}${WZ.miles?` + drive ${money(mc)}`:''}) = profit <b>${money(profit)}</b> (${pct(margin)}). This margin <b>excludes your labor</b> — that's paid from the 60% Labor Pool, so it isn't a cost here.<br><br>
-        <b>Your take-home from this job</b> — OA split: 25% tax · 15% business · 60% labor → 80% Field Work, split by who works:
-        <table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:13px">
-          <tr><td>Solo (1 person)</td><td style="text-align:right;font-weight:800">${money(fieldPool)}</td></tr>
-          <tr style="border-top:1px solid var(--line)"><td>2 people — each</td><td style="text-align:right;font-weight:800">${money(fieldPool/2)}</td></tr>
-          <tr style="border-top:1px solid var(--line)"><td>3 people — each</td><td style="text-align:right;font-weight:800">${money(fieldPool/3)}</td></tr>
-        </table>
-        <div class="sub" style="margin-top:6px">Field-Work share only (80% of the 60% pool); Sales credit (15%) + Admin (5%) are separate. Hard out-of-pocket (dump/rental) comes from the 15% Business Fund. Industry margins for this kind of work run ~40–65% — but the take-home above is your real number.</div>
-      </div>
-    </details>`;
-  // ⏱ Hour & pay estimator — what each person actually nets if the job takes the expected time
+  const total=Math.max(0,sub-(WZ.disc||0));
+  const cost=itemsCost(WZ.items);                        // hard cost only (disposal + mileage already baked into the line)
+  const profit=total-cost;
   const crewN=Math.max(1,WZ.crewN||1), hrs=WZ.hours||0, personHrs=crewN*hrs;
+  const fieldPool=Math.max(0,total-cost)*0.48;           // (revenue − hard costs) × 60% labor × 80% field work
   const perPersonField=fieldPool/crewN, perHr=hrs>0?perPersonField/hrs:0, TGT=45;
-  let est=`<div class="card" style="border-left:4px solid var(--accent);margin-top:10px"><div style="font-weight:800">⏱ Hour &amp; pay estimator</div>`;
-  est+=`<div class="sub" style="margin-top:2px;white-space:normal">If this takes <b>${crewN}</b> ${crewN===1?"person":"people"} × <b>${hrs||"?"}</b> hr${hrs===1?"":"s"} each${personHrs?` (${personHrs} crew-hours)`:""}, here's the real field-work pay:</div>`;
+  const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
+  let h=`<div style="margin-top:10px;font-size:14px">Subtotal: ${money(sub)}${WZ.disc?`<br>Discount −${money(WZ.disc)}${WZ.discPct?` (${WZ.discPct}%)`:""}`:""}<br><b>Total ${money(total)}</b> · hard cost ${money(cost)} · profit <b>${money(profit)}</b></div>`;
+  // ⏱ Pay estimate — what each person nets at the estimated time (auto from the build; $45/hr floor)
+  let est=`<div class="card" style="border-left:4px solid var(--accent);margin-top:10px"><div style="font-weight:800">⏱ Pay estimate</div>`;
+  est+=`<div class="sub" style="margin-top:2px;white-space:normal">Takes <b>${crewN}</b> ${crewN===1?"person":"people"} × ~<b>${hrs||"?"}</b> hr${hrs===1?"":"s"} each${personHrs?` (${Math.round(personHrs*10)/10} crew-hours — drive + load + 20-min on-site)`:""}:</div>`;
   if(total>0&&hrs>0){
-    est+=`<div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap"><div class="grow"><div class="sub">Each person earns</div><div class="nm" style="font-size:18px">${money(perPersonField)}</div></div><div class="grow"><div class="sub">Per hour each</div><div class="nm" style="font-size:18px;${perHr<35?"color:var(--danger)":perHr>=TGT?"color:var(--accent)":""}">${money(perHr)}/hr</div></div></div>`;
-    if(perHr<TGT){ const need=Math.ceil((TGT*personHrs/0.48)/5)*5; est+=`<div class="note" style="margin-top:8px;white-space:normal">${perHr<35?"🔴 Low":"⚠️ Light"} — to pay <b>${money(TGT)}/hr</b> each at these hours, price this around <b>${money(need)}</b> (now ${money(total)}).</div>`; }
-    else est+=`<div class="sub" style="margin-top:6px;color:var(--accent)">✓ Solid hourly at this price.</div>`;
-  } else est+=`<div class="sub" style="margin-top:6px">Set the crew size + hours (incl. driving/hauls) above to see the per-person hourly.</div>`;
+    est+=`<div class="row" style="gap:14px;margin-top:8px;flex-wrap:wrap"><div class="grow"><div class="sub">Each person earns</div><div class="nm" style="font-size:18px">${money(perPersonField)}</div></div><div class="grow"><div class="sub">Per hour each</div><div class="nm" style="font-size:18px;color:${perHr<TGT?"var(--danger)":"var(--accent)"}">${money(perHr)}/hr ${perHr>=TGT?"✓":"⚠"}</div></div></div>`;
+    if(perHr<TGT){ const need=Math.ceil((TGT*personHrs/0.48+cost)/5)*5; est+=`<div class="note" style="margin-top:8px;white-space:normal">⚠️ Below your <b>${money(TGT)}/hr</b> floor — to clear it at these hours, price around <b>${money(need)}</b> (now ${money(total)}).</div>`; }
+    else est+=`<div class="sub" style="margin-top:6px;color:var(--accent)">✓ Clears your $45/hr floor.</div>`;
+  } else est+=`<div class="sub" style="margin-top:6px">Set crew + hours below to see the per-person hourly.</div>`;
   h+=est+`</div>`;
   if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
   return h;
@@ -193,7 +174,7 @@ function reviewSummaryHTML(){
 function wizReviewTotals(){
   const s=document.getElementById("wz_summary");if(s)s.innerHTML=reviewSummaryHTML();
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const total=Math.max(0,sub-recDisc-(WZ.disc||0));
+  const total=Math.max(0,sub-(WZ.disc||0));
   const f=document.getElementById("wz_rtotal");if(f)f.textContent=money(total);
   wizAutosave();
 }
@@ -201,9 +182,7 @@ function wizReview(){
   if(!WZ.items)WZ.items=[];
   if(typeof wizLockReconcile==="function")wizLockReconcile();
   const editing=!!WZ.id;
-  const c=cat(),groups=[];c.forEach(s=>{if(!groups.includes(s.cat))groups.push(s.cat);});
-  const svcOpts=i=>`<option value="">— link a catalog service (optional) —</option>`+groups.map(g=>`<optgroup label="${esc(g)}">`+c.filter(s=>s.cat===g).map(s=>`<option value="${s.id}" ${WZ.items[i].serviceId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")+`</optgroup>`).join("");
-  let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Step 4 of 5"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
+  let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Review"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
   if(WZ.readonly)h=`<div class="lockbanner"><div class="grow">🔒 <b>${esc((WZ.lockBy&&WZ.lockBy.name)||"Someone")}</b>${WZ.lockBy&&WZ.lockBy.initials?` (${esc(WZ.lockBy.initials)})`:""} is editing this — read-only.</div><button class="btn acc sm" onclick="wizTakeOver()">Take over editing</button></div>`+h;
   // customer mini-form (full single flow — no bounce required)
   h+=`<div class="card"><div class="row" style="align-items:center"><div class="grow"><label style="margin-top:0">Customer / name</label></div><button class="btn ghost sm" onclick="WZ.step='cust';render()">↩ Full picker</button></div>
@@ -212,37 +191,27 @@ function wizReview(){
     <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
   // editable line items
   h+=`<div class="secthd"><h2>Line items</h2><span class="ct">${WZ.items.length}</span></div><div id="wz_lines">`;
-  if(!WZ.items.length)h+=`<div class="empty">No items yet — add a service or a manual line below.</div>`;
+  if(!WZ.items.length)h+=`<div class="empty">No items yet — add a manual line below.</div>`;
   else h+=WZ.items.map((it,i)=>{
     const lineTot=(it.price||0)*(it.qty||1);
-    const junkish=/junk|haul|debris|clear|cleanout|clean-?out|dump|move-?out|demo|storm|brush|tree|shrub|bush|stump|veget|yard|limb|land.?clear/i.test(it.name||"");
-    let r=`<div class="card" style="padding:10px;margin-bottom:8px">
-      <input value="${esc(it.name||"")}" placeholder="Line description" oninput="wizItemField(${i},'name',this.value)" style="font-weight:600;margin:0">
-      <div class="row" style="gap:6px;align-items:center;margin-top:6px"><select style="flex:1;font-size:12px" onchange="wizLineSvc(${i},this.value)">${svcOpts(i)}</select><button class="rm" onclick="wizRemItem(${i})" title="remove">×</button></div>
+    return `<div class="card" style="padding:10px;margin-bottom:8px">
+      <div class="row" style="gap:6px;align-items:center"><input value="${esc(it.name||"")}" placeholder="Line description" oninput="wizItemField(${i},'name',this.value)" style="font-weight:600;margin:0;flex:1"><button class="rm" onclick="wizRemItem(${i})" title="remove">×</button></div>
       <div class="row" style="gap:8px;margin-top:6px">
         <div style="flex:1"><label style="margin:0 0 2px">Qty</label><input class="q" type="number" min="1" value="${it.qty||1}" oninput="wizItemField(${i},'qty',this.value)" style="width:100%"></div>
         <div style="flex:1"><label style="margin:0 0 2px">Price $</label><input type="number" value="${it.price||0}" oninput="wizItemField(${i},'price',this.value)" style="width:100%;text-align:right"></div>
         <div style="flex:1"><label style="margin:0 0 2px">Cost $</label><input type="number" value="${it.cost||0}" oninput="wizItemField(${i},'cost',this.value)" style="width:100%;text-align:right"></div>
       </div>
-      <div class="sub" style="margin-top:4px">Line total: <b id="lt_${i}">${money(lineTot)}</b>${it.notes&&it.notes.length?` · ${esc((it.notes||[]).join("; "))}`:""}</div>`;
-    if(junkish)r+=`<details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">⚖ Add dump fee from load weight</summary>
-      <label style="margin-top:6px">Estimated load weight (lbs)</label><input id="df_lbs_${i}" type="number" inputmode="decimal" value="2000" placeholder="pickup load ≈ 1,500–2,500">
-      <div class="toggle"><input type="checkbox" id="df_veg_${i}"><label style="margin:0">Clean vegetative debris (yard/brush) — billed ~$${VEG_RATE_PER_TON}/ton (NOT free)</label></div>
-      <button class="btn ghost sm" style="margin-top:6px" onclick="wizDumpFee(${i})">Add dump fee + dump-run drive</button>
-      <div class="sub" style="margin-top:4px">Mixed C&amp;D $${DISPOSAL_RATE_PER_TON}/ton (first ${DISPOSAL_FREE_LBS} lbs free) · brush/veg $${VEG_RATE_PER_TON}/ton. Also adds the ~${DISPOSAL_TRIP_MILES}-mi round-trip drive to the transfer station (@ ${MILEAGE_RATE_LABEL}/mi).</div></details>`;
-    return r+`</div>`;
+      <div class="sub" style="margin-top:4px">Line total: <b id="lt_${i}">${money(lineTot)}</b>${it.notes&&it.notes.length?` · ${esc((it.notes||[]).join("; "))}`:""}</div></div>`;
   }).join("");
   h+=`</div>`;
-  h+=`<div class="row" style="gap:8px"><button class="btn ghost grow" onclick="wizAddBlankLine()">+ Add manual line</button><button class="btn ghost grow" onclick="WZ.step='pick';render()">+ Add service</button></div>`;
+  h+=`<button class="btn ghost" style="width:100%" onclick="wizAddBlankLine()">+ Add manual line</button>`;
   // options
   h+=`<div class="card" style="margin-top:10px">`;
-  if(BIZ[S.biz].recurring)h+=`<div class="toggle"><input type="checkbox" id="wz_rec" ${WZ.recurring?"checked":""} onchange="WZ.recurring=this.checked;wizReviewTotals()"><label style="margin:0">Recurring plan — 20% off</label></div>`;
   h+=`<label>Discount</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:6px">${[5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${WZ.discPct===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p}%</button>`).join("")}<button class="btn ghost sm" onclick="WZ.disc=0;WZ.discPct=null;render()">Clear</button></div>
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" oninput="wizDiscFlat(this.value)"></div></div>
-    <label>Round-trip miles (drive cost @ ${MILEAGE_RATE_LABEL}/mi)</label><input type="number" id="wz_miles" inputmode="decimal" value="${WZ.miles||0}" oninput="WZ.miles=parseFloat(this.value)||0;wizReviewTotals()">
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">People on the job</label><input type="number" id="wz_crewn" inputmode="numeric" min="1" step="1" value="${WZ.crewN||1}" oninput="WZ.crewN=Math.max(1,parseInt(this.value)||1);wizReviewTotals()"></div>
-      <div class="grow"><label style="margin-top:0">Hours each (incl. hauls)</label><input type="number" id="wz_hours" inputmode="decimal" min="0" step="0.5" value="${WZ.hours||0}" oninput="WZ.hours=parseFloat(this.value)||0;wizReviewTotals()"></div></div>
-    <div class="sub">Feeds the ⏱ pay estimator below — punch in crew + hours (count the driving/hauls!) and check the per-person rate before you send. Labor isn't a cost line.</div></div>`;
+      <div class="grow"><label style="margin-top:0">Hours each (drive + load)</label><input type="number" id="wz_hours" inputmode="decimal" min="0" step="0.5" value="${WZ.hours||0}" oninput="WZ.hours=parseFloat(this.value)||0;wizReviewTotals()"></div></div>
+    <div class="sub">Auto-estimated from the build — tweak if it's bigger. The pay check below holds it to your $45/hr floor.</div></div>`;
   // live summary region (partial-updated to preserve input focus)
   h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
   // collateral
@@ -262,7 +231,7 @@ function wizReview(){
         <button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Accept &amp; schedule job →</button>`;
     }
     h+=`</div>`;
-    let _qsub=0;WZ.items.forEach(it=>_qsub+=(it.price||0)*(it.qty||1));const _qtot=Math.max(0,_qsub-((WZ.recurring&&BIZ[S.biz].recurring)?_qsub*0.2:0)-(WZ.disc||0));
+    let _qsub=0;WZ.items.forEach(it=>_qsub+=(it.price||0)*(it.qty||1));const _qtot=Math.max(0,_qsub-(WZ.disc||0));
     h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
       <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>
       <label style="margin-top:10px">Final price charged <span class="sub">— if different from the ${money(_qtot)} quote (add-ons, discount)</span></label>
@@ -274,7 +243,7 @@ function wizReview(){
     h+=`</div><button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
   }
   // sticky save footer
-  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const total=Math.max(0,sub-recDisc-(WZ.disc||0));
+  let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));const total=Math.max(0,sub-(WZ.disc||0));
   h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
   return h;
 }
