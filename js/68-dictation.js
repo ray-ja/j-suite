@@ -27,6 +27,7 @@
   function stop() { on = false; if (btn) { btn.innerHTML = "🎤"; btn.style.background = "var(--accent)"; } try { rec && rec.stop(); } catch (_) { } }
   function toggle() {
     if (on) { stop(); return; }
+    if (!window.isSecureContext) { alert("Voice typing needs a secure (https) connection. On desktop, open the app at its https jsuite.dev address rather than a raw http:// IP."); return; }
     if (!isField(field)) { const ta = document.querySelector("textarea,input[type=text]"); if (ta) { field = ta; ta.focus(); } }
     if (!field) return;
     rec = new SR(); rec.lang = "en-US"; rec.continuous = true; rec.interimResults = false;
