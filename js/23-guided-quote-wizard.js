@@ -147,9 +147,9 @@ window.wizRemItem=function(i){WZ.items.splice(i,1);render();};
 window.wizDiscPct=function(p){p=p||0;let s=0;(WZ.items||[]).forEach(it=>s+=(it.price||0)*(it.qty||1));WZ.discPct=p;WZ.disc=Math.round(s*p/100);render();};
 window.wizDiscPctLive=function(v){let p=parseFloat(v)||0,s=0;(WZ.items||[]).forEach(it=>s+=(it.price||0)*(it.qty||1));WZ.discPct=p;WZ.disc=Math.round(s*p/100);const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc;wizReviewTotals();};
 window.wizDiscFlat=function(v){WZ.disc=parseFloat(v)||0;WZ.discPct=null;wizReviewTotals();};
-/* the discount slider: % off → updates the flat $ + % inputs in place + the live band/pay summary */
-window.wizDiscSlide=function(v){let p=parseInt(v)||0,s=0;(WZ.items||[]).forEach(it=>s+=(it.price||0)*(it.qty||1));WZ.discPct=p;WZ.disc=Math.round(s*p/100);
-  const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc;const pf=document.getElementById("wz_discpct");if(pf)pf.value=p||"";
+/* the price dial: sets the final price directly. disc = quote − price (negative disc = markup). updates inputs + live summary */
+window.wizPriceSlide=function(price,sub){price=parseFloat(price)||0;WZ.disc=Math.round((sub||0)-price);WZ.discPct=null;
+  const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc>0?WZ.disc:"";const pf=document.getElementById("wz_discpct");if(pf)pf.value="";
   wizReviewTotals();};
 /* ← from the review back to the load builder; drop the line being edited so re-adding doesn't duplicate (the builder still holds WZ.junk / WZ.inp) */
 window.wizBackToBuild=function(){if(WZ.items&&WZ.items.length)WZ.items.pop();WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};
@@ -170,7 +170,7 @@ function reviewSummaryHTML(){
   const z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,Math.max(1,total/bMax*100));
   const zone=total<bandLo?["underpriced","#c1121f"]:total<bMid?["good value","#1a7f37"]:total<=bandHi?["premium","#b8860b"]:["above market","#c1121f"];
   let h=`<div class="card" style="margin-top:10px">
-    <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:26px">${money(total)}</div><div class="sub" style="text-align:right">${WZ.disc?`was ${money(sub)} · −${money(WZ.disc)}${WZ.discPct?` (${WZ.discPct}%)`:""}`:`hard cost ${money(cost)}`}<br>profit ${money(profit)}</div></div>
+    <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:26px">${money(total)}</div><div class="sub" style="text-align:right">${WZ.disc>0?`was ${money(sub)} · −${money(WZ.disc)}${WZ.discPct?` (${WZ.discPct}%)`:""}`:WZ.disc<0?`marked up +${money(-WZ.disc)} over ${money(sub)}`:`hard cost ${money(cost)}`}<br>profit ${money(profit)}</div></div>
     <div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
     <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>
     <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0&&perHr<TGT?"var(--danger)":"var(--accent)"}">${hrs>0?money(perHr)+"/hr "+(perHr>=TGT?"✓":"⚠"):"—"}</div></div></div>`;
@@ -198,12 +198,14 @@ function wizReview(){
     <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
     <label>Phone</label><input id="r_phone" value="${esc(WZ.cust.phone||"")}" inputmode="tel" placeholder="(252) ___-____" onchange="WZ.cust.phone=this.value;wizAutosave()">
     <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
-  // price adjuster — slide along the band to discount; chips + custom %/flat still available
+  // price dial — drag LEFT to discount (down to your good-value floor), RIGHT to mark up jobs you don't want (to +20%)
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Adjust the price — slide to discount</label>
-    <input type="range" min="0" max="40" step="1" value="${WZ.discPct||0}" oninput="wizDiscSlide(this.value)" style="width:100%;accent-color:var(--accent)">
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin:2px 0 6px">${[0,5,10,15,20,25,30].map(p=>`<button class="btn ghost sm" style="${(WZ.discPct||0)===p?'background:var(--accent);color:var(--accent-ink);border-color:var(--accent)':''}" onclick="wizDiscPct(${p})">${p?p+"%":"Full price"}</button>`).join("")}</div>
-    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Custom %</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $ off</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc||0}" oninput="wizDiscFlat(this.value)"></div></div></div>`;
+  const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk:{lo:150,hi:800};
+  const floorP=Math.max(_B.lo,Math.ceil(_cost*1.2/5)*5),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
+  h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
+    <input type="range" min="${floorP}" max="${ceilP}" step="5" value="${curP}" oninput="wizPriceSlide(this.value,${sub})" style="width:100%;accent-color:var(--accent)">
+    <div class="row" style="justify-content:space-between"><span class="sub">◀ floor ${money(floorP)}</span><span class="sub">full ${money(sub)} · +20% ${money(ceilP)} ▶</span></div>
+    <div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label style="margin-top:0">Custom % off</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $ off</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc>0?WZ.disc:''}" oninput="wizDiscFlat(this.value)"></div></div></div>`;
   // live summary region (partial-updated to preserve input focus)
   h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
   // collateral
