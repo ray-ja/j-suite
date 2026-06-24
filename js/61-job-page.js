@@ -17,6 +17,7 @@ function jobAddr(j) {
 function rJobPage(j) {
   const cust = (typeof custName === "function") ? custName(j.customerId) : "";
   const addr = jobAddr(j);
+  const _ll = (typeof jobLatLng === "function") ? jobLatLng(j) : null, _drive = (_ll && typeof driveBadge === "function") ? driveBadge(_ll.lat, _ll.lng) : "";
   const crewNames = (j.crew || []).map(id => (typeof userName === "function" ? userName(id) : "") || "").filter(Boolean).join(", ");
   const me = (typeof tcWho === "function") ? tcWho() : null;
   const tc = (typeof actTC === "function") ? actTC() : [];
@@ -31,7 +32,7 @@ function rJobPage(j) {
 
   h += `<div class="card"><div class="nm" style="font-size:17px">${esc(cust || "—")}</div>`;
   h += addr
-    ? `<div class="sub" style="white-space:normal;margin-top:4px">${esc(addr)}</div><a class="btn ghost sm" style="margin-top:8px;display:inline-block" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">🗺️ Directions</a>`
+    ? `<div class="sub" style="white-space:normal;margin-top:4px">${esc(addr)}</div>${_drive ? `<div class="sub" style="margin-top:4px;font-weight:600;color:var(--brand-text)">${_drive}</div>` : ""}<a class="btn ghost sm" style="margin-top:8px;display:inline-block" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">🗺️ Directions</a>`
     : `<div class="muted" style="margin-top:4px">No address on file.</div>`;
   h += `</div>`;
 

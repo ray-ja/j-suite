@@ -43,6 +43,7 @@ window.profileMenu=function(){
         <option value="jam" ${S.biz==="jam"?"selected":""}>Jamieson Automation</option>
       </select></div>
     <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>Dark mode</strong></div><input type="checkbox" style="width:auto;flex:0 0 auto" ${dk?"checked":""} onchange="toggleTheme()"></div></div>
+    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🏠 Home base</strong><div class="sub" style="white-space:normal">${(typeof homeBase==="function"&&homeBase())?esc(homeBase().address):"Not set — drive times need this"}</div></div><button class="btn ghost sm" onclick="closeModal();setHomeBase()">Set</button></div></div>
     <button class="btn" style="width:100%;margin-top:6px;background:var(--danger);color:#fff" onclick="closeModal();logoutUser()">Sign out</button>
   `);
 };

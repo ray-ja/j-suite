@@ -26,7 +26,7 @@ function rProperties(){
   const s=document.getElementById("psearch");
   if(s)s.oninput=e=>{PSEARCH=e.target.value;const p=s.selectionStart;rProperties();const n=document.getElementById("psearch");n.focus();n.setSelectionRange(p,p);};
 }
-function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}</div></div></div>`;}
+function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const _drive=(p.lat!=null&&typeof driveBadge==="function")?driveBadge(p.lat,p.lng):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}${_drive?" · "+_drive:""}</div></div></div>`;}
 function liCustomer(c){
   const tel=(c.phone||"").replace(/[^0-9+]/g,"");
   const parts=[]; const meta=[c.company&&c.name?c.company:"",c.town].filter(Boolean).join(" · "); if(meta)parts.push(esc(meta));
