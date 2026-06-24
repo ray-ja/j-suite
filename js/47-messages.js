@@ -49,10 +49,12 @@ function updateMsgBadge() {
 window.updateMsgBadge = updateMsgBadge;
 
 /* ----- write helpers ----- */
-function msgPost(tid, body, senderLabelOverride) {
+let MSG_PENDING = null;   // an uploaded-but-unsent photo id for the reply composer
+function msgPost(tid, body, senderLabelOverride, attachments) {
   const u = (typeof curUser === "function") ? curUser() : null; if (!u) { alert("Sign in to send."); return; }
-  body = (body || "").trim(); if (!body) return;
-  msgColl().push({ id: "msg_" + uid(), threadId: tid, senderId: u.id, senderLabel: senderLabelOverride || u.username || "—", body: body, ts: now(), deleted: false, updatedAt: now() });
+  body = (body || "").trim(); attachments = (attachments || []).filter(a => a && a.id);
+  if (!body && !attachments.length) return;
+  msgColl().push({ id: "msg_" + uid(), threadId: tid, senderId: u.id, senderLabel: senderLabelOverride || u.username || "—", body: body, ts: now(), attachments: attachments.length ? attachments : undefined, deleted: false, updatedAt: now() });
   markRead(tid);   // your own send counts as read
   if (typeof logChange === "function") logChange("create", "message", tid, "Message in " + tid);
   save();
@@ -115,12 +117,16 @@ function renderThread(tid) {
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
-    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`;
+    const _att = (m.attachments || []).filter(a => a && a.id && !a.deleted);
+    const _attHtml = _att.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">` + _att.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="max-width:180px;max-height:180px;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>` : "";
+    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_attHtml}</div></div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
   let h = `<div class="secthd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
-  h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>
-    <button class="btn acc" style="margin-top:8px" onclick="msgSendReply('${tid}')">Send</button>`;
+  h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>`;
+  if (MSG_PENDING) h += `<div class="row" style="gap:8px;margin-top:6px;align-items:center"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(MSG_PENDING) : ""}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="sub">photo attached</span><button class="btn ghost sm" onclick="msgClearPhoto()">✕</button></div>`;
+  h += `<input type="file" id="msg_photo" accept="image/*" capture="environment" style="display:none" onchange="msgAddPhoto(this)">
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('msg_photo').click()">📷 Photo</button><button class="btn acc grow" onclick="msgSendReply('${tid}')">Send</button></div>`;
   view.innerHTML = h;
   const _ta = document.getElementById("msg_reply");
   if (_ta) { if (_draft) _ta.value = _draft; if (_focused) { _ta.focus(); try { _ta.setSelectionRange(_selS, _selE); } catch (e) {} } }
@@ -133,7 +139,9 @@ window.msgOpen = function (tid) {
   renderThread(tid);
 };
 window.msgBack = function () { MSG_OPEN = null; render(); };
-window.msgSendReply = function (tid) { const b = val("msg_reply"); if (!b) return; msgPost(tid, b); render(); };
+window.msgSendReply = function (tid) { const b = val("msg_reply"); const atts = MSG_PENDING ? [{ id: MSG_PENDING, ts: now() }] : []; if (!b && !atts.length) return; msgPost(tid, b, null, atts); MSG_PENDING = null; render(); };
+window.msgAddPhoto = function (input) { const file = input && input.files && input.files[0]; if (!file) return; if (typeof jsUpload !== "function") { alert("Photo needs a connection."); return; } jsUpload(file).then(function (id) { MSG_PENDING = id; render(); }).catch(function (e) { alert("Upload failed: " + (e.message || e)); }); };
+window.msgClearPhoto = function () { MSG_PENDING = null; render(); };
 
 /* ----- availability quick-replies: write STRUCTURED availability data, not text ----- */
 function msgAvailChips(tid) {
