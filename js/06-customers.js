@@ -7,7 +7,7 @@ function rCustomers(){
   let list=actC().slice().sort((a,b)=>(a.name||a.company||"").localeCompare(b.name||b.company||""));
   if(CSEARCH){const q=CSEARCH.toLowerCase();
     list=list.filter(c=>((c.name||"")+(c.company||"")+(c.phone||"")).toLowerCase().includes(q));}
-  let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
+  let h=acctSubnav()+(ACCTSUB!=="properties"?`<button class="btn acc" style="width:100%;margin-bottom:10px;padding:13px;font-size:16px" onclick="openGuidedCall()">📞 On a call? — I'll run it</button>`:"")+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
   if(!actC().length)h+=`<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
   else if(!list.length)h+=`<div class="empty">No matches.</div>`;
   else h+=`<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
