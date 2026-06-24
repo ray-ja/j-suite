@@ -3,7 +3,7 @@ const JUNK_FULL=480;      // cu ft in a standard 18-cu-yd junk truck = industry 
 const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
 const JUNK_TRIPBASE=60;   // $ base (drive + dump minimum)
 const JUNK_PEREIGHTH=90;  // $ per 1/8-truck of volume (OBX premium; tune to taste)
-const JUNK_MIN=95;        // minimum job ($)
+const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
 const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
@@ -94,9 +94,9 @@ function wizJunkUI(){
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Crew &amp; disposal</div>
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Crew (people)</label><input type="number" value="${_crew}" min="1" onchange="WZ.junkCrew=parseFloat(this.value)||2;render()"></div><div class="grow"><label style="margin-top:0">Where does it go?</label><select onchange="WZ.junkMode=this.value;render()"><option value="dump" ${_mode!=="stash"?"selected":""}>Straight to the dump</option><option value="stash" ${_mode==="stash"?"selected":""}>Stash at the warehouse</option></select></div></div>
     <div class="sub" style="margin-top:6px">🚗 Drive auto-figured from the address: ~${_dr.rt} mi round-trip${_mode!=="stash"?` · dump run ~${(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55)} mi RT (1 person)`:` · no dump run (stashing)`}</div></div>`;
-  const o=junkEngineObj(c),price=c.total;   // VOLUME is the price; the strip below just checks take-home/hr
-  h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">PRICE TO GIVE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(price)}</div><div style="font-size:12px;opacity:.85">${c.cuft} cu ft · ${c.eighths.toFixed(1)}/8 truck · ${c.lbs} lb</div></div>`;
-  h+=qeStrip(price,o,"junk");
+  const o=junkEngineObj(c),price=Math.max(JUNK_MIN,c.total),ev=qeEval(price,o),atMin=price<=JUNK_MIN;   // never below the minimum
+  h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center"><div style="font-size:13px;font-weight:700">PRICE TO GIVE</div><div style="font-size:32px;font-weight:800;line-height:1.1">${money(price)}</div><div style="font-size:12px;opacity:.85">${c.cuft} cu ft · ${c.eighths.toFixed(1)}/8 truck · ${c.lbs} lb${atMin?" · minimum job":""}</div></div>`;
+  h+=`<div class="sub" style="text-align:center;margin:6px 2px;font-size:13px;font-weight:700;color:${ev.takeHome>=QE.TAKE_HOME?"#1a7f37":"var(--muted)"}">Each person takes home ~${money(ev.takeHome)}/hr${ev.takeHome>=QE.TAKE_HOME?" ✓":atMin?" · just the minimum on a small load (that's fine)":" · light for a dump run — stash it or add more"}</div>`;
   h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button></div>`;
   return h;
 }
@@ -171,7 +171,7 @@ window.openTrailerBuy=function(){
 window.wizAddJunk=function(){
   if(!WZ.junk||!WZ.junk.length){alert("Add at least one item first.");return;}
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
-  const c=calcJunk(),o=junkEngineObj(c),price=c.total,ev=qeEval(price,o);
+  const c=calcJunk(),o=junkEngineObj(c),price=Math.max(JUNK_MIN,c.total),ev=qeEval(price,o);
   const itemCount=WZ.junk.reduce((s,x)=>s+(x.qty||0),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · "+(o.mode==="dump"?"straight to dump":"stash at warehouse")+" · take-home "+money(ev.takeHome)+"/hr each.");
