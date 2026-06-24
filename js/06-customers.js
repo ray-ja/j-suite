@@ -27,13 +27,19 @@ function rProperties(){
   if(s)s.oninput=e=>{PSEARCH=e.target.value;const p=s.selectionStart;rProperties();const n=document.getElementById("psearch");n.focus();n.setSelectionRange(p,p);};
 }
 function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const _drive=(p.lat!=null&&typeof driveBadge==="function")?driveBadge(p.lat,p.lng):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}${_drive?" · "+_drive:""}</div></div></div>`;}
+/* pretty US phone: (252) 475-4152 */
+function fmtPhone(p){ const d=(p||"").replace(/\D/g,""); if(d.length===10)return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; if(d.length===11&&d[0]==="1")return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`; return p||""; }
 function liCustomer(c){
   const tel=(c.phone||"").replace(/[^0-9+]/g,"");
-  const parts=[]; const meta=[c.company&&c.name?c.company:"",c.town].filter(Boolean).join(" · "); if(meta)parts.push(esc(meta));
-  if(c.phone)parts.push(`<a href="tel:${tel}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">📞 ${esc(c.phone)}</a>`);
+  const np=(typeof propsForCust==="function")?propsForCust(c.id).length:0;
+  const lines=[];
+  if(c.company && c.name) lines.push(esc(c.company));                                                                                              // business
+  if(c.phone) lines.push(`<a href="tel:${tel}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">📞 ${esc(fmtPhone(c.phone))}</a>`);   // phone
+  if(c.email) lines.push(`<a href="mailto:${esc(c.email)}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">✉️ ${esc(c.email)}</a>`);   // email
+  lines.push(`🏠 ${np} ${np===1?"property":"properties"}`);                                                                                         // properties linked
   return `<div class="li" onclick="openCustomer('${c.id}')">
     <div class="grow"><div class="nm">${esc(c.name||c.company||"Unnamed")}</div>
-    <div class="sub" style="white-space:normal">${parts.join(" · ")||"&nbsp;"}</div></div>
+    ${lines.map(l=>`<div class="sub" style="white-space:normal">${l}</div>`).join("")}</div>
     <span class="badge s-${c.status||"Lead"}">${c.status||"Lead"}</span></div>`;
 }
 const SOURCES=["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"];
