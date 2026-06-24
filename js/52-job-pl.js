@@ -21,14 +21,23 @@ function plQuoteFor(j) {
   return (d.quotes || []).find(q => q && !q.deleted && q.jobId === j.id) || null;
 }
 function plExpenses(j) { return Array.isArray(j.expenses) ? j.expenses : []; }
-function plJobRow(j) {
+/* confirmed mileage cost attributed to this job (timeclock miles × IRS rate) */
+function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
+/* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line */
+function jobProfit(j) {
   const q = plQuoteFor(j);
-  const revenue = q ? (+q.total || 0) : 0;
-  const hard = plExpenses(j).reduce((s, e) => s + (+e.amount || 0), 0);
-  const gross = revenue - hard;
-  const margin = revenue > 0 ? gross / revenue : (hard > 0 ? -1 : 0);   // cost but no revenue = worst (loss)
-  const split = (typeof finSplitAmount === "function") ? finSplitAmount(finCents(revenue)) : null;
-  return { j: j, q: q, revenue: revenue, hard: hard, gross: gross, margin: margin, field: split ? finDollars(split.field) : 0, under: revenue > 0 && margin < plFloor() };
+  const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
+  const expCost = plExpenses(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
+  const milCost = jobMileageCost(j), cost = expCost + milCost, profit = price - cost;
+  const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
+  const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");
+  const cust = (q && q.cust) || (j.customerId && typeof custName === "function" ? custName(j.customerId) : "") || "—";
+  return { j: j, q: q, price: price, expCost: expCost, milCost: milCost, cost: cost, profit: profit, margin: margin, type: type, cust: cust };
+}
+function plJobRow(j) {
+  const p = jobProfit(j);
+  const split = (typeof finSplitAmount === "function") ? finSplitAmount(finCents(p.price)) : null;
+  return { j: j, q: p.q, revenue: p.price, hard: p.cost, gross: p.profit, margin: p.margin, field: split ? finDollars(split.field) : 0, under: p.price > 0 && p.margin < plFloor() };
 }
 function plRows() {
   const ws = plWeek(), we = plAddDays(ws, 6);
