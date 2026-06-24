@@ -329,7 +329,19 @@ function ceoProjection(store, opts) {
       });
       (((store[b] || {}).resale) || []).forEach(r => { if (r && !r.deleted && r.status !== "sold") resale.push({ id: r.id, biz: b, item: r.item || "", status: r.status || "pulled", jobId: r.jobId || "", platform: r.platform || "", listedDate: r.listedDate || "", createdAt: r.createdAt || 0, updatedAt: r.updatedAt || 0 }); });
     });
-    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue, knowledge };
+    // finance summary (current month) — so Cap can read the real numbers + advise
+    const _fym = today.slice(0, 7); const finance = { month: _fym, revenue: 0, expenses: 0, arOutstanding: 0 };
+    bizes.forEach(b => {
+      (((store[b] || {}).income) || []).forEach(e => { if (e && !e.deleted && String(e.date || "").slice(0, 7) === _fym) finance.revenue += (+e.amount || 0); });
+      (((store[b] || {}).expenses) || []).forEach(e => { if (e && !e.deleted && String(e.date || "").slice(0, 7) === _fym) finance.expenses += (+e.amount || 0); });
+      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted && String(j.date || "").slice(0, 7) === _fym) (j.expenses || []).forEach(x => { if (x && !x.deleted) finance.expenses += (+x.amount || 0); }); });
+      (((store[b] || {}).quotes) || []).forEach(q => { if (q && !q.deleted && q.invoiced && !q.paid) finance.arOutstanding += (+(q.finalPrice || q.total) || 0); });
+    });
+    finance.revenue = Math.round(finance.revenue * 100) / 100; finance.expenses = Math.round(finance.expenses * 100) / 100;
+    finance.net = Math.round((finance.revenue - finance.expenses) * 100) / 100;
+    finance.arOutstanding = Math.round(finance.arOutstanding * 100) / 100;
+    finance.margin = finance.revenue > 0 ? Math.round((finance.net / finance.revenue) * 1000) / 10 : 0;
+    return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue, knowledge, finance };
   }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };

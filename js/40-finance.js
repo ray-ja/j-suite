@@ -3,7 +3,7 @@
    Sub-views: Payouts (period split + per-member owed + account funding), Income (log/link), Expenses.
    Mileage is reimbursed from the Business Fund (computed live from confirmed time-clock miles). */
 
-let FINSUB = "payouts", FIN_MONTH = null;
+let FINSUB = "overview", FIN_MONTH = null;
 let FININCOME_CREW = new Set();
 
 /* ---- money formatting (cents → $0.00, exact) ---- */
@@ -57,11 +57,13 @@ window.finSub = function (s) { FINSUB = s; render(); };
 function rFinance() {
   if (!finCanView()) { view.innerHTML = `<div class="card"><div class="nm">Owner / Admin only</div><div class="sub">The Finance page is restricted to Owner and Admin roles.</div></div>`; return; }
   const sub = `<div class="subnav">
+    <button class="subbtn ${FINSUB === "overview" ? "on" : ""}" onclick="finSub('overview')">📊 Overview</button>
     <button class="subbtn ${FINSUB === "payouts" ? "on" : ""}" onclick="finSub('payouts')">💵 Payouts</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
     <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
-    <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 Owed</button>
-    <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 P&L</button></div>`;
+    <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 A/R</button>
+    <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 Job P&L</button></div>`;
+  if (FINSUB === "overview" && typeof rFinOverview === "function") { view.innerHTML = sub + rFinOverview(); return; }
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }
