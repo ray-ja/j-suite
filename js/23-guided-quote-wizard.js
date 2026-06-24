@@ -68,7 +68,7 @@ function wizRender(){wizAutosave();const f={cust:wizCust,pick:wizPick,calc:wizCa
 function wizCust(){const c=WZ.cust;
   return wizHead(1,5,"Who's the quote for?")+`<div class="card">
     <label>Find an existing customer</label>
-    <div class="acwrap"><input id="wc_search" placeholder="Type a name…" autocomplete="off" oninput="wizCustSearch()"><div class="acbox" id="wc_sbox"></div></div>
+    <div class="acwrap"><input id="wc_search" placeholder="Type a name, or tap to browse…" autocomplete="off" oninput="wizCustSearch()" onfocus="wizCustSearch()" onblur="setTimeout(function(){var b=document.getElementById('wc_sbox');if(b)b.innerHTML='';},200)"><div class="acbox" id="wc_sbox" style="max-height:260px;overflow-y:auto"></div></div>
     ${c.id?`<div class="muted" style="margin-top:4px">Linked: <b>${esc(c.name)}</b> — <a href="#" onclick="wizClearCust();return false">clear</a></div>`:""}
     <div id="wc_propwrap">${wizPropPicker()}</div>
     <div style="border-top:1px solid var(--line);margin:14px 0"></div>
@@ -85,9 +85,12 @@ function wizPropPicker(){const c=WZ.cust;if(!c.id)return"";const ps=propsForCust
   return `<label>Which property?</label><select onchange="wizPickProp(this.value)">${ps.map(p=>`<option value="${p.id}" ${c.propertyId===p.id?"selected":""}>${esc(p.label||"")} — ${esc(p.address||"")}</option>`).join("")}</select>`;}
 function wizSoldPicker(){const c=WZ.cust;if(c.source!=="Cold call / in-person")return"";
   return `<label>Which team member made this sale? (credit)</label><select id="wc_sold"><option value="">— none —</option>${users().map(u=>`<option value="${u.id}" ${c.soldBy===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>`;}
-window.wizCustSearch=function(){const q=val("wc_search").toLowerCase();const box=document.getElementById("wc_sbox");if(!box)return;if(q.length<2){box.innerHTML="";return;}
-  const m=actC().filter(c=>(c.name||c.company||"").toLowerCase().indexOf(q)>=0).slice(0,6);
-  box.innerHTML=m.length?m.map(c=>`<div class="acitem" onclick="wizPickCust('${c.id}')">${esc(c.name||c.company)}${c.phone?" · "+esc(c.phone):""}</div>`).join(""):`<div class="acitem muted">No match — just fill in the fields below to add new.</div>`;};
+window.wizCustSearch=function(){
+  const q=val("wc_search").toLowerCase().trim();const box=document.getElementById("wc_sbox");if(!box)return;
+  let m=actC().slice().sort((a,b)=>(a.name||a.company||"").toLowerCase().localeCompare((b.name||b.company||"").toLowerCase()));   // alphabetical — browse the whole list on focus
+  if(q)m=m.filter(c=>((c.name||"")+" "+(c.company||"")+" "+(c.phone||"")).toLowerCase().indexOf(q)>=0);                          // …and filter as you type
+  m=m.slice(0,50);
+  box.innerHTML=m.length?m.map(c=>`<div class="acitem" onclick="wizPickCust('${c.id}')">${esc(c.name||c.company)}${c.phone?" · "+esc(typeof fmtPhone==="function"?fmtPhone(c.phone):c.phone):""}</div>`).join(""):`<div class="acitem muted">No match — just fill in the fields below to add new.</div>`;};
 window.wizPickCust=function(id){const cust=D().customers.find(x=>x.id===id);if(!cust)return;
   const ps=propsForCust(cust.id);const prop=ps[0]||{address:"",id:""};
   WZ.cust={id:cust.id,name:cust.name||cust.company||"",phone:cust.phone||"",address:prop.address||"",propertyId:prop.id||"",source:cust.source||"",soldBy:cust.soldBy||"",notes:""};render();};
