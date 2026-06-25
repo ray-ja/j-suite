@@ -212,10 +212,13 @@ function wizReview(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const _bk2=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),(WZ.items[0]&&guessBandKey(WZ.items[0].name)),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
   const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk2])?MARKET_BANDS[_bk2]:{lo:150,hi:800};
-  const floorP=Math.max(_B.lo,Math.ceil(_cost*1.2/5)*5),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
+  // slider floor = cost+20% (never lose money), but cap the market-band floor so it can't exceed THIS job's price (a small/labor-only paver can sit below a whole-job band — that's the band's job to flag, not the slider's to break on).
+  // slider ceiling = the higher of +20% markup OR the price that clears your $45/hr — so when a job is underpriced you can slide UP to fix it instead of being stuck at +20% of a bad number.
+  const _ph=Math.max(1,WZ.crewN||1)*(WZ.hours||0), _payTarget=_ph>0?Math.ceil(((typeof QE!=="undefined"?QE.TAKE_HOME:45)*_ph/0.48+_cost)/5)*5:0;   // price that clears your $45/hr each
+  const floorP=Math.max(Math.ceil(_cost*1.2/5)*5,Math.min(_B.lo,Math.round(sub*0.6/5)*5)),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5,_payTarget),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
   h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
     <input type="range" min="${floorP}" max="${ceilP}" step="5" value="${curP}" oninput="wizPriceSlide(this.value,${sub})" style="width:100%;accent-color:var(--accent)">
-    <div class="row" style="justify-content:space-between"><span class="sub">◀ floor ${money(floorP)}</span><span class="sub">full ${money(sub)} · +20% ${money(ceilP)} ▶</span></div>
+    <div class="row" style="justify-content:space-between"><span class="sub">◀ floor ${money(floorP)}</span><span class="sub">full ${money(sub)} · ${ceilP>Math.round(sub*1.2/5)*5?`up to ${money(ceilP)} (clears $45/hr)`:`+20% ${money(ceilP)}`} ▶</span></div>
     <div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label style="margin-top:0">Custom % off</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $ off</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc>0?WZ.disc:''}" oninput="wizDiscFlat(this.value)"></div></div></div>`;
   // live summary region (partial-updated to preserve input focus)
   h+=`<div id="wz_summary">${reviewSummaryHTML()}</div>`;
