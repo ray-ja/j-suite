@@ -5,7 +5,7 @@
    Cost model (per CLAUDE.md): clean-veg disposal is FREE in Dare/Currituck → $0.
    Hard costs = stump-grinder rental (only if a stump line is selected) + optional
    trailer (passthrough). NO labor line, and NO chainsaw rental — the saw is owned.
-   Travel is its own auto-added line (js/41), so drive isn't folded into the work cost.
+   Drive is static-from-the-property-address via wizDriveCharge (the legacy js/41 travel-zone line is retired).
    Scope cap: ground-based shrubs/small trees up to ~30 ft, no climbing. Over that,
    or anything needing climbing/rigging/large-trunk felling → out of scope, refer. */
 
@@ -78,6 +78,12 @@ function wizBrushUI(){
   if(!WZ.brush)WZ.brush=[];
   const oos=!!WZ.brushOOS;
   const c=calcBrush();
+  const crew=Math.max(1,WZ.brushCrew||2);
+  const _drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
+  const _totalPH=((c.mins||0)/60)+crew*((_drv.min||0)/60)+crew*(15/60);
+  const _perHr=_totalPH>0?Math.floor((c.price+_drv.charge-c.cost)*0.48/_totalPH):0;
+  const _hrsEach=crew>0?Math.round(_totalPH/crew*10)/10:0;
+  const _TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45),_CF=(typeof QE!=="undefined"?QE.CREW_FLOOR:30),_tier=_perHr>=_TGT?2:_perHr>=_CF?1:0;
   let h=wizHead(3,5,"Brush / shrub / small-tree removal");
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px"><b>Walk the yard with the customer.</b> For each shrub or small tree, tap its <b>size band</b> (by height), set <b>how many</b> of that size, and the <b>access</b>. Then choose what they want: <b>cut &amp; haul</b>, <b>stump/root removal</b>, or both — they're priced and presented separately so the customer can pick either or both.<br><br><b>Ground-based work only, up to ~30 ft.</b> Anything taller, or that needs climbing, rigging, or felling a real trunk, is a tree-service job — flip the toggle at the top and refer it out.</div></details>`;
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💬 What to say to the customer (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">1. "Let's walk the yard and I'll note each shrub and small tree."<br>2. "I price the cut-down and the stump separately — you can do just the tops, or have me grind the stumps too. Your call."<br>3. "For the brush cut and hauled it's <b>[cut number]</b>; to also pull the stumps it's <b>[stump number]</b>." Then stop talking.<br>4. "The brush hauls free — clean yard waste doesn't cost anything at the county, so you're only paying for the work."<br>5. If anything's a real tree: "That one's a tree job — I'd bring in a tree service so it's done safely, I won't cut corners on that."</div></details>`;
@@ -110,8 +116,13 @@ function wizBrushUI(){
       h+=`<div class="card">${cogsStrip(c.price,c.cost)}<div class="sub">Hard cost only (rentals + drive); disposal is $0 and there's no labor line — the crew is paid from the revenue split.</div></div>`;
     }
 
+    // Crew selector + live pay check (paver-standard)
+    h+=`<div class="card"><div class="row" style="gap:6px;align-items:center"><div class="grow" style="font-weight:800">Crew on this job</div>${(typeof pvCrewBtns==="function")?pvCrewBtns(crew,"wizBrushCrew"):""}</div>
+      <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:8px"><div class="sub">${crew} ${crew===1?"person":"people"} × ~${_hrsEach} hr each · drive + work</div><div class="nm" style="font-size:18px;color:${["var(--danger)","#b8860b","var(--accent)"][_tier]}">${money(_perHr)}/hr each ${["⚠","⚠","✓"][_tier]}</div></div>
+      <div class="sub">${_tier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':_tier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor.</span>'}</div></div>`;
+
     // Green on-site quote — distinct lines (cut / stump) + travel
-    const _drv=(typeof wizDriveCharge==="function")?wizDriveCharge(2):{charge:0},grand=c.price+_drv.charge;
+    const grand=c.price+_drv.charge;
     h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink)"><div style="font-size:13px;font-weight:700;text-align:center">QUOTE TO GIVE ON SITE</div>
       ${c.cutLine>0?`<div class="row" style="justify-content:space-between;margin-top:6px"><span>Cut &amp; haul</span><b>${money(c.cutLine)}</b></div>`:""}
       ${c.stumpLine>0?`<div class="row" style="justify-content:space-between"><span>Stump / root removal</span><b>${money(c.stumpLine)}</b></div>`:""}
@@ -133,6 +144,7 @@ window.wizBrushAccess=function(id,v){const li=(WZ.brush||[]).find(x=>x.id===id);
 window.wizBrushFlag=function(id,which,on){const li=(WZ.brush||[]).find(x=>x.id===id);if(li){li[which]=!!on;brushScrollKeepRender();}};
 window.wizBrushRem=function(id){WZ.brush=(WZ.brush||[]).filter(x=>x.id!==id);brushScrollKeepRender();};
 window.wizBrushCost=function(k,v){WZ[k]=Math.max(0,parseFloat(v)||0);brushScrollKeepRender();};
+window.wizBrushCrew=function(n){WZ.brushCrew=Math.max(1,n);brushScrollKeepRender();};
 window.wizBrushOOS=function(on){WZ.brushOOS=!!on;render();};
 window.wizAddBrush=function(){
   if(WZ.brushOOS){alert("This job is out of scope for the brush estimator (over 30 ft or needs climbing/rigging). Refer it to a tree service — don't quote it here.");return;}
@@ -148,8 +160,8 @@ window.wizAddBrush=function(){
     WZ.items.push({name:"Stump/root removal",price:c.stumpLine,cost:rent.grinder+(c.cutLine>0?0:trailer),
       notes:["Stump/root grinding — separate, optional line."],qty:1,unit:"job",serviceId:"",bandKey:"brush"});
   }
-  // static drive from the property address (replaces the travel-zone line) + pay-check hours (2-person ground crew)
-  const crew=2, drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
+  // static drive from the property address + pay-check hours (selectable crew)
+  const crew=Math.max(1,WZ.brushCrew||2), drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
   const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
   if(drv.charge>0)WZ.items.push({name:"Drive — round trip to site",price:drv.charge,cost:Math.round((drv.miles||0)*MIL),qty:1,unit:"job",serviceId:"",bandKey:"brush"});
   const totalPH=((c.mins||0)/60)+crew*((drv.min||0)/60)+crew*(15/60);

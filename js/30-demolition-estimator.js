@@ -28,6 +28,7 @@ function demoBand(area){
 }
 
 window.openDemoEst=function(){
+  if(!window._demoCrew)window._demoCrew=2;
   modal("Shed / Structure Demolition",`
     <p class="muted" style="margin:0 0 8px">Tear-down + haul-off. The price updates live as you tap. Crew labor is paid from the revenue split, so it isn't a cost line — only disposal, drive, and consumables are.</p>
     <div class="row" style="gap:8px">
@@ -44,7 +45,8 @@ window.openDemoEst=function(){
     <label>Access</label>
     <select id="dm_access" onchange="demoCalc()"><option value="easy">Easy — truck/trailer reaches it</option><option value="tight">Tight — long carry / hand-out</option></select>
     <div class="toggle"><input type="checkbox" id="dm_cleared" checked onchange="demoCalc()"><label style="margin:0">Contents already cleared out</label></div>
-    <div class="sub" style="margin-top:6px">🚗 Drive is figured automatically — to the property + a full dump run (demo debris is must-dump). The $45/$30 pay check is on the review.</div>
+    <div class="row" style="gap:6px;align-items:center;margin-top:8px"><div class="grow sub" style="font-weight:700">Crew on this job</div><span id="dm_crew">${(typeof pvCrewBtns==="function")?pvCrewBtns(window._demoCrew||2,"demoSetCrew"):""}</span></div>
+    <div class="sub" style="margin-top:6px">🚗 Drive is figured automatically — to the property + a full dump run (demo debris is must-dump).</div>
 
     <div class="card" id="dm_break" style="margin-top:12px"></div>
     <div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center;margin-top:8px"><div style="font-size:13px;font-weight:700">PRICE TO GIVE</div><div id="dm_price" style="font-size:32px;font-weight:800;line-height:1.1">$0</div><div id="dm_band" style="font-size:12px;opacity:.85"></div></div>
@@ -74,7 +76,8 @@ window.demoCalc=function(){
   const disposal=Math.round(billLbs/2000*DEMO_TON_FEE*100)/100;
   const consum=DEMO_CONSUM+(anchor==="concrete"?15:0);   // extra blades for cutting footings
   // --- STATIC drive from the property address + a FULL dump run (demo is must-dump, can't be stashed) ---
-  const dr=(typeof wizDriveCharge==="function")?wizDriveCharge(2):{charge:0,miles:0,min:0};
+  const crew=window._demoCrew||2;
+  const dr=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
   const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED=(typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75), DUMPMI=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);
   const dumpRun=Math.round(DUMPMI*MIL+(80/60)*LOADED);
   const driveCharge=dr.charge+dumpRun, driveMileage=Math.round((dr.miles+DUMPMI)*MIL);
@@ -90,6 +93,10 @@ window.demoCalc=function(){
   const workPrice=Math.round((lo+(hi-lo)*push)/25)*25;
   const grand=workPrice+driveCharge;
   const workMin=Math.round(area*4.5*(1+push*0.5));   // tear-down + load minutes, scaled by the hard factors → pay check
+  const _totalPH=(workMin/60)+crew*((dr.min+80)/60)+crew*(20/60);
+  const _perHr=_totalPH>0?Math.floor((grand-cost)*0.48/_totalPH):0;
+  const _hrsEach=crew>0?Math.round(_totalPH/crew*10)/10:0;
+  const _tier=_perHr>=(typeof QE!=="undefined"?QE.TAKE_HOME:45)?2:_perHr>=(typeof QE!=="undefined"?QE.CREW_FLOOR:30)?1:0;
 
   // --- breakdown ---
   const b=document.getElementById("dm_break");
@@ -100,12 +107,14 @@ window.demoCalc=function(){
       Consumables (blades/fuel/bags): <b>${money(consum)}</b><br>
       🚗 Drive — static (~${dr.miles} mi site + ${DUMPMI} mi dump run): <b>${money(driveCharge)}</b>
     </div>
-    <div class="sub" style="margin-top:6px">Value band for this footprint: ${money(lo)}–${money(hi)}.${push>=1?" Factors max it toward the top.":""} Demolition ${money(workPrice)} + drive ${money(driveCharge)} = <b>${money(grand)}</b>.</div>`;
+    <div class="sub" style="margin-top:6px">Value band for this footprint: ${money(lo)}–${money(hi)}.${push>=1?" Factors max it toward the top.":""} Demolition ${money(workPrice)} + drive ${money(driveCharge)} = <b>${money(grand)}</b>.</div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:6px"><div class="sub">${crew} ${crew===1?"person":"people"} × ~${_hrsEach} hr each</div><div class="nm" style="font-size:17px;color:${["var(--danger)","#b8860b","var(--accent)"][_tier]}">${money(_perHr)}/hr each ${["⚠","⚠","✓"][_tier]}</div></div>`;
   const p=document.getElementById("dm_price");if(p)p.textContent=money(grand);
   const bd=document.getElementById("dm_band");if(bd)bd.textContent=`work ${money(workPrice)} (band ${money(lo)}–${money(hi)}) + drive ${money(driveCharge)}${!cleared?" · contents NOT cleared — quote junk separately":""}`;
 
-  window._demo={workPrice:workPrice,price:grand,cost:cost,lbs:lbs,tons:tons,disposal:disposal,driveCharge:driveCharge,driveMin:(dr.min+80),mins:workMin,consum:consum,area:area,L:L,W:W,H:H};
+  window._demo={workPrice:workPrice,price:grand,cost:cost,lbs:lbs,tons:tons,disposal:disposal,driveCharge:driveCharge,driveMin:(dr.min+80),mins:workMin,consum:consum,area:area,L:L,W:W,H:H,crew:crew};
 };
+window.demoSetCrew=function(n){window._demoCrew=Math.max(1,n);const r=document.getElementById("dm_crew");if(r&&typeof pvCrewBtns==="function")r.innerHTML=pvCrewBtns(window._demoCrew,"demoSetCrew");demoCalc();};
 
 window.saveDemoQuote=function(){
   const d=window._demo||{};
@@ -116,7 +125,7 @@ window.saveDemoQuote=function(){
   const notes=["Shed/structure demolition + haul-off.","Excludes: no slab removal · power disconnected by owner · contents emptied first.","Must-dump — price includes a full dump run + C&D tipping ("+(d.tons||0).toFixed(2)+" ton)."];
   WZ.items=WZ.items||[];
   WZ.items.push({serviceId:"",name:"Shed / structure demolition + haul-off",unit:"job",price:grand,qty:1,cost:d.cost||0,notes:notes,bandKey:"demo",breakdown:(d.L&&d.W)?[d.L+"×"+d.W+" = "+Math.round(d.area)+" sq ft · "+(d.tons||0).toFixed(2)+" ton"]:[]});
-  const crew=2, totalPH=((d.mins||0)/60)+crew*((d.driveMin||0)/60)+crew*(20/60);
+  const crew=d.crew||window._demoCrew||2, totalPH=((d.mins||0)/60)+crew*((d.driveMin||0)/60)+crew*(20/60);
   WZ.crewN=crew; WZ.hours=totalPH>0?Math.round(totalPH/crew*10)/10:0;
   WZ.modalBuilt=true;   // modal-built → review hides back-to-build (rebuild via the picker)
   closeModal(); WZ.step="review"; render();

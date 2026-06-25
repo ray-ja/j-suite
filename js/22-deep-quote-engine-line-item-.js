@@ -366,6 +366,18 @@ function wizDeepUI(key){const cfg=getDeepCfg(key);const c=calcDeep(key);const mo
     if(md.t==="chk")return `<div class="toggle"><input type="checkbox" ${v?"checked":""} onchange="wizDJobMod('${key}','${md.k}',this.checked)"><label style="margin:0">${esc(md.label)}${tip}</label></div>`;
     return `<label style="margin-top:8px">${esc(md.label)}${tip}</label><select onchange="wizDJobMod('${key}','${md.k}',this.value)" style="font-size:13px">${md.opts.map(o=>`<option value="${o[0]}" ${(v||md.opts[0][0])===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
   }).join("")+`</div>`;}
+  // crew selector + live pay check (paver-standard) — DEEP_CREW is just the default; the user can change it
+  const _dcrew=Math.max(1,(WZ.deepCrew&&WZ.deepCrew[key])||(typeof DEEP_CREW!=="undefined"&&DEEP_CREW[key])||1);
+  const _ddrv=(typeof wizDriveCharge==="function")?wizDriveCharge(_dcrew):{charge:0,miles:0,min:0};
+  const _dMIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
+  const _dcost=(c.fees||0)+Math.round((c.sub||0)*CONSUMABLES_PCT)+Math.round((_ddrv.miles||0)*_dMIL);
+  const _dPH=((c.mins||0)/60)+_dcrew*((_ddrv.min||0)/60)+_dcrew*(15/60);
+  const _dperHr=_dPH>0?Math.floor((c.total+_ddrv.charge-_dcost)*0.48/_dPH):0;
+  const _dhrs=_dcrew>0?Math.round(_dPH/_dcrew*10)/10:0;
+  const _dtier=_dperHr>=(typeof QE!=="undefined"?QE.TAKE_HOME:45)?2:_dperHr>=(typeof QE!=="undefined"?QE.CREW_FLOOR:30)?1:0;
+  h+=`<div class="card"><div class="row" style="gap:6px;align-items:center"><div class="grow" style="font-weight:800">Crew on this job</div>${(typeof pvCrewBtns==="function")?pvCrewBtns(_dcrew,"wizDeepCrew"):""}</div>
+    <div class="row" style="justify-content:space-between;align-items:baseline;margin-top:8px"><div class="sub">${_dcrew} ${_dcrew===1?"person":"people"} × ~${_dhrs} hr each · drive + work</div><div class="nm" style="font-size:18px;color:${["var(--danger)","#b8860b","var(--accent)"][_dtier]}">${money(_dperHr)}/hr each ${["⚠","⚠","✓"][_dtier]}</div></div>
+    <div class="sub">${_dtier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':_dtier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor — fewer people or raise the quote.</span>'}</div></div>`;
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💵 How the price is built (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px"><b>Industry standard:</b> ${cfg.std}<br><br>Each line = rate × quantity (area items use a sliding scale — bigger jobs cost less per unit). Per-item and job conditions adjust the labor.${cfg.unc&&cfg.unc.pct?` The ± range reflects real uncertainty: ${esc(cfg.unc.reason)}.`:""} Rounds to the nearest $5; ${money(cfg.min)} minimum.</div></details>`;
   if(cfg.glossary)h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📖 Plain-English glossary (tap)</summary><div style="font-size:12.5px;line-height:1.6;margin-top:8px">${cfg.glossary.map(g=>`<b>${esc(g[0])}:</b> ${esc(g[1])}`).join("<br><br>")}</div></details>`;
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:6px">Itemized breakdown</div><div style="font-size:13px;line-height:1.9" id="dz_break">${deepBreakHTML(c)}</div><div style="border-top:1px solid var(--line);margin:8px 0"></div><div class="row" style="justify-content:space-between;align-items:center"><span class="sub">Estimate</span><b id="dz_total" style="font-size:20px">${money(c.total)}</b></div>${c.unc?`<div class="sub" id="dz_range">Likely range ${money(c.total-c.unc)}–${money(c.total+c.unc)}</div>`:""}</div>`;
@@ -380,13 +392,14 @@ window.wizDQn=function(key,ik,val){const L=deepLines(key);const q=Math.max(0,par
 window.wizDLive=function(key){const c=calcDeep(key);const t=document.getElementById("dz_total");if(t)t.textContent=money(c.total);const f=document.getElementById("dz_foot");if(f)f.textContent=money(c.total);const b=document.getElementById("dz_break");if(b)b.innerHTML=deepBreakHTML(c);const r=document.getElementById("dz_range");if(r&&c.unc)r.textContent="Likely range "+money(c.total-c.unc)+"–"+money(c.total+c.unc);};
 window.wizDM=function(key,ik,v){const li=(WZ.deep[key]||[]).find(x=>x.key===ik);if(li){li.mod=v;render();}};
 window.wizDJobMod=function(key,mk,v){if(!WZ.deepMods)WZ.deepMods={};if(!WZ.deepMods[key])WZ.deepMods[key]={};WZ.deepMods[key][mk]=v;render();};
+window.wizDeepCrew=function(n){if(!WZ.deepCrew)WZ.deepCrew={};WZ.deepCrew[WZ.svc]=Math.max(1,n);render();};
 window.wizDSearch=function(){const e=document.getElementById("dz_search");WZ.deepSearch=e?e.value:"";const c=document.getElementById("dz_catalog");if(c)c.innerHTML=deepCatalogHTML(WZ.svc);};
 window.wizAddDeep=function(key){const c=calcDeep(key),cfg=getDeepCfg(key);if(!c.rows.length){alert("Add at least one line item first.");return;}
   const notes=[];
   if(c.unc)notes.push("Estimate ±"+money(c.unc)+" — "+(cfg.unc.reason||"confirmed on site")+".");
   c.modRows.forEach(m=>notes.push(m[0]+" ("+m[1]+")."));
   // STATIC drive from the property address (folded into the price, like junk/paver) + crew default
-  const crew=(typeof DEEP_CREW!=="undefined"&&DEEP_CREW[key])||1;
+  const crew=Math.max(1,(WZ.deepCrew&&WZ.deepCrew[key])||(typeof DEEP_CREW!=="undefined"&&DEEP_CREW[key])||1);
   const drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
   const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
   const driveMil=Math.round((drv.miles||0)*MIL);
