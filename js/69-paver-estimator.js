@@ -45,7 +45,7 @@ function pvPickup(area){
     const sb = site ? ((driveFromBase(site.lat, site.lng)||{}).miles||0) : 0;
     if (bp) { loopMi = Math.round((bp.miles + ps + sb)*10)/10; exact = true; }
   }
-  const trips = Math.max(1, Math.ceil(weight / (PAVER_LOAD_CAP * Math.max(1, crew-1 || 1))));   // more crew → more carrying capacity per run
+  const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));   // vehicle capacity drives trip count (crew drives handling speed + drive labor, not capacity)
   const driveMin = Math.round(loopMi/35*60);
   const handlePH = (weight/2000) * PAVER_HANDLE_PH_TON;
   const drivePH = crew * trips * (driveMin/60);
@@ -108,7 +108,8 @@ function pvCrewBtns(cur, fn){ return [1,2,3,4].map(n=>`<button class="btn ${cur=
 function pvPickupInfoHTML(pk){
   if (!pk.has) return "";
   const ex = pk.exact ? "" : ` <span style="color:#b8860b">— est. ${pk.miles} mi; add the supplier address for exact</span>`;
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${pk.miles} mi loop × ${pk.trips}${ex}: mileage <b>${money(pk.cost)}</b><br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>`;
+  const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the supplier <b>deliver</b> (~$50–150 flat) usually beats self-haul once it's 2+ trips. Or have the customer provide it.</div>` : "";
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${pk.miles} mi loop × ${pk.trips}${ex}: mileage <b>${money(pk.cost)}</b><br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
 }
 
 function wizPaverUI(){
