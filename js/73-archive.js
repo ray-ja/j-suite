@@ -1,16 +1,38 @@
 /* ---------- ARCHIVE (soft-delete recycle bin) ----------
-   Deleted jobs & quotes are soft-deleted (deleted=true + deletedAt) and live here for 60 days so a
-   mistaken delete can be undone. After 60 days they drop out of the archive view. We never HARD-remove
-   the record — per the data-safety rule, sync is per-record last-write-wins and would resurrect a
-   dropped record; the tombstone stays (tiny) but is invisible. "Delete now" marks it purged so it
-   leaves the list immediately. Per-business (D() = current business). */
+   Deleting a job or quote archives the WHOLE funnel entry together — the quote, its job, and the job's
+   sub-jobs (e.g. the materials-pickup run) — so it leaves the pipeline cleanly. Items live here 60 days
+   so a mistaken delete can be undone, then drop out of view. We never HARD-remove the record (sync is
+   per-record last-write-wins and would resurrect a dropped record) — the tombstone stays (tiny) but is
+   invisible; "Delete now" sets purged=true to drop it from the list early. Per-business (D()). */
 const ARCHIVE_DAYS = 60;
+function _softDel(r){ if (r && !r.deleted){ r.deleted = true; r.deletedAt = now(); if (typeof touch==="function") touch(r); } }
+function _unDel(r){ if (r){ r.deleted = false; r.deletedAt = null; r.purged = false; if (typeof touch==="function") touch(r); } }
+function _purge(r){ if (r){ r.purged = true; r.purgedAt = now(); if (typeof touch==="function") touch(r); } }
+function _subJobs(d, jobId){ return (d.jobs||[]).filter(x => x && x.parentJobId === jobId); }
+
+// CASCADE soft-delete — job + its sub-jobs + its originating quote, or quote + its job + sub-jobs.
+function archiveDeleteJob(jobId){
+  const d = D(), j = (d.jobs||[]).find(x => x && x.id === jobId); if (!j) return;
+  _softDel(j); _subJobs(d, jobId).forEach(_softDel);
+  if (j.quoteId) _softDel((d.quotes||[]).find(x => x && x.id === j.quoteId));
+}
+function archiveDeleteQuote(quoteId){
+  const d = D(), q = (d.quotes||[]).find(x => x && x.id === quoteId); if (!q) return;
+  _softDel(q);
+  if (q.jobId){ const j = (d.jobs||[]).find(x => x && x.id === q.jobId); if (j){ _softDel(j); _subJobs(d, j.id).forEach(_softDel); } }
+}
+
+// one row per funnel: deleted quotes, plus standalone deleted jobs (no parent, and not already covered by a deleted quote).
 function archiveItems(){
   const d = D(), cut = now() - ARCHIVE_DAYS*86400000;
-  const mk = (coll,type) => (d[coll]||[]).filter(x => x && x.deleted && !x.purged && (x.deletedAt==null || x.deletedAt>cut)).map(x => ({type, rec:x}));
-  return mk("jobs","job").concat(mk("quotes","quote")).sort((a,b) => (b.rec.deletedAt||0) - (a.rec.deletedAt||0));
+  const within = x => x && x.deleted && !x.purged && (x.deletedAt==null || x.deletedAt > cut);
+  const delQ = new Set((d.quotes||[]).filter(within).map(q => q.id));
+  const items = (d.quotes||[]).filter(within).map(q => ({type:"quote", rec:q}));
+  (d.jobs||[]).filter(x => within(x) && !x.parentJobId && !(x.quoteId && delQ.has(x.quoteId))).forEach(j => items.push({type:"job", rec:j}));
+  return items.sort((a,b) => (b.rec.deletedAt||0) - (a.rec.deletedAt||0));
 }
 function archiveCount(){ try { return archiveItems().length; } catch(e){ return 0; } }
+
 window.openArchive = function(){
   const items = archiveItems();
   const daysLeft = r => r.deletedAt != null ? Math.max(0, ARCHIVE_DAYS - Math.floor((now()-r.deletedAt)/86400000)) : null;
@@ -21,18 +43,23 @@ window.openArchive = function(){
     return `<div class="li"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${it.type==="job"?"🗓":"📄"} ${esc(lab)}</div><div class="sub">deleted ${when}${lf!=null?` · clears in ${lf}d`:""}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn ghost sm" onclick="archRestore('${it.type}','${r.id}')">Restore</button><button class="btn danger sm" onclick="archPurge('${it.type}','${r.id}')">Delete now</button></div></div>`;
   };
   modal("🗑 Archive", items.length
-    ? `<p class="muted" style="margin-bottom:8px">Deleted jobs &amp; quotes wait here, then auto-clear <b>${ARCHIVE_DAYS} days</b> after deletion. <b>Restore</b> brings one back; <b>Delete now</b> drops it from the list.</p>` + items.map(row).join("")
+    ? `<p class="muted" style="margin-bottom:8px">Deleted jobs &amp; quotes wait here, then auto-clear <b>${ARCHIVE_DAYS} days</b> after deletion. <b>Restore</b> brings the whole thing back (job + quote); <b>Delete now</b> drops it from the list.</p>` + items.map(row).join("")
     : `<p class="muted">Empty. Deleted jobs &amp; quotes show here for ${ARCHIVE_DAYS} days so you can undo a mistake.</p>`);
 };
-function _archFind(type,id){ const d=D(); return (type==="job" ? (d.jobs||[]) : (d.quotes||[])).find(x => x && x.id===id); }
-window.archRestore = function(type,id){
-  const r = _archFind(type,id);
-  if (r){ r.deleted=false; r.deletedAt=null; r.purged=false; if(typeof touch==="function")touch(r); if(typeof logChange==="function")logChange("update",type,id,"Restored from archive"); save(); }
-  openArchive(); if(typeof render==="function")render();
+
+function _archEach(type, id, fn){
+  const d = D();
+  if (type === "quote"){ const q = (d.quotes||[]).find(x => x.id === id); fn(q); if (q && q.jobId){ const j = (d.jobs||[]).find(x => x.id === q.jobId); if (j){ fn(j); _subJobs(d, j.id).forEach(fn); } } }
+  else { const j = (d.jobs||[]).find(x => x.id === id); fn(j); if (j){ _subJobs(d, id).forEach(fn); if (j.quoteId) fn((d.quotes||[]).find(x => x.id === j.quoteId)); } }
+}
+window.archRestore = function(type, id){
+  _archEach(type, id, _unDel);
+  if (typeof logChange==="function") logChange("update", type, id, "Restored from archive");
+  save(); openArchive(); if (typeof render==="function") render();
 };
-window.archPurge = function(type,id){
-  if(!confirm("Remove this from the archive now? You won't be able to restore it from here.")) return;
-  const r = _archFind(type,id);
-  if (r){ r.purged=true; r.purgedAt=now(); if(typeof touch==="function")touch(r); if(typeof logChange==="function")logChange("delete",type,id,"Cleared from archive"); save(); }
-  openArchive(); if(typeof render==="function")render();
+window.archPurge = function(type, id){
+  if (!confirm("Remove this from the archive now? You won't be able to restore it from here.")) return;
+  _archEach(type, id, _purge);
+  if (typeof logChange==="function") logChange("delete", type, id, "Cleared from archive");
+  save(); openArchive(); if (typeof render==="function") render();
 };

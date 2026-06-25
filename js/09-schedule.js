@@ -262,8 +262,10 @@ window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done
   if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);}else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
   if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();
   if(j.done&&typeof reviewPrompt==="function")reviewPrompt(id);};   /* Cap #2: ask for a Google review at the done-moment */
-window.delJob=function(id){if(!confirm("Delete this job? It goes to the Archive for 60 days — you can restore it there."))return;
-  const j=D().jobs.find(x=>x.id===id);j.deleted=true;j.deletedAt=now();touch(j);if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+(j.title||"job"));save();
+window.delJob=function(id){if(!confirm("Delete this job? It (and its quote) go to the Archive for 60 days — restore it there if needed."))return;
+  const j=D().jobs.find(x=>x.id===id); const ttl=(j&&j.title)||"job";
+  if(typeof archiveDeleteJob==="function")archiveDeleteJob(id); else if(j){j.deleted=true;j.deletedAt=now();touch(j);}   // cascade: job + sub-jobs + originating quote
+  if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+ttl);save();
   if(window.JOB_OPEN===id)window.JOB_OPEN=null;   // leave the now-deleted job page → back to the schedule
   closeModal();render();};
 

@@ -8,10 +8,11 @@ function plReviewed(q) { const j = q.jobId ? (D().jobs || []).find(x => x.id ===
 function rPipeline() {
   const quotes = (typeof actQ === "function") ? actQ().filter(q => (q.total || q.finalPrice)) : [];
   const leads = (typeof actC === "function") ? actC().filter(c => c.status === "Lead") : [];
-  const jobById = id => id ? (D().jobs || []).find(j => j.id === id) : null;
+  const jobById = id => id ? (D().jobs || []).find(j => j.id === id && !j.deleted) : null;   // a deleted job shouldn't keep its quote in the pipeline
   const G = { quote: [], job: [], bill: [], pay: [], review: [] };
   quotes.forEach(q => {
     const j = jobById(q.jobId);
+    if (q.jobId && !j && !q.paid && !q.invoiced) return;   // its job was deleted → the funnel entry is dead; drop it (handles pre-cascade orphans too)
     if (q.paid) { if (!plReviewed(q)) G.review.push(q); }
     else if (q.invoiced) G.pay.push(q);
     else if (q.accepted || q.jobId) { if (j && j.done) G.bill.push(q); else G.job.push(q); }
