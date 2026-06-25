@@ -152,7 +152,7 @@ window.wizPriceSlide=function(price,sub){price=parseFloat(price)||0;WZ.disc=Math
   const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc>0?WZ.disc:"";const pf=document.getElementById("wz_discpct");if(pf)pf.value="";
   wizReviewTotals();};
 /* ← from the review back to the load builder; drop the line being edited so re-adding doesn't duplicate (the builder still holds WZ.junk / WZ.inp) */
-window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};   // one service per quote — drop all of this build's lines; the builder keeps its own state (WZ.junk/WZ.deep/WZ.brush)
+window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};   // one service per quote — drop this build's lines; the builder keeps its state (WZ.junk/WZ.deep/WZ.brush). Hidden for the modal tools (paver/demo).
 
 /* ---- the single editable review/edit screen ---- */
 function reviewSummaryHTML(){
@@ -246,7 +246,7 @@ function wizReview(){
   }
   // sticky footer: back to the load + crew (−/+) + total + save
   const total=Math.max(0,sub-(WZ.disc||0)),cN=Math.max(1,WZ.crewN||1);
-  h+=`<div class="wizfoot" style="gap:6px">${editing?"":`<button class="btn ghost sm" onclick="wizBackToBuild()" title="Back to the load">←</button>`}<span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=Math.max(1,(WZ.crewN||2)-1);render()">−</button>${cN}<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=(WZ.crewN||1)+1;render()">+</button></span><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
+  h+=`<div class="wizfoot" style="gap:6px">${(editing||WZ.modalBuilt)?"":`<button class="btn ghost sm" onclick="wizBackToBuild()" title="Back to the load">←</button>`}<span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=Math.max(1,(WZ.crewN||2)-1);render()">−</button>${cN}<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=(WZ.crewN||1)+1;render()">+</button></span><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
   return h;
 }
 /* line editing */

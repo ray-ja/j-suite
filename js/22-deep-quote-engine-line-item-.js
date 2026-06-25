@@ -339,6 +339,7 @@ const MARKET_BANDS={
  brush:{lo:150,hi:600,label:"brush & yard debris"},
  storm:{lo:500,hi:3000,label:"storm cleanup"},
  parking:{lo:150,hi:800,label:"parking-lot cleanup"},
+ paver:{lo:1500,hi:8000,label:"paver patio / pad install"},
  housewatch:{lo:40,hi:75,label:"house-watch (per visit)"},
  junk:{lo:150,hi:800,label:"junk / cleanout (scales with volume)"},
  demo:{lo:350,hi:1000,label:"shed demolition"}

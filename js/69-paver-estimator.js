@@ -41,7 +41,7 @@ window.openPaverEst = function () {
     <input id="pv_override" type="number" inputmode="decimal" placeholder="leave blank to use the estimate" oninput="paverCalc()">
 
     <label>Save under customer / job name</label><input id="pv_name" value="${esc(nm0)}" placeholder="e.g. Brodeur hot-tub pad">
-    <button class="btn acc" style="margin-top:10px" onclick="savePaverQuote()">Save as quote</button>`);
+    <button class="btn acc" style="margin-top:10px" onclick="savePaverQuote()">Review quote →</button>`);
   setTimeout(paverCalc, 40);
 };
 
@@ -84,26 +84,23 @@ window.paverCalc = function () {
   const p = document.getElementById("pv_price_out"); if (p) p.textContent = money(grand);
   const bd = document.getElementById("pv_band"); if (bd) bd.textContent = override > 0 ? `logged at your actual price ${money(override)}` : `install ${money(workPrice)} + drive ${money(driveCharge)}`;
   const cg = document.getElementById("pv_cogs"); if (cg) cg.innerHTML = cogsStrip(grand, cost);
-  window._paver = { workPrice: workPrice, workCost: workCost, price: grand, cost: cost, override: override, area: area, L: L, W: W, driveCharge: driveCharge, pavers: paversBy, notes: b ? b.innerText : "" };
+  window._paver = { workPrice: workPrice, workCost: workCost, price: grand, cost: cost, override: override, area: area, L: L, W: W, driveCharge: driveCharge, driveMin: dr.min, pavers: paversBy, notes: b ? b.innerText : "" };
 };
 
 window.savePaverQuote = function () {
   const d = window._paver || {};
-  const wc = (typeof WZ !== "undefined" && WZ.cust) ? WZ.cust : {};
-  const nm = val("pv_name") || wc.name || (d.L && d.W ? `${d.L}×${d.W} paver patio` : "Paver patio quote");
-  const grand = d.price || 0, override = d.override || 0;
-  const notes = (d.notes || "") + "\nPavers: " + (d.pavers === "cust" ? "customer-supplied" : "we supplied (avg estimate)") + " · full premium build (stone base + sand + polymeric + edging)";
-  let items;
-  if (override > 0) { items = [{ serviceId: "", name: "Paver patio / pad install", unit: "job", price: override, qty: 1, cost: d.cost || 0 }]; }
-  else {
-    items = [{ serviceId: "", name: "Paver patio / pad install (full premium build)", unit: "job", price: d.workPrice || 0, qty: 1, cost: d.workCost || 0 }];
-    if ((d.driveCharge || 0) > 0) items.push({ serviceId: "", name: "Drive — round trip to site", unit: "job", price: d.driveCharge, qty: 1, cost: Math.round(((d.cost || 0) - (d.workCost || 0)) * 100) / 100 });
-  }
-  const q = { id: uid(), customerId: wc.id || null, cust: nm, propertyId: wc.propertyId || null, address: wc.address || "", date: today(), items: items, recurring: false, subtotal: grand, discount: 0, total: grand, cost: d.cost || 0, kind: "paver", notes: notes, updatedAt: now() };
-  if (!q.num && typeof nextQuoteNum === "function") q.num = nextQuoteNum();
-  (D().quotes || (D().quotes = [])).push(q); save();
-  if (typeof logEvent === "function") logEvent("Paver quote created — " + money(grand) + " · " + nm, "quote");
-  closeModal();
-  alert("Saved " + money(grand) + " paver quote for " + nm + ". Find it on Jobs → Pipeline (Quote stage).");
-  render();
+  const grand = d.price || 0, override = d.override || 0, price = override > 0 ? override : grand;
+  if (!(price > 0)) { alert("Enter the patio size first."); return; }
+  if (typeof WZON === "undefined" || !WZON || typeof WZ === "undefined" || !WZ) { alert("Open this from a quote so it links the customer."); return; }
+  const nm = val("pv_name"); if (nm && WZ.cust && !WZ.cust.name) WZ.cust.name = nm;
+  const notes = ["Full premium build — stone base + sand + polymeric + edging." + (d.pavers === "cust" ? " Customer-supplied pavers." : " We supply pavers (avg estimate — adjust once they pick).")];
+  if ((d.driveCharge || 0) > 0 && !(override > 0)) notes.push("Incl. ~" + money(d.driveCharge) + " round-trip drive from the property address.");
+  WZ.items = WZ.items || [];
+  WZ.items.push({ serviceId: "", name: "Paver patio / pad install (full premium build)", unit: "job", price: price, qty: 1, cost: d.cost || 0, notes: notes, bandKey: "paver", breakdown: (d.L && d.W) ? [d.L + "×" + d.W + " = " + Math.round(d.area) + " sq ft"] : [] });
+  // pay-check hours: full build ~6 work-min/sq ft, 2-person crew, + static drive + 20-min on-site baseline
+  const crew = 2, workMin = (d.area || 0) * 6, driveMin = d.driveMin || 0;
+  const totalPH = (workMin / 60) + crew * (driveMin / 60) + crew * (20 / 60);
+  WZ.crewN = crew; WZ.hours = totalPH > 0 ? Math.round(totalPH / crew * 10) / 10 : 0;
+  WZ.modalBuilt = true;   // a modal-built tool — the review hides "back to build" (rebuild via the service picker)
+  closeModal(); WZ.step = "review"; render();
 };
