@@ -102,7 +102,7 @@ function rFinPayouts() {
   h += `<div class="secthd"><h2>Owed to members</h2><span class="ct">${fm(owedTotal)}</span></div>`;
   const ids = Object.keys(pay).sort((a, c) => finName(a).localeCompare(finName(c)));
   if (!ids.length) h += `<div class="card"><div class="muted">No payouts this period — record income to compute the split.</div></div>`;
-  else h += `<div class="card">` + ids.map(id => { const r = pay[id]; return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${esc(finName(id))}</div><div class="sub" style="white-space:normal">Field ${fm(r.field)} · Sales ${fm(r.sales)} · Admin ${fm(r.admin)}${r.mileage ? ` · Mileage ${fm(r.mileage)}` : ""}</div></div><div style="text-align:right;flex:0 0 auto"><b>${fm(r.total)}</b></div></div>`; }).join("") + `</div>`;
+  else h += `<div class="card">` + ids.map(id => { const r = pay[id]; return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${esc(finName(id))}</div><div class="sub" style="white-space:normal">Field ${fm(r.field)} · Sales ${fm(r.sales)} · Admin ${fm(r.admin)}${r.mileage ? `<br><span style="color:var(--muted)">↩ ${fm(r.mileage)} gas reimbursement — covers their fuel, not earnings</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto"><b>${fm(r.distribution)}</b><div class="sub" style="font-size:11px">earned${r.mileage ? `<br>+ ${fm(r.mileage)} reimb.<br>= ${fm(r.total)} to pay` : ""}</div></div></div>`; }).join("") + `</div>`;
 
   /* notes */
   const notes = [];
