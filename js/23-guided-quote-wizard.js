@@ -152,7 +152,7 @@ window.wizPriceSlide=function(price,sub){price=parseFloat(price)||0;WZ.disc=Math
   const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc>0?WZ.disc:"";const pf=document.getElementById("wz_discpct");if(pf)pf.value="";
   wizReviewTotals();};
 /* ← from the review back to the load builder; drop the line being edited so re-adding doesn't duplicate (the builder still holds WZ.junk / WZ.inp) */
-window.wizBackToBuild=function(){if(WZ.items&&WZ.items.length)WZ.items.pop();WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};
+window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};   // one service per quote — drop all of this build's lines; the builder keeps its own state (WZ.junk/WZ.deep/WZ.brush)
 
 /* ---- the single editable review/edit screen ---- */
 function reviewSummaryHTML(){
@@ -168,7 +168,7 @@ function reviewSummaryHTML(){
   const priceFor=rate=>Math.ceil((rate*personHrs/0.48+cost)/5)*5;   // price to clear a given $/hr each
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
   // market band (colored zones) — same look as the junk builder; the price marker slides as you discount
-  const _bk=(typeof WZ!=="undefined"&&WZ.svc)||(WZ.items[0]&&WZ.items[0].bandKey)||"junk";
+  const _bk=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
   const B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk])?MARKET_BANDS[_bk]:{lo:150,hi:800};
   const bandLo=B.lo,bandHi=B.hi,bMid=(bandLo+bandHi)/2,bMax=bandHi*1.3;
   const z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,Math.max(1,total/bMax*100));
@@ -207,7 +207,7 @@ function wizReview(){
     <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
   // price dial — drag LEFT to discount (down to your good-value floor), RIGHT to mark up jobs you don't want (to +20%)
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const _bk2=(typeof WZ!=="undefined"&&WZ.svc)||(WZ.items[0]&&WZ.items[0].bandKey)||"junk";
+  const _bk2=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
   const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk2])?MARKET_BANDS[_bk2]:{lo:150,hi:800};
   const floorP=Math.max(_B.lo,Math.ceil(_cost*1.2/5)*5),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
   h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>

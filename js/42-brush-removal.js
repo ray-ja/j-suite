@@ -32,7 +32,8 @@ function brushAccessMult(a){const o=BRUSH_ACCESS.find(x=>x[0]===a);return o?o[2]
 function calcBrush(){
   const bands=getBrushBands(),rent=getBrushRent();
   const lines=WZ.brush||[];
-  let cutSub=0,stumpSub=0,rows=[];
+  const TMIN={small:{cut:12,stump:10},medium:{cut:25,stump:20},large:{cut:45,stump:35},xlarge:{cut:75,stump:60}};   // work-minutes per item → pay check
+  let cutSub=0,stumpSub=0,mins=0,rows=[];
   lines.forEach(li=>{
     const b=bands[li.tier];if(!b)return;
     const q=Math.max(0,li.qty||0);if(!q)return;
@@ -41,6 +42,7 @@ function calcBrush(){
     const lc=cutEach*q, ls=stumpEach*q;
     if(lc<=0&&ls<=0)return;
     cutSub+=lc;stumpSub+=ls;
+    const tm=TMIN[li.tier]||{cut:20,stump:15};mins+=q*am*((li.cut?tm.cut:0)+(li.stump?tm.stump:0));
     const acc=(BRUSH_ACCESS.find(x=>x[0]===li.access)||BRUSH_ACCESS[0]);
     rows.push({label:q+"× "+b.label+(am!==1?" · "+acc[1]:""),cut:Math.round(lc),stump:Math.round(ls)});
   });
@@ -52,7 +54,7 @@ function calcBrush(){
   const trailer=Math.max(0,WZ.brushTrailer||0);
   const grinder=stumpLine>0?rent.grinder:0;
   const cost=grinder+trailer;
-  return {rows:rows,cutLine:cutLine,stumpLine:stumpLine,price:price,
+  return {rows:rows,cutLine:cutLine,stumpLine:stumpLine,price:price,mins:Math.round(mins),
     grinder:grinder,trailer:trailer,cost:Math.round(cost*100)/100};
 }
 
@@ -93,9 +95,7 @@ function wizBrushUI(){
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:4px">Hard costs</div>
     <div class="sub" style="margin-bottom:6px">Clean-veg disposal is <b>free</b> in Dare/Currituck → <b>$0 dump</b>. The chainsaw is <b>owned — no rental</b>. The stump grinder ${money(rent.grinder)} applies only when a stump line is selected. Rentals are editable in the rate editor; travel is its own line below.</div>
     <label style="margin-top:0">Optional trailer rental (passthrough $)</label><input type="number" inputmode="decimal" value="${WZ.brushTrailer||0}" onchange="wizBrushCost('brushTrailer',this.value)">
-    <div class="sub" style="margin-top:4px">Work cost in this quote: grinder ${money(c.grinder)} + trailer ${money(c.trailer)} = <b>${money(c.cost)}</b>. Travel is added as its own line so drive is counted once.</div></div>`;
-  // Travel — auto-added so the trip charge is never forgotten
-  h+=travelCardHTML();
+    <div class="sub" style="margin-top:4px">Work cost in this quote: grinder ${money(c.grinder)} + trailer ${money(c.trailer)} = <b>${money(c.cost)}</b>. 🚗 Drive is figured automatically from the property address.</div></div>`;
 
   if(!oos){
     // Breakdown
@@ -111,11 +111,11 @@ function wizBrushUI(){
     }
 
     // Green on-site quote — distinct lines (cut / stump) + travel
-    const tc=travelCharge(wizTravelOpts()),grand=c.price+tc.charge;
+    const _drv=(typeof wizDriveCharge==="function")?wizDriveCharge(2):{charge:0},grand=c.price+_drv.charge;
     h+=`<div class="card" style="background:var(--accent);color:var(--accent-ink)"><div style="font-size:13px;font-weight:700;text-align:center">QUOTE TO GIVE ON SITE</div>
       ${c.cutLine>0?`<div class="row" style="justify-content:space-between;margin-top:6px"><span>Cut &amp; haul</span><b>${money(c.cutLine)}</b></div>`:""}
       ${c.stumpLine>0?`<div class="row" style="justify-content:space-between"><span>Stump / root removal</span><b>${money(c.stumpLine)}</b></div>`:""}
-      <div class="row" style="justify-content:space-between"><span>Travel (${esc(tc.short)})</span><b>${money(tc.charge)}</b></div>
+      <div class="row" style="justify-content:space-between"><span>Drive (round trip, from address)</span><b>${money(_drv.charge)}</b></div>
       <div style="font-size:32px;font-weight:800;line-height:1.1;text-align:center;margin-top:4px">${money(grand)}</div>
       <div style="font-size:12px;opacity:.9;text-align:center">Cut &amp; stump are separate — the customer can take either or both; travel applies to the trip.</div></div>`;
     h+=`<div class="wizfoot"><div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(grand)}</b></div><button class="btn ghost sm" onclick="WZ.step='pick';render()">← Back</button><button class="btn acc grow" onclick="wizAddBrush()">Add to quote</button></div>`;
@@ -142,15 +142,19 @@ window.wizAddBrush=function(){
   const accNote=(WZ.brush||[]).some(l=>l.access!=="open")?" Some items have access adders (near structures / tight).":"";
   if(c.cutLine>0){
     WZ.items.push({name:"Brush/shrub removal — cut & haul",price:c.cutLine,cost:trailer,
-      notes:["Clean veg hauls free (no disposal cost); saw is owned (no rental)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:""});
+      notes:["Clean veg hauls free (no disposal cost); saw is owned (no rental)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:"",bandKey:"brush"});
   }
   if(c.stumpLine>0){
     WZ.items.push({name:"Stump/root removal",price:c.stumpLine,cost:rent.grinder+(c.cutLine>0?0:trailer),
-      notes:["Stump/root grinding — separate, optional line."],qty:1,unit:"job",serviceId:""});
+      notes:["Stump/root grinding — separate, optional line."],qty:1,unit:"job",serviceId:"",bandKey:"brush"});
   }
-  upsertTravelLine(WZ.items,wizTravelOpts()); // auto-add the travel line so the trip charge is never forgotten
-  WZ.brush=[];WZ.brushTrailer=0;WZ.brushOOS=false;
-  WZ.step="pick";render();
+  // static drive from the property address (replaces the travel-zone line) + pay-check hours (2-person ground crew)
+  const crew=2, drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
+  const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
+  if(drv.charge>0)WZ.items.push({name:"Drive — round trip to site",price:drv.charge,cost:Math.round((drv.miles||0)*MIL),qty:1,unit:"job",serviceId:"",bandKey:"brush"});
+  const totalPH=((c.mins||0)/60)+crew*((drv.min||0)/60)+crew*(15/60);
+  WZ.crewN=crew; WZ.hours=totalPH>0?Math.round(totalPH/crew*10)/10:0;
+  WZ.step="review";render();   // keep WZ.brush so the review's ← back returns to the build
 };
 
 /* ----- rate editor (price bands + rental cost defaults) ----- */
