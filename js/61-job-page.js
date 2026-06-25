@@ -79,9 +79,9 @@ function rJobPage(j) {
   else h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Your vehicle</label><input id="tc_vehicle" list="veh_list" placeholder="pick a truck — or type your own car" autocomplete="off"><datalist id="veh_list">${vehs.map(v => `<option value="${esc(v.name)}">`).join("")}</datalist><label>Odometer — start</label><input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now"><div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div><button class="btn acc" style="margin-top:10px;width:100%;padding:13px" onclick="tcClockIn()">⏱️ Clock in</button>`;
   h += `</div>`;
 
-  // 4) Photos — inline, so anyone who opens the job sees them
+  // 4) Job photos — documentation gallery, inline so anyone who opens the job sees them
   const atts = (j.attachments || []).filter(a => a && !a.deleted);
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:8px">📸 Photos</div>`;
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:8px">🖼 Job photos <span class="sub" style="font-weight:400">· documentation</span></div>`;
   if (atts.length) h += `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">` + atts.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>`;
   else h += `<div class="muted" style="margin-bottom:8px">No photos yet.</div>`;
   h += `<input type="file" id="job_photo" accept="image/*" capture="environment" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo</button></div>`;
@@ -116,11 +116,11 @@ function rJobPage(j) {
   const me2 = (typeof curUser === "function") ? curUser() : null;
   const capTid = "thr_job_" + j.id + "_" + (me2 ? me2.id : "x");
   const capMsgs = (D().messages || []).filter(m => m && !m.kind && !m.deleted && m.threadId === capTid).sort((a, b) => (a.ts || 0) - (b.ts || 0));
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap about this job</div>`;
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap <span class="sub" style="font-weight:400">· attach a photo</span></div>`;
   h += capMsgs.length
-    ? capMsgs.slice(-6).map(m => { const isCap = m.senderId === "__ceo__" || m.senderId === "__cap__"; return `<div class="li" style="${isCap ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${isCap ? "🤖 Cap" : esc(m.senderLabel || "You")} <span style="font-weight:400">· ${typeof relTime === "function" ? relTime(m.ts) : ""}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div></div></div>`; }).join("")
+    ? capMsgs.slice(-6).map(m => { const isCap = m.senderId === "__ceo__" || m.senderId === "__cap__"; const _ma = (m.attachments || []).filter(a => a && a.id && !a.deleted); return `<div class="li" style="${isCap ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${isCap ? "🤖 Cap" : esc(m.senderLabel || "You")} <span style="font-weight:400">· ${typeof relTime === "function" ? relTime(m.ts) : ""}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_ma.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);margin-top:6px" loading="lazy"></a>`).join("")}</div></div>`; }).join("")
     : `<div class="muted">Ask Cap anything about this job — he knows the customer, address, notes &amp; equipment. e.g. "Are we providing the pavers, or is it client-provided?"</div>`;
-  h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap…"></textarea><button class="btn acc sm" style="margin-top:8px;width:100%" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div>`;
+  h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap… (e.g. send a photo of the spot and ask what base it needs)"></textarea><input type="file" id="jobcap_photo" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('jobcap_photo_lbl');if(l)l.textContent='✓ Photo ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('jobcap_photo').click()"><span id="jobcap_photo_lbl">📷 Attach photo</span></button><button class="btn acc grow" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div></div>`;
 
   // 7) Change orders
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change orders${coTotal ? ` · <span style="color:var(--accent)">${money(coTotal)}</span>` : ""}</div>`;
@@ -199,7 +199,9 @@ window.jobAddPhoto = function (jobId, input) {
    converses; toStrategy so it's a Cap channel). The server tags the projection with jobId → Cap pulls
    the job's customer/address/notes/equipment as context when he answers. His reply syncs back here. */
 window.jobAskCap = function (jobId) {
-  const q = val("jobcap_q"); if (!q) return;
+  const q = (val("jobcap_q") || "").trim();
+  const pinput = document.getElementById("jobcap_photo"); const pfile = pinput && pinput.files && pinput.files[0];
+  if (!q && !pfile) return;
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) { alert("Sign in first."); return; }
   const tid = "thr_job_" + jobId + "_" + me.id;
@@ -207,8 +209,12 @@ window.jobAskCap = function (jobId) {
   let thr = coll.find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted);
   if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: "Cap · " + (j.title || "Job"), type: "dm", toStrategy: true, jobId: jobId, members: [me.id], createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
   else if (!thr.jobId) { thr.jobId = jobId; thr.updatedAt = now(); }
-  coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q, ts: now(), deleted: false, updatedAt: now() });
-  if (typeof save === "function") save(); if (typeof render === "function") render();
+  const post = function (atts) {
+    coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q || "(photo)", ts: now(), attachments: (atts && atts.length) ? atts : undefined, deleted: false, updatedAt: now() });
+    if (typeof save === "function") save(); if (typeof render === "function") render();
+  };
+  if (pfile && typeof jsUpload === "function") jsUpload(pfile).then(function (id) { post([{ id: id }]); }).catch(function (e) { alert("Photo upload failed: " + (e.message || e)); post([]); });
+  else post([]);
 };
 window.jobSaveTravel = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
