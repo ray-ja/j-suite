@@ -295,6 +295,7 @@ window.acceptQuoteToJob=function(quoteId){
   if(!job.title)job.title=quoteJobTitle(q);
   job.customerId=q.customerId||job.customerId||"";job.propertyId=q.propertyId||job.propertyId||"";
   job.address=q.address||job.address||"";job.crew=[...JOBCREW];job.date=date;job.time=time;job.quoteId=q.id;
+  job.estHours=+q.hours||0;job.estCrew=Math.max(1,+q.crewN||1);   // carry the quote's time estimate so we can compare est-vs-actual at the job
   touch(job);
   q.accepted=true;q.jobId=job.id;q.acceptedDate=date;touch(q);
   if(typeof WZ!=="undefined"&&WZ&&WZ.id===q.id){WZ.accepted=true;WZ.jobId=job.id;WZ.acceptedDate=date;}

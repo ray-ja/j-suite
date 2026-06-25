@@ -57,6 +57,14 @@ window.clockPillTap = function () {
 };
 try { setInterval(function () { if (typeof renderClockPill === "function") renderClockPill(); }, 30000); } catch (e) {}
 function tcJob(id) { return (D().jobs || []).find(j => j.id === id) || null; }
+/* ===== estimated vs ACTUAL job time (the learning loop). Estimate = the quote's hours-each × crew (incl.
+   drive + setup). Actual = the SUM of every clocked segment on the job across the whole crew — breaks
+   fall out automatically (a lunch clock-out is just a gap between two completed entries), so it's the
+   real time-on-site. Apples to apples as long as the crew clocks the whole job. ===== */
+function jobEstHrsEach(j) { var h = +(j && j.estHours) || 0; if (!h && j) { var q = (D().quotes || []).find(x => x && !x.deleted && x.jobId === j.id); if (q) h = +q.hours || 0; } return h; }
+function jobEstCrew(j) { var c = +(j && j.estCrew) || 0; if (!c && j) { var q = (D().quotes || []).find(x => x && !x.deleted && x.jobId === j.id); if (q) c = +q.crewN || 0; } return Math.max(1, c || 1); }
+function jobEstCrewHrs(j) { return Math.round(jobEstHrsEach(j) * jobEstCrew(j) * 10) / 10; }
+function jobClockedHrs(j) { if (!j) return 0; return Math.round((D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut).reduce((s, e) => s + Math.max(0, e.clockOut - e.clockIn), 0) / 3600000 * 10) / 10; }
 function tcJobTitle(id) { const j = tcJob(id); return j ? (j.title || "Job") : "—"; }
 
 /* ----- geometry + math ----- */
@@ -229,6 +237,7 @@ function tcClockHTML() {
     h += `<div class="card" style="border-left:5px solid var(--accent)">
       <div class="sub">⏱ On the clock — ${esc(who.name)}</div>
       <div class="nm" style="font-size:18px;margin:2px 0">${esc(open.jobId ? tcJobTitle(open.jobId) : "Job")}${j && j.customerId ? ` <span class="sub">· ${esc(custName(j.customerId))}</span>` : ""}</div>
+      ${(j && jobEstHrsEach(j)) ? `<div class="sub" style="color:var(--brand-text);font-weight:600">⏱ Est ~${jobEstHrsEach(j)} hr (your share) · likely finish ~${(function(){try{return new Date(open.clockIn+jobEstHrsEach(j)*3600000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(e){return""}})()} · breaks don't count</div>` : ""}
       <div style="display:flex;gap:14px;margin:8px 0;flex-wrap:wrap">
         <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>
         <div><div style="font-size:24px;font-weight:800" id="tc_miles">${tcRound(open.computedMiles)} mi est</div><div class="sub" id="tc_pings">${(open.pings || []).length} ping${(open.pings || []).length === 1 ? "" : "s"}</div></div>
