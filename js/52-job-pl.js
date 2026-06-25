@@ -21,6 +21,7 @@ function plQuoteFor(j) {
   return (d.quotes || []).find(q => q && !q.deleted && q.jobId === j.id) || null;
 }
 function plExpenses(j) { return Array.isArray(j.expenses) ? j.expenses : []; }
+function plMaterials(j) { return Array.isArray(j.materials) ? j.materials : []; }   // pass-through materials (billed at cost) — a cost in the P&L since the quote price includes them
 /* confirmed mileage cost attributed to this job (timeclock miles × IRS rate) */
 function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
 /* sub-jobs (e.g. a dump run filed under a bigger job) — their costs + hours roll up into the parent */
@@ -32,13 +33,14 @@ function jobProfit(j) {
   const q = plQuoteFor(j);
   const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
   let expCost = plExpenses(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
+  let matCost = plMaterials(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
   let milCost = jobMileageCost(j);
-  subJobsOf(j.id).forEach(sj => { expCost += plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0); milCost += jobMileageCost(sj); });
-  const cost = expCost + milCost, profit = price - cost;
+  subJobsOf(j.id).forEach(sj => { expCost += plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0); matCost += plMaterials(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0); milCost += jobMileageCost(sj); });
+  const cost = expCost + matCost + milCost, profit = price - cost;
   const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
   const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");
   const cust = (q && q.cust) || (j.customerId && typeof custName === "function" ? custName(j.customerId) : "") || "—";
-  return { j: j, q: q, price: price, expCost: expCost, milCost: milCost, cost: cost, profit: profit, margin: margin, type: type, cust: cust };
+  return { j: j, q: q, price: price, expCost: expCost, matCost: matCost, milCost: milCost, cost: cost, profit: profit, margin: margin, type: type, cust: cust };
 }
 /* effective field-work pay $/hr each — the number that says if a job was worth it.
    person-hours = crew × (on-site hrs + round-trip drive hrs). Uses the job's manual time/travel fields
