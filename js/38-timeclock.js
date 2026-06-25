@@ -114,8 +114,8 @@ window.tcClockIn = async function () {
   if (!jobId) { alert("Pick the job you're working on."); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
-  const vehicle = (val("tc_vehicle") || "").trim();
-  if (!vehicle) { alert("Enter which vehicle you're driving."); return; }
+  const vehOwnerId = val("tc_vehicle_owner") || who.userId;
+  const vehicle = tcVehOwnerName(vehOwnerId) + "'s vehicle";
   const odoStart = parseFloat(val("tc_odo_start"));
   if (!(odoStart >= 0)) { alert("Enter your starting odometer reading."); return; }
   const btn = document.getElementById("tc_inbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
@@ -126,7 +126,7 @@ window.tcClockIn = async function () {
     inLoc: loc, outLoc: null, pings: [],
     computedMiles: 0, miles: null, milesConfirmed: false,
     odoStart: odoStart, odoEnd: null,
-    vehicle: vehicle, rate: TC_RATE, updatedAt: now()
+    vehicle: vehicle, vehicleOwnerId: vehOwnerId, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
@@ -158,6 +158,16 @@ window.tcFinishClockOut = function (id) {
   try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
 
+/* ===== vehicle ownership — the mileage reimburses whoever OWNS the vehicle, not the driver.
+   Each person's vehicle is "<name>'s vehicle" (one personal vehicle each until there's a company truck). ===== */
+function tcVehMembers() { return (typeof schedMembers === "function") ? schedMembers() : []; }
+function tcVehOwnerName(id) { const u = tcVehMembers().find(x => x.id === id); return u ? u.username : "Crew"; }
+function tcVehOwnerOptions(selId) { return tcVehMembers().map(u => `<option value="${esc(u.id)}" ${selId === u.id ? "selected" : ""}>${esc(u.username)}'s vehicle</option>`).join(""); }
+function tcDefaultVehOwner(uid) {   // default to this driver's last-used vehicle owner (they mostly drive the same one), else their own
+  const last = (tcoll() || []).filter(e => e.userId === uid && e.vehicleOwnerId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
+  return (last && last.vehicleOwnerId) || uid;
+}
+
 /* ===== owner: edit / confirm an entry's mileage + vehicle ===== */
 window.tcOpenEntry = function (id) {
   if (typeof isOwner === "function" && !isOwner()) { alert("Only the owner can adjust logged time + mileage."); return; }
@@ -170,9 +180,8 @@ window.tcOpenEntry = function (id) {
     <label>Miles (owner-confirmed)</label>
     <input id="tc_e_miles" type="number" step="0.1" value="${tcMiles(e)}">
     <div class="sub" style="margin-top:4px">Mileage cost @ $${TC_RATE}/mi updates on save. GPS distance is an estimate — confirm the real driven miles.</div>
-    <label style="margin-top:10px">Whose vehicle</label>
-    <input id="tc_e_veh" list="tc_e_vehlist" value="${esc(e.vehicle || "")}" placeholder="e.g. Ray's truck">
-    <datalist id="tc_e_vehlist">${veh.map(n => `<option value="${esc(n)}'s vehicle">`).join("")}</datalist>
+    <label style="margin-top:10px">Whose vehicle? <span class="sub">(mileage reimburses the owner, not the driver)</span></label>
+    <select id="tc_e_veh_owner">${tcVehOwnerOptions(e.vehicleOwnerId || e.userId)}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="tc_e_conf" style="width:20px;height:20px;flex:0 0 auto" ${e.milesConfirmed ? "checked" : ""}><div class="grow"><div class="nm" style="font-size:15px">Confirm mileage</div><div class="sub">Marks it owner-verified (no longer an estimate)</div></div></label>
     <button class="btn acc" style="margin-top:14px" onclick="tcSaveEntry('${e.id}')">Save</button>
     <button class="btn danger" style="margin-top:10px" onclick="tcDelEntry('${e.id}')">Delete entry</button>`);
@@ -180,7 +189,8 @@ window.tcOpenEntry = function (id) {
 window.tcSaveEntry = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e) return;
   const m = parseFloat(val("tc_e_miles")); e.miles = isNaN(m) ? tcRound(e.computedMiles) : Math.max(0, m);
-  e.vehicle = val("tc_e_veh"); e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
+  e.vehicleOwnerId = val("tc_e_veh_owner") || e.vehicleOwnerId || e.userId; e.vehicle = tcVehOwnerName(e.vehicleOwnerId) + "'s vehicle";
+  e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
   touch(e);
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
   save(); closeModal(); render();
@@ -239,9 +249,8 @@ function tcClockHTML() {
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
         <label>Job</label>
         <select id="tc_job">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
-        <label>Vehicle (required)</label>
-        <input id="tc_vehicle" list="tc_vehlist" value="${esc(veh.length && veh.indexOf(who.name) >= 0 ? who.name + "'s vehicle" : "")}" placeholder="e.g. Ray's truck">
-        <datalist id="tc_vehlist">${veh.map(n => `<option value="${esc(n)}'s vehicle">`).join("")}</datalist>
+        <label>Whose vehicle? <span class="sub">(mileage reimburses the owner — pick Ray if you're in his truck)</span></label>
+        <select id="tc_vehicle_owner">${tcVehOwnerOptions(tcDefaultVehOwner(who.userId))}</select>
         <label>Odometer — start (required)</label>
         <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
         <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>

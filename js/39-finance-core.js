@@ -104,7 +104,8 @@ function finRollup(incomes, opts) {
 }
 
 function finDayOf(ms) { var d = new Date(ms); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
-/* mileage reimbursements from time-clock entries → cents per member (vehicle owner = entry.userId).
+/* mileage reimbursements from time-clock entries → cents per member, paid to the VEHICLE OWNER
+   (entry.vehicleOwnerId; falls back to entry.userId for pre-change entries with no owner recorded).
    opts: { from, to, confirmedOnly, rate } — period filtered on the clock-in day. */
 function finMileage(entries, opts) {
   opts = opts || {}; var per = {}, total = 0, miles = 0;
@@ -115,7 +116,8 @@ function finMileage(entries, opts) {
     if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) return;
     var mi = (e.miles != null) ? e.miles : Math.round((e.computedMiles || 0) * 10) / 10;
     var cents = Math.round(mi * (e.rate || opts.rate || FIN.MILEAGE_RATE) * 100);
-    per[e.userId] = (per[e.userId] || 0) + cents; total += cents; miles += mi;
+    var owner = e.vehicleOwnerId || e.userId;   // mileage reimburses the VEHICLE OWNER, not the driver
+    per[owner] = (per[owner] || 0) + cents; total += cents; miles += mi;
   });
   return { perMember: per, total: total, miles: Math.round(miles * 10) / 10 };
 }
