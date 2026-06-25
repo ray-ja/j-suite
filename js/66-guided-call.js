@@ -7,7 +7,20 @@
 let GC = {};
 function gcInit(){ if (!GC._init) { const me = (typeof curUser === "function") ? curUser() : null; GC = { soldBy: me ? me.id : "", _init: true }; } }
 window.openGuidedCall = function () { if (typeof ACCTSUB !== "undefined") ACCTSUB = "calllead"; TAB = "accounts"; render(); };   // legacy entry → the Call Lead tab
-window.gcReset = function () { const me = (typeof curUser === "function") ? curUser() : null; GC = { soldBy: me ? me.id : "", _init: true }; if (typeof render === "function") render(); };
+window.gcReset = function () { if (typeof gcClearDraft === "function") gcClearDraft(); const me = (typeof curUser === "function") ? curUser() : null; GC = { soldBy: me ? me.id : "", _init: true }; if (typeof render === "function") render(); };
+
+/* ---- draft autosave + recover — survive an accidental close mid-call (name/need/address aren't lost) ---- */
+const GC_DRAFT_KEY = "jsuite_gcdraft";
+function gcHasData(){ return !!(GC && (GC.name || GC.need || GC.address || GC.phone || GC.email)); }
+window.gcAutosave = function(){ try { if (gcHasData()) localStorage.setItem(GC_DRAFT_KEY, JSON.stringify({ biz: S.biz, ts: now(), gc: GC })); } catch(e){} };
+function gcDraftMeta(){ try { const d = JSON.parse(localStorage.getItem(GC_DRAFT_KEY) || "null"); if (!d || !d.gc || (d.biz && d.biz !== S.biz)) return null; return { name: d.gc.name || "", need: d.gc.need || "", address: d.gc.address || "" }; } catch(e){ return null; } }
+window.gcResumeDraft = function(){ try { const d = JSON.parse(localStorage.getItem(GC_DRAFT_KEY) || "null"); if (d && d.gc) GC = Object.assign({ _init: true }, d.gc); } catch(e){} if (typeof render === "function") render(); };
+window.gcClearDraft = function(){ try { localStorage.removeItem(GC_DRAFT_KEY); } catch(e){} };
+/* save the in-progress call (and any open quote) the instant the tab is backgrounded/closed */
+(function(){ try {
+  document.addEventListener("visibilitychange", function(){ if (document.visibilityState === "hidden") { if (typeof gcAutosave === "function") gcAutosave(); if (typeof wizAutosave === "function") wizAutosave(); } });
+  window.addEventListener("pagehide", function(){ if (typeof gcAutosave === "function") gcAutosave(); if (typeof wizAutosave === "function") wizAutosave(); });
+} catch(e){} })();
 
 function gcStep(n, title, say, fields) {
   return `<div class="card"><div style="font-weight:800;margin-bottom:4px"><span style="color:var(--accent)">${n}</span> · ${esc(title)}</div><div class="note" style="white-space:normal${fields ? ";margin-bottom:8px" : ""}">🗣️ ${esc(say)}</div>${fields || ""}</div>`;
@@ -21,7 +34,10 @@ function gcQuotePick() {
 /* the Call Lead tab body (rendered inside the accounts view, under the subnav) */
 function gcBody() {
   const me = (typeof curUser === "function") ? curUser() : null;
-  let h = `<div class="row" style="margin:0 2px 8px;align-items:center"><div class="grow"><div class="nm" style="font-size:17px">📞 On a call — I've got you</div></div><button class="btn ghost sm" onclick="gcReset()">🔄 New call</button></div>`;
+  let h = "";
+  const _gd = (typeof gcDraftMeta === "function") ? gcDraftMeta() : null;
+  if (_gd && !gcHasData()) h += `<div class="card" style="border-left:4px solid var(--accent)"><div class="nm">📝 Unfinished call — recovered</div><div class="sub" style="white-space:normal">${_gd.name ? esc(_gd.name) : "(no name yet)"}${_gd.need ? " · " + esc(_gd.need.slice(0,40)) : ""}${_gd.address ? " · " + esc(_gd.address.slice(0,30)) : ""}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="gcResumeDraft()">Resume the call</button><button class="btn ghost grow" onclick="gcClearDraft();render()">Discard</button></div></div>`;
+  h += `<div class="row" style="margin:0 2px 8px;align-items:center"><div class="grow"><div class="nm" style="font-size:17px">📞 On a call — I've got you</div></div><button class="btn ghost sm" onclick="gcReset()">🔄 New call</button></div>`;
   h += gcStep("1", "Open warm + get their name", `"Thanks for calling OBX Lot Solutions — this is ${me ? me.username : "[you]"}. Who do I have the pleasure of speaking with?"  → then use their name the rest of the call.`, `<input id="gc_name" placeholder="Their name" value="${esc(GC.name || "")}" oninput="GC.name=this.value" autocomplete="off">`);
   h += gcStep("2", "Let them talk — what do they need?", `"Great to meet you, [name]. So tell me what's going on — what are you looking to get done?"  → Then LISTEN. Don't interrupt, don't jump to price. People buy when they feel heard.`, `<textarea id="gc_need" placeholder="What they need + key details" oninput="GC.need=this.value">${esc(GC.need || "")}</textarea>`);
   h += gcStep("3", "Where & when", `"Got it. What's the property address? … And when were you hoping to have it done?"  → The address lets you price + map it; urgency means you can hold your price.`, `<div class="acwrap"><input id="gc_addr" placeholder="Start typing the address…" value="${esc(GC.address || "")}" oninput="GC.address=this.value;addrSuggest('gc_addr','gc_abox')" onchange="GC.address=this.value" autocomplete="off"><div class="acbox" id="gc_abox"></div></div><input id="gc_when" placeholder="Timeline / urgency (ASAP, this month…)" value="${esc(GC.timeline || "")}" oninput="GC.timeline=this.value" autocomplete="off" style="margin-top:6px">`);
@@ -42,6 +58,7 @@ function rCallLead() {
   const _a = document.activeElement, _aid = _a && _a.id, _s = _a ? _a.selectionStart : 0, _e = _a ? _a.selectionEnd : 0;
   view.innerHTML = ((typeof acctSubnav === "function") ? acctSubnav() : "") + gcBody();
   if (_aid) { const el = document.getElementById(_aid); if (el) { el.focus(); try { el.setSelectionRange(_s, _e); } catch (ex) {} } }
+  if (typeof gcAutosave === "function") gcAutosave();
 }
 
 /* save the customer (+ property) captured on the call; returns {c, prop} */
@@ -71,6 +88,7 @@ window.gcQuoteWith = function (svcKey) {
 window.gcFinish = function (outcome) {
   if (!(GC.name || GC.phone)) { if (!confirm("No name or phone captured yet — save anyway?")) return; }
   const r = gcSaveCustomer(outcome === "lead" ? "Lead" : "Quoted"), name = r.c.name;
+  gcClearDraft();   // the call is saved (lead/quote/visit) — drop the recovery draft
   const me = (typeof curUser === "function") ? curUser() : null;
   if (outcome === "quote" && typeof WZON !== "undefined") { WZ = gcWizFor(r.c, r.prop); GC = { soldBy: me ? me.id : "", _init: true }; WZON = true; TAB = "quotes"; render(); return; }
   GC = { soldBy: me ? me.id : "", _init: true };

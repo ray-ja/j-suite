@@ -112,4 +112,5 @@ window.wizPvSqft = function (v) {
   const m=document.getElementById("pv_mk"); if(m)m.style.left=mk+"%";
   const pn=document.getElementById("pv_paynote"); if(pn)pn.innerHTML=tier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':tier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor — slide up.</span>';
   const br=document.getElementById("pv_break"); if(br)br.innerHTML=pvBreakHTML(c);
+  if(typeof wizAutosave==="function")wizAutosave();   // the slider does a partial update (no full render) — keep the draft current
 };
