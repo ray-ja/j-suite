@@ -211,6 +211,12 @@ window.wizPvPickCrew = function (n) { if (!WZ.pv) return; WZ.pv.pickupCrew = Mat
 window.wizPvGeoPickup = function (addr) {
   if (!WZ.pv) return; WZ.pv.pickupAddr = addr;
   if (!addr) { WZ.pv.pickupLat = null; WZ.pv.pickupLng = null; if (typeof render==="function") render(); return; }
+  const inp = document.getElementById("pv_pickaddr");                          // if they PICKED a suggestion, use its exact coords — re-geocoding the text is what landed Lowe's 400mi off
+  if (inp && inp.dataset && inp.dataset.pickLat) {
+    WZ.pv.pickupLat = +inp.dataset.pickLat; WZ.pv.pickupLng = +inp.dataset.pickLng;
+    delete inp.dataset.pickLat; delete inp.dataset.pickLng;
+    if (typeof render==="function") render(); return;
+  }
   fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" + encodeURIComponent(addr))
     .then(function (r) { return r.json(); })
     .then(function (d) { if (d && d[0]) { WZ.pv.pickupLat = +d[0].lat; WZ.pv.pickupLng = +d[0].lon; } if (typeof render==="function") render(); })
