@@ -34,6 +34,24 @@ function rcptAllFiled(){
 /* a duplicate = same amount + same (normalized) description/vendor */
 function rcptDupKey(e){ const v = String(e.vendor || "").trim().toLowerCase(), dsc = String(e.desc || e.note || "").trim().toLowerCase(); return Math.round((+e.amount || 0) * 100) + "|" + (v || dsc).replace(/\s+/g, " "); }
 function rcptDupSet(filed){ const cnt = {}, s = {}; (filed || []).forEach(function (e) { const k = rcptDupKey(e); cnt[k] = (cnt[k] || 0) + 1; }); Object.keys(cnt).forEach(function (k) { if (cnt[k] > 1) s[k] = cnt[k]; }); return s; }
+/* tax records: standardized DATE-first filename + a CSV export.
+   `capRead` (when Cap has read the receipt) provides the real transaction date/vendor; else we use the filed date. */
+function rcptDate(e){ const cr = e.capRead || {}; if (cr.date) return String(cr.date).slice(0,10); if (e.date) return String(e.date).slice(0,10); if (e.ts) { try { return new Date(e.ts).toISOString().slice(0,10); } catch(x){} } return "undated"; }
+function rcptSan(s, n){ s = String(s || "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); return n ? s.slice(0, n) : s; }
+function rcptStdName(e){ const ext = (/\.([A-Za-z0-9]+)$/.exec(e.receiptId || "") || [, "jpg"])[1]; return [rcptDate(e), rcptSan(e.vendor || "vendor", 24), "$" + (+e.amount || 0).toFixed(2), rcptSan(e.desc || e.note || "", 24)].filter(Boolean).join("_") + "." + ext; }
+window.rcptExportCSV = function () {
+  const filed = rcptAllFiled();
+  if (!filed.length) { alert("No filed receipts to export yet."); return; }
+  const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, "");
+  const rows = [["Date", "Vendor", "Amount", "What", "Category", "Paid by", "Card", "Where", "Standard filename", "Receipt link"]];
+  filed.forEach(function (e) { rows.push([ rcptDate(e), e.vendor || "", (+e.amount || 0).toFixed(2), e.desc || e.note || "", e.category || "", e.paidBy ? ((typeof userName === "function" ? userName(e.paidBy) : "") || "") : "", e.paidBy ? "personal (reimburse)" : "business", e.where || "", rcptStdName(e), base + "/uploads/" + (e.receiptId || "") ]); });
+  const csv = rows.map(function (r) { return r.map(function (c) { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(","); }).join("\r\n");
+  try {
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "receipts-" + (typeof today === "function" ? today() : "export") + ".csv";
+    document.body.appendChild(a); a.click(); setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (z) {} }, 100);
+  } catch (x) { alert("Export failed: " + (x.message || x)); }
+};
 
 function rReceipts(){
   if (typeof canSee === "function" && !canSee("receipts")) { view.innerHTML = `<div class="secthd"><h2>Receipts</h2></div><div class="card"><div class="muted">Owner / admin only.</div></div>`; return; }
@@ -65,7 +83,7 @@ function rReceipts(){
     h += `<div class="card"><div class="muted">No receipts staged. Upload a batch above — then attribute each one.</div></div>`;
   }
   if (filed.length) {
-    h += `<div class="secthd" style="margin-top:14px"><h2>Filed receipts</h2><span class="ct">${filed.length}</span></div>`;
+    h += `<div class="secthd" style="margin-top:14px"><h2>Filed receipts</h2><div class="row" style="gap:8px;align-items:center"><span class="ct">${filed.length}</span><button class="btn ghost sm" onclick="rcptExportCSV()">📤 Export for taxes</button></div></div>`;
     h += filed.slice(0, 60).map(function (e) {
       const isDup = !!dups[rcptDupKey(e)];
       return `<div class="card"${isDup ? ' style="border-left:4px solid var(--danger)"' : ''}><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(e.receiptId)}<div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""}${(e.desc || e.note) ? ' <span class="sub" style="font-weight:400">' + esc(e.desc || e.note) + '</span>' : ''}${isDup ? ' <span class="badge" style="background:var(--danger);color:#fff">⚠ possible duplicate</span>' : ''}</div><div class="sub" style="white-space:normal">${esc(e.where)}${e.category ? " · " + esc(e.category) : ""}${e.paidBy ? " · reimburse " + esc((typeof userName === "function" ? userName(e.paidBy) : "") || "") : ""}${e.ts && typeof relTime === "function" ? " · " + relTime(e.ts) : ""}</div></div><button class="btn ghost sm" onclick="rcptDelFiled('${e.store}','${e.jobId || ""}','${e.id}')">✕</button></div></div>`;
