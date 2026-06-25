@@ -16,22 +16,28 @@ function rcptReimbOwed(){
   (D().expenses || []).forEach(add);
   return per;
 }
+function rcptThumb(id){
+  const up = (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
+  if (/\.pdf$/i.test(id || "")) return `<a href="${up}" target="_blank" rel="noopener" style="display:flex;width:84px;height:84px;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--line);background:var(--soft);text-decoration:none;flex:0 0 auto"><div style="text-align:center"><div style="font-size:26px;line-height:1">📄</div><div class="sub" style="font-size:10px">PDF</div></div></a>`;
+  return `<a href="${up}" target="_blank" rel="noopener" style="flex:0 0 auto"><img src="${up}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`;
+}
 
 function rReceipts(){
   if (typeof canSee === "function" && !canSee("receipts")) { view.innerHTML = `<div class="secthd"><h2>Receipts</h2></div><div class="card"><div class="muted">Owner / admin only.</div></div>`; return; }
   const q = rcptQueue(), members = rcptMembers(), jobs = rcptJobs();
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   let h = `<div class="secthd"><h2>📸 Receipts</h2></div>`;
-  h += `<div class="card"><div class="sub" style="white-space:normal">Upload a pile of receipt photos, then attribute each below — which job (or a business expense), category, pass-through vs not, and who paid (a person = their personal card → reimburse; blank = business card). Files stage here until you file them.</div>
-    <input type="file" id="rcpt_files" accept="image/*" capture="environment" multiple style="display:none" onchange="rcptUpload(this)">
-    <button class="btn acc" style="width:100%;margin-top:8px" onclick="document.getElementById('rcpt_files').click()">📷 Upload receipt photos</button></div>`;
+  h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)"><div class="sub" style="white-space:normal">Upload a pile of receipt photos — tap the button, or <b>drag &amp; drop</b> them right onto this box — then attribute each below: which job (or a business expense), category, pass-through vs not, and who paid (a person = their personal card → reimburse; blank = business card). Files stage here until you file them.</div>
+    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
+    <button class="btn acc" style="width:100%;margin-top:8px" onclick="document.getElementById('rcpt_files').click()">📷 Upload receipt photos</button>
+    <div class="sub" style="text-align:center;margin-top:6px;opacity:.65">⬇ or drag photos onto this box (desktop)</div></div>`;
   if (q.length) {
     h += `<div class="secthd" style="margin-top:14px"><h2>To attribute</h2><span class="ct">${q.length}</span></div>`;
     h += q.map(r => {
       const jobOpts = `<option value="">— no job: business expense —</option>` + jobs.map(j => `<option value="${esc(j.id)}">${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
       const memOpts = `<option value="">— business card (no reimburse) —</option>` + members.map(u => `<option value="${esc(u.id)}">${esc(u.username)} — personal (reimburse)</option>`).join("");
       const catOpts = RCPT_CATS.map(c => `<option${c === "materials" ? " selected" : ""}>${c}</option>`).join("");
-      return `<div class="card"><div class="row" style="gap:10px;align-items:flex-start"><a href="${upUrl(r.id)}" target="_blank" rel="noopener"><img src="${upUrl(r.id)}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>
+      return `<div class="card"><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(r.id)}
         <div class="grow"><div class="row" style="gap:8px"><input id="ra_${r.id}" type="number" inputmode="decimal" placeholder="$ amount" style="flex:0 0 100px"><input id="rd_${r.id}" placeholder="What — vendor / item (required)" style="flex:2"></div>
         <label style="margin-top:6px">Category</label><select id="rc_${r.id}">${catOpts}</select>
         <label>Job</label><select id="rj_${r.id}" onchange="rcptJobChange('${r.id}')">${jobOpts}</select>
@@ -49,14 +55,25 @@ function rReceipts(){
   view.innerHTML = h;
 }
 
-window.rcptUpload = function (input) {
-  const files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+function rcptIsReceipt(f){ return !!(f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""))); }
+function rcptUploadFiles(files) {
+  files = (files || []).filter(rcptIsReceipt);
   if (!files.length) return;
-  if (typeof jsUpload !== "function") { alert("Photo upload needs a connection."); return; }
+  if (typeof jsUpload !== "function") { alert("Upload needs a connection."); return; }
   let pending = files.length;
   const done = () => { if (--pending === 0 && typeof render === "function") render(); };
   files.forEach(f => { jsUpload(f).then(id => { const q = rcptQueue(); q.push({ id: id, ts: now() }); rcptSaveQ(q); done(); }).catch(e => { alert("One upload failed: " + (e.message || e)); done(); }); });
-  input.value = "";
+}
+window.rcptUpload = function (input) {
+  rcptUploadFiles(input && input.files ? Array.prototype.slice.call(input.files) : []);
+  if (input) input.value = "";
+};
+window.rcptDragOver = function (e) { if (e && e.preventDefault) e.preventDefault(); const dz = e && e.currentTarget; if (dz && dz.style) { dz.style.outline = "2px dashed var(--accent)"; dz.style.outlineOffset = "-4px"; } };
+window.rcptDragLeave = function (e) { const dz = e && e.currentTarget; if (dz && dz.style) dz.style.outline = ""; };
+window.rcptDrop = function (e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const dz = e && e.currentTarget; if (dz && dz.style) dz.style.outline = "";
+  rcptUploadFiles((e && e.dataTransfer && e.dataTransfer.files) ? Array.prototype.slice.call(e.dataTransfer.files) : []);
 };
 window.rcptJobChange = function (rid) { const j = val("rj_" + rid); const t = document.getElementById("rpw_" + rid); if (t) t.style.display = j ? "flex" : "none"; };
 window.rcptDiscard = function (rid) { if (!confirm("Discard this receipt photo? It won't be filed.")) return; rcptSaveQ(rcptQueue().filter(r => r.id !== rid)); render(); };
