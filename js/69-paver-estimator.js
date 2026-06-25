@@ -84,7 +84,7 @@ function pvCalc(){
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
   const laborPrice = Math.round(area*laborSqft/25)*25;
   const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(pvMatQty(m,area)*pvMatCost(m.key)) : 0), 0);
-  const spoilTip = Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);
+  const spoilTip = (pv.haulSpoil === false) ? 0 : Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);   // customer keeping the dirt → no haul-off cost
   const materials = matCost + spoilTip;
   const price = laborPrice + materials + driveCharge;
   const cost = materials + driveMileage;
@@ -99,7 +99,7 @@ function pvCalc(){
 function pvItem(c){
   const ours = PAVER_MATS.filter(m=>pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
   const theirs = PAVER_MATS.filter(m=>!pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
-  const notes = ["Full premium build — base + bedding + polymeric joints + edging + excavate/haul spoil.",
+  const notes = ["Full premium build — base + bedding + polymeric joints + edging + "+(c.spoilTip>0?"excavate & haul off the spoil":"excavate (customer keeps the dirt — no haul-off)")+".",
     "Labor (the install): $"+c.laborSqft+"/sq ft · "+c.crew+"-person crew.",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")];
   return { serviceId:"", name:"Paver patio / pad install (full premium build)", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"paver",
@@ -178,6 +178,8 @@ function wizPaverUI(){
   // per-material selectors with EDITABLE price (unit-aware)
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧱 Materials — who provides each? <span class="sub" style="font-weight:400">we = pass-through at cost</span></div>`;
   h += PAVER_MATS.map(m=>{ const we = pvMats()[m.key]==="us", cost = pvMatCost(m.key), qty = m.unit==="ft"?perim:c.area, u = m.unit==="ft"?"ft":"sq ft"; return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="0.25" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizPvMatCost('${m.key}',this.value)">/${u} <span class="sub">= ${money(Math.round(qty*cost))}</span>`:`<span class="sub">~$${cost}/${u}</span>`}</div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
+  const _spoilRaw = Math.round(c.area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON), _spoilTons = Math.round(c.area*(PAVER_DIG_IN/12)/27*1.35*10)/10, _haul = WZ.pv.haulSpoil !== false;
+  h += `<div class="row" style="gap:6px;align-items:center;margin:8px 0 2px;border-top:1px solid var(--line);padding-top:8px"><div class="grow"><b>🟫 Excavated dirt</b> ${_haul?`<span class="sub">~${_spoilTons} ton dug out · haul off + dump = ${money(_spoilRaw)}</span>`:`<span class="sub" style="color:var(--accent)">left on site — customer keeps it ($0)</span>`}</div><button class="btn ${_haul?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvSpoil(1)">Haul off</button><button class="btn ${!_haul?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvSpoil(0)">Leave it</button></div>`;
   h += `<div class="sub" style="margin-top:4px">Defaults are real-price estimates — change any to the actual cost. Quote premium pavers; drop only if they ask for cheaper. Your labor price never changes with these.</div></div>`;
   // pickup mini-quote
   if (pk.has) h += `<div class="card" style="border-left:4px solid #b8860b"><div style="font-weight:800;margin-bottom:4px">🚚 Materials pickup — its own run</div>
@@ -205,6 +207,7 @@ function pvBreakHTML(c, pk){
 }
 window.wizPvField = function (k, v) { if (!WZ.pv) return; WZ.pv[k] = Math.max(0, parseFloat(v)||0); render(); };
 window.wizPvMat = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.mats) WZ.pv.mats = {}; WZ.pv.mats[key] = v; render(); };
+window.wizPvSpoil = function (v) { if (!WZ.pv) return; WZ.pv.haulSpoil = !!v; render(); };   // haul the dig-out dirt (default) vs leave it for the customer
 window.wizPvMatCost = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.matCosts) WZ.pv.matCosts = {}; WZ.pv.matCosts[key] = Math.max(0, parseFloat(v)||0); render(); };
 window.wizPvCrew = function (n) { if (!WZ.pv) return; WZ.pv.crew = Math.max(1, n); render(); };
 window.wizPvPickCrew = function (n) { if (!WZ.pv) return; WZ.pv.pickupCrew = Math.max(1, n); render(); };
