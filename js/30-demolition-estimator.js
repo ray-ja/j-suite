@@ -4,7 +4,8 @@
      cost = C&D disposal (tons × $73.16, first 500 lb free) + round-trip mileage + consumables.
    Price is set by value bands (footprint) and pushed toward the top by the factors that
    actually make the job harder: shingles, wood floor, anchors, bad access, height, uncleared.
-   Shows Cost/Price/Profit/Margin via cogsStrip() with the same 35% floor warning as every other service. */
+   Drive is static-from-the-property (site + a full dump run, since demo is must-dump). "Review quote →"
+   routes through the wizard review for the $45/$30 pay check, the demo market band, and customer linking. */
 var DEMO_TON_FEE   = 73.16;   // mixed C&D, per ton (Dare County transfer — first 500 lb free)
 var DEMO_FREE_LBS  = 500;     // first 500 lb waived
 var DEMO_CONSUM    = 25;      // blades, fuel for saws, bags, fasteners (flat allowance)
@@ -43,20 +44,10 @@ window.openDemoEst=function(){
     <label>Access</label>
     <select id="dm_access" onchange="demoCalc()"><option value="easy">Easy — truck/trailer reaches it</option><option value="tight">Tight — long carry / hand-out</option></select>
     <div class="toggle"><input type="checkbox" id="dm_cleared" checked onchange="demoCalc()"><label style="margin:0">Contents already cleared out</label></div>
-    <label>Travel zone (sets surcharge + trip minimum)</label>
-    <select id="dm_zone" onchange="demoCalc()">${TRAVEL_ZONE_ORDER.map(z=>`<option value="${z}">${esc(TRAVEL_ZONES_DEFAULT[z].label)}</option>`).join("")}</select>
-    <label>Round-trip miles to disposal</label><input id="dm_miles" type="number" inputmode="decimal" value="30" min="0" oninput="demoCalc()">
+    <div class="sub" style="margin-top:6px">🚗 Drive is figured automatically — to the property + a full dump run (demo debris is must-dump). The $45/$30 pay check is on the review.</div>
 
     <div class="card" id="dm_break" style="margin-top:12px"></div>
     <div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center;margin-top:8px"><div style="font-size:13px;font-weight:700">PRICE TO GIVE</div><div id="dm_price" style="font-size:32px;font-weight:800;line-height:1.1">$0</div><div id="dm_band" style="font-size:12px;opacity:.85"></div></div>
-    <div id="dm_cogs"></div>
-
-    <details class="card" style="margin-top:8px"><summary style="font-weight:800;cursor:pointer">⏱ Hourly fallback (when scope is unclear)</summary>
-      <div style="font-size:13px;line-height:1.7;margin-top:8px">2 guys × $60–75/hr + disposal passthrough. Estimated crew-hours on site:
-        <input id="dm_hours" type="number" inputmode="decimal" value="3" min="0" step="0.5" style="width:74px" oninput="demoCalc()">
-        <div id="dm_hourly" class="sub" style="margin-top:6px"></div>
-      </div>
-    </details>
 
     <div class="card" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.55">
       <b>Excluded — say this out loud:</b><br>
@@ -66,7 +57,7 @@ window.openDemoEst=function(){
     </div>
 
     <label>Save under customer / job name</label><input id="dm_name" placeholder="e.g. Wilson backyard shed">
-    <button class="btn acc" style="margin-top:10px" onclick="saveDemoQuote()">Save as quote</button>`);
+    <button class="btn acc" style="margin-top:10px" onclick="saveDemoQuote()">Review quote →</button>`);
   setTimeout(demoCalc,40);
 };
 
@@ -75,80 +66,58 @@ window.demoCalc=function(){
   const roof=val("dm_roof")||"shingles", floor=val("dm_floor")||"wood", anchor=val("dm_anchor")||"none";
   const access=val("dm_access")||"easy";
   const cleared=(document.getElementById("dm_cleared")||{}).checked!==false;
-  const zone=val("dm_zone")||"local";
-  const miles=parseFloat(val("dm_miles"))||0;
   const area=Math.max(0,L*W);
 
-  // --- weight + disposal ---
-  const lbs=demoWeight(area,H,roof,floor,anchor);
-  const tons=lbs/2000;
+  // --- weight + C&D tipping ---
+  const lbs=demoWeight(area,H,roof,floor,anchor), tons=lbs/2000;
   const billLbs=Math.max(0,lbs-DEMO_FREE_LBS);
   const disposal=Math.round(billLbs/2000*DEMO_TON_FEE*100)/100;
   const consum=DEMO_CONSUM+(anchor==="concrete"?15:0);   // extra blades for cutting footings
-  const workCost=Math.round((disposal+consum)*100)/100;  // tear-down hard cost — drive lives on the travel line
-  // --- travel is its own billable line (js/41) so the trip charge is never forgotten ---
-  const tc=travelCharge({zone:zone,miles:miles});
-  const drive=mileageCost(miles);                        // == the travel line's cost
-  const cost=Math.round((workCost+drive)*100)/100;       // total hard cost (work + drive)
+  // --- STATIC drive from the property address + a FULL dump run (demo is must-dump, can't be stashed) ---
+  const dr=(typeof wizDriveCharge==="function")?wizDriveCharge(2):{charge:0,miles:0,min:0};
+  const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED=(typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75), DUMPMI=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);
+  const dumpRun=Math.round(DUMPMI*MIL+(80/60)*LOADED);
+  const driveCharge=dr.charge+dumpRun, driveMileage=Math.round((dr.miles+DUMPMI)*MIL);
+  const cost=Math.round((disposal+consum+driveMileage)*100)/100;   // hard cost = tipping + consumables + drive mileage (no labor line)
 
-  // --- value-band price for the tear-down work, pushed toward the top by the hard factors ---
+  // --- value-band price for the tear-down, pushed toward the top by the hard factors ---
   const [lo,hi]=demoBand(area);
   let push=0;
-  if(roof==="shingles")push+=0.25;
-  if(floor==="wood")push+=0.20;
+  if(roof==="shingles")push+=0.25; if(floor==="wood")push+=0.20;
   if(anchor==="concrete")push+=0.30; else if(anchor==="light")push+=0.10;
-  if(access==="tight")push+=0.25;
-  if(H>8)push+=0.15;
-  if(!cleared)push+=0.20;
+  if(access==="tight")push+=0.25; if(H>8)push+=0.15; if(!cleared)push+=0.20;
   push=Math.min(1,push);
-  let workPrice=Math.round((lo+(hi-lo)*push)/25)*25;
-  // never knowingly quote the work under the margin floor
-  const floorPrice=workCost>0?Math.ceil((workCost/(1-MARGIN_FLOOR))/25)*25:0;
-  if(workPrice<floorPrice)workPrice=floorPrice;
-  const grand=workPrice+tc.charge;                       // what the customer is told
+  const workPrice=Math.round((lo+(hi-lo)*push)/25)*25;
+  const grand=workPrice+driveCharge;
+  const workMin=Math.round(area*4.5*(1+push*0.5));   // tear-down + load minutes, scaled by the hard factors → pay check
 
   // --- breakdown ---
   const b=document.getElementById("dm_break");
   if(b)b.innerHTML=`<div style="font-size:13px;line-height:1.85">
       Footprint: <b>${L}×${W} = ${Math.round(area)} sq ft</b> · ${H} ft walls<br>
       Est. debris: <b>${lbs.toLocaleString()} lb (${tons.toFixed(2)} ton)</b><br>
-      Disposal (first 500 lb free → ${Math.round(billLbs).toLocaleString()} lb @ $${DEMO_TON_FEE}/ton): <b>${money(disposal)}</b><br>
+      C&amp;D tipping (first 500 lb free → ${Math.round(billLbs).toLocaleString()} lb @ $${DEMO_TON_FEE}/ton): <b>${money(disposal)}</b><br>
       Consumables (blades/fuel/bags): <b>${money(consum)}</b><br>
-      Travel charge (${esc(tc.short)} · ${tc.miles} mi × ${MILEAGE_RATE_LABEL}${tc.surcharge?" + "+money(tc.surcharge)+" surcharge":""}${tc.hitMin?" → "+money(tc.min)+" min":""}): <b>${money(tc.charge)}</b>
+      🚗 Drive — static (~${dr.miles} mi site + ${DUMPMI} mi dump run): <b>${money(driveCharge)}</b>
     </div>
-    <div class="sub" style="margin-top:6px">Value band for this footprint: ${money(lo)}–${money(hi)}.${push>=1?" Factors max it toward the top.":""} Demolition ${money(workPrice)} + travel ${money(tc.charge)} = <b>${money(grand)}</b>.</div>`;
-
+    <div class="sub" style="margin-top:6px">Value band for this footprint: ${money(lo)}–${money(hi)}.${push>=1?" Factors max it toward the top.":""} Demolition ${money(workPrice)} + drive ${money(driveCharge)} = <b>${money(grand)}</b>.</div>`;
   const p=document.getElementById("dm_price");if(p)p.textContent=money(grand);
-  const bd=document.getElementById("dm_band");if(bd)bd.textContent=`work ${money(workPrice)} (band ${money(lo)}–${money(hi)}) + travel ${money(tc.charge)}${!cleared?" · contents NOT cleared — quote junk separately":""}`;
-  const cg=document.getElementById("dm_cogs");if(cg)cg.innerHTML=cogsStrip(grand,cost);
+  const bd=document.getElementById("dm_band");if(bd)bd.textContent=`work ${money(workPrice)} (band ${money(lo)}–${money(hi)}) + drive ${money(driveCharge)}${!cleared?" · contents NOT cleared — quote junk separately":""}`;
 
-  // --- hourly fallback ---
-  const hrs=parseFloat(val("dm_hours"))||0;
-  const hl=document.getElementById("dm_hourly");
-  if(hl){const loH=Math.round(hrs*2*60+disposal+drive), hiH=Math.round(hrs*2*75+disposal+drive);
-    hl.textContent=`${hrs} crew-hrs → ${money(loH)}–${money(hiH)} (labor 2×$60–75/hr + ${money(disposal+drive)} disposal & drive passthrough).`;}
-
-  window._demo={workPrice:workPrice,workCost:workCost,price:grand,cost:cost,lbs:lbs,tons:tons,disposal:disposal,drive:drive,consum:consum,area:area,L:L,W:W,H:H,
-    zone:zone,miles:miles,travel:tc,
-    notes:b?b.innerText:"",excl:"No slab removal · power disconnected by owner · contents emptied first."};
+  window._demo={workPrice:workPrice,price:grand,cost:cost,lbs:lbs,tons:tons,disposal:disposal,driveCharge:driveCharge,driveMin:(dr.min+80),mins:workMin,consum:consum,area:area,L:L,W:W,H:H};
 };
 
 window.saveDemoQuote=function(){
   const d=window._demo||{};
-  const nm=val("dm_name")||(d.L&&d.W?`${d.L}×${d.W} shed demolition`:"Shed demolition quote");
-  const workPrice=d.workPrice||0,grand=d.price||0;
-  const notes=(d.notes||"")+"\nExclusions: "+(d.excl||"");
-  const items=[{serviceId:"",name:"Shed / structure demolition + haul-off",unit:"job",price:workPrice,qty:1,cost:d.workCost||0}];
-  // auto-add the travel line so the trip charge is never forgotten
-  const tline=travelLineItem({zone:d.zone||"local",miles:d.miles||0});
-  if(tline.price>0)items.push(tline);
-  const q={id:uid(),customerId:null,cust:nm,propertyId:null,address:"",date:today(),
-    items:items,
-    recurring:false,subtotal:grand,discount:0,total:grand,cost:d.cost||0,kind:"demo",notes:notes,updatedAt:now()};
-  if(!q.num&&typeof nextQuoteNum==="function")q.num=nextQuoteNum();
-  S.obx.quotes.push(q);save();
-  if(typeof logEvent==="function")logEvent("Demo quote created — "+money(grand)+" · "+nm,"quote");
-  closeModal();
-  alert("Saved "+money(grand)+" demolition quote for "+nm+" to OBX Lot Solutions. Find it in the Quotes tab (switch to OBX).");
-  render();
+  const grand=d.price||0;
+  if(!(grand>0)){alert("Enter the footprint first.");return;}
+  if(typeof WZON==="undefined"||!WZON||typeof WZ==="undefined"||!WZ){alert("Open this from a quote so it links the customer.");return;}
+  const nm=val("dm_name"); if(nm&&WZ.cust&&!WZ.cust.name)WZ.cust.name=nm;
+  const notes=["Shed/structure demolition + haul-off.","Excludes: no slab removal · power disconnected by owner · contents emptied first.","Must-dump — price includes a full dump run + C&D tipping ("+(d.tons||0).toFixed(2)+" ton)."];
+  WZ.items=WZ.items||[];
+  WZ.items.push({serviceId:"",name:"Shed / structure demolition + haul-off",unit:"job",price:grand,qty:1,cost:d.cost||0,notes:notes,bandKey:"demo",breakdown:(d.L&&d.W)?[d.L+"×"+d.W+" = "+Math.round(d.area)+" sq ft · "+(d.tons||0).toFixed(2)+" ton"]:[]});
+  const crew=2, totalPH=((d.mins||0)/60)+crew*((d.driveMin||0)/60)+crew*(20/60);
+  WZ.crewN=crew; WZ.hours=totalPH>0?Math.round(totalPH/crew*10)/10:0;
+  WZ.modalBuilt=true;   // modal-built → review hides back-to-build (rebuild via the picker)
+  closeModal(); WZ.step="review"; render();
 };
