@@ -182,8 +182,7 @@ function wizPaverUI(){
   h += `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:28px" id="pv_price">${money(total)}</div><div style="text-align:right"><div class="nm" style="font-size:18px" id="pv_rate">$${c.laborSqft}/sq ft labor</div><div class="sub" id="pv_allin">paving ${money(c.price)}${pk.has?` + pickup ${money(pk.charge)}`:""}</div></div></div>
     <input type="range" min="${lo}" max="${hi}" step="0.5" value="${pv.sqft}" oninput="wizPvSqft(this.value)" style="width:100%;accent-color:var(--accent);margin-top:8px">
-    <div style="position:relative;height:13px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div id="pv_mk" style="position:absolute;top:-3px;bottom:-3px;left:${mk}%;width:3px;background:#0b1f3a"></div></div>
-    <div class="sub" style="font-size:12px;margin-top:3px">📊 <b id="pv_zone" style="color:${zone[1]}">${zone[0]}</b> · $${PAVER_LABOR_BAND.lo}–$${PAVER_LABOR_BAND.hi}/sq ft <b>labor</b> band (materials extra, at cost)</div>
+    <div id="pv_mktband" style="margin-top:6px">${(typeof pvBandHTML==="function"&&items[0].mkt)?pvBandHTML(items[0].mkt,total):""}</div>
     <div class="row" style="gap:6px;align-items:center;margin-top:8px"><div class="grow sub">Paving crew</div>${pvCrewBtns(c.crew,"wizPvCrew")}</div>
     <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub" id="pv_hrs">Paving: ${c.crew} people × ~${c.hours} hr each</div><div class="sub">drive + build + mobilization</div></div><div class="grow" style="text-align:right"><div class="sub">Paving — per hour each</div><div class="nm" style="font-size:20px;color:${tCol}" id="pv_payhr">${money(c.perHr)}/hr ${tIcon}</div></div></div>
     <div class="sub" id="pv_paynote" style="margin-top:4px">${pvPayNote(tier)}</div></div></div>`;
@@ -220,6 +219,7 @@ window.wizPvPickRate = function (v) {
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
   set("pv_price", money(total)); set("pv_foot", money(total)); set("pv_allin", "paving "+money(c.price)+(pk.has?" + pickup "+money(pk.charge):""));
   const br=document.getElementById("pv_break"); if(br)br.innerHTML=pvBreakHTML(c, pk);
+  const mb=document.getElementById("pv_mktband"); if(mb&&typeof pvBandHTML==="function")mb.innerHTML=pvBandHTML(items[0].mkt,total);
   if(typeof wizAutosave==="function")wizAutosave();
 };
 window.wizPvSqft = function (v) {
@@ -233,8 +233,7 @@ window.wizPvSqft = function (v) {
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
   set("pv_price", money(total)); set("pv_foot", money(total)); set("pv_rate", "$"+c.laborSqft+"/sq ft labor"); set("pv_allin", "paving "+money(c.price)+(pk.has?" + pickup "+money(pk.charge):""));
   set("pv_payhr", money(c.perHr)+"/hr "+tIcon); const ph=document.getElementById("pv_payhr"); if(ph)ph.style.color=tCol;
-  const zn=document.getElementById("pv_zone"); if(zn){zn.textContent=zone[0];zn.style.color=zone[1];}
-  const m=document.getElementById("pv_mk"); if(m)m.style.left=mk+"%";
+  const mb=document.getElementById("pv_mktband"); if(mb&&typeof pvBandHTML==="function")mb.innerHTML=pvBandHTML(items[0].mkt,total);
   const pn=document.getElementById("pv_paynote"); if(pn)pn.innerHTML=pvPayNote(tier);
   const br=document.getElementById("pv_break"); if(br)br.innerHTML=pvBreakHTML(c, pk);
   if(typeof wizAutosave==="function")wizAutosave();
