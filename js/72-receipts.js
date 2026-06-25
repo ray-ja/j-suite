@@ -11,7 +11,7 @@ function rcptMembers(){ return (typeof schedMembers === "function") ? schedMembe
 function rcptJobs(){ return ((typeof actJ === "function") ? actJ() : []).filter(j => j && !j.deleted).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,60); }
 /* per-member personal-card spend (paidBy set) across job expenses, pass-through materials, and business expenses */
 function rcptReimbOwed(){
-  const per = {}; const add = e => { if (e && !e.deleted && e.paidBy) per[e.paidBy] = (per[e.paidBy]||0) + (+e.amount||0); };
+  const per = {}; const add = e => { if (e && !e.deleted && e.paidBy && !e.reimbursedAt) per[e.paidBy] = (per[e.paidBy]||0) + (+e.amount||0); };
   (D().jobs || []).forEach(j => { if (j && !j.deleted) { (j.expenses||[]).forEach(add); (j.materials||[]).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;
@@ -39,18 +39,49 @@ function rcptDupSet(filed){ const cnt = {}, s = {}; (filed || []).forEach(functi
 function rcptDate(e){ const cr = e.capRead || {}; if (cr.date) return String(cr.date).slice(0,10); if (e.date) return String(e.date).slice(0,10); if (e.ts) { try { return new Date(e.ts).toISOString().slice(0,10); } catch(x){} } return "undated"; }
 function rcptSan(s, n){ s = String(s || "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); return n ? s.slice(0, n) : s; }
 function rcptStdName(e){ const ext = (/\.([A-Za-z0-9]+)$/.exec(e.receiptId || "") || [, "jpg"])[1]; return [rcptDate(e), rcptSan(e.vendor || "vendor", 24), "$" + (+e.amount || 0).toFixed(2), rcptSan(e.desc || e.note || "", 24)].filter(Boolean).join("_") + "." + ext; }
+function rcptCsvString(){
+  const filed = rcptAllFiled(), base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, "");
+  const rows = [["Date", "Vendor", "Amount", "What", "Category", "Paid by", "Card", "Reimbursed", "Where", "Standard filename", "Receipt link"]];
+  filed.forEach(function (e) { rows.push([ rcptDate(e), e.vendor || "", (+e.amount || 0).toFixed(2), e.desc || e.note || "", e.category || "", e.paidBy ? ((typeof userName === "function" ? userName(e.paidBy) : "") || "") : "", e.paidBy ? "personal" : "business", e.reimbursedAt ? "yes" : (e.paidBy ? "no" : ""), e.where || "", rcptStdName(e), base + "/uploads/" + (e.receiptId || "") ]); });
+  return rows.map(function (r) { return r.map(function (c) { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(","); }).join("\r\n");
+}
+function rcptDownload(name, data, mime){
+  try { const blob = new Blob([data], { type: mime }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (z) {} }, 120); } catch (x) { alert("Export failed: " + (x.message || x)); }
+}
 window.rcptExportCSV = function () {
-  const filed = rcptAllFiled();
-  if (!filed.length) { alert("No filed receipts to export yet."); return; }
+  if (!rcptAllFiled().length) { alert("No filed receipts to export yet."); return; }
+  rcptDownload("receipts-" + (typeof today === "function" ? today() : "export") + ".csv", rcptCsvString(), "text/csv");
+};
+/* hand-rolled minimal ZIP (STORE method — receipts are already-compressed images/PDFs, so no deflate needed; no library, fits the no-build rule) */
+function rcptCrc32(u8){ let c = ~0; for (let i = 0; i < u8.length; i++) { c ^= u8[i]; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1)); } return (~c) >>> 0; }
+function rcptZip(files){
+  const u16 = n => [n & 255, (n >> 8) & 255], u32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255];
+  const parts = [], central = []; let offset = 0;
+  files.forEach(function (f) {
+    const name = new TextEncoder().encode(f.name), data = f.data, crc = rcptCrc32(data), sz = data.length;
+    const lfh = new Uint8Array([].concat([0x50,0x4b,0x03,0x04], u16(20), u16(0), u16(0), u16(0), u16(0x21), u32(crc), u32(sz), u32(sz), u16(name.length), u16(0)));
+    parts.push(lfh, name, data);
+    central.push(new Uint8Array([].concat([0x50,0x4b,0x01,0x02], u16(20), u16(20), u16(0), u16(0), u16(0), u16(0x21), u32(crc), u32(sz), u32(sz), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset))), name);
+    offset += lfh.length + name.length + sz;
+  });
+  let cdSize = 0; central.forEach(p => cdSize += p.length);
+  const eocd = new Uint8Array([].concat([0x50,0x4b,0x05,0x06], u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(offset), u16(0)));
+  const all = parts.concat(central, [eocd]); let total = 0; all.forEach(p => total += p.length);
+  const out = new Uint8Array(total); let pos = 0; all.forEach(function (p) { out.set(p, pos); pos += p.length; }); return out;
+}
+window.rcptExportZip = async function () {
+  const filed = rcptAllFiled(); if (!filed.length) { alert("No filed receipts to export yet."); return; }
+  if (filed.length > 300 && !confirm(filed.length + " receipts — building the zip may take a moment. Continue?")) return;
   const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, "");
-  const rows = [["Date", "Vendor", "Amount", "What", "Category", "Paid by", "Card", "Where", "Standard filename", "Receipt link"]];
-  filed.forEach(function (e) { rows.push([ rcptDate(e), e.vendor || "", (+e.amount || 0).toFixed(2), e.desc || e.note || "", e.category || "", e.paidBy ? ((typeof userName === "function" ? userName(e.paidBy) : "") || "") : "", e.paidBy ? "personal (reimburse)" : "business", e.where || "", rcptStdName(e), base + "/uploads/" + (e.receiptId || "") ]); });
-  const csv = rows.map(function (r) { return r.map(function (c) { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(","); }).join("\r\n");
-  try {
-    const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "receipts-" + (typeof today === "function" ? today() : "export") + ".csv";
-    document.body.appendChild(a); a.click(); setTimeout(function () { try { document.body.removeChild(a); URL.revokeObjectURL(a.href); } catch (z) {} }, 100);
-  } catch (x) { alert("Export failed: " + (x.message || x)); }
+  const files = [], used = {};
+  for (const e of filed) {
+    if (!e.receiptId) continue;
+    let name = rcptStdName(e); if (used[name]) { used[name]++; name = name.replace(/(\.[^.]+)$/, "-" + used[name] + "$1"); } else used[name] = 1;
+    try { const r = await fetch(base + "/uploads/" + encodeURIComponent(e.receiptId)); if (!r.ok) continue; files.push({ name: name, data: new Uint8Array(await r.arrayBuffer()) }); } catch (x) {}
+  }
+  if (!files.length) { alert("Couldn't fetch any receipt files."); return; }
+  files.push({ name: "_manifest.csv", data: new TextEncoder().encode(rcptCsvString()) });
+  rcptDownload("receipts-" + (typeof today === "function" ? today() : "export") + ".zip", rcptZip(files), "application/zip");
 };
 
 function rReceipts(){
@@ -83,15 +114,15 @@ function rReceipts(){
     h += `<div class="card"><div class="muted">No receipts staged. Upload a batch above — then attribute each one.</div></div>`;
   }
   if (filed.length) {
-    h += `<div class="secthd" style="margin-top:14px"><h2>Filed receipts</h2><div class="row" style="gap:8px;align-items:center"><span class="ct">${filed.length}</span><button class="btn ghost sm" onclick="rcptExportCSV()">📤 Export for taxes</button></div></div>`;
+    h += `<div class="secthd" style="margin-top:14px"><h2>Filed receipts</h2><div class="row" style="gap:8px;align-items:center"><span class="ct">${filed.length}</span><button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div></div>`;
     h += filed.slice(0, 60).map(function (e) {
       const isDup = !!dups[rcptDupKey(e)];
-      return `<div class="card"${isDup ? ' style="border-left:4px solid var(--danger)"' : ''}><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(e.receiptId)}<div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""}${(e.desc || e.note) ? ' <span class="sub" style="font-weight:400">' + esc(e.desc || e.note) + '</span>' : ''}${isDup ? ' <span class="badge" style="background:var(--danger);color:#fff">⚠ possible duplicate</span>' : ''}</div><div class="sub" style="white-space:normal">${esc(e.where)}${e.category ? " · " + esc(e.category) : ""}${e.paidBy ? " · reimburse " + esc((typeof userName === "function" ? userName(e.paidBy) : "") || "") : ""}${e.ts && typeof relTime === "function" ? " · " + relTime(e.ts) : ""}${e.capRead ? (e.capRead.match ? ' · <span style="color:var(--accent)">🤖 Cap ✓' + (e.capRead.date ? " " + esc(e.capRead.date) : "") + '</span>' : ' · <span style="color:var(--danger)">🤖 Cap reads $' + (e.capRead.amount || 0) + (e.capRead.note ? " — " + esc(e.capRead.note) : "") + '</span>') : ''}</div></div><button class="btn ghost sm" onclick="rcptDelFiled('${e.store}','${e.jobId || ""}','${e.id}')">✕</button></div></div>`;
+      return `<div class="card"${isDup ? ' style="border-left:4px solid var(--danger)"' : ''}><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(e.receiptId)}<div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""}${(e.desc || e.note) ? ' <span class="sub" style="font-weight:400">' + esc(e.desc || e.note) + '</span>' : ''}${isDup ? ' <span class="badge" style="background:var(--danger);color:#fff">⚠ possible duplicate</span>' : ''}</div><div class="sub" style="white-space:normal">${esc(e.where)}${e.category ? " · " + esc(e.category) : ""}${e.paidBy ? (e.reimbursedAt ? " · ✓ reimbursed " + esc((typeof userName === "function" ? userName(e.paidBy) : "") || "") : " · reimburse " + esc((typeof userName === "function" ? userName(e.paidBy) : "") || "")) : ""}${e.ts && typeof relTime === "function" ? " · " + relTime(e.ts) : ""}${e.capRead ? (e.capRead.match ? ' · <span style="color:var(--accent)">🤖 Cap ✓' + (e.capRead.date ? " " + esc(e.capRead.date) : "") + '</span>' : ' · <span style="color:var(--danger)">🤖 Cap reads $' + (e.capRead.amount || 0) + (e.capRead.note ? " — " + esc(e.capRead.note) : "") + '</span>') : ''}</div></div><button class="btn ghost sm" onclick="rcptDelFiled('${e.store}','${e.jobId || ""}','${e.id}')">✕</button></div></div>`;
     }).join("");
   }
   const owed = rcptReimbOwed(), oids = Object.keys(owed).filter(id => owed[id] > 0.005);
   if (oids.length) {
-    h += `<div class="secthd" style="margin-top:14px"><h2>💸 Reimbursements owed</h2></div><div class="card">` + oids.map(id => `<div class="li"><div class="grow"><div class="nm">${esc((typeof userName === "function" ? userName(id) : "") || "?")}</div><div class="sub">personal-card spend logged on jobs + business</div></div><b>${money(owed[id])}</b></div>`).join("") + `<div class="sub" style="margin-top:6px">Everything logged as paid on a personal card. Settle these from the business funds.</div></div>`;
+    h += `<div class="secthd" style="margin-top:14px"><h2>💸 Reimbursements owed</h2></div><div class="card">` + oids.map(id => `<div class="li"><div class="grow"><div class="nm">${esc((typeof userName === "function" ? userName(id) : "") || "?")}</div><div class="sub">personal-card spend on jobs + business</div></div><div class="row" style="gap:8px;align-items:center"><b>${money(owed[id])}</b><button class="btn ghost sm" onclick="rcptSettle('${id}')">✓ Mark paid back</button></div></div>`).join("") + `<div class="sub" style="margin-top:6px">Everything logged as paid on a personal card. "Mark paid back" settles it (clears the balance) once you've reimbursed them from the business funds.</div></div>`;
   }
   view.innerHTML = h;
 }
@@ -123,6 +154,16 @@ window.rcptDelFiled = function (store, jobId, id) {
   const d = D();
   if (store === "biz") { const e = (d.expenses || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); } }
   else { const j = (d.jobs || []).find(x => x && x.id === jobId); if (j) { const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []); const e = arr.find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(j); } } }
+  if (typeof save === "function") save(); render();
+};
+window.rcptSettle = function (memberId) {
+  const owed = (rcptReimbOwed()[memberId] || 0), nm = (typeof userName === "function" ? userName(memberId) : "") || "this person";
+  if (!confirm("Mark " + nm + " reimbursed for " + money(owed) + "? Clears their personal-card balance — do this once you've actually paid them back from the business funds.")) return;
+  const t = now(), d = D();
+  const settle = function (e) { if (e && !e.deleted && e.paidBy === memberId && !e.reimbursedAt) { e.reimbursedAt = t; return true; } return false; };
+  (d.jobs || []).forEach(function (j) { if (j && !j.deleted) { let ch = false; (j.expenses || []).forEach(function (e) { if (settle(e)) ch = true; }); (j.materials || []).forEach(function (e) { if (settle(e)) ch = true; }); if (ch && typeof touch === "function") touch(j); } });
+  (d.expenses || []).forEach(function (e) { if (settle(e) && typeof touch === "function") touch(e); });
+  if (typeof logChange === "function") logChange("update", "expense", memberId, "Reimbursed " + nm + " " + money(owed) + " (personal-card spend settled)");
   if (typeof save === "function") save(); render();
 };
 window.rcptFile = function (rid) {
