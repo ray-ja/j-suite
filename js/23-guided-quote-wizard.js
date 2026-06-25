@@ -159,21 +159,23 @@ window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(
 /* ---- the single editable review/edit screen ---- */
 /* infer a market-band key from the line-item name — fallback for legacy quotes saved before bandKey was persisted */
 function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
-/* MARKET-VALUE band (paver): what the OPEN MARKET pays (national + a distinct OBX shade) with a $45/hr MARKER.
-   We price to the market and read whether the job clears Ray's time — we do NOT price up to his floor. */
+/* MARKET-VALUE band (paver): a multi-colored gradient = the NATIONAL market (red below → green good →
+   yellow high → orange above); the OBX premium range is the outlined region between its two markers;
+   ▲ = your price, ▼ = the price that clears Ray's $45/hr. The look Ray liked, with the market data. */
 function pvBandHTML(mkt, total){
-  const pay45=+mkt.pay45||0;
-  const lo=Math.min(mkt.natLo,total)*0.92, hi=Math.max(mkt.obxHi,pay45,total)*1.06, span=(hi-lo)||1;
+  const pay45=+mkt.pay45||0, natMid=(mkt.natLo+mkt.natHi)/2;
+  const lo=Math.min(mkt.natLo,total)*0.85, hi=Math.max(mkt.obxHi,pay45,total)*1.05, span=(hi-lo)||1;
   const pos=v=>Math.min(100,Math.max(0,(v-lo)/span*100));
-  const natL=pos(mkt.natLo),natR=pos(mkt.natHi),obxL=pos(mkt.obxLo),obxR=pos(mkt.obxHi),pP=pos(total),payP=pos(pay45);
-  const v=total<mkt.natLo?["below market — underpriced","#c1121f"]:total<=mkt.natHi?["fair national market","#1a7f37"]:total<=mkt.obxHi?["Outer Banks premium","#0e8a9a"]:["above OBX market","#c1121f"];
-  const worth = pay45>mkt.obxHi ? ` <span style="color:#c1121f">· ⚠ clears $45/hr only above market — fewer crew or pass</span>` : pay45>=mkt.natLo&&pay45<=mkt.obxHi ? ` <span style="color:#1a7f37">· ✓ $45/hr sits inside market</span>` : "";
-  return `<div style="position:relative;height:30px;margin-top:8px">
-    <div style="position:absolute;top:7px;left:${natL}%;width:${Math.max(1,natR-natL)}%;height:7px;background:#9ed89e;border-radius:4px"></div>
-    <div style="position:absolute;top:16px;left:${obxL}%;width:${Math.max(1,obxR-obxL)}%;height:7px;background:#46b8c8;border-radius:4px"></div>
-    <div style="position:absolute;top:1px;bottom:1px;left:${pP}%;width:3px;background:#0b1f3a"></div>
-    <div style="position:absolute;top:-3px;left:${payP}%;transform:translateX(-50%);font-size:9px;color:#b8860b;white-space:nowrap">▼$45/hr</div></div>
-  <div class="sub" style="font-size:11.5px;margin-top:2px"><b style="color:${v[1]}">📊 ${v[0]}</b> · <span style="color:#1a7f37">national ${money(mkt.natLo)}–${money(mkt.natHi)}</span> · <span style="color:#0e8a9a">OBX ${money(mkt.obxLo)}–${money(mkt.obxHi)}</span> · $45/hr at <b>${money(pay45)}</b>${worth}</div>`;
+  const z1=pos(mkt.natLo),z2=pos(natMid),z3=pos(mkt.natHi),pP=pos(total),payP=pos(pay45),oL=pos(mkt.obxLo),oR=pos(mkt.obxHi);
+  const v=total<mkt.natLo?["below market — underpriced","#c1121f"]:total<=mkt.natHi?["fair national market","#1a7f37"]:total<=mkt.obxHi?["Outer Banks premium","#0e7c86"]:["above OBX market","#c1121f"];
+  return `<div style="position:relative;height:36px;margin-top:12px">
+    <div style="position:absolute;top:-2px;left:${payP}%;transform:translateX(-50%);font-size:9px;color:#b8860b;white-space:nowrap;font-weight:700">▼ $45/hr</div>
+    <div style="position:absolute;top:10px;left:${(oL+oR)/2}%;transform:translateX(-50%);font-size:8.5px;color:#0e7c86;font-weight:800;white-space:nowrap">◀ OBX ▶</div>
+    <div style="position:absolute;top:18px;left:0;right:0;height:13px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"></div>
+    <div style="position:absolute;top:16px;height:17px;left:${oL}%;width:${Math.max(1,oR-oL)}%;border:2px solid #0e7c86;border-radius:4px;box-sizing:border-box"></div>
+    <div style="position:absolute;top:15px;height:19px;left:${pP}%;width:3px;background:#0b1f3a;border-radius:2px"></div>
+  </div>
+  <div class="sub" style="font-size:11.5px"><b style="color:${v[1]}">📊 ${v[0]}</b> · <span style="color:#1a7f37">national ${money(mkt.natLo)}–${money(mkt.natHi)}</span> · <span style="color:#0e7c86">OBX ${money(mkt.obxLo)}–${money(mkt.obxHi)}</span> · clears $45/hr at <b>${money(pay45)}</b></div>`;
 }
 /* Recover the market band for paver quotes saved before mkt existed: parse the sq ft out of the line
    breakdown and recompute it (in-memory; persists if re-saved). Idempotent — skips if mkt is already set. */
