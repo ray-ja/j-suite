@@ -10,7 +10,8 @@
      • DUMP   — C&D/trees must go straight to the dump; full dump run (drive + 1-person time + tip fee).
 
    Every per-job tool calls these qe* functions, so the math + the price readout feel identical. */
-const QE = { TAKE_HOME: 45, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 73.16, VEG_TON: 58.46, FILL_TON: 45, FREE_LBS: 500, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
+const QE = { TAKE_HOME: 45, CREW_FLOOR: 30, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 73.16, VEG_TON: 58.46, FILL_TON: 45, FREE_LBS: 500, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
+// TAKE_HOME ($45/hr) = Ray's floor (leaving a $55/hr day job). CREW_FLOOR ($30/hr) = the worth-it line for Chase/Pierce (off $15-18/hr day jobs). A job between the two = "send the crew, not yourself."
 function qeLoadedRate() { return QE.TAKE_HOME / QE.FIELD_SPLIT; }   // 93.75 — billed per person-hour
 function qeTipFee(lbs, type) { const rate = type === "veg" ? QE.VEG_TON : type === "fill" ? QE.FILL_TON : QE.CD_TON; const bill = Math.max(0, (+lbs || 0) - QE.FREE_LBS); return Math.round(bill / 2000 * rate * 100) / 100; }
 function qePersonHours(o) { const crew = Math.max(1, +o.crew || 1), onsite = +o.onsiteHrs || 0, siteDrive = +o.siteDriveHrs || 0, dumpH = (o.mode === "dump") ? (+o.dumpHrs || 0) : 0; return Math.round((crew * (onsite + siteDrive) + dumpH) * 100) / 100; }

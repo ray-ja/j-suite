@@ -113,7 +113,8 @@ function wizJunkUI(){
   const onsiteHrs=(20+(c.loadMin||0))/60;
   const totalPH=_crew*onsiteHrs+_crew*(_dr.min/60);
   const reserved=c.special+dumpAmort+Math.round(_dr.rt*QE.MILEAGE);   // passthrough + the dump-run reserve (paid out on the eventual batched run)
-  const hourly=totalPH>0?Math.round((price-reserved)*QE.FIELD_SPLIT/totalPH):0, okHr=hourly>=QE.TAKE_HOME;
+  const hourly=totalPH>0?Math.round((price-reserved)*QE.FIELD_SPLIT/totalPH):0;
+  const hrCol=hourly>=QE.TAKE_HOME?"#1a7f37":hourly>=QE.CREW_FLOOR?"#b8860b":"#c1121f", hrTag=hourly>=QE.TAKE_HOME?"✓":hourly>=QE.CREW_FLOOR?"crew ✓":"⚠";
   // sticky bottom bar — truck fill · market band · price · volume(cu ft) + drive(mi) · $/hr each · crew · dump/stash
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
   const bandLo=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.lo:150,bandHi=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.hi:800;
@@ -126,7 +127,7 @@ function wizJunkUI(){
     </div>
     <div style="flex-basis:100%">
       <div style="position:relative;height:11px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> (${money(bandLo)}–${money(bandHi)} band) · <b style="color:${okHr?"#1a7f37":"#c1121f"}">~${money(hourly)}/hr each ${okHr?"✓":"⚠"}</b></div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> (${money(bandLo)}–${money(bandHi)} band) · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>

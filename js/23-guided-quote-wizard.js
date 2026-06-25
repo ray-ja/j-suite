@@ -162,7 +162,10 @@ function reviewSummaryHTML(){
   const profit=total-cost;
   const crewN=Math.max(1,WZ.crewN||1), hrs=WZ.hours||0, personHrs=crewN*hrs;
   const fieldPool=Math.max(0,total-cost)*0.48;           // (revenue − hard costs) × 60% labor × 80% field work
-  const perPersonField=fieldPool/crewN, perHr=hrs>0?perPersonField/hrs:0, TGT=45;
+  const perPersonField=fieldPool/crewN, perHr=hrs>0?perPersonField/hrs:0;
+  const TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45), CF=(typeof QE!=="undefined"?QE.CREW_FLOOR:30);
+  const tier=perHr>=TGT?2:perHr>=CF?1:0, tCol=["var(--danger)","#b8860b","var(--accent)"][tier], tIcon=["⚠","⚠","✓"][tier];
+  const priceFor=rate=>Math.ceil((rate*personHrs/0.48+cost)/5)*5;   // price to clear a given $/hr each
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
   // market band (colored zones) — same look as the junk builder; the price marker slides as you discount
   const B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk:{lo:150,hi:800};
@@ -173,9 +176,12 @@ function reviewSummaryHTML(){
     <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:26px">${money(total)}</div><div class="sub" style="text-align:right">${WZ.disc>0?`was ${money(sub)} · −${money(WZ.disc)}${WZ.discPct?` (${WZ.discPct}%)`:""}`:WZ.disc<0?`marked up +${money(-WZ.disc)} over ${money(sub)}`:`hard cost ${money(cost)}`}<br>profit ${money(profit)}</div></div>
     <div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
     <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>
-    <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0&&perHr<TGT?"var(--danger)":"var(--accent)"}">${hrs>0?money(Math.floor(perHr))+"/hr "+(perHr>=TGT?"✓":"⚠"):"—"}</div></div></div>`;
-  if(hrs>0&&perHr<TGT){const need=Math.ceil((TGT*personHrs/0.48+cost)/5)*5;h+=`<div class="note" style="margin-top:6px;white-space:normal">⚠️ Below your <b>${money(TGT)}/hr</b> floor — needs ~<b>${money(need)}</b> to clear it (now ${money(total)}). ${(WZ.disc||0)>0?"Ease off the discount.":"Underpriced even at full — mark it up, or stash it instead of dumping."}</div>`;}
-  else if(hrs>0)h+=`<div class="sub" style="margin-top:4px;color:var(--accent)">✓ Clears your $45/hr floor — ${money(Math.floor(perHr))}/hr each.</div>`;
+    <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0?tCol:"var(--muted)"}">${hrs>0?money(Math.floor(perHr))+"/hr "+tIcon:"—"}</div></div></div>`;
+  if(hrs>0){
+    if(tier===2)h+=`<div class="sub" style="margin-top:4px;color:var(--accent)">✓ Clears your $${TGT}/hr floor — ${money(Math.floor(perHr))}/hr each.</div>`;
+    else if(tier===1)h+=`<div class="note" style="margin-top:6px;white-space:normal;border-left-color:#b8860b">🟡 Below your <b>$${TGT}/hr</b>, but clears the <b>$${CF}/hr crew floor</b> — worth it for Chase/Pierce, not your own time. For you to clear $${TGT}/hr, price ~<b>${money(priceFor(TGT))}</b> (now ${money(total)}).</div>`;
+    else h+=`<div class="note" style="margin-top:6px;white-space:normal">🔴 Below even the <b>$${CF}/hr crew floor</b> — pass, or price up: ~<b>${money(priceFor(CF))}</b> makes it worth the crew's time, ~${money(priceFor(TGT))} clears your $${TGT}/hr. ${(WZ.disc||0)>0?"Or ease off the discount.":""}</div>`;
+  }
   h+=`</div></div>`;
   if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
   return h;
