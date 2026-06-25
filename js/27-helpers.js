@@ -17,11 +17,11 @@ window.toggleTheme=function(){
     if(S.sync&&S.sync.url&&S.sync.token&&S.sync.auto&&typeof syncNow==="function")syncNow();}
   applyTheme();
 };
-/* upload an image file → resolves the stored blob id. The bytes live as a server file (uploads/<id>),
+/* upload an image OR PDF file → resolves the stored blob id. The bytes live as a server file (uploads/<id>),
    the record only keeps the small id — so the synced JSON store never bloats. */
 window.jsUpload=function(file){
   return new Promise(function(resolve,reject){
-    if(!file||!/^image\//.test(file.type||"")){reject(new Error("Pick an image"));return;}
+    if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||""))){reject(new Error("Pick an image or PDF"));return;}
     const fr=new FileReader();
     fr.onload=function(){
       const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,""),tok=(S.sync&&S.sync.token)||"";
