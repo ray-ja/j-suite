@@ -1,43 +1,42 @@
 /* ---------- PAVER PATIO / PAD — ONE-PAGE QUOTE MACHINE ----------
    PRICING MODEL (Ray):
    - PRICE = LABOR only. The $/sq ft slider + band are the worth of your INSTALL work, never the materials.
-   - EVERY material (pavers, base rock, bedding sand, underlayment) is its own selector: the customer can
-     provide it, or we provide it. When WE provide it, it's a PURE PASS-THROUGH — added to the total at
-     cost, never marked up, never eaten. So material choices move the customer's total, not your value.
-   - PICKUP is its OWN mini-quote (a quote within the quote): whatever WE provide, we haul. It's sized by
-     WEIGHT (from the sq ft + which materials are ours) → trips + 2-person crew, and priced at a softer
-     "customer-service" rate you slide ($20-45/hr take-home) — they're already giving us the patio, so we
-     don't need full margin on the haul, just to not lose money and pay whoever does it. It saves as its
-     own line so it can become a sub-job assigned to a different person. Customer provides everything → no
-     pickup. All costs/weights/rates are tunable one-number knobs; the pay readouts are the real guide. */
+   - EVERY material (pavers, base rock, bedding sand, underlayment) is its own selector + its own EDITABLE
+     $/sq ft (defaults are guesses — a specific paver costs what it costs). Customer provides it, or we do;
+     when WE do, it's a PURE PASS-THROUGH (at cost, zero margin). Default paver is a premium "high end of
+     good value" (we don't put our name on crappy pavers — cheap is the customer's call); drop it if asked.
+   - PICKUP is its own weight-driven mini-quote → a real sub-job. Whatever WE provide, we haul. Sized by
+     WEIGHT of the we-provide materials → trips, at a SELECTABLE crew (1/2/3/4 — light run vs an insane load)
+     and a softer "customer-service" rate you slide ($20-45/hr take-home). Customer provides all → no pickup.
+   - PAVING crew is also selectable (1-4). All costs/weights/rates are tunable; the pay readouts are the guide. */
 const PAVER_MATS = [
-  { key:"pavers", label:"Pavers",             cost:7.00, lbs:22 },   // ~2-3/8" concrete pavers
-  { key:"rock",   label:"Base rock",          cost:2.00, lbs:30 },   // ~4" crushed road base
+  { key:"pavers", label:"Pavers",             cost:8.00, lbs:22 },   // premium "high end of good value" default (editable)
+  { key:"rock",   label:"Base rock",          cost:2.00, lbs:30 },
   { key:"sand",   label:"Bedding / poly sand", cost:1.00, lbs:9 },
   { key:"fabric", label:"Underlayment fabric", cost:0.35, lbs:0.2 }
 ];
-const PAVER_DIG_IN     = 8;     // inches excavated → spoil-haul volume (always ours — the dig-out)
-const PAVER_DIRT_TON   = 45;    // $/ton spoil tipping
-const PAVER_LABOR_DEF  = 16;    // default LABOR $/sq ft
+const PAVER_DIG_IN     = 8;
+const PAVER_DIRT_TON   = 45;
+const PAVER_LABOR_DEF  = 16;
 const PAVER_LABOR_MIN  = 8, PAVER_LABOR_MAX = 30;
 const PAVER_LABOR_BAND = { lo: 12, hi: 22 };
-const PAVER_PICKUP_CREW   = 2;     // a materials run is a 2-person job (heavy, no forklift at the house)
-const PAVER_LOAD_CAP      = 4000;  // lb per trip (truck + utility trailer) → trips = ceil(weight/cap)
-const PAVER_HANDLE_PH_TON = 1.3;   // person-hours of handling (load + unload + carry) per ton
-const PAVER_PICKUP_DEF_MI = 20;    // fallback loop miles until the supplier address is geocoded
-const PAVER_PICKUP_RATE_DEF = 30, PAVER_PICKUP_RATE_MIN = 20, PAVER_PICKUP_RATE_MAX = 45;   // pickup take-home $/hr (softer than install)
+const PAVER_PICKUP_CREW   = 2;
+const PAVER_LOAD_CAP      = 4000;
+const PAVER_HANDLE_PH_TON = 1.3;
+const PAVER_PICKUP_DEF_MI = 20;
+const PAVER_PICKUP_RATE_DEF = 30, PAVER_PICKUP_RATE_MIN = 20, PAVER_PICKUP_RATE_MAX = 45;
 
-function pvMats(){ const m = (WZ.pv && WZ.pv.mats) || {}; return m; }
+function pvMats(){ return (WZ.pv && WZ.pv.mats) || {}; }
 function pvWeProvide(key){ return pvMats()[key] === "us"; }
+function pvMatCost(key){ const o=(WZ.pv&&WZ.pv.matCosts)||{}; if(o[key]!=null) return o[key]; const m=PAVER_MATS.find(x=>x.key===key); return m?m.cost:0; }
 function pvSiteLatLng(){ const pid=(typeof WZ!=="undefined")&&WZ.cust&&WZ.cust.propertyId; if(pid){const p=(D().properties||[]).find(x=>x.id===pid); if(p&&p.lat!=null)return {lat:p.lat,lng:p.lng};} return null; }
 
-/* the materials run — sized by the WEIGHT of whatever WE provide, priced at the customer-service rate */
 function pvPickup(area){
   const pv = WZ.pv || {};
   const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
   const weight = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? area*m.lbs : 0), 0);
-  if (weight <= 0) return { has:false, charge:0, cost:0, weight:0, tons:0, trips:0, miles:0, hoursEach:0, personHrs:0, rate:0, exact:false, addr:"" };
-  const rate = pv.pickupRate || PAVER_PICKUP_RATE_DEF;
+  if (weight <= 0) return { has:false, charge:0, cost:0, weight:0, tons:0, trips:0, miles:0, hoursEach:0, personHrs:0, rate:0, crew:0, exact:false, addr:"" };
+  const rate = pv.pickupRate || PAVER_PICKUP_RATE_DEF, crew = Math.max(1, pv.pickupCrew || PAVER_PICKUP_CREW);
   let loopMi = PAVER_PICKUP_DEF_MI, exact = false;
   const site = pvSiteLatLng();
   if (pv.pickupLat!=null && typeof driveFromBase==="function") {
@@ -46,14 +45,13 @@ function pvPickup(area){
     const sb = site ? ((driveFromBase(site.lat, site.lng)||{}).miles||0) : 0;
     if (bp) { loopMi = Math.round((bp.miles + ps + sb)*10)/10; exact = true; }
   }
-  const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));
+  const trips = Math.max(1, Math.ceil(weight / (PAVER_LOAD_CAP * Math.max(1, crew-1 || 1))));   // more crew → more carrying capacity per run
   const driveMin = Math.round(loopMi/35*60);
-  const crew = PAVER_PICKUP_CREW;
-  const handlePH = (weight/2000) * PAVER_HANDLE_PH_TON;          // person-hours of load/unload/carry
-  const drivePH = crew * trips * (driveMin/60);                 // person-hours of driving (whole crew, per trip)
+  const handlePH = (weight/2000) * PAVER_HANDLE_PH_TON;
+  const drivePH = crew * trips * (driveMin/60);
   const personHrs = handlePH + drivePH;
   const mileage = Math.round(loopMi * trips * MIL);
-  const labor = personHrs * (rate/0.48);                        // charge labor so each earns `rate` take-home
+  const labor = personHrs * (rate/0.48);
   const charge = Math.round((labor + mileage)/5)*5;
   return { has:true, charge, cost:mileage, weight:Math.round(weight), tons:Math.round(weight/2000*10)/10, trips, miles:loopMi, exact, crew, personHrs:Math.round(personHrs*10)/10, hoursEach:Math.round(personHrs/crew*10)/10, rate, addr:pv.pickupAddr||"" };
 }
@@ -64,15 +62,15 @@ function pvCalc(){
   const MIL = (typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED = (typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75);
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
   const laborPrice = Math.round(area*laborSqft/25)*25;
-  const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(area*m.cost) : 0), 0);   // only what WE provide
-  const spoilTip = Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);   // excavation — always ours
-  const materials = matCost + spoilTip;   // pass-through — same in price AND cost → zero margin
+  const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(area*pvMatCost(m.key)) : 0), 0);
+  const spoilTip = Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);
+  const materials = matCost + spoilTip;
   const price = laborPrice + materials + driveCharge;
   const cost = materials + driveMileage;
   const profit = price - cost, allInSqft = area>0 ? Math.round(price/area) : 0;
   const mpu = area<150 ? 6 : area<300 ? 5 : 4.5;
   const workMin = Math.round(area*mpu) + 120;
-  const crew = 2, totalPH = (workMin/60) + crew*(dr.min/60) + crew*(20/60), hours = crew>0?totalPH/crew:totalPH;
+  const crew = Math.max(1, pv.crew || 2), totalPH = (workMin/60) + crew*(dr.min/60) + crew*(20/60), hours = crew>0?totalPH/crew:totalPH;
   const fieldPool = Math.max(0, profit)*0.48, perHr = hours>0 ? fieldPool/crew/hours : 0;
   return { area, laborSqft, laborPrice, matCost, spoilTip, materials, allInSqft, price, cost, driveCharge, dr, crew, hours: Math.round(hours*10)/10, perHr: Math.floor(perHr), profit };
 }
@@ -81,7 +79,7 @@ function pvItem(c){
   const ours = PAVER_MATS.filter(m=>pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
   const theirs = PAVER_MATS.filter(m=>!pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
   const notes = ["Full premium build — base + bedding + edging + excavate/haul spoil.",
-    "Labor (the install): $"+c.laborSqft+"/sq ft.",
+    "Labor (the install): $"+c.laborSqft+"/sq ft · "+c.crew+"-person crew.",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")];
   return { serviceId:"", name:"Paver patio / pad install (full premium build)", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"paver",
     breakdown:[ (WZ.pv.L)+"×"+(WZ.pv.W)+" = "+Math.round(c.area)+" sq ft · labor $"+c.laborSqft+"/sq ft + materials at cost" ] };
@@ -96,7 +94,7 @@ function pvPickupItem(pk){
 
 window.wizPaverStart = function () {
   if (typeof WZ === "undefined" || !WZ) return;
-  if (!WZ.pv) WZ.pv = { L:10, W:10, sqft:PAVER_LABOR_DEF, mats:{ pavers:"us", rock:"us", sand:"us", fabric:"us" }, pickupAddr:"", pickupLat:null, pickupLng:null, pickupRate:PAVER_PICKUP_RATE_DEF };
+  if (!WZ.pv) WZ.pv = { L:10, W:10, sqft:PAVER_LABOR_DEF, crew:2, mats:{ pavers:"us", rock:"us", sand:"us", fabric:"us" }, matCosts:{}, pickupAddr:"", pickupLat:null, pickupLng:null, pickupRate:PAVER_PICKUP_RATE_DEF, pickupCrew:2 };
   if (!WZ.pv.mats) WZ.pv.mats = { pavers:"us", rock:"us", sand:"us", fabric:"us" };
   WZ.svc = "paver"; WZ.disc = 0; WZ.discPct = null;
   WZ.step = "calc"; if (typeof render==="function") render();
@@ -106,15 +104,16 @@ window.openPaverEst = window.wizPaverStart;
 function pvTier(perHr){ const TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45), CF=(typeof QE!=="undefined"?QE.CREW_FLOOR:30); return perHr>=TGT?2 : perHr>=CF?1 : 0; }
 function pvPayNote(tier){ return tier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':tier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor — slide up.</span>'; }
 function pvZone(labor){ const mid=(PAVER_LABOR_BAND.lo+PAVER_LABOR_BAND.hi)/2; return labor<PAVER_LABOR_BAND.lo?["underpriced","#c1121f"]:labor<mid?["good value","#1a7f37"]:labor<=PAVER_LABOR_BAND.hi?["premium","#b8860b"]:["above market","#c1121f"]; }
+function pvCrewBtns(cur, fn){ return [1,2,3,4].map(n=>`<button class="btn ${cur===n?"acc":"ghost"} sm" style="flex:0 0 auto;min-width:34px;padding:4px 0" onclick="${fn}(${n})">${n}</button>`).join(""); }
 function pvPickupInfoHTML(pk){
   if (!pk.has) return "";
-  const ex = pk.exact ? "" : ` <span style="color:#b8860b">— est. ${pk.miles} mi; add the supplier address for exact mileage</span>`;
-  return `⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} people × ~${pk.hoursEach} hr<br>🚗 ${pk.miles} mi loop × ${pk.trips}${ex}: mileage <b>${money(pk.cost)}</b><br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">pickup pay <b>$${pk.rate}/hr</b> each</div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate — slide $${PAVER_PICKUP_RATE_MIN} (favor) → $${PAVER_PICKUP_RATE_MAX} (full). They're giving us the patio; just don't lose money + pay the labor.</div>`;
+  const ex = pk.exact ? "" : ` <span style="color:#b8860b">— est. ${pk.miles} mi; add the supplier address for exact</span>`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${pk.miles} mi loop × ${pk.trips}${ex}: mileage <b>${money(pk.cost)}</b><br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>`;
 }
 
 function wizPaverUI(){
   if (!WZ.pv) wizPaverStart();
-  if (WZ.pv && !WZ.pv.mats) WZ.pv.mats = { pavers:"us", rock:"us", sand:"us", fabric:"us" };   // legacy draft (pre per-material)
+  if (WZ.pv && !WZ.pv.mats) WZ.pv.mats = { pavers:"us", rock:"us", sand:"us", fabric:"us" };
   const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area);
   const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk));
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
@@ -131,22 +130,23 @@ function wizPaverUI(){
     <div class="grow"><label style="margin-top:0">Length (ft)</label><input type="number" inputmode="decimal" value="${pv.L}" min="1" oninput="wizPvField('L',this.value)"></div>
     <div class="grow"><label style="margin-top:0">Width (ft)</label><input type="number" inputmode="decimal" value="${pv.W}" min="1" oninput="wizPvField('W',this.value)"></div>
     <div style="align-self:flex-end;padding-bottom:8px;font-weight:800">= ${Math.round(c.area)} sq ft</div></div></div>`;
-  // per-material selectors
+  // per-material selectors with EDITABLE $/sq ft
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧱 Materials — who provides each? <span class="sub" style="font-weight:400">we = pass-through at cost</span></div>`;
-  h += PAVER_MATS.map(m=>`<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> <span class="sub">~$${m.cost}/sq ft${pvWeProvide(m.key)?" · "+money(Math.round(c.area*m.cost)):""}</span></div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`).join("");
-  h += `<div class="sub" style="margin-top:4px">Whatever we get, we pick up below. Your labor price never changes with these.</div></div>`;
-  // pickup mini-quote (only if we provide something)
-  if (pk.has) h += `<div class="card" style="border-left:4px solid #b8860b"><div style="font-weight:800;margin-bottom:4px">🚚 Materials pickup — its own ${pk.crew}-person run</div>
+  h += PAVER_MATS.map(m=>{ const we = pvMats()[m.key]==="us", cost = pvMatCost(m.key); return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="0.25" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizPvMatCost('${m.key}',this.value)">/sq ft <span class="sub">= ${money(Math.round(c.area*cost))}</span>`:`<span class="sub">~$${cost}/sq ft</span>`}</div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
+  h += `<div class="sub" style="margin-top:4px">Defaults are estimates — change any to the real price. Quote premium pavers; drop only if they ask for cheaper. Your labor price never changes with these.</div></div>`;
+  // pickup mini-quote
+  if (pk.has) h += `<div class="card" style="border-left:4px solid #b8860b"><div style="font-weight:800;margin-bottom:4px">🚚 Materials pickup — its own run</div>
     <label style="margin-top:0">Where are we picking up?</label>
     <div class="acwrap"><input id="pv_pickaddr" value="${esc(pv.pickupAddr||"")}" placeholder="Supplier address…" autocomplete="off" oninput="addrSuggest('pv_pickaddr','pv_pickbox')" onchange="wizPvGeoPickup(this.value)"><div class="acbox" id="pv_pickbox"></div></div>
     <div id="pv_pickinfo" style="margin-top:6px;white-space:normal;font-size:13px;line-height:1.8">${pvPickupInfoHTML(pk)}</div></div>`;
-  // LABOR slider + band + paving pay check
+  // LABOR slider + crew + band + paving pay check
   h += `<div class="card">
     <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:28px" id="pv_price">${money(total)}</div><div style="text-align:right"><div class="nm" style="font-size:18px" id="pv_rate">$${c.laborSqft}/sq ft labor</div><div class="sub" id="pv_allin">paving ${money(c.price)}${pk.has?` + pickup ${money(pk.charge)}`:""}</div></div></div>
     <input type="range" min="${lo}" max="${hi}" step="0.5" value="${pv.sqft}" oninput="wizPvSqft(this.value)" style="width:100%;accent-color:var(--accent);margin-top:8px">
     <div style="position:relative;height:13px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div id="pv_mk" style="position:absolute;top:-3px;bottom:-3px;left:${mk}%;width:3px;background:#0b1f3a"></div></div>
     <div class="sub" style="font-size:12px;margin-top:3px">📊 <b id="pv_zone" style="color:${zone[1]}">${zone[0]}</b> · $${PAVER_LABOR_BAND.lo}–$${PAVER_LABOR_BAND.hi}/sq ft <b>labor</b> band (materials extra, at cost)</div>
-    <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub" id="pv_hrs">Paving: ${c.crew} people × ~${c.hours} hr each</div><div class="sub">drive + build + mobilization</div></div><div class="grow" style="text-align:right"><div class="sub">Paving — per hour each</div><div class="nm" style="font-size:20px;color:${tCol}" id="pv_payhr">${money(c.perHr)}/hr ${tIcon}</div></div></div>
+    <div class="row" style="gap:6px;align-items:center;margin-top:8px"><div class="grow sub">Paving crew</div>${pvCrewBtns(c.crew,"wizPvCrew")}</div>
+    <div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub" id="pv_hrs">Paving: ${c.crew} people × ~${c.hours} hr each</div><div class="sub">drive + build + mobilization</div></div><div class="grow" style="text-align:right"><div class="sub">Paving — per hour each</div><div class="nm" style="font-size:20px;color:${tCol}" id="pv_payhr">${money(c.perHr)}/hr ${tIcon}</div></div></div>
     <div class="sub" id="pv_paynote" style="margin-top:4px">${pvPayNote(tier)}</div></div></div>`;
   h += `<div class="card" id="pv_break">${pvBreakHTML(c, pk)}</div>`;
   h += `<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost grow" onclick="wizPrint()">🖨 Print / PDF</button><button class="btn ghost grow" onclick="wizCopy()">Copy text</button></div>`;
@@ -154,13 +154,16 @@ function wizPaverUI(){
   return h;
 }
 function pvBreakHTML(c, pk){
-  let s = `<div style="font-size:13px;line-height:1.9">🔨 Labor: ${Math.round(c.area)} sq ft × $${c.laborSqft}/sq ft: <b>${money(c.laborPrice)}</b><br>🧱 Materials — pass-through at cost: <b>+${money(c.materials)}</b> <span class="sub">(our materials ${money(c.matCost)} + spoil ${money(c.spoilTip)})</span><br>🚗 Drive — static (~${c.dr.rt} mi RT): <b>+${money(c.driveCharge)}</b>`;
+  let s = `<div style="font-size:13px;line-height:1.9">🔨 Labor: ${Math.round(c.area)} sq ft × $${c.laborSqft}/sq ft (${c.crew} crew): <b>${money(c.laborPrice)}</b><br>🧱 Materials — pass-through at cost: <b>+${money(c.materials)}</b> <span class="sub">(our materials ${money(c.matCost)} + spoil ${money(c.spoilTip)})</span><br>🚗 Drive — static (~${c.dr.rt} mi RT): <b>+${money(c.driveCharge)}</b>`;
   if (pk && pk.has) s += `<br>🚚 Materials pickup (own line, ${pk.crew}-person @ $${pk.rate}/hr): <b>+${money(pk.charge)}</b>`;
   s += `<br><span class="sub">Materials net <b>$0</b> to you (pass-through) — paving profit ${money(c.profit)} is labor + drive only.</span></div>`;
   return s;
 }
 window.wizPvField = function (k, v) { if (!WZ.pv) return; WZ.pv[k] = Math.max(0, parseFloat(v)||0); render(); };
 window.wizPvMat = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.mats) WZ.pv.mats = {}; WZ.pv.mats[key] = v; render(); };
+window.wizPvMatCost = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.matCosts) WZ.pv.matCosts = {}; WZ.pv.matCosts[key] = Math.max(0, parseFloat(v)||0); render(); };
+window.wizPvCrew = function (n) { if (!WZ.pv) return; WZ.pv.crew = Math.max(1, n); render(); };
+window.wizPvPickCrew = function (n) { if (!WZ.pv) return; WZ.pv.pickupCrew = Math.max(1, n); render(); };
 window.wizPvGeoPickup = function (addr) {
   if (!WZ.pv) return; WZ.pv.pickupAddr = addr;
   if (!addr) { WZ.pv.pickupLat = null; WZ.pv.pickupLng = null; if (typeof render==="function") render(); return; }
@@ -169,7 +172,6 @@ window.wizPvGeoPickup = function (addr) {
     .then(function (d) { if (d && d[0]) { WZ.pv.pickupLat = +d[0].lat; WZ.pv.pickupLng = +d[0].lon; } if (typeof render==="function") render(); })
     .catch(function () { if (typeof render==="function") render(); });
 };
-/* pickup rate slider — update the pickup card + the total in place (smooth) */
 window.wizPvPickRate = function (v) {
   if (!WZ.pv) return; WZ.pv.pickupRate = parseInt(v,10) || PAVER_PICKUP_RATE_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
@@ -181,7 +183,6 @@ window.wizPvPickRate = function (v) {
   const br=document.getElementById("pv_break"); if(br)br.innerHTML=pvBreakHTML(c, pk);
   if(typeof wizAutosave==="function")wizAutosave();
 };
-/* labor slider — update the PAVING + total in place (smooth) */
 window.wizPvSqft = function (v) {
   if (!WZ.pv) return; WZ.pv.sqft = parseFloat(v) || PAVER_LABOR_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
