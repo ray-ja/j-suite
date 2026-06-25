@@ -51,6 +51,10 @@ const lastActive = {};
 function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) lastActive[userId] = n; }
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
+// Cache-bust token — changes on every restart (i.e. every deploy). Stamped onto js/css URLs in the
+// served HTML so a new build loads from a URL no cache has seen — defeats Cloudflare's max-age override
+// on static assets (Cloudflare serves the HTML as DYNAMIC/uncached, so the fresh stamps always arrive).
+const BUILD = String(Date.now());
 // Messaging rollout flag — OFF by default. Activate in prod WITHOUT a code change/redeploy:
 // set env MESSAGING_ON=1 (or ceo-config.json {"messagingOn":true}) and restart. The shell route
 // then injects window.JSUITE_MESSAGING=true so the client's gate (js/47) turns the feature on.
@@ -680,8 +684,9 @@ const server = http.createServer((req, res) => {
     return fs.readFile(APP_FILE, (err, buf) => {
       if (err) { res.writeHead(404); return res.end("app file not found next to sync-server.js"); }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
-      if (MESSAGING_ON) { return res.end(buf.toString("utf8").replace("</head>", '<script>window.JSUITE_MESSAGING=true;</script></head>')); }
-      res.end(buf);
+      let html = buf.toString("utf8").replace(/((?:src|href)=")(js\/[^"?]+\.js|app\.css)(")/g, '$1$2?b=' + BUILD + '$3');   // version-stamp js/css past Cloudflare's cache
+      if (MESSAGING_ON) html = html.replace("</head>", '<script>window.JSUITE_MESSAGING=true;</script></head>');
+      res.end(html);
     });
   }
 
