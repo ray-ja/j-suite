@@ -21,16 +21,31 @@ function rcptThumb(id){
   if (/\.pdf$/i.test(id || "")) return `<a href="${up}" target="_blank" rel="noopener" style="display:flex;width:84px;height:84px;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--line);background:var(--soft);text-decoration:none;flex:0 0 auto"><div style="text-align:center"><div style="font-size:26px;line-height:1">📄</div><div class="sub" style="font-size:10px">PDF</div></div></a>`;
   return `<a href="${up}" target="_blank" rel="noopener" style="flex:0 0 auto"><img src="${up}" style="width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`;
 }
+/* every filed receipt across job expenses, pass-through materials, and business expenses (only those with a receiptId) */
+function rcptAllFiled(){
+  const out = [];
+  (D().jobs || []).forEach(function (j) { if (!j || j.deleted) return;
+    (j.expenses || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobexp", jobId: j.id, where: (j.title || "job") })); });
+    (j.materials || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobmat", jobId: j.id, where: (j.title || "job") + " · pass-through" })); });
+  });
+  (D().expenses || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "biz", jobId: null, where: "business expense" })); });
+  return out.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+}
+/* a duplicate = same amount + same (normalized) description/vendor */
+function rcptDupKey(e){ const v = String(e.vendor || "").trim().toLowerCase(), dsc = String(e.desc || e.note || "").trim().toLowerCase(); return Math.round((+e.amount || 0) * 100) + "|" + (v || dsc).replace(/\s+/g, " "); }
+function rcptDupSet(filed){ const cnt = {}, s = {}; (filed || []).forEach(function (e) { const k = rcptDupKey(e); cnt[k] = (cnt[k] || 0) + 1; }); Object.keys(cnt).forEach(function (k) { if (cnt[k] > 1) s[k] = cnt[k]; }); return s; }
 
 function rReceipts(){
   if (typeof canSee === "function" && !canSee("receipts")) { view.innerHTML = `<div class="secthd"><h2>Receipts</h2></div><div class="card"><div class="muted">Owner / admin only.</div></div>`; return; }
   const q = rcptQueue(), members = rcptMembers(), jobs = rcptJobs();
+  const filed = rcptAllFiled(), dups = rcptDupSet(filed), dupCount = Object.keys(dups).length;
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   let h = `<div class="secthd"><h2>📸 Receipts</h2></div>`;
   h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)"><div class="sub" style="white-space:normal">Upload a pile of receipt photos — tap the button, or <b>drag &amp; drop</b> them right onto this box — then attribute each below: which job (or a business expense), category, pass-through vs not, and who paid (a person = their personal card → reimburse; blank = business card). Files stage here until you file them.</div>
     <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="document.getElementById('rcpt_files').click()">📷 Upload receipt photos</button>
     <div class="sub" style="text-align:center;margin-top:6px;opacity:.65">⬇ or drag photos onto this box (desktop)</div></div>`;
+  if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — the same amount + description was filed more than once. Flagged in red under Filed receipts below; delete the extras.</div>`;
   if (q.length) {
     h += `<div class="secthd" style="margin-top:14px"><h2>To attribute</h2><span class="ct">${q.length}</span></div>`;
     h += q.map(r => {
@@ -38,7 +53,8 @@ function rReceipts(){
       const memOpts = `<option value="">— business card (no reimburse) —</option>` + members.map(u => `<option value="${esc(u.id)}">${esc(u.username)} — personal (reimburse)</option>`).join("");
       const catOpts = RCPT_CATS.map(c => `<option${c === "materials" ? " selected" : ""}>${c}</option>`).join("");
       return `<div class="card"><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(r.id)}
-        <div class="grow"><div class="row" style="gap:8px"><input id="ra_${r.id}" type="number" inputmode="decimal" placeholder="$ amount" style="flex:0 0 100px"><input id="rd_${r.id}" placeholder="What — vendor / item (required)" style="flex:2"></div>
+        <div class="grow"><div class="row" style="gap:8px"><input id="ra_${r.id}" type="number" inputmode="decimal" placeholder="$ amount" style="flex:0 0 90px"><input id="rv_${r.id}" placeholder="Where — vendor / store (required)" style="flex:2"></div>
+        <input id="rd_${r.id}" placeholder="What you bought" style="margin-top:6px">
         <label style="margin-top:6px">Category</label><select id="rc_${r.id}">${catOpts}</select>
         <label>Job</label><select id="rj_${r.id}" onchange="rcptJobChange('${r.id}')">${jobOpts}</select>
         <label class="toggle" id="rpw_${r.id}" style="margin-top:8px;display:none"><input type="checkbox" id="rp_${r.id}"><span style="margin:0">Pass-through material (billed to the customer at cost)</span></label>
@@ -47,6 +63,13 @@ function rReceipts(){
     }).join("");
   } else {
     h += `<div class="card"><div class="muted">No receipts staged. Upload a batch above — then attribute each one.</div></div>`;
+  }
+  if (filed.length) {
+    h += `<div class="secthd" style="margin-top:14px"><h2>Filed receipts</h2><span class="ct">${filed.length}</span></div>`;
+    h += filed.slice(0, 60).map(function (e) {
+      const isDup = !!dups[rcptDupKey(e)];
+      return `<div class="card"${isDup ? ' style="border-left:4px solid var(--danger)"' : ''}><div class="row" style="gap:10px;align-items:flex-start">${rcptThumb(e.receiptId)}<div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""}${(e.desc || e.note) ? ' <span class="sub" style="font-weight:400">' + esc(e.desc || e.note) + '</span>' : ''}${isDup ? ' <span class="badge" style="background:var(--danger);color:#fff">⚠ possible duplicate</span>' : ''}</div><div class="sub" style="white-space:normal">${esc(e.where)}${e.category ? " · " + esc(e.category) : ""}${e.paidBy ? " · reimburse " + esc((typeof userName === "function" ? userName(e.paidBy) : "") || "") : ""}${e.ts && typeof relTime === "function" ? " · " + relTime(e.ts) : ""}</div></div><button class="btn ghost sm" onclick="rcptDelFiled('${e.store}','${e.jobId || ""}','${e.id}')">✕</button></div></div>`;
+    }).join("");
   }
   const owed = rcptReimbOwed(), oids = Object.keys(owed).filter(id => owed[id] > 0.005);
   if (oids.length) {
@@ -77,13 +100,23 @@ window.rcptDrop = function (e) {
 };
 window.rcptJobChange = function (rid) { const j = val("rj_" + rid); const t = document.getElementById("rpw_" + rid); if (t) t.style.display = j ? "flex" : "none"; };
 window.rcptDiscard = function (rid) { if (!confirm("Discard this receipt photo? It won't be filed.")) return; rcptSaveQ(rcptQueue().filter(r => r.id !== rid)); render(); };
+window.rcptDelFiled = function (store, jobId, id) {
+  if (!confirm("Delete this filed receipt/expense?")) return;
+  const d = D();
+  if (store === "biz") { const e = (d.expenses || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); } }
+  else { const j = (d.jobs || []).find(x => x && x.id === jobId); if (j) { const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []); const e = arr.find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(j); } } }
+  if (typeof save === "function") save(); render();
+};
 window.rcptFile = function (rid) {
   const amt = parseFloat(val("ra_" + rid)); if (!(amt > 0)) { alert("Enter the amount."); return; }
-  const desc = (val("rd_" + rid) || "").trim(); if (!desc) { alert("Enter what it was for."); return; }
+  const vendor = (val("rv_" + rid) || "").trim(); if (!vendor) { alert("Enter where you bought it (vendor / store)."); return; }
+  const desc = (val("rd_" + rid) || "").trim();
   const cat = val("rc_" + rid) || "other", jobId = val("rj_" + rid), paidBy = val("rm_" + rid) || "";
   const pwEl = document.getElementById("rp_" + rid), passthrough = !!(jobId && pwEl && pwEl.checked);
   const by = (typeof curUser === "function" && curUser()) ? curUser().username : "";
-  const rec = { id: uid(), amount: amt, desc: desc, category: cat, receiptId: rid, paidBy: paidBy || null, by: by, ts: now() };
+  const _dupHit = rcptAllFiled().find(function (e) { return rcptDupKey(e) === rcptDupKey({ amount: amt, vendor: vendor, desc: desc }); });
+  if (_dupHit && !confirm("⚠ Possible duplicate — a " + money(amt) + " receipt from \"" + vendor + "\" is already filed (" + _dupHit.where + "). File anyway?")) return;
+  const rec = { id: uid(), amount: amt, vendor: vendor, desc: desc, category: cat, receiptId: rid, paidBy: paidBy || null, by: by, ts: now() };
   const d = D();
   if (jobId) {
     const j = (D().jobs || []).find(x => x.id === jobId); if (!j) { alert("Job not found."); return; }
