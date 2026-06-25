@@ -82,7 +82,7 @@ function wizCust(){const c=WZ.cust;
     <button class="btn acc" style="margin-top:6px" onclick="wizCustNext()">Next: pick services →</button>
   </div>`;}
 function wizPropPicker(){const c=WZ.cust;if(!c.id)return"";const ps=propsForCust(c.id);if(ps.length<2)return"";
-  return `<label>Which property?</label><select onchange="wizPickProp(this.value)">${ps.map(p=>`<option value="${p.id}" ${c.propertyId===p.id?"selected":""}>${esc(p.label||"")} — ${esc(p.address||"")}</option>`).join("")}</select>`;}
+  return `<label>Which property is this job for? <span class="sub">(${ps.length} on file)</span></label><div style="display:flex;flex-direction:column;gap:6px;margin:2px 0 4px">${ps.map(p=>`<button class="btn ${c.propertyId===p.id?"acc":"ghost"} sm" style="text-align:left;justify-content:flex-start;white-space:normal" onclick="wizPickProp('${p.id}')">${c.propertyId===p.id?"✓ ":""}<b>${esc(p.label||"Property")}</b>${p.address?" — "+esc(p.address):""}</button>`).join("")}</div>`;}
 function wizSoldPicker(){const c=WZ.cust;if(c.source!=="Cold call / in-person")return"";
   return `<label>Which team member made this sale? (credit)</label><select id="wc_sold"><option value="">— none —</option>${users().map(u=>`<option value="${u.id}" ${c.soldBy===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>`;}
 window.wizCustSearch=function(){
