@@ -263,7 +263,7 @@ function tcClockHTML() {
         <label>Odometer — start (required)</label>
         <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
         <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>
-        <div class="sub" style="margin-top:8px;white-space:normal">Asks for location permission to stamp where you started. Time tracks even if you decline GPS.</div>
+        <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Asks for location to stamp where you started; time tracks even if you decline GPS.</div>
       </div>`;
     }
   }
