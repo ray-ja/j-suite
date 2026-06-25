@@ -83,7 +83,8 @@ function rFinPayouts() {
   const exps = actExpenses().filter(e => e.date >= b.from && e.date <= b.to);
   const expCents = exps.reduce((s, e) => s + finCents(e.amount), 0);
   const acct = finAccounts(roll.totals, mil.total, expCents);
-  const pay = finPayouts(roll, mil), members = finMembers();
+  const flt = finFaultDeductions(D().jobs || [], { from: b.from, to: b.to });
+  const pay = finPayouts(roll, mil, flt), members = finMembers();
   const owedTotal = roll.totals.field + roll.totals.sales + roll.totals.admin + mil.total;
 
   let h = `<div class="card"><div class="row" style="align-items:center">
@@ -102,7 +103,7 @@ function rFinPayouts() {
   h += `<div class="secthd"><h2>Owed to members</h2><span class="ct">${fm(owedTotal)}</span></div>`;
   const ids = Object.keys(pay).sort((a, c) => finName(a).localeCompare(finName(c)));
   if (!ids.length) h += `<div class="card"><div class="muted">No payouts this period — record income to compute the split.</div></div>`;
-  else h += `<div class="card">` + ids.map(id => { const r = pay[id]; return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${esc(finName(id))}</div><div class="sub" style="white-space:normal">Field ${fm(r.field)} · Sales ${fm(r.sales)} · Admin ${fm(r.admin)}${r.mileage ? `<br><span style="color:var(--muted)">↩ ${fm(r.mileage)} gas reimbursement — covers their fuel, not earnings</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto"><b>${fm(r.distribution)}</b><div class="sub" style="font-size:11px">earned${r.mileage ? `<br>+ ${fm(r.mileage)} reimb.<br>= ${fm(r.total)} to pay` : ""}</div></div></div>`; }).join("") + `</div>`;
+  else h += `<div class="card">` + ids.map(id => { const r = pay[id]; return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${esc(finName(id))}</div><div class="sub" style="white-space:normal">Field ${fm(r.field)} · Sales ${fm(r.sales)} · Admin ${fm(r.admin)}${r.mileage ? `<br><span style="color:var(--muted)">↩ ${fm(r.mileage)} gas reimbursement — covers their fuel, not earnings</span>` : ""}${r.fault ? `<br><span style="color:var(--danger);font-weight:700">⚠ −${fm(r.fault)} — their own job mistake (docked from them, not the crew)</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto"><b>${fm(r.distribution)}</b><div class="sub" style="font-size:11px">earned${r.mileage ? `<br>+ ${fm(r.mileage)} reimb.` : ""}${r.fault ? `<br>− ${fm(r.fault)} fault` : ""}${(r.mileage || r.fault) ? `<br>= ${fm(r.total)} to pay` : ""}</div></div></div>`; }).join("") + `</div>`;
 
   /* notes */
   const notes = [];

@@ -86,11 +86,13 @@ function rJobPage(j) {
   else h += `<div class="muted" style="margin-bottom:8px">No photos yet.</div>`;
   h += `<input type="file" id="job_photo" accept="image/*" capture="environment" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo</button></div>`;
 
-  // 5) Expenses — log the amount, attach the receipt as proof
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Expenses${expTotal ? ` · <span style="color:var(--accent)">${money(expTotal)}</span>` : ""}</div>`;
-  h += exps.length ? exps.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a href="${upUrl(e.receiptId)}" target="_blank" rel="noopener"><img src="${upUrl(e.receiptId)}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--line)" title="receipt"></a>` : `<span class="sub" style="color:var(--danger)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`).join("") : `<div class="muted">No expenses logged.</div>`;
-  h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_desc" placeholder="What for — dump fee, materials…" style="flex:2"></div>`;
-  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt</span></button><button class="btn acc grow" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
+  // 5) Expenses & receipts — amount + what for (required), receipt photo optional + collapsed, optional fault attribution
+  const _members = (typeof schedMembers === "function") ? schedMembers() : [];
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Expenses &amp; receipts${expTotal ? ` · <span style="color:var(--accent)">${money(expTotal)}</span>` : ""}</div>`;
+  h += exps.length ? exps.map(e => { const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : ""; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`; }).join("") : `<div class="muted">No expenses logged. Enter the amount + what it was for; a receipt photo is optional.</div>`;
+  h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_desc" placeholder="What for — dump fee, materials… (required)" style="flex:2"></div>`;
+  h += `<label style="margin-top:8px">Whose mistake caused this? <span class="sub">(optional — docks <i>their</i> payout, not the whole crew's)</span></label><select id="exp_fault"><option value="">— nobody's fault / shared job cost —</option>${_members.map(u => `<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("")}</select>`;
+  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
 
   // 5b) Time & travel — reconstruct/log for the real effective $/hr (drive time is the silent cost)
   const hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
@@ -147,11 +149,12 @@ window.jobToggleLoaded = function (jobId, itemId) {
 window.jobAddExpense = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const amt = parseFloat(val("exp_amt")); if (!(amt > 0)) { alert("Enter the expense amount."); return; }
-  const desc = val("exp_desc");
+  const desc = (val("exp_desc") || "").trim(); if (!desc) { alert("Enter what the expense was for."); return; }
+  const fault = val("exp_fault") || "";
   const input = document.getElementById("exp_receipt"); const file = input && input.files && input.files[0];
   const add = function (receiptId) {
     if (!Array.isArray(j.expenses)) j.expenses = [];
-    j.expenses.push({ id: uid(), amount: amt, desc: desc, receiptId: receiptId || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
+    j.expenses.push({ id: uid(), amount: amt, desc: desc, receiptId: receiptId || null, faultMemberId: fault || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
     if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
   };
   if (file && typeof jsUpload === "function") jsUpload(file).then(add).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); add(null); });

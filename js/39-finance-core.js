@@ -134,17 +134,31 @@ function finAccounts(totals, mileageTotal, expensesTotal) {
   };
 }
 
-/* per-member payout — field + sales + admin is the distribution; mileage is reported alongside
-   (an expense reimbursement from the Business Fund, not a distribution). */
-function finPayouts(rollup, mileage) {
-  mileage = mileage || { perMember: {} };
+/* fault-attributed job expenses → cents docked from THAT member's payout (fairness among owners: a
+   mistake that cost the job is borne by who made it, not split across the crew). opts: { from, to } filter on the expense day. */
+function finFaultDeductions(jobs, opts) {
+  opts = opts || {}; var per = {};
+  (jobs || []).forEach(function (j) { if (!j || j.deleted) return;
+    (j.expenses || []).forEach(function (e) { if (!e || e.deleted || !e.faultMemberId) return;
+      var day = (typeof e.ts === "number") ? finDayOf(e.ts) : String(e.ts || "").slice(0, 10);
+      if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) return;
+      per[e.faultMemberId] = (per[e.faultMemberId] || 0) + Math.round((+e.amount || 0) * 100);
+    });
+  });
+  return { perMember: per };
+}
+/* per-member payout — field + sales + admin is the distribution; mileage is a reimbursement (not a
+   distribution); a fault deduction is subtracted (the member eats their own mistake). */
+function finPayouts(rollup, mileage, fault) {
+  mileage = mileage || { perMember: {} }; fault = fault || { perMember: {} };
   var ids = {}, rows = {};
   Object.keys((rollup && rollup.member) || {}).forEach(function (id) { ids[id] = 1; });
   Object.keys(mileage.perMember || {}).forEach(function (id) { ids[id] = 1; });
+  Object.keys(fault.perMember || {}).forEach(function (id) { ids[id] = 1; });
   Object.keys(ids).forEach(function (id) {
-    var m = (rollup.member && rollup.member[id]) || { field: 0, sales: 0, admin: 0 }, mil = mileage.perMember[id] || 0;
+    var m = (rollup.member && rollup.member[id]) || { field: 0, sales: 0, admin: 0 }, mil = mileage.perMember[id] || 0, flt = fault.perMember[id] || 0;
     var dist = (m.field || 0) + (m.sales || 0) + (m.admin || 0);
-    rows[id] = { field: m.field || 0, sales: m.sales || 0, admin: m.admin || 0, distribution: dist, mileage: mil, total: dist + mil };
+    rows[id] = { field: m.field || 0, sales: m.sales || 0, admin: m.admin || 0, distribution: dist, mileage: mil, fault: flt, total: dist + mil - flt };
   });
   return rows;
 }
