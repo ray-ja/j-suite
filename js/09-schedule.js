@@ -262,8 +262,10 @@ window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done
   if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);}else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
   if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();
   if(j.done&&typeof reviewPrompt==="function")reviewPrompt(id);};   /* Cap #2: ask for a Google review at the done-moment */
-window.delJob=function(id){if(!confirm("Delete this job?"))return;
-  const j=D().jobs.find(x=>x.id===id);j.deleted=true;touch(j);if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+(j.title||"job"));save();closeModal();render();};
+window.delJob=function(id){if(!confirm("Delete this job? It goes to the Archive for 60 days — you can restore it there."))return;
+  const j=D().jobs.find(x=>x.id===id);j.deleted=true;j.deletedAt=now();touch(j);if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+(j.title||"job"));save();
+  if(window.JOB_OPEN===id)window.JOB_OPEN=null;   // leave the now-deleted job page → back to the schedule
+  closeModal();render();};
 
 /* ===== Quote → Job: accept a quote with a date/time, creating a scheduled job =====
    Reachable from the quote flow (wizard). Reuses the crew picker (j_date/j_crew ids + JOBCREW)
