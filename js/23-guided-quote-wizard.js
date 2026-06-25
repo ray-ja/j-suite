@@ -156,6 +156,8 @@ window.wizPriceSlide=function(price,sub){price=parseFloat(price)||0;WZ.disc=Math
 window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};   // one service per quote — drop this build's lines; the builder keeps its state (WZ.junk/WZ.deep/WZ.brush). Hidden for the modal tools (paver/demo).
 
 /* ---- the single editable review/edit screen ---- */
+/* infer a market-band key from the line-item name — fallback for legacy quotes saved before bandKey was persisted */
+function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
 function reviewSummaryHTML(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
@@ -169,7 +171,7 @@ function reviewSummaryHTML(){
   const priceFor=rate=>Math.ceil((rate*personHrs/0.48+cost)/5)*5;   // price to clear a given $/hr each
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
   // market band (colored zones) — same look as the junk builder; the price marker slides as you discount
-  const _bk=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
+  const _bk=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),(WZ.items[0]&&guessBandKey(WZ.items[0].name)),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
   const B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk])?MARKET_BANDS[_bk]:{lo:150,hi:800};
   const bandLo=B.lo,bandHi=B.hi,bMid=(bandLo+bandHi)/2,bMax=bandHi*1.3;
   const z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,Math.max(1,total/bMax*100));
@@ -208,7 +210,7 @@ function wizReview(){
     <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
   // price dial — drag LEFT to discount (down to your good-value floor), RIGHT to mark up jobs you don't want (to +20%)
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const _bk2=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
+  const _bk2=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),(WZ.items[0]&&guessBandKey(WZ.items[0].name)),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
   const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk2])?MARKET_BANDS[_bk2]:{lo:150,hi:800};
   const floorP=Math.max(_B.lo,Math.ceil(_cost*1.2/5)*5),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
   h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
@@ -296,7 +298,7 @@ window.wizPersist=function(){
     propertyId:prop?prop.id:(base.propertyId||null),
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
-    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
+    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
