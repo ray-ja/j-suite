@@ -80,6 +80,9 @@ function rData(){
     <h2>Job costs (COGS)</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Material/hardware cost defaults behind each service — these drive the live <b>Cost / Profit / Margin</b> strip on every quote.</p>
       <button class="btn ghost" onclick="openCostsEditor()">Edit job costs (JSON)</button></div>
+    <h2>📍 Home base — ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">Where this business's jobs start &amp; end — sets pickup + travel mileage. Each business keeps its <b>own</b> home base (switch the business in the ⌄ account menu, top-right, to set the other one).</p>
+      <div class="row" style="align-items:center"><div class="grow"><strong>${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set to fix"):"Not set yet — pickup mileage needs this"}</strong></div><button class="btn acc sm" style="flex:0 0 auto" onclick="setHomeBase()">${(typeof homeBase==="function"&&homeBase()&&homeBase().address)?"Change":"Set"}</button></div></div>
     <h2>This device</h2>
     <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
     <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
