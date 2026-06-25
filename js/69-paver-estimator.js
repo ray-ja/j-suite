@@ -87,7 +87,7 @@ function pvItem(c){
     breakdown:[ (WZ.pv.L)+"×"+(WZ.pv.W)+" = "+Math.round(c.area)+" sq ft · labor $"+c.laborSqft+"/sq ft + materials at cost" ] };
 }
 function pvPickupItem(pk){
-  return { serviceId:"", name:"Materials pickup & delivery ("+pk.crew+"-person run)", unit:"job", price:pk.charge, qty:1, cost:pk.cost, bandKey:"paver", _pickup:true,
+  return { serviceId:"", name:"Materials pickup & delivery ("+pk.crew+"-person run)", unit:"job", price:pk.charge, qty:1, cost:pk.cost, bandKey:"paver", _pickup:true, estHours:pk.hoursEach, estCrew:pk.crew,
     notes:["Haul OUR materials from "+(pk.addr||"the supplier")+" → the site, then unload.",
       "~"+pk.tons+" ton ("+pk.weight+" lb) · "+pk.trips+" trip(s) · "+pk.crew+" people × ~"+pk.hoursEach+" hr — heavy manual handling, no forklift.",
       "Customer-service rate $"+pk.rate+"/hr each (softer than install). Customer can provide/haul materials to skip this."],

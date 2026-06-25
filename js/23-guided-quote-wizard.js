@@ -296,7 +296,7 @@ window.wizPersist=function(){
     propertyId:prop?prop.id:(base.propertyId||null),
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
-    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown})),
+    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
