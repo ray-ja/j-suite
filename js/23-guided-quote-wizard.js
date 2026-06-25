@@ -158,6 +158,22 @@ window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(
 /* ---- the single editable review/edit screen ---- */
 /* infer a market-band key from the line-item name — fallback for legacy quotes saved before bandKey was persisted */
 function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
+/* MARKET-VALUE band (paver): what the OPEN MARKET pays (national + a distinct OBX shade) with a $45/hr MARKER.
+   We price to the market and read whether the job clears Ray's time — we do NOT price up to his floor. */
+function pvBandHTML(mkt, total){
+  const pay45=+mkt.pay45||0;
+  const lo=Math.min(mkt.natLo,total)*0.92, hi=Math.max(mkt.obxHi,pay45,total)*1.06, span=(hi-lo)||1;
+  const pos=v=>Math.min(100,Math.max(0,(v-lo)/span*100));
+  const natL=pos(mkt.natLo),natR=pos(mkt.natHi),obxL=pos(mkt.obxLo),obxR=pos(mkt.obxHi),pP=pos(total),payP=pos(pay45);
+  const v=total<mkt.natLo?["below market — underpriced","#c1121f"]:total<=mkt.natHi?["fair national market","#1a7f37"]:total<=mkt.obxHi?["Outer Banks premium","#0e8a9a"]:["above OBX market","#c1121f"];
+  const worth = pay45>mkt.obxHi ? ` <span style="color:#c1121f">· ⚠ clears $45/hr only above market — fewer crew or pass</span>` : pay45>=mkt.natLo&&pay45<=mkt.obxHi ? ` <span style="color:#1a7f37">· ✓ $45/hr sits inside market</span>` : "";
+  return `<div style="position:relative;height:30px;margin-top:8px">
+    <div style="position:absolute;top:7px;left:${natL}%;width:${Math.max(1,natR-natL)}%;height:7px;background:#9ed89e;border-radius:4px"></div>
+    <div style="position:absolute;top:16px;left:${obxL}%;width:${Math.max(1,obxR-obxL)}%;height:7px;background:#46b8c8;border-radius:4px"></div>
+    <div style="position:absolute;top:1px;bottom:1px;left:${pP}%;width:3px;background:#0b1f3a"></div>
+    <div style="position:absolute;top:-3px;left:${payP}%;transform:translateX(-50%);font-size:9px;color:#b8860b;white-space:nowrap">▼$45/hr</div></div>
+  <div class="sub" style="font-size:11.5px;margin-top:2px"><b style="color:${v[1]}">📊 ${v[0]}</b> · <span style="color:#1a7f37">national ${money(mkt.natLo)}–${money(mkt.natHi)}</span> · <span style="color:#0e8a9a">OBX ${money(mkt.obxLo)}–${money(mkt.obxHi)}</span> · $45/hr at <b>${money(pay45)}</b>${worth}</div>`;
+}
 function reviewSummaryHTML(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
@@ -178,8 +194,8 @@ function reviewSummaryHTML(){
   const zone=total<bandLo?["underpriced","#c1121f"]:total<bMid?["good value","#1a7f37"]:total<=bandHi?["premium","#b8860b"]:["above market","#c1121f"];
   let h=`<div class="card" style="margin-top:10px">
     <div class="row" style="justify-content:space-between;align-items:baseline"><div class="nm" style="font-size:26px">${money(total)}</div><div class="sub" style="text-align:right">${WZ.disc>0?`was ${money(sub)} · −${money(WZ.disc)}${WZ.discPct?` (${WZ.discPct}%)`:""}`:WZ.disc<0?`marked up +${money(-WZ.disc)} over ${money(sub)}`:`hard cost ${money(cost)}`}<br>profit ${money(profit)}</div></div>
-    <div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
-    <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>
+    ${(WZ.items[0]&&WZ.items[0].mkt)?pvBandHTML(WZ.items[0].mkt,total):`<div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
+    <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>`}
     <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0?tCol:"var(--muted)"}">${hrs>0?money(Math.floor(perHr))+"/hr "+tIcon:"—"}</div></div></div>`;
   if(hrs>0){
     if(tier===2)h+=`<div class="sub" style="margin-top:4px;color:var(--accent)">✓ Clears your $${TGT}/hr floor — ${money(Math.floor(perHr))}/hr each.</div>`;
@@ -215,7 +231,10 @@ function wizReview(){
   // slider floor = cost+20% (never lose money), but cap the market-band floor so it can't exceed THIS job's price (a small/labor-only paver can sit below a whole-job band — that's the band's job to flag, not the slider's to break on).
   // slider ceiling = the higher of +20% markup OR the price that clears your $45/hr — so when a job is underpriced you can slide UP to fix it instead of being stuck at +20% of a bad number.
   const _ph=Math.max(1,WZ.crewN||1)*(WZ.hours||0), _payTarget=_ph>0?Math.ceil(((typeof QE!=="undefined"?QE.TAKE_HOME:45)*_ph/0.48+_cost)/5)*5:0;   // price that clears your $45/hr each
-  const floorP=Math.max(Math.ceil(_cost*1.2/5)*5,Math.min(_B.lo,Math.round(sub*0.6/5)*5)),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5,_payTarget),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
+  const _mk=WZ.items[0]&&WZ.items[0].mkt;   // paver carries a market band → the slider spans the MARKET (national→OBX), not Ray's $45/hr floor
+  const floorP=_mk?Math.max(Math.ceil(_cost*1.2/5)*5,Math.round(_mk.natLo*0.8/5)*5):Math.max(Math.ceil(_cost*1.2/5)*5,Math.min(_B.lo,Math.round(sub*0.6/5)*5));
+  const ceilP=_mk?Math.max(floorP+5,Math.round(_mk.obxHi/5)*5,Math.round(sub*1.2/5)*5):Math.max(floorP+5,Math.round(sub*1.2/5)*5,_payTarget);
+  const curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
   h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
     <input type="range" min="${floorP}" max="${ceilP}" step="5" value="${curP}" oninput="wizPriceSlide(this.value,${sub})" style="width:100%;accent-color:var(--accent)">
     <div class="row" style="justify-content:space-between"><span class="sub">◀ floor ${money(floorP)}</span><span class="sub">full ${money(sub)} · ${ceilP>Math.round(sub*1.2/5)*5?`up to ${money(ceilP)} (clears $45/hr)`:`+20% ${money(ceilP)}`} ▶</span></div>
@@ -301,7 +320,7 @@ window.wizPersist=function(){
     propertyId:prop?prop.id:(base.propertyId||null),
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
-    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
+    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"

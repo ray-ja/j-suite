@@ -26,6 +26,21 @@ const PAVER_LOAD_CAP      = 4000;
 const PAVER_HANDLE_PH_TON = 1.3;
 const PAVER_PICKUP_DEF_MI = 20;
 const PAVER_PICKUP_RATE_DEF = 30, PAVER_PICKUP_RATE_MIN = 20, PAVER_PICKUP_RATE_MAX = 45;
+const PAVER_OBX_PREMIUM = 1.22;   // Outer Banks premium over the national market (2026 research: scarce trades + island logistics + tourist demand, +20-25%; NOT cost-of-living, which is only +4%). Tunable.
+
+/* MARKET band for THIS job — what the OPEN MARKET pays, so we price to fair value (not to what Ray needs).
+   National labor-only $/sq ft (2026 research: ~$6-11, small jobs higher per ft / mobilization), × the OBX
+   premium, PLUS the actual pass-through materials + drive (same in the band AND the price, so they cancel
+   in the comparison). pay45 = the total price that clears Ray's $45/hr each — shown as a MARKER, not the price. */
+function pvMarketBand(c, pk){
+  const area = c.area;
+  const loS = area<150?7:area<350?6:5, hiS = area<150?11:area<350?9:7.5;
+  const labLo = Math.max(loS*area, 500), labHi = Math.max(hiS*area, 750);
+  const extras = c.materials + c.driveCharge + (pk && pk.has ? pk.charge : 0);
+  const r5 = n => Math.round(n/5)*5, ph = c.crew*c.hours, TGT = (typeof QE!=="undefined"?QE.TAKE_HOME:45);
+  const pay45 = r5(TGT*ph/0.48 + c.cost) + (pk && pk.has ? pk.charge : 0);
+  return { natLo:r5(labLo+extras), natHi:r5(labHi+extras), obxLo:r5(labLo*PAVER_OBX_PREMIUM+extras), obxHi:r5(labHi*PAVER_OBX_PREMIUM+extras), pay45:pay45 };
+}
 
 function pvPerim(){ const pv=WZ.pv||{}; return 2*((+pv.L||0)+(+pv.W||0)); }
 function pvMatQty(m, area){ return m.unit==="ft" ? pvPerim() : area; }
@@ -120,7 +135,7 @@ function wizPaverUI(){
   if (!WZ.pv) wizPaverStart();
   pvMatNorm();
   const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area), perim = pvPerim();
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk));
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
 
@@ -181,7 +196,7 @@ window.wizPvGeoPickup = function (addr) {
 window.wizPvPickRate = function (v) {
   if (!WZ.pv) return; WZ.pv.pickupRate = parseInt(v,10) || PAVER_PICKUP_RATE_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); WZ.items = items;
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk); WZ.items = items;
   const total = c.price + (pk.has ? pk.charge : 0);
   const info = document.getElementById("pv_pickinfo"); if (info) info.innerHTML = pvPickupInfoHTML(pk);
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
@@ -192,7 +207,7 @@ window.wizPvPickRate = function (v) {
 window.wizPvSqft = function (v) {
   if (!WZ.pv) return; WZ.pv.sqft = parseFloat(v) || PAVER_LABOR_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk));
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
   const tier = pvTier(c.perHr), tCol = ["var(--danger)","#b8860b","var(--accent)"][tier], tIcon = ["⚠","⚠","✓"][tier];
