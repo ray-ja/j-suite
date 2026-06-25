@@ -54,13 +54,17 @@ function pvPickup(area){
   const weight = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? pvMatQty(m,area)*m.lbs : 0), 0);
   if (weight <= 0) return { has:false, charge:0, cost:0, weight:0, tons:0, trips:0, miles:0, hoursEach:0, personHrs:0, rate:0, crew:0, exact:false, addr:"" };
   const rate = pv.pickupRate || PAVER_PICKUP_RATE_DEF, crew = Math.max(1, pv.pickupCrew || PAVER_PICKUP_CREW);
-  let loopMi = PAVER_PICKUP_DEF_MI, exact = false;
+  let loopMi = PAVER_PICKUP_DEF_MI, exact = false, legBP = null, legPS = null, suspect = false;
   const site = pvSiteLatLng();
   if (pv.pickupLat!=null && typeof driveFromBase==="function") {
-    const bp = driveFromBase(pv.pickupLat, pv.pickupLng);
-    let ps = 0; if (site && typeof haversineMi==="function") { const hv = haversineMi(pv.pickupLat, pv.pickupLng, site.lat, site.lng); if (hv!=null) ps = hv*1.3; }
-    const sb = site ? ((driveFromBase(site.lat, site.lng)||{}).miles||0) : 0;
-    if (bp) { loopMi = Math.round((bp.miles + ps + sb)*10)/10; exact = true; }
+    const bp = driveFromBase(pv.pickupLat, pv.pickupLng);                                   // home base → supplier
+    let ps = 0; if (site && typeof haversineMi==="function") { const hv = haversineMi(pv.pickupLat, pv.pickupLng, site.lat, site.lng); if (hv!=null) ps = Math.round(hv*1.3*10)/10; }  // supplier → job site
+    if (bp) {
+      legBP = bp.miles; legPS = ps;
+      const geoLoop = Math.round((bp.miles + ps)*10)/10;                                    // base → supplier → site (Ray's spec; no return-to-base leg)
+      if (geoLoop > 80 || bp.miles > 60) suspect = true;                                    // absurd for a local pickup → a coord geocoded wrong; fall back to the estimate instead of billing it
+      else { loopMi = geoLoop; exact = true; }
+    }
   }
   const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));   // vehicle capacity drives trips
   const driveMin = Math.round(loopMi/35*60);
@@ -70,7 +74,7 @@ function pvPickup(area){
   const mileage = Math.round(loopMi * trips * MIL);
   const labor = personHrs * (rate/0.48);
   const charge = Math.round((labor + mileage)/5)*5;
-  return { has:true, charge, cost:mileage, weight:Math.round(weight), tons:Math.round(weight/2000*10)/10, trips, miles:loopMi, exact, crew, personHrs:Math.round(personHrs*10)/10, hoursEach:Math.round(personHrs/crew*10)/10, rate, addr:pv.pickupAddr||"" };
+  return { has:true, charge, cost:mileage, weight:Math.round(weight), tons:Math.round(weight/2000*10)/10, trips, miles:loopMi, exact, legBP, legPS, suspect, crew, personHrs:Math.round(personHrs*10)/10, hoursEach:Math.round(personHrs/crew*10)/10, rate, addr:pv.pickupAddr||"" };
 }
 
 function pvCalc(){
@@ -144,9 +148,11 @@ function pvZone(labor){ const mid=(PAVER_LABOR_BAND.lo+PAVER_LABOR_BAND.hi)/2; r
 function pvCrewBtns(cur, fn){ return [1,2,3,4].map(n=>`<button class="btn ${cur===n?"acc":"ghost"} sm" style="flex:0 0 auto;min-width:34px;padding:4px 0" onclick="${fn}(${n})">${n}</button>`).join(""); }
 function pvPickupInfoHTML(pk){
   if (!pk.has) return "";
-  const ex = pk.exact ? "" : ` <span style="color:#b8860b">— est. ${pk.miles} mi; add the supplier address for exact</span>`;
+  const ex = (pk.exact||pk.suspect) ? "" : ` <span style="color:#b8860b">— est.; add the supplier address for exact</span>`;
+  const legs = (!pk.suspect && pk.legBP!=null && pk.legPS!=null) ? `base→supplier ${pk.legBP} mi + supplier→site ${pk.legPS} mi = ` : "";
+  const warn = pk.suspect ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The drive computed as base→supplier <b>${pk.legBP} mi</b> + supplier→site <b>${pk.legPS} mi</b> — way too far for a local pickup, so we're using a ~${pk.miles} mi estimate. One address geocoded to the wrong spot: re-check the supplier above and your <b>Home base</b> in Settings.</div>` : "";
   const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the supplier <b>deliver</b> (~$50–150 flat) usually beats self-haul once it's 2+ trips. Or have the customer provide it.</div>` : "";
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${pk.miles} mi loop × ${pk.trips}${ex}: mileage <b>${money(pk.cost)}</b><br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${legs}${pk.suspect?`~${pk.miles} mi (estimate)`:`${pk.miles} mi`}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
 }
 
 function wizPaverUI(){
