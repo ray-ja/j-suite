@@ -32,14 +32,12 @@ const PAVER_OBX_PREMIUM = 1.22;   // Outer Banks premium over the national marke
    National labor-only $/sq ft (2026 research: ~$6-11, small jobs higher per ft / mobilization), × the OBX
    premium, PLUS the actual pass-through materials + drive (same in the band AND the price, so they cancel
    in the comparison). pay45 = the total price that clears Ray's $45/hr each — shown as a MARKER, not the price. */
-function pvMarketBand(c, pk){
-  const area = c.area;
+function pvMarketBand(area, baseCost, personHrs){
+  area = Math.max(0, +area || 0); baseCost = +baseCost || 0; personHrs = Math.max(0, +personHrs || 0);
   const loS = area<150?7:area<350?6:5, hiS = area<150?11:area<350?9:7.5;
   const labLo = Math.max(loS*area, 500), labHi = Math.max(hiS*area, 750);
-  const extras = c.materials + c.driveCharge + (pk && pk.has ? pk.charge : 0);
-  const r5 = n => Math.round(n/5)*5, ph = c.crew*c.hours, TGT = (typeof QE!=="undefined"?QE.TAKE_HOME:45);
-  const pay45 = r5(TGT*ph/0.48 + c.cost) + (pk && pk.has ? pk.charge : 0);
-  return { natLo:r5(labLo+extras), natHi:r5(labHi+extras), obxLo:r5(labLo*PAVER_OBX_PREMIUM+extras), obxHi:r5(labHi*PAVER_OBX_PREMIUM+extras), pay45:pay45 };
+  const r5 = n => Math.round(n/5)*5, OBX = PAVER_OBX_PREMIUM, TGT = (typeof QE!=="undefined"?QE.TAKE_HOME:45);
+  return { natLo:r5(labLo+baseCost), natHi:r5(labHi+baseCost), obxLo:r5(labLo*OBX+baseCost), obxHi:r5(labHi*OBX+baseCost), pay45:r5(TGT*personHrs/0.48+baseCost) };
 }
 
 function pvPerim(){ const pv=WZ.pv||{}; return 2*((+pv.L||0)+(+pv.W||0)); }
@@ -120,6 +118,26 @@ window.wizPaverStart = function () {
 };
 window.openPaverEst = window.wizPaverStart;
 
+/* Change-order: re-open the full paver builder for a saved quote. If the quote carried its builder inputs
+   (WZ.pv, restored by openQuote) use them; otherwise reconstruct size/labor/crew/materials from the saved
+   line so old quotes are still fully editable. Keeps WZ.id + customer + any discount. */
+window.wizPaverEdit = function () {
+  if (typeof WZ === "undefined" || !WZ) return;
+  const it = WZ.items && WZ.items[0];
+  if (!WZ._pvFromSave && it) {
+    if (!WZ.pv) WZ.pv = { L:10, W:10, sqft:PAVER_LABOR_DEF, crew:2, mats:{}, matCosts:{}, pickupAddr:"", pickupLat:null, pickupLng:null, pickupRate:PAVER_PICKUP_RATE_DEF, pickupCrew:2 };
+    const bd = [].concat(it.breakdown||[]).join(" "), nt = [].concat(it.notes||[]).join(" ");
+    const lw = /(\d+(?:\.\d+)?)\s*×\s*(\d+(?:\.\d+)?)/.exec(bd); if (lw) { WZ.pv.L=+lw[1]; WZ.pv.W=+lw[2]; }
+    const ls = /labor \$(\d+(?:\.\d+)?)/.exec(bd); if (ls) WZ.pv.sqft=+ls[1];
+    const cr = /(\d+)-person crew/.exec(nt); if (cr) WZ.pv.crew=Math.max(1,Math.min(4,+cr[1]));
+    const theirs = ((/customer provides:\s*([^.]+)/i.exec(nt)||[])[1]||"").toLowerCase();
+    if (!WZ.pv.mats) WZ.pv.mats = {};
+    PAVER_MATS.forEach(m => { WZ.pv.mats[m.key] = theirs.indexOf(m.label.toLowerCase())>=0 ? "them" : "us"; });
+  }
+  pvMatNorm();
+  WZ.svc = "paver"; WZ.step = "calc"; if (typeof render==="function") render();
+};
+
 function pvTier(perHr){ const TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45), CF=(typeof QE!=="undefined"?QE.CREW_FLOOR:30); return perHr>=TGT?2 : perHr>=CF?1 : 0; }
 function pvPayNote(tier){ return tier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':tier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor — slide up.</span>'; }
 function pvZone(labor){ const mid=(PAVER_LABOR_BAND.lo+PAVER_LABOR_BAND.hi)/2; return labor<PAVER_LABOR_BAND.lo?["underpriced","#c1121f"]:labor<mid?["good value","#1a7f37"]:labor<=PAVER_LABOR_BAND.hi?["premium","#b8860b"]:["above market","#c1121f"]; }
@@ -135,7 +153,7 @@ function wizPaverUI(){
   if (!WZ.pv) wizPaverStart();
   pvMatNorm();
   const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area), perim = pvPerim();
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk);
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
 
@@ -196,7 +214,7 @@ window.wizPvGeoPickup = function (addr) {
 window.wizPvPickRate = function (v) {
   if (!WZ.pv) return; WZ.pv.pickupRate = parseInt(v,10) || PAVER_PICKUP_RATE_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk); WZ.items = items;
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours); WZ.items = items;
   const total = c.price + (pk.has ? pk.charge : 0);
   const info = document.getElementById("pv_pickinfo"); if (info) info.innerHTML = pvPickupInfoHTML(pk);
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
@@ -207,7 +225,7 @@ window.wizPvPickRate = function (v) {
 window.wizPvSqft = function (v) {
   if (!WZ.pv) return; WZ.pv.sqft = parseFloat(v) || PAVER_LABOR_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c, pk);
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
   const tier = pvTier(c.perHr), tCol = ["var(--danger)","#b8860b","var(--accent)"][tier], tIcon = ["⚠","⚠","✓"][tier];

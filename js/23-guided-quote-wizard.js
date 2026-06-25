@@ -34,6 +34,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
+    if(q.pv){WZ.pv=JSON.parse(JSON.stringify(q.pv));WZ._pvFromSave=true;}else{WZ._pvFromSave=false;}   // builder inputs for change-order editing
     WZ.step="review";
   } else {
     if(preset)WZ.items=JSON.parse(JSON.stringify(preset));
@@ -174,7 +175,20 @@ function pvBandHTML(mkt, total){
     <div style="position:absolute;top:-3px;left:${payP}%;transform:translateX(-50%);font-size:9px;color:#b8860b;white-space:nowrap">▼$45/hr</div></div>
   <div class="sub" style="font-size:11.5px;margin-top:2px"><b style="color:${v[1]}">📊 ${v[0]}</b> · <span style="color:#1a7f37">national ${money(mkt.natLo)}–${money(mkt.natHi)}</span> · <span style="color:#0e8a9a">OBX ${money(mkt.obxLo)}–${money(mkt.obxHi)}</span> · $45/hr at <b>${money(pay45)}</b>${worth}</div>`;
 }
+/* Recover the market band for paver quotes saved before mkt existed: parse the sq ft out of the line
+   breakdown and recompute it (in-memory; persists if re-saved). Idempotent — skips if mkt is already set. */
+function pvEnsureMkt(){
+  const it = WZ.items && WZ.items[0]; if(!it || it.mkt) return;
+  if(!(it.bandKey==="paver" || (typeof guessBandKey==="function" && guessBandKey(it.name)==="paver"))) return;
+  if(typeof pvMarketBand !== "function") return;
+  const m = /(\d+(?:\.\d+)?)\s*sq\.?\s?ft/i.exec([].concat(it.breakdown||[], it.notes||[]).join(" "));
+  const area = m ? Math.round(+m[1]) : 0; if(!(area>0)) return;
+  const cost = (typeof itemsCost==="function") ? itemsCost(WZ.items) : 0;
+  const personHrs = Math.max(1, WZ.crewN||1) * (WZ.hours||0);
+  it.mkt = pvMarketBand(area, cost, personHrs);
+}
 function reviewSummaryHTML(){
+  pvEnsureMkt();
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
   const cost=itemsCost(WZ.items);                        // hard cost only (disposal + mileage already baked into the line)
@@ -214,11 +228,14 @@ function wizReviewTotals(){
   wizAutosave();
 }
 function wizReview(){
-  if(!WZ.items)WZ.items=[];
+  if(!WZ.items)WZ.items=[]; pvEnsureMkt();
   if(typeof wizLockReconcile==="function")wizLockReconcile();
   const editing=!!WZ.id;
   let h=`<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">${editing?"Editing saved quote":"Review"}</div><div class="nm" style="font-size:18px">${editing?"Edit quote":"Review the quote"}</div></div><button class="btn ghost sm" onclick="exitWizard()">${editing?"Close":"Cancel"}</button></div>`;
   if(WZ.readonly)h=`<div class="lockbanner"><div class="grow">🔒 <b>${esc((WZ.lockBy&&WZ.lockBy.name)||"Someone")}</b>${WZ.lockBy&&WZ.lockBy.initials?` (${esc(WZ.lockBy.initials)})`:""} is editing this — read-only.</div><button class="btn acc sm" onclick="wizTakeOver()">Take over editing</button></div>`+h;
+  // back to the builder — change order: re-open the full paver tool (size · materials · crew · pickup), keeping the customer + quote id
+  if(editing && WZ.items[0] && (WZ.items[0].bandKey==="paver" || (typeof guessBandKey==="function" && guessBandKey(WZ.items[0].name)==="paver")) && typeof wizPaverEdit==="function")
+    h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizPaverEdit()">← Edit the paver build — size · materials · crew · pickup (change order)</button>`;
   // customer mini-form (full single flow — no bounce required)
   h+=`<div class="card"><label style="margin-top:0">Customer / name</label>
     <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
@@ -321,6 +338,7 @@ window.wizPersist=function(){
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
+    pv:(WZ.pv&&WZ.items[0]&&(WZ.items[0].bandKey==="paver"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="paver")))?JSON.parse(JSON.stringify(WZ.pv)):undefined,
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
