@@ -168,7 +168,8 @@ function reviewSummaryHTML(){
   const priceFor=rate=>Math.ceil((rate*personHrs/0.48+cost)/5)*5;   // price to clear a given $/hr each
   const notes=[].concat.apply([],WZ.items.map(it=>it.notes||[]));
   // market band (colored zones) — same look as the junk builder; the price marker slides as you discount
-  const B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk:{lo:150,hi:800};
+  const _bk=(typeof WZ!=="undefined"&&WZ.svc)||(WZ.items[0]&&WZ.items[0].bandKey)||"junk";
+  const B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk])?MARKET_BANDS[_bk]:{lo:150,hi:800};
   const bandLo=B.lo,bandHi=B.hi,bMid=(bandLo+bandHi)/2,bMax=bandHi*1.3;
   const z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,Math.max(1,total/bMax*100));
   const zone=total<bandLo?["underpriced","#c1121f"]:total<bMid?["good value","#1a7f37"]:total<=bandHi?["premium","#b8860b"]:["above market","#c1121f"];
@@ -206,7 +207,8 @@ function wizReview(){
     <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
   // price dial — drag LEFT to discount (down to your good-value floor), RIGHT to mark up jobs you don't want (to +20%)
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
-  const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk:{lo:150,hi:800};
+  const _bk2=(typeof WZ!=="undefined"&&WZ.svc)||(WZ.items[0]&&WZ.items[0].bandKey)||"junk";
+  const _cost=itemsCost(WZ.items),_B=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[_bk2])?MARKET_BANDS[_bk2]:{lo:150,hi:800};
   const floorP=Math.max(_B.lo,Math.ceil(_cost*1.2/5)*5),ceilP=Math.max(floorP+5,Math.round(sub*1.2/5)*5),curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
   h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
     <input type="range" min="${floorP}" max="${ceilP}" step="5" value="${curP}" oninput="wizPriceSlide(this.value,${sub})" style="width:100%;accent-color:var(--accent)">

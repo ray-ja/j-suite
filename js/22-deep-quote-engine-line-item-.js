@@ -277,15 +277,24 @@ function getDeepCfg(key){const base=JSON.parse(JSON.stringify(DEEP[key]));const 
   return base;}
 function deepItem(key,ik){const cfg=getDeepCfg(key);if(!cfg)return null;for(const g of cfg.groups)for(const it of g[1])if(it.k===ik)return it;return null;}
 function deepLines(key){if(!WZ.deep)WZ.deep={};if(!WZ.deep[key])WZ.deep[key]=[];return WZ.deep[key];}
+/* work-time estimate (minutes per unit) so EVERY service feeds the $45/$30 pay check, + default crew size.
+   Rough starting points — the owner calibrates via the crew toggle on the review and the rate editor. */
+const DEEP_MPU={"sq ft":0.12,"pane":2,"window":2,"linear ft":0.4,"visit":25,"tree":60,"acre":240,"cu yd":8,"hour":60,"person-hr":60,"door":20,"screen":2,"spout":6,"drop":6,"inch dia.":3,"bag":4,"can":3,"load":40,"dump load":40,"space":15,"spot":12,"camera":50,"node":40,"lock":35,"install":50,"system":100,"set":25,"run":25,"job":90,"each":12,"AP":40};
+const DEEP_MPU_DEFAULT=8;
+const DEEP_CREW={lotclear:2,brush:2,storm:2};   // most services are 1-person; heavy outdoor work defaults to 2
+/* shared static site drive from the linked property (round trip) — same model as junk/paver */
+function wizSiteDriveRT(){const pid=(typeof WZ!=="undefined")&&WZ.cust&&WZ.cust.propertyId;if(pid){const p=(D().properties||[]).find(x=>x.id===pid);if(p&&p.lat!=null&&typeof driveFromBase==="function"){const d=driveFromBase(p.lat,p.lng);if(d)return {rt:d.roundMiles,min:d.min*2};}}return {rt:20,min:30};}
+function wizDriveCharge(crew){const dr=wizSiteDriveRT(),L=(typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75),MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);return {charge:Math.round(dr.rt*MIL+(crew||1)*(dr.min/60)*L),miles:dr.rt,min:dr.min};}
 function calcDeep(key){
   const cfg=getDeepCfg(key);const lines=(WZ.deep&&WZ.deep[key])||[];const mods=(WZ.deepMods&&WZ.deepMods[key])||{};
-  let sub=0,fees=0,rows=[];
+  let sub=0,fees=0,mins=0,rows=[];
   lines.forEach(li=>{const it=deepItem(key,li.key);if(!it||!li.qty)return;
     let base=it.kind==="area"?tierPrice(li.qty,it.tiers):it.rate*li.qty;
     let pct=0,ml="";
     if(it.mods){const m=it.mods.find(x=>x[0]===(li.mod||it.mods[0][0]));if(m&&m[2]){pct=m[2];ml=" · "+m[1];}}
     const afterMod=base*(1+pct),fee=it.fee?it.fee*li.qty:0;
     sub+=afterMod;fees+=fee;
+    mins+=(+li.qty||0)*(DEEP_MPU[it.unit]!=null?DEEP_MPU[it.unit]:DEEP_MPU_DEFAULT);
     rows.push({label:it.label+" ×"+(+li.qty.toFixed(2))+" "+it.unit+ml,amt:Math.round(afterMod+fee)});
   });
   let mult=1,adds=0,modRows=[];
@@ -293,10 +302,10 @@ function calcDeep(key){
     if(md.t==="chk"){if(v){if(md.pct){mult*=(1+md.pct);modRows.push([md.label,(md.pct>0?"+":"")+Math.round(md.pct*100)+"%"]);}else if(md.flat){adds+=md.flat;modRows.push([md.label,"+"+money(md.flat)]);}}}
     else if(md.t==="sel"){const o=md.opts.find(x=>x[0]===v);if(o&&o[2]){if(o[2].pct){mult*=(1+o[2].pct);modRows.push([o[1],(o[2].pct>0?"+":"")+Math.round(o[2].pct*100)+"%"]);}else if(o[2].flat){adds+=o[2].flat;modRows.push([o[1],"+"+money(o[2].flat)]);}}}
   });
-  let total=sub*mult+fees+adds;
+  let total=sub*mult+fees+adds;mins*=mult;   // job-level mods (stories/access/etc.) scale the time too
   if(sub<=0&&fees<=0)total=0;else total=Math.max(cfg.min,rnd5(total));
   const unc=cfg.unc&&cfg.unc.pct?Math.round(total*cfg.unc.pct/5)*5:0;
-  return {sub:Math.round(sub),fees:Math.round(fees),rows:rows,modRows:modRows,total:total,unc:unc};
+  return {sub:Math.round(sub),fees:Math.round(fees),rows:rows,modRows:modRows,total:total,unc:unc,mins:Math.round(mins)};
 }
 function deepBreakHTML(c){let h=c.rows.length?c.rows.map(r=>`${esc(r.label)}: <b>${money(r.amt)}</b>`).join("<br>"):'<span class="muted">No items yet — tap + on what the job needs.</span>';
   if(c.modRows.length)h+=`<br><span class="muted">Adjustments —</span><br>`+c.modRows.map(m=>`${esc(m[0])}: <b>${m[1]}</b>`).join("<br>");
@@ -375,8 +384,17 @@ window.wizAddDeep=function(key){const c=calcDeep(key),cfg=getDeepCfg(key);if(!c.
   const notes=[];
   if(c.unc)notes.push("Estimate ±"+money(c.unc)+" — "+(cfg.unc.reason||"confirmed on site")+".");
   c.modRows.forEach(m=>notes.push(m[0]+" ("+m[1]+")."));
-  var deepCost=(c.fees||0)+Math.round((c.sub||0)*CONSUMABLES_PCT); // hard cost: per-item disposal/material fees + chemical/consumable allowance (no labor; mileage added per-quote)
-  WZ.items.push({name:cfg.label+" — "+c.rows.length+" line"+(c.rows.length>1?"s":""),price:c.total,cost:deepCost,notes:notes,qty:1,unit:"job",serviceId:"",breakdown:c.rows.map(r=>r.label+": "+money(r.amt))});
-  if(WZ.deep)WZ.deep[key]=[];if(WZ.deepMods)WZ.deepMods[key]={};WZ.step="pick";render();
+  // STATIC drive from the property address (folded into the price, like junk/paver) + crew default
+  const crew=(typeof DEEP_CREW!=="undefined"&&DEEP_CREW[key])||1;
+  const drv=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
+  const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
+  const driveMil=Math.round((drv.miles||0)*MIL);
+  if(drv.charge>0)notes.push("Incl. ~"+money(drv.charge)+" round-trip drive from the property address.");
+  var deepCost=(c.fees||0)+Math.round((c.sub||0)*CONSUMABLES_PCT)+driveMil; // hard cost: fees + consumables + drive mileage
+  WZ.items.push({name:cfg.label+" — "+c.rows.length+" line"+(c.rows.length>1?"s":""),price:c.total+drv.charge,cost:deepCost,notes:notes,qty:1,unit:"job",serviceId:"",bandKey:key,breakdown:c.rows.map(r=>r.label+": "+money(r.amt))});
+  // person-hours → lights up the $45/$30 pay check on the review: work-time + crew × (drive + 15-min on-site baseline)
+  const totalPH=((c.mins||0)/60)+crew*((drv.min||0)/60)+crew*(15/60);
+  WZ.crewN=crew; WZ.hours=totalPH>0?Math.round(totalPH/crew*10)/10:0;
+  if(WZ.deepMods)WZ.deepMods[key]={};WZ.step="review";render();   // keep WZ.deep[key] so the review's ← back returns to the build
 };
 
