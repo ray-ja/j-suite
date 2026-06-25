@@ -10,25 +10,36 @@ function driveBadge(lat,lng){ const d=driveFromBase(lat,lng); return d?`🚗 ~${
 /* coords for a job via its linked property */
 function jobLatLng(j){ if(!j)return null; const p=(j.propertyId&&typeof actProps==="function")?actProps().find(x=>x.id===j.propertyId):null; return (p&&p.lat!=null)?{lat:p.lat,lng:p.lng}:null; }
 
+function bizName(){ return (typeof S!=="undefined"&&S.biz==="jam")?"Jamieson Automation":"OBX Lot Solutions"; }
 function hbGeocode(hb){
   if(!hb||!hb.address)return;
   const g1=q=>fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(q)).then(r=>r.json());
   const coarse=hb.address.split(",").slice(1).join(",").trim();   // drop the street line → "town, ST zip" when an exact street isn't in OSM
+  const done=ok=>{ if(typeof touch==="function")touch(hb); save(); const st=document.getElementById("hb_status");
+    if(st){ st.innerHTML = ok
+      ? `<span style="color:var(--accent)">📍 Found: ${esc(hb.resolved||"")}</span><br><span class="sub">If that's the wrong place, fix the address and re-save.</span>`
+      : `<span style="color:var(--danger)">Couldn't locate that — add the town + ZIP (e.g. "Kill Devil Hills, NC 27948").</span>`; }
+    else if(typeof render==="function")render(); };
   g1(hb.address).then(g=>(g&&g[0])?g:(coarse&&coarse!==hb.address?g1(coarse):null))
-    .then(g=>{ if(g&&g[0]){ hb.lat=+g[0].lat; hb.lng=+g[0].lon; if(typeof touch==="function")touch(hb); save(); if(typeof render==="function")render(); } }).catch(function(){});
+    .then(g=>{ if(g&&g[0]){ hb.lat=+g[0].lat; hb.lng=+g[0].lon; hb.resolved=g[0].display_name||""; done(true); } else { hb.lat=null; hb.lng=null; hb.resolved=""; done(false); } })
+    .catch(function(){ done(false); });
 }
 window.setHomeBase=function(){
-  const hb=homeBase();
-  modal("Home base address",`<p class="muted" style="margin-bottom:8px">Jobs start &amp; end here — used for drive-time + cost estimates.</p>
+  const hb=homeBase(), bn=bizName();
+  const stat = hb ? (hb.lat!=null
+      ? `<span style="color:var(--accent)">📍 Found: ${esc(hb.resolved||hb.address||"")}</span><br><span class="sub">If that's the wrong place, fix the address and re-save.</span>`
+      : `<span style="color:var(--danger)">Not located yet — check the address (add town + ZIP).</span>`) : "";
+  modal("Home base — "+bn,`<p class="muted" style="margin-bottom:8px"><b>${bn}</b> jobs start &amp; end here — drive-time + pickup mileage use it. Each business keeps its <b>own</b> home base; switch the Business in Settings to set the other one.</p>
     <label>Address</label><input id="hb_addr" value="${esc(hb?hb.address:"")}" placeholder="street, town, ST zip" autocomplete="off">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveHomeBase()">Save &amp; locate</button>
-    ${hb?(hb.lat!=null?`<div class="sub" style="margin-top:8px">📍 Located.</div>`:`<div class="sub" style="margin-top:8px;color:var(--danger)">Not located yet — check the address.</div>`):""}`);
+    <div id="hb_status" style="margin-top:8px">${stat}</div>`);
 };
 window.saveHomeBase=function(){
   const addr=(val("hb_addr")||"").trim(); if(!addr){ alert("Enter an address."); return; }
   const d=D(); if(!Array.isArray(d.docs))d.docs=[];
   let hb=d.docs.find(x=>x&&x.id==="homeBase");
-  if(!hb){ hb={id:"homeBase",address:addr,lat:null,lng:null,updatedAt:now()}; d.docs.push(hb); } else { hb.address=addr; hb.lat=null; hb.lng=null; }
-  if(typeof touch==="function")touch(hb); save(); if(typeof closeModal==="function")closeModal(); if(typeof render==="function")render();
+  if(!hb){ hb={id:"homeBase",address:addr,lat:null,lng:null,resolved:"",updatedAt:now()}; d.docs.push(hb); } else { hb.address=addr; hb.lat=null; hb.lng=null; hb.resolved=""; }
+  if(typeof touch==="function")touch(hb); save();
+  const st=document.getElementById("hb_status"); if(st)st.innerHTML='<span class="sub">Locating…</span>';   // keep the modal open so you SEE where it landed
   hbGeocode(hb);
 };
