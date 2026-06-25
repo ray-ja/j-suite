@@ -1,19 +1,20 @@
 /* ---------- PAVER PATIO / PAD — ONE-PAGE QUOTE MACHINE ----------
    PRICING MODEL (Ray):
    - PRICE = LABOR only. The $/sq ft slider + band are the worth of your INSTALL work, never the materials.
-   - EVERY material (pavers, base rock, bedding sand, underlayment) is its own selector + its own EDITABLE
-     $/sq ft (defaults are guesses — a specific paver costs what it costs). Customer provides it, or we do;
-     when WE do, it's a PURE PASS-THROUGH (at cost, zero margin). Default paver is a premium "high end of
-     good value" (we don't put our name on crappy pavers — cheap is the customer's call); drop it if asked.
-   - PICKUP is its own weight-driven mini-quote → a real sub-job. Whatever WE provide, we haul. Sized by
-     WEIGHT of the we-provide materials → trips, at a SELECTABLE crew (1/2/3/4 — light run vs an insane load)
-     and a softer "customer-service" rate you slide ($20-45/hr take-home). Customer provides all → no pickup.
-   - PAVING crew is also selectable (1-4). All costs/weights/rates are tunable; the pay readouts are the guide. */
+   - EVERY material is its own selector + its own EDITABLE price (defaults are estimates — prices change, so
+     they're knobs, not presets). Customer provides it, or we do; when WE do, it's a PURE PASS-THROUGH (at
+     cost, zero margin). Materials are unit-aware: most are $/sq ft, EDGING is $/linear ft (the perimeter).
+     Defaults calibrated from real OBX Home Depot prices (2026-06): bedding sand ~$1/sq ft ($6/0.5 cu ft),
+     base rock ~$3/sq ft (3-4" — bulk beats bagged on big jobs), polymeric joint sand ~$0.50/sq ft
+     ($30/35 lb bag), underlayment ~$0.20/sq ft, edging ~$1.75/ft ($77/48 ft), premium pavers $8/sq ft.
+   - PICKUP is its own weight-driven mini-quote → a real sub-job (selectable crew + softer rate). All editable. */
 const PAVER_MATS = [
-  { key:"pavers", label:"Pavers",             cost:8.00, lbs:22 },   // premium "high end of good value" default (editable)
-  { key:"rock",   label:"Base rock",          cost:2.00, lbs:30 },
-  { key:"sand",   label:"Bedding / poly sand", cost:1.00, lbs:9 },
-  { key:"fabric", label:"Underlayment fabric", cost:0.35, lbs:0.2 }
+  { key:"pavers", label:"Pavers",              unit:"sqft", cost:8.00, lbs:22 },   // premium "high end of good value" (we don't put our name on crap)
+  { key:"rock",   label:"Base rock (crushed)", unit:"sqft", cost:3.00, lbs:30 },   // ~3-4" base; bulk is cheaper than bagged on big jobs
+  { key:"bed",    label:"Bedding sand",        unit:"sqft", cost:1.00, lbs:9 },    // ~1" leveling sand (~$6/0.5 cu ft)
+  { key:"poly",   label:"Polymeric joint sand", unit:"sqft", cost:0.50, lbs:2 },   // swept into joints (~$30/35 lb bag ≈ 60 sq ft)
+  { key:"fabric", label:"Underlayment fabric", unit:"sqft", cost:0.20, lbs:0.2 },  // weed/moisture barrier
+  { key:"edge",   label:"Paver edging",        unit:"ft",   cost:1.75, lbs:0.3 }   // per PERIMETER foot (~$77/48 ft)
 ];
 const PAVER_DIG_IN     = 8;
 const PAVER_DIRT_TON   = 45;
@@ -26,6 +27,9 @@ const PAVER_HANDLE_PH_TON = 1.3;
 const PAVER_PICKUP_DEF_MI = 20;
 const PAVER_PICKUP_RATE_DEF = 30, PAVER_PICKUP_RATE_MIN = 20, PAVER_PICKUP_RATE_MAX = 45;
 
+function pvPerim(){ const pv=WZ.pv||{}; return 2*((+pv.L||0)+(+pv.W||0)); }
+function pvMatQty(m, area){ return m.unit==="ft" ? pvPerim() : area; }
+function pvMatNorm(){ if(!WZ.pv)return; if(!WZ.pv.mats)WZ.pv.mats={}; PAVER_MATS.forEach(m=>{ if(WZ.pv.mats[m.key]==null)WZ.pv.mats[m.key]="us"; }); }
 function pvMats(){ return (WZ.pv && WZ.pv.mats) || {}; }
 function pvWeProvide(key){ return pvMats()[key] === "us"; }
 function pvMatCost(key){ const o=(WZ.pv&&WZ.pv.matCosts)||{}; if(o[key]!=null) return o[key]; const m=PAVER_MATS.find(x=>x.key===key); return m?m.cost:0; }
@@ -34,7 +38,7 @@ function pvSiteLatLng(){ const pid=(typeof WZ!=="undefined")&&WZ.cust&&WZ.cust.p
 function pvPickup(area){
   const pv = WZ.pv || {};
   const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);
-  const weight = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? area*m.lbs : 0), 0);
+  const weight = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? pvMatQty(m,area)*m.lbs : 0), 0);
   if (weight <= 0) return { has:false, charge:0, cost:0, weight:0, tons:0, trips:0, miles:0, hoursEach:0, personHrs:0, rate:0, crew:0, exact:false, addr:"" };
   const rate = pv.pickupRate || PAVER_PICKUP_RATE_DEF, crew = Math.max(1, pv.pickupCrew || PAVER_PICKUP_CREW);
   let loopMi = PAVER_PICKUP_DEF_MI, exact = false;
@@ -45,7 +49,7 @@ function pvPickup(area){
     const sb = site ? ((driveFromBase(site.lat, site.lng)||{}).miles||0) : 0;
     if (bp) { loopMi = Math.round((bp.miles + ps + sb)*10)/10; exact = true; }
   }
-  const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));   // vehicle capacity drives trip count (crew drives handling speed + drive labor, not capacity)
+  const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));   // vehicle capacity drives trips
   const driveMin = Math.round(loopMi/35*60);
   const handlePH = (weight/2000) * PAVER_HANDLE_PH_TON;
   const drivePH = crew * trips * (driveMin/60);
@@ -62,7 +66,7 @@ function pvCalc(){
   const MIL = (typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED = (typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75);
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
   const laborPrice = Math.round(area*laborSqft/25)*25;
-  const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(area*pvMatCost(m.key)) : 0), 0);
+  const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(pvMatQty(m,area)*pvMatCost(m.key)) : 0), 0);
   const spoilTip = Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);
   const materials = matCost + spoilTip;
   const price = laborPrice + materials + driveCharge;
@@ -78,7 +82,7 @@ function pvCalc(){
 function pvItem(c){
   const ours = PAVER_MATS.filter(m=>pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
   const theirs = PAVER_MATS.filter(m=>!pvWeProvide(m.key)).map(m=>m.label.toLowerCase());
-  const notes = ["Full premium build — base + bedding + edging + excavate/haul spoil.",
+  const notes = ["Full premium build — base + bedding + polymeric joints + edging + excavate/haul spoil.",
     "Labor (the install): $"+c.laborSqft+"/sq ft · "+c.crew+"-person crew.",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")];
   return { serviceId:"", name:"Paver patio / pad install (full premium build)", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"paver",
@@ -94,8 +98,8 @@ function pvPickupItem(pk){
 
 window.wizPaverStart = function () {
   if (typeof WZ === "undefined" || !WZ) return;
-  if (!WZ.pv) WZ.pv = { L:10, W:10, sqft:PAVER_LABOR_DEF, crew:2, mats:{ pavers:"us", rock:"us", sand:"us", fabric:"us" }, matCosts:{}, pickupAddr:"", pickupLat:null, pickupLng:null, pickupRate:PAVER_PICKUP_RATE_DEF, pickupCrew:2 };
-  if (!WZ.pv.mats) WZ.pv.mats = { pavers:"us", rock:"us", sand:"us", fabric:"us" };
+  if (!WZ.pv) WZ.pv = { L:10, W:10, sqft:PAVER_LABOR_DEF, crew:2, mats:{}, matCosts:{}, pickupAddr:"", pickupLat:null, pickupLng:null, pickupRate:PAVER_PICKUP_RATE_DEF, pickupCrew:2 };
+  pvMatNorm();
   WZ.svc = "paver"; WZ.disc = 0; WZ.discPct = null;
   WZ.step = "calc"; if (typeof render==="function") render();
 };
@@ -114,8 +118,8 @@ function pvPickupInfoHTML(pk){
 
 function wizPaverUI(){
   if (!WZ.pv) wizPaverStart();
-  if (WZ.pv && !WZ.pv.mats) WZ.pv.mats = { pavers:"us", rock:"us", sand:"us", fabric:"us" };
-  const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area);
+  pvMatNorm();
+  const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area), perim = pvPerim();
   const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk));
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
@@ -130,11 +134,12 @@ function wizPaverUI(){
   h += `<div class="card"><div class="row" style="gap:8px">
     <div class="grow"><label style="margin-top:0">Length (ft)</label><input type="number" inputmode="decimal" value="${pv.L}" min="1" oninput="wizPvField('L',this.value)"></div>
     <div class="grow"><label style="margin-top:0">Width (ft)</label><input type="number" inputmode="decimal" value="${pv.W}" min="1" oninput="wizPvField('W',this.value)"></div>
-    <div style="align-self:flex-end;padding-bottom:8px;font-weight:800">= ${Math.round(c.area)} sq ft</div></div></div>`;
-  // per-material selectors with EDITABLE $/sq ft
+    <div style="align-self:flex-end;padding-bottom:8px;font-weight:800">= ${Math.round(c.area)} sq ft</div></div>
+    <div class="sub" style="margin-top:2px">perimeter ${Math.round(perim)} ft (edging)</div></div>`;
+  // per-material selectors with EDITABLE price (unit-aware)
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧱 Materials — who provides each? <span class="sub" style="font-weight:400">we = pass-through at cost</span></div>`;
-  h += PAVER_MATS.map(m=>{ const we = pvMats()[m.key]==="us", cost = pvMatCost(m.key); return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="0.25" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizPvMatCost('${m.key}',this.value)">/sq ft <span class="sub">= ${money(Math.round(c.area*cost))}</span>`:`<span class="sub">~$${cost}/sq ft</span>`}</div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
-  h += `<div class="sub" style="margin-top:4px">Defaults are estimates — change any to the real price. Quote premium pavers; drop only if they ask for cheaper. Your labor price never changes with these.</div></div>`;
+  h += PAVER_MATS.map(m=>{ const we = pvMats()[m.key]==="us", cost = pvMatCost(m.key), qty = m.unit==="ft"?perim:c.area, u = m.unit==="ft"?"ft":"sq ft"; return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="0.25" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizPvMatCost('${m.key}',this.value)">/${u} <span class="sub">= ${money(Math.round(qty*cost))}</span>`:`<span class="sub">~$${cost}/${u}</span>`}</div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
+  h += `<div class="sub" style="margin-top:4px">Defaults are real-price estimates — change any to the actual cost. Quote premium pavers; drop only if they ask for cheaper. Your labor price never changes with these.</div></div>`;
   // pickup mini-quote
   if (pk.has) h += `<div class="card" style="border-left:4px solid #b8860b"><div style="font-weight:800;margin-bottom:4px">🚚 Materials pickup — its own run</div>
     <label style="margin-top:0">Where are we picking up?</label>
