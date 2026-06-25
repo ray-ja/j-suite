@@ -354,6 +354,18 @@ function ceoProjection(store, opts) {
     return { ok: true, asOf, today, biz: opts.biz || "all", crew, availabilityWeek, jobs, todos, openShifts, unscheduledQuotes, resale, revenue, knowledge, finance };
   }
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
+  // filed receipts that Cap hasn't read yet (has a receiptId, no capRead) — for the background receipt reader
+  if (view === "receipts") {
+    const receipts = [], _bz = ["obx", "jam"].filter(b => store[b]);
+    _bz.forEach(b => {
+      (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) {
+        (j.expenses || []).forEach(e => { if (e && !e.deleted && e.receiptId && !e.capRead) receipts.push({ biz: b, type: "jobexp", jobId: j.id, id: e.id, receiptId: e.receiptId, amount: +e.amount || 0, vendor: e.vendor || "", desc: e.desc || "" }); });
+        (j.materials || []).forEach(e => { if (e && !e.deleted && e.receiptId && !e.capRead) receipts.push({ biz: b, type: "jobmat", jobId: j.id, id: e.id, receiptId: e.receiptId, amount: +e.amount || 0, vendor: e.vendor || "", desc: e.desc || "" }); });
+      }});
+      (((store[b] || {}).expenses) || []).forEach(e => { if (e && !e.deleted && e.receiptId && !e.capRead) receipts.push({ biz: b, type: "biz", jobId: null, id: e.id, receiptId: e.receiptId, amount: +e.amount || 0, vendor: e.vendor || "", desc: e.note || "" }); });
+    });
+    return { ok: true, asOf, biz: opts.biz || "all", receipts: receipts.slice(0, 40) };
+  }
   if (view === "crew") return { ok: true, asOf, biz: full.biz, crew, availabilityWeek, counts };
   if (view === "jobs") return { ok: true, asOf, biz: full.biz, openJobs, counts };
   if (view === "quotes") return { ok: true, asOf, biz: full.biz, openQuotes, counts };
@@ -394,6 +406,21 @@ function ceoSetReceipt(store, biz, msgId, kind) {
   if (kind === "read") { m.capRead = t; if (!m.capReceived) m.capReceived = t; }
   else m.capReceived = t;
   m.updatedAt = t;
+  return { ok: true, biz: b };
+}
+
+/* Cap's NON-DESTRUCTIVE receipt annotation: writes ONLY a `capRead` field (Cap's reading of the image) onto
+   one receipt-bearing record. Structurally cannot touch the user's entry, money, or any other field/collection. */
+function ceoSetCapRead(store, p) {
+  const b = (p.biz === "jam") ? "jam" : "obx";
+  const src = (p.capRead && typeof p.capRead === "object") ? p.capRead : null;
+  if (!src) return { ok: false, error: "no capRead" };
+  const cr = { date: String(src.date || "").slice(0, 10), vendor: String(src.vendor || "").slice(0, 80), amount: +src.amount || 0, match: src.match !== false, note: String(src.note || "").slice(0, 200), ts: Date.now() };
+  let rec = null;
+  if (p.type === "biz") { rec = (((store[b] || {}).expenses) || []).find(x => x && x.id === p.id && !x.deleted); }
+  else { const j = (((store[b] || {}).jobs) || []).find(x => x && x.id === p.jobId && !x.deleted); if (j) { const arr = (p.type === "jobmat") ? (j.materials || []) : (j.expenses || []); rec = arr.find(x => x && x.id === p.id && !x.deleted); if (rec) j.updatedAt = Date.now(); } }
+  if (!rec) return { ok: false, error: "record not found" };
+  rec.capRead = cr; rec.updatedAt = Date.now();
   return { ok: true, biz: b };
 }
 
@@ -720,6 +747,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // SCOPED CEO write — POST /api/ceo/annotate {biz,type,jobId,id,capRead}. Writes ONLY Cap's capRead reading
+  // onto one receipt record. Token = CEO_WRITE_TOKEN. Cannot touch the entry, money, or anything else.
+  if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/annotate")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let body = "";
+    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
+      if (!p || typeof p !== "object") p = {};
+      const store = loadStore();
+      const r = ceoSetCapRead(store, p);
+      if (!r.ok) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: r.error })); }
+      saveStore(store);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"ok":true}');
+    });
+    return;
+  }
+
   // SCOPED CEO write — POST /api/ceo/propose. Token = CEO_WRITE_TOKEN. Queues an approval (pendingChanges)
   // ONLY — whitelist-enforced, cannot apply or touch any business collection. Owner approves in-app.
   if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/propose")) {
@@ -962,4 +1010,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
