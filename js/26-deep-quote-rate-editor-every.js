@@ -61,6 +61,7 @@ function rData(){
         <div class="row" style="gap:8px;margin-top:12px"><button class="btn grow" onclick="saveSync()">Save settings</button><button class="btn ghost grow" onclick="syncNow()">Sync now</button></div>
       </details>
     </div>
+    <div class="card" style="border-left:4px solid var(--accent)"><div class="row" style="align-items:center"><div class="grow"><strong>🔄 Get the latest version</strong><div class="sub" style="white-space:normal">If a fix or change isn't showing up, tap this — it force-reloads the newest build (clears the app cache; your data is safe).</div></div><button class="btn acc sm" style="flex:0 0 auto" onclick="forceUpdate()">Update now</button></div></div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
     <h2>Team</h2>

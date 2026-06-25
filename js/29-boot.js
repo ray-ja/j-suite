@@ -54,4 +54,14 @@ if("serviceWorker" in navigator && window.isSecureContext){
     }
   });
 }
+/* Manual "get the latest" escape hatch — unregister the SW + clear its caches + reload. For iOS PWAs
+   that won't auto-update. Touches ONLY the SW cache (Cache Storage); never your data (localStorage). */
+window.forceUpdate=function(){
+  if(!confirm("Reload with the latest version? This clears the app cache only — your data is safe (it syncs to the server)."))return;
+  (async function(){
+    try{ if("serviceWorker" in navigator){ var regs=await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(function(r){return r.unregister();})); } }catch(e){}
+    try{ if(window.caches){ var ks=await caches.keys(); await Promise.all(ks.map(function(k){return caches.delete(k);})); } }catch(e){}
+    location.reload();
+  })();
+};
 /* v2 */
