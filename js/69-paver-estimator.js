@@ -33,10 +33,10 @@ const PAVER_OBX_PREMIUM = 1.22;   // Outer Banks premium over the national marke
    National labor-only $/sq ft (2026 research: ~$6-11, small jobs higher per ft / mobilization), × the OBX
    premium, PLUS the actual pass-through materials + drive (same in the band AND the price, so they cancel
    in the comparison). pay45 = the total price that clears Ray's $45/hr each — shown as a MARKER, not the price. */
-function pvMarketBand(area, baseCost, personHrs){
-  area = Math.max(0, +area || 0); baseCost = +baseCost || 0; personHrs = Math.max(0, +personHrs || 0);
+function pvMarketBand(area, baseCost, personHrs, cplx){
+  area = Math.max(0, +area || 0); baseCost = +baseCost || 0; personHrs = Math.max(0, +personHrs || 0); cplx = Math.max(1, +cplx || 1);
   const loS = area<150?7:area<350?6:5, hiS = area<150?11:area<350?9:7.5;
-  const labLo = Math.max(loS*area, 500), labHi = Math.max(hiS*area, 750);
+  const labLo = Math.max(loS*area, 500)*cplx, labHi = Math.max(hiS*area, 750)*cplx;   // the market charges more for hard shapes too — scale the band so the marker still reads right
   const r5 = n => Math.round(n/5)*5, OBX = PAVER_OBX_PREMIUM, TGT = (typeof QE!=="undefined"?QE.TAKE_HOME:45);
   return { natLo:r5(labLo+baseCost), natHi:r5(labHi+baseCost), obxLo:r5(labLo*OBX+baseCost), obxHi:r5(labHi*OBX+baseCost), pay45:r5(TGT*personHrs/0.48+baseCost) };
 }
@@ -85,7 +85,8 @@ function pvCalc(){
   const dr = (typeof wizSiteDriveRT==="function") ? wizSiteDriveRT() : {rt:20,min:30};
   const MIL = (typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED = (typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75);
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
-  const laborPrice = Math.round(area*laborSqft/25)*25;
+  const cplx = Math.max(1, pv.complexity || 1);   // shape difficulty: 1 simple rectangle · 1.25 cuts/angles · 1.5 curves/transitions — scales labor TIME + PRICE
+  const laborPrice = Math.round(area*laborSqft*cplx/25)*25;
   const matCost = PAVER_MATS.reduce((s,m)=> s + (pvWeProvide(m.key) ? Math.round(pvMatQty(m,area)*pvMatCost(m.key)) : 0), 0);
   const spoilTip = (pv.haulSpoil === false) ? 0 : Math.round(area*(PAVER_DIG_IN/12)/27*1.35*PAVER_DIRT_TON);   // customer keeping the dirt → no haul-off cost
   const materials = matCost + spoilTip;
@@ -93,10 +94,10 @@ function pvCalc(){
   const cost = materials + driveMileage;
   const profit = price - cost, allInSqft = area>0 ? Math.round(price/area) : 0;
   const mpu = area<150 ? 6 : area<300 ? 5 : 4.5;
-  const workMin = Math.round(area*mpu) + 120;
+  const workMin = Math.round(area*mpu*cplx) + 120;   // harder shapes take longer to lay; mobilization is fixed
   const crew = Math.max(1, pv.crew || 2), totalPH = (workMin/60) + crew*(dr.min/60) + crew*(20/60), hours = crew>0?totalPH/crew:totalPH;
   const fieldPool = Math.max(0, profit)*0.48, perHr = hours>0 ? fieldPool/crew/hours : 0;
-  return { area, laborSqft, laborPrice, matCost, spoilTip, materials, allInSqft, price, cost, driveCharge, dr, crew, hours: Math.round(hours*10)/10, perHr: Math.floor(perHr), profit };
+  return { area, laborSqft, complexity:cplx, laborPrice, matCost, spoilTip, materials, allInSqft, price, cost, driveCharge, dr, crew, hours: Math.round(hours*10)/10, perHr: Math.floor(perHr), profit };
 }
 
 function pvItem(c){
@@ -149,6 +150,7 @@ function pvTier(perHr){ const TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45), CF=
 function pvPayNote(tier){ return tier===2?'<span style="color:var(--accent)">✓ Clears your $45/hr floor.</span>':tier===1?'<span style="color:#b8860b">🟡 Below $45 but clears the $30/hr crew floor — good for Chase/Pierce.</span>':'<span style="color:var(--danger)">🔴 Below the $30/hr crew floor — slide up.</span>'; }
 function pvZone(labor){ const mid=(PAVER_LABOR_BAND.lo+PAVER_LABOR_BAND.hi)/2; return labor<PAVER_LABOR_BAND.lo?["underpriced","#c1121f"]:labor<mid?["good value","#1a7f37"]:labor<=PAVER_LABOR_BAND.hi?["premium","#b8860b"]:["above market","#c1121f"]; }
 function pvCrewBtns(cur, fn){ return [1,2,3,4].map(n=>`<button class="btn ${cur===n?"acc":"ghost"} sm" style="flex:0 0 auto;min-width:34px;padding:4px 0" onclick="${fn}(${n})">${n}</button>`).join(""); }
+function pvCplxBtns(cur){ return [[1,"▢ Simple"],[1.25,"Cuts & angles"],[1.5,"Curves & transitions"]].map(o=>`<button class="btn ${cur===o[0]?"acc":"ghost"} sm" style="flex:1 1 0;padding:5px 4px;font-size:11.5px;white-space:normal;line-height:1.15" onclick="wizPvComplexity(${o[0]})">${o[1]}</button>`).join(""); }
 function pvPickupInfoHTML(pk){
   if (!pk.has) return "";
   const ex = (pk.exact||pk.suspect) ? "" : ` <span style="color:#b8860b">— est.; add the supplier address for exact</span>`;
@@ -164,7 +166,7 @@ function wizPaverUI(){
   if (!WZ.pv) wizPaverStart();
   pvMatNorm();
   const pv = WZ.pv, c = pvCalc(), pk = pvPickup(c.area), perim = pvPerim();
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours);
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours, c.complexity);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
 
@@ -180,6 +182,8 @@ function wizPaverUI(){
     <div class="grow"><label style="margin-top:0">Width (ft)</label><input type="number" inputmode="decimal" value="${pv.W}" min="1" oninput="wizPvField('W',this.value)"></div>
     <div style="align-self:flex-end;padding-bottom:8px;font-weight:800">= ${Math.round(c.area)} sq ft</div></div>
     <div class="sub" style="margin-top:2px">perimeter ${Math.round(perim)} ft (edging)</div></div>`;
+  // shape / layout complexity — a skinny-into-wide or curvy run is more layout + cuts than a clean square
+  h += `<div class="card" style="padding:10px"><div class="grow" style="margin-bottom:6px"><b>Shape / layout</b> <span class="sub">cuts, curves &amp; transitions = more layout + labor</span></div><div class="row" style="gap:6px">${pvCplxBtns(c.complexity)}</div>${c.complexity>1?`<div class="sub" style="margin-top:6px;color:#b8860b">+${Math.round((c.complexity-1)*100)}% on labor time &amp; price — a skinny-into-wide or curvy run isn't a clean square.</div>`:""}</div>`;
   // per-material selectors with EDITABLE price (unit-aware)
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧱 Materials — who provides each? <span class="sub" style="font-weight:400">we = pass-through at cost</span></div>`;
   h += PAVER_MATS.map(m=>{ const we = pvMats()[m.key]==="us", cost = pvMatCost(m.key), qty = m.unit==="ft"?perim:c.area, u = m.unit==="ft"?"ft":"sq ft"; return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="0.25" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizPvMatCost('${m.key}',this.value)">/${u} <span class="sub">= ${money(Math.round(qty*cost))}</span>`:`<span class="sub">~$${cost}/${u}</span>`}</div>${[["us","We get it"],["cust","They provide"]].map(o=>`<button class="btn ${pvMats()[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizPvMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
@@ -205,7 +209,7 @@ function wizPaverUI(){
   return h;
 }
 function pvBreakHTML(c, pk){
-  let s = `<div style="font-size:13px;line-height:1.9">🔨 Labor: ${Math.round(c.area)} sq ft × $${c.laborSqft}/sq ft (${c.crew} crew): <b>${money(c.laborPrice)}</b><br>🧱 Materials — pass-through at cost: <b>+${money(c.materials)}</b> <span class="sub">(our materials ${money(c.matCost)} + spoil ${money(c.spoilTip)})</span><br>🚗 Drive — static (~${c.dr.rt} mi RT): <b>+${money(c.driveCharge)}</b>`;
+  let s = `<div style="font-size:13px;line-height:1.9">🔨 Labor: ${Math.round(c.area)} sq ft × $${c.laborSqft}/sq ft${c.complexity>1?` × ${c.complexity} (shape)`:""} (${c.crew} crew): <b>${money(c.laborPrice)}</b><br>🧱 Materials — pass-through at cost: <b>+${money(c.materials)}</b> <span class="sub">(our materials ${money(c.matCost)} + spoil ${money(c.spoilTip)})</span><br>🚗 Drive — static (~${c.dr.rt} mi RT): <b>+${money(c.driveCharge)}</b>`;
   if (pk && pk.has) s += `<br>🚚 Materials pickup (own line, ${pk.crew}-person @ $${pk.rate}/hr): <b>+${money(pk.charge)}</b>`;
   s += `<br><span class="sub">Materials net <b>$0</b> to you (pass-through) — paving profit ${money(c.profit)} is labor + drive only.</span></div>`;
   return s;
@@ -215,6 +219,7 @@ window.wizPvMat = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.mats) WZ.pv
 window.wizPvSpoil = function (v) { if (!WZ.pv) return; WZ.pv.haulSpoil = !!v; render(); };   // haul the dig-out dirt (default) vs leave it for the customer
 window.wizPvMatCost = function (key, v) { if (!WZ.pv) return; if (!WZ.pv.matCosts) WZ.pv.matCosts = {}; WZ.pv.matCosts[key] = Math.max(0, parseFloat(v)||0); render(); };
 window.wizPvCrew = function (n) { if (!WZ.pv) return; WZ.pv.crew = Math.max(1, n); render(); };
+window.wizPvComplexity = function (v) { if (!WZ.pv) return; WZ.pv.complexity = Math.max(1, +v || 1); render(); };
 window.wizPvPickCrew = function (n) { if (!WZ.pv) return; WZ.pv.pickupCrew = Math.max(1, n); render(); };
 window.wizPvGeoPickup = function (addr) {
   if (!WZ.pv) return; WZ.pv.pickupAddr = addr;
@@ -234,7 +239,7 @@ window.wizPvPickMiles = function (v) { if (!WZ.pv) return; const n = parseFloat(
 window.wizPvPickRate = function (v) {
   if (!WZ.pv) return; WZ.pv.pickupRate = parseInt(v,10) || PAVER_PICKUP_RATE_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours); WZ.items = items;
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours, c.complexity); WZ.items = items;
   const total = c.price + (pk.has ? pk.charge : 0);
   const info = document.getElementById("pv_pickinfo"); if (info) info.innerHTML = pvPickupInfoHTML(pk);
   const set = (id, txt) => { const e = document.getElementById(id); if (e) e.textContent = txt; };
@@ -246,7 +251,7 @@ window.wizPvPickRate = function (v) {
 window.wizPvSqft = function (v) {
   if (!WZ.pv) return; WZ.pv.sqft = parseFloat(v) || PAVER_LABOR_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
-  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours);
+  const items = [ pvItem(c) ]; if (pk.has) items.push(pvPickupItem(pk)); items[0].mkt = pvMarketBand(c.area, c.materials + c.driveCharge + (pk.has?pk.charge:0), c.crew*c.hours, c.complexity);
   WZ.items = items; WZ.crewN = c.crew; WZ.hours = c.hours;
   const total = c.price + (pk.has ? pk.charge : 0);
   const tier = pvTier(c.perHr), tCol = ["var(--danger)","#b8860b","var(--accent)"][tier], tIcon = ["⚠","⚠","✓"][tier];
