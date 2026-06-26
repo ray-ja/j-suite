@@ -13,8 +13,9 @@ const PAVER_MATS = [
   { key:"rock",   label:"Base rock (crushed)", unit:"sqft", cost:3.00, lbs:30 },   // ~3-4" base; bulk is cheaper than bagged on big jobs
   { key:"bed",    label:"Bedding sand",        unit:"sqft", cost:1.00, lbs:9 },    // ~1" leveling sand (~$6/0.5 cu ft)
   { key:"poly",   label:"Polymeric joint sand", unit:"sqft", cost:0.50, lbs:2 },   // swept into joints (~$30/35 lb bag ≈ 60 sq ft)
-  { key:"fabric", label:"Underlayment fabric", unit:"sqft", cost:0.20, lbs:0.2 },  // weed/moisture barrier
-  { key:"edge",   label:"Paver edging",        unit:"ft",   cost:1.75, lbs:0.3 }   // per PERIMETER foot (~$77/48 ft)
+  { key:"fabric", label:"Underlayment fabric", unit:"sqft", cost:0.20, lbs:0.2 },  // weed/moisture barrier (rock holds it; +a $5 pack of fabric staples is negligible)
+  { key:"edge",   label:"Paver edging",        unit:"ft",   cost:2.50, lbs:0.3 },  // per PERIMETER foot (~$15/6 ft at Lowe's)
+  { key:"spikes", label:"Edging spikes",       unit:"ft",   cost:0.50, lbs:0.3 }   // anchor spikes for the edging, per PERIMETER foot (~1-1.5/ft; corners tighter)
 ];
 const PAVER_DIG_IN     = 8;
 const PAVER_DIRT_TON   = 45;
