@@ -67,6 +67,8 @@ function pvPickup(area){
       else { loopMi = geoLoop; exact = true; }
     }
   }
+  const manual = pv.pickupMiles > 0;
+  if (manual) { loopMi = +pv.pickupMiles; exact = true; suspect = false; }   // manual round-trip override — you know the real distance, the geocoder can't argue
   const trips = Math.max(1, Math.ceil(weight / PAVER_LOAD_CAP));   // vehicle capacity drives trips
   const driveMin = Math.round(loopMi/35*60);
   const handlePH = (weight/2000) * PAVER_HANDLE_PH_TON;
@@ -75,7 +77,7 @@ function pvPickup(area){
   const mileage = Math.round(loopMi * trips * MIL);
   const labor = personHrs * (rate/0.48);
   const charge = Math.round((labor + mileage)/5)*5;
-  return { has:true, charge, cost:mileage, weight:Math.round(weight), tons:Math.round(weight/2000*10)/10, trips, miles:loopMi, exact, legBP, legPS, suspect, crew, personHrs:Math.round(personHrs*10)/10, hoursEach:Math.round(personHrs/crew*10)/10, rate, addr:pv.pickupAddr||"" };
+  return { has:true, charge, cost:mileage, weight:Math.round(weight), tons:Math.round(weight/2000*10)/10, trips, miles:loopMi, exact, manual, legBP, legPS, suspect, crew, personHrs:Math.round(personHrs*10)/10, hoursEach:Math.round(personHrs/crew*10)/10, rate, addr:pv.pickupAddr||"" };
 }
 
 function pvCalc(){
@@ -150,10 +152,12 @@ function pvCrewBtns(cur, fn){ return [1,2,3,4].map(n=>`<button class="btn ${cur=
 function pvPickupInfoHTML(pk){
   if (!pk.has) return "";
   const ex = (pk.exact||pk.suspect) ? "" : ` <span style="color:#b8860b">— est.; add the supplier address for exact</span>`;
-  const legs = (!pk.suspect && pk.legBP!=null && pk.legPS!=null) ? `base→supplier ${pk.legBP} mi + supplier→site ${pk.legPS} mi = ` : "";
-  const warn = pk.suspect ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The drive computed as base→supplier <b>${pk.legBP} mi</b> + supplier→site <b>${pk.legPS} mi</b> — way too far for a local pickup, so we're using a ~${pk.miles} mi estimate. One address geocoded to the wrong spot: re-check the supplier above and your <b>Home base</b> in Settings.</div>` : "";
+  const legs = (!pk.manual && !pk.suspect && pk.legBP!=null && pk.legPS!=null) ? `base→supplier ${pk.legBP} mi + supplier→site ${pk.legPS} mi = ` : "";
+  const milesTxt = pk.manual ? `${pk.miles} mi (you set it)` : pk.suspect ? `~${pk.miles} mi (estimate)` : `${legs}${pk.miles} mi`;
+  const warn = (pk.suspect && !pk.manual) ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The geocoder put the supplier <b>${pk.legBP} mi</b> away — that's wrong. Using a ~${pk.miles} mi estimate for now. Re-pick the supplier from the dropdown, or just <b>type the real miles</b> below.</div>` : "";
+  const override = `<div class="row" style="gap:6px;align-items:center;margin-top:5px"><div class="grow sub">${pk.manual?'✓ <b>Using your miles</b>':'Drive off? Set the run miles'} <span style="opacity:.7">(base→supplier→site)</span>:</div><input type="number" inputmode="decimal" value="${pk.manual?pk.miles:''}" placeholder="auto ${pk.miles}" style="width:72px;padding:3px 6px;font-size:13px" onchange="wizPvPickMiles(this.value)"><span class="sub">mi</span></div>`;
   const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the supplier <b>deliver</b> (~$50–150 flat) usually beats self-haul once it's 2+ trips. Or have the customer provide it.</div>` : "";
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${legs}${pk.suspect?`~${pk.miles} mi (estimate)`:`${pk.miles} mi`}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
 }
 
 function wizPaverUI(){
@@ -226,6 +230,7 @@ window.wizPvGeoPickup = function (addr) {
     .then(function (d) { if (d && d[0]) { WZ.pv.pickupLat = +d[0].lat; WZ.pv.pickupLng = +d[0].lon; } if (typeof render==="function") render(); })
     .catch(function () { if (typeof render==="function") render(); });
 };
+window.wizPvPickMiles = function (v) { if (!WZ.pv) return; const n = parseFloat(v); WZ.pv.pickupMiles = (n>0) ? n : 0; if (typeof render==="function") render(); };   // manual round-trip override
 window.wizPvPickRate = function (v) {
   if (!WZ.pv) return; WZ.pv.pickupRate = parseInt(v,10) || PAVER_PICKUP_RATE_DEF;
   const c = pvCalc(), pk = pvPickup(c.area);
