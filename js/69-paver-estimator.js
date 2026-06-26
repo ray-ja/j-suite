@@ -10,8 +10,8 @@
    - PICKUP is its own weight-driven mini-quote → a real sub-job (selectable crew + softer rate). All editable. */
 const PAVER_MATS = [
   { key:"pavers", label:"Pavers",              unit:"sqft", cost:8.00, lbs:22 },   // premium "high end of good value" (we don't put our name on crap)
-  { key:"rock",   label:"Base rock (crushed)", unit:"sqft", cost:3.00, lbs:30 },   // ~3-4" base; bulk is cheaper than bagged on big jobs
-  { key:"bed",    label:"Bedding sand",        unit:"sqft", cost:1.00, lbs:9 },    // ~1" leveling sand (~$6/0.5 cu ft)
+  { key:"rock",   label:"Base rock (crushed)", unit:"sqft", cost:1.50, lbs:30 },   // ~3-4" base, BULK from a stone yard (~$80/ton #57); bagged at Lowe's is ~$5/sq ft for 4" — bump it for bagged jobs. CONFIRM w/ the yard quote.
+  { key:"bed",    label:"Bedding sand",        unit:"sqft", cost:0.40, lbs:9 },    // ~1" bedding — BULK concrete/coarse sand from the stone yard; Lowe's bags run ~$1/sq ft. CONFIRM w/ the yard quote.
   { key:"poly",   label:"Polymeric joint sand", unit:"sqft", cost:0.50, lbs:2 },   // swept into joints (~$30/35 lb bag ≈ 60 sq ft)
   { key:"fabric", label:"Underlayment fabric", unit:"sqft", cost:0.20, lbs:0.2 },  // weed/moisture barrier (rock holds it; +a $5 pack of fabric staples is negligible)
   { key:"edge",   label:"Paver edging",        unit:"ft",   cost:2.50, lbs:0.3 },  // per PERIMETER foot (~$15/6 ft at Lowe's)
