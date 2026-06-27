@@ -232,15 +232,16 @@ window.adminPinSubmit = async function () {
   if (msg) msg.textContent = "Wrong PIN."; if (el) { el.value = ""; el.focus(); }
 };
 window.adminSetPin = async function () {
-  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
   const pin = prompt("Set a 4–8 digit Admin PIN:"); if (pin == null) return;
   const p = String(pin).trim();
   if (!/^\d{4,8}$/.test(p)) { alert("PIN must be 4–8 digits."); return; }
   const again = prompt("Re-enter the PIN to confirm:"); if (again == null) return;
   if (String(again).trim() !== p) { alert("PINs didn't match — try again."); return; }
-  try { me.adminPin = await hashPw(p); } catch (e) { alert("Couldn't set the PIN."); return; }
-  if (typeof touch === "function") touch(me); save(); try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {}
-  if (typeof syncRun === "function") syncRun("push");
+  let hash; try { hash = await hashPw(p); } catch (e) { alert("Couldn't set the PIN."); return; }
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;   // RE-FETCH after the await: a sync that landed while the prompt was open may have replaced S.users (the bug that silently dropped the PIN)
+  me.adminPin = hash; if (typeof touch === "function") touch(me); save();
+  try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {}
+  if (typeof syncRun === "function") syncRun("auto");
   render(); alert("Admin PIN set — you'll be asked for it each session.");
 };
 window.adminRemovePin = function () {
