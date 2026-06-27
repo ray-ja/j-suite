@@ -146,7 +146,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetCats", "budgetTx"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -203,6 +203,25 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
     L.push("Life trackers: " + trk.length + " | Journal entries: " + notes.length + " | Daily logs: " + logs.length);
     trk.slice(0, 12).forEach(t => L.push("  Tracker: " + (t.name || "?") + " (" + (t.type || "check") + (t.unit ? ", " + t.unit : "") + ")"));
     notes.slice().sort((a, b) => (b.date || "") < (a.date || "") ? -1 : 1).slice(0, 5).forEach(n => L.push("  Journal " + (n.date || "") + ": " + String(n.title || n.body || "").replace(/\s+/g, " ").slice(0, 120)));
+  }
+  // budget (personal orgs): running balance + this month's planned-vs-actual per category, so the org assistant can advise on money/life
+  const bcats = live("budgetCats"), btx = live("budgetTx");
+  if (bcats.length || btx.length) {
+    const now2 = new Date(), mo = now2.getFullYear() + "-" + String(now2.getMonth() + 1).padStart(2, "0");
+    const inAll = sum(btx.filter(t => t.dir === "in"), "amount"), outAll = sum(btx.filter(t => t.dir === "out"), "amount");
+    const txMo = btx.filter(t => String(t.date || "").slice(0, 7) === mo);
+    const inMo = sum(txMo.filter(t => t.dir === "in"), "amount"), outMo = sum(txMo.filter(t => t.dir === "out"), "amount");
+    L.push("BUDGET — running balance (all time): $" + (inAll - outAll).toFixed(2) + " (income $" + inAll.toFixed(2) + ", spending $" + outAll.toFixed(2) + ")");
+    L.push("This month (" + mo + "): income $" + inMo.toFixed(2) + ", spending $" + outMo.toFixed(2) + ", net $" + (inMo - outMo).toFixed(2) + " across " + txMo.length + " transactions");
+    const catName = id => { const c = bcats.find(x => x.id === id); return c ? c.name : "Uncategorized"; };
+    bcats.filter(c => (c.kind || "out") === "out").slice(0, 20).forEach(c => {
+      const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
+      L.push("  Spend · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " planned" + (actual > target ? " (OVER by $" + (actual - target).toFixed(2) + ")" : " ($" + (target - actual).toFixed(2) + " left)") : " (no target)"));
+    });
+    bcats.filter(c => (c.kind || "out") === "in").slice(0, 10).forEach(c => {
+      const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
+      L.push("  Income · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " expected" : ""));
+    });
   }
   return L.join("\n").slice(0, 6000);
 }

@@ -19,7 +19,7 @@ const ADMIN_PAGES = [
   { tab: "training", label: "Train" }, { tab: "market", label: "Market" },
   { tab: "opps", label: "Opps" }, { tab: "sites", label: "Sites" },
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
-  { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" },
+  { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
   { tab: "playbook", label: "Playbook" },
   { tab: "time", label: "Time" }, { tab: "finance", label: "Finance" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
 ];
