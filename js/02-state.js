@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetCats:[],budgetTx:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetCats:[],budgetTx:[],budgetMemo:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -47,7 +47,8 @@ function load(){
     if(!S[b].lifeTrackers)S[b].lifeTrackers=[];
     if(!S[b].lifeLogs)S[b].lifeLogs=[];
     if(!S[b].budgetCats)S[b].budgetCats=[];   // budget tool (personal orgs): categories + monthly targets
-    if(!S[b].budgetTx)S[b].budgetTx=[];});    // budget tool: transactions (in/out)
+    if(!S[b].budgetTx)S[b].budgetTx=[];       // budget tool: transactions (in/out)
+    if(!S[b].budgetMemo)S[b].budgetMemo=[];});// budget CSV import: merchant-keyword → category memory
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);
     emb.forEach(ep=>{S[b].properties.push({id:ep.id||uid(),label:ep.label||"Main",address:ep.address||"",accessNotes:"",lat:null,lng:null,customerIds:[c.id],updatedAt:now()});});

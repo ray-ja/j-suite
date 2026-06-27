@@ -21,6 +21,8 @@ function actBudgetCats(){ return (D().budgetCats||[]).filter(function(c){return 
 function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted;}); }
 function budgetCat(id){ return actBudgetCats().find(function(c){return c.id===id;}); }
 function budgetCatName(id){ var c=budgetCat(id); return c?c.name:"Uncategorized"; }
+/* merchant→category memory (budgetMemo): {id,key,catId,updatedAt,deleted}; key = normalized description keyword */
+function actBudgetMemo(){ return (D().budgetMemo||[]).filter(function(m){return !m.deleted;}); }
 
 /* ---- month helpers ---- */
 function budgetMonthOf(ds){ return (ds||today()).slice(0,7); }                  // "YYYY-MM"
@@ -153,7 +155,9 @@ function budgetRenderTx(){
     +'<input type="month" value="'+m+'" onchange="budgetSetMonth(this.value)" style="flex:1;text-align:center">'
     +'<button class="btn ghost sm" onclick="budgetNavMonth(1)">›</button>'
     +'</div></div>';
-  h+='<button class="btn acc" style="width:100%;margin-bottom:10px" onclick="openBudgetTx(null)">＋ Add transaction</button>';
+  h+='<div class="row" style="gap:8px;margin-bottom:10px">'
+    +'<button class="btn acc" style="flex:1" onclick="openBudgetTx(null)">＋ Add transaction</button>'
+    +'<button class="btn ghost" style="flex:1" onclick="budgetImportOpen()">⬆️ Import CSV</button></div>';
   h+='<div class="secthd"><h2>'+budgetMonthLabel(m)+'</h2><span class="ct">'+rows.length+' '+(rows.length===1?"item":"items")+'</span></div>';
   if(!rows.length){
     h+='<div class="empty"><div class="big">🧾</div>No transactions this month. Tap <b>Add transaction</b> to log income or spending.</div>';
@@ -233,6 +237,11 @@ function budgetRenderSettings(){
   if(!cats.length){
     h+='<div class="empty"><div class="big">⚙️</div>No categories yet. Add spending categories (rent, food, gas…) and income categories (paycheck, side work…).</div>';
   }
+
+  /* import a bank CSV */
+  h+='<div class="secthd"><h2>Import</h2></div>';
+  h+='<div class="card"><p class="muted" style="margin:0 0 8px;font-size:13px">Import a month of transactions from a bank/card CSV: paste or upload, map the columns, then bulk-categorize. Re-importing skips obvious duplicates.</p>'
+    +'<button class="btn acc" style="width:100%" onclick="budgetImportOpen()">⬆️ Import CSV</button></div>';
 
   /* export / backup */
   h+='<div class="secthd"><h2>Backup</h2></div>';
