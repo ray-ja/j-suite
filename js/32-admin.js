@@ -126,7 +126,7 @@ function rAdmin() {
     const active = u.active !== false, mine = me && me.id === u.id;
     h += `<div class="card">
       <div class="row"><div class="grow"><div class="nm">${esc(u.username)}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
-        <div class="sub">${roleBadge(u.role || "crew")} ${active ? `<span class="badge" style="background:var(--soft);color:var(--muted)">Active</span>` : `<span class="badge" style="background:var(--danger);color:#fff">Deactivated</span>`}</div></div>
+        <div class="sub">${roleBadge(u.role || "crew")} ${active ? `<span class="badge" style="background:var(--soft);color:var(--muted)">Active</span>` : `<span class="badge" style="background:var(--danger);color:#fff">Deactivated</span>`} <span class="sub" id="pres_${u.id}" style="display:inline;color:var(--muted)"></span></div></div>
         <select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:110px">${roleOpts(u.role || "crew")}</select></div>
       <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn ghost sm" onclick="adminSetName('${u.id}')">🧑 ${u.name ? esc(u.name) : "Set full name"}</button>
@@ -155,7 +155,23 @@ function rAdmin() {
     h += `</div>`;
   });
   view.innerHTML = h;
+  if (window.loadPresenceUI) setTimeout(loadPresenceUI, 30);
 }
+window.agoTxt = function (ms) {
+  if (!ms) return "never synced";
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 90) return "online now";
+  const m = Math.round(s / 60); if (m < 60) return m + "m ago";
+  const hr = Math.round(m / 60); if (hr < 36) return hr + "h ago";
+  return Math.round(hr / 24) + "d ago";
+};
+window.loadPresenceUI = function () {
+  const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
+  fetch(base + "/api/presence", { headers: tok ? { Authorization: "Bearer " + tok } : {} })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(p => { (S.users || []).forEach(u => { const el = document.getElementById("pres_" + u.id); if (el) { const t = p[u.id]; el.textContent = "· " + agoTxt(t); el.style.color = (t && Date.now() - t < 90000) ? "var(--ok,#1a9a5a)" : "var(--muted)"; } }); })
+    .catch(() => {});
+};
 
 /* ----- account actions ----- */
 window.adminOpenCreate = function () {

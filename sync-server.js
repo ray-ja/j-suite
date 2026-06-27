@@ -48,7 +48,11 @@ try { VAPID = JSON.parse(fs.readFileSync(path.join(__dirname, "vapid-config.json
 // Last-active per user (ops-brain Layer-1 capture). IN-MEMORY ONLY — never written to data.json, so
 // it can't churn the sync layer. Stamped (throttled ~60s/user) on /sync; surfaced read-only on /api/ceo.
 const lastActive = {};
-function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) lastActive[userId] = n; }
+const PRESENCE_FILE = path.join(__dirname, "presence.json");
+function loadPresence() { try { return JSON.parse(fs.readFileSync(PRESENCE_FILE, "utf8")); } catch (e) { return {}; } }
+function savePresence(p) { try { const tmp = PRESENCE_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(p)); fs.renameSync(tmp, PRESENCE_FILE); } catch (e) {} }
+Object.assign(lastActive, loadPresence());   // seed last-seen from disk so presence survives a restart
+function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) { lastActive[userId] = n; const p = loadPresence(); p[userId] = n; savePresence(p); } }   // record + persist last-seen (throttled to once/60s per user)
 // Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
 // (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
@@ -57,6 +61,7 @@ function loadUserTokens() { try { return JSON.parse(fs.readFileSync(USER_TOKENS_
 function saveUserTokens(m) { const tmp = USER_TOKENS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, USER_TOKENS_FILE); }
 function issueUserToken(userId, label) { const m = loadUserTokens(); const tok = crypto.randomBytes(24).toString("hex"); m[tok] = { userId: userId, issued: Date.now(), label: (label || "").slice(0, 80) }; saveUserTokens(m); return tok; }
 function userForToken(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && r.userId) || null; }
+function tokOk(tok) { return (!!TOKEN && tok === TOKEN) || !!userForToken(tok); }   // shared (legacy) OR a per-user token — both authenticate to the API
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 // Backups live one level up (matches ~/jsuite-backup.sh + the deploy snapshots). The GUI Backups card
@@ -852,7 +857,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.split("?")[0] === "/api/backup-status") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify(backupStatus()));
   }
@@ -860,7 +865,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/backup") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify(backupNow()));
   }
@@ -869,7 +874,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.split("?")[0] === "/api/config/status") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     let c = {}; try { c = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken) }));
@@ -878,7 +883,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
     req.on("end", () => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
@@ -896,6 +901,15 @@ const server = http.createServer((req, res) => {
       res.end('{"ok":true}');
     });
     return;
+  }
+
+  // PRESENCE — GET /api/presence (token-gated). { userId: lastSeenMs } for the team roster's "online Xm ago".
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/presence") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(lastActive));
   }
 
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
@@ -1058,7 +1072,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/upload") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     const chunks = []; let blen = 0;
     req.on("data", c => { chunks.push(c); blen += c.length; if (blen > 16e6) req.destroy(); });
     req.on("end", () => {
