@@ -47,6 +47,7 @@ ok("migration promotes the owner to super-admin", !!mm.users.find(x => x.id === 
 ok("membership migration is idempotent", t.migrateStore(t.migrateStore(mm)).users.filter(x => x.kind === "membership").length === 4);
 ok("an account that already has a membership is NOT re-migrated into obx/jam", (function () { const s2 = t.migrateStore({ obx: {}, jam: {}, escaperoom: {}, users: [{ id: "u3", role: "crew", updatedAt: 1 }, { id: "mem_escaperoom_u3", kind: "membership", orgId: "escaperoom", accountId: "u3", active: true, updatedAt: 1 }] }); return s2.users.filter(x => x.kind === "membership" && x.accountId === "u3").length === 1; })());
 ok("projectForUser sends only the caller's orgs", (function () { const p = t.projectForUser({ obx: { customers: [] }, jam: { customers: [] }, registry: [{ id: "obx" }, { id: "jam" }], users: [] }, ["obx"], { id: "z" }); return !!p.obx && !p.jam && p.registry.length === 1; })());
+ok("orgAiContext is scoped to ONE org (its name + counts)", (function () { const c = t.orgAiContext({ obx: { customers: [{ id: "c1" }] }, jam: { customers: [{ id: "j1" }, { id: "j2" }] }, registry: [{ id: "obx", name: "OBX Lot" }] }, "obx"); return c.indexOf("OBX Lot") >= 0 && c.indexOf("Customers: 1") >= 0; })());
 ok("users array migrated in", Array.isArray(m.users) && m.users.length === 1, m.users);
 ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") || {}).name === "New", m.obx.customers);
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);

@@ -181,6 +181,32 @@ function writerOwnsOrg(store, selfId, orgId) {   // may selfId write MEMBERSHIP 
   const me = accountById(store, selfId); if (!me) return false; if (me.superAdmin) return true;
   return ((store && store.users) || []).some(m => m && m.kind === "membership" && m.accountId === selfId && m.orgId === orgId && m.role === "owner" && m.active !== false);
 }
+// MULTI-ORG (Phase 4) — per-org AI. Each org may enable its OWN assistant on its OWN Anthropic key, stored
+// server-side in org-ai-config.json (gitignored, never synced to devices, never echoed back). One-way GUI setup.
+const ORG_AI_FILE = path.join(__dirname, "org-ai-config.json");
+function loadOrgAi() { try { return JSON.parse(fs.readFileSync(ORG_AI_FILE, "utf8")); } catch (e) { return {}; } }
+function saveOrgAi(m) { const tmp = ORG_AI_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, ORG_AI_FILE); }
+function orgAiStatus(orgId) { const c = loadOrgAi()[orgId] || {}; return { enabled: !!c.enabled, hasKey: !!c.apiKey, model: c.model || "claude-haiku-4-5-20251001" }; }   // NEVER includes the key
+function apiAccount(tok) { const uid = userForToken(tok); return uid ? accountById(loadStore(), uid) : null; }   // resolve the per-user account behind a bearer token
+function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary handed to that org's assistant (its data only)
+  const o = store[orgId] || {}, reg = (store.registry || []).find(r => r && r.id === orgId) || {};
+  const live = c => (o[c] || []).filter(r => r && !r.deleted), sum = (a, f) => a.reduce((t, r) => t + (+r[f] || 0), 0);
+  const L = ["Organization: " + (reg.name || orgId)];
+  L.push("Customers: " + live("customers").length + " | Properties: " + live("properties").length + " | Inventory items: " + live("inventory").length);
+  const q = live("quotes"); L.push("Quotes: " + q.length + " (open " + q.filter(x => !x.accepted).length + ", accepted " + q.filter(x => x.accepted).length + ")");
+  const j = live("jobs"); L.push("Jobs: " + j.length + " (done " + j.filter(x => x.done || x.status === "done").length + ")");
+  L.push("Income: " + live("income").length + " records, $" + sum(live("income"), "amount").toFixed(0) + " | Expenses: " + live("expenses").length + " records, $" + sum(live("expenses"), "amount").toFixed(0));
+  q.filter(x => !x.accepted).slice(-8).forEach(x => L.push("  Open quote #" + (x.num || "?") + " " + (x.cust || x.customer || "") + " $" + (x.total || 0)));
+  return L.join("\n").slice(0, 6000);
+}
+function callAnthropic(apiKey, model, context, question, cb) {   // the org's OWN key — j-Suite never bills for this
+  const payload = JSON.stringify({ model: model || "claude-haiku-4-5-20251001", max_tokens: 1024,
+    system: "You are the assistant for this organization. Answer using ONLY the organization data provided below. Be concise and practical.\n\n" + context,
+    messages: [{ role: "user", content: String(question || "").slice(0, 4000) }] });
+  const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || "No response."); } catch (e) { cb(e); } }); });
+  r.on("error", e => cb(e)); r.write(payload); r.end();
+}
 // Phase 3c — read/write ISOLATION. No field-stripping anywhere: the additive merge preserves every UNSENT
 // org/account from `stored` on write-back, so a scoped client can never drop another org's data.
 function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's org slabs (foreign slabs dropped); users/registry pass through to sanitizeUserWrites
@@ -983,6 +1009,52 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken) }));
   }
+  // PER-ORG AI (Phase 4). status: any member. config: org-OWNER/super-admin only, one-way key. ask: any member, uses the org's OWN key + scoped data.
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/org-ai/status") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const acct = apiAccount(tok), org = q.searchParams.get("org") || "";
+    if (!acct || orgsForUser(loadStore(), acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(orgAiStatus(org)));
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/config") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const acct = apiAccount(tok);
+    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const org = p && p.org;
+      if (!acct || !org || !writerOwnsOrg(loadStore(), acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      const cfg = loadOrgAi(), c = cfg[org] || {};
+      if (typeof p.enabled === "boolean") c.enabled = p.enabled;
+      if (typeof p.model === "string" && p.model.trim()) c.model = p.model.trim().slice(0, 80);
+      if (typeof p.apiKey === "string" && p.apiKey.trim()) { if (p.apiKey.length > 8192) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"key too long"}'); } c.apiKey = p.apiKey.trim(); }   // one-way, never echoed
+      c.updatedAt = Date.now(); cfg[org] = c;
+      try { saveOrgAi(cfg); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(orgAiStatus(org)));   // status only — never the key
+    });
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/ask") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const acct = apiAccount(tok);
+    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const store = loadStore(), org = p && p.org;
+      if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      const cfg = loadOrgAi()[org];
+      if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization"}'); }
+      callAnthropic(cfg.apiKey, cfg.model, orgAiContext(store, org), p.question, (err, answer) => {
+        if (err) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"AI request failed"}'); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ answer: answer }));
+      });
+    });
+    return;
+  }
   // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
@@ -1247,4 +1319,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, scopedIncoming, projectUsers, projectForUser, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

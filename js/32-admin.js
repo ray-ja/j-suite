@@ -169,6 +169,7 @@ function rAdmin() {
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
+  if (typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup (org-owner)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;

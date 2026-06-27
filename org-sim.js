@@ -93,6 +93,19 @@ async function main() {
     await sync(moeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "owner", active: true, updatedAt: now() }] });   // moe (now admin, not owner) tries to self-promote to owner
     rayst = await sync(rayTok, {});
     check("a non-owner member CANNOT self-promote to org owner", memRole(rayst, "moe", "obx") === "admin");
+
+    // ===== per-org AI config (Phase 4) — one-way key, owner-gated, never echoed, per-org =====
+    let aiCfg = await api("POST", "/api/org-ai/config", { org: "obx", enabled: true, apiKey: "sk-ant-fake-test-key" }, joeTok);
+    check("org-owner CAN configure AI (enabled + key stored)", aiCfg.status === 200 && aiCfg.json.enabled === true && aiCfg.json.hasKey === true);
+    check("AI status NEVER echoes the API key", !!aiCfg.json && !("apiKey" in aiCfg.json) && JSON.stringify(aiCfg.json).indexOf("sk-ant") < 0);
+    let aiMoe = await api("POST", "/api/org-ai/config", { org: "obx", enabled: false }, moeTok);
+    check("a non-owner CANNOT configure an org's AI (403)", aiMoe.status === 403);
+    let aiSt = await api("GET", "/api/org-ai/status?org=obx", null, moeTok);
+    check("a member CAN read AI status (and it carries no key)", aiSt.status === 200 && aiSt.json.hasKey === true && !("apiKey" in aiSt.json));
+    let aiEve = await api("GET", "/api/org-ai/status?org=obx", null, eveTok);
+    check("a NON-member CANNOT read another org's AI status (403)", aiEve.status === 403);
+    let aiAsk = await api("POST", "/api/org-ai/ask", { org: "jam", question: "hi" }, rayTok);
+    check("ask fails cleanly when an org has no AI configured (400)", aiAsk.status === 400);
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");

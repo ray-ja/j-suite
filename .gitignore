@@ -19,6 +19,7 @@ sync.env
 
 # --- Per-user sync tokens (token -> userId map; server-only, never synced/committed) ---
 user-tokens.json
+org-ai-config.json
 
 # --- Presence (userId -> last-seen ms; server-only, ephemeral) ---
 presence.json
