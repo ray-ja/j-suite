@@ -146,7 +146,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "lifeNotes", "lifeTrackers", "lifeLogs"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -197,6 +197,13 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
   const j = live("jobs"); L.push("Jobs: " + j.length + " (done " + j.filter(x => x.done || x.status === "done").length + ")");
   L.push("Income: " + live("income").length + " records, $" + sum(live("income"), "amount").toFixed(0) + " | Expenses: " + live("expenses").length + " records, $" + sum(live("expenses"), "amount").toFixed(0));
   q.filter(x => !x.accepted).slice(-8).forEach(x => L.push("  Open quote #" + (x.num || "?") + " " + (x.cust || x.customer || "") + " $" + (x.total || 0)));
+  // life tracker (personal orgs): trackers + recent journal so the org assistant can reflect on day-to-day
+  const trk = live("lifeTrackers"), notes = live("lifeNotes"), logs = live("lifeLogs");
+  if (trk.length || notes.length) {
+    L.push("Life trackers: " + trk.length + " | Journal entries: " + notes.length + " | Daily logs: " + logs.length);
+    trk.slice(0, 12).forEach(t => L.push("  Tracker: " + (t.name || "?") + " (" + (t.type || "check") + (t.unit ? ", " + t.unit : "") + ")"));
+    notes.slice().sort((a, b) => (b.date || "") < (a.date || "") ? -1 : 1).slice(0, 5).forEach(n => L.push("  Journal " + (n.date || "") + ": " + String(n.title || n.body || "").replace(/\s+/g, " ").slice(0, 120)));
+  }
   return L.join("\n").slice(0, 6000);
 }
 function callAnthropic(apiKey, model, context, question, cb) {   // the org's OWN key — j-Suite never bills for this

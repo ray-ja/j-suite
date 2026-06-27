@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -34,6 +34,11 @@ function load(){
     // stable per-biz job numbers: number any quote lacking one, deterministically (by date+id) so every device agrees without syncing
     (function(){ const ql=(S[b].quotes||[]).filter(q=>!q.num); if(ql.length){ let mx=(S[b].quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0); ql.sort((x,y)=>(((x.date||"")+(x.id||""))<((y.date||"")+(y.id||""))?-1:1)).forEach(q=>{q.num=++mx;}); } })();
   });
+  // life-tracker collections — backfill on EVERY org slab (obx/jam + any personal org like rbjvl) so the new synced arrays always exist
+  (S.registry||[]).forEach(r=>{const b=r&&r.id;if(!b||!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
+    if(!S[b].lifeNotes)S[b].lifeNotes=[];
+    if(!S[b].lifeTrackers)S[b].lifeTrackers=[];
+    if(!S[b].lifeLogs)S[b].lifeLogs=[];});
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);
     emb.forEach(ep=>{S[b].properties.push({id:ep.id||uid(),label:ep.label||"Main",address:ep.address||"",accessNotes:"",lat:null,lng:null,customerIds:[c.id],updatedAt:now()});});

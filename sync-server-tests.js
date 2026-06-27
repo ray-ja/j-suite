@@ -65,6 +65,29 @@ const dm = t.mergeState({ obx: { income: [{ id: "in1", amount: 100, date: "2026-
 ok("disbursements scaffolded + record round-trips through the merge", Array.isArray(dm.obx.disbursements) && (dm.obx.disbursements.find(x => x.id === "db1") || {}).type === "payout", dm.obx.disbursements);
 ok("income survives the disbursements-collection migration", (dm.obx.income.find(x => x.id === "in1") || {}).amount === 100, dm.obx.income);
 
+console.log("— life tracker (personal org rbjvl): notes/trackers/logs are synced collections + survive a round-trip with zero loss —");
+// realistic pre-life-tracker store: obx has real records, a personal org (rbjvl) exists with NO life keys yet
+const lifeStored = {
+  obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", title: "Job", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }], properties: [{ id: "p1", address: "X", updatedAt: 10 }] },
+  rbjvl: { customers: [], quotes: [], jobs: [] },   // personal org, legacy shape (no life* keys)
+  registry: [{ id: "obx", name: "OBX Lot Solutions", updatedAt: 1 }, { id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }]
+};
+const lifeIncoming = { rbjvl: {
+  lifeNotes: [{ id: "ln1", date: "2026-06-27", title: "Good day", body: "Shipped the life tracker.", updatedAt: 20 }],
+  lifeTrackers: [{ id: "lt1", name: "Workout", type: "check", order: 0, updatedAt: 20 }, { id: "lt2", name: "Weight", type: "number", unit: "lbs", order: 1, updatedAt: 20 }],
+  lifeLogs: [{ id: "lg1", trackerId: "lt1", date: "2026-06-27", value: true, updatedAt: 20 }, { id: "lg2", trackerId: "lt2", date: "2026-06-27", value: 182, updatedAt: 20 }]
+} };
+const lm = t.mergeState(lifeStored, lifeIncoming);
+ok("life collections scaffolded on a legacy personal org (no life* keys)", Array.isArray(lm.rbjvl.lifeNotes) && Array.isArray(lm.rbjvl.lifeTrackers) && Array.isArray(lm.rbjvl.lifeLogs), Object.keys(lm.rbjvl));
+ok("journal note round-trips through the merge", (lm.rbjvl.lifeNotes.find(x => x.id === "ln1") || {}).title === "Good day", lm.rbjvl.lifeNotes);
+ok("both trackers + both daily logs round-trip", lm.rbjvl.lifeTrackers.length === 2 && lm.rbjvl.lifeLogs.length === 2 && (lm.rbjvl.lifeLogs.find(x => x.id === "lg2") || {}).value === 182, lm.rbjvl);
+ok("never-drop-an-org: OBX (and every record) survives a personal-org-only push", !!(lm.obx.customers.find(x => x.id === "c1") && lm.obx.jobs.find(x => x.id === "j1") && lm.obx.quotes.find(x => x.id === "q1") && lm.obx.properties.find(x => x.id === "p1")), lm.obx);
+// second round-trip (re-push the merged state) → still zero loss, ids stable (no duplication)
+const lm2 = t.mergeState(lm, lifeIncoming);
+ok("life records are stable across a second round-trip (no loss, no dup)", lm2.rbjvl.lifeNotes.length === 1 && lm2.rbjvl.lifeTrackers.length === 2 && lm2.rbjvl.lifeLogs.length === 2, { n: lm2.rbjvl.lifeNotes.length, t: lm2.rbjvl.lifeTrackers.length, l: lm2.rbjvl.lifeLogs.length });
+ok("orgAiContext surfaces the personal org's trackers + journal", (function () { const c = t.orgAiContext(lm, "rbjvl"); return c.indexOf("Life trackers: 2") >= 0 && c.indexOf("Workout") >= 0 && c.indexOf("Good day") >= 0; })());
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
