@@ -89,7 +89,7 @@ function loadStore() {
   try { return JSON.parse(fs.readFileSync(FILE, "utf8")); }
   catch (e) { return { obx: blankBiz(), jam: blankBiz() }; }
 }
-function saveStore(s) { fs.writeFileSync(FILE, JSON.stringify(s)); }
+function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
 // merge two arrays of records by id; newest updatedAt wins
 function mergeColl(a = [], b = []) {
@@ -717,7 +717,7 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    return res.end(JSON.stringify({ ok: true, store: FILE }));
+    return res.end(JSON.stringify({ ok: true }));   // no FILE path — don't leak the install path/username
   }
 
   // CEO read path — GET /api/ceo (read-only sweep, token-gated). Reached via the on-host bridge
@@ -1091,6 +1091,10 @@ const server = http.createServer((req, res) => {
 // Tailscale-only posture: bound to the host's interfaces, reached over the tailnet — the port is
 // NOT forwarded/exposed publicly. Keep it that way; auth + token are a second layer, not the first.
 if (require.main === module) {
+  // Fail closed: a server with no TOKEN accepts every /sync, /upload, /backup, /config request unauthenticated.
+  // Refuse to start rather than run wide-open by accident (e.g. a manual run without the env). Inside
+  // require.main so `require("./sync-server")` from the test suite is unaffected.
+  if (!TOKEN) { console.error("FATAL: TOKEN is not set — refusing to start (the server would be unauthenticated). Set TOKEN in the environment."); process.exit(1); }
   server.listen(PORT, () => {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
