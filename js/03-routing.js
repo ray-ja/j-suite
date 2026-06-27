@@ -46,6 +46,15 @@ const TAB_META = {
   todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
+// MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.
+const ORG_CORE_TABS = ["today","admin","data"];
+const ORG_TEMPLATES = {
+  full: null,                                                                 // field services (OBX / Jamieson) — every tool
+  bookings: ["messages","schedule","accounts","finance","receipts","time","playbook"],   // e.g. an escape room — customers, calendar, money, comms
+  personal: ["todo","plan","finance","playbook"]                              // e.g. a personal area — planning, budget, notes (+ Cap via the org AI)
+};
+function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
+function orgHasTab(tab){ const t=orgTabs(); return !t || ORG_CORE_TABS.indexOf(tab)>=0 || t.indexOf(tab)>=0; }
 function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !msgEnabled() : true)) return false; return (typeof canSee==="function") ? canSee(t) : true; }
 function tabGroup(t){ return NAV_GROUPS.find(g=>g.tabs.indexOf(t)>=0) || NAV_GROUPS[0]; }
 function groupTabs(g){ return g.tabs.filter(navCanSee); }

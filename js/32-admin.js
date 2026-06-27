@@ -79,7 +79,7 @@ function roleAllows(key, tab) {
   if (!Array.isArray(r.pages)) return true;     // role with no restriction ⇒ all pages
   return r.pages.indexOf(tab) >= 0;
 }
-function canSee(tab) { return roleAllows(curRoleKey(), tab); }
+function canSee(tab) { return roleAllows(curRoleKey(), tab) && (typeof orgHasTab !== "function" || orgHasTab(tab)); }   // role gate AND per-org tool visibility
 function activeOwners() { return realAccounts().filter(u => u.role === "owner" && u.active !== false); }
 
 /* ----- migration: run from load() once accounts exist ----- */
@@ -109,6 +109,40 @@ function orgSetRole(accountId, orgId, role) {   // add/update a member's per-org
   m.role = role || "crew"; m.active = true; m.deleted = false; m.updatedAt = now();
 }
 function orgRemoveMember(accountId, orgId) { const m = membershipFor(accountId, orgId); if (m) { m.active = false; m.deleted = true; m.updatedAt = now(); } }
+/* ----- per-org tool visibility (Phase 5) — make each org feel like its own app ----- */
+function orgConfigurableTabs() { return ALL_TABS.filter(t => ORG_CORE_TABS.indexOf(t) < 0); }
+function orgToolsCard() {
+  const meta = (typeof TAB_META !== "undefined") ? TAB_META : {};
+  let h = `<div class="card" style="margin-top:8px;border-left:3px solid var(--acc)" id="orgtools-card">
+    <div class="nm" style="font-size:15px">🧩 Tools for ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div>
+    <div class="sub" style="margin-bottom:8px">Pick which tools this organization shows — hidden ones are completely unavailable here, so each org feels like its own app. (Home, Admin &amp; Settings always stay.)</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn ghost sm" onclick="orgApplyTemplate('full')">Field services (all)</button>
+      <button class="btn ghost sm" onclick="orgApplyTemplate('bookings')">Bookings / shop</button>
+      <button class="btn ghost sm" onclick="orgApplyTemplate('personal')">Personal</button></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+  orgConfigurableTabs().forEach(t => {
+    const on = (typeof orgHasTab === "function") ? orgHasTab(t) : true, m = meta[t] || {};
+    h += `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:14px;font-size:13px;background:${on ? "var(--acc)" : "var(--line)"};color:${on ? "#fff" : "inherit"}"><input type="checkbox" style="width:auto;margin:0" ${on ? "checked" : ""} onchange="orgToolToggle('${t}')">${(m.i || "")} ${esc(m.l || t)}</label>`;
+  });
+  return h + `</div></div>`;
+}
+function orgSetTabs(tabs) {
+  const r = (S.registry || []).find(x => x && x.id === S.biz); if (!r) return;
+  r.tabs = tabs; r.updatedAt = now();
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Changed tools for " + (typeof orgName === "function" ? orgName(S.biz) : S.biz));
+  save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); render();
+}
+window.orgApplyTemplate = function (name) {
+  if (typeof isOwner === "function" && !isOwner()) { alert("Owner only."); return; }
+  orgSetTabs(ORG_TEMPLATES[name] ? ORG_TEMPLATES[name].slice() : null);
+};
+window.orgToolToggle = function (tab) {
+  if (typeof isOwner === "function" && !isOwner()) { alert("Owner only."); return; }
+  let cur = orgTabs(); if (!cur) cur = orgConfigurableTabs().slice();   // materialize "all" before turning one off
+  const i = cur.indexOf(tab); if (i >= 0) cur.splice(i, 1); else cur.push(tab);
+  orgSetTabs(cur);
+};
 function myOrgIds() {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return [];
   if (me.superAdmin) return (S.registry || []).filter(r => r && !r.deleted).map(r => r.id);   // super-admin sees every org
@@ -169,6 +203,7 @@ function rAdmin() {
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
+  if (typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility (org-owner)
   if (typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup (org-owner)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
