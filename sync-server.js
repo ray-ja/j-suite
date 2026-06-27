@@ -94,6 +94,7 @@ function sanitizeUserWrites(incoming, pre, selfId) {
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;
+    if (u.kind === "membership" && u.orgId && writerOwnsOrg(pre, selfId, u.orgId)) { safe.push(u); continue; }   // org-owner (or super-admin) may manage memberships for an org they OWN — add/role/remove their team
     const old = storedMap[u.id];
     if (!old) continue;                       // new account / new sentinel from a non-owner → drop
     if (u.kind || old.kind) continue;         // role-config sentinel (__roles__) → drop incoming, keep stored
@@ -176,6 +177,10 @@ function loadStore() {
 function accountById(store, id) { return ((store && store.users) || []).find(u => u && u.id === id && !u.kind) || null; }
 function membershipsOfStore(store, accountId) { return ((store && store.users) || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
 function orgsForUser(store, account) { if (account && account.superAdmin) return orgIdsOf(store); return account ? membershipsOfStore(store, account.id).map(m => m.orgId) : []; }
+function writerOwnsOrg(store, selfId, orgId) {   // may selfId write MEMBERSHIP records for orgId? super-admin → any; else only an org they OWN (per the STORED state, never the claimed incoming). The org-admin tier.
+  const me = accountById(store, selfId); if (!me) return false; if (me.superAdmin) return true;
+  return ((store && store.users) || []).some(m => m && m.kind === "membership" && m.accountId === selfId && m.orgId === orgId && m.role === "owner" && m.active !== false);
+}
 // Phase 3c — read/write ISOLATION. No field-stripping anywhere: the additive merge preserves every UNSENT
 // org/account from `stored` on write-back, so a scoped client can never drop another org's data.
 function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's org slabs (foreign slabs dropped); users/registry pass through to sanitizeUserWrites

@@ -23,10 +23,12 @@ function setup() {
     users: [
       { id: "ray", username: "ray", passhash: H("pw"), role: "owner", superAdmin: true, updatedAt: 1 },
       { id: "joe", username: "joe", passhash: H("pw"), role: "crew", updatedAt: 1 },
+      { id: "moe", username: "moe", passhash: H("pw"), role: "crew", updatedAt: 1 },
       { id: "eve", username: "eve", passhash: H("pw"), role: "crew", updatedAt: 1 },
       { id: "mem_obx_ray", kind: "membership", orgId: "obx", accountId: "ray", role: "owner", active: true, updatedAt: 1 },
       { id: "mem_jam_ray", kind: "membership", orgId: "jam", accountId: "ray", role: "owner", active: true, updatedAt: 1 },
-      { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "crew", active: true, updatedAt: 1 },
+      { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "owner", active: true, updatedAt: 1 },
+      { id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "crew", active: true, updatedAt: 1 },
       { id: "mem_escaperoom_eve", kind: "membership", orgId: "escaperoom", accountId: "eve", role: "crew", active: true, updatedAt: 1 },
     ],
   }));
@@ -43,6 +45,8 @@ const login = async u => (await api("POST", "/login", { username: u, password: "
 const sync = async (token, state) => (await api("POST", "/sync", { token, state: state || {} }, token)).json;
 const orgsIn = st => Object.keys((st && st.state) || {}).filter(k => k !== "users" && k !== "registry");
 const custIds = (st, oid) => (((st && st.state && st.state[oid]) || {}).customers || []).map(c => c.id);
+const memRole = (st, accId, orgId) => { const m = ((st && st.state && st.state.users) || []).find(u => u && u.kind === "membership" && u.accountId === accId && u.orgId === orgId); return m ? m.role : null; };
+const hasMem = (st, id) => ((st && st.state && st.state.users) || []).some(u => u && u.id === id);
 let pass = 0, fail = 0;
 const check = (n, c) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ FAIL: " + n); } };
 
@@ -51,7 +55,7 @@ async function main() {
   const srv = cp.spawn(process.execPath, ["sync-server.js"], { cwd: DIR, env: Object.assign({}, process.env, { PORT: String(PORT), TOKEN: SHARED }), stdio: "ignore" });
   await new Promise(r => setTimeout(r, 1500));
   try {
-    const joeTok = (await login("joe")).token, eveTok = (await login("eve")).token, rayTok = (await login("ray")).token;
+    const joeTok = (await login("joe")).token, eveTok = (await login("eve")).token, rayTok = (await login("ray")).token, moeTok = (await login("moe")).token;
     check("logins issue distinct per-user tokens", !!joeTok && !!eveTok && !!rayTok && joeTok !== eveTok);
 
     let st = await sync(joeTok, {});
@@ -78,6 +82,17 @@ async function main() {
     check("ray (super-admin) RECEIVES all 3 orgs", ["obx", "jam", "escaperoom"].every(o => orgsIn(rayst).indexOf(o) >= 0));
     check("super-admin sees every account", !!rayst.state.users.find(u => u.id === "eve") && !!rayst.state.users.find(u => u.id === "joe"));
     check("scoped syncs never dropped a sibling org (jam + escaperoom data intact)", custIds(rayst, "jam").indexOf("jamc1") >= 0 && custIds(rayst, "escaperoom").indexOf("escc1") >= 0);
+
+    // ===== org-admin tier: an org OWNER manages their org's memberships (but only theirs) =====
+    await sync(joeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "admin", active: true, updatedAt: now() }] });   // joe (obx OWNER) promotes moe
+    rayst = await sync(rayTok, {});
+    check("org-owner CAN set a member's role in their own org (moe → admin)", memRole(rayst, "moe", "obx") === "admin");
+    await sync(joeTok, { users: [{ id: "mem_jam_joe", kind: "membership", orgId: "jam", accountId: "joe", role: "owner", active: true, updatedAt: now() }] });   // joe tries to add himself to jam
+    rayst = await sync(rayTok, {});
+    check("org-owner CANNOT write memberships for an org they don't own (no mem_jam_joe)", !hasMem(rayst, "mem_jam_joe"));
+    await sync(moeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "owner", active: true, updatedAt: now() }] });   // moe (now admin, not owner) tries to self-promote to owner
+    rayst = await sync(rayTok, {});
+    check("a non-owner member CANNOT self-promote to org owner", memRole(rayst, "moe", "obx") === "admin");
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");

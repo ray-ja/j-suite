@@ -60,11 +60,15 @@ function hasAnyAccount() { return realAccounts().length > 0; }
 const NO_SESSION_ROLE = "__nosession__";
 function curRoleKey() {
   const u = (typeof curUser === "function") ? curUser() : null;
-  const real = (u && u.role) ? u.role : (hasAnyAccount() ? NO_SESSION_ROLE : "owner");
+  let real;
+  if (u && u.superAdmin) real = "owner";   // MULTI-ORG: platform owner → owner in every org
+  else if (u) real = ((typeof roleInOrg === "function" && S.biz) ? roleInOrg(u.id, S.biz) : null) || u.role || "crew";   // role in the ACTIVE org; fall back to the global role (transition / no membership)
+  else real = hasAnyAccount() ? NO_SESSION_ROLE : "owner";   // signed out → crew unless bootstrapping the first owner
   // Owner "view-as" preview (js/48): downgrade only, and only for a real owner — never escalates.
   if (window.VIEW_AS && real === "owner" && window.VIEW_AS !== "owner") return window.VIEW_AS;
   return real;
 }
+function isSuperAdmin() { const u = (typeof curUser === "function") ? curUser() : null; return !!(u && u.superAdmin); }   // platform owner
 function isOwner() { return curRoleKey() === "owner"; }
 function roleAllows(key, tab) {
   if (key === "owner") return true;            // owner sees everything, incl. the admin panel
@@ -96,6 +100,15 @@ function adminMigrate() {
    Records live in S.users with kind:"membership" (so realAccounts() already excludes them). */
 function membershipsOf(accountId) { return (S.users || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
 function roleInOrg(accountId, orgId) { const m = (S.users || []).find(x => x && x.kind === "membership" && x.accountId === accountId && x.orgId === orgId && x.active !== false); return m ? m.role : null; }
+function membershipFor(accountId, orgId) { return (S.users || []).find(m => m && m.kind === "membership" && m.accountId === accountId && m.orgId === orgId); }
+function orgMembers(orgId) { return realAccounts().filter(u => !!roleInOrg(u.id, orgId)); }   // accounts with an ACTIVE membership in this org
+function orgOwners(orgId) { return orgMembers(orgId).filter(u => roleInOrg(u.id, orgId) === "owner" && u.active !== false); }
+function orgSetRole(accountId, orgId, role) {   // add/update a member's per-org role (creates the membership if missing)
+  let m = membershipFor(accountId, orgId);
+  if (!m) { m = { id: "mem_" + orgId + "_" + accountId, kind: "membership", orgId: orgId, accountId: accountId }; (S.users = S.users || []).push(m); }
+  m.role = role || "crew"; m.active = true; m.deleted = false; m.updatedAt = now();
+}
+function orgRemoveMember(accountId, orgId) { const m = membershipFor(accountId, orgId); if (m) { m.active = false; m.deleted = true; m.updatedAt = now(); } }
 function myOrgIds() {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return [];
   if (me.superAdmin) return (S.registry || []).filter(r => r && !r.deleted).map(r => r.id);   // super-admin sees every org
@@ -134,7 +147,7 @@ function roleBadge(key) {
 }
 function rAdmin() {
   if (!isOwner()) { view.innerHTML = `<div class="card"><div class="nm">Owner only</div><div class="sub">This screen is restricted to the Owner role.</div></div>`; return; }
-  const accs = realAccounts(), roles = allRoles();
+  const accs = orgMembers(S.biz), roles = allRoles();   // MULTI-ORG: the ACTIVE org's members only
   const me = (typeof curUser === "function") ? curUser() : null;
   // PIN gate — lock the Admin page behind the owner's PIN (unlocked for the browser session once entered)
   let _adminOk = false; try { _adminOk = !!(me && sessionStorage.getItem("jra_admin_ok") === me.id); } catch (e) {}
@@ -151,13 +164,14 @@ function rAdmin() {
   const roleOpts = sel => roles.map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("");
 
   let h = `<div class="secthd"><h2>Admin</h2><button class="btn ghost sm" onclick="adminOpenCreate()">+ Account</button></div>
+    <div class="card" style="margin-bottom:6px;border-left:3px solid var(--acc)"><div class="nm" style="font-size:14px">🏢 Managing: ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div><div class="sub">${(typeof isSuperAdmin === "function" && isSuperAdmin()) ? "Super-admin — switch organization (👤 menu) to manage another. " : ""}People here belong to this organization only.</div></div>
     <p class="muted" style="margin:0 4px 6px">Manage who can sign in, what role they hold, and which tabs each role sees. Roles &amp; access sync to every device.</p>`;
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
-  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Team accounts</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add account</button></div>`;
-  if (!accs.length) h += `<div class="card"><div class="muted">No accounts yet. Tap “+ Add account”.</div></div>`;
+  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
+  if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;
   else {
     h += `<div class="row" style="gap:8px;margin:0 2px 8px">
       <input id="acctsearch" value="${esc(ADMIN_SEARCH)}" placeholder="🔍 Search name, username or email" oninput="adminFilterAccounts()" style="flex:1">
@@ -276,7 +290,7 @@ function adminSortFn(mode) {
 }
 function adminAccountsHTML() {
   const me = (typeof curUser === "function") ? curUser() : null;
-  const all = realAccounts();
+  const all = orgMembers(S.biz);   // MULTI-ORG: members of the active org only
   const q = String(ADMIN_SEARCH || "").toLowerCase().trim();
   let list = q ? all.filter(u => (String(u.username || "") + " " + String(u.name || "") + " " + String(u.email || "")).toLowerCase().indexOf(q) >= 0) : all.slice();
   list.sort(adminSortFn(ADMIN_SORT));
@@ -286,11 +300,11 @@ function adminAccountsHTML() {
     const active = u.active !== false, mine = me && me.id === u.id, open = u.id === ADMIN_EXPANDED;
     h += `<div class="card" style="padding:10px 12px;margin-bottom:6px">
       <div class="row" onclick="adminToggleAcct('${u.id}')" style="cursor:pointer;align-items:center">
-        <div class="grow"><div class="nm" style="font-size:15px">${esc(u.name || u.username)} ${roleBadge(u.role || "crew")}${active ? "" : ` <span class="badge" style="background:var(--danger);color:#fff">off</span>`}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
+        <div class="grow"><div class="nm" style="font-size:15px">${esc(u.name || u.username)} ${roleBadge(roleInOrg(u.id, S.biz) || u.role || "crew")}${active ? "" : ` <span class="badge" style="background:var(--danger);color:#fff">off</span>`}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
         <div class="sub">@${esc(u.username)} <span id="pres_${u.id}" style="color:var(--muted)"></span></div></div>
         <span class="sub" style="font-size:16px">${open ? "▾" : "▸"}</span></div>`;
     if (open) h += `<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
-        <div class="row" style="align-items:center;gap:8px;margin-bottom:10px"><div class="sub grow">Role</div><select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:120px">${adminRoleOpts(u.role || "crew")}</select></div>
+        <div class="row" style="align-items:center;gap:8px;margin-bottom:10px"><div class="sub grow">Role in this org</div><select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:120px">${adminRoleOpts(roleInOrg(u.id, S.biz) || u.role || "crew")}</select></div>
         <div class="row" style="gap:6px;flex-wrap:wrap">
           <button class="btn ghost sm" onclick="adminSetName('${u.id}')">🧑 ${u.name ? esc(u.name) : "Set name"}</button>
           <button class="btn ghost sm" onclick="adminSetEmail('${u.id}')">✉ ${u.email ? esc(u.email) : "Set email"}</button>
@@ -317,6 +331,7 @@ window.adminToggleAcct = function (id) {
 
 /* ----- account actions ----- */
 window.adminOpenCreate = function () {
+  if (typeof isSuperAdmin === "function" && !isSuperAdmin()) { alert("New accounts are created by the platform owner. You can set roles and remove members here — ask the platform owner to add a new person, then assign them."); return; }
   const roles = allRoles();
   modal("New account", `
     <p class="muted" style="margin-bottom:8px">Username + password + role. Add the person's email to enable one-tap Cloudflare Access sign-in.</p>
@@ -332,8 +347,10 @@ window.adminCreateAccount = async function () {
   if (!un || !pw) { alert("Username and password required."); return; }
   if (users().some(u => u.username.toLowerCase() === un.toLowerCase())) { alert("That username is taken."); return; }
   if (!S.users) S.users = [];
-  S.users.push({ id: uid(), username: un, name: (val("ac_full") || "").trim(), email: (val("ac_email") || "").trim().toLowerCase(), passhash: await hashPw(pw), role: role, active: true, settings: { theme: (typeof themePref === "function" ? themePref() : "light") }, updatedAt: now() });
-  if (typeof logChange === "function") logChange("create", "account", "", "Created account " + un + " (" + role + ")");
+  const _nid = uid();
+  S.users.push({ id: _nid, username: un, name: (val("ac_full") || "").trim(), email: (val("ac_email") || "").trim().toLowerCase(), passhash: await hashPw(pw), role: role, active: true, settings: { theme: (typeof themePref === "function" ? themePref() : "light") }, updatedAt: now() });
+  if (S.biz) orgSetRole(_nid, S.biz, role);   // MULTI-ORG: member of the ACTIVE org (so they're scoped here, not auto-migrated to obx/jam)
+  if (typeof logChange === "function") logChange("create", "account", _nid, "Added " + un + " to " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " (" + role + ")");
   save(); closeModal(); render();
 };
 window.adminSetName = function (id) {
@@ -354,9 +371,9 @@ window.adminSetEmail = function (id) {
 };
 window.adminSetRole = function (id, key) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;
-  if (u.role === "owner" && key !== "owner" && activeOwners().length <= 1) { alert("Can't change the last owner — promote another owner first."); render(); return; }
-  u.role = key; touch(u);
-  if (typeof logChange === "function") logChange("update", "account", id, "Set " + u.username + " role → " + (roleByKey(key) ? roleByKey(key).label : key));
+  if (roleInOrg(id, S.biz) === "owner" && key !== "owner" && orgOwners(S.biz).length <= 1) { alert("Can't change the last owner of this organization — promote another owner first."); render(); return; }
+  orgSetRole(id, S.biz, key);   // per-org role
+  if (typeof logChange === "function") logChange("update", "account", id, "Set " + u.username + " role in " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " → " + (roleByKey(key) ? roleByKey(key).label : key));
   save(); render();
 };
 window.adminToggleActive = function (id) {
@@ -383,11 +400,10 @@ window.adminDoResetPw = async function (id) {
 };
 window.adminRemove = function (id) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;
-  if (u.role === "owner" && activeOwners().length <= 1) { alert("Can't remove the last owner."); return; }
-  if (!confirm("Remove " + u.username + "? They won't be able to sign in.")) return;
-  u.deleted = true; touch(u);
-  if (localStorage.getItem("jra_session") === id) localStorage.removeItem("jra_session");
-  if (typeof logChange === "function") logChange("delete", "account", id, "Removed account " + u.username);
+  if (roleInOrg(id, S.biz) === "owner" && orgOwners(S.biz).length <= 1) { alert("Can't remove the last owner of this organization."); return; }
+  if (!confirm("Remove " + u.username + " from " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + "? They keep their account but lose access to this organization.")) return;
+  orgRemoveMember(id, S.biz);   // remove the membership (not the global account)
+  if (typeof logChange === "function") logChange("delete", "account", id, "Removed " + u.username + " from " + (typeof orgName === "function" ? orgName(S.biz) : S.biz));
   save(); render();
 };
 
