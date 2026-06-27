@@ -100,8 +100,22 @@ function rData(){
       <input type="file" accept="application/json" id="impfile" onchange="importData(this)">
       <p class="muted" style="margin-top:8px;font-size:12px">The server auto-backs-up hourly. "Back up now" puts a full copy on this device — keep one off the server.</p>
     </div>
+    ${(typeof isOwner==="function"&&isOwner())?`
+    <h2>🔒 Security</h2>
+    <div class="card">
+      <p class="muted" style="margin-bottom:12px">Paste a secret and Save — it's written straight to the server file, never shown back and never sent anywhere else.</p>
+      <label style="margin:0">Resend email key <span id="sec_resendKey" class="sub"></span></label>
+      <input type="password" id="in_resendKey" placeholder="re_…" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('resendKey','in_resendKey')">Save Resend key</button>
+      <div style="border-top:1px solid var(--line);margin:14px 0 10px"></div>
+      <label style="margin:0">Cloudflare Access AUD tag <span id="sec_accessAud" class="sub"></span></label>
+      <input type="password" id="in_accessAud" placeholder="64-char tag from Cloudflare" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('accessAud','in_accessAud')">Save AUD — arms SSO protection</button>
+      <p class="muted" style="margin-top:8px;font-size:12px">Cloudflare → Zero Trust → Access → Applications → your j-Suite app → <b>Application Audience (AUD) Tag</b>. Saving it locks SSO login to this app only.</p>
+    </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
+  if(window.loadSecStatus)setTimeout(loadSecStatus,30);
 }
 window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
   S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
@@ -195,6 +209,22 @@ window.backupServerNow=function(btn){
     .then(r=>r.json())
     .then(d=>{ if(btn){btn.disabled=false;btn.textContent="☁️ Snapshot the server now";} if(d&&d.ok){loadBackupStatus();alert("Server snapshot saved — "+d.count+" total.");}else{alert("Snapshot failed: "+((d&&d.error)||"unknown"));} })
     .catch(()=>{ if(btn){btn.disabled=false;btn.textContent="☁️ Snapshot the server now";} alert("Snapshot failed — are you online?"); });
+};
+window.loadSecStatus=function(){
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/config/status",{headers:tok?{Authorization:"Bearer "+tok}:{}})
+    .then(r=>r.ok?r.json():Promise.reject())
+    .then(d=>{ const mark=(id,set)=>{const e=document.getElementById(id); if(e)e.innerHTML=set?"— <b style='color:#1a9a5a'>set ✓</b>":"— <span style='color:#c0392b'>not set</span>";}; mark("sec_resendKey",d.resendKey); mark("sec_accessAud",d.accessAud); })
+    .catch(()=>{});
+};
+window.saveSecret=function(key,inputId){
+  const el=document.getElementById(inputId); if(!el)return; const v=(el.value||"").trim();
+  if(!v){alert("Paste a value first.");return;}
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/config/secret",{method:"POST",headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{}),body:JSON.stringify({key:key,value:v})})
+    .then(r=>r.json())
+    .then(d=>{ if(d&&d.ok){ el.value=""; loadSecStatus(); alert("Saved ✓ — written to the server. It never passed through anyone else."); } else { alert("Save failed: "+((d&&d.error)||"unknown")); } })
+    .catch(()=>alert("Save failed — are you online?"));
 };
 window.importData=function(inp){
   const file=inp.files[0];if(!file)return;const r=new FileReader();

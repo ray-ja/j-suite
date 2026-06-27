@@ -216,6 +216,11 @@ async function verifyAccessJwt(token, opts) {
   let header, payload;
   try { header = b64urlJson(parts[0]); payload = b64urlJson(parts[1]); } catch (e) { return null; }
   if (payload.iss !== "https://" + domain) return null;                         // must be OUR team
+  // App-scoped: once an Access AUD tag is set (Security GUI → ceo-config.json), the JWT must be for OUR
+  // app, not merely our team — closes the "any team app = passwordless takeover" gap. Read fresh so the
+  // GUI arms it with no restart. Unset = not yet armed (preserves current behavior, can't lock anyone out).
+  let expectedAud = ""; try { expectedAud = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).accessAud || ""; } catch (e) {}
+  if (expectedAud) { const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud]; if (auds.indexOf(expectedAud) < 0) return null; }
   if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;  // not expired
   const keys = opts.keys || await accessCerts(domain);
   const jwk = keys.find(k => k && k.kid === header.kid && k.kty === "RSA"); if (!jwk) return null;
@@ -850,6 +855,39 @@ const server = http.createServer((req, res) => {
     if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify(backupNow()));
+  }
+
+  // CONFIG SECRETS (Security GUI) — token-gated. STATUS returns booleans only, NEVER the secret values.
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/config/status") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let c = {}; try { c = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken) }));
+  }
+  // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
+    req.on("end", () => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const ALLOW = ["resendKey", "accessAud"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination)
+      const key = p && p.key, value = p && p.value;
+      if (ALLOW.indexOf(key) < 0 || typeof value !== "string" || !value.trim() || value.length > 8192) {
+        res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"not allowed"}');
+      }
+      const cfgPath = path.join(__dirname, "ceo-config.json");
+      let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8")); } catch (e) {}
+      cfg[key] = value.trim();
+      try { const tmp = cfgPath + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2)); fs.renameSync(tmp, cfgPath); }
+      catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end('{"ok":true}');
+    });
+    return;
   }
 
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
