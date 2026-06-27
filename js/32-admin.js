@@ -182,7 +182,9 @@ window.loadAuditUI = function () {
     .then(list => {
       if (!list || !list.length) { el.textContent = "No changes recorded yet."; return; }
       const nm = id => { const u = (S.users || []).find(x => x && x.id === id); return u ? (u.name || u.username) : "someone"; };
-      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${esc(String(e.c).replace(/s$/, ""))} <span class="sub">${esc(e.label || e.id)}</span> · <span class="sub">${agoTxt(e.t)}</span></div>`).join("");
+      // resolve a readable label live from the store (so even already-logged entries read well, not raw ids)
+      const lbl = e => { try { const biz = (e.b === "obx" || e.b === "jam") ? S[e.b] : null; const rec = biz && Array.isArray(biz[e.c]) ? biz[e.c].find(r => r && r.id === e.id) : null; if (rec) { const cust = rec.cust || (rec.customerId && typeof custName === "function" ? custName(rec.customerId) : ""); return rec.name || rec.title || cust || rec.label || rec.desc || rec.what || rec.vendor || e.label || e.id; } } catch (x) {} return e.label || e.id; };
+      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${esc(String(e.c).replace(/s$/, ""))} <span class="sub">${esc(lbl(e))}</span> · <span class="sub">${agoTxt(e.t)}</span></div>`).join("");
     })
     .catch(() => { el.textContent = "Activity unavailable (offline?)."; });
 };

@@ -60,7 +60,7 @@ const AUDIT_CAP = 3000;
 const AUDIT_COLLECTIONS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "disbursements", "places"];
 function loadAudit() { try { return JSON.parse(fs.readFileSync(AUDIT_FILE, "utf8")); } catch (e) { return []; } }
 function saveAudit(a) { try { const tmp = AUDIT_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(a)); fs.renameSync(tmp, AUDIT_FILE); } catch (e) {} }
-function auditLabel(r) { return String((r && (r.name || r.title || r.label || r.customer || r.vendor || r.what)) || (r && r.id) || "").slice(0, 60); }
+function auditLabel(r) { return String((r && (r.name || r.title || r.cust || r.label || r.customer || r.vendor || r.what || r.desc || r.address)) || (r && r.id) || "").slice(0, 60); }
 function auditDiff(userId, pre, incoming) {
   if (!userId || !incoming) return;   // only attribute identified (per-user-token) syncs; anonymous legacy syncs aren't logged
   const now = Date.now(), entries = [];
