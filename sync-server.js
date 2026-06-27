@@ -146,7 +146,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
