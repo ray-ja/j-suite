@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -33,6 +33,13 @@ function load(){
     });
     // stable per-biz job numbers: number any quote lacking one, deterministically (by date+id) so every device agrees without syncing
     (function(){ const ql=(S[b].quotes||[]).filter(q=>!q.num); if(ql.length){ let mx=(S[b].quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0); ql.sort((x,y)=>(((x.date||"")+(x.id||""))<((y.date||"")+(y.id||""))?-1:1)).forEach(q=>{q.num=++mx;}); } })();
+  });
+  // ESCAPE SCHEDULER (org-specific tool): backfill its two collections on EVERY org slab (obx/jam + any created org),
+  // so an org that predates this feature still has the arrays the sync layer / module expect.
+  (typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(b=>{
+    if(!S[b])return;
+    if(!Array.isArray(S[b].escapeRooms))S[b].escapeRooms=[];
+    if(!Array.isArray(S[b].escapeBookings))S[b].escapeBookings=[];
   });
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);

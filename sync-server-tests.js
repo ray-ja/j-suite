@@ -65,6 +65,20 @@ const dm = t.mergeState({ obx: { income: [{ id: "in1", amount: 100, date: "2026-
 ok("disbursements scaffolded + record round-trips through the merge", Array.isArray(dm.obx.disbursements) && (dm.obx.disbursements.find(x => x.id === "db1") || {}).type === "payout", dm.obx.disbursements);
 ok("income survives the disbursements-collection migration", (dm.obx.income.find(x => x.id === "in1") || {}).amount === 100, dm.obx.income);
 
+console.log("— escape-room scheduler (escapeRooms + escapeBookings) sync collections + zero-loss merge —");
+// realistic legacy fixture for a brand-new escape-room org: full prior data, NO escape keys
+const esStored = { escaperoom: { customers: [{ id: "ec1", name: "Walk-in", updatedAt: 10 }], jobs: [{ id: "ej1", title: "Party", updatedAt: 10 }], properties: [{ id: "ep1", address: "Main St", updatedAt: 10 }], quotes: [{ id: "eq1", updatedAt: 10 }], income: [{ id: "ei1", amount: 200, updatedAt: 10 }] }, users: [{ id: "ray", role: "owner", superAdmin: true, updatedAt: 1 }] };
+const es1 = t.mergeState(esStored, { escaperoom: { escapeRooms: [{ id: "erm-heist", name: "The Heist", color: "#1B2A4E", order: 0, updatedAt: 5 }], escapeBookings: [{ id: "ebk-erm-heist-2026-07-01-10:00", roomId: "erm-heist", date: "2026-07-01", slot: "10:00", status: "booked", party: "Miller", players: "6", guideId: "ray", updatedAt: 5 }] } });
+ok("escapeRooms + escapeBookings scaffold on a legacy org (no escape keys)", Array.isArray(es1.escaperoom.escapeRooms) && Array.isArray(es1.escaperoom.escapeBookings), Object.keys(es1.escaperoom));
+ok("a room record round-trips through the merge", (es1.escaperoom.escapeRooms.find(x => x.id === "erm-heist") || {}).name === "The Heist", es1.escaperoom.escapeRooms);
+ok("a booking record round-trips through the merge", (es1.escaperoom.escapeBookings.find(x => x.id === "ebk-erm-heist-2026-07-01-10:00") || {}).party === "Miller", es1.escaperoom.escapeBookings);
+ok("every pre-existing escape-org record survives (customer/job/property/quote/income)", !!(es1.escaperoom.customers.find(x => x.id === "ec1") && es1.escaperoom.jobs.find(x => x.id === "ej1") && es1.escaperoom.properties.find(x => x.id === "ep1") && es1.escaperoom.quotes.find(x => x.id === "eq1") && es1.escaperoom.income.find(x => x.id === "ei1")), es1.escaperoom);
+// stable-id LWW: a second device editing the SAME cell upserts, never duplicates; newer status wins
+const es2 = t.mergeState(es1, { escaperoom: { escapeBookings: [{ id: "ebk-erm-heist-2026-07-01-10:00", roomId: "erm-heist", date: "2026-07-01", slot: "10:00", status: "in-progress", party: "Miller", players: "6", guideId: "ray", updatedAt: 9 }] } });
+ok("booking dedupes by stable id (no duplicate cell)", es2.escaperoom.escapeBookings.filter(x => x.id === "ebk-erm-heist-2026-07-01-10:00").length === 1, es2.escaperoom.escapeBookings);
+ok("booking LWW: newer status (in-progress) wins", (es2.escaperoom.escapeBookings.find(x => x.id === "ebk-erm-heist-2026-07-01-10:00") || {}).status === "in-progress", es2.escaperoom.escapeBookings);
+ok("never-drop-an-org: escaperoom + its escape collections survive an obx-only push", (function () { const e3 = t.mergeState(es1, { obx: { customers: [{ id: "oc", updatedAt: 6 }] } }); return e3.escaperoom && e3.escaperoom.escapeRooms.find(x => x.id === "erm-heist") && e3.escaperoom.escapeBookings.find(x => x.id === "ebk-erm-heist-2026-07-01-10:00"); })(), null);
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
