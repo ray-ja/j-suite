@@ -992,7 +992,12 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET") {
     const rel = decodeURIComponent((req.url.split("?")[0] || "").replace(/^\/+/, ""));
     const full = path.normalize(path.join(__dirname, rel));
-    if (rel && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
+    // ALLOWLIST — serve ONLY the app's own static assets. Secrets/config (data.json, *-config.json,
+    // qb-tokens.json, vapid-config.json, .env, sync.env) also live in __dirname, so an open
+    // "anything in the dir" serve leaks them. Check the NORMALIZED path so js/../data.json can't sneak in.
+    const okDir = [path.join(__dirname,"js")+path.sep, path.join(__dirname,"assets")+path.sep, path.join(__dirname,"uploads")+path.sep].some(d => full.startsWith(d));
+    const okFile = [path.join(__dirname,"app.css"), path.join(__dirname,"sw.js"), path.join(__dirname,"manifest.webmanifest"), path.join(__dirname,"favicon.ico")].indexOf(full) >= 0;
+    if ((okDir || okFile) && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
       const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
       // no-cache = the browser must revalidate before reusing, so a deploy shows up on the next load
