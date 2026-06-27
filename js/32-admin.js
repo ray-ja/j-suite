@@ -278,6 +278,7 @@ function adminAccountsHTML() {
           <button class="btn ghost sm" onclick="adminToggleActive('${u.id}')">${active ? "Deactivate" : "Reactivate"}</button>
           <button class="btn danger sm" onclick="adminRemove('${u.id}')">Remove</button>
         </div></div>`;
+    h += `</div>`;   // close the account card — was missing, so cards nested inside each other
   });
   return h;
 }
