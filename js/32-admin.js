@@ -182,9 +182,21 @@ window.loadAuditUI = function () {
     .then(list => {
       if (!list || !list.length) { el.textContent = "No changes recorded yet."; return; }
       const nm = id => { const u = (S.users || []).find(x => x && x.id === id); return u ? (u.name || u.username) : "someone"; };
-      // resolve a readable label live from the store (so even already-logged entries read well, not raw ids)
-      const lbl = e => { try { const biz = (e.b === "obx" || e.b === "jam") ? S[e.b] : null; const rec = biz && Array.isArray(biz[e.c]) ? biz[e.c].find(r => r && r.id === e.id) : null; if (rec) { const cust = rec.cust || (rec.customerId && typeof custName === "function" ? custName(rec.customerId) : ""); return rec.name || rec.title || cust || rec.label || rec.desc || rec.what || rec.vendor || e.label || e.id; } } catch (x) {} return e.label || e.id; };
-      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${esc(String(e.c).replace(/s$/, ""))} <span class="sub">${esc(lbl(e))}</span> · <span class="sub">${agoTxt(e.t)}</span></div>`).join("");
+      const dt = ms => { try { const d = new Date(ms); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch (x) { return ""; } };
+      const recOf = e => { try { const biz = (e.b === "obx" || e.b === "jam") ? S[e.b] : null; return biz && Array.isArray(biz[e.c]) ? biz[e.c].find(r => r && r.id === e.id) : null; } catch (x) { return null; } };
+      const custOf = rec => rec.cust || (rec.customerId && typeof custName === "function" ? custName(rec.customerId) : "") || "";
+      // build a readable descriptor live from the store: quotes get #num + customer + type; everything else its name/title
+      const desc = e => {
+        const coll = String(e.c).replace(/s$/, ""), rec = recOf(e);
+        if (e.c === "quotes" && rec) {
+          const num = (typeof quoteNum === "function" ? quoteNum(rec) : "") || ("#" + String(e.id).slice(-5));
+          const type = (rec.items && rec.items[0] && rec.items[0].name) || "";
+          return `quote <b>${esc(num)}</b> for ${esc(custOf(rec) || "a customer")}${type ? " · " + esc(type) : ""}`;
+        }
+        if (rec) return `${coll} ${esc(rec.name || rec.title || custOf(rec) || rec.label || rec.desc || rec.what || rec.vendor || e.label || e.id)}`;
+        return `${coll} ${esc(e.label || e.id)}`;
+      };
+      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:7px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${desc(e)} <span class="sub">· ${dt(e.t)}</span></div>`).join("");
     })
     .catch(() => { el.textContent = "Activity unavailable (offline?)."; });
 };
