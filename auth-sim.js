@@ -85,7 +85,9 @@ async function main() {
     const pres = (await api("GET", "/api/presence", null, ownerTok)).json;
     check("presence recorded for owner + crew", !!pres && !!pres.owner && !!pres.crew);
 
-    const audit = (await api("GET", "/api/audit", null, ownerTok)).json || [];
+    // Audit is written AFTER the sync response (best-effort, by design) — poll until it lands rather than racing it.
+    let audit = [];
+    for (let i = 0; i < 10; i++) { audit = (await api("GET", "/api/audit", null, ownerTok)).json || []; if (audit.some(e => e.c === "account" && e.id === "crew" && e.u === "owner")) break; await new Promise(r => setTimeout(r, 150)); }
     check("audit logged the owner's account change", audit.some(e => e.c === "account" && e.id === "crew" && e.u === "owner"));
     check("audit logged the business-record creation", audit.some(e => e.c === "customers" && e.id === "c1"));
 
