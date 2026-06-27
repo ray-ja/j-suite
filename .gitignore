@@ -17,6 +17,9 @@ ceo-config.json
 vapid-config.json
 sync.env
 
+# --- Per-user sync tokens (token -> userId map; server-only, never synced/committed) ---
+user-tokens.json
+
 # --- Reply-watcher: dev-box tokens (read+write to prod) + cursor (THE SWITCH; never commit) ---
 watcher-config.json
 tools/.reply-watcher-cursor.json

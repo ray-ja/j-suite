@@ -49,6 +49,14 @@ try { VAPID = JSON.parse(fs.readFileSync(path.join(__dirname, "vapid-config.json
 // it can't churn the sync layer. Stamped (throttled ~60s/user) on /sync; surfaced read-only on /api/ceo.
 const lastActive = {};
 function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) lastActive[userId] = n; }
+// Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
+// token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
+// (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
+const USER_TOKENS_FILE = path.join(__dirname, "user-tokens.json");
+function loadUserTokens() { try { return JSON.parse(fs.readFileSync(USER_TOKENS_FILE, "utf8")); } catch (e) { return {}; } }
+function saveUserTokens(m) { const tmp = USER_TOKENS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, USER_TOKENS_FILE); }
+function issueUserToken(userId, label) { const m = loadUserTokens(); const tok = crypto.randomBytes(24).toString("hex"); m[tok] = { userId: userId, issued: Date.now(), label: (label || "").slice(0, 80) }; saveUserTokens(m); return tok; }
+function userForToken(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && r.userId) || null; }
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
 // Backups live one level up (matches ~/jsuite-backup.sh + the deploy snapshots). The GUI Backups card
@@ -918,7 +926,8 @@ const server = http.createServer((req, res) => {
       clearFailedLogin(p.username);
       if (maybeUpgradeHash(store, u.id, p.password)) { try { saveStore(store); } catch (e) {} }   // legacy hash -> scrypt on successful login
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, token: TOKEN, user: { id: u.id, username: u.username, settings: u.settings || null } }));
+      let outTok = TOKEN; try { const t = issueUserToken(u.id, req.headers["user-agent"] || ""); if (t) outTok = t; } catch (e) {}   // per-user token; fall back to the shared token on any error so login never breaks
+      res.end(JSON.stringify({ ok: true, token: outTok, user: { id: u.id, username: u.username, settings: u.settings || null } }));
     });
     return;
   }
@@ -985,8 +994,9 @@ const server = http.createServer((req, res) => {
       const store = loadStore();
       const u = accountByEmail(store, claims.email);
       if (!u) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no account mapped to this email", email: claims.email })); }
+      let outTok = TOKEN; try { const t = issueUserToken(u.id, "access:" + claims.email); if (t) outTok = t; } catch (e) {}
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, token: TOKEN, user: { id: u.id, username: u.username, settings: u.settings || null }, email: claims.email, via: "access" }));
+      res.end(JSON.stringify({ ok: true, token: outTok, user: { id: u.id, username: u.username, settings: u.settings || null }, email: claims.email, via: "access" }));
     })();
     return;
   }
@@ -998,8 +1008,10 @@ const server = http.createServer((req, res) => {
       const body = Buffer.concat(_ch).toString("utf8");   // full-body UTF-8 decode — per-chunk body+=c mangles multi-byte chars at chunk boundaries (the ��� bug)
       let payload;
       try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
-      if (TOKEN && payload.token !== TOKEN) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
-      noteActive(payload.userId);   // ops-brain last-active (in-memory; doesn't affect the merge)
+      const puid = userForToken(payload.token);   // per-user token -> the real userId (trustworthy), or null
+      if (!((TOKEN && payload.token === TOKEN) || puid)) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
+      const syncUserId = puid || (typeof payload.userId === "string" ? payload.userId : null);   // legacy shared token falls back to the client-claimed id
+      noteActive(syncUserId);   // ops-brain last-active (in-memory; doesn't affect the merge)
       const pre = loadStore();
       const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
       const merged = mergeState(pre, payload.state || {});
