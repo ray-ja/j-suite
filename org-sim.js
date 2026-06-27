@@ -25,11 +25,23 @@ function setup() {
       { id: "joe", username: "joe", passhash: H("pw"), role: "crew", updatedAt: 1 },
       { id: "moe", username: "moe", passhash: H("pw"), role: "crew", updatedAt: 1 },
       { id: "eve", username: "eve", passhash: H("pw"), role: "crew", updatedAt: 1 },
+      { id: "liz", username: "liz", passhash: H("pw"), role: "crew", updatedAt: 1 },   // escaperoom MANAGER (role hierarchy)
+      { id: "gus", username: "gus", passhash: H("pw"), role: "crew", updatedAt: 1 },   // escaperoom game-guide (target of manager writes)
+      // role registry sentinel — defines the manager tier's "manage-members" grant (owner-only to write; trusted as stored state)
+      { id: "__roles__", kind: "roles", roles: [
+        { key: "owner", label: "Owner", builtin: true },
+        { key: "manager", label: "Manager", actions: ["assign-guides", "edit-schedule", "edit-settings", "manage-members", "edit-tools"] },
+        { key: "supervisor", label: "Supervisor", actions: ["assign-guides", "edit-schedule"] },
+        { key: "game-guide", label: "Game guide", actions: [] },
+        { key: "crew", label: "Crew", actions: [] },
+      ], updatedAt: 1 },
       { id: "mem_obx_ray", kind: "membership", orgId: "obx", accountId: "ray", role: "owner", active: true, updatedAt: 1 },
       { id: "mem_jam_ray", kind: "membership", orgId: "jam", accountId: "ray", role: "owner", active: true, updatedAt: 1 },
       { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "owner", active: true, updatedAt: 1 },
       { id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "crew", active: true, updatedAt: 1 },
       { id: "mem_escaperoom_eve", kind: "membership", orgId: "escaperoom", accountId: "eve", role: "crew", active: true, updatedAt: 1 },
+      { id: "mem_escaperoom_liz", kind: "membership", orgId: "escaperoom", accountId: "liz", role: "manager", active: true, updatedAt: 1 },
+      { id: "mem_escaperoom_gus", kind: "membership", orgId: "escaperoom", accountId: "gus", role: "game-guide", active: true, updatedAt: 1 },
     ],
   }));
 }
@@ -93,6 +105,39 @@ async function main() {
     await sync(moeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "owner", active: true, updatedAt: now() }] });   // moe (now admin, not owner) tries to self-promote to owner
     rayst = await sync(rayTok, {});
     check("a non-owner member CANNOT self-promote to org owner", memRole(rayst, "moe", "obx") === "admin");
+
+    // ===== role hierarchy (Phase 3e): the escaperoom MANAGER tier may manage members, but RESTRICTED =====
+    const lizTok = (await login("liz")).token, gusTok = (await login("gus")).token;
+    await sync(lizTok, { users: [{ id: "mem_escaperoom_gus", kind: "membership", orgId: "escaperoom", accountId: "gus", role: "supervisor", active: true, updatedAt: now() }] });   // manager promotes a guide → supervisor
+    rayst = await sync(rayTok, {});
+    check("manager CAN set a member's role in their own org (gus guide → supervisor)", memRole(rayst, "gus", "escaperoom") === "supervisor");
+    await sync(lizTok, { users: [{ id: "mem_escaperoom_gus", kind: "membership", orgId: "escaperoom", accountId: "gus", role: "owner", active: true, updatedAt: now() }] });   // manager tries to grant OWNER
+    rayst = await sync(rayTok, {});
+    check("manager CANNOT grant the owner role (no escalation of others)", memRole(rayst, "gus", "escaperoom") === "supervisor");
+    await sync(lizTok, { users: [{ id: "mem_escaperoom_liz", kind: "membership", orgId: "escaperoom", accountId: "liz", role: "owner", active: true, updatedAt: now() }] });   // manager tries to self-promote to owner
+    rayst = await sync(rayTok, {});
+    check("manager CANNOT self-promote to org owner", memRole(rayst, "liz", "escaperoom") === "manager");
+    await sync(lizTok, { users: [{ id: "mem_escaperoom_eve", kind: "membership", orgId: "escaperoom", accountId: "eve", role: "manager", active: true, updatedAt: now() }] });   // manager promotes a crew member → manager (allowed, not owner)
+    rayst = await sync(rayTok, {});
+    check("manager CAN promote a member to another non-owner role (eve → manager)", memRole(rayst, "eve", "escaperoom") === "manager");
+    await sync(lizTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "manager", active: true, updatedAt: now() }] });   // escaperoom manager tries to write into obx
+    rayst = await sync(rayTok, {});
+    check("manager CANNOT manage memberships for an org they aren't in (obx untouched)", memRole(rayst, "moe", "obx") === "admin");
+    await sync(gusTok, { users: [{ id: "mem_escaperoom_eve", kind: "membership", orgId: "escaperoom", accountId: "eve", role: "crew", active: true, updatedAt: now() }] });   // a game-guide (no manage-members) tries to change a role
+    rayst = await sync(rayTok, {});
+    check("a game-guide (no manage-members action) CANNOT manage members", memRole(rayst, "eve", "escaperoom") === "manager");
+
+    // unit-level checks on the server's hierarchy helpers against a synthetic store (stored-state authoritative)
+    const synthStore = { users: [
+      { id: "__roles__", kind: "roles", roles: [{ key: "manager", actions: ["manage-members"] }, { key: "supervisor", actions: ["assign-guides"] }] },
+      { id: "m1", kind: "membership", orgId: "z", accountId: "mgr", role: "manager", active: true },
+      { id: "m2", kind: "membership", orgId: "z", accountId: "sup", role: "supervisor", active: true },
+    ] };
+    check("roleManagesMembers: manager (granted) → true", SS.roleManagesMembers(synthStore, "manager") === true);
+    check("roleManagesMembers: supervisor (not granted) → false", SS.roleManagesMembers(synthStore, "supervisor") === false);
+    check("roleManagesMembers: crew/game-guide → false", SS.roleManagesMembers(synthStore, "game-guide") === false && SS.roleManagesMembers(synthStore, "crew") === false);
+    check("writerManagesOrg: manager member → true for own org", SS.writerManagesOrg(synthStore, "mgr", "z") === true);
+    check("writerManagesOrg: supervisor member → false", SS.writerManagesOrg(synthStore, "sup", "z") === false);
 
     // ===== per-org AI config (Phase 4) — one-way key, owner-gated, never echoed, per-org =====
     let aiCfg = await api("POST", "/api/org-ai/config", { org: "obx", enabled: true, apiKey: "sk-ant-fake-test-key" }, joeTok);
