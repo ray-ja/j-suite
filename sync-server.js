@@ -90,7 +90,7 @@ function sanitizeUserWrites(incoming, pre) {
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
-  const SENSITIVE = ["role", "passhash", "active", "logoutAt"];   // logoutAt = "log out everywhere"; only a verified owner may set it (and a revoked user can't clear it)
+  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin"];   // logoutAt = "log out everywhere"; adminPin = Admin-page lock; both owner-only (a crew can't grief or lock out an owner)
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;

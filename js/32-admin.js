@@ -114,10 +114,24 @@ function rAdmin() {
   if (!isOwner()) { view.innerHTML = `<div class="card"><div class="nm">Owner only</div><div class="sub">This screen is restricted to the Owner role.</div></div>`; return; }
   const accs = realAccounts(), roles = allRoles();
   const me = (typeof curUser === "function") ? curUser() : null;
+  // PIN gate — lock the Admin page behind the owner's PIN (unlocked for the browser session once entered)
+  let _adminOk = false; try { _adminOk = !!(me && sessionStorage.getItem("jra_admin_ok") === me.id); } catch (e) {}
+  if (me && me.adminPin && !_adminOk) {
+    view.innerHTML = `<div class="card" style="max-width:340px;margin:36px auto;text-align:center">
+      <div class="nm" style="font-size:18px">🛡️ Admin locked</div>
+      <p class="muted" style="margin:8px 0 14px">Enter your admin PIN to continue.</p>
+      <input id="adminpin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••" style="width:100%;text-align:center;font-size:22px;letter-spacing:8px" onkeydown="if(event.key==='Enter')adminPinSubmit()">
+      <div id="adminpinmsg" class="sub" style="color:var(--danger);min-height:18px;margin-top:6px"></div>
+      <button class="btn acc" style="width:100%;margin-top:8px" onclick="adminPinSubmit()">Unlock</button></div>`;
+    setTimeout(() => { const _e = document.getElementById("adminpin"); if (_e) _e.focus(); }, 30);
+    return;
+  }
   const roleOpts = sel => roles.map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("");
 
   let h = `<div class="secthd"><h2>Admin</h2><button class="btn ghost sm" onclick="adminOpenCreate()">+ Account</button></div>
     <p class="muted" style="margin:0 4px 6px">Manage who can sign in, what role they hold, and which tabs each role sees. Roles &amp; access sync to every device.</p>`;
+  h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
+    <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
   /* ---- accounts ---- */
   h += `<h2>Team accounts</h2>`;
@@ -208,6 +222,32 @@ window.adminLogoutEverywhere = function (id) {
   if (typeof syncRun === "function") syncRun("push");
   if (typeof render === "function") render();
   alert((u.name || u.username) + " will be signed out on every device on their next sync.");
+};
+window.adminPinSubmit = async function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
+  const el = document.getElementById("adminpin"), msg = document.getElementById("adminpinmsg");
+  const pin = ((el && el.value) || "").trim();
+  if (!pin) { if (msg) msg.textContent = "Enter your PIN."; return; }
+  try { const hh = await hashPw(pin); if (hh === me.adminPin) { try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {} render(); return; } } catch (e) {}
+  if (msg) msg.textContent = "Wrong PIN."; if (el) { el.value = ""; el.focus(); }
+};
+window.adminSetPin = async function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
+  const pin = prompt("Set a 4–8 digit Admin PIN:"); if (pin == null) return;
+  const p = String(pin).trim();
+  if (!/^\d{4,8}$/.test(p)) { alert("PIN must be 4–8 digits."); return; }
+  const again = prompt("Re-enter the PIN to confirm:"); if (again == null) return;
+  if (String(again).trim() !== p) { alert("PINs didn't match — try again."); return; }
+  try { me.adminPin = await hashPw(p); } catch (e) { alert("Couldn't set the PIN."); return; }
+  if (typeof touch === "function") touch(me); save(); try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {}
+  if (typeof syncRun === "function") syncRun("push");
+  render(); alert("Admin PIN set — you'll be asked for it each session.");
+};
+window.adminRemovePin = function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
+  if (!confirm("Remove the Admin PIN? Anyone with your unlocked phone could then open Admin.")) return;
+  me.adminPin = ""; if (typeof touch === "function") touch(me); save();
+  if (typeof syncRun === "function") syncRun("push"); render(); alert("Admin PIN removed.");
 };
 
 /* ----- account actions ----- */

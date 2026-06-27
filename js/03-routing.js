@@ -31,7 +31,8 @@ const NAV_GROUPS = [
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","receipts"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
-  { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data","admin"] }
+  { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
+  { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, pipeline:{l:"Pipeline",i:"🔀"}, quotes:{l:"All jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},

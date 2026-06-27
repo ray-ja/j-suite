@@ -106,6 +106,10 @@ async function main() {
     const ownerRec = (((reSync.json || {}).state || {}).users || []).find(u => u.id === "owner");
     st = await sync(crewTok2, { users: [Object.assign(clone(ownerRec), { logoutAt: now() + 1e7, updatedAt: now() })], obx: {}, jam: {} });
     check("crew CANNOT force-logout the owner (logoutAt protected)", !find(st, "owner").logoutAt);
+
+    const ownerNow = clone(find(st, "owner"));
+    st = await sync(crewTok2, { users: [Object.assign(ownerNow, { adminPin: "999", updatedAt: now() })], obx: {}, jam: {} });
+    check("crew CANNOT set the owner's Admin PIN (adminPin protected)", !find(st, "owner").adminPin);
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");
