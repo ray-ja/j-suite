@@ -92,6 +92,27 @@ function adminMigrate() {
   accs.forEach(u => { if (!u.role) u.role = "crew"; });      // remaining roleless ⇒ crew (no churn)
   if (changed) save();
 }
+/* MULTI-ORG (Phase 3a) — membership model. A membership ties an account to an org with a per-org role.
+   Records live in S.users with kind:"membership" (so realAccounts() already excludes them). */
+function membershipsOf(accountId) { return (S.users || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
+function roleInOrg(accountId, orgId) { const m = (S.users || []).find(x => x && x.kind === "membership" && x.accountId === accountId && x.orgId === orgId && x.active !== false); return m ? m.role : null; }
+function myOrgIds() {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return [];
+  if (me.superAdmin) return (S.registry || []).filter(r => r && !r.deleted).map(r => r.id);   // super-admin sees every org
+  return membershipsOf(me.id).map(m => m.orgId);
+}
+// ONE-TIME: migrate the pre-multi-org crew (everyone belonged to obx + jam) into memberships; owner → super-admin.
+function membershipMigrate() {
+  if (S.membersV1) return;
+  const accs = realAccounts(); if (!accs.length) return;   // wait for accounts (bootstrap) — retries next load
+  let changed = false;
+  ["obx", "jam"].forEach(oid => { if (!S[oid]) return; accs.forEach(u => {
+    const mid = "mem_" + oid + "_" + u.id;
+    if (!(S.users || []).find(x => x && x.id === mid)) { S.users.push({ id: mid, kind: "membership", orgId: oid, accountId: u.id, role: u.role || "crew", active: true, updatedAt: now() }); changed = true; }
+  }); });
+  accs.forEach(u => { if (u.role === "owner" && !u.superAdmin) { u.superAdmin = true; touch(u); changed = true; } });   // existing owner → platform super-admin
+  S.membersV1 = true; if (changed) save();
+}
 
 /* ----- nav/render enforcement (called from render() in 03-routing) ----- */
 function applyAccess() {

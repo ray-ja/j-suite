@@ -49,6 +49,7 @@ function load(){
   if(typeof seedInventory==="function")seedInventory();
   /* admin/roles — backfill roles + the synced access-map record on accounts (js/32-admin.js) */
   if(typeof adminMigrate==="function")adminMigrate();
+  if(typeof membershipMigrate==="function")membershipMigrate();   // MULTI-ORG: existing crew → obx/jam memberships, owner → super-admin (one-time)
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
 }
 function seedCeo(){
@@ -115,7 +116,7 @@ function D(){return S[S.biz]}
 function cat(){return CATALOG[S.biz]}
 function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
 // MULTI-ORG (Phase 2): the registry lists the organizations; S.biz is the ACTIVE org id; D()=S[S.biz].
-function myOrgs(){ return (S.registry||[]).filter(r=>r&&!r.deleted); }   // Phase 3 will filter to the signed-in user's memberships
+function myOrgs(){ const ids=(typeof myOrgIds==="function")?myOrgIds():null; return (S.registry||[]).filter(r=>r&&!r.deleted&&(!ids||!ids.length||ids.indexOf(r.id)>=0)); }   // the signed-in user's orgs (all for super-admin; all as a safe fallback if not-yet-migrated)
 function curOrg(){ return (S.registry||[]).find(r=>r&&r.id===S.biz) || {id:S.biz,name:S.biz}; }
 function orgName(id){ const r=(S.registry||[]).find(x=>x&&x.id===id); return r?r.name:id; }
 function clientOrgIds(){ return (S.registry||[]).filter(r=>r&&r.id&&S[r.id]&&typeof S[r.id]==="object"&&!Array.isArray(S[r.id])).map(r=>r.id); }   // org keys that have a local data slab (for the sync push)
@@ -124,6 +125,8 @@ function createOrg(name){
   const id=uid(); if(!S[id]) S[id]=blank();
   S.registry=S.registry||[];
   S.registry.push({id, slug:name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,""), name, settings:{}, aiConfig:null, createdAt:now(), updatedAt:now(), deleted:false});
+  const me=(typeof curUser==="function")?curUser():null;   // the creator becomes owner of the new org
+  if(me) S.users.push({id:"mem_"+id+"_"+me.id, kind:"membership", orgId:id, accountId:me.id, role:"owner", active:true, updatedAt:now()});
   save(); return id;
 }
 window.createOrgPrompt=function(){

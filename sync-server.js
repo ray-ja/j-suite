@@ -166,6 +166,10 @@ function loadStore() {
   try { return migrateStore(JSON.parse(fs.readFileSync(FILE, "utf8"))); }
   catch (e) { return migrateStore({ obx: blankBiz(), jam: blankBiz() }); }
 }
+// MULTI-ORG (Phase 3) — membership-based scoping helpers (used by /sync read+write isolation in 3c).
+function accountById(store, id) { return ((store && store.users) || []).find(u => u && u.id === id && !u.kind) || null; }
+function membershipsOfStore(store, accountId) { return ((store && store.users) || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
+function orgsForUser(store, account) { if (account && account.superAdmin) return orgIdsOf(store); return account ? membershipsOfStore(store, account.id).map(m => m.orgId) : []; }
 function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
 // merge two arrays of records by id; newest updatedAt wins
@@ -1207,4 +1211,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

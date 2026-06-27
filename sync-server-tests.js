@@ -29,6 +29,18 @@ ok("migration scaffolds the registry (obx + jam listed)", !!mig.registry.find(r 
 ok("migration preserves every record (obx customer survives)", !!mig.obx.customers.find(x => x.id === "c1"), mig.obx);
 ok("migration is idempotent (registry not duplicated on re-run)", t.migrateStore(t.migrateStore(mig)).registry.filter(r => r.id === "obx").length === 1);
 ok("registry LWW-merges (newer org name wins)", t.mergeState({ registry: [{ id: "obx", name: "Old", updatedAt: 1 }] }, { registry: [{ id: "obx", name: "New", updatedAt: 9 }] }).registry.find(r => r.id === "obx").name === "New");
+
+console.log("\n— multi-org (Phase 3a): memberships + scoping helpers —");
+const mstore = { obx: {}, jam: {}, escaperoom: {}, users: [
+  { id: "ray", username: "ray", role: "owner", superAdmin: true, updatedAt: 1 },
+  { id: "joe", username: "joe", role: "crew", updatedAt: 1 },
+  { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "crew", active: true, updatedAt: 1 },
+  { id: "mem_jam_joe", kind: "membership", orgId: "jam", accountId: "joe", role: "admin", active: true, updatedAt: 1 },
+] };
+ok("accountById returns the account, not membership records", !!t.accountById(mstore, "joe") && t.accountById(mstore, "joe").username === "joe" && !t.accountById(mstore, "mem_obx_joe"));
+ok("membershipsOfStore lists an account's memberships", t.membershipsOfStore(mstore, "joe").length === 2);
+ok("orgsForUser(member) = only their orgs", JSON.stringify(t.orgsForUser(mstore, t.accountById(mstore, "joe")).sort()) === JSON.stringify(["jam", "obx"]));
+ok("orgsForUser(super-admin) = every org", JSON.stringify(t.orgsForUser(mstore, t.accountById(mstore, "ray")).sort()) === JSON.stringify(["escaperoom", "jam", "obx"]));
 ok("users array migrated in", Array.isArray(m.users) && m.users.length === 1, m.users);
 ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") || {}).name === "New", m.obx.customers);
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);
