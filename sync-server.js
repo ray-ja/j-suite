@@ -94,7 +94,20 @@ function sanitizeUserWrites(incoming, pre, selfId) {
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;
-    if (u.kind === "membership" && u.orgId && writerOwnsOrg(pre, selfId, u.orgId)) { safe.push(u); continue; }   // org-owner (or super-admin) may manage memberships for an org they OWN — add/role/remove their team
+    if (u.kind === "membership" && u.orgId) {
+      // org-OWNER / super-admin: unrestricted membership writes for an org they own.
+      if (writerOwnsOrg(pre, selfId, u.orgId)) { safe.push(u); continue; }
+      // manager-tier (e.g. escape-room "manager"): RESTRICTED — may add/role/remove their team, but may NOT
+      // grant the owner role, touch an existing owner's membership, or self-promote (no privilege escalation).
+      if (writerManagesOrg(pre, selfId, u.orgId)) {
+        const tgtStored = storedRoleInOrg(pre, u.accountId, u.orgId);
+        const grantingOwner = u.role === "owner";
+        const touchingOwner = tgtStored === "owner";
+        const selfPromote = u.accountId === selfId && u.role && u.role !== storedRoleInOrg(pre, selfId, u.orgId);
+        if (!grantingOwner && !touchingOwner && !selfPromote) { safe.push(u); continue; }
+      }
+      // not authorized → fall through; drop a NEW membership, or revert SENSITIVE fields on a stored one below.
+    }
     const old = storedMap[u.id];
     if (!old) continue;                       // new account / new sentinel from a non-owner → drop
     if (u.kind || old.kind) continue;         // role-config sentinel (__roles__) → drop incoming, keep stored
@@ -180,6 +193,29 @@ function orgsForUser(store, account) { if (account && account.superAdmin) return
 function writerOwnsOrg(store, selfId, orgId) {   // may selfId write MEMBERSHIP records for orgId? super-admin → any; else only an org they OWN (per the STORED state, never the claimed incoming). The org-admin tier.
   const me = accountById(store, selfId); if (!me) return false; if (me.superAdmin) return true;
   return ((store && store.users) || []).some(m => m && m.kind === "membership" && m.accountId === selfId && m.orgId === orgId && m.role === "owner" && m.active !== false);
+}
+// Phase 3e — role hierarchy. The `__roles__` sentinel (owner-only to write, so trustworthy as STORED state)
+// carries each role's `actions`. A "manager-tier" role is one granted "manage-members". Default fallback if no
+// stored sentinel: only the built-in `manager`/`admin` keys (never `crew`/`game-guide`/`supervisor`).
+const MGR_FALLBACK = new Set(["manager", "admin"]);
+function roleManagesMembers(store, roleKey) {
+  if (roleKey === "owner") return true;
+  const rec = ((store && store.users) || []).find(u => u && u.id === "__roles__" && u.kind === "roles");
+  const def = rec && Array.isArray(rec.roles) ? rec.roles.find(r => r && r.key === roleKey) : null;
+  if (def && Array.isArray(def.actions)) return def.actions.indexOf("manage-members") >= 0;   // explicit grant
+  return MGR_FALLBACK.has(roleKey);   // no/legacy sentinel ⇒ conservative built-in fallback
+}
+// stored role of selfId in orgId (per STORED memberships only — never the claimed incoming)
+function storedRoleInOrg(store, accId, orgId) {
+  const m = ((store && store.users) || []).find(x => x && x.kind === "membership" && x.accountId === accId && x.orgId === orgId && x.active !== false);
+  return m ? m.role : null;
+}
+// May selfId MANAGE memberships for orgId at the manager tier? super-admin OR org-owner OR a stored manager-tier
+// member. Managers get RESTRICTED writes (enforced in sanitizeUserWrites): cannot grant owner, touch an owner,
+// or self-promote. writerOwnsOrg stays the "full owner" gate (used by org-AI etc.).
+function writerManagesOrg(store, selfId, orgId) {
+  if (writerOwnsOrg(store, selfId, orgId)) return true;
+  return roleManagesMembers(store, storedRoleInOrg(store, selfId, orgId));
 }
 // MULTI-ORG (Phase 4) — per-org AI. Each org may enable its OWN assistant on its OWN Anthropic key, stored
 // server-side in org-ai-config.json (gitignored, never synced to devices, never echoed back). One-way GUI setup.
@@ -1326,4 +1362,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };

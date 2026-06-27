@@ -69,7 +69,10 @@ window.escDateShift=function(n){ var d=new Date((ESC_DATE||today())+"T00:00:00")
   ESC_DATE=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); render(); };
 
 function escCanEdit(){ return (typeof canSee==="function")?canSee("escape"):true; }   // any role that can see the tab can run the board
-function escIsOwner(){ return (typeof isOwner==="function")?isOwner():true; }          // config (rooms/times) is owner-only
+// config (rooms/times) = owner OR a role granted "edit-settings" (manager/admin tier). Falls back to isOwner.
+function escIsOwner(){ if(typeof canDo==="function")return (typeof isOwner==="function"&&isOwner())||canDo("edit-settings"); return (typeof isOwner==="function")?isOwner():true; }
+// assign OTHER guides = owner OR a role granted "assign-guides" (supervisor+). Everyone can still self-assign.
+function escCanAssign(){ if(typeof canDo==="function")return (typeof isOwner==="function"&&isOwner())||canDo("assign-guides"); return (typeof isOwner==="function")?isOwner():true; }
 
 /* ---------- main render ---------- */
 function rEscape(){
@@ -118,7 +121,7 @@ function escRenderBoard(){
     html+='<div class="card" style="flex:1 1 280px;min-width:260px;padding:0;overflow:hidden;border-top:5px solid '+esc(col)+'">'
       +'<div style="padding:10px 12px;font-weight:800;font-size:16px;display:flex;justify-content:space-between;align-items:center">'
         +'<span>'+esc(room.name||"(room)")+'</span>'
-        +'<button class="btn ghost sm" onclick="escAddOffSlot(\''+room.id+'\')" title="Add a one-off game outside the fixed slots">+ off-slot</button>'
+        +(escCanManageDay()?'<button class="btn ghost sm" onclick="escAddOffSlot(\''+room.id+'\')" title="Add a one-off game outside the fixed slots">+ off-slot</button>':"")
       +'</div>';
     slots.forEach(function(slot){
       html+=escCellHtml(room,date,slot,escBookingAt(room.id,date,slot),false);
@@ -180,13 +183,18 @@ window.escOpenSlot=function(roomId,date,slot,bid){
     return '<option value="'+u.id+'" '+(b&&b.guideId===u.id?"selected":"")+'>'+esc(u.username||"")+'</option>';
   }).join("");
   var me=(typeof curUser==="function")?curUser():null;
+  var canAssign=escCanAssign();
+  // assign-capable roles get the full guide picker; a plain game-guide gets a read-only field + the self-assign button only
+  var guideField=canAssign
+    ? '<label>Game guide</label><select id="esc_guide">'+guideOpts+'</select>'
+    : '<label>Game guide</label><input id="esc_guide" type="hidden" value="'+(b?esc(b.guideId||""):"")+'"><div class="sub" style="padding:6px 0">'+(b&&b.guideId?esc(escGuideName(b.guideId)):"— unassigned —")+'</div>';
   modal((room?esc(room.name):"Slot")+" · "+esc(slot),''
     +'<div class="sub" style="margin-bottom:8px">'+fmtDate(date)+(isOff?" · off-slot one-off":"")+'</div>'
     +(isOff?'<label>Start time</label><input id="esc_slot" type="time" value="'+esc(slot)+'">':"")
     +'<label>Status</label><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+statusBtns+'</div>'
     +'<label>Party name</label><input id="esc_party" value="'+(b?esc(b.party||""):"")+'" placeholder="e.g. Miller birthday">'
     +'<div class="row" style="gap:8px"><div class="grow"><label># Players</label><input id="esc_players" inputmode="numeric" value="'+(b?esc(b.players||""):"")+'" placeholder="e.g. 6"></div>'
-      +'<div class="grow"><label>Game guide</label><select id="esc_guide">'+guideOpts+'</select></div></div>'
+      +'<div class="grow">'+guideField+'</div></div>'
     +'<label>Note (optional)</label><input id="esc_note" value="'+(b?esc(b.note||""):"")+'" placeholder="waiver done, late, etc.">'
     +(me?'<button class="btn ghost" style="margin-top:10px" onclick="escAssignSelfInModal()">👤 Assign me as guide</button>':"")
     +'<button class="btn acc" style="margin-top:12px" onclick="escSaveSlot(\''+roomId+'\',\''+date+'\',\''+esc(slot)+'\','+(b?"'"+b.id+"'":"null")+','+isOff+')">Save</button>'
@@ -234,8 +242,11 @@ window.escSelfAssign=function(bid){
   render();
 };
 /* off-slot one-off — opens a fresh slot editor for a room (room optional → prompt to pick) */
+// "manage the day" (off-slot one-offs) = owner OR a role granted "edit-schedule" (supervisor+). Falls back to escCanEdit.
+function escCanManageDay(){ if(typeof canDo==="function")return (typeof isOwner==="function"&&isOwner())||canDo("edit-schedule"); return escCanEdit(); }
 window.escAddOffSlot=function(roomId){
   if(!escCanEdit())return;
+  if(!escCanManageDay()){ alert("Off-slot games are added by a supervisor or manager."); return; }
   var rooms=escRooms();
   if(!rooms.length){ alert("Add a room first (Rooms tab)."); return; }
   var date=ESC_DATE||today();
@@ -262,13 +273,16 @@ window.escOpenOffSlot=function(roomId,date,slot){
     return '<option value="'+u.id+'">'+esc(u.username||"")+'</option>';
   }).join("");
   var me=(typeof curUser==="function")?curUser():null;
+  var guideField=escCanAssign()
+    ? '<label>Game guide</label><select id="esc_guide">'+guideOpts+'</select>'
+    : '<label>Game guide</label><input id="esc_guide" type="hidden" value=""><div class="sub" style="padding:6px 0">— unassigned —</div>';
   modal((room?esc(room.name):"Room")+" · off-slot game",''
     +'<div class="sub" style="margin-bottom:8px">'+fmtDate(date)+' · a one-off game outside the fixed session times</div>'
     +'<label>Start time</label><input id="esc_slot" type="time" value="'+esc(slot)+'">'
     +'<label>Status</label><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+statusBtns+'</div>'
     +'<label>Party name</label><input id="esc_party" placeholder="e.g. Walk-in group">'
     +'<div class="row" style="gap:8px"><div class="grow"><label># Players</label><input id="esc_players" inputmode="numeric" placeholder="e.g. 4"></div>'
-      +'<div class="grow"><label>Game guide</label><select id="esc_guide">'+guideOpts+'</select></div></div>'
+      +'<div class="grow">'+guideField+'</div></div>'
     +'<label>Note (optional)</label><input id="esc_note" placeholder="walk-in, etc.">'
     +(me?'<button class="btn ghost" style="margin-top:10px" onclick="escAssignSelfInModal()">👤 Assign me as guide</button>':"")
     +'<button class="btn acc" style="margin-top:12px" onclick="escSaveSlot(\''+roomId+'\',\''+date+'\',\''+esc(slot)+'\',null,true)">Add game</button>'

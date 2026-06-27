@@ -26,11 +26,36 @@ const ADMIN_PAGES = [
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
+
+/* ----- ACTIONS (Phase 3e — role hierarchy) -----
+   Fine-grained capabilities a role may exercise WITHIN the pages it can see. A role's actions are an
+   additive `actions` array on the role record (alongside `pages`). This is opt-in per role: roles with no
+   `actions` array fall back to a sensible default keyed off whether the role is a "manager tier" (see
+   roleActionAllows). `manage-members` is the ONLY action also enforced server-side (writerOwnsOrg). */
+const ALL_ACTIONS = [
+  { key: "assign-guides", label: "Assign guides" },     // pick who runs which room (supervisor+)
+  { key: "edit-schedule", label: "Manage the day" },    // add/move/cancel sessions, off-slot games
+  { key: "edit-settings", label: "Org settings" },      // rename rooms/times, module settings pages
+  { key: "manage-members", label: "Manage members" },   // add/role/remove members in this org (server-enforced)
+  { key: "edit-tools", label: "Module toggles" }        // turn org tools/modules on/off
+];
+const ALL_ACTION_KEYS = ALL_ACTIONS.map(a => a.key);
+
+/* Escape-room ladder (owner asked for game guide → supervisor → manager → admin → owner). These keys live in
+   the GLOBAL role registry but are OPT-IN per member (membership.role is per-org), so OBX/Jamieson keep
+   owner/admin/crew untouched while the escape-room org assigns this fuller ladder. Backward-compatible.
+   Page sets escalate; ESCAPE_PAGES = the operational tabs a guide needs to run the floor. */
+const ESCAPE_PAGES = ["today", "escape", "schedule", "booking", "messages", "accounts", "time"];
+
 /* owner is implicit "all access" (no pages list); admin/crew seed the editable defaults */
 const DEFAULT_ROLES = [
   { key: "owner", label: "Owner", builtin: true },
-  { key: "admin", label: "Admin", pages: ALL_TABS.slice() },
-  { key: "crew", label: "Crew", pages: CREW_PAGES.slice() }
+  { key: "admin", label: "Admin", pages: ALL_TABS.slice(), actions: ALL_ACTION_KEYS.slice() },
+  { key: "crew", label: "Crew", pages: CREW_PAGES.slice(), actions: [] },
+  // ---- escape-room hierarchy (opt-in; assign per member in the org's Admin → Members) ----
+  { key: "game-guide", label: "Game guide", pages: ESCAPE_PAGES.slice(), actions: [] },                                              // run games / room board + scheduler (self-assign only)
+  { key: "supervisor", label: "Supervisor", pages: ESCAPE_PAGES.slice(), actions: ["assign-guides", "edit-schedule"] },             // + assign guides, manage the day
+  { key: "manager", label: "Manager", pages: ALL_TABS.slice(), actions: ["assign-guides", "edit-schedule", "edit-settings", "manage-members", "edit-tools"] }   // + org settings, members, module toggles (everything but the AI/tools secrets the owner holds)
 ];
 
 /* ----- accessors ----- */
@@ -45,6 +70,11 @@ function ensureRolesRec() {
   }
   if (!Array.isArray(r.roles)) r.roles = JSON.parse(JSON.stringify(DEFAULT_ROLES));
   if (!r.roles.some(x => x.key === "owner")) r.roles.unshift({ key: "owner", label: "Owner", builtin: true });
+  // ADDITIVELY backfill any NEW built-in default roles (e.g. the escape-room ladder) that an existing,
+  // pre-hierarchy __roles__ record predates — never overwrite a role the admin already has/customized.
+  // Local-only seed: do NOT bump updatedAt, so this never pushes over a server's authoritative config; the
+  // roles simply become available on this device (and ride along the next genuine edit).
+  DEFAULT_ROLES.forEach(d => { if (!r.roles.some(x => x.key === d.key)) r.roles.push(JSON.parse(JSON.stringify(d))); });
   return r;
 }
 function rolesRec() { return ensureRolesRec(); }
@@ -73,7 +103,8 @@ function isSuperAdmin() { const u = (typeof curUser === "function") ? curUser() 
 function isOwner() { return curRoleKey() === "owner"; }
 function roleAllows(key, tab) {
   if (key === "owner") return true;            // owner sees everything, incl. the admin panel
-  if (tab === "admin" || tab === "approvals") return false;   // admin panel + approvals inbox are owner-only, always (hard-gated: hidden AND coerced-away)
+  if (tab === "approvals") return false;       // approvals inbox is owner-only, always (hard-gated: hidden AND coerced-away)
+  if (tab === "admin") return roleActionAllows(key, "manage-members");   // Admin panel: owner OR a manager-tier role (it self-gates owner-only cards inside)
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user
@@ -81,6 +112,24 @@ function roleAllows(key, tab) {
   return r.pages.indexOf(tab) >= 0;
 }
 function canSee(tab) { return roleAllows(curRoleKey(), tab) && (typeof orgHasTab !== "function" || orgHasTab(tab)); }   // role gate AND per-org tool visibility
+/* ----- action gate (role hierarchy) -----
+   May `key` perform `action`? Owner = always. Otherwise consult the role's `actions` array. Roles with no
+   `actions` array fall back to all-access (a custom role made before this field existed shouldn't suddenly
+   lose abilities). The signed-out pseudo-role can do nothing. */
+function roleActionAllows(key, action) {
+  if (key === "owner") return true;                       // owner does everything, incl. AI/tools secrets
+  if (key === NO_SESSION_ROLE) return false;              // logged-out device: no privileged actions
+  const r = roleByKey(key);
+  if (!r) return false;                                   // unknown role ⇒ no privileged action (fail-closed for actions; pages still fail-open in roleAllows)
+  if (!Array.isArray(r.actions)) return true;             // legacy custom role w/o an actions list ⇒ unrestricted (backward-compatible)
+  return r.actions.indexOf(action) >= 0;
+}
+function canDo(action) { return roleActionAllows(curRoleKey(), action); }   // current session's capability check
+window.canDo = canDo; window.roleActionAllows = roleActionAllows;
+/* may the current session manage this org's members (assign roles / add / remove)? Owner OR a role granted
+   `manage-members`. MUST stay in lock-step with the server's writerOwnsOrg, which is the real authority. */
+function canManageMembers() { return canDo("manage-members"); }
+window.canManageMembers = canManageMembers;
 function activeOwners() { return realAccounts().filter(u => u.role === "owner" && u.active !== false); }
 
 /* ----- migration: run from load() once accounts exist ----- */
@@ -181,7 +230,8 @@ function roleBadge(key) {
   return `<span class="badge" style="${c}">${esc(label)}</span>`;
 }
 function rAdmin() {
-  if (!isOwner()) { view.innerHTML = `<div class="card"><div class="nm">Owner only</div><div class="sub">This screen is restricted to the Owner role.</div></div>`; return; }
+  const owner = isOwner(), canMembers = (typeof canManageMembers === "function") && canManageMembers();
+  if (!owner && !canMembers) { view.innerHTML = `<div class="card"><div class="nm">Restricted</div><div class="sub">This screen is restricted to the Owner and Manager roles.</div></div>`; return; }
   const accs = orgMembers(S.biz), roles = allRoles();   // MULTI-ORG: the ACTIVE org's members only
   const me = (typeof curUser === "function") ? curUser() : null;
   // PIN gate — lock the Admin page behind the owner's PIN (unlocked for the browser session once entered)
@@ -204,8 +254,9 @@ function rAdmin() {
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
-  if (typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility (org-owner)
-  if (typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup (org-owner)
+  const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
+  if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
+  if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;
@@ -220,23 +271,30 @@ function rAdmin() {
     <div id="acctlist">${adminAccountsHTML()}</div>`;
   }
 
-  /* ---- roles & page access ---- */
-  h += `<div class="secthd" style="margin-top:18px"><h2>Roles &amp; page access</h2><button class="btn ghost sm" onclick="adminOpenAddRole()">+ Role</button></div>`;
-  roles.forEach(r => {
-    const builtin = r.key === "owner";
-    h += `<div class="card"><div class="row"><div class="grow"><div class="nm">${esc(r.label)} ${roleBadge(r.key)}</div>
-      <div class="sub">${esc(r.key)}${builtin ? " · built-in" : ""}</div></div>
-      ${builtin ? "" : `<button class="btn danger sm" onclick="adminDeleteRole('${esc(r.key)}')">Delete role</button>`}</div>`;
-    if (builtin) { h += `<div class="muted" style="margin-top:8px">Full access — every page, including this Admin panel. Cannot be restricted.</div>`; }
-    else {
-      h += `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px">` + ADMIN_PAGES.map(p => {
-        const on = roleAllows(r.key, p.tab);
-        return `<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">
-          <input type="checkbox" style="width:18px;height:18px" ${on ? "checked" : ""} onchange="adminTogglePage('${esc(r.key)}','${p.tab}')">${esc(p.label)}</label>`;
-      }).join("") + `</div>`;
-    }
-    h += `</div>`;
-  });
+  /* ---- roles & page access (role DEFINITIONS are the global registry — owner-only to edit) ---- */
+  if (owner) {
+    h += `<div class="secthd" style="margin-top:18px"><h2>Roles, pages &amp; actions</h2><button class="btn ghost sm" onclick="adminOpenAddRole()">+ Role</button></div>`;
+    roles.forEach(r => {
+      const builtin = r.key === "owner";
+      h += `<div class="card"><div class="row"><div class="grow"><div class="nm">${esc(r.label)} ${roleBadge(r.key)}</div>
+        <div class="sub">${esc(r.key)}${builtin ? " · built-in" : ""}</div></div>
+        ${builtin ? "" : `<button class="btn danger sm" onclick="adminDeleteRole('${esc(r.key)}')">Delete role</button>`}</div>`;
+      if (builtin) { h += `<div class="muted" style="margin-top:8px">Full access — every page + every action, including this Admin panel. Cannot be restricted.</div>`; }
+      else {
+        h += `<div class="sub" style="margin-top:10px;font-weight:600">Pages</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">` + ADMIN_PAGES.map(p => {
+          const on = roleAllows(r.key, p.tab);
+          return `<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">
+            <input type="checkbox" style="width:18px;height:18px" ${on ? "checked" : ""} onchange="adminTogglePage('${esc(r.key)}','${p.tab}')">${esc(p.label)}</label>`;
+        }).join("") + `</div>`;
+        h += `<div class="sub" style="margin-top:12px;font-weight:600">Actions</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">` + ALL_ACTIONS.map(a => {
+          const on = roleActionAllows(r.key, a.key);
+          return `<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">
+            <input type="checkbox" style="width:18px;height:18px" ${on ? "checked" : ""} onchange="adminToggleAction('${esc(r.key)}','${a.key}')">${esc(a.label)}</label>`;
+        }).join("") + `</div>`;
+      }
+      h += `</div>`;
+    });
+  }
   h += `<h2 style="margin-top:18px">Activity</h2><div class="card"><div id="auditlog" class="sub">Loading recent changes…</div></div>`;
   view.innerHTML = h;
   if (window.loadPresenceUI) setTimeout(loadPresenceUI, 30);
@@ -318,7 +376,12 @@ window.adminRemovePin = function () {
   me.adminPin = ""; if (typeof touch === "function") touch(me); save();
   if (typeof syncRun === "function") syncRun("push"); render(); alert("Admin PIN removed.");
 };
-function adminRoleOpts(sel) { return allRoles().map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join(""); }
+function adminRoleOpts(sel) {
+  // A non-owner manager cannot assign the Owner role (no escalation) — hide it from the picker unless it's
+  // the member's current role (so we never silently drop their displayed value).
+  const ownerOk = (typeof isOwner === "function") ? isOwner() : true;
+  return allRoles().filter(r => ownerOk || r.key !== "owner" || sel === "owner").map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("");
+}
 function adminSortFn(mode) {
   const nm = u => String(u.name || u.username || "").toLowerCase();
   if (mode === "role") return (a, b) => String(a.role || "").localeCompare(String(b.role || "")) || nm(a).localeCompare(nm(b));
@@ -408,6 +471,12 @@ window.adminSetEmail = function (id) {
 };
 window.adminSetRole = function (id, key) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;
+  // Member-management authz: owner OR a manager-tier role. A NON-owner manager may neither touch an owner nor
+  // grant the owner role (no privilege escalation). The server's writerOwnsOrg is the real backstop.
+  if (!isOwner()) {
+    if (!(typeof canManageMembers === "function" && canManageMembers())) { alert("You don't have permission to manage members."); return; }
+    if (key === "owner" || roleInOrg(id, S.biz) === "owner") { alert("Only an owner can assign or change the Owner role."); render(); return; }
+  }
   if (roleInOrg(id, S.biz) === "owner" && key !== "owner" && orgOwners(S.biz).length <= 1) { alert("Can't change the last owner of this organization — promote another owner first."); render(); return; }
   orgSetRole(id, S.biz, key);   // per-org role
   if (typeof logChange === "function") logChange("update", "account", id, "Set " + u.username + " role in " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " → " + (roleByKey(key) ? roleByKey(key).label : key));
@@ -415,6 +484,10 @@ window.adminSetRole = function (id, key) {
 };
 window.adminToggleActive = function (id) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;
+  if (!isOwner()) {
+    if (!(typeof canManageMembers === "function" && canManageMembers())) { alert("You don't have permission to manage members."); return; }
+    if (roleInOrg(id, S.biz) === "owner") { alert("Only an owner can deactivate an owner."); return; }
+  }
   const willActivate = u.active === false;
   if (!willActivate && u.role === "owner" && activeOwners().length <= 1) { alert("Can't deactivate the last active owner."); return; }
   u.active = willActivate ? true : false; touch(u);
@@ -437,6 +510,10 @@ window.adminDoResetPw = async function (id) {
 };
 window.adminRemove = function (id) {
   const u = realAccounts().find(x => x.id === id); if (!u) return;
+  if (!isOwner()) {
+    if (!(typeof canManageMembers === "function" && canManageMembers())) { alert("You don't have permission to manage members."); return; }
+    if (roleInOrg(id, S.biz) === "owner") { alert("Only an owner can remove an owner."); return; }
+  }
   if (roleInOrg(id, S.biz) === "owner" && orgOwners(S.biz).length <= 1) { alert("Can't remove the last owner of this organization."); return; }
   if (!confirm("Remove " + u.username + " from " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + "? They keep their account but lose access to this organization.")) return;
   orgRemoveMember(id, S.biz);   // remove the membership (not the global account)
@@ -446,12 +523,23 @@ window.adminRemove = function (id) {
 
 /* ----- role actions ----- */
 window.adminTogglePage = function (key, tab) {
+  if (typeof isOwner === "function" && !isOwner()) { alert("Editing role definitions is owner-only."); return; }
   const r = roleByKey(key); if (!r || r.key === "owner") return;
   if (!Array.isArray(r.pages)) r.pages = ALL_TABS.slice();   // materialize "all" before toggling one off
   const i = r.pages.indexOf(tab);
   if (i >= 0) r.pages.splice(i, 1); else r.pages.push(tab);
   touchRoles();
   if (typeof logChange === "function") logChange("update", "account", "", (i >= 0 ? "Hid " : "Showed ") + tab + " for role " + r.label);
+  save(); render();
+};
+window.adminToggleAction = function (key, action) {
+  if (typeof isOwner === "function" && !isOwner()) { alert("Editing role definitions is owner-only."); return; }
+  const r = roleByKey(key); if (!r || r.key === "owner") return;
+  if (!Array.isArray(r.actions)) r.actions = ALL_ACTION_KEYS.slice();   // legacy role was unrestricted ⇒ materialize "all" before turning one off
+  const i = r.actions.indexOf(action);
+  if (i >= 0) r.actions.splice(i, 1); else r.actions.push(action);
+  touchRoles();
+  if (typeof logChange === "function") logChange("update", "account", "", (i >= 0 ? "Revoked " : "Granted ") + action + " for role " + r.label);
   save(); render();
 };
 window.adminOpenAddRole = function () {
