@@ -174,7 +174,10 @@ async function syncRun(mode){
     window.AUTH_401=false;_retryN=0;
     const changed=JSON.stringify(data.state)!==sentSig;
     window.__syncApplying=true;
-    Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;S.sync.last=now();save();   // apply EVERY org slab the server returned
+    Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;   // apply every org slab the server returned
+    var _keep=new Set((S.registry||[]).map(function(r){return r&&r.id;}));Object.keys(S).forEach(function(k){if(k!=="users"&&k!=="registry"&&k!=="sync"&&k!=="biz"&&S[k]&&typeof S[k]==="object"&&!Array.isArray(S[k])&&!_keep.has(k))delete S[k];});   // ISOLATION: drop org slabs we're not a member of (server preserves them → loss-free)
+    if(!S[S.biz]&&(S.registry||[]).length)S.biz=S.registry[0].id;   // the active org must be one we actually have
+    S.sync.last=now();save();
     window.__syncApplying=false;
     if(typeof checkForcedLogout==="function"&&checkForcedLogout()){_syncInflight=false;return;}   // an owner signed this account out everywhere
 

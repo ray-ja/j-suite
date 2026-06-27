@@ -41,6 +41,12 @@ ok("accountById returns the account, not membership records", !!t.accountById(ms
 ok("membershipsOfStore lists an account's memberships", t.membershipsOfStore(mstore, "joe").length === 2);
 ok("orgsForUser(member) = only their orgs", JSON.stringify(t.orgsForUser(mstore, t.accountById(mstore, "joe")).sort()) === JSON.stringify(["jam", "obx"]));
 ok("orgsForUser(super-admin) = every org", JSON.stringify(t.orgsForUser(mstore, t.accountById(mstore, "ray")).sort()) === JSON.stringify(["escaperoom", "jam", "obx"]));
+const mm = t.migrateStore({ obx: {}, jam: {}, users: [{ id: "u1", role: "owner", updatedAt: 1 }, { id: "u2", role: "crew", updatedAt: 1 }] });
+ok("migration synthesizes obx+jam memberships for pre-multi-org accounts", mm.users.filter(x => x.kind === "membership").length === 4);
+ok("migration promotes the owner to super-admin", !!mm.users.find(x => x.id === "u1").superAdmin);
+ok("membership migration is idempotent", t.migrateStore(t.migrateStore(mm)).users.filter(x => x.kind === "membership").length === 4);
+ok("an account that already has a membership is NOT re-migrated into obx/jam", (function () { const s2 = t.migrateStore({ obx: {}, jam: {}, escaperoom: {}, users: [{ id: "u3", role: "crew", updatedAt: 1 }, { id: "mem_escaperoom_u3", kind: "membership", orgId: "escaperoom", accountId: "u3", active: true, updatedAt: 1 }] }); return s2.users.filter(x => x.kind === "membership" && x.accountId === "u3").length === 1; })());
+ok("projectForUser sends only the caller's orgs", (function () { const p = t.projectForUser({ obx: { customers: [] }, jam: { customers: [] }, registry: [{ id: "obx" }, { id: "jam" }], users: [] }, ["obx"], { id: "z" }); return !!p.obx && !p.jam && p.registry.length === 1; })());
 ok("users array migrated in", Array.isArray(m.users) && m.users.length === 1, m.users);
 ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") || {}).name === "New", m.obx.customers);
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);

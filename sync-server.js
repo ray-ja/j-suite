@@ -90,7 +90,7 @@ function sanitizeUserWrites(incoming, pre, selfId) {
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
-  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin"];   // owner-only fields; adminPin is also self-settable (you can PIN-lock your OWN account)
+  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin", "superAdmin"];   // owner-only fields (superAdmin = platform owner — never settable by a non-owner sync); adminPin is also self-settable
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;
@@ -160,6 +160,12 @@ function migrateStore(s) {
   if (!Array.isArray(s.registry)) s.registry = [];
   for (const oid of orgIdsOf(s)) if (!s.registry.find(r => r && r.id === oid))   // scaffold a registry record for every org lacking one (idempotent)
     s.registry.push({ id: oid, slug: oid, name: ORG_NAMES[oid] || oid, settings: {}, aiConfig: null, createdAt: 1, updatedAt: 1, deleted: false });
+  // migrate pre-multi-org accounts (those with NO membership) → members of the original orgs (obx+jam); owner → super-admin. Idempotent + authoritative (so isolation works from the first sync).
+  s.users.filter(u => u && !u.kind && !u.deleted).forEach(u => {
+    if (s.users.some(m => m && m.kind === "membership" && m.accountId === u.id)) return;
+    ["obx", "jam"].forEach(oid => { if (s[oid]) s.users.push({ id: "mem_" + oid + "_" + u.id, kind: "membership", orgId: oid, accountId: u.id, role: u.role || "crew", active: true, updatedAt: 1 }); });
+    if (u.role === "owner") u.superAdmin = true;
+  });
   return s;
 }
 function loadStore() {
@@ -170,6 +176,28 @@ function loadStore() {
 function accountById(store, id) { return ((store && store.users) || []).find(u => u && u.id === id && !u.kind) || null; }
 function membershipsOfStore(store, accountId) { return ((store && store.users) || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
 function orgsForUser(store, account) { if (account && account.superAdmin) return orgIdsOf(store); return account ? membershipsOfStore(store, account.id).map(m => m.orgId) : []; }
+// Phase 3c — read/write ISOLATION. No field-stripping anywhere: the additive merge preserves every UNSENT
+// org/account from `stored` on write-back, so a scoped client can never drop another org's data.
+function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's org slabs (foreign slabs dropped); users/registry pass through to sanitizeUserWrites
+  const out = { users: incoming && incoming.users, registry: incoming && incoming.registry };
+  const set = new Set(myOrgs);
+  Object.keys(incoming || {}).forEach(k => { if (set.has(k) && incoming[k] && typeof incoming[k] === "object" && !Array.isArray(incoming[k])) out[k] = incoming[k]; });
+  return out;
+}
+function projectUsers(users, myOrgs, me) {   // READ: a caller sees only memberships for their orgs + accounts that co-member those orgs
+  if (me && me.superAdmin) return users || [];
+  const set = new Set(myOrgs), memberIds = new Set();
+  (users || []).forEach(u => { if (u && u.kind === "membership" && set.has(u.orgId)) memberIds.add(u.accountId); });
+  if (me) memberIds.add(me.id);
+  return (users || []).filter(u => u && (u.kind === "membership" ? set.has(u.orgId) : (u.kind ? true : memberIds.has(u.id))));
+}
+function projectForUser(store, myOrgs, me) {   // the ONLY thing /sync returns — strictly the caller's orgs
+  const out = { users: projectUsers(store.users, myOrgs, me), registry: [] };
+  const set = new Set(myOrgs), isSuper = !!(me && me.superAdmin);
+  for (const oid of myOrgs) if (store[oid]) out[oid] = store[oid];
+  out.registry = (store.registry || []).filter(r => r && (isSuper || set.has(r.id)));
+  return out;
+}
 function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
 // merge two arrays of records by id; newest updatedAt wins
@@ -1111,12 +1139,15 @@ const server = http.createServer((req, res) => {
       const pre = loadStore();
       if (puid) { const _acct = (pre.users || []).find(u => u && u.id === puid); if (_acct && _acct.logoutAt && (+tokRec.issued || 0) < _acct.logoutAt) { res.writeHead(401); return res.end('{"error":"session ended — sign in again"}'); } }   // "log out everywhere": a token issued before the account's logoutAt is dead
       const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
-      const verifiedOwner = !!(puid && (pre.users || []).find(u => u && u.id === puid && u.role === "owner"));   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
-      const incomingState = verifiedOwner ? (payload.state || {}) : sanitizeUserWrites(payload.state || {}, pre, syncUserId);
+      const me = puid ? accountById(pre, puid) : null;
+      const myOrgs = me ? orgsForUser(pre, me) : ["obx", "jam"].filter(o => pre[o]);   // ISOLATION: identified user → their member orgs; legacy shared token → original orgs only (new orgs stay isolated from it)
+      const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
+      const scoped = scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: foreign org slabs dropped before the merge
+      const incomingState = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, state: merged }));
+      res.end(JSON.stringify({ ok: true, state: projectForUser(merged, myOrgs, me) }));   // READ isolation: only the caller's orgs go back
       // best-effort push: tickle recipients of genuinely-new human messages (DMs + broadcasts) synced in
       try {
         const nowMs = Date.now(), incoming = payload.state || {};
@@ -1211,4 +1242,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, scopedIncoming, projectUsers, projectForUser, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
