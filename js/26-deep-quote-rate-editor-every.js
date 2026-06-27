@@ -89,13 +89,19 @@ function rData(){
     <h2>This device</h2>
     <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
     <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
-    <h2>Backup</h2>
+    <h2>Backups</h2>
     <div class="card">
-      <p class="muted" style="margin-bottom:10px">Data lives on this device. Export a backup any time; import to restore or move it manually.</p>
-      <button class="btn ghost" onclick="exportData()">Export backup (.json)</button>
-      <label>Import backup</label><input type="file" accept="application/json" id="impfile" onchange="importData(this)">
+      <div id="bk_status" class="sub" style="margin-bottom:12px">🗄️ Checking server backups…</div>
+      <button class="btn acc" style="width:100%" onclick="backupNow()">💾 Back up now — save a full copy to this device</button>
+      <div class="sub" id="bk_devlast" style="margin:7px 2px 0">${(function(){var t=+(localStorage.getItem("jra_lastbackup")||0);return t?"✓ Last copy to this device: "+new Date(t).toLocaleString():"⚠️ No copy saved to this device yet — tap above.";})()}</div>
+      <button class="btn ghost" style="width:100%;margin-top:12px" onclick="backupServerNow(this)">☁️ Snapshot the server now</button>
+      <div style="border-top:1px solid var(--line);margin:14px 0 10px"></div>
+      <label style="margin:0">↩ Restore from a backup file</label>
+      <input type="file" accept="application/json" id="impfile" onchange="importData(this)">
+      <p class="muted" style="margin-top:8px;font-size:12px">The server auto-backs-up hourly. "Back up now" puts a full copy on this device — keep one off the server.</p>
     </div>
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
+  if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
 }
 window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
   S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
@@ -170,6 +176,25 @@ window.exportData=function(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="business-app-backup-"+today()+".json";a.click();
+  try{localStorage.setItem("jra_lastbackup",String(Date.now()));}catch(e){}
+};
+window.backupNow=function(){ exportData(); const el=document.getElementById("bk_devlast"); if(el)el.textContent="✓ Last copy to this device: "+new Date().toLocaleString(); };
+window.fmtBytes=function(n){ n=+n||0; if(n<1024)return n+" B"; if(n<1048576)return Math.round(n/1024)+" KB"; return (n/1048576).toFixed(1)+" MB"; };
+window.loadBackupStatus=function(){
+  const el=document.getElementById("bk_status"); if(!el)return;
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/backup-status",{headers:tok?{Authorization:"Bearer "+tok}:{}})
+    .then(r=>r.ok?r.json():Promise.reject(r.status))
+    .then(d=>{ const last=d.last?new Date(d.last).toLocaleString():"never"; el.innerHTML="🗄️ Server auto-backup: hourly · <b>"+(d.count||0)+"</b> snapshots ("+fmtBytes(d.bytes)+") · last "+last; })
+    .catch(()=>{ el.innerHTML="🗄️ Server auto-backs-up hourly (live status unavailable right now)."; });
+};
+window.backupServerNow=function(btn){
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  if(btn){btn.disabled=true;btn.textContent="☁️ Snapshotting…";}
+  fetch(base+"/api/backup",{method:"POST",headers:tok?{Authorization:"Bearer "+tok}:{}})
+    .then(r=>r.json())
+    .then(d=>{ if(btn){btn.disabled=false;btn.textContent="☁️ Snapshot the server now";} if(d&&d.ok){loadBackupStatus();alert("Server snapshot saved — "+d.count+" total.");}else{alert("Snapshot failed: "+((d&&d.error)||"unknown"));} })
+    .catch(()=>{ if(btn){btn.disabled=false;btn.textContent="☁️ Snapshot the server now";} alert("Snapshot failed — are you online?"); });
 };
 window.importData=function(inp){
   const file=inp.files[0];if(!file)return;const r=new FileReader();

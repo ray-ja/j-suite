@@ -51,6 +51,26 @@ const lastActive = {};
 function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) lastActive[userId] = n; }
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
+// Backups live one level up (matches ~/jsuite-backup.sh + the deploy snapshots). The GUI Backups card
+// reads this status (token-gated) and can trigger an on-demand snapshot. Metadata only — never serves the data.
+const BACKUP_DIR = path.join(__dirname, "..", "data-backups");
+function backupStatus() {
+  try {
+    const files = fs.readdirSync(BACKUP_DIR).filter(f => /\.json$/.test(f));
+    let last = 0, bytes = 0;
+    for (const f of files) { try { const st = fs.statSync(path.join(BACKUP_DIR, f)); if (st.mtimeMs > last) last = st.mtimeMs; bytes += st.size; } catch (e) {} }
+    return { count: files.length, last: Math.round(last), bytes: bytes };
+  } catch (e) { return { count: 0, last: 0, bytes: 0, error: "no backup dir" }; }
+}
+function backupNow() {
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    if (!fs.existsSync(FILE)) return { ok: false, error: "no data file" };
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "").replace(/(\d{8})(\d{6})/, "$1-$2");
+    fs.copyFileSync(FILE, path.join(BACKUP_DIR, "manual-" + ts + ".json"));
+    return Object.assign({ ok: true }, backupStatus());
+  } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+}
 // Cache-bust token — changes on every restart (i.e. every deploy). Stamped onto js/css URLs in the
 // served HTML so a new build loads from a URL no cache has seen — defeats Cloudflare's max-age override
 // on static assets (Cloudflare serves the HTML as DYNAMIC/uncached, so the fresh stamps always arrive).
@@ -813,6 +833,23 @@ const server = http.createServer((req, res) => {
     const on = !!(VAPID && VAPID.publicKey);
     res.writeHead(on ? 200 : 404, { "Content-Type": "application/json" });
     return res.end(JSON.stringify(on ? { key: VAPID.publicKey } : { error: "push not configured" }));
+  }
+
+  // BACKUPS (GUI Backups card) — token-gated. Status is METADATA ONLY (count/last/bytes); never serves the data.
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/backup-status") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(backupStatus()));
+  }
+  // On-demand server snapshot — POST /api/backup. Token-gated. Copies data.json → data-backups/manual-<ts>.json.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/backup") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (TOKEN && tok !== TOKEN) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(backupNow()));
   }
 
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
