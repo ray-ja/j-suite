@@ -24,6 +24,7 @@ const ADMIN_PAGES = [
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time"];
+let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 /* owner is implicit "all access" (no pages list); admin/crew seed the editable defaults */
 const DEFAULT_ROLES = [
   { key: "owner", label: "Owner", builtin: true },
@@ -133,24 +134,19 @@ function rAdmin() {
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
-  /* ---- accounts ---- */
-  h += `<h2>Team accounts</h2>`;
-  if (!accs.length) h += `<div class="card"><div class="muted">No accounts yet. Add one to start assigning roles.</div></div>`;
-  accs.forEach(u => {
-    const active = u.active !== false, mine = me && me.id === u.id;
-    h += `<div class="card">
-      <div class="row"><div class="grow"><div class="nm">${esc(u.username)}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
-        <div class="sub">${roleBadge(u.role || "crew")} ${active ? `<span class="badge" style="background:var(--soft);color:var(--muted)">Active</span>` : `<span class="badge" style="background:var(--danger);color:#fff">Deactivated</span>`} <span class="sub" id="pres_${u.id}" style="display:inline;color:var(--muted)"></span></div></div>
-        <select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:110px">${roleOpts(u.role || "crew")}</select></div>
-      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn ghost sm" onclick="adminSetName('${u.id}')">🧑 ${u.name ? esc(u.name) : "Set full name"}</button>
-        <button class="btn ghost sm" onclick="adminSetEmail('${u.id}')">✉ ${u.email ? esc(u.email) : "Set email (SSO)"}</button>
-        <button class="btn ghost sm" onclick="adminResetPw('${u.id}')">Reset password</button>
-        <button class="btn ghost sm" onclick="adminLogoutEverywhere('${u.id}')">🚪 Log out everywhere</button>
-        <button class="btn ghost sm" onclick="adminToggleActive('${u.id}')">${active ? "Deactivate" : "Reactivate"}</button>
-        <button class="btn danger sm" onclick="adminRemove('${u.id}')">Remove</button>
-      </div></div>`;
-  });
+  /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
+  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Team accounts</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add account</button></div>`;
+  if (!accs.length) h += `<div class="card"><div class="muted">No accounts yet. Tap “+ Add account”.</div></div>`;
+  else {
+    h += `<div class="row" style="gap:8px;margin:0 2px 8px">
+      <input id="acctsearch" value="${esc(ADMIN_SEARCH)}" placeholder="🔍 Search name, username or email" oninput="adminFilterAccounts()" style="flex:1">
+      <select id="acctsort" onchange="adminFilterAccounts()" style="width:auto">
+        <option value="name"${ADMIN_SORT === "name" ? " selected" : ""}>Name A–Z</option>
+        <option value="role"${ADMIN_SORT === "role" ? " selected" : ""}>By role</option>
+        <option value="active"${ADMIN_SORT === "active" ? " selected" : ""}>Active first</option>
+      </select></div>
+    <div id="acctlist">${adminAccountsHTML()}</div>`;
+  }
 
   /* ---- roles & page access ---- */
   h += `<div class="secthd" style="margin-top:18px"><h2>Roles &amp; page access</h2><button class="btn ghost sm" onclick="adminOpenAddRole()">+ Role</button></div>`;
@@ -249,6 +245,52 @@ window.adminRemovePin = function () {
   if (!confirm("Remove the Admin PIN? Anyone with your unlocked phone could then open Admin.")) return;
   me.adminPin = ""; if (typeof touch === "function") touch(me); save();
   if (typeof syncRun === "function") syncRun("push"); render(); alert("Admin PIN removed.");
+};
+function adminRoleOpts(sel) { return allRoles().map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join(""); }
+function adminSortFn(mode) {
+  const nm = u => String(u.name || u.username || "").toLowerCase();
+  if (mode === "role") return (a, b) => String(a.role || "").localeCompare(String(b.role || "")) || nm(a).localeCompare(nm(b));
+  if (mode === "active") return (a, b) => ((b.active !== false) - (a.active !== false)) || nm(a).localeCompare(nm(b));
+  return (a, b) => nm(a).localeCompare(nm(b));
+}
+function adminAccountsHTML() {
+  const me = (typeof curUser === "function") ? curUser() : null;
+  const all = realAccounts();
+  const q = String(ADMIN_SEARCH || "").toLowerCase().trim();
+  let list = q ? all.filter(u => (String(u.username || "") + " " + String(u.name || "") + " " + String(u.email || "")).toLowerCase().indexOf(q) >= 0) : all.slice();
+  list.sort(adminSortFn(ADMIN_SORT));
+  let h = `<div class="sub" style="margin:0 2px 8px">${q ? ("Showing " + list.length + " of " + all.length) : (all.length + " account" + (all.length === 1 ? "" : "s"))}</div>`;
+  if (!list.length) return h + `<div class="muted" style="margin:4px">No matching accounts.</div>`;
+  list.forEach(u => {
+    const active = u.active !== false, mine = me && me.id === u.id, open = u.id === ADMIN_EXPANDED;
+    h += `<div class="card" style="padding:10px 12px;margin-bottom:6px">
+      <div class="row" onclick="adminToggleAcct('${u.id}')" style="cursor:pointer;align-items:center">
+        <div class="grow"><div class="nm" style="font-size:15px">${esc(u.name || u.username)} ${roleBadge(u.role || "crew")}${active ? "" : ` <span class="badge" style="background:var(--danger);color:#fff">off</span>`}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
+        <div class="sub">@${esc(u.username)} <span id="pres_${u.id}" style="color:var(--muted)"></span></div></div>
+        <span class="sub" style="font-size:16px">${open ? "▾" : "▸"}</span></div>`;
+    if (open) h += `<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">
+        <div class="row" style="align-items:center;gap:8px;margin-bottom:10px"><div class="sub grow">Role</div><select onchange="adminSetRole('${u.id}',this.value)" style="width:auto;min-width:120px">${adminRoleOpts(u.role || "crew")}</select></div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+          <button class="btn ghost sm" onclick="adminSetName('${u.id}')">🧑 ${u.name ? esc(u.name) : "Set name"}</button>
+          <button class="btn ghost sm" onclick="adminSetEmail('${u.id}')">✉ ${u.email ? esc(u.email) : "Set email"}</button>
+          <button class="btn ghost sm" onclick="adminResetPw('${u.id}')">Reset PW</button>
+          <button class="btn ghost sm" onclick="adminLogoutEverywhere('${u.id}')">🚪 Log out</button>
+          <button class="btn ghost sm" onclick="adminToggleActive('${u.id}')">${active ? "Deactivate" : "Reactivate"}</button>
+          <button class="btn danger sm" onclick="adminRemove('${u.id}')">Remove</button>
+        </div></div>`;
+  });
+  return h;
+}
+window.adminFilterAccounts = function () {
+  const s = document.getElementById("acctsearch"), so = document.getElementById("acctsort");
+  if (s) ADMIN_SEARCH = s.value; if (so) ADMIN_SORT = so.value;
+  const c = document.getElementById("acctlist"); if (c) c.innerHTML = adminAccountsHTML();
+  if (window.loadPresenceUI) setTimeout(loadPresenceUI, 10);
+};
+window.adminToggleAcct = function (id) {
+  ADMIN_EXPANDED = (ADMIN_EXPANDED === id) ? null : id;
+  const c = document.getElementById("acctlist"); if (c) c.innerHTML = adminAccountsHTML();
+  if (window.loadPresenceUI) setTimeout(loadPresenceUI, 10);
 };
 
 /* ----- account actions ----- */
