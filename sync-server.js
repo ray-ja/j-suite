@@ -76,9 +76,32 @@ function auditDiff(userId, pre, incoming) {
       });
     });
   });
+  const incU = Array.isArray(incoming.users) ? incoming.users : [];   // account changes (role/password/active/profile) — top-level users collection
+  if (incU.length) { const stoU = {}; ((pre && pre.users) || []).forEach(u => { if (u && u.id) stoU[u.id] = u; }); incU.forEach(u => { if (!u || !u.id || u.kind) return; const old = stoU[u.id], iu = +u.updatedAt || 0, ou = old ? (+old.updatedAt || 0) : -1; if (iu > ou) entries.push({ t: now, u: userId, b: "*", c: "account", id: u.id, act: !old ? "created" : "edited", label: u.username || u.id }); }); }
   if (!entries.length) return;
   const a = loadAudit(); for (const e of entries) a.push(e);
   saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a);
+}
+// PHASE 4 authz — when the syncing user is NOT a verified owner, neutralize account/role/password writes:
+// drop new accounts + role-config sentinels, and force role/passhash/active back to the stored values.
+// NEVER drops a stored user (worst case a change just doesn't apply). Bootstrap-exempt while no real account exists.
+function sanitizeUserWrites(incoming, pre) {
+  if (!incoming || !Array.isArray(incoming.users)) return incoming;
+  const stored = (pre && pre.users) || [];
+  if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
+  const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
+  const SENSITIVE = ["role", "passhash", "active"];
+  const safe = [];
+  for (const u of incoming.users) {
+    if (!u || !u.id) continue;
+    const old = storedMap[u.id];
+    if (!old) continue;                       // new account / new sentinel from a non-owner → drop
+    if (u.kind || old.kind) continue;         // role-config sentinel (__roles__) → drop incoming, keep stored
+    const m = Object.assign({}, u);
+    SENSITIVE.forEach(f => { if (f in old) m[f] = old[f]; else delete m[f]; });   // revert sensitive fields to stored
+    safe.push(m);
+  }
+  return Object.assign({}, incoming, { users: safe });
 }
 // Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
@@ -1065,7 +1088,9 @@ const server = http.createServer((req, res) => {
       noteActive(syncUserId);   // ops-brain last-active (in-memory; doesn't affect the merge)
       const pre = loadStore();
       const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
-      const merged = mergeState(pre, payload.state || {});
+      const verifiedOwner = !!(puid && (pre.users || []).find(u => u && u.id === puid && u.role === "owner"));   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
+      const incomingState = verifiedOwner ? (payload.state || {}) : sanitizeUserWrites(payload.state || {}, pre);
+      const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, state: merged }));
@@ -1076,7 +1101,7 @@ const server = http.createServer((req, res) => {
           if (pushWorthy(m, hadMsg[b], nowMs)) pushNotify(merged, b, m.threadId, m.senderId).catch(() => {});
         }));
       } catch (e) {}
-      try { auditDiff(syncUserId, pre, payload.state || {}); } catch (e) {}   // server-authoritative paper trail; AFTER save + wrapped, so it can never break the sync
+      try { auditDiff(syncUserId, pre, incomingState); } catch (e) {}   // server-authoritative paper trail (what was actually applied); AFTER save + wrapped, so it can never break the sync
     });
     return;
   }
