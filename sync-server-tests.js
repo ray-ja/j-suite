@@ -8,14 +8,27 @@ function ok(n, c, got) { if (c) { pass++; console.log("  ✓ " + n); } else { fa
 
 console.log("\n— data-layer migration (mergeState) —");
 // legacy fixture: old biz shape (customers only, missing collections), and NO users key at all
-const stored = { obx: { customers: [{ id: "c1", name: "Old", updatedAt: 10 }] } };
+const stored = { obx: { customers: [{ id: "c1", name: "Old", updatedAt: 10 }] }, jam: { customers: [{ id: "jc1", name: "Jam Cust", updatedAt: 5 }] } };
 const incoming = {
   obx: { customers: [{ id: "c1", name: "New", updatedAt: 20 }, { id: "c2", name: "Added", updatedAt: 5 }], quotes: [{ id: "q1", updatedAt: 1 }] },
   users: [{ id: "u1", username: "ray", passhash: t.hashPw("pw"), updatedAt: 3 }]
-};
+};   // incoming mentions ONLY obx — jam must survive from stored (never-drop-an-org)
 const m = t.mergeState(stored, incoming);
 ok("all collections present on obx", ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock"].every(k => Array.isArray(m.obx[k])), Object.keys(m.obx));
-ok("jam business scaffolded", m.jam && Array.isArray(m.jam.customers), m.jam);
+ok("jam org preserved when incoming omits it (never-drop-an-org)", m.jam && Array.isArray(m.jam.customers) && !!m.jam.customers.find(x => x.id === "jc1"), m.jam);
+
+console.log("\n— multi-org (Phase 1): dynamic orgs + registry —");
+ok("orgIdsOf lists org keys, excludes users/registry", JSON.stringify(t.orgIdsOf({ obx: {}, jam: {}, users: [], registry: [] }).sort()) === JSON.stringify(["jam", "obx"]));
+const moA = t.mergeState({ obx: { customers: [{ id: "oc", updatedAt: 5 }] }, jam: { customers: [{ id: "jcx", updatedAt: 5 }] } }, { escaperoom: { customers: [{ id: "ec", updatedAt: 5 }] } });
+ok("a NEW org (escaperoom) merges in", moA.escaperoom && !!moA.escaperoom.customers.find(x => x.id === "ec"), moA.escaperoom);
+ok("existing orgs preserved when a new org is added", !!moA.obx.customers.find(x => x.id === "oc") && !!moA.jam.customers.find(x => x.id === "jcx"), Object.keys(moA));
+const moB = t.mergeState({ obx: { customers: [{ id: "oc", updatedAt: 5 }] }, escaperoom: { customers: [{ id: "ec", updatedAt: 5 }] } }, { obx: { customers: [{ id: "oc2", updatedAt: 6 }] } });
+ok("never-drop-an-org: escaperoom survives an obx-only push", moB.escaperoom && !!moB.escaperoom.customers.find(x => x.id === "ec"), moB.escaperoom);
+const mig = t.migrateStore({ obx: { customers: [{ id: "c1", updatedAt: 1 }] }, jam: { customers: [] }, users: [{ id: "u1", updatedAt: 1 }] });
+ok("migration scaffolds the registry (obx + jam listed)", !!mig.registry.find(r => r.id === "obx") && !!mig.registry.find(r => r.id === "jam"), mig.registry);
+ok("migration preserves every record (obx customer survives)", !!mig.obx.customers.find(x => x.id === "c1"), mig.obx);
+ok("migration is idempotent (registry not duplicated on re-run)", t.migrateStore(t.migrateStore(mig)).registry.filter(r => r.id === "obx").length === 1);
+ok("registry LWW-merges (newer org name wins)", t.mergeState({ registry: [{ id: "obx", name: "Old", updatedAt: 1 }] }, { registry: [{ id: "obx", name: "New", updatedAt: 9 }] }).registry.find(r => r.id === "obx").name === "New");
 ok("users array migrated in", Array.isArray(m.users) && m.users.length === 1, m.users);
 ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") || {}).name === "New", m.obx.customers);
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);

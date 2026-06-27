@@ -149,9 +149,22 @@ const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
+// MULTI-ORG: an organization is a top-level store key holding its collections. The ONLY non-org top-level
+// keys are these reserved ones. orgIdsOf() lists the org keys dynamically (obx, jam, + any future org).
+const RESERVED = new Set(["users", "registry"]);
+function orgIdsOf(s) { return Object.keys(s || {}).filter(k => !RESERVED.has(k) && s[k] && typeof s[k] === "object" && !Array.isArray(s[k])); }
+const ORG_NAMES = { obx: "OBX Lot Solutions", jam: "Jamieson Automation" };
+function migrateStore(s) {
+  s = s || {};
+  if (!Array.isArray(s.users)) s.users = [];
+  if (!Array.isArray(s.registry)) s.registry = [];
+  for (const oid of orgIdsOf(s)) if (!s.registry.find(r => r && r.id === oid))   // scaffold a registry record for every org lacking one (idempotent)
+    s.registry.push({ id: oid, slug: oid, name: ORG_NAMES[oid] || oid, settings: {}, aiConfig: null, createdAt: 1, updatedAt: 1, deleted: false });
+  return s;
+}
 function loadStore() {
-  try { return JSON.parse(fs.readFileSync(FILE, "utf8")); }
-  catch (e) { return { obx: blankBiz(), jam: blankBiz() }; }
+  try { return migrateStore(JSON.parse(fs.readFileSync(FILE, "utf8"))); }
+  catch (e) { return migrateStore({ obx: blankBiz(), jam: blankBiz() }); }
 }
 function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
@@ -312,13 +325,16 @@ function rateCheck(ip) {
 }
 
 function mergeState(stored, incoming) {
+  stored = stored || {}; incoming = incoming || {};
   const out = {};
-  for (const biz of BIZES) {
-    out[biz] = blankBiz();
-    const s = stored[biz] || blankBiz(), i = (incoming && incoming[biz]) || blankBiz();
-    for (const c of COLLECTIONS) out[biz][c] = mergeColl(s[c], i[c]);
+  const ids = new Set([...orgIdsOf(stored), ...orgIdsOf(incoming)]);   // UNION of org keys from both sides → an org present on EITHER side survives (never-drop-an-org)
+  for (const oid of ids) {
+    out[oid] = blankBiz();
+    const s = stored[oid] || blankBiz(), i = incoming[oid] || blankBiz();
+    for (const c of COLLECTIONS) out[oid][c] = mergeColl(s[c], i[c]);
   }
-  out.users = mergeColl((stored && stored.users) || [], (incoming && incoming.users) || []);
+  out.users = mergeColl(stored.users || [], incoming.users || []);
+  out.registry = mergeColl(stored.registry || [], incoming.registry || []);   // org metadata, LWW like users
   return out;
 }
 
@@ -1191,4 +1207,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
