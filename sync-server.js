@@ -85,12 +85,12 @@ function auditDiff(userId, pre, incoming) {
 // PHASE 4 authz — when the syncing user is NOT a verified owner, neutralize account/role/password writes:
 // drop new accounts + role-config sentinels, and force role/passhash/active back to the stored values.
 // NEVER drops a stored user (worst case a change just doesn't apply). Bootstrap-exempt while no real account exists.
-function sanitizeUserWrites(incoming, pre) {
+function sanitizeUserWrites(incoming, pre, selfId) {
   if (!incoming || !Array.isArray(incoming.users)) return incoming;
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
-  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin"];   // logoutAt = "log out everywhere"; adminPin = Admin-page lock; both owner-only (a crew can't grief or lock out an owner)
+  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin"];   // owner-only fields; adminPin is also self-settable (you can PIN-lock your OWN account)
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;
@@ -98,7 +98,7 @@ function sanitizeUserWrites(incoming, pre) {
     if (!old) continue;                       // new account / new sentinel from a non-owner → drop
     if (u.kind || old.kind) continue;         // role-config sentinel (__roles__) → drop incoming, keep stored
     const m = Object.assign({}, u);
-    SENSITIVE.forEach(f => { if (f in old) m[f] = old[f]; else delete m[f]; });   // revert sensitive fields to stored
+    SENSITIVE.forEach(f => { if (f === "adminPin" && u.id === selfId) return; if (f in old) m[f] = old[f]; else delete m[f]; });   // you may set your OWN admin PIN; role/passhash/active/logoutAt + others' adminPin stay owner-only
     safe.push(m);
   }
   return Object.assign({}, incoming, { users: safe });
@@ -1092,7 +1092,7 @@ const server = http.createServer((req, res) => {
       if (puid) { const _acct = (pre.users || []).find(u => u && u.id === puid); if (_acct && _acct.logoutAt && (+tokRec.issued || 0) < _acct.logoutAt) { res.writeHead(401); return res.end('{"error":"session ended — sign in again"}'); } }   // "log out everywhere": a token issued before the account's logoutAt is dead
       const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
       const verifiedOwner = !!(puid && (pre.users || []).find(u => u && u.id === puid && u.role === "owner"));   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
-      const incomingState = verifiedOwner ? (payload.state || {}) : sanitizeUserWrites(payload.state || {}, pre);
+      const incomingState = verifiedOwner ? (payload.state || {}) : sanitizeUserWrites(payload.state || {}, pre, syncUserId);
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });

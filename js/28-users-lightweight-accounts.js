@@ -53,6 +53,7 @@ window.profileMenu=function(){
 window.logoutUser=function(){
   if(!confirm("Sign out?"))return;
   localStorage.removeItem("jra_session");localStorage.removeItem("jra_offline_ok");
+  try{sessionStorage.removeItem("jra_admin_ok");}catch(e){}   // re-lock the Admin PIN on next sign-in
   if(S.sync)S.sync.token="";save();
   render();   // back to the app's own username/password login (the Cloudflare Access gate is retired)
 };

@@ -110,6 +110,11 @@ async function main() {
     const ownerNow = clone(find(st, "owner"));
     st = await sync(crewTok2, { users: [Object.assign(ownerNow, { adminPin: "999", updatedAt: now() })], obx: {}, jam: {} });
     check("crew CANNOT set the owner's Admin PIN (adminPin protected)", !find(st, "owner").adminPin);
+    // adminPin is SELF-settable even on the shared token (real client sends its userId)
+    st = (await api("POST", "/sync", { token: SHARED, userId: "crew", state: { users: [Object.assign(clone(find(st, "crew")), { adminPin: "SELFPIN", updatedAt: now() })], obx: {}, jam: {} } }, SHARED)).json;
+    check("a user CAN set their OWN admin PIN (even on the shared token)", find(st, "crew").adminPin === "SELFPIN");
+    st = (await api("POST", "/sync", { token: SHARED, userId: "crew", state: { users: [Object.assign(clone(find(st, "owner")), { adminPin: "HACK", updatedAt: now() })], obx: {}, jam: {} } }, SHARED)).json;
+    check("but CANNOT set someone ELSE's admin PIN", find(st, "owner").adminPin !== "HACK");
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");
