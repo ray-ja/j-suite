@@ -19,7 +19,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,escape:(typeof rEscape==="function"?rEscape:rToday)}[TAB])||rToday)();
+  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday)}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
   if(typeof renderClockPill==="function")renderClockPill();
@@ -28,6 +28,7 @@ function render(){
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
+  { key:"booking",   label:"Booking",   icon:"🎟️", tabs:["booking"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
@@ -40,7 +41,7 @@ const NAV_GROUPS = [
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {
-  today:{l:"Today",i:"🧭"}, pipeline:{l:"Pipeline",i:"🔀"}, quotes:{l:"All jobs",i:"🧾"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
+  today:{l:"Today",i:"🧭"}, pipeline:{l:"Pipeline",i:"🔀"}, quotes:{l:"All jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
   accounts:{l:"Customers",i:"👥"}, sales:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
@@ -49,13 +50,17 @@ const TAB_META = {
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.
 const ORG_CORE_TABS = ["today","admin","data"];
+// OPT-IN tabs: org-specific tools that must be EXPLICITLY enabled per org, even when an org has no tab
+// restriction (null = "all" standard tools). Keeps niche tools (escape-room Rooms board + Booking, the
+// personal Life tracker) out of obx/jam, which run on the null/"full" default.
+const ORG_OPTIN_TABS = ["escape","booking","life"];
 const ORG_TEMPLATES = {
   full: null,                                                                 // field services (OBX / Jamieson) — every tool
-  bookings: ["escape","messages","schedule","accounts","finance","receipts","time","playbook"],   // e.g. an escape room — the room board + customers, calendar, money, comms
+  bookings: ["escape","booking","messages","schedule","accounts","finance","receipts","time","playbook"],   // e.g. an escape room — the room board + booking page + customers, calendar, money, comms
   personal: ["todo","plan","finance","playbook"]                              // e.g. a personal area — planning, budget, notes (+ Cap via the org AI)
 };
 function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
-function orgHasTab(tab){ const t=orgTabs(); return !t || ORG_CORE_TABS.indexOf(tab)>=0 || t.indexOf(tab)>=0; }
+function orgHasTab(tab){ const t=orgTabs(); if(ORG_CORE_TABS.indexOf(tab)>=0) return true; if(ORG_OPTIN_TABS.indexOf(tab)>=0) return !!t && t.indexOf(tab)>=0; return !t || t.indexOf(tab)>=0; }
 function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !msgEnabled() : true)) return false; return (typeof canSee==="function") ? canSee(t) : true; }
 function tabGroup(t){ return NAV_GROUPS.find(g=>g.tabs.indexOf(t)>=0) || NAV_GROUPS[0]; }
 function groupTabs(g){ return g.tabs.filter(navCanSee); }

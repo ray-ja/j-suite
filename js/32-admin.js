@@ -12,7 +12,7 @@ const ROLES_ID = "__roles__";
 /* canonical page registry — mirrors the nav tabs (the admin tab itself is owner-only and excluded) */
 const ADMIN_PAGES = [
   { tab: "today", label: "CEO desk" }, { tab: "pipeline", label: "Pipeline" }, { tab: "accounts", label: "Customers" },
-  { tab: "quotes", label: "All jobs" }, { tab: "schedule", label: "Schedule" },
+  { tab: "quotes", label: "All jobs" }, { tab: "booking", label: "Booking" }, { tab: "schedule", label: "Schedule" },
   { tab: "messages", label: "Messages" },
   { tab: "map", label: "Map" }, { tab: "sales", label: "Sales" },
   { tab: "todo", label: "To-Do" }, { tab: "plan", label: "Plan" },
@@ -23,7 +23,7 @@ const ADMIN_PAGES = [
   { tab: "time", label: "Time" }, { tab: "finance", label: "Finance" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
-const CREW_PAGES = ["today", "accounts", "quotes", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time"];
+const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 /* owner is implicit "all access" (no pages list); admin/crew seed the editable defaults */
 const DEFAULT_ROLES = [
