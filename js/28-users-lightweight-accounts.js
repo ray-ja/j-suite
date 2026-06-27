@@ -40,13 +40,13 @@ window.profileMenu=function(){
   var u=curUser(), dk=(typeof themePref==="function"&&themePref()==="dark");
   modal("Account", `
     <div class="card"><div class="sub">Signed in as</div><div style="font-weight:800;font-size:17px">${u?esc(u.username):"—"}</div></div>
-    <div class="card"><label style="margin-top:0">Business</label>
-      <select onchange="setBiz(this.value);closeModal()">
-        <option value="obx" ${S.biz==="obx"?"selected":""}>OBX Lot Solutions</option>
-        <option value="jam" ${S.biz==="jam"?"selected":""}>Jamieson Automation</option>
+    <div class="card"><label style="margin-top:0">Organization</label>
+      <select onchange="if(this.value==='__new__'){this.value=S.biz;createOrgPrompt();}else{setBiz(this.value);closeModal();}">
+        ${(typeof myOrgs==="function"?myOrgs():[]).map(o=>`<option value="${esc(o.id)}" ${S.biz===o.id?"selected":""}>${esc(o.name)}</option>`).join("")}
+        ${(typeof isOwner==="function"&&isOwner())?`<option value="__new__">➕ New organization…</option>`:""}
       </select></div>
     <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>Dark mode</strong></div><input type="checkbox" style="width:auto;flex:0 0 auto" ${dk?"checked":""} onchange="toggleTheme()"></div></div>
-    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🏠 Home base — ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</strong><div class="sub" style="white-space:normal">${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set"):"Not set — pickup/drive mileage needs this"}</div></div><button class="btn ghost sm" onclick="closeModal();setHomeBase()">Set</button></div></div>
+    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🏠 Home base — ${typeof orgName==="function"?esc(orgName(S.biz)):esc(S.biz)}</strong><div class="sub" style="white-space:normal">${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set"):"Not set — pickup/drive mileage needs this"}</div></div><button class="btn ghost sm" onclick="closeModal();setHomeBase()">Set</button></div></div>
     <button class="btn" style="width:100%;margin-top:6px;background:var(--danger);color:#fff" onclick="closeModal();logoutUser()">Sign out</button>
   `);
 };

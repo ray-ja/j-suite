@@ -2,7 +2,11 @@
 let TAB="today";
 const view=document.getElementById("view");
 function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
-  document.getElementById("logo").innerHTML='<img src="'+BIZ[b].logo+'" alt="'+BIZ[b].name+'" style="max-height:54px;width:auto;max-width:248px;object-fit:contain;display:block">';
+  var meta=((S.registry||[]).find(function(r){return r&&r.id===b;}))||{name:b};
+  var logo=(typeof BIZ!=="undefined"&&BIZ[b])?BIZ[b].logo:"";
+  var nm=(typeof esc==="function")?esc(meta.name||b):(meta.name||b);
+  var el=document.getElementById("logo");
+  if(el)el.innerHTML=logo?('<img src="'+logo+'" alt="'+nm+'" style="max-height:54px;width:auto;max-width:248px;object-fit:contain;display:block">'):('<div style="font-weight:800;font-size:20px;padding:6px 0">'+nm+'</div>');
   var _bs=document.getElementById("bizsel");if(_bs)_bs.value=b;render()}
 function render(){
   if(typeof jsResetToken==="function"&&jsResetToken()&&typeof renderResetPw==="function"){   // an emailed ?reset= link always wins, even if already logged in

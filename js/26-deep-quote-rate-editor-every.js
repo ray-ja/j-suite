@@ -162,18 +162,19 @@ async function syncRun(mode){
   if(mode==="pull"&&S.sync.last&&(now()-S.sync.last<4000)&&!SYNC_DIRTY)return; // throttle redundant pulls
   if(_syncInflight)return;                                                      // coalesce; post-success reschedules if dirty
   const seq=_editSeq;_syncInflight=true;setSyncState("syncing");
-  const sentSig=JSON.stringify({obx:S.obx,jam:S.jam,users:S.users,registry:S.registry||[]});
+  const _pushState={users:S.users,registry:S.registry||[]};(typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(id=>{_pushState[id]=S[id];});   // push EVERY org slab (obx, jam, + any created org), not just obx/jam
+  const sentSig=JSON.stringify(_pushState);
   try{
     const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),state:{obx:S.obx,jam:S.jam,users:S.users,registry:S.registry||[]}})});
+      body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),state:_pushState})});
     if(res.status===401){window.AUTH_401=true;S.sync.token="";save();_syncInflight=false;setSyncState("offline");syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();
-    if(!data||!data.state||!data.state.obx)throw new Error("bad response");
+    if(!data||!data.state||typeof data.state!=="object")throw new Error("bad response");
     window.AUTH_401=false;_retryN=0;
     const changed=JSON.stringify(data.state)!==sentSig;
     window.__syncApplying=true;
-    S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;S.sync.last=now();save();
+    Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;S.sync.last=now();save();   // apply EVERY org slab the server returned
     window.__syncApplying=false;
     if(typeof checkForcedLogout==="function"&&checkForcedLogout()){_syncInflight=false;return;}   // an owner signed this account out everywhere
 

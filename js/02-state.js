@@ -114,6 +114,25 @@ function save(){localStorage.setItem(KEY,JSON.stringify(S));
 function D(){return S[S.biz]}
 function cat(){return CATALOG[S.biz]}
 function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
+// MULTI-ORG (Phase 2): the registry lists the organizations; S.biz is the ACTIVE org id; D()=S[S.biz].
+function myOrgs(){ return (S.registry||[]).filter(r=>r&&!r.deleted); }   // Phase 3 will filter to the signed-in user's memberships
+function curOrg(){ return (S.registry||[]).find(r=>r&&r.id===S.biz) || {id:S.biz,name:S.biz}; }
+function orgName(id){ const r=(S.registry||[]).find(x=>x&&x.id===id); return r?r.name:id; }
+function clientOrgIds(){ return (S.registry||[]).filter(r=>r&&r.id&&S[r.id]&&typeof S[r.id]==="object"&&!Array.isArray(S[r.id])).map(r=>r.id); }   // org keys that have a local data slab (for the sync push)
+function createOrg(name){
+  name=(name||"").trim(); if(!name) return null;
+  const id=uid(); if(!S[id]) S[id]=blank();
+  S.registry=S.registry||[];
+  S.registry.push({id, slug:name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,""), name, settings:{}, aiConfig:null, createdAt:now(), updatedAt:now(), deleted:false});
+  save(); return id;
+}
+window.createOrgPrompt=function(){
+  if(typeof isOwner==="function" && !isOwner()){ alert("Only an owner can create organizations."); return; }
+  const name=prompt("Name the new organization:"); if(name==null) return;
+  if(!name.trim()){ alert("Give it a name."); return; }
+  const id=createOrg(name);
+  if(id){ if(typeof closeModal==="function")closeModal(); if(typeof setBiz==="function")setBiz(id); if(typeof scheduleAutoPush==="function")scheduleAutoPush(); alert("Created “"+orgName(id)+"”. You're now working in it."); }
+};
 function money(n){return "$"+(Math.round(n)).toLocaleString()}
 /* COGS layer — Part 3: render helpers (Cost/Price/Profit/Margin strip + floor warning). */
 function cogsStrip(price, cost){
