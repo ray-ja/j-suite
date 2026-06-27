@@ -5,6 +5,9 @@ async function hashPw(pw){
 }
 function users(){return (S.users||[]).filter(u=>!u.deleted&&!u.kind);}
 function curUser(){const id=localStorage.getItem("jra_session");return users().find(u=>u.id===id)||null;}
+/* "Log out everywhere": an owner stamps the account's logoutAt; any device whose login predates it signs out.
+   Works for shared-token devices too (it's a synced field), and the server also 401s a per-user token issued before it. */
+function checkForcedLogout(){try{const me=curUser();if(!me)return false;const myLogin=+localStorage.getItem("jra_login_at")||0;if(me.logoutAt&&me.logoutAt>myLogin){window.AUTH_401=true;if(S.sync)S.sync.token="";localStorage.removeItem("jra_session");save();if(typeof syMsg==="function")syMsg("Signed out by an owner — sign in again.");if(typeof render==="function")render();return true;}}catch(e){}return false;}
 function userName(id){const u=(S.users||[]).find(x=>x.id===id);return u?u.username:"";}
 window.openCreateAccount=function(){modal("New account",`
   <p class="muted" style="margin-bottom:8px">Username + password. Add the person's email to enable one-tap sign-in through Cloudflare Access (optional).</p>
@@ -91,7 +94,7 @@ window.appLogin=async function(){
     const d=await r.json();
     S.sync.url=base;if(d.token)S.sync.token=d.token;S.sync.auto=true;
     if(d.user&&d.user.id)localStorage.setItem("jra_session",d.user.id);
-    window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
+    window.AUTH_401=false;localStorage.setItem("jra_login_at",String(now()));localStorage.removeItem("jra_offline_ok");save();
     // SPA login doesn't navigate, so explicitly ask the browser to save the credential (Credential Mgmt API; Chromium). Safari/extensions use the <form> instead.
     try{ if(window.PasswordCredential && navigator.credentials && navigator.credentials.store){ await navigator.credentials.store(new PasswordCredential({id:un,password:pw,name:un})); } }catch(e){}
     if(typeof syncRun==="function")await syncRun("pull");   // pull their data silently (no empty-store confirm)
@@ -102,7 +105,7 @@ window.appLogin=async function(){
 window.appBootstrapToken=async function(){
   const base=(val("lg_url")||defaultServerUrl()).replace(/\/+$/,""),tok=val("lg_token");
   if(!tok){loginMsg("Paste a token first.");return;}
-  S.sync.url=base;S.sync.token=tok;S.sync.auto=true;window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
+  S.sync.url=base;S.sync.token=tok;S.sync.auto=true;window.AUTH_401=false;localStorage.setItem("jra_login_at",String(now()));localStorage.removeItem("jra_offline_ok");save();
   loginMsg("Connecting…");
   try{if(typeof syncRun==="function")await syncRun("pull");else await syncNow();}catch(e){}
   render();
@@ -120,7 +123,7 @@ async function attemptAccessLogin(){
     const d=await r.json();if(!d||!d.token||!d.user)return false;
     S.sync.url=defaultServerUrl();S.sync.token=d.token;S.sync.auto=true;
     localStorage.setItem("jra_session",d.user.id);
-    window.AUTH_401=false;localStorage.removeItem("jra_offline_ok");save();
+    window.AUTH_401=false;localStorage.setItem("jra_login_at",String(now()));localStorage.removeItem("jra_offline_ok");save();
     if(typeof syncRun==="function")await syncRun("pull");
     if(typeof applyUserSettings==="function")applyUserSettings();
     return true;

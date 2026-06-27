@@ -175,6 +175,8 @@ async function syncRun(mode){
     window.__syncApplying=true;
     S.obx=data.state.obx;S.jam=data.state.jam;if(data.state.users)S.users=data.state.users;S.sync.last=now();save();
     window.__syncApplying=false;
+    if(typeof checkForcedLogout==="function"&&checkForcedLogout()){_syncInflight=false;return;}   // an owner signed this account out everywhere
+
     _syncInflight=false;syMsg("Synced ✓");
     if(_editSeq!==seq){scheduleAutoPush();}            // edits arrived mid-flight → push again
     else{SYNC_DIRTY=false;setSyncState("synced");}

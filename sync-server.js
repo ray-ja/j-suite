@@ -90,7 +90,7 @@ function sanitizeUserWrites(incoming, pre) {
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
-  const SENSITIVE = ["role", "passhash", "active"];
+  const SENSITIVE = ["role", "passhash", "active", "logoutAt"];   // logoutAt = "log out everywhere"; only a verified owner may set it (and a revoked user can't clear it)
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;
@@ -111,6 +111,7 @@ function loadUserTokens() { try { return JSON.parse(fs.readFileSync(USER_TOKENS_
 function saveUserTokens(m) { const tmp = USER_TOKENS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, USER_TOKENS_FILE); }
 function issueUserToken(userId, label) { const m = loadUserTokens(); const tok = crypto.randomBytes(24).toString("hex"); m[tok] = { userId: userId, issued: Date.now(), label: (label || "").slice(0, 80) }; saveUserTokens(m); return tok; }
 function userForToken(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && r.userId) || null; }
+function userTokenRec(tok) { if (!tok || typeof tok !== "string") return null; return loadUserTokens()[tok] || null; }   // {userId, issued, label} — issued lets us honor "log out everywhere"
 function tokOk(tok) { return (!!TOKEN && tok === TOKEN) || !!userForToken(tok); }   // shared (legacy) OR a per-user token — both authenticate to the API
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
@@ -1082,11 +1083,13 @@ const server = http.createServer((req, res) => {
       const body = Buffer.concat(_ch).toString("utf8");   // full-body UTF-8 decode — per-chunk body+=c mangles multi-byte chars at chunk boundaries (the ��� bug)
       let payload;
       try { payload = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
-      const puid = userForToken(payload.token);   // per-user token -> the real userId (trustworthy), or null
+      const tokRec = userTokenRec(payload.token);   // {userId, issued} for a per-user token, or null
+      const puid = tokRec && tokRec.userId;
       if (!((TOKEN && payload.token === TOKEN) || puid)) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
       const syncUserId = puid || (typeof payload.userId === "string" ? payload.userId : null);   // legacy shared token falls back to the client-claimed id
       noteActive(syncUserId);   // ops-brain last-active (in-memory; doesn't affect the merge)
       const pre = loadStore();
+      if (puid) { const _acct = (pre.users || []).find(u => u && u.id === puid); if (_acct && _acct.logoutAt && (+tokRec.issued || 0) < _acct.logoutAt) { res.writeHead(401); return res.end('{"error":"session ended — sign in again"}'); } }   // "log out everywhere": a token issued before the account's logoutAt is dead
       const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
       const verifiedOwner = !!(puid && (pre.users || []).find(u => u && u.id === puid && u.role === "owner"));   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
       const incomingState = verifiedOwner ? (payload.state || {}) : sanitizeUserWrites(payload.state || {}, pre);

@@ -132,6 +132,7 @@ function rAdmin() {
         <button class="btn ghost sm" onclick="adminSetName('${u.id}')">🧑 ${u.name ? esc(u.name) : "Set full name"}</button>
         <button class="btn ghost sm" onclick="adminSetEmail('${u.id}')">✉ ${u.email ? esc(u.email) : "Set email (SSO)"}</button>
         <button class="btn ghost sm" onclick="adminResetPw('${u.id}')">Reset password</button>
+        <button class="btn ghost sm" onclick="adminLogoutEverywhere('${u.id}')">🚪 Log out everywhere</button>
         <button class="btn ghost sm" onclick="adminToggleActive('${u.id}')">${active ? "Deactivate" : "Reactivate"}</button>
         <button class="btn danger sm" onclick="adminRemove('${u.id}')">Remove</button>
       </div></div>`;
@@ -199,6 +200,14 @@ window.loadAuditUI = function () {
       el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:7px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${desc(e)} <span class="sub">· ${dt(e.t)}</span></div>`).join("");
     })
     .catch(() => { el.textContent = "Activity unavailable (offline?)."; });
+};
+window.adminLogoutEverywhere = function (id) {
+  const u = (S.users || []).find(x => x && x.id === id); if (!u) return;
+  if (!confirm("Sign " + (u.name || u.username) + " out on all their devices? They'll have to log in again.")) return;
+  u.logoutAt = now(); if (typeof touch === "function") touch(u); save();
+  if (typeof syncRun === "function") syncRun("push");
+  if (typeof render === "function") render();
+  alert((u.name || u.username) + " will be signed out on every device on their next sync.");
 };
 
 /* ----- account actions ----- */

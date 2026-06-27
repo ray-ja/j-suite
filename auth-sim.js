@@ -49,7 +49,7 @@ async function main() {
   setup();
   const srv = cp.spawn(process.execPath, ["sync-server.js"], { cwd: DIR, env: Object.assign({}, process.env, { PORT: String(PORT), TOKEN: SHARED }), stdio: "ignore" });
   await new Promise(r => setTimeout(r, 1500));
-  const now = () => Date.now();
+  let _t = 0; const now = () => { let n = Date.now(); if (n <= _t) n = _t + 1; _t = n; return n; };   // strictly-increasing (real clients don't collide updatedAt in the same ms; the sim's fast loop can)
   try {
     const ol = await login("ray", "ownerpw"), cl = await login("joe", "crewpw");
     const ownerTok = ol && ol.token, crewTok = cl && cl.token;
@@ -93,6 +93,19 @@ async function main() {
 
     st = await sync(SHARED, { users: [Object.assign(clone(C), { role: "owner", updatedAt: now() })], obx: {}, jam: {} });
     check("leaked SHARED (legacy) token ALSO cannot escalate", find(st, "crew").role === "admin");   // unchanged from the owner's change above
+
+    // ===== LOG OUT EVERYWHERE =====
+    const t0 = now();
+    st = await sync(ownerTok, { users: [Object.assign(clone(find(st, "crew")), { logoutAt: t0, updatedAt: now() })], obx: {}, jam: {} });
+    check("owner CAN force-logout the crew (sets logoutAt)", find(st, "crew").logoutAt === t0);
+    const revoked = await api("POST", "/sync", { token: crewTok, state: { obx: {}, jam: {} } }, crewTok);
+    check("crew's existing token is now revoked (401)", revoked.status === 401);
+    const cl2 = await login("joe", "crewpw"); const crewTok2 = cl2 && cl2.token;
+    const reSync = await api("POST", "/sync", { token: crewTok2, state: { obx: {}, jam: {} } }, crewTok2);
+    check("crew logs back in → fresh token syncs (200)", !!crewTok2 && crewTok2 !== crewTok && reSync.status === 200);
+    const ownerRec = (((reSync.json || {}).state || {}).users || []).find(u => u.id === "owner");
+    st = await sync(crewTok2, { users: [Object.assign(clone(ownerRec), { logoutAt: now() + 1e7, updatedAt: now() })], obx: {}, jam: {} });
+    check("crew CANNOT force-logout the owner (logoutAt protected)", !find(st, "owner").logoutAt);
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");
