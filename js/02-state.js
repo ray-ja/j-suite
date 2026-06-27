@@ -9,6 +9,8 @@ function load(){
   if(!S.jam)S.jam=blank();
   if(!S.sync)S.sync={url:"",token:"",last:0,auto:true};
   if(!S.users)S.users=[];
+  if(!Array.isArray(S.registry))S.registry=[];   // MULTI-ORG: org metadata (id,name,…); orgs are top-level keys (obx, jam, + future). Scaffold obx/jam idempotently.
+  {const ON={obx:"OBX Lot Solutions",jam:"Jamieson Automation"};["obx","jam"].forEach(oid=>{if(S[oid]&&!S.registry.find(r=>r&&r.id===oid))S.registry.push({id:oid,slug:oid,name:ON[oid]||oid,settings:{},aiConfig:null,createdAt:1,updatedAt:1,deleted:false});});}
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
