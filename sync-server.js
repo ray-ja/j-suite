@@ -53,6 +53,33 @@ function loadPresence() { try { return JSON.parse(fs.readFileSync(PRESENCE_FILE,
 function savePresence(p) { try { const tmp = PRESENCE_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(p)); fs.renameSync(tmp, PRESENCE_FILE); } catch (e) {} }
 Object.assign(lastActive, loadPresence());   // seed last-seen from disk so presence survives a restart
 function noteActive(userId) { if (!userId || typeof userId !== "string") return; const n = Date.now(); if (n - (lastActive[userId] || 0) > 60000) { lastActive[userId] = n; const p = loadPresence(); p[userId] = n; savePresence(p); } }   // record + persist last-seen (throttled to once/60s per user)
+// AUDIT — server-authoritative paper trail: who changed which records, when. Append-only, capped, best-effort
+// (computed AFTER the merge+save and wrapped in try/catch by the caller, so it can never break a sync).
+const AUDIT_FILE = path.join(__dirname, "audit.log");
+const AUDIT_CAP = 3000;
+const AUDIT_COLLECTIONS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "disbursements", "places"];
+function loadAudit() { try { return JSON.parse(fs.readFileSync(AUDIT_FILE, "utf8")); } catch (e) { return []; } }
+function saveAudit(a) { try { const tmp = AUDIT_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(a)); fs.renameSync(tmp, AUDIT_FILE); } catch (e) {} }
+function auditLabel(r) { return String((r && (r.name || r.title || r.label || r.customer || r.vendor || r.what)) || (r && r.id) || "").slice(0, 60); }
+function auditDiff(userId, pre, incoming) {
+  if (!userId || !incoming) return;   // only attribute identified (per-user-token) syncs; anonymous legacy syncs aren't logged
+  const now = Date.now(), entries = [];
+  ["obx", "jam"].forEach(b => {
+    const inc = incoming[b] || {}, sto = (pre && pre[b]) || {};
+    AUDIT_COLLECTIONS.forEach(c => {
+      const incArr = Array.isArray(inc[c]) ? inc[c] : []; if (!incArr.length) return;
+      const stoMap = {}; (Array.isArray(sto[c]) ? sto[c] : []).forEach(r => { if (r && r.id) stoMap[r.id] = r; });
+      incArr.forEach(r => {
+        if (!r || !r.id) return;
+        const old = stoMap[r.id], iu = +r.updatedAt || 0, ou = old ? (+old.updatedAt || 0) : -1;
+        if (iu > ou) entries.push({ t: now, u: userId, b: b, c: c, id: r.id, act: !old ? "created" : (r.deleted && !old.deleted ? "deleted" : "edited"), label: auditLabel(r) });
+      });
+    });
+  });
+  if (!entries.length) return;
+  const a = loadAudit(); for (const e of entries) a.push(e);
+  saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a);
+}
 // Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
 // (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
@@ -912,6 +939,16 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(lastActive));
   }
 
+  // AUDIT — GET /api/audit (token-gated). Most-recent-first paper trail for the owner Activity view.
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/audit") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const a = loadAudit();
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(a.slice(-300).reverse()));
+  }
+
   // per-user calendar subscription feed — GET /calendar/<token>.ics (read-only, one-way)
   if (req.method === "GET" && req.url.indexOf("/calendar/") === 0) {
     const tok = decodeURIComponent((req.url.split("?")[0] || "").slice("/calendar/".length)).replace(/\.ics$/i, "");
@@ -1039,6 +1076,7 @@ const server = http.createServer((req, res) => {
           if (pushWorthy(m, hadMsg[b], nowMs)) pushNotify(merged, b, m.threadId, m.senderId).catch(() => {});
         }));
       } catch (e) {}
+      try { auditDiff(syncUserId, pre, payload.state || {}); } catch (e) {}   // server-authoritative paper trail; AFTER save + wrapped, so it can never break the sync
     });
     return;
   }

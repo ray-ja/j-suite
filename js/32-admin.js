@@ -154,8 +154,10 @@ function rAdmin() {
     }
     h += `</div>`;
   });
+  h += `<h2 style="margin-top:18px">Activity</h2><div class="card"><div id="auditlog" class="sub">Loading recent changes…</div></div>`;
   view.innerHTML = h;
   if (window.loadPresenceUI) setTimeout(loadPresenceUI, 30);
+  if (window.loadAuditUI) setTimeout(loadAuditUI, 30);
 }
 window.agoTxt = function (ms) {
   if (!ms) return "never synced";
@@ -171,6 +173,18 @@ window.loadPresenceUI = function () {
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(p => { (S.users || []).forEach(u => { const el = document.getElementById("pres_" + u.id); if (el) { const t = p[u.id]; el.textContent = "· " + agoTxt(t); el.style.color = (t && Date.now() - t < 90000) ? "var(--ok,#1a9a5a)" : "var(--muted)"; } }); })
     .catch(() => {});
+};
+window.loadAuditUI = function () {
+  const el = document.getElementById("auditlog"); if (!el) return;
+  const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
+  fetch(base + "/api/audit", { headers: tok ? { Authorization: "Bearer " + tok } : {} })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(list => {
+      if (!list || !list.length) { el.textContent = "No changes recorded yet."; return; }
+      const nm = id => { const u = (S.users || []).find(x => x && x.id === id); return u ? (u.name || u.username) : "someone"; };
+      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${esc(String(e.c).replace(/s$/, ""))} <span class="sub">${esc(e.label || e.id)}</span> · <span class="sub">${agoTxt(e.t)}</span></div>`).join("");
+    })
+    .catch(() => { el.textContent = "Activity unavailable (offline?)."; });
 };
 
 /* ----- account actions ----- */

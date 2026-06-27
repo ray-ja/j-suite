@@ -23,6 +23,9 @@ user-tokens.json
 # --- Presence (userId -> last-seen ms; server-only, ephemeral) ---
 presence.json
 
+# --- Audit trail (server-authoritative change log; server-only) ---
+audit.log
+
 # --- Reply-watcher: dev-box tokens (read+write to prod) + cursor (THE SWITCH; never commit) ---
 watcher-config.json
 tools/.reply-watcher-cursor.json

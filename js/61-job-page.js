@@ -36,6 +36,7 @@ function rJobPage(j) {
   const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 
   let h = `<div class="secthd"><h2 style="margin:0">${esc(j.title || "Job")}</h2><button class="btn ghost sm" onclick="jobPageBack()">← Back</button></div>`;
+  h += editedByLine(j);
 
   // 1) Where & when — directions + call
   h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;

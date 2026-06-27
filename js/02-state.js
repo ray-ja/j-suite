@@ -151,5 +151,5 @@ function propsForCust(cid){return actProps().filter(p=>(p.customerIds||[]).index
 function custsForProp(p){return (p.customerIds||[]).map(id=>D().customers.find(c=>c.id===id&&!c.deleted)).filter(Boolean)}
 function propLabel(id){const p=(D().properties||[]).find(x=>x.id===id);return p?((p.label?p.label+" — ":"")+(p.address||"")):""}
 function custName(id){const c=D().customers.find(x=>x.id===id);return c?(c.name||c.company||"—"):"—"}
-function touch(r){r.updatedAt=now();return r}
+function touch(r){r.updatedAt=now();try{const u=(typeof curUser==="function")?curUser():null;if(u){r.editedBy=u.id;r.editedAt=r.updatedAt;}}catch(e){}return r}
 
