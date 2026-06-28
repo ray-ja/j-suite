@@ -15,6 +15,9 @@ function rToday(){
     }
   }
 
+  // 0b) Discoverability nudge — owner-facing, when this org has opt-in tools available but none enabled yet
+  if(owner && typeof orgOptinHint==="function") h+=orgOptinHint();
+
   // 1) Notice board — at the very top
   const dir=(D().docs.find(x=>x.id==="ceo"&&!x.deleted)||{}).text||"";
   h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>

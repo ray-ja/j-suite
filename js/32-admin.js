@@ -163,17 +163,22 @@ function orgRemoveMember(accountId, orgId) { const m = membershipFor(accountId, 
 function orgConfigurableTabs() { return ALL_TABS.filter(t => ORG_CORE_TABS.indexOf(t) < 0); }
 function orgToolsCard() {
   const meta = (typeof TAB_META !== "undefined") ? TAB_META : {};
+  const optin = (typeof ORG_OPTIN_TABS !== "undefined") ? ORG_OPTIN_TABS : [];
   let h = `<div class="card" style="margin-top:8px;border-left:3px solid var(--acc)" id="orgtools-card">
     <div class="nm" style="font-size:15px">🧩 Tools for ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div>
     <div class="sub" style="margin-bottom:8px">Pick which tools this organization shows — hidden ones are completely unavailable here, so each org feels like its own app. (Home, Admin &amp; Settings always stay.)</div>
-    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn ghost sm" onclick="orgApplyTemplate('full')">Field services (all)</button>
-      <button class="btn ghost sm" onclick="orgApplyTemplate('bookings')">Bookings / shop</button>
-      <button class="btn ghost sm" onclick="orgApplyTemplate('personal')">Personal</button></div>
+    <div class="sub" style="margin-bottom:6px"><b>Start from a template</b> (a starting set you can then fine-tune below):</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:4px">
+      <button class="btn ghost sm" onclick="orgApplyTemplate('full')">🛠️ Field services (all)</button>
+      <button class="btn ghost sm" onclick="orgApplyTemplate('bookings')">🎟️ Bookings / shop</button>
+      <button class="btn ghost sm" onclick="orgApplyTemplate('personal')">🌱 Personal</button></div>
+    <div class="sub" style="margin-bottom:10px;font-size:12px">Field services = every standard tool (OBX / Jamieson). Bookings = room board + booking + customers, calendar, money, comms. Personal = life tracker + budget + planning.</div>
+    <div class="sub" style="margin-bottom:6px"><b>Or fine-tune</b> — tap a tool to turn it on/off${optin.length ? '. Tools marked <b>✦</b> are opt-in extras, hidden by default — turn one on to see it' : ''}:</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">`;
   orgConfigurableTabs().forEach(t => {
     const on = (typeof orgHasTab === "function") ? orgHasTab(t) : true, m = meta[t] || {};
-    h += `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:14px;font-size:13px;background:${on ? "var(--acc)" : "var(--line)"};color:${on ? "#fff" : "inherit"}"><input type="checkbox" style="width:auto;margin:0" ${on ? "checked" : ""} onchange="orgToolToggle('${t}')">${(m.i || "")} ${esc(m.l || t)}</label>`;
+    const isOptin = optin.indexOf(t) >= 0;
+    h += `<label style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:14px;font-size:13px;background:${on ? "var(--acc)" : "var(--line)"};color:${on ? "#fff" : "inherit"}"><input type="checkbox" style="width:auto;margin:0" ${on ? "checked" : ""} onchange="orgToolToggle('${t}')">${(m.i || "")} ${esc(m.l || t)}${isOptin ? " ✦" : ""}</label>`;
   });
   return h + `</div></div>`;
 }
@@ -256,6 +261,7 @@ function rAdmin() {
 
   const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
   if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
+  if (owner && typeof sampleDataCard === "function") h += sampleDataCard();   // Load/Clear obvious SAMPLE records for the enabled org tools (owner-only)
   if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
