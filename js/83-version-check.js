@@ -32,10 +32,25 @@
     return true;
   }
 
+  /* The hard part: a plain location.reload() re-serves the stale cache if the device is stuck on an old/
+     cache-first service worker (which never updates itself on a resumed PWA). So before reloading we do the
+     automatic equivalent of "clear site data": purge ALL caches AND unregister the service worker. The reload
+     then hits the network with no SW interference → genuinely fresh code; js/29-boot re-registers the current
+     SW. Loop-guarded via sessionStorage so a stubborn case shows the banner instead of reloading forever. */
   function doReload() {
     if (reloading) return;
+    try {
+      var last = +sessionStorage.getItem("jra_upd_reload") || 0;
+      if (Date.now() - last < 20000) { banner(); return; }   // already tried very recently → don't loop; let the user tap
+      sessionStorage.setItem("jra_upd_reload", String(Date.now()));
+    } catch (e) {}
     reloading = true;
-    try { location.reload(); } catch (e) { reloading = false; }
+    var go = function () { try { location.reload(); } catch (e) { reloading = false; } };
+    var steps = [];
+    try { if (window.caches && caches.keys) steps.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })); } catch (e) {}
+    try { if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) steps.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (e) {}
+    if (steps.length) Promise.all(steps).then(go).catch(go); else go();
+    setTimeout(go, 2000);   // hard fallback if the cache/SW ops hang
   }
 
   function banner() {
@@ -91,5 +106,6 @@
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
     setInterval(check, INTERVAL);
+    setTimeout(check, 2500);   // ON LOAD: if a stale page was served from cache (its __BUILD lags prod), self-heal immediately — the key fix for a resumed PWA that never re-navigates
   }
 })();
