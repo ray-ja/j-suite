@@ -144,6 +144,49 @@ xferStore.rbjvl.budgetTx.push({ id: "x-in", date: "2026-06-10", dir: "in", amoun
 ok("transfers are EXCLUDED from the orgAiContext income/spending totals (they net to zero in combined)", (function () { const c = t.orgAiContext(xferStore, "rbjvl"); const m = c.match(/combined balance \(all time\): \$([\-\d.]+)/); return m && Math.abs(parseFloat(m[1]) - (3200 - 1296.4)) < 0.01; })(), t.orgAiContext(xferStore, "rbjvl").split("\n").filter(l => l.indexOf("BUDGET") === 0 || l.indexOf("Book ·") === 0));
 ok("orgAiContext is per-book aware (lists each book by name)", (function () { const c = t.orgAiContext(xferStore, "rbjvl"); return c.indexOf("Book · Personal") >= 0 && c.indexOf("Book · OBX") >= 0; })());
 
+console.log("— BUDGET P1 (YNAB accounts + envelopes) migration fixture: a P0-shaped books store survives load()+round-trip; accounts/budgets are additive; zero loss; existing cats/tx keep their data + gain nothing harmful —");
+// Start from the SAME pre-change P0 store (no budgetAccounts, no budgetBudgets, no rollover field) and prove the
+// P1 collections backfill additively, every P0 record survives untouched, and the envelope math is exposed to Cap.
+const p1Stored = JSON.parse(JSON.stringify(bookStored));
+const p1m = t.migrateStore(JSON.parse(JSON.stringify(p1Stored)));
+ok("P1 backfills empty budgetAccounts + budgetBudgets arrays on a P0 budget org", Array.isArray(p1m.rbjvl.budgetAccounts) && p1m.rbjvl.budgetAccounts.length === 0 && Array.isArray(p1m.rbjvl.budgetBudgets) && p1m.rbjvl.budgetBudgets.length === 0, { a: p1m.rbjvl.budgetAccounts, b: p1m.rbjvl.budgetBudgets });
+ok("P1 migration does NOT touch existing cats/tx (counts, amounts, targets, ids all intact)", p1m.rbjvl.budgetCats.length === 3 && p1m.rbjvl.budgetTx.length === 3 && (p1m.rbjvl.budgetCats.find(c => c.id === "bgt-cat-rent") || {}).target === 1200 && (p1m.rbjvl.budgetTx.find(x => x.id === "bgt-tx-1") || {}).amount === 3200, p1m.rbjvl);
+ok("P1 migration does NOT invent allocations (envelopes start empty — user allocates)", p1m.rbjvl.budgetBudgets.length === 0, p1m.rbjvl.budgetBudgets);
+// Now a populated P1 store: an account ($2600), an allocation to Rent ($1200), with a $1200 rent spend already logged.
+const thisMo = new Date().getFullYear() + "-" + String(new Date().getMonth() + 1).padStart(2, "0");
+const prevMo = (function () { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); })();
+const yPop = {
+  registry: [{ id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }],
+  rbjvl: {
+    customers: [], quotes: [], jobs: [],
+    budgetBooks: [{ id: "bgt-book-default-rbjvl", name: "Personal", kind: "personal", order: 0, updatedAt: 1 }],
+    budgetCats: [
+      { id: "c-rent", name: "Rent", kind: "out", target: 1200, rollover: false, bookId: "bgt-book-default-rbjvl", order: 0, updatedAt: 5 },
+      { id: "c-save", name: "Savings", kind: "out", target: 200, rollover: true, bookId: "bgt-book-default-rbjvl", order: 1, updatedAt: 5 },
+      { id: "c-pay", name: "Paycheck", kind: "in", bookId: "bgt-book-default-rbjvl", order: 2, updatedAt: 5 }
+    ],
+    budgetTx: [
+      { id: "tx-pay", date: thisMo + "-01", dir: "in", amount: 3200, catId: "c-pay", bookId: "bgt-book-default-rbjvl", updatedAt: 5 },
+      { id: "tx-rent", date: thisMo + "-03", dir: "out", amount: 1200, catId: "c-rent", bookId: "bgt-book-default-rbjvl", updatedAt: 5 }
+    ],
+    budgetAccounts: [{ id: "a-chk", bookId: "bgt-book-default-rbjvl", name: "Checking", type: "checking", balance: 2600, order: 0, updatedAt: 5 }],
+    budgetBudgets: [
+      { id: "al-rent", bookId: "bgt-book-default-rbjvl", catId: "c-rent", month: thisMo, allocated: 1200, updatedAt: 5 },
+      { id: "al-save-prev", bookId: "bgt-book-default-rbjvl", catId: "c-save", month: prevMo, allocated: 200, updatedAt: 5 }   // last month's savings rolls in
+    ]
+  }
+};
+const yM = t.migrateStore(JSON.parse(JSON.stringify(yPop)));
+const yRound = t.mergeState(yM, yM);
+ok("P1 round-trip: accounts + budgets survive with zero loss (ids + balances stable)", yRound.rbjvl.budgetAccounts.length === 1 && (yRound.rbjvl.budgetAccounts[0] || {}).balance === 2600 && yRound.rbjvl.budgetBudgets.length === 2, { a: yRound.rbjvl.budgetAccounts.length, b: yRound.rbjvl.budgetBudgets.length });
+const yctx = t.orgAiContext(yM, "rbjvl");
+// total cash 2600; envelopes: Rent available = 1200 alloc − 1200 spent = 0; Savings = 200 carry (rollover) + 0 − 0 = 200 ⇒ assigned 200 ⇒ TBB = 2600 − 200 = 2400
+ok("orgAiContext exposes total cash + To-Be-Budgeted (cash 2600, envelopes 200 ⇒ TBB 2400)", yctx.indexOf("total cash $2600.00") >= 0 && yctx.indexOf("TO BE BUDGETED $2400.00") >= 0, yctx.split("\n").filter(l => l.indexOf("YNAB combined") === 0));
+ok("orgAiContext exposes a reset envelope drained to $0 (Rent: assigned 1200, spent 1200 → available 0)", /Envelope · Rent: available \$0.00/.test(yctx), yctx.split("\n").filter(l => l.indexOf("Envelope · Rent") >= 0));
+ok("orgAiContext exposes a rollover envelope's carried balance (Savings available $200 from last month)", /Envelope · Savings: available \$200.00/.test(yctx), yctx.split("\n").filter(l => l.indexOf("Envelope · Savings") >= 0));
+ok("orgAiContext exposes age of money (combined)", /Age of money \(combined\): \d+ day/.test(yctx), yctx.split("\n").filter(l => l.indexOf("Age of money") >= 0));
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },

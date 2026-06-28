@@ -2,9 +2,18 @@
    Built for Ray's personal organization (rbjvl). Ray's #1 personal priority. Per-org synced collections that
    ride the existing per-record LWW sync exactly like customers:
      - budgetBooks {id,name,kind,linkedOrgId,color,order,updatedAt,deleted}   one ENTITY (a business or Personal)
-     - budgetCats  {id,name,kind,target,bookId,order,updatedAt,deleted}        categories + monthly PLANNED target
+     - budgetCats  {id,name,kind,target,rollover,bookId,order,updatedAt,deleted}  categories; target=optional GOAL; rollover flag
      - budgetTx    {id,date,amount,catId,note,dir,bookId,isTransfer,transferId,updatedAt,deleted}  one transaction
      - budgetMemo  {id,key,catId,updatedAt,deleted}                            CSV merchant→category memory
+     - budgetAccounts {id,bookId,name,type,balance,mask,order,updatedAt,deleted}   P1: real cash accounts (TRUTH for available cash)
+     - budgetBudgets  {id,bookId,catId,month,allocated,updatedAt,deleted}          P1: monthly envelope allocations (YNAB "allocated this month")
+
+   P1 = YNAB ZERO-BASED ENVELOPE budgeting on top of P0. Real cash lives in budgetAccounts (manual entry in P1;
+   bank-link is P3). To-Be-Budgeted (TBB) = Σ account balances − Σ envelope balances; drive it to zero = give every
+   dollar a job. Envelope balance = carryover(prior month) + allocated(this month) − spent(this month); spent = out-txns
+   in that cat/book/month (transfers excluded). Positive leftover rolls into next month; overspend goes negative and
+   reduces next month's TBB. Per-category `rollover` flag: true → leftover carries (sinking fund), false → resets each
+   month (rent). Age-of-Money = derived FIFO days from a dollar arriving to being spent. All per-book + Combined.
 
    P0 = BOOKS foundation. Each business + personal entity = a `budgetBook`; `bookId` tags every cat + tx. A
    header SELECTOR picks one book OR "All (combined)". Per-book views filter by bookId; Combined aggregates
@@ -27,6 +36,8 @@
 function migrateBudgetBooks(o,oid){
   if(!o||typeof o!=="object"||Array.isArray(o))return o;
   if(!Array.isArray(o.budgetBooks))o.budgetBooks=[];
+  if(!Array.isArray(o.budgetAccounts))o.budgetAccounts=[];   // P1 (YNAB): real cash accounts — additive
+  if(!Array.isArray(o.budgetBudgets))o.budgetBudgets=[];     // P1 (YNAB): monthly envelope allocations — additive
   var hasBudget=(o.budgetCats&&o.budgetCats.length)||(o.budgetTx&&o.budgetTx.length)||o.budgetBooks.length;
   if(!hasBudget)return o;                                  // org never used the budget tool → leave untouched
   var defId="bgt-book-default-"+oid;
@@ -72,6 +83,97 @@ function budgetCatName(id){ var c=budgetCat(id); return c?c.name:"Uncategorized"
 function budgetBookName(id){ var b=budgetBook(id); return b?b.name:"—"; }
 /* merchant→category memory (budgetMemo): {id,key,catId,updatedAt,deleted}; key = normalized description keyword */
 function actBudgetMemo(){ return (D().budgetMemo||[]).filter(function(m){return !m.deleted;}); }
+
+/* ---- P1: accounts (real cash) + budgets (monthly envelope allocations), book-scoped ---- */
+function actBudgetAccounts(){ return (D().budgetAccounts||[]).filter(function(a){return !a.deleted&&budgetInBook(a);})
+  .sort(function(a,b){ return (a.order||0)-(b.order||0) || (a.name||"").localeCompare(b.name||""); }); }
+function budgetAccount(id){ return (D().budgetAccounts||[]).filter(function(a){return !a.deleted;}).find(function(a){return a.id===id;}); }
+/* total cash in scope = Σ account balances (credit accounts carry a negative balance — money owed) */
+function budgetTotalCash(){ return actBudgetAccounts().reduce(function(s,a){return s+(+a.balance||0);},0); }
+/* allocation record for a cat+month (book implied by the cat) */
+function budgetAllocRec(catId,m){ return (D().budgetBudgets||[]).filter(function(x){return !x.deleted;})
+  .find(function(x){return x.catId===catId&&x.month===m;}); }
+function budgetAllocated(catId,m){ var r=budgetAllocRec(catId,m); return r?(+r.allocated||0):0; }
+function ACCT_TYPES(){ return [
+  {k:"checking",label:"Checking",icon:"🏦"},
+  {k:"savings", label:"Savings", icon:"🐖"},
+  {k:"cash",    label:"Cash",    icon:"💵"},
+  {k:"credit",  label:"Credit card",icon:"💳"}
+]; }
+function acctTypeMeta(k){ return ACCT_TYPES().find(function(t){return t.k===k;})||ACCT_TYPES()[0]; }
+
+/* ---- ENVELOPE MATH (per book; respects the Combined filter via the *InBook accessors) ----
+   spent(cat,month) = Σ out-txns in that cat & month (transfers already excluded by actBudgetTx).
+   carryover(cat,month) = running envelope balance at the END of the prior month, but ONLY for rollover cats;
+                          a reset (non-rollover) cat starts each month at 0 (overspend still carries as debt).
+   envelope balance(cat,month) = carryover + allocated(month) − spent(month).
+   To keep this cheap + bounded we walk months from the category's first activity (alloc or tx) up to `month`. */
+function budgetCatSpent(catId,m){
+  return budgetTxForMonth(m).filter(function(t){return t.catId===catId&&t.dir==="out";})
+    .reduce(function(s,t){return s+(+t.amount||0);},0);
+}
+/* earliest month with any allocation or transaction for a category (for the carryover walk) */
+function budgetCatFirstMonth(catId,upto){
+  var first=upto;
+  (D().budgetBudgets||[]).forEach(function(x){ if(!x.deleted&&x.catId===catId&&x.month&&x.month<first)first=x.month; });
+  (D().budgetTx||[]).forEach(function(t){ if(!t.deleted&&!t.isTransfer&&t.catId===catId){ var mm=budgetMonthOf(t.date); if(mm&&mm<first)first=mm; } });
+  return first;
+}
+/* envelope balance available in a cat AT THE END of month m (carryover + allocated − spent, walked forward) */
+function budgetEnvelopeBalance(catId,m){
+  var cat=budgetCat(catId); var rollover=cat?(cat.rollover!==false):true;   // default rollover = true
+  var start=budgetCatFirstMonth(catId,m);
+  var bal=0, cur=start, guard=0;
+  while(cur<=m && guard<600){
+    var carry=bal;
+    if(!rollover&&carry>0)carry=0;                 // reset cats drop a POSITIVE leftover each month (overspend debt still carries)
+    bal=carry+budgetAllocated(catId,cur)-budgetCatSpent(catId,cur);
+    if(cur===m)break;
+    cur=budgetShiftMonth(cur,1); guard++;
+  }
+  return Math.round(bal*100)/100;
+}
+/* carryover INTO month m = envelope balance at the end of the prior month (rollover-aware) */
+function budgetCarryIn(catId,m){
+  var cat=budgetCat(catId); var rollover=cat?(cat.rollover!==false):true;
+  var prev=budgetShiftMonth(m,-1);
+  var c=budgetEnvelopeBalance(catId,prev);
+  if(!rollover&&c>0)c=0;
+  return Math.round(c*100)/100;
+}
+/* Σ of every spending envelope's CURRENT balance (end of month m), in scope — the cash that's "spoken for" */
+function budgetEnvelopesTotal(m){
+  return actBudgetCats().filter(function(c){return (c.kind||"out")==="out";})
+    .reduce(function(s,c){ var b=budgetEnvelopeBalance(c.id,m); return s+(b>0?b:0); },0);
+}
+/* To-Be-Budgeted (in scope) = total cash − Σ positive envelope balances. Drive to zero. */
+function budgetTBB(m){ return Math.round((budgetTotalCash()-budgetEnvelopesTotal(m))*100)/100; }
+
+/* ---- AGE OF MONEY (derived, FIFO): for the most-recently spent dollars, how many days since the income
+   that funded them arrived. Compute per scope across ALL history up to the end of month m. No new storage. ---- */
+function budgetAgeOfMoney(m){
+  var end=budgetShiftMonth(m,1)+"-01";   // exclusive upper bound = first of next month
+  var tx=actBudgetTx().filter(function(t){ return (t.date||"")<end; })
+    .slice().sort(function(a,b){ return (a.date||"")<(b.date||"")?-1:((a.date||"")>(b.date||"")?1:0); });
+  var income=tx.filter(function(t){return t.dir==="in";}).map(function(t){return {date:t.date,amt:+t.amount||0};});
+  var ages=[], ii=0, rem=income.length?income[0].amt:0;
+  function dayDiff(a,b){ return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000); }
+  tx.filter(function(t){return t.dir==="out";}).forEach(function(o){
+    var need=+o.amount||0;
+    while(need>0.0001 && ii<income.length){
+      if(rem<=0.0001){ ii++; rem=ii<income.length?income[ii].amt:0; if(ii>=income.length)break; continue; }
+      var take=Math.min(need,rem);
+      ages.push({d:dayDiff(income[ii].date,o.date),w:take});
+      need-=take; rem-=take;
+    }
+  });
+  if(!ages.length)return null;
+  var recent=ages.slice(-Math.min(ages.length,40));   // last ~40 fundings (≈ YNAB's rolling window feel)
+  var tot=recent.reduce(function(s,a){return s+a.w;},0);
+  if(tot<=0)return null;
+  var wAvg=recent.reduce(function(s,a){return s+a.d*a.w;},0)/tot;
+  return Math.max(0,Math.round(wAvg));
+}
 
 /* ---- month helpers ---- */
 function budgetMonthOf(ds){ return (ds||today()).slice(0,7); }                  // "YYYY-MM"
@@ -144,13 +246,11 @@ function budgetBookBar(){
     +'</div>';
 }
 
-/* ---------- MONTH — planned vs actual per category + income/spending/net + running balance ---------- */
+/* ---------- MONTH — YNAB ENVELOPE view: To-Be-Budgeted + Accounts + per-cat AVAILABLE NOW ---------- */
 function budgetRenderMonth(){
   var body=document.getElementById("budget_body"); if(!body)return;
   var m=BUDGET_MONTH||budgetThisMonth();
-  var rows=budgetTxForMonth(m);
-  var income=budgetSum(rows,"in"), spending=budgetSum(rows,"out"), net=income-spending;
-  var bal=budgetRunningBalance();
+  var books=actBudgetBooks();
 
   var h='<div class="card"><div class="row" style="gap:8px;align-items:center">'
     +'<button class="btn ghost sm" onclick="budgetNavMonth(-1)" title="Previous month">‹</button>'
@@ -160,61 +260,205 @@ function budgetRenderMonth(){
     +(m===budgetThisMonth()?' · this month':'')
     +(budgetIsAll()?' · all books':' · '+esc(budgetBookName(BUDGET_BOOK)))+'</div></div>';
 
-  /* the three headline numbers for the month + running balance */
-  h+='<div class="card"><div class="row" style="text-align:center">'
-    +budgetStat("Income","var(--ok,#1b7f4d)",budgetMoney(income))
-    +budgetStat("Spending","var(--danger)",budgetMoney(spending))
-    +budgetStat("Net",net>=0?"var(--ok,#1b7f4d)":"var(--danger)",(net>=0?"+":"")+budgetMoney(net))
-    +'</div>'
-    +'<div class="sub" style="text-align:center;margin-top:8px;border-top:1px solid var(--line,#eee);padding-top:8px">Running balance (all time): <b style="color:'+(bal>=0?"var(--ok,#1b7f4d)":"var(--danger)")+'">'+budgetMoney(bal)+'</b></div>'
-    +'</div>';
-
-  /* planned vs actual — spending categories first (the budget), then income categories */
-  var cats=actBudgetCats();
-  h+=budgetPlanSection("Spending plan","out",cats,m,spending);
-  h+=budgetPlanSection("Income","in",cats,m,income);
-
-  if(!cats.length){
-    h+='<div class="empty"><div class="big">💰</div>No categories yet'+(budgetIsAll()?'':' in this book')+'. Add spending + income categories with monthly targets on the <b>Settings</b> tab, then log transactions.</div>';
+  if(!books.length){
+    h+='<div class="empty"><div class="big">📚</div>No books yet. Create one on the <b>Settings</b> tab, then add an account and categories.</div>';
+    body.innerHTML=h; return;
   }
 
+  /* ---- TO BE BUDGETED — the headline. Drive to zero = "give every dollar a job." ---- */
+  h+=budgetTBBCard(m);
+
+  /* ---- ACCOUNTS — real cash; the truth for available money ---- */
+  h+=budgetAccountsSection();
+
+  /* ---- ENVELOPES — spending categories, each with AVAILABLE NOW + allocate controls ---- */
+  var cats=actBudgetCats();
+  var aom=budgetAgeOfMoney(m);
+  if(aom!=null){
+    h+='<div class="card" style="padding:8px 10px;text-align:center"><span class="sub">Age of money</span> '
+      +'<b style="font-size:16px">'+aom+' day'+(aom===1?"":"s")+'</b>'
+      +'<span class="sub"> — how long your money sits before you spend it</span></div>';
+  }
+  h+=budgetEnvelopeSection("Envelopes — spending","out",cats,m);
+  h+=budgetEnvelopeSection("Income","in",cats,m);
+
+  if(!cats.length){
+    h+='<div class="empty"><div class="big">💰</div>No categories yet'+(budgetIsAll()?'':' in this book')+'. Add spending + income categories on the <b>Settings</b> tab, then allocate cash to each envelope.</div>';
+  }
   body.innerHTML=h;
 }
-function budgetStat(label,color,value){
-  return '<div style="flex:1"><div class="sub">'+esc(label)+'</div><div style="font-weight:800;font-size:18px;color:'+color+'">'+value+'</div></div>';
+/* TBB card: total cash − Σ envelope balances, in scope. Green at 0, amber when there's money to assign, red when over. */
+function budgetTBBCard(m){
+  var cash=budgetTotalCash(), tbb=budgetTBB(m);
+  var color=Math.abs(tbb)<0.005?"var(--ok,#1b7f4d)":(tbb>0?"#d98a00":"var(--danger)");
+  var msg=Math.abs(tbb)<0.005?"Every dollar has a job. 🎯"
+        :(tbb>0?"You have money to assign — give it a job below."
+               :"You’ve assigned more than you have. Pull some back.");
+  var h='<div class="card" style="text-align:center;border-left:4px solid '+color+'">'
+    +'<div class="sub">To Be Budgeted'+(budgetIsAll()?' · all books':'')+'</div>'
+    +'<div style="font-weight:800;font-size:30px;color:'+color+'">'+budgetMoney(tbb)+'</div>'
+    +'<div class="sub" style="margin-top:2px">'+esc(msg)+'</div>'
+    +'<div class="sub" style="margin-top:6px;border-top:1px solid var(--line,#eee);padding-top:6px">Total cash <b>'+budgetMoney(cash)+'</b> − assigned to envelopes <b>'+budgetMoney(cash-tbb)+'</b></div>';
+  /* one-tap: fill THIS month's allocations from category targets (only when there's something to fill) */
+  var fillable=actBudgetCats().filter(function(c){return (c.kind||"out")==="out"&&(+c.target||0)>0&&budgetAllocated(c.id,m)<(+c.target||0);}).length;
+  if(fillable)h+='<button class="btn ghost sm" style="margin-top:8px" onclick="budgetFillFromTargets(\''+m+'\')">⚡ Fill this month from targets</button>';
+  return h+'</div>';
 }
-function budgetPlanSection(title,kind,cats,m,monthTotal){
+/* ACCOUNTS section: list balances + add/adjust; inviting empty state (cash 0 until the first account) */
+function budgetAccountsSection(){
+  var accts=actBudgetAccounts();
+  var h='<div class="secthd"><h2>Accounts</h2>'+(accts.length?'<span class="ct">'+budgetMoney(budgetTotalCash())+'</span>':'')+'</div>';
+  if(!accts.length){
+    h+='<div class="card" style="text-align:center;border:1px dashed var(--line,#ccc)">'
+      +'<div style="font-size:24px">🏦</div>'
+      +'<div class="sub" style="margin:4px 0 8px">No accounts yet — your cash is <b>$0.00</b>. Add a checking, savings, cash, or credit account to tell the budget how much real money you have to work with.</div>'
+      +'<button class="btn acc" onclick="openBudgetAccount(null)">＋ Add an account</button></div>';
+    return h;
+  }
+  h+='<div class="card" style="padding:6px 10px">'+accts.map(function(a){
+    var meta=acctTypeMeta(a.type), bal=+a.balance||0;
+    var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(a.bookId))+'</span>'):'';
+    return '<div class="li" style="cursor:pointer" onclick="openBudgetAccount(\''+a.id+'\')">'
+      +'<div class="grow"><div class="nm">'+meta.icon+' '+esc(a.name)+(a.mask?' <span class="sub" style="font-weight:400">··'+esc(a.mask)+'</span>':'')+bookTag+'</div>'
+      +'<div class="sub">'+esc(meta.label)+'</div></div>'
+      +'<div style="font-weight:800;color:'+(bal<0?"var(--danger)":"var(--ink,#111)")+'">'+budgetMoney(bal)+'</div></div>';
+  }).join("")+'</div>';
+  h+='<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="openBudgetAccount(null)">＋ Add account</button>';
+  return h;
+}
+/* ENVELOPE rows: spending cats show AVAILABLE NOW (envelope balance) + allocate controls + spent + activity */
+function budgetEnvelopeSection(title,kind,cats,m){
   var list=cats.filter(function(c){return (c.kind||"out")===kind;});
   if(!list.length)return "";
-  var plannedTotal=list.reduce(function(s,c){return s+(+c.target||0);},0);
-  var h='<div class="secthd"><h2>'+esc(title)+'</h2>'+(plannedTotal>0?'<span class="ct">plan '+budgetMoney(plannedTotal)+'</span>':'')+'</div>';
+  if(kind==="in")return budgetIncomeSection(list,m);
+  var allocTotal=list.reduce(function(s,c){return s+budgetAllocated(c.id,m);},0);
+  var h='<div class="secthd"><h2>'+esc(title)+'</h2>'+(allocTotal>0?'<span class="ct">assigned '+budgetMoney(allocTotal)+'</span>':'')+'</div>';
   h+='<div class="card" style="padding:6px 10px">'+list.map(function(c){
-    var actual=budgetCatActual(c.id,m), target=+c.target||0;
-    var pct=target>0?Math.min(100,Math.round(actual/target*100)):(actual>0?100:0);
-    var over=target>0&&actual>target;
-    var barColor=kind==="in"?"#1b7f4d":(over?"var(--danger)":(pct>=90?"#d98a00":"#1b7f4d"));
-    var remLabel="";
-    if(target>0){
-      var rem=target-actual;
-      remLabel=over?('<span style="color:var(--danger);font-weight:600">'+budgetMoney(-rem)+' over</span>')
-                    :('<span style="color:var(--muted)">'+budgetMoney(rem)+' '+(kind==="in"?"to go":"left")+'</span>');
-    }else remLabel='<span style="color:var(--muted)">no target</span>';
+    var avail=budgetEnvelopeBalance(c.id,m), alloc=budgetAllocated(c.id,m), spent=budgetCatSpent(c.id,m), carry=budgetCarryIn(c.id,m);
+    var target=+c.target||0;
+    var availColor=avail<-0.005?"var(--danger)":(avail<0.005?"var(--muted)":"var(--ok,#1b7f4d)");
     var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(c.bookId))+'</span>'):'';
-    return '<div class="li" style="align-items:flex-start;flex-direction:column;cursor:pointer" onclick="budgetSetSub(\'tx\')">'
-      +'<div class="row" style="width:100%;justify-content:space-between"><div class="nm">'+esc(c.name)+bookTag+'</div>'
-      +'<div style="font-weight:700">'+budgetMoney(actual)+(target>0?' <span class="sub" style="font-weight:400">/ '+budgetMoney(target)+'</span>':'')+'</div></div>'
-      +'<div style="width:100%;height:6px;background:var(--line,#eee);border-radius:4px;margin:5px 0 3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+barColor+'"></div></div>'
-      +'<div class="sub" style="width:100%;text-align:right">'+remLabel+'</div>'
-      +'</div>';
+    var meta='';
+    if(carry>0.005||carry<-0.005)meta+='carry '+budgetMoney(carry)+' · ';
+    meta+='assigned '+budgetMoney(alloc)+' · spent '+budgetMoney(spent);
+    if(target>0)meta+=' · goal '+budgetMoney(target);
+    if(c.rollover===false)meta+=' · resets';
+    return '<div class="li" style="align-items:flex-start;flex-direction:column">'
+      +'<div class="row" style="width:100%;justify-content:space-between;align-items:flex-start">'
+      +'<div class="grow" style="cursor:pointer" onclick="budgetOpenCatTx(\''+c.id+'\')"><div class="nm">'+esc(c.name)+bookTag+'</div>'
+      +'<div class="sub">'+esc(meta)+'</div></div>'
+      +'<div style="text-align:right;flex:0 0 auto"><div class="sub">available</div>'
+      +'<div style="font-weight:800;font-size:17px;color:'+availColor+'">'+budgetMoney(avail)+'</div></div></div>'
+      +'<div class="row" style="gap:6px;width:100%;margin-top:6px">'
+      +'<button class="btn ghost sm" onclick="budgetAlloc(\''+c.id+'\',\''+m+'\',-1)" title="Take $10 back">−</button>'
+      +'<button class="btn ghost sm" onclick="budgetAlloc(\''+c.id+'\',\''+m+'\',1)" title="Add $10">＋</button>'
+      +'<button class="btn ghost sm" style="flex:1" onclick="budgetAllocSet(\''+c.id+'\',\''+m+'\')">Set…</button>'
+      +(target>0&&alloc<target?'<button class="btn ghost sm" onclick="budgetAllocToTarget(\''+c.id+'\',\''+m+'\')" title="Assign up to the goal">→ goal</button>':'')
+      +'</div></div>';
   }).join("")+'</div>';
-  /* uncategorized for this kind */
-  var uncat=budgetTxForMonth(m).filter(function(t){return t.dir===kind&&!budgetCat(t.catId);});
+  /* uncategorized spending for this month */
+  var uncat=budgetTxForMonth(m).filter(function(t){return t.dir==="out"&&!budgetCat(t.catId);});
   if(uncat.length){
     var uTot=uncat.reduce(function(s,t){return s+(+t.amount||0);},0);
-    h+='<div class="sub" style="margin:4px 8px 0">Uncategorized '+(kind==="in"?"income":"spending")+': <b>'+budgetMoney(uTot)+'</b> ('+uncat.length+')</div>';
+    h+='<div class="sub" style="margin:4px 8px 0">Uncategorized spending: <b>'+budgetMoney(uTot)+'</b> ('+uncat.length+') — categorize on the Transactions tab.</div>';
   }
   return h;
 }
+function budgetIncomeSection(list,m){
+  var inc=budgetSum(budgetTxForMonth(m),"in");
+  var h='<div class="secthd"><h2>Income</h2>'+(inc>0?'<span class="ct">'+budgetMoney(inc)+' in</span>':'')+'</div>';
+  h+='<div class="card" style="padding:6px 10px">'+list.map(function(c){
+    var got=budgetCatActual(c.id,m), target=+c.target||0;
+    var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(c.bookId))+'</span>'):'';
+    return '<div class="li" style="cursor:pointer" onclick="budgetOpenCatTx(\''+c.id+'\')">'
+      +'<div class="grow"><div class="nm">'+esc(c.name)+bookTag+'</div>'
+      +'<div class="sub">'+(target>0?'expected '+budgetMoney(target):'income')+'</div></div>'
+      +'<div style="font-weight:800;color:var(--ok,#1b7f4d)">'+budgetMoney(got)+'</div></div>';
+  }).join("")+'</div>'
+    +'<div class="sub" style="margin:4px 8px 0">Income lands in <b>To Be Budgeted</b> — assign it to envelopes above.</div>';
+  return h;
+}
+/* tap an envelope → jump to its transactions for the month */
+window.budgetOpenCatTx=function(catId){ var c=budgetCat(catId); if(c&&c.bookId)BUDGET_BOOK=c.bookId; budgetSetSub("tx"); };
+
+/* ---------- ALLOCATION — write/adjust a budgetBudgets {bookId,catId,month,allocated} record ---------- */
+function budgetSetAllocation(catId,m,amount){
+  var c=budgetCat(catId); if(!c)return;
+  amount=Math.round((+amount||0)*100)/100;
+  var d=D(); if(!d.budgetBudgets)d.budgetBudgets=[];
+  var r=d.budgetBudgets.find(function(x){return !x.deleted&&x.catId===catId&&x.month===m;});
+  if(!r){ r={id:"bgt-alloc-"+uid(),bookId:c.bookId,catId:catId,month:m,allocated:amount,deleted:false}; d.budgetBudgets.push(r); }
+  else { r.allocated=amount; r.bookId=c.bookId; r.deleted=false; }
+  touch(r); save();
+}
+window.budgetAlloc=function(catId,m,sign){
+  var cur=budgetAllocated(catId,m);
+  var next=Math.max(0,Math.round((cur+sign*10)*100)/100);   // quick ±$10
+  budgetSetAllocation(catId,m,next); render();
+};
+window.budgetAllocSet=function(catId,m){
+  var c=budgetCat(catId); if(!c)return;
+  var cur=budgetAllocated(catId,m);
+  var v=prompt("Assign to “"+c.name+"” for "+budgetMonthLabel(m)+" (dollars):",cur||"");
+  if(v==null)return;
+  var n=parseFloat(v); if(isNaN(n)||n<0){ alert("Enter a number ≥ 0."); return; }
+  budgetSetAllocation(catId,m,n); render();
+};
+window.budgetAllocToTarget=function(catId,m){
+  var c=budgetCat(catId); if(!c)return;
+  budgetSetAllocation(catId,m,+c.target||0); render();
+};
+/* one-tap: top up every spending envelope's allocation to its target for this month (never lowers an over-target alloc) */
+window.budgetFillFromTargets=function(m){
+  var cats=actBudgetCats().filter(function(c){return (c.kind||"out")==="out"&&(+c.target||0)>0;});
+  var todo=cats.filter(function(c){return budgetAllocated(c.id,m)<(+c.target||0);});
+  if(!todo.length){ alert("Every envelope is already funded to its goal for "+budgetMonthLabel(m)+"."); return; }
+  if(!confirm("Assign cash so each spending envelope hits its monthly goal for "+budgetMonthLabel(m)+"?\n\n"+todo.length+" envelope"+(todo.length===1?"":"s")+" will be topped up. To Be Budgeted will drop accordingly."))return;
+  todo.forEach(function(c){ budgetSetAllocation(c.id,m,+c.target||0); });
+  render();
+};
+
+/* ---------- ACCOUNTS — real cash per book; manual entry/adjust in P1 ---------- */
+window.openBudgetAccount=function(id){
+  var isNew=!id;
+  var books=actBudgetBooks();
+  if(isNew&&!books.length){ alert("Create a book first (Settings → Books), then add an account to it."); return; }
+  var a=isNew?{id:"bgt-acct-"+uid(),name:"",type:"checking",balance:"",mask:"",bookId:budgetDefaultBookId()}
+             :budgetAccount(id);
+  if(!a)return;
+  var bid=a.bookId||budgetDefaultBookId();
+  var typeOpts=ACCT_TYPES().map(function(t){return '<option value="'+t.k+'"'+((a.type||"checking")===t.k?" selected":"")+'>'+t.icon+' '+t.label+'</option>';}).join("");
+  var bookSel=books.length>1?('<label>Book</label><select id="ba_book">'
+    +books.map(function(b){return '<option value="'+b.id+'"'+(bid===b.id?" selected":"")+'>'+esc(b.name)+'</option>';}).join("")+'</select>'):'<input type="hidden" id="ba_book" value="'+esc(bid)+'">';
+  modal(isNew?"Add account":"Edit account",''
+    +'<p class="muted" style="margin:0 0 8px;font-size:13px">Enter the real balance — this is the cash the budget works from. (Bank-link comes later; for now keep it current by hand.)</p>'
+    +bookSel
+    +'<label>Name</label><input id="ba_name" value="'+esc(a.name||"")+'" placeholder="e.g. Checking · Savings · Wallet · Visa">'
+    +'<label>Type</label><select id="ba_type">'+typeOpts+'</select>'
+    +'<label>Current balance</label><input id="ba_balance" type="number" inputmode="decimal" step="0.01" value="'+esc(a.balance!=null&&a.balance!==""?a.balance:"")+'" placeholder="0.00">'
+    +'<div class="sub" style="margin:4px 0">For a credit card, enter what you OWE as a negative number (e.g. −250).</div>'
+    +'<label>Last 4 (optional)</label><input id="ba_mask" value="'+esc(a.mask||"")+'" placeholder="1234" maxlength="4" inputmode="numeric">'
+    +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetAccount(\''+a.id+'\','+isNew+')">Save</button>'
+    +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetAccount(\''+a.id+'\')">Delete account</button>')
+  );
+};
+window.saveBudgetAccount=function(id,isNew){
+  var d=D(); if(!d.budgetAccounts)d.budgetAccounts=[];
+  var a=isNew?{id:id,order:(d.budgetAccounts||[]).filter(function(x){return !x.deleted;}).length}:d.budgetAccounts.find(function(x){return x.id===id;});
+  if(!a){closeModal();return;}
+  a.name=val("ba_name"); if(!a.name){alert("Give the account a name.");return;}
+  a.type=(document.getElementById("ba_type")||{}).value||"checking";
+  a.bookId=(document.getElementById("ba_book")||{}).value||a.bookId||budgetDefaultBookId();
+  var bal=parseFloat(val("ba_balance")); a.balance=isNaN(bal)?0:Math.round(bal*100)/100;
+  a.mask=(val("ba_mask")||"").replace(/[^0-9]/g,"").slice(0,4);
+  a.deleted=false; touch(a); if(isNew)d.budgetAccounts.push(a);
+  save(); closeModal(); render();
+};
+window.delBudgetAccount=function(id){
+  if(!confirm("Delete this account? Its balance no longer counts toward your cash. (Transactions stay.)"))return;
+  var a=budgetAccount(id); if(!a)return;
+  a.deleted=true; touch(a); save(); closeModal(); render();
+};
 
 /* ---------- TRANSACTIONS — list (this month, newest first) + fast entry ---------- */
 function budgetRenderTx(){
@@ -386,7 +630,7 @@ function budgetRenderSettings(){
   var body=document.getElementById("budget_body"); if(!body)return;
   var cats=actBudgetCats();
   var h=budgetBooksSection();
-  h+='<p class="muted" style="margin:12px 4px 8px;font-size:13px">Set up your spending + income categories and a monthly <b>target</b> (your plan) for each. The Month tab compares planned vs actual.'
+  h+='<p class="muted" style="margin:12px 4px 8px;font-size:13px">Set up your spending + income categories. Each spending category is an <b>envelope</b> you assign cash to on the Month tab; an optional monthly <b>goal</b> powers the one-tap fill.'
     +(budgetIsAll()?' Showing categories across <b>all books</b>.':' Showing <b>'+esc(budgetBookName(BUDGET_BOOK))+'</b>.')+'</p>';
   h+='<button class="btn acc" style="width:100%;margin-bottom:10px" onclick="openBudgetCat(null)">＋ New category</button>';
 
@@ -493,13 +737,15 @@ window.budgetMoveBook=function(id,dir){
 function budgetCatSection(title,kind,cats){
   var list=cats.filter(function(c){return (c.kind||"out")===kind;});
   var planTotal=list.reduce(function(s,c){return s+(+c.target||0);},0);
-  var h='<div class="secthd"><h2>'+esc(title)+'</h2>'+(list.length?'<span class="ct">plan '+budgetMoney(planTotal)+'/mo</span>':'')+'</div>';
+  var h='<div class="secthd"><h2>'+esc(title)+'</h2>'+(list.length&&planTotal>0?'<span class="ct">goals '+budgetMoney(planTotal)+'/mo</span>':'')+'</div>';
   if(!list.length)return h+'<div class="card"><div class="sub">None yet.</div></div>';
   h+='<div class="card" style="padding:6px 10px">'+list.map(function(c){
     var bookTag=budgetIsAll()?(' <span class="sub" style="font-weight:400">· '+esc(budgetBookName(c.bookId))+'</span>'):'';
+    var sub=(+c.target>0)?('goal '+budgetMoney(c.target)+'/mo'):'no monthly goal';
+    if((c.kind||"out")==="out"&&c.rollover===false)sub+=' · resets';
     return '<div class="li" style="cursor:pointer" onclick="openBudgetCat(\''+c.id+'\')">'
       +'<div class="grow"><div class="nm">'+esc(c.name)+bookTag+'</div>'
-      +'<div class="sub">'+((+c.target>0)?('target '+budgetMoney(c.target)+'/mo'):'no monthly target')+'</div></div>'
+      +'<div class="sub">'+sub+'</div></div>'
       +'<div class="btn ghost sm">Edit ›</div></div>';
   }).join("")+'</div>';
   return h;
@@ -522,7 +768,10 @@ window.openBudgetCat=function(id){
     +'<option value="out" '+(kind==="out"?"selected":"")+'>Spending (money out)</option>'
     +'<option value="in" '+(kind==="in"?"selected":"")+'>Income (money in)</option>'
     +'</select>'
-    +'<label>Monthly target (optional)</label><input id="bc_target" type="number" inputmode="decimal" step="0.01" value="'+esc(c.target!=null&&c.target!==""?c.target:"")+'" placeholder="0.00 — your monthly plan for this">'
+    +'<label>Monthly goal (optional)</label><input id="bc_target" type="number" inputmode="decimal" step="0.01" value="'+esc(c.target!=null&&c.target!==""?c.target:"")+'" placeholder="0.00 — how much you aim to fund this each month">'
+    +'<div class="sub" style="margin:4px 0">A goal just powers the “fill from goal” shortcut on the Month tab — you still assign cash to the envelope yourself.</div>'
+    +(kind==="out"?('<label class="row" style="gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="bc_rollover" '+((c.rollover!==false)?"checked":"")+' style="width:auto"> Roll leftover into next month</label>'
+      +'<div class="sub" style="margin:2px 0 0">On = a sinking fund (savings build up). Off = resets each month (e.g. rent — unused cash goes back to To Be Budgeted).</div>'):'')
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetCat(\''+c.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetCat(\''+c.id+'\')">Delete category</button>')
   );
@@ -535,6 +784,8 @@ window.saveBudgetCat=function(id,isNew){
   c.kind=(document.getElementById("bc_kind")||{}).value||"out";
   c.bookId=(document.getElementById("bc_book")||{}).value||c.bookId||budgetDefaultBookId();
   var tgt=parseFloat(val("bc_target")); c.target=(isNaN(tgt)||tgt<0)?0:Math.round(tgt*100)/100;
+  var roll=document.getElementById("bc_rollover");
+  c.rollover=(c.kind==="out")?(roll?!!roll.checked:(c.rollover!==false)):true;   // income cats: rollover flag irrelevant
   c.deleted=false; touch(c); if(isNew)d.budgetCats.push(c);
   save(); closeModal(); BUDGET_SUB="settings"; render();
 };
@@ -569,7 +820,9 @@ window.budgetExport=function(fmt){
     }).join("\n");
     budgetDownload("budget-"+stamp+".csv",head+lines,"text/csv");
   }else{
-    var out={ exportedAt:stamp, books:books, categories:cats, transactions:tx };
+    var accounts=(D().budgetAccounts||[]).filter(function(a){return !a.deleted;});
+    var budgets=(D().budgetBudgets||[]).filter(function(x){return !x.deleted;});
+    var out={ exportedAt:stamp, books:books, categories:cats, transactions:tx, accounts:accounts, budgets:budgets };
     budgetDownload("budget-backup-"+stamp+".json",JSON.stringify(out,null,2),"application/json");
   }
 };

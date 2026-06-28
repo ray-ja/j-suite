@@ -22,7 +22,7 @@
 var SAMPLE_TOOLS = [
   { tab:"escape", label:"Room scheduler", icon:"🚪", cols:["escapeRooms","escapeBookings"] },
   { tab:"life",   label:"Life tracker",   icon:"🌱", cols:["lifeTrackers","lifeNotes","lifeLogs"] },
-  { tab:"budget", label:"Budget",         icon:"💵", cols:["budgetCats","budgetTx"] },
+  { tab:"budget", label:"Budget",         icon:"💵", cols:["budgetCats","budgetTx","budgetAccounts","budgetBudgets"] },
   { tab:"booking",label:"Booking",        icon:"🎟️", cols:[] }   // stateless scaffold — nothing to seed
 ];
 
@@ -148,6 +148,17 @@ function sampleSeedBudget(d){
   ];
   txs.forEach(function(t,i){
     sampleUpsert(d,"budgetTx",{ id:sampleId("tx",i+1), date:t.date, amount:t.amount, catId:t.cat, dir:t.dir, note:t.note, bookId:bookId });
+  });
+  /* P1: a sample CHECKING account (real cash) + a couple envelope allocations so the YNAB Month view
+     demos out of the box — cash present, a few envelopes funded, TBB shows money still to assign */
+  sampleUpsert(d,"budgetAccounts",{ id:sampleId("acct","chk"), bookId:bookId, name:"SAMPLE — Checking", type:"checking", balance:2600, mask:"0000", order:0 });
+  var allocs=[
+    { cat:cats[2].id, amount:1200 },   // Rent — funded to goal
+    { cat:cats[3].id, amount:500  },   // Groceries — funded to goal
+    { cat:cats[4].id, amount:160  }    // Gas — funded to goal
+  ];
+  allocs.forEach(function(a,i){
+    sampleUpsert(d,"budgetBudgets",{ id:sampleId("alloc",i+1), bookId:bookId, catId:a.cat, month:m, allocated:a.amount });
   });
 }
 

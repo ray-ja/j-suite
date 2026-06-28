@@ -159,7 +159,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -193,6 +193,8 @@ function migrateBudgetBooks(o, oid) {
   if (!o || typeof o !== "object" || Array.isArray(o)) return o;
   const hasBudget = (o.budgetCats && o.budgetCats.length) || (o.budgetTx && o.budgetTx.length) || (o.budgetBooks && o.budgetBooks.length);
   if (!Array.isArray(o.budgetBooks)) o.budgetBooks = [];
+  if (!Array.isArray(o.budgetAccounts)) o.budgetAccounts = [];   // P1 (YNAB): real cash accounts — additive, empty initially
+  if (!Array.isArray(o.budgetBudgets)) o.budgetBudgets = [];     // P1 (YNAB): monthly envelope allocations — additive, empty initially
   if (!hasBudget) return o;                       // org never used the budget tool → leave it untouched
   const defId = "bgt-book-default-" + oid;        // deterministic so re-seed / multi-device dedupe
   let def = o.budgetBooks.find(b => b && b.id === defId);
@@ -268,21 +270,37 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
   // assistant can advise across his separate entities (OBX / Jamieson / Personal) and the combined money hub.
   // Transfers (isTransfer) are EXCLUDED from income/spend totals — they only move cash between books.
   const books = live("budgetBooks"), bcats = live("budgetCats"), btx = live("budgetTx").filter(t => !t.isTransfer);
+  const baccts = live("budgetAccounts"), bbudgets = live("budgetBudgets");
   if (books.length || bcats.length || btx.length) {
     const now2 = new Date(), mo = now2.getFullYear() + "-" + String(now2.getMonth() + 1).padStart(2, "0");
     const inOf = a => sum(a.filter(t => t.dir === "in"), "amount"), outOf = a => sum(a.filter(t => t.dir === "out"), "amount");
     const moTx = a => a.filter(t => String(t.date || "").slice(0, 7) === mo);
+    // P1 YNAB helpers (envelope balance + TBB + age-of-money), scoped to a tx/cat/account subset
+    const shiftMonth = (mm, dl) => { const p = mm.split("-"); const d = new Date(+p[0], (+p[1] || 1) - 1 + dl, 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); };
+    const allocOf = (catId, mm) => { const r = bbudgets.find(x => x.catId === catId && x.month === mm); return r ? (+r.allocated || 0) : 0; };
+    const spentOf = (catId, mm) => sum(btx.filter(t => t.catId === catId && t.dir === "out" && String(t.date || "").slice(0, 7) === mm), "amount");
+    const firstMonth = (catId, upto) => { let f = upto; bbudgets.forEach(x => { if (x.catId === catId && x.month && x.month < f) f = x.month; }); btx.forEach(t => { if (t.catId === catId) { const m2 = String(t.date || "").slice(0, 7); if (m2 && m2 < f) f = m2; } }); return f; };
+    const envBal = (cat, mm) => { const roll = cat.rollover !== false; let bal = 0, cur = firstMonth(cat.id, mm), g = 0; while (cur <= mm && g < 600) { let carry = bal; if (!roll && carry > 0) carry = 0; bal = carry + allocOf(cat.id, cur) - spentOf(cat.id, cur); if (cur === mm) break; cur = shiftMonth(cur, 1); g++; } return Math.round(bal * 100) / 100; };
+    const envTotal = (cats, mm) => cats.filter(c => (c.kind || "out") === "out").reduce((s, c) => { const b = envBal(c, mm); return s + (b > 0 ? b : 0); }, 0);
+    const cashOf = accts => accts.reduce((s, a) => s + (+a.balance || 0), 0);
+    const ageOfMoney = tx => { const t2 = tx.slice().sort((a, b) => (a.date || "") < (b.date || "") ? -1 : 1); const inc = t2.filter(t => t.dir === "in").map(t => ({ date: t.date, amt: +t.amount || 0 })); const dd = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000); let ages = [], ii = 0, rem = inc.length ? inc[0].amt : 0; t2.filter(t => t.dir === "out").forEach(o => { let need = +o.amount || 0; while (need > 0.0001 && ii < inc.length) { if (rem <= 0.0001) { ii++; rem = ii < inc.length ? inc[ii].amt : 0; if (ii >= inc.length) break; continue; } const take = Math.min(need, rem); ages.push({ d: dd(inc[ii].date, o.date), w: take }); need -= take; rem -= take; } }); if (!ages.length) return null; const r = ages.slice(-Math.min(ages.length, 40)); const tot = r.reduce((s, a) => s + a.w, 0); if (tot <= 0) return null; return Math.max(0, Math.round(r.reduce((s, a) => s + a.d * a.w, 0) / tot)); };
     // combined headline (real income/spend, transfers netted out by the filter above)
     L.push("BUDGET — combined balance (all time): $" + (inOf(btx) - outOf(btx)).toFixed(2) + " (income $" + inOf(btx).toFixed(2) + ", spending $" + outOf(btx).toFixed(2) + ")");
     const cMo = moTx(btx);
     L.push("This month (" + mo + ") combined: income $" + inOf(cMo).toFixed(2) + ", spending $" + outOf(cMo).toFixed(2) + ", net $" + (inOf(cMo) - outOf(cMo)).toFixed(2) + " across " + cMo.length + " transactions");
+    // P1: cash truth + To-Be-Budgeted + age-of-money (combined across all books)
+    const cashAll = cashOf(baccts), assignedAll = envTotal(bcats, mo), tbbAll = Math.round((cashAll - assignedAll) * 100) / 100;
+    L.push("YNAB combined: total cash $" + cashAll.toFixed(2) + " across " + baccts.length + " account(s); assigned to envelopes $" + assignedAll.toFixed(2) + "; TO BE BUDGETED $" + tbbAll.toFixed(2) + (Math.abs(tbbAll) < 0.005 ? " (every dollar has a job)" : (tbbAll > 0 ? " (unassigned cash to give a job)" : " (over-assigned — pull some back)")));
+    const aomAll = ageOfMoney(btx.filter(t => String(t.date || "") < shiftMonth(mo, 1) + "-01"));
+    if (aomAll != null) L.push("Age of money (combined): " + aomAll + " day(s)");
     const bookList = books.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
     bookList.forEach(bk => {
       const tx = btx.filter(t => t.bookId === bk.id), txMo = moTx(tx), cats = bcats.filter(c => c.bookId === bk.id);
-      L.push("Book · " + (bk.name || "?") + " (" + (bk.kind || "personal") + "): balance $" + (inOf(tx) - outOf(tx)).toFixed(2) + "; this month income $" + inOf(txMo).toFixed(2) + ", spending $" + outOf(txMo).toFixed(2));
+      const accts = baccts.filter(a => a.bookId === bk.id), cash = cashOf(accts), assigned = envTotal(cats, mo), tbb = Math.round((cash - assigned) * 100) / 100;
+      L.push("Book · " + (bk.name || "?") + " (" + (bk.kind || "personal") + "): balance $" + (inOf(tx) - outOf(tx)).toFixed(2) + "; cash $" + cash.toFixed(2) + "; to-be-budgeted $" + tbb.toFixed(2) + "; this month income $" + inOf(txMo).toFixed(2) + ", spending $" + outOf(txMo).toFixed(2));
       cats.filter(c => (c.kind || "out") === "out").slice(0, 12).forEach(c => {
-        const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
-        L.push("  Spend · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " planned" + (actual > target ? " (OVER by $" + (actual - target).toFixed(2) + ")" : " ($" + (target - actual).toFixed(2) + " left)") : " (no target)"));
+        const spent = spentOf(c.id, mo), alloc = allocOf(c.id, mo), avail = envBal(c, mo);
+        L.push("  Envelope · " + (c.name || "?") + ": available $" + avail.toFixed(2) + " (assigned $" + alloc.toFixed(2) + ", spent $" + spent.toFixed(2) + ")" + (avail < -0.005 ? " — OVERSPENT" : ""));
       });
       cats.filter(c => (c.kind || "out") === "in").slice(0, 6).forEach(c => {
         const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
