@@ -1038,6 +1038,7 @@ const server = http.createServer((req, res) => {
       if (err) { res.writeHead(404); return res.end("app file not found next to sync-server.js"); }
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
       let html = buf.toString("utf8").replace(/((?:src|href)=")(js\/[^"?]+\.js|app\.css)(")/g, '$1$2?b=' + BUILD + '$3');   // version-stamp js/css past Cloudflare's cache
+      html = html.replace("<head>", '<head><script>window.__BUILD="' + BUILD + '";</script>');   // tell the loaded page its own build → js/83 polls /api/version and nudges a refresh when prod moves ahead
       if (MESSAGING_ON) html = html.replace("</head>", '<script>window.JSUITE_MESSAGING=true;</script></head>');
       res.end(html);
     });
@@ -1046,6 +1047,12 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ ok: true }));   // no FILE path — don't leak the install path/username
+  }
+
+  // current build — under /api/ so the SW bypasses it (always live). js/83 polls this; a mismatch vs window.__BUILD means a new deploy is up.
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/version") {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ build: BUILD }));
   }
 
   // CEO read path — GET /api/ceo (read-only sweep, token-gated). Reached via the on-host bridge
