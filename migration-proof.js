@@ -6,7 +6,7 @@ const SS = require("./sync-server");
 const fs = require("fs");
 const file = process.argv[2] || "data.json";
 const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-const COLS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "inventory", "todos", "messages", "timeclock", "resale", "disbursements", "knowledge", "pendingChanges", "docs", "places", "changelog", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax"];
+const COLS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "inventory", "todos", "messages", "timeclock", "resale", "disbursements", "knowledge", "pendingChanges", "docs", "places", "changelog", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills"];
 function census(store) {
   const c = { _accounts: (store.users || []).filter(u => u && !u.kind && !u.deleted).length };
   const orgIds = Object.keys(store).filter(k => k !== "users" && k !== "registry" && store[k] && typeof store[k] === "object" && !Array.isArray(store[k]));

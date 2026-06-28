@@ -160,7 +160,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -197,6 +197,7 @@ function migrateBudgetBooks(o, oid) {
   if (!Array.isArray(o.budgetAccounts)) o.budgetAccounts = [];   // P1 (YNAB): real cash accounts — additive, empty initially
   if (!Array.isArray(o.budgetBudgets)) o.budgetBudgets = [];     // P1 (YNAB): monthly envelope allocations — additive, empty initially
   if (!Array.isArray(o.budgetTax)) o.budgetTax = [];            // P2 (tax): ONE taxProfile settings record per org — additive, empty initially
+  if (!Array.isArray(o.budgetBills)) o.budgetBills = [];        // v2 (recurring bills): scheduled bills linked to a budget category — additive, empty initially
   if (!hasBudget) return o;                       // org never used the budget tool → leave it untouched
   const defId = "bgt-book-default-" + oid;        // deterministic so re-seed / multi-device dedupe
   let def = o.budgetBooks.find(b => b && b.id === defId);
@@ -348,6 +349,38 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
           (minTotal > 0 ? "; total minimum payments $" + minTotal.toFixed(2) + "/mo" : ""));
       }
     } catch (e) { /* debt summary is advisory — never break the context build */ }
+    // RECURRING BILLS (fund-ahead): bills due THIS month, total needed vs funded (linked-envelope available), gap. Combined.
+    try {
+      const bills = live("budgetBills").filter(b => b.active !== false);
+      if (bills.length) {
+        // next-due (>= ref) for a bill from its frequency + dueDay (mirrors client budgetBillNextDue)
+        const onDay = (y, m0, day) => { const dim = new Date(y, m0 + 1, 0).getDate(); const dd = Math.min(Math.max(1, day || 1), dim); return y + "-" + String(m0 + 1).padStart(2, "0") + "-" + String(dd).padStart(2, "0"); };
+        const addDays = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() + n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+        const ref = now2.getFullYear() + "-" + String(now2.getMonth() + 1).padStart(2, "0") + "-" + String(now2.getDate()).padStart(2, "0");
+        const nextDue = b => {
+          if (b.nextDue && b.nextDue >= ref) return b.nextDue;
+          const r = new Date(ref + "T12:00:00"), freq = b.frequency || "monthly";
+          if (freq === "weekly") { const wd = (b.dueDay != null && b.dueDay !== "") ? (((+b.dueDay) % 7) + 7) % 7 : r.getDay(); return addDays(ref, (wd - r.getDay() + 7) % 7); }
+          const day = (b.dueDay != null && b.dueDay !== "") ? (+b.dueDay) : 1;
+          if (freq === "monthly") { const c = onDay(r.getFullYear(), r.getMonth(), day); return c >= ref ? c : onDay(r.getFullYear(), r.getMonth() + 1, day); }
+          if (freq === "quarterly") { for (let i = 0; i < 5; i++) { const c = onDay(r.getFullYear(), r.getMonth() + i * 3 - (r.getMonth() % 3), day); if (c >= ref) return c; } return onDay(r.getFullYear() + 1, 0, day); }
+          const am = b.nextDue ? (+b.nextDue.slice(5, 7) - 1) : r.getMonth(); const ca = onDay(r.getFullYear(), am, day); return ca >= ref ? ca : onDay(r.getFullYear() + 1, am, day);
+        };
+        const dueThis = bills.filter(b => String(nextDue(b)).slice(0, 7) === mo);
+        if (dueThis.length) {
+          const needed = Math.round(dueThis.reduce((s, b) => s + (+b.amount || 0), 0) * 100) / 100;
+          // funded toward this month's bills = cash set aside now: a non-negative carry-in + this-month alloc −
+          // this-month spend, floored at 0 (prior unfunded overspend never counts against this month's bill money).
+          // dedup by category so several bills sharing one envelope aren't double-counted.
+          const billFunded = c => { let carry = envBal(c, shiftMonth(mo, -1)); if (carry < 0) carry = 0; const v = carry + allocOf(c.id, mo) - spentOf(c.id, mo); return Math.round((v > 0 ? v : 0) * 100) / 100; };
+          const seen = {}; let funded = 0;
+          dueThis.forEach(b => { if (!b.catId || seen[b.catId]) return; seen[b.catId] = 1; const c = bcats.find(x => x.id === b.catId); if (c) funded += billFunded(c); });
+          funded = Math.round(funded * 100) / 100;
+          const gap = Math.round(Math.max(0, needed - funded) * 100) / 100;
+          L.push("BILLS (fund-ahead, " + mo + "): " + dueThis.length + " due, need $" + needed.toFixed(2) + "; set aside $" + funded.toFixed(2) + (gap > 0.005 ? "; FUND THE GAP $" + gap.toFixed(2) + " so every bill is covered before it's due" : "; every bill is funded ahead"));
+        }
+      }
+    } catch (e) { /* bills summary is advisory — never break the context build */ }
   }
   return L.join("\n").slice(0, 6000);
 }

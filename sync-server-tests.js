@@ -284,6 +284,76 @@ ok("orgAiContext surfaces total debt owed ($1,450 across 2 accounts)", /DEBT \(c
 ok("orgAiContext names the highest-APR card (Store Card @ 27.99%)", ccCtx.indexOf("highest-APR = Store Card @ 27.99%") >= 0, ccCtx.split("\n").filter(l => l.indexOf("DEBT") === 0));
 ok("orgAiContext sums total minimum payments ($85.00/mo)", ccCtx.indexOf("total minimum payments $85.00/mo") >= 0, ccCtx.split("\n").filter(l => l.indexOf("DEBT") === 0));
 
+console.log("— BUDGET v2 (recurring bills + historical-average + fund-ahead) fixture: budgetBills survives migration + round-trip; historical-average math; due-this-month + funded-vs-needed; Cap fund-ahead line —");
+// month helpers mirroring the client (budgetShiftMonth)
+const shiftMo = (mm, dl) => { const p = mm.split("-"); const d = new Date(+p[0], (+p[1] || 1) - 1 + dl, 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); };
+const m1 = shiftMo(thisMo, -1), m2 = shiftMo(thisMo, -2), m3 = shiftMo(thisMo, -3);
+// A budget store with an Electric category that has 3 prior months of spending ($142.18, $128.40, $171.05),
+// a $147 monthly Electric bill due the 15th, plus a Rent bill. Electric envelope funded $100 this month → gap.
+const billStored = {
+  registry: [{ id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }],
+  rbjvl: {
+    customers: [], quotes: [], jobs: [],
+    budgetBooks: [{ id: "bgt-book-default-rbjvl", name: "Personal", kind: "personal", order: 0, updatedAt: 1 }],
+    budgetCats: [
+      { id: "c-elec", name: "Electric", kind: "out", rollover: true, group: "bill", bookId: "bgt-book-default-rbjvl", order: 0, updatedAt: 5 },
+      { id: "c-rent", name: "Rent", kind: "out", rollover: false, group: "bill", bookId: "bgt-book-default-rbjvl", order: 1, updatedAt: 5 }
+    ],
+    budgetTx: [
+      { id: "e1", date: m1 + "-12", dir: "out", amount: 142.18, catId: "c-elec", bookId: "bgt-book-default-rbjvl", updatedAt: 5 },
+      { id: "e2", date: m2 + "-12", dir: "out", amount: 128.40, catId: "c-elec", bookId: "bgt-book-default-rbjvl", updatedAt: 5 },
+      { id: "e3", date: m3 + "-12", dir: "out", amount: 171.05, catId: "c-elec", bookId: "bgt-book-default-rbjvl", updatedAt: 5 }
+    ],
+    budgetAccounts: [{ id: "a-chk", bookId: "bgt-book-default-rbjvl", name: "Checking", type: "checking", balance: 3000, order: 0, updatedAt: 5 }],
+    budgetBudgets: [
+      { id: "al-elec", bookId: "bgt-book-default-rbjvl", catId: "c-elec", month: thisMo, allocated: 100, updatedAt: 5 },
+      { id: "al-rent", bookId: "bgt-book-default-rbjvl", catId: "c-rent", month: thisMo, allocated: 1200, updatedAt: 5 }
+    ],
+    budgetBills: [
+      { id: "bgt-bill-elec", bookId: "bgt-book-default-rbjvl", catId: "c-elec", name: "Electric", amount: 147, frequency: "monthly", dueDay: 15, nextDue: "", autoEstimate: true, active: true, updatedAt: 5 },
+      { id: "bgt-bill-rent", bookId: "bgt-book-default-rbjvl", catId: "c-rent", name: "Rent", amount: 1200, frequency: "monthly", dueDay: 1, nextDue: "", autoEstimate: false, active: true, updatedAt: 5 }
+    ]
+  }
+};
+const billM = t.migrateStore(JSON.parse(JSON.stringify(billStored)));
+ok("recurring-bills migration is loss-free: both bills survive + the budgetBills array exists", Array.isArray(billM.rbjvl.budgetBills) && billM.rbjvl.budgetBills.length === 2 && !!billM.rbjvl.budgetBills.find(b => b.id === "bgt-bill-elec" && b.amount === 147 && b.frequency === "monthly"), billM.rbjvl.budgetBills);
+ok("category bill-group flag survives migration", (billM.rbjvl.budgetCats.find(c => c.id === "c-elec") || {}).group === "bill", billM.rbjvl.budgetCats);
+const billRound = t.mergeState(billM, billM);
+ok("recurring-bills round-trip: ZERO loss (2 bills, 2 cats, 3 tx, 2 allocs all stable, fields intact)", billRound.rbjvl.budgetBills.length === 2 && billRound.rbjvl.budgetCats.length === 2 && billRound.rbjvl.budgetTx.length === 3 && billRound.rbjvl.budgetBudgets.length === 2 && (billRound.rbjvl.budgetBills.find(b => b.id === "bgt-bill-elec") || {}).dueDay === 15, { bills: billRound.rbjvl.budgetBills.length, tx: billRound.rbjvl.budgetTx.length });
+ok("backfill leaves a budget org with NO bills as an empty array (additive)", (function () { const s = t.migrateStore({ registry: [{ id: "rbjvl", updatedAt: 1 }], rbjvl: { budgetCats: [{ id: "x", bookId: "", updatedAt: 1 }], budgetTx: [], budgetBooks: [] } }); return Array.isArray(s.rbjvl.budgetBills) && s.rbjvl.budgetBills.length === 0; })());
+// HISTORICAL AVERAGE (mirrors client budgetHistoryStats over the last N complete months, spend-only)
+const histStats = (store, catId, nMonths) => {
+  const tx = store.rbjvl.budgetTx.filter(x => !x.deleted && !x.isTransfer);
+  const spentOf = mm => Math.round(tx.filter(t => t.catId === catId && t.dir === "out" && String(t.date || "").slice(0, 7) === mm).reduce((s, t) => s + (+t.amount || 0), 0) * 100) / 100;
+  const vals = [];
+  for (let i = 1; i <= (nMonths || 6); i++) { const v = spentOf(shiftMo(thisMo, -i)); if (v > 0.005) vals.push(v); }
+  if (!vals.length) return { avg: 0, min: 0, max: 0, n: 0 };
+  return { avg: Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 100) / 100, min: Math.min(...vals), max: Math.max(...vals), n: vals.length };
+};
+const eh = histStats(billM, "c-elec", 6);
+ok("historical-average of Electric = avg of 3 months ($147.21), min $128.40, max $171.05, n=3", eh.n === 3 && Math.abs(eh.avg - 147.21) < 0.005 && eh.min === 128.40 && eh.max === 171.05, eh);
+ok("historical-average ignores the CURRENT (partial) month + months with no spending", histStats(billM, "c-rent", 6).n === 0, histStats(billM, "c-rent", 6));
+// DUE-THIS-MONTH + nextDue logic (mirrors client budgetBillNextDue for monthly)
+const onDay = (y, m0, day) => { const dim = new Date(y, m0 + 1, 0).getDate(); const dd = Math.min(Math.max(1, day || 1), dim); return y + "-" + String(m0 + 1).padStart(2, "0") + "-" + String(dd).padStart(2, "0"); };
+const refToday = new Date().getFullYear() + "-" + String(new Date().getMonth() + 1).padStart(2, "0") + "-" + String(new Date().getDate()).padStart(2, "0");
+const nextDueMonthly = (day) => { const r = new Date(refToday + "T12:00:00"); const c = onDay(r.getFullYear(), r.getMonth(), day); return c >= refToday ? c : onDay(r.getFullYear(), r.getMonth() + 1, day); };
+ok("a monthly bill's next due is always today-or-later (rolls forward when the day has passed)", nextDueMonthly(15) >= refToday && nextDueMonthly(1) >= refToday, { d15: nextDueMonthly(15), d1: nextDueMonthly(1) });
+// FUNDED-VS-NEEDED (fund-ahead): the Cap line is the cleanest cross-check of the whole pipeline.
+// Use a nextDue override pinned to THIS month so the fund-ahead math is deterministic regardless of run date.
+const fixedBills = JSON.parse(JSON.stringify(billStored));
+fixedBills.rbjvl.budgetBills = [{ id: "b-fix", bookId: "bgt-book-default-rbjvl", catId: "c-elec", name: "Electric", amount: 147, frequency: "monthly", dueDay: 28, nextDue: thisMo + "-28", autoEstimate: false, active: true, updatedAt: 5 }];
+const fixedM = t.migrateStore(fixedBills);
+const fixedCtx = t.orgAiContext(fixedM, "rbjvl");
+const fixedLine = fixedCtx.split("\n").filter(l => l.indexOf("BILLS (fund-ahead") === 0)[0] || "";
+// Electric envelope this month: alloc $100, no spend this month → available $100; bill needs $147 → gap $47.
+ok("fund-ahead: a $147 bill with $100 set aside → need $147.00, set aside $100.00, FUND THE GAP $47.00", /need \$147\.00; set aside \$100\.00; FUND THE GAP \$47\.00/.test(fixedLine), fixedLine);
+// Fully-funded case: bump the allocation to $147 → no gap, "funded ahead".
+const fundedFull = JSON.parse(JSON.stringify(fixedBills));
+fundedFull.rbjvl.budgetBudgets.find(x => x.id === "al-elec").allocated = 147;
+const fullCtx = t.orgAiContext(t.migrateStore(fundedFull), "rbjvl");
+ok("fund-ahead: fully-funded bill reports 'every bill is funded ahead' (no gap)", /set aside \$147\.00; every bill is funded ahead/.test(fullCtx.split("\n").filter(l => l.indexOf("BILLS (fund-ahead") === 0)[0] || ""), fullCtx.split("\n").filter(l => l.indexOf("BILLS") === 0));
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
