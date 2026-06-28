@@ -57,11 +57,15 @@ if("serviceWorker" in navigator && window.isSecureContext){
 /* Manual "get the latest" escape hatch — unregister the SW + clear its caches + reload. For iOS PWAs
    that won't auto-update. Touches ONLY the SW cache (Cache Storage); never your data (localStorage). */
 window.forceUpdate=function(){
-  if(!confirm("Reload with the latest version? This clears the app cache only — your data is safe (it syncs to the server)."))return;
+  /* NO native confirm() — iOS home-screen PWAs frequently swallow confirm()/alert(), so the button did
+     nothing. The tap itself (a clearly-labelled, safe, cache-only action) is the consent. Show a brief
+     in-page "Updating…" note so it's obvious it fired, then purge + reload. */
+  try{ var n=document.createElement("div"); n.id="fuNote"; n.textContent="Updating…"; n.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:16px;background:#1B2A4E;color:#fff;font:600 16px system-ui;text-align:center"; document.body.appendChild(n); }catch(e){}
   (async function(){
     try{ if("serviceWorker" in navigator){ var regs=await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(function(r){return r.unregister();})); } }catch(e){}
     try{ if(window.caches){ var ks=await caches.keys(); await Promise.all(ks.map(function(k){return caches.delete(k);})); } }catch(e){}
-    location.reload();
+    try{ location.reload(); }catch(e){}
   })();
+  setTimeout(function(){ try{ location.reload(); }catch(e){} }, 2500);   // hard fallback if the SW/cache ops hang (iOS)
 };
-/* v2 */
+/* v3 — no confirm(); hard-fallback reload */
