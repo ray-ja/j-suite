@@ -160,6 +160,22 @@ function sampleSeedBudget(d){
   allocs.forEach(function(a,i){
     sampleUpsert(d,"budgetBudgets",{ id:sampleId("alloc",i+1), bookId:bookId, catId:a.cat, month:m, allocated:a.amount });
   });
+  /* P2 (tax): a sample BUSINESS book with a month of 1099 income + heavy expenses so the Tax tab demos a
+     real (low) effective reserve rate out of the box. One taxpayer → this net drives the tax estimate. */
+  var bizBook=sampleId("book","biz");
+  sampleUpsert(d,"budgetBooks",{ id:bizBook, name:"SAMPLE — Side business", kind:"business", color:"#0099e5", order:1 });
+  var bcats=[
+    { id:sampleId("cat","bizinc"), name:"SAMPLE — Contract income", kind:"in",  bookId:bizBook, order:0 },
+    { id:sampleId("cat","bizexp"), name:"SAMPLE — Business expenses",kind:"out", bookId:bizBook, order:1 }
+  ];
+  bcats.forEach(function(c){ sampleUpsert(d,"budgetCats",c); });
+  var btx=[
+    { cat:bcats[0].id, dir:"in",  amount:6000, date:dm(2),  note:"SAMPLE — 1099 job" },
+    { cat:bcats[1].id, dir:"out", amount:3300, date:dm(5),  note:"SAMPLE — materials/fuel/disposal" }
+  ];
+  btx.forEach(function(t,i){
+    sampleUpsert(d,"budgetTx",{ id:sampleId("biztx",i+1), date:t.date, amount:t.amount, catId:t.cat, dir:t.dir, note:t.note, bookId:bizBook });
+  });
 }
 
 /* ---------- CLEAR — soft-delete ONLY sample:true records (never real data) ---------- */

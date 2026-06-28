@@ -20,6 +20,7 @@ function setup() {
   fs.mkdirSync(path.join(DIR, "js"), { recursive: true });
   fs.copyFileSync(path.join(ROOT, "sync-server.js"), path.join(DIR, "sync-server.js"));
   ["qb-bridge.js", "availability-resolve.js"].forEach(f => { try { fs.copyFileSync(path.join(ROOT, f), path.join(DIR, f)); } catch (e) {} });
+  try { fs.copyFileSync(path.join(ROOT, "js", "82-tax-estimator.js"), path.join(DIR, "js", "82-tax-estimator.js")); } catch (e) {}   // sync-server requires the tax estimator (P2)
   fs.writeFileSync(path.join(DIR, "js", "x.js"), "//x");
   fs.writeFileSync(path.join(DIR, "data.json"), JSON.stringify({
     obx: { customers: [] }, jam: {}, users: [

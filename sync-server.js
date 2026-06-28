@@ -22,6 +22,7 @@ const path = require("path");
 const crypto = require("crypto");
 let QB = null; try { QB = require("./qb-bridge"); } catch (e) {}
 const AvailResolve = require("./availability-resolve");   // shared client/server availability logic
+const TaxEst = require("./js/82-tax-estimator");          // contractor (1099) tax set-aside estimator (P2) — pure math, shared client/server
 
 const PORT = process.env.PORT || 4000;
 const TOKEN = process.env.TOKEN || "";
@@ -159,7 +160,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -195,6 +196,7 @@ function migrateBudgetBooks(o, oid) {
   if (!Array.isArray(o.budgetBooks)) o.budgetBooks = [];
   if (!Array.isArray(o.budgetAccounts)) o.budgetAccounts = [];   // P1 (YNAB): real cash accounts — additive, empty initially
   if (!Array.isArray(o.budgetBudgets)) o.budgetBudgets = [];     // P1 (YNAB): monthly envelope allocations — additive, empty initially
+  if (!Array.isArray(o.budgetTax)) o.budgetTax = [];            // P2 (tax): ONE taxProfile settings record per org — additive, empty initially
   if (!hasBudget) return o;                       // org never used the budget tool → leave it untouched
   const defId = "bgt-book-default-" + oid;        // deterministic so re-seed / multi-device dedupe
   let def = o.budgetBooks.find(b => b && b.id === defId);
@@ -307,6 +309,25 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
         L.push("  Income · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " expected" : ""));
       });
     });
+    // P2 TAX SET-ASIDE (one taxpayer): estimate on COMBINED business-book net; reserved (tax envelope) vs owed YTD + next quarterly due.
+    try {
+      const bizIds = books.filter(b => b.kind === "business").map(b => b.id);
+      if (bizIds.length) {
+        const profRec = (o.budgetTax || []).filter(r => r && !r.deleted)[0] || {};
+        const profile = { filing: profRec.filing || "mfj", state: profRec.state || "NC", spouseIncome: +profRec.spouseIncome || 0, dependents: profRec.dependents != null ? +profRec.dependents : 3, overrideRate: (profRec.overrideRate != null && profRec.overrideRate !== "") ? +profRec.overrideRate : null };
+        const year = now2.getFullYear();
+        const netIn = (from, to) => sum(btx.filter(t => bizIds.indexOf(t.bookId) >= 0 && t.dir === "in" && (t.date || "") >= from && (t.date || "") <= to), "amount") - sum(btx.filter(t => bizIds.indexOf(t.bookId) >= 0 && t.dir === "out" && (t.date || "") >= from && (t.date || "") <= to), "amount");
+        const ytdNet = Math.round(netIn(year + "-01-01", year + "-12-31") * 100) / 100;
+        const monthsElapsed = Math.max(1, now2.getMonth() + 1);
+        const annNet = Math.round(ytdNet * (12 / monthsElapsed) * 100) / 100;
+        const est = TaxEst.estimateAnnualTax(annNet, profile);
+        const taxCatId = "bgt-cat-tax-" + orgId;
+        const reservedYtd = Math.round(bbudgets.filter(x => x.catId === taxCatId && String(x.month || "").slice(0, 4) === String(year)).reduce((s, x) => s + (+x.allocated || 0), 0) * 100) / 100;
+        const owedYtd = Math.round(ytdNet * est.effectiveRate * 100) / 100;
+        const due = TaxEst.nextQuarterlyDue(now2.getFullYear() + "-" + String(now2.getMonth() + 1).padStart(2, "0") + "-" + String(now2.getDate()).padStart(2, "0"));
+        L.push("TAX set-aside (1099, combined): reserve rate " + (Math.round(est.effectiveRate * 1000) / 10).toFixed(1) + "%" + (profile.overrideRate != null ? " (manual override)" : " (estimated: SE $" + est.se.toFixed(0) + " + fed $" + est.federal.toFixed(0) + " + NC $" + est.state.toFixed(0) + ")") + "; YTD business net $" + ytdNet.toFixed(2) + "; reserved YTD $" + reservedYtd.toFixed(2) + " vs estimated owed $" + owedYtd.toFixed(2) + (reservedYtd + 0.005 >= owedYtd ? " (on track)" : " (BEHIND by $" + (owedYtd - reservedYtd).toFixed(2) + ")") + "; next quarterly due " + due.label + " " + due.due);
+      }
+    } catch (e) { /* tax estimate is advisory — never break the context build */ }
   }
   return L.join("\n").slice(0, 6000);
 }

@@ -187,6 +187,57 @@ ok("orgAiContext exposes a reset envelope drained to $0 (Rent: assigned 1200, sp
 ok("orgAiContext exposes a rollover envelope's carried balance (Savings available $200 from last month)", /Envelope · Savings: available \$200.00/.test(yctx), yctx.split("\n").filter(l => l.indexOf("Envelope · Savings") >= 0));
 ok("orgAiContext exposes age of money (combined)", /Age of money \(combined\): \d+ day/.test(yctx), yctx.split("\n").filter(l => l.indexOf("Age of money") >= 0));
 
+console.log("— BUDGET P2 (contractor tax set-aside) estimator math + migration fixture: a known business net + Ray's profile → expected reserve within tolerance; the tax envelope auto-funds; zero data loss on the round-trip —");
+const TaxEst = require("./js/82-tax-estimator");
+// MATH: Ray's profile (MFJ, no spouse income, 3 kids) on a known combined annual business net of $60,000.
+// SE: 60000*0.9235=55410; SS 55410*0.124=6870.84; Med 55410*0.029=1606.89 ⇒ SE=8477.73, half=4238.865.
+// Fed: AGI=60000-4238.865=55761.135; taxable=55761.135-30000=25761.135; bracket: 23850*0.10=2385 + (25761.135-23850)*0.12=229.336 ⇒ 2614.34 before credits; CTC 3*2000=6000 ⇒ federal=0.
+// NC: (55761.135-25500)*0.0425=1286.10. Total=8477.73+0+1286.10=9763.83 ⇒ rate=9763.83/60000=16.27%.
+const taxEst60 = TaxEst.estimateAnnualTax(60000, { filing: "mfj", spouseIncome: 0, dependents: 3, overrideRate: null });
+ok("SE tax on $60k net SE income ≈ $8,477.73 (15.3% on 92.35%, under the SS wage cap)", Math.abs(taxEst60.se - 8477.73) < 0.5, taxEst60.se);
+ok("3 child credits ($6,000) wipe out the federal income tax at $60k net (federal = $0)", taxEst60.federal === 0 && Math.abs(taxEst60.childCredit - 6000) < 0.01, { fed: taxEst60.federal, ctc: taxEst60.childCredit });
+ok("NC state ≈ $1,286.10 (4.25% flat on AGI − NC std deduction)", Math.abs(taxEst60.state - 1286.10) < 0.5, taxEst60.state);
+ok("total estimated tax ≈ $9,763.83 → effective reserve rate ≈ 16.27% (WELL under the 25% fallback — correct)", Math.abs(taxEst60.totalTax - 9763.83) < 1 && Math.abs(taxEst60.effectiveRate - 0.1627) < 0.001, { total: taxEst60.totalTax, rate: taxEst60.effectiveRate });
+ok("a manual rate override WINS (open-ended, no floor): 12% on $60k → reserve $7,200", (function () { const e = TaxEst.estimateAnnualTax(60000, { dependents: 3, overrideRate: 0.12 }); return e.effectiveRate === 0.12 && Math.abs(e.reserve - 7200) < 0.01; })());
+ok("low net + child credits → very low rate (at $30k net, federal = $0, rate < 16%)", (function () { const e = TaxEst.estimateAnnualTax(30000, { dependents: 3 }); return e.federal === 0 && e.effectiveRate < 0.16 && e.effectiveRate > 0; })());
+ok("a loss/zero net reserves $0 (rate 0, no negative reserve)", (function () { const e = TaxEst.estimateAnnualTax(0, { dependents: 3 }); return e.reserve === 0 && e.totalTax === 0; })());
+ok("quarterly due-date logic: mid-June → next due is Sep 15", (function () { const d = TaxEst.nextQuarterlyDue("2026-06-27"); return d.label === "Q3" && d.due === "2026-09-15"; })());
+ok("quarterly due-date logic: late-Dec rolls to next year's Jan 15", (function () { const d = TaxEst.nextQuarterlyDue("2026-12-20"); return d.label === "Q4" && d.due === "2027-01-15"; })());
+
+// MIGRATION + ENVELOPE FIXTURE: a budget store with a BUSINESS book + a taxProfile record; prove budgetTax survives
+// load()+round-trip with zero loss, and that a tax envelope allocation (the auto-fund) is preserved + drives Cap context.
+const taxStored = {
+  registry: [{ id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }],
+  rbjvl: {
+    customers: [], quotes: [], jobs: [],
+    budgetBooks: [
+      { id: "bgt-book-default-rbjvl", name: "Personal", kind: "personal", order: 0, updatedAt: 1 },
+      { id: "bgt-book-biz", name: "OBX", kind: "business", order: 1, updatedAt: 1 }
+    ],
+    budgetCats: [
+      { id: "c-bizinc", name: "Contract income", kind: "in", bookId: "bgt-book-biz", order: 0, updatedAt: 5 },
+      { id: "c-bizexp", name: "Biz expenses", kind: "out", bookId: "bgt-book-biz", order: 1, updatedAt: 5 },
+      { id: "bgt-cat-tax-rbjvl", name: "Tax set-aside", kind: "out", rollover: true, taxEnvelope: true, bookId: "bgt-book-default-rbjvl", order: -1, updatedAt: 5 }
+    ],
+    budgetTx: [
+      { id: "btx-in", date: thisMo + "-02", dir: "in", amount: 6000, catId: "c-bizinc", bookId: "bgt-book-biz", updatedAt: 5 },
+      { id: "btx-out", date: thisMo + "-05", dir: "out", amount: 3300, catId: "c-bizexp", bookId: "bgt-book-biz", updatedAt: 5 }
+    ],
+    budgetAccounts: [{ id: "a-chk", bookId: "bgt-book-default-rbjvl", name: "Checking", type: "checking", balance: 4000, order: 0, updatedAt: 5 }],
+    budgetBudgets: [{ id: "al-tax", bookId: "bgt-book-default-rbjvl", catId: "bgt-cat-tax-rbjvl", month: thisMo, allocated: 450, updatedAt: 5 }],
+    budgetTax: [{ id: "bgt-tax-rbjvl", filing: "mfj", state: "NC", spouseIncome: 0, dependents: 3, overrideRate: null, updatedAt: 5 }]
+  }
+};
+const taxM = t.migrateStore(JSON.parse(JSON.stringify(taxStored)));
+ok("P2 backfills an empty budgetTax array on any budget org (additive)", Array.isArray(taxM.rbjvl.budgetTax), taxM.rbjvl.budgetTax);
+const taxRound = t.mergeState(taxM, taxM);
+ok("P2 round-trip: the taxProfile + tax-envelope allocation survive with ZERO loss (ids + values stable)", taxRound.rbjvl.budgetTax.length === 1 && (taxRound.rbjvl.budgetTax[0] || {}).dependents === 3 && taxRound.rbjvl.budgetBudgets.length === 1 && (taxRound.rbjvl.budgetBudgets[0] || {}).allocated === 450, { tax: taxRound.rbjvl.budgetTax.length, bud: taxRound.rbjvl.budgetBudgets.length });
+ok("P2 round-trip: business book + its income/expense tx survive (combined business net intact)", taxRound.rbjvl.budgetBooks.length === 2 && taxRound.rbjvl.budgetTx.length === 2, { books: taxRound.rbjvl.budgetBooks.length, tx: taxRound.rbjvl.budgetTx.length });
+const taxCtx = t.orgAiContext(taxM, "rbjvl");
+ok("orgAiContext surfaces the tax set-aside status (rate, reserved vs owed, next quarterly due)", taxCtx.indexOf("TAX set-aside (1099, combined)") >= 0 && /reserve rate \d/.test(taxCtx) && taxCtx.indexOf("reserved YTD") >= 0 && /next quarterly due Q\d/.test(taxCtx), taxCtx.split("\n").filter(l => l.indexOf("TAX set-aside") >= 0));
+ok("orgAiContext tax line reflects the auto-funded reserve ($450 reserved YTD)", taxCtx.indexOf("reserved YTD $450.00") >= 0, taxCtx.split("\n").filter(l => l.indexOf("TAX set-aside") >= 0));
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },

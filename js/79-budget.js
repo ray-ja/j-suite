@@ -199,6 +199,7 @@ window.budgetSetBook=function(id){ BUDGET_BOOK=id||"__all__"; render(); };
 /* the + FAB does the natural "add" for whatever sub-tab is open */
 window.budgetFabAdd=function(){
   if(BUDGET_SUB==="settings")openBudgetCat(null);
+  else if(BUDGET_SUB==="tax")openTaxProfile();
   else openBudgetTx(null);
 };
 
@@ -219,10 +220,13 @@ function rBudget(){
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(BUDGET_SUB==="month"?"on":"")+'" onclick="budgetSetSub(\'month\')">📅 Month</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tx"?"on":"")+'" onclick="budgetSetSub(\'tx\')">🧾 Transactions</button>'
+    +'<button class="subbtn '+(BUDGET_SUB==="tax"?"on":"")+'" onclick="budgetSetSub(\'tax\')">🧮 Tax</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="settings"?"on":"")+'" onclick="budgetSetSub(\'settings\')">⚙️ Settings</button>'
     +'</div>';
-  view.innerHTML=sub+budgetBookBar()+'<div id="budget_body"></div>';
+  /* the Tax sub-tab has its own combined view (one taxpayer) — no per-book bar there */
+  view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+'<div id="budget_body"></div>';
   if(BUDGET_SUB==="tx")budgetRenderTx();
+  else if(BUDGET_SUB==="tax")budgetRenderTax();
   else if(BUDGET_SUB==="settings")budgetRenderSettings();
   else budgetRenderMonth();
 }
@@ -825,4 +829,279 @@ window.budgetExport=function(fmt){
     var out={ exportedAt:stamp, books:books, categories:cats, transactions:tx, accounts:accounts, budgets:budgets };
     budgetDownload("budget-backup-"+stamp+".json",JSON.stringify(out,null,2),"application/json");
   }
+};
+
+/* ============================================================================================================
+   P2 — CONTRACTOR (1099) TAX SET-ASIDE. One taxpayer: ALL business-book net flows to one 1040, so we estimate on
+   COMBINED business net (income − expenses; transfers excluded) regardless of the on-screen book filter. The math
+   lives in js/82-tax-estimator.js (pure, node-tested). Here: the taxProfile record, the business-net rollup, the
+   Tax set-aside ENVELOPE auto-fund, the quarterly card, and the combined "not really yours" view.
+   FRAME: an ESTIMATE, not tax advice. 25% is only the fallback; Ray's real rate is well under it (low net + child
+   credits) and he can override the rate open-endedly. ============================================================ */
+
+/* ---- taxProfile: ONE settings record per org. Defaults = Ray's profile (NC, MFJ, no spouse income, 3 kids). ---- */
+function taxProfileId(){ return "bgt-tax-"+S.biz; }
+function taxProfileRec(){ return (D().budgetTax||[]).filter(function(r){return !r.deleted;}).find(function(r){return r.id===taxProfileId();}); }
+function taxProfile(){
+  var r=taxProfileRec()||{};
+  return {
+    filing: r.filing||"mfj",
+    state: r.state||"NC",
+    spouseIncome: (+r.spouseIncome||0),
+    dependents: (r.dependents!=null?(+r.dependents||0):3),
+    overrideRate: (r.overrideRate!=null&&r.overrideRate!=="")?(+r.overrideRate):null
+  };
+}
+function saveTaxProfile(p){
+  var d=D(); if(!d.budgetTax)d.budgetTax=[];
+  var r=d.budgetTax.find(function(x){return x.id===taxProfileId();});
+  if(!r){ r={id:taxProfileId()}; d.budgetTax.push(r); }
+  r.filing=p.filing; r.state=p.state; r.spouseIncome=p.spouseIncome; r.dependents=p.dependents;
+  r.overrideRate=(p.overrideRate==null||p.overrideRate==="")?null:p.overrideRate;
+  r.deleted=false; touch(r); save();
+}
+
+/* ---- COMBINED BUSINESS NET — across ALL business-kind books (ignores the book filter; one taxpayer). Transfers
+   already excluded (D().budgetTx isTransfer flagged). Returns net for a date predicate. ---- */
+function taxBusinessBookIds(){ return (D().budgetBooks||[]).filter(function(b){return !b.deleted&&b.kind==="business";}).map(function(b){return b.id;}); }
+function taxBusinessNet(fromDate,toDate){
+  var ids=taxBusinessBookIds(); if(!ids.length)return 0;
+  var net=0;
+  (D().budgetTx||[]).forEach(function(t){
+    if(t.deleted||t.isTransfer)return;
+    if(ids.indexOf(t.bookId)<0)return;
+    var dt=t.date||"";
+    if(fromDate&&dt<fromDate)return;
+    if(toDate&&dt>toDate)return;
+    net+=(t.dir==="in"?1:-1)*(+t.amount||0);
+  });
+  return Math.round(net*100)/100;
+}
+function taxYearOf(m){ return parseInt(String(m||budgetThisMonth()).slice(0,4),10)||new Date().getFullYear(); }
+function taxBusinessNetMonth(m){ return taxBusinessNet(m+"-01",m+"-31"); }
+function taxBusinessNetYTD(year){ return taxBusinessNet(year+"-01-01",year+"-12-31"); }
+/* annualized projection from YTD: scale by 12/monthsElapsed (only meaningful mid-year; clamp ≥1 month) */
+function taxAnnualizedNet(year){
+  var ytd=taxBusinessNetYTD(year);
+  var now=new Date(); var curY=now.getFullYear();
+  var monthsElapsed=(year<curY)?12:(year>curY?1:(now.getMonth()+1));
+  if(monthsElapsed<1)monthsElapsed=1;
+  return Math.round(ytd*(12/monthsElapsed)*100)/100;
+}
+
+/* ---- the estimate (annualized) for the displayed year, using the live profile ---- */
+function taxEstimate(year){ return estimateAnnualTax(taxAnnualizedNet(year), taxProfile()); }
+/* effective reserve rate to apply to a month's net (override wins; else computed from the annualized estimate). */
+function taxReserveRate(year){ var e=taxEstimate(year); return e.effectiveRate; }
+
+/* ---- TAX SET-ASIDE ENVELOPE — a special spending category (stable per-org id) on the default Personal book.
+   Auto-fund a month = set its allocation to (that month's combined business net × effective reserve rate).
+   Allocating to it removes those dollars from To-Be-Budgeted = the reserve is a real funded envelope. ---- */
+function taxEnvelopeId(){ return "bgt-cat-tax-"+S.biz; }
+function taxEnvelopeCat(){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.id===taxEnvelopeId();}); }
+function ensureTaxEnvelope(){
+  var c=taxEnvelopeCat(); if(c)return c;
+  var d=D(); if(!d.budgetCats)d.budgetCats=[];
+  c={id:taxEnvelopeId(),name:"Tax set-aside",kind:"out",target:0,rollover:true,taxEnvelope:true,
+     bookId:budgetDefaultBookId(),order:-1,deleted:false};
+  touch(c); d.budgetCats.push(c); save();
+  return c;
+}
+/* fund THIS month's tax envelope to (month business net × rate). Never lowers below what's already there unless
+   the user opts to true-up exactly. Returns the dollar amount funded. */
+function taxFundMonth(m,exact){
+  var rate=taxReserveRate(taxYearOf(m));
+  var net=taxBusinessNetMonth(m);
+  var want=Math.max(0,Math.round(net*rate*100)/100);   // a loss month wants $0 added (never negative)
+  ensureTaxEnvelope();
+  var cur=budgetAllocated(taxEnvelopeId(),m);
+  var next=exact?want:Math.max(cur,want);
+  budgetSetAllocation(taxEnvelopeId(),m,next);
+  return next;
+}
+window.taxFundThisMonth=function(m){
+  var net=taxBusinessNetMonth(m);
+  if(net<=0){ alert("No business net to reserve against for "+budgetMonthLabel(m)+" (a loss month reserves $0)."); return; }
+  taxFundMonth(m,false); render();
+};
+window.taxTrueUpMonth=function(m){
+  if(!confirm("Set this month's Tax set-aside exactly to (this month's business net × your reserve rate)? This can raise OR lower the current allocation."))return;
+  taxFundMonth(m,true); render();
+};
+
+/* YTD reserved (Σ allocations to the tax envelope this calendar year) vs YTD estimated owed */
+function taxYtdReserved(year){
+  var sum=0;
+  (D().budgetBudgets||[]).forEach(function(x){ if(!x.deleted&&x.catId===taxEnvelopeId()&&String(x.month||"").slice(0,4)===String(year))sum+=(+x.allocated||0); });
+  return Math.round(sum*100)/100;
+}
+/* YTD estimated owed = YTD business net × the effective rate (what should be reserved so far) */
+function taxYtdOwed(year){ return Math.round(taxBusinessNetYTD(year)*taxReserveRate(year)*100)/100; }
+
+/* ---------- TAX render: profile summary · estimate breakdown · Tax envelope · quarterly card · combined reserve ---------- */
+function budgetRenderTax(){
+  var body=document.getElementById("budget_body"); if(!body)return;
+  var m=BUDGET_MONTH||budgetThisMonth();
+  var year=taxYearOf(m);
+  var bizBooks=taxBusinessBookIds();
+  var p=taxProfile();
+  var est=taxEstimate(year);
+  var ytdNet=taxBusinessNetYTD(year), annNet=taxAnnualizedNet(year), moNet=taxBusinessNetMonth(m);
+  var rate=est.effectiveRate;
+  var pct=function(r){ return (Math.round(r*1000)/10).toFixed(1)+"%"; };
+
+  var h='<div class="card"><div class="row" style="gap:8px;align-items:center">'
+    +'<button class="btn ghost sm" onclick="budgetNavMonth(-1)" title="Previous month">‹</button>'
+    +'<input type="month" value="'+m+'" onchange="budgetSetMonth(this.value)" style="flex:1;text-align:center">'
+    +'<button class="btn ghost sm" onclick="budgetNavMonth(1)" title="Next month">›</button>'
+    +'</div><div class="sub" style="text-align:center;margin-top:6px"><b>Tax set-aside · '+year+'</b> · combined across all business books (one taxpayer)</div></div>';
+
+  h+='<div class="card" style="border-left:4px solid #8e44ad"><p class="muted" style="margin:0;font-size:13px">'
+    +'<b>Estimate — not tax advice.</b> All your businesses’ 1099 net flows to one 1040, so this estimates SE + federal (MFJ, child credits) + NC state on your <b>combined business net</b>. Heavy expenses + child credits keep your real rate well under 25%. Adjust your profile or override the rate anytime.</p></div>';
+
+  if(!bizBooks.length){
+    h+='<div class="empty"><div class="big">🧮</div>No <b>business</b> books yet. On the Settings tab, set a book’s type to <b>Business</b> — its net income drives your tax reserve. (Personal books don’t count toward 1099 tax.)</div>';
+    body.innerHTML=h; return;
+  }
+
+  /* ---- PROFILE summary + edit ---- */
+  h+='<div class="secthd"><h2>Your tax profile</h2><span class="ct" style="cursor:pointer" onclick="openTaxProfile()">Edit ›</span></div>';
+  h+='<div class="card" style="padding:8px 10px"><div class="sub">'
+    +'Filing <b>'+(p.filing==="mfj"?"Married filing jointly":esc(p.filing).toUpperCase())+'</b> · State <b>'+esc(p.state)+'</b> · '
+    +'Spouse income <b>'+budgetMoney(p.spouseIncome)+'</b> · Dependent kids <b>'+p.dependents+'</b>'
+    +(p.overrideRate!=null?(' · <b style="color:#8e44ad">manual rate '+pct(p.overrideRate)+'</b>'):'')
+    +'</div></div>';
+
+  /* ---- the headline reserve rate ---- */
+  var rateColor=p.overrideRate!=null?"#8e44ad":"var(--ok,#1b7f4d)";
+  h+='<div class="card" style="text-align:center;border-left:4px solid '+rateColor+'">'
+    +'<div class="sub">Effective reserve rate'+(p.overrideRate!=null?" (manual override)":" (estimated)")+'</div>'
+    +'<div style="font-weight:800;font-size:34px;color:'+rateColor+'">'+pct(rate)+'</div>'
+    +'<div class="sub" style="margin-top:2px">of business net — set aside this share of every business dollar</div>'
+    +'<button class="btn ghost sm" style="margin-top:8px" onclick="openTaxRate()">Override the rate…</button>'
+    +(p.overrideRate!=null?' <button class="btn ghost sm" style="margin-top:8px" onclick="taxClearOverride()">Use estimate ('+pct(est.computedRate)+')</button>':'')
+    +'</div>';
+
+  /* ---- breakdown (annualized) — transparent, line by line ---- */
+  h+='<div class="secthd"><h2>Estimate breakdown</h2><span class="ct">annualized</span></div>';
+  h+='<div class="card" style="padding:8px 10px">'
+    +taxLine("Combined business net (annualized)",budgetMoney(annNet),true)
+    +'<div class="sub" style="margin:2px 0 8px">YTD net '+budgetMoney(ytdNet)+' projected to a full year.</div>'
+    +taxLine("Self-employment tax (15.3% on 92.35%)",budgetMoney(est.se))
+    +taxLine("Federal income tax (MFJ, after child credit)",budgetMoney(est.federal))
+    +'<div class="sub" style="margin:0 0 6px;padding-left:2px">before credits '+budgetMoney(est.federalBeforeCredits)+' − child tax credit '+budgetMoney(est.childCredit)+' ('+p.dependents+' × $2,000)</div>'
+    +taxLine("NC state income tax (4.25% flat)",budgetMoney(est.state))
+    +'<div style="border-top:1px solid var(--line,#eee);margin-top:6px;padding-top:6px">'
+    +taxLine("Total estimated tax",budgetMoney(est.totalTax),true)
+    +taxLine("Effective rate (tax ÷ business net)",pct(est.computedRate),true)
+    +'</div></div>';
+
+  /* ---- THIS MONTH's reserve → the Tax set-aside envelope ---- */
+  var envAlloc=budgetAllocated(taxEnvelopeId(),m);
+  var moWant=Math.max(0,Math.round(moNet*rate*100)/100);
+  h+='<div class="secthd"><h2>'+budgetMonthLabel(m)+' set-aside</h2></div>';
+  h+='<div class="card" style="padding:10px">'
+    +taxLine("This month’s business net",budgetMoney(moNet))
+    +taxLine("× reserve rate "+pct(rate)+" =",budgetMoney(moWant),true)
+    +'<div class="sub" style="margin:6px 0">Funded into the <b>Tax set-aside</b> envelope: <b>'+budgetMoney(envAlloc)+'</b>'
+    +(Math.abs(envAlloc-moWant)>0.005?' — '+(envAlloc<moWant?'short '+budgetMoney(moWant-envAlloc):'over '+budgetMoney(envAlloc-moWant)):' ✓ on target')+'</div>'
+    +'<div class="row" style="gap:8px">'
+    +'<button class="btn acc" style="flex:1" onclick="taxFundThisMonth(\''+m+'\')">💧 Fund to '+budgetMoney(moWant)+'</button>'
+    +'<button class="btn ghost" style="flex:1" onclick="taxTrueUpMonth(\''+m+'\')">True-up exactly</button>'
+    +'</div>'
+    +'<div class="sub" style="margin-top:6px">Funding moves dollars OUT of To-Be-Budgeted into the tax envelope — that’s the reserve. You only “spend” it when you pay the IRS.</div>'
+    +'</div>';
+
+  /* ---- QUARTERLY CARD ---- */
+  h+=taxQuarterlyCard(year);
+
+  /* ---- COMBINED "this isn't really yours" reserve vs cash ---- */
+  var reservedNow=budgetEnvelopeBalance(taxEnvelopeId(),m);   // current balance in the tax envelope
+  var allCash=(D().budgetAccounts||[]).filter(function(a){return !a.deleted;}).reduce(function(s,a){return s+(+a.balance||0);},0);
+  h+='<div class="secthd"><h2>Reserve vs cash</h2></div>';
+  h+='<div class="card" style="text-align:center;border-left:4px solid #c0392b">'
+    +'<div class="sub">In the Tax set-aside envelope (not really yours)</div>'
+    +'<div style="font-weight:800;font-size:26px;color:#c0392b">'+budgetMoney(reservedNow<0?0:reservedNow)+'</div>'
+    +'<div class="sub" style="margin-top:4px;border-top:1px solid var(--line,#eee);padding-top:6px">Total cash across all books <b>'+budgetMoney(allCash)+'</b> · truly yours <b>'+budgetMoney(allCash-(reservedNow<0?0:reservedNow))+'</b></div>'
+    +'</div>';
+
+  body.innerHTML=h;
+}
+function taxLine(label,value,strong){
+  return '<div class="row" style="justify-content:space-between;align-items:baseline;margin:2px 0">'
+    +'<span class="'+(strong?"":"sub")+'"'+(strong?' style="font-weight:600"':'')+'>'+esc(label)+'</span>'
+    +'<span style="font-weight:'+(strong?"800":"600")+'">'+value+'</span></div>';
+}
+/* QUARTERLY: reserve $X by [next due]; YTD reserved vs YTD owed; on-track / behind. */
+function taxQuarterlyCard(year){
+  var due=nextQuarterlyDue(today());
+  var ytdReserved=taxYtdReserved(year), ytdOwed=taxYtdOwed(year);
+  var behind=Math.round((ytdOwed-ytdReserved)*100)/100;
+  var onTrack=behind<=0.005;
+  var color=onTrack?"var(--ok,#1b7f4d)":"#d98a00";
+  var h='<div class="secthd"><h2>Quarterly estimate</h2></div>';
+  h+='<div class="card" style="border-left:4px solid '+color+'">'
+    +'<div class="sub">Next federal quarterly due</div>'
+    +'<div style="font-weight:800;font-size:18px">'+esc(due.label)+' · '+esc(fmtDate(due.due))+'</div>'
+    +'<div class="sub" style="margin-top:8px;border-top:1px solid var(--line,#eee);padding-top:8px">'
+    +'YTD reserved <b>'+budgetMoney(ytdReserved)+'</b> · YTD estimated owed <b>'+budgetMoney(ytdOwed)+'</b></div>'
+    +'<div style="font-weight:700;color:'+color+';margin-top:4px">'
+    +(onTrack?'✓ On track'+(ytdReserved-ytdOwed>0.005?' — '+budgetMoney(ytdReserved-ytdOwed)+' ahead':''):'⚠ Behind by '+budgetMoney(behind)+' — fund the tax envelope to catch up')
+    +'</div>'
+    +'<div class="sub" style="margin-top:6px">Estimated payments are due Apr 15, Jun 15, Sep 15, and Jan 15. This is a planning estimate — confirm amounts with your CPA / 1040-ES.</div>'
+    +'</div>';
+  return h;
+}
+
+/* ---------- profile + rate editors ---------- */
+window.openTaxProfile=function(){
+  var p=taxProfile();
+  modal("Tax profile",''
+    +'<p class="muted" style="margin:0 0 8px;font-size:13px">Defaults match your situation. This drives the estimate — it’s not a tax filing.</p>'
+    +'<label>Filing status</label><select id="tp_filing">'
+    +'<option value="mfj"'+(p.filing==="mfj"?" selected":"")+'>Married filing jointly</option>'
+    +'<option value="single"'+(p.filing==="single"?" selected":"")+'>Single (approx — uses MFJ figures)</option>'
+    +'</select>'
+    +'<label>State</label><input id="tp_state" value="'+esc(p.state)+'" maxlength="2" style="text-transform:uppercase" placeholder="NC">'
+    +'<div class="sub" style="margin:2px 0">State tax is modeled as NC flat 4.25%. Other states approximate.</div>'
+    +'<label>Spouse income (W-2, if any)</label><input id="tp_spouse" type="number" inputmode="decimal" step="100" value="'+(p.spouseIncome||"")+'" placeholder="0">'
+    +'<label>Dependent children</label><input id="tp_deps" type="number" inputmode="numeric" step="1" min="0" value="'+p.dependents+'" placeholder="3">'
+    +'<div class="sub" style="margin:2px 0">Each qualifying child = up to a $2,000 child tax credit.</div>'
+    +'<button class="btn acc" style="margin-top:12px" onclick="saveTaxProfileForm()">Save profile</button>'
+  );
+};
+window.saveTaxProfileForm=function(){
+  var cur=taxProfile();
+  var sp=parseFloat(val("tp_spouse")); var dep=parseInt(val("tp_deps"),10);
+  saveTaxProfile({
+    filing:(document.getElementById("tp_filing")||{}).value||"mfj",
+    state:(val("tp_state")||"NC").toUpperCase().slice(0,2),
+    spouseIncome:isNaN(sp)?0:Math.max(0,sp),
+    dependents:isNaN(dep)?0:Math.max(0,dep),
+    overrideRate:cur.overrideRate   // keep any existing rate override
+  });
+  closeModal(); render();
+};
+window.openTaxRate=function(){
+  var p=taxProfile(); var est=taxEstimate(taxYearOf(BUDGET_MONTH||budgetThisMonth()));
+  var cur=p.overrideRate!=null?(Math.round(p.overrideRate*1000)/10):"";
+  modal("Override reserve rate",''
+    +'<p class="muted" style="margin:0 0 8px;font-size:13px">The estimate suggests <b>'+(Math.round(est.computedRate*1000)/10).toFixed(1)+'%</b>. Set your own rate (open-ended — no floor). Leave blank to use the estimate.</p>'
+    +'<label>Reserve rate (%)</label><input id="tp_rate" type="number" inputmode="decimal" step="0.5" min="0" value="'+cur+'" placeholder="e.g. 18">'
+    +'<div class="sub" style="margin:4px 0">Set aside this % of every business dollar. 25% is just the operating-agreement fallback — your real rate is likely lower.</div>'
+    +'<button class="btn acc" style="margin-top:12px" onclick="saveTaxRate()">Save rate</button>'
+    +'<button class="btn ghost" style="margin-top:10px" onclick="closeModal();taxClearOverride()">Clear (use estimate)</button>'
+  );
+};
+window.saveTaxRate=function(){
+  var v=val("tp_rate"); var p=taxProfile();
+  var rate=(v==="")?null:(parseFloat(v)/100);
+  if(rate!=null&&(isNaN(rate)||rate<0)){ alert("Enter a percentage ≥ 0, or leave blank."); return; }
+  saveTaxProfile({filing:p.filing,state:p.state,spouseIncome:p.spouseIncome,dependents:p.dependents,overrideRate:rate});
+  closeModal(); render();
+};
+window.taxClearOverride=function(){
+  var p=taxProfile();
+  saveTaxProfile({filing:p.filing,state:p.state,spouseIncome:p.spouseIncome,dependents:p.dependents,overrideRate:null});
+  render();
 };
