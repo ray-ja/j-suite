@@ -96,6 +96,14 @@ async function main() {
     check("super-admin sees every account", !!rayst.state.users.find(u => u.id === "eve") && !!rayst.state.users.find(u => u.id === "joe"));
     check("scoped syncs never dropped a sibling org (jam + escaperoom data intact)", custIds(rayst, "jam").indexOf("jamc1") >= 0 && custIds(rayst, "escaperoom").indexOf("escc1") >= 0);
 
+    // ===== org CREATION (the phantom-org fix): super-admin can create a new org whose slab PERSISTS =====
+    await sync(rayTok, { newroom: { customers: [{ id: "nr1", name: "New Cust", updatedAt: now() }] }, registry: [{ id: "newroom", name: "New Room", updatedAt: now() }] });
+    let raycreate = await sync(rayTok, {});
+    check("super-admin CAN create a new org — its slab PERSISTS (not a phantom)", orgsIn(raycreate).indexOf("newroom") >= 0 && custIds(raycreate, "newroom").indexOf("nr1") >= 0);
+    await sync(joeTok, { joeorg: { customers: [{ id: "jo1", updatedAt: now() }] }, registry: [{ id: "joeorg", name: "Joe Org", updatedAt: now() }] });   // non-super tries to create an org
+    let rayafter = await sync(rayTok, {});
+    check("a NON-super CANNOT create an org (slab + registry both dropped)", orgsIn(rayafter).indexOf("joeorg") < 0 && !(rayafter.state.registry || []).some(r => r.id === "joeorg"));
+
     // ===== org-admin tier: an org OWNER manages their org's memberships (but only theirs) =====
     await sync(joeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "admin", active: true, updatedAt: now() }] });   // joe (obx OWNER) promotes moe
     rayst = await sync(rayTok, {});

@@ -173,6 +173,10 @@ function migrateStore(s) {
   s = s || {};
   if (!Array.isArray(s.users)) s.users = [];
   if (!Array.isArray(s.registry)) s.registry = [];
+  // SELF-HEAL: every non-deleted registry org MUST have a data slab. A brand-new org created via sync could
+  // lose its slab to write-scoping (the registry record persisted but the slab was dropped) → backfill an
+  // empty slab so the org is functional (mergeState + the client fill in the collections). Idempotent.
+  s.registry.forEach(r => { if (r && r.id && !r.deleted && !RESERVED.has(r.id) && (!s[r.id] || typeof s[r.id] !== "object" || Array.isArray(s[r.id]))) s[r.id] = blankBiz(); });
   for (const oid of orgIdsOf(s)) if (!s.registry.find(r => r && r.id === oid))   // scaffold a registry record for every org lacking one (idempotent)
     s.registry.push({ id: oid, slug: oid, name: ORG_NAMES[oid] || oid, settings: {}, aiConfig: null, createdAt: 1, updatedAt: 1, deleted: false });
   // migrate pre-multi-org accounts (those with NO membership) → members of the original orgs (obx+jam); owner → super-admin. Idempotent + authoritative (so isolation works from the first sync).
@@ -394,9 +398,9 @@ function callAnthropic(apiKey, model, context, question, cb) {   // the org's OW
 }
 // Phase 3c — read/write ISOLATION. No field-stripping anywhere: the additive merge preserves every UNSENT
 // org/account from `stored` on write-back, so a scoped client can never drop another org's data.
-function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's org slabs (foreign slabs dropped); users/registry pass through to sanitizeUserWrites
-  const out = { users: incoming && incoming.users, registry: incoming && incoming.registry };
+function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's org slabs + registry records (foreign ones dropped); users pass through to sanitizeUserWrites
   const set = new Set(myOrgs);
+  const out = { users: incoming && incoming.users, registry: (incoming && Array.isArray(incoming.registry)) ? incoming.registry.filter(r => r && set.has(r.id)) : (incoming && incoming.registry) };
   Object.keys(incoming || {}).forEach(k => { if (set.has(k) && incoming[k] && typeof incoming[k] === "object" && !Array.isArray(incoming[k])) out[k] = incoming[k]; });
   return out;
 }
@@ -1411,7 +1415,7 @@ const server = http.createServer((req, res) => {
       const me = puid ? accountById(pre, puid) : null;
       const myOrgs = me ? orgsForUser(pre, me) : ["obx", "jam"].filter(o => pre[o]);   // ISOLATION: identified user → their member orgs; legacy shared token → original orgs only (new orgs stay isolated from it)
       const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
-      const scoped = scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: foreign org slabs dropped before the merge
+      const scoped = (me && me.superAdmin) ? (payload.state || {}) : scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: a SUPER-ADMIN may write ANY org (incl. creating a brand-new one — its slab must persist); everyone else is scoped to their member orgs
       const incomingState = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
