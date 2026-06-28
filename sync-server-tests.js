@@ -102,6 +102,48 @@ const lm2 = t.mergeState(lm, lifeIncoming);
 ok("life records are stable across a second round-trip (no loss, no dup)", lm2.rbjvl.lifeNotes.length === 1 && lm2.rbjvl.lifeTrackers.length === 2 && lm2.rbjvl.lifeLogs.length === 2, { n: lm2.rbjvl.lifeNotes.length, t: lm2.rbjvl.lifeTrackers.length, l: lm2.rbjvl.lifeLogs.length });
 ok("orgAiContext surfaces the personal org's trackers + journal", (function () { const c = t.orgAiContext(lm, "rbjvl"); return c.indexOf("Life trackers: 2") >= 0 && c.indexOf("Workout") >= 0 && c.indexOf("Good day") >= 0; })());
 
+console.log("— BUDGET BOOKS (P0) migration fixture: pre-books rbjvl budget store survives load() + a sync round-trip with ZERO loss and gains a default Personal book —");
+// a realistic PRE-CHANGE rbjvl budget store: cats + tx (incl. sample-marked), NO budgetBooks, NO bookId fields
+const bookStored = {
+  obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }] },
+  rbjvl: {
+    customers: [], quotes: [], jobs: [],
+    budgetCats: [
+      { id: "bgt-cat-pay", name: "Paycheck", kind: "in", target: 3200, order: 0, updatedAt: 10 },
+      { id: "bgt-cat-rent", name: "Rent", kind: "out", target: 1200, order: 1, updatedAt: 10 },
+      { id: "sample-cat-rbjvl-food", name: "SAMPLE — Groceries", kind: "out", target: 500, order: 2, sample: true, updatedAt: 10 }
+    ],
+    budgetTx: [
+      { id: "bgt-tx-1", date: "2026-06-01", dir: "in", amount: 3200, catId: "bgt-cat-pay", note: "pay", updatedAt: 10 },
+      { id: "bgt-tx-2", date: "2026-06-01", dir: "out", amount: 1200, catId: "bgt-cat-rent", note: "rent", updatedAt: 10 },
+      { id: "sample-tx-rbjvl-1", date: "2026-06-04", dir: "out", amount: 96.4, catId: "sample-cat-rbjvl-food", note: "SAMPLE — groceries", sample: true, updatedAt: 10 }
+    ],
+    budgetMemo: [{ id: "bgt-memo-1", key: "harris teeter", catId: "sample-cat-rbjvl-food", updatedAt: 10 }]
+  },
+  registry: [{ id: "obx", name: "OBX Lot Solutions", updatedAt: 1 }, { id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }]
+};
+const bm = t.migrateStore(JSON.parse(JSON.stringify(bookStored)));
+const defBook = "bgt-book-default-rbjvl";
+ok("default Personal book is created with the deterministic per-org id", (bm.rbjvl.budgetBooks || []).filter(b => b.id === defBook && b.name === "Personal" && b.kind === "personal").length === 1, bm.rbjvl.budgetBooks);
+ok("ALL pre-existing categories survive AND gain the default bookId", bm.rbjvl.budgetCats.length === 3 && bm.rbjvl.budgetCats.every(c => c.bookId === defBook), bm.rbjvl.budgetCats);
+ok("ALL pre-existing transactions survive AND gain the default bookId (incl. sample ones)", bm.rbjvl.budgetTx.length === 3 && bm.rbjvl.budgetTx.every(x => x.bookId === defBook), bm.rbjvl.budgetTx);
+ok("existing budget data is otherwise UNTOUCHED (amounts/cats/notes preserved)", (bm.rbjvl.budgetTx.find(x => x.id === "bgt-tx-1") || {}).amount === 3200 && (bm.rbjvl.budgetCats.find(x => x.id === "bgt-cat-rent") || {}).target === 1200, bm.rbjvl);
+ok("OBX (and every other org's records) survive the budget migration", !!(bm.obx.customers.find(x => x.id === "c1") && bm.obx.jobs.find(x => x.id === "j1") && bm.obx.quotes.find(x => x.id === "q1")), bm.obx);
+// migration is idempotent: re-running it must not create a 2nd default book or re-tag (deterministic id)
+const bm2 = t.migrateStore(JSON.parse(JSON.stringify(bm)));
+ok("budget-books migration is idempotent (no duplicate default book, no re-tag)", (bm2.rbjvl.budgetBooks || []).filter(b => b.id === defBook).length === 1 && bm2.rbjvl.budgetCats.length === 3 && bm2.rbjvl.budgetTx.length === 3, bm2.rbjvl.budgetBooks);
+// a full sync round-trip of the migrated store (re-push) must keep everything, ids + bookIds stable
+const bmRound = t.mergeState(bm, bm);
+ok("ZERO loss after a sync round-trip: books+cats+tx+memo all stable, bookIds intact", bmRound.rbjvl.budgetBooks.length === 1 && bmRound.rbjvl.budgetCats.length === 3 && bmRound.rbjvl.budgetTx.length === 3 && bmRound.rbjvl.budgetMemo.length === 1 && bmRound.rbjvl.budgetCats.every(c => c.bookId === defBook), { books: bmRound.rbjvl.budgetBooks.length, cats: bmRound.rbjvl.budgetCats.length, tx: bmRound.rbjvl.budgetTx.length });
+// a transfer between books nets out of income/spending and to zero in combined totals
+const xferStore = t.migrateStore(JSON.parse(JSON.stringify(bookStored)));
+xferStore.rbjvl.budgetBooks.push({ id: "bgt-book-obxbiz", name: "OBX", kind: "business", order: 1, updatedAt: 11 });
+xferStore.rbjvl.budgetTx.push({ id: "x-out", date: "2026-06-10", dir: "out", amount: 500, isTransfer: true, transferId: "xf1", bookId: "bgt-book-obxbiz", xferBookId: defBook, updatedAt: 11 });
+xferStore.rbjvl.budgetTx.push({ id: "x-in", date: "2026-06-10", dir: "in", amount: 500, isTransfer: true, transferId: "xf1", bookId: defBook, xferBookId: "bgt-book-obxbiz", updatedAt: 11 });
+ok("transfers are EXCLUDED from the orgAiContext income/spending totals (they net to zero in combined)", (function () { const c = t.orgAiContext(xferStore, "rbjvl"); const m = c.match(/combined balance \(all time\): \$([\-\d.]+)/); return m && Math.abs(parseFloat(m[1]) - (3200 - 1296.4)) < 0.01; })(), t.orgAiContext(xferStore, "rbjvl").split("\n").filter(l => l.indexOf("BUDGET") === 0 || l.indexOf("Book ·") === 0));
+ok("orgAiContext is per-book aware (lists each book by name)", (function () { const c = t.orgAiContext(xferStore, "rbjvl"); return c.indexOf("Book · Personal") >= 0 && c.indexOf("Book · OBX") >= 0; })());
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },

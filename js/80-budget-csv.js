@@ -84,20 +84,29 @@ function budgetParseAmount(s){
 var BCSV=null;   // {rows, headers, hasHeader, map, amtMode, parsed}
 
 window.budgetImportOpen=function(){
-  BCSV={ rows:null, headers:[], hasHeader:true, map:{date:0,desc:1,amount:2,debit:-1,credit:-1}, amtMode:"signed", parsed:[] };
+  /* land imported rows in the currently-selected book (or the default Personal book when Combined is on) */
+  var bookId=(typeof budgetDefaultBookId==="function")?budgetDefaultBookId():"";
+  BCSV={ rows:null, headers:[], hasHeader:true, map:{date:0,desc:1,amount:2,debit:-1,credit:-1}, amtMode:"signed", parsed:[], bookId:bookId };
   budgetImportStep1();
 };
 
 /* ---------- STEP 1 — source (paste or upload) ---------- */
 function budgetImportStep1(){
+  var books=(typeof actBudgetBooks==="function")?actBudgetBooks():[];
+  if(!BCSV.bookId||!books.find(function(b){return b.id===BCSV.bookId;}))BCSV.bookId=books.length?books[0].id:"";
+  var bookSel=books.length>1?('<label>Import into book</label><select id="bcsv_book" onchange="budgetCsvBookChange(this.value)">'
+    +books.map(function(b){return '<option value="'+b.id+'"'+(BCSV.bookId===b.id?" selected":"")+'>'+esc(b.name)+'</option>';}).join("")+'</select>')
+    :(books.length?'<div class="sub" style="margin-bottom:6px">Importing into <b>'+esc(books[0].name)+'</b>.</div>':'');
   modal("Import CSV — 1 of 3: source",''
     +'<p class="muted" style="margin:0 0 8px;font-size:13px">Paste your bank/card CSV below, or choose a file. We parse it on your phone — nothing is uploaded.</p>'
+    +bookSel
     +'<input type="file" id="bcsv_file" accept=".csv,text/csv" style="margin-bottom:8px" onchange="budgetCsvFile(this)">'
     +'<label>or paste CSV</label>'
     +'<textarea id="bcsv_text" rows="7" placeholder="Date,Description,Amount\n2026-06-01,COFFEE SHOP,-4.50\n..." style="width:100%;font-family:monospace;font-size:12px"></textarea>'
     +'<button class="btn acc" style="margin-top:12px" onclick="budgetCsvParse()">Next: map columns →</button>'
   );
 };
+window.budgetCsvBookChange=function(id){ if(BCSV)BCSV.bookId=id; };
 window.budgetCsvFile=function(input){
   var f=input&&input.files&&input.files[0]; if(!f)return;
   var rdr=new FileReader();
@@ -106,6 +115,7 @@ window.budgetCsvFile=function(input){
   rdr.readAsText(f);
 };
 window.budgetCsvParse=function(){
+  var bsel=document.getElementById("bcsv_book"); if(bsel)BCSV.bookId=bsel.value;
   var text=(document.getElementById("bcsv_text")||{}).value||"";
   var rows=budgetParseCSV(text);
   if(rows.length<1){ alert("No rows found. Paste a CSV or choose a file first."); return; }
@@ -170,9 +180,10 @@ window.budgetCsvBuild=function(){
   budgetCsvMapChange();
   var data=BCSV.rows.slice(BCSV.hasHeader?1:0);
   var m=BCSV.map, parsed=[], seen={};
-  /* existing tx for de-dupe: date|amount|desc-ish */
+  /* existing tx for de-dupe: date|amount|desc-ish — scoped to the TARGET book so the same row can live in two books */
   var existing={};
-  actBudgetTx().forEach(function(t){ existing[budgetDupKey(t.date,t.amount,t.note)]=true; });
+  (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.isTransfer&&t.bookId===BCSV.bookId;})
+    .forEach(function(t){ existing[budgetDupKey(t.date,t.amount,t.note)]=true; });
   data.forEach(function(r){
     var date=budgetParseDate(r[m.date]);
     var desc=String(r[m.desc]!=null?r[m.desc]:"").trim();
@@ -193,8 +204,10 @@ window.budgetCsvBuild=function(){
     var dk=budgetDupKey(date,amt,desc);
     var dup=existing[dk]||seen[dk];   // already in book OR repeated within this file
     seen[dk]=true;
+    /* pre-fill a remembered category only if it lives in the target book (cats are book-scoped) */
+    var mc=budgetMemoLookup(desc), mcc=mc?budgetCat(mc):null;
     parsed.push({ date:date, desc:desc, amount:Math.round(amt*100)/100, dir:dir,
-                  catId:budgetMemoLookup(desc), dup:dup, skip:dup });
+                  catId:(mcc&&mcc.bookId===BCSV.bookId)?mc:"", dup:dup, skip:dup });
   });
   if(!parsed.length){ alert("No transactions could be parsed with this mapping. Check the column choices and amount format."); return; }
   BCSV.parsed=parsed;
@@ -206,7 +219,10 @@ function budgetDupKey(date,amount,desc){
 
 /* ---------- STEP 3 — review + categorize ---------- */
 function budgetImportStep3(){
-  var cats=actBudgetCats();
+  /* categories of the TARGET book (not the on-screen filter) so picks pair with the book we import into */
+  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===BCSV.bookId;})
+    .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
+  var bk=(typeof budgetBookName==="function")?budgetBookName(BCSV.bookId):"";
   var p=BCSV.parsed;
   var nNew=p.filter(function(x){return !x.skip;}).length;
   var nDup=p.filter(function(x){return x.dup;}).length;
@@ -253,16 +269,17 @@ window.budgetCsvCommit=function(){
   var keep=BCSV.parsed.filter(function(r){return !r.skip;});
   if(!keep.length){ alert("Nothing selected to import."); return; }
   var d=D(); if(!d.budgetTx)d.budgetTx=[];
+  var bookId=BCSV.bookId||(typeof budgetDefaultBookId==="function"?budgetDefaultBookId():"");
   var lastMonth=budgetThisMonth(), n=0;
   keep.forEach(function(row){
-    var t={ id:"bgt-tx-"+uid(), date:row.date, dir:row.dir, amount:row.amount,
+    var t={ id:"bgt-tx-"+uid(), date:row.date, dir:row.dir, amount:row.amount, bookId:bookId,
             catId:budgetCat(row.catId)?row.catId:"", note:row.desc||"", imported:true, deleted:false };
     touch(t); d.budgetTx.push(t); n++;
     lastMonth=budgetMonthOf(t.date);
     if(t.catId)budgetMemoRemember(row.desc,t.catId);   // remember this merchant→category for next time
   });
   save(); closeModal();
-  BUDGET_SUB="tx"; BUDGET_MONTH=lastMonth; BCSV=null;
+  BUDGET_SUB="tx"; BUDGET_MONTH=lastMonth; if(bookId)BUDGET_BOOK=bookId; BCSV=null;
   render();
   if(typeof toast==="function")toast("Imported "+n+" transaction"+(n===1?"":"s"));
 };

@@ -122,8 +122,11 @@ function sampleSeedLife(d){
   sampleUpsert(d,"lifeNotes",{ id:sampleId("note","2"), date:sampleDayShift(-2), title:"SAMPLE — Slow start", body:"Another sample entry from a couple days ago. Slept in, caught up later." });
 }
 
-/* budget: income + spending categories with monthly targets, and a month of transactions */
+/* budget: income + spending categories with monthly targets, and a month of transactions — all in the
+   default Personal book (created on load by migrateBudgetBooks; we tag the sample cats/tx with its id) */
 function sampleSeedBudget(d){
+  var bookId="bgt-book-default-"+S.biz;
+  if(typeof migrateBudgetBooks==="function")migrateBudgetBooks(d,S.biz);   // ensure the default Personal book exists
   var cats=[
     { id:sampleId("cat","pay"),    name:"SAMPLE — Paycheck",  kind:"in",  target:3200, order:0 },
     { id:sampleId("cat","side"),   name:"SAMPLE — Side work", kind:"in",  target:400,  order:1 },
@@ -131,7 +134,7 @@ function sampleSeedBudget(d){
     { id:sampleId("cat","food"),   name:"SAMPLE — Groceries", kind:"out", target:500,  order:3 },
     { id:sampleId("cat","gas"),    name:"SAMPLE — Gas",       kind:"out", target:160,  order:4 }
   ];
-  cats.forEach(function(c){ sampleUpsert(d,"budgetCats",c); });
+  cats.forEach(function(c){ c.bookId=bookId; sampleUpsert(d,"budgetCats",c); });
   var m=sampleThisMonth();
   function dm(day){ return m+"-"+String(day).padStart(2,"0"); }
   var txs=[
@@ -144,7 +147,7 @@ function sampleSeedBudget(d){
     { cat:cats[4].id, dir:"out", amount:48.1, date:dm(20), note:"SAMPLE — fill-up" }
   ];
   txs.forEach(function(t,i){
-    sampleUpsert(d,"budgetTx",{ id:sampleId("tx",i+1), date:t.date, amount:t.amount, catId:t.cat, dir:t.dir, note:t.note });
+    sampleUpsert(d,"budgetTx",{ id:sampleId("tx",i+1), date:t.date, amount:t.amount, catId:t.cat, dir:t.dir, note:t.note, bookId:bookId });
   });
 }
 

@@ -159,7 +159,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetCats", "budgetTx", "budgetMemo"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
@@ -180,7 +180,31 @@ function migrateStore(s) {
     ["obx", "jam"].forEach(oid => { if (s[oid]) s.users.push({ id: "mem_" + oid + "_" + u.id, kind: "membership", orgId: oid, accountId: u.id, role: u.role || "crew", active: true, updatedAt: 1 }); });
     if (u.role === "owner") u.superAdmin = true;
   });
+  // BUDGET BOOKS (P0): every org slab that has any budget data (or a budgetBooks array) gets a default
+  // "Personal" book; every existing budgetCat/budgetTx that lacks a bookId is assigned to it. Loss-free +
+  // idempotent: the default book id is DETERMINISTIC per org, so independent devices converge (no dup books).
+  for (const oid of orgIdsOf(s)) migrateBudgetBooks(s[oid], oid);
   return s;
+}
+// Assign a default Personal book to any budget org that lacks one, then tag untagged cats/tx with it.
+// Pure-additive: never renames an existing book, never drops a record, never reassigns a record that
+// already has a (non-empty) bookId. Safe to run on every load. Returns the org slab (mutated in place).
+function migrateBudgetBooks(o, oid) {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return o;
+  const hasBudget = (o.budgetCats && o.budgetCats.length) || (o.budgetTx && o.budgetTx.length) || (o.budgetBooks && o.budgetBooks.length);
+  if (!Array.isArray(o.budgetBooks)) o.budgetBooks = [];
+  if (!hasBudget) return o;                       // org never used the budget tool → leave it untouched
+  const defId = "bgt-book-default-" + oid;        // deterministic so re-seed / multi-device dedupe
+  let def = o.budgetBooks.find(b => b && b.id === defId);
+  if (!def) {                                     // create the default Personal book once (idempotent on the id)
+    def = { id: defId, name: "Personal", kind: "personal", linkedOrgId: "", color: "#1b7f4d", order: 0, updatedAt: 1, deleted: false };
+    o.budgetBooks.push(def);
+  }
+  // pick a fallback target book for untagged records: an existing non-deleted book, else the default we just ensured
+  const target = (o.budgetBooks.find(b => b && !b.deleted && b.id === defId) || o.budgetBooks.find(b => b && !b.deleted) || def).id;
+  (o.budgetCats || []).forEach(c => { if (c && !c.bookId) { c.bookId = target; if (!c.updatedAt) c.updatedAt = 1; } });
+  (o.budgetTx || []).forEach(t => { if (t && !t.bookId) { t.bookId = target; if (!t.updatedAt) t.updatedAt = 1; } });
+  return o;
 }
 function loadStore() {
   try { return migrateStore(JSON.parse(fs.readFileSync(FILE, "utf8"))); }
@@ -240,23 +264,30 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
     trk.slice(0, 12).forEach(t => L.push("  Tracker: " + (t.name || "?") + " (" + (t.type || "check") + (t.unit ? ", " + t.unit : "") + ")"));
     notes.slice().sort((a, b) => (b.date || "") < (a.date || "") ? -1 : 1).slice(0, 5).forEach(n => L.push("  Journal " + (n.date || "") + ": " + String(n.title || n.body || "").replace(/\s+/g, " ").slice(0, 120)));
   }
-  // budget (personal orgs): running balance + this month's planned-vs-actual per category, so the org assistant can advise on money/life
-  const bcats = live("budgetCats"), btx = live("budgetTx");
-  if (bcats.length || btx.length) {
+  // budget (personal orgs): per-BOOK + combined running balance & this month's plan-vs-actual, so the org
+  // assistant can advise across his separate entities (OBX / Jamieson / Personal) and the combined money hub.
+  // Transfers (isTransfer) are EXCLUDED from income/spend totals — they only move cash between books.
+  const books = live("budgetBooks"), bcats = live("budgetCats"), btx = live("budgetTx").filter(t => !t.isTransfer);
+  if (books.length || bcats.length || btx.length) {
     const now2 = new Date(), mo = now2.getFullYear() + "-" + String(now2.getMonth() + 1).padStart(2, "0");
-    const inAll = sum(btx.filter(t => t.dir === "in"), "amount"), outAll = sum(btx.filter(t => t.dir === "out"), "amount");
-    const txMo = btx.filter(t => String(t.date || "").slice(0, 7) === mo);
-    const inMo = sum(txMo.filter(t => t.dir === "in"), "amount"), outMo = sum(txMo.filter(t => t.dir === "out"), "amount");
-    L.push("BUDGET — running balance (all time): $" + (inAll - outAll).toFixed(2) + " (income $" + inAll.toFixed(2) + ", spending $" + outAll.toFixed(2) + ")");
-    L.push("This month (" + mo + "): income $" + inMo.toFixed(2) + ", spending $" + outMo.toFixed(2) + ", net $" + (inMo - outMo).toFixed(2) + " across " + txMo.length + " transactions");
-    const catName = id => { const c = bcats.find(x => x.id === id); return c ? c.name : "Uncategorized"; };
-    bcats.filter(c => (c.kind || "out") === "out").slice(0, 20).forEach(c => {
-      const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
-      L.push("  Spend · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " planned" + (actual > target ? " (OVER by $" + (actual - target).toFixed(2) + ")" : " ($" + (target - actual).toFixed(2) + " left)") : " (no target)"));
-    });
-    bcats.filter(c => (c.kind || "out") === "in").slice(0, 10).forEach(c => {
-      const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
-      L.push("  Income · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " expected" : ""));
+    const inOf = a => sum(a.filter(t => t.dir === "in"), "amount"), outOf = a => sum(a.filter(t => t.dir === "out"), "amount");
+    const moTx = a => a.filter(t => String(t.date || "").slice(0, 7) === mo);
+    // combined headline (real income/spend, transfers netted out by the filter above)
+    L.push("BUDGET — combined balance (all time): $" + (inOf(btx) - outOf(btx)).toFixed(2) + " (income $" + inOf(btx).toFixed(2) + ", spending $" + outOf(btx).toFixed(2) + ")");
+    const cMo = moTx(btx);
+    L.push("This month (" + mo + ") combined: income $" + inOf(cMo).toFixed(2) + ", spending $" + outOf(cMo).toFixed(2) + ", net $" + (inOf(cMo) - outOf(cMo)).toFixed(2) + " across " + cMo.length + " transactions");
+    const bookList = books.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    bookList.forEach(bk => {
+      const tx = btx.filter(t => t.bookId === bk.id), txMo = moTx(tx), cats = bcats.filter(c => c.bookId === bk.id);
+      L.push("Book · " + (bk.name || "?") + " (" + (bk.kind || "personal") + "): balance $" + (inOf(tx) - outOf(tx)).toFixed(2) + "; this month income $" + inOf(txMo).toFixed(2) + ", spending $" + outOf(txMo).toFixed(2));
+      cats.filter(c => (c.kind || "out") === "out").slice(0, 12).forEach(c => {
+        const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
+        L.push("  Spend · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " planned" + (actual > target ? " (OVER by $" + (actual - target).toFixed(2) + ")" : " ($" + (target - actual).toFixed(2) + " left)") : " (no target)"));
+      });
+      cats.filter(c => (c.kind || "out") === "in").slice(0, 6).forEach(c => {
+        const actual = sum(txMo.filter(t => t.catId === c.id), "amount"), target = +c.target || 0;
+        L.push("  Income · " + (c.name || "?") + ": $" + actual.toFixed(2) + (target > 0 ? " of $" + target.toFixed(2) + " expected" : ""));
+      });
     });
   }
   return L.join("\n").slice(0, 6000);
@@ -1381,4 +1412,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
