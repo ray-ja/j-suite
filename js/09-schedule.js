@@ -1,16 +1,30 @@
 /* ---------- SCHEDULE ---------- */
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
+/* Calendar view mode (month/week/day) + the single selected-date anchor that carries across switches.
+   The mode is remembered per-device; the anchor defaults to today and follows ‹ › / Today + day taps. */
+let CALVIEW=(function(){try{const v=localStorage.getItem("jra_calview");return (v==="week"||v==="day"||v==="month")?v:"month";}catch(e){return "month";}})();
+let CAL_SEL=null;   // YYYY-MM-DD anchor; null until first render (set to today)
+function calAnchor(){if(!CAL_SEL)CAL_SEL=today();return CAL_SEL;}
+function calSetView(v){CALVIEW=v;try{localStorage.setItem("jra_calview",v);}catch(e){}}
+/* keep CALY/CALM (used by the month grid) in step with the selected anchor */
+function calSyncMonth(){const a=calAnchor();const d=new Date(a+"T00:00:00");CALY=d.getFullYear();CALM=d.getMonth();}
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
 function rSchedule(){
   if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ const _ids=["job_notes","jobcap_q","exp_amt","exp_desc","co_desc","co_amt","jt_crew","jt_onsite","jt_drivemin","jt_drivemiles"]; const _save=_ids.map(function(id){const el=document.getElementById(id);return el?{id:id,v:el.value,f:document.activeElement===el,s:el.selectionStart,e:el.selectionEnd}:null;}).filter(Boolean); view.innerHTML=rJobPage(_j); _save.forEach(function(o){const el=document.getElementById(o.id);if(el){el.value=o.v;if(o.f){el.focus();try{el.setSelectionRange(o.s,o.e);}catch(e){}}}}); return; } window.JOB_OPEN=null; }
   if(SCHEDSUB==="crew")SCHEDSUB="calendar";   // crew-availability tab retired (Ray's request)
   const sub=`<div class="subnav"><button class="subbtn ${SCHEDSUB==="calendar"?"on":""}" onclick="schedSub('calendar')">📅 Calendar</button><button class="subbtn ${SCHEDSUB==="myavail"?"on":""}" onclick="schedSub('myavail')">🗓 My shifts</button></div>`;
   if(SCHEDSUB==="myavail"){view.innerHTML=sub+(typeof renderMyAvailCalendar==="function"?renderMyAvailCalendar():"");return;}
-  // Calendar = just the month calendar. Scheduled jobs live on the Jobs tab + the Today page; tap a day here for that day's jobs.
-  if(CALY==null){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();}
+  // Calendar = Month / Week / Day views over the same jobs. Tap a day (or job) to act on it.
+  calSyncMonth();
   const jobs=actJ().slice().sort((a,b)=>(a.date+(a.time||""))<(b.date+(b.time||""))?-1:1);
-  let h=sub+renderCalendar(jobs);
-  if(typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
+  const toggle=`<div class="calviews">`
+    +`<button class="calviewbtn ${CALVIEW==="month"?"on":""}" onclick="calSwitch('month')">Month</button>`
+    +`<button class="calviewbtn ${CALVIEW==="week"?"on":""}" onclick="calSwitch('week')">Week</button>`
+    +`<button class="calviewbtn ${CALVIEW==="day"?"on":""}" onclick="calSwitch('day')">Day</button></div>`;
+  let body=CALVIEW==="week"?renderWeekView(jobs):CALVIEW==="day"?renderDayView(jobs):renderCalendar(jobs);
+  let h=sub+toggle+calNavBar()+body;
+  // crew-initials legend only matters for the month grid (the cells that draw chips)
+  if(CALVIEW==="month"&&typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
   view.innerHTML=h;
 }
 window.schedSub=function(s){SCHEDSUB=s;render();};
@@ -67,11 +81,25 @@ function calDayChips(ds){
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;
   return `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">${chips}</div>`;
 }
+/* shared ‹ Title › / Today nav bar — the title + step size follow the active view */
+function calNavBar(){
+  const a=calAnchor();let title="";
+  if(CALVIEW==="month"){const f=new Date(CALY,CALM,1);title=f.toLocaleString(undefined,{month:"long"})+" "+CALY;}
+  else if(CALVIEW==="week"){const ws=weekStart(a),we=addDays(ws,6);
+    const sd=new Date(ws+"T00:00:00"),ed=new Date(we+"T00:00:00");
+    const sm=sd.toLocaleString(undefined,{month:"short"}),em=ed.toLocaleString(undefined,{month:"short"});
+    title=sm===em?`${sm} ${sd.getDate()}–${ed.getDate()}`:`${sm} ${sd.getDate()} – ${em} ${ed.getDate()}`;}
+  else{const dd=new Date(a+"T00:00:00");title=DOW[dowOf(a)]+", "+dd.toLocaleString(undefined,{month:"short"})+" "+dd.getDate();}
+  return `<div class="calhead"><button class="calnav" onclick="calShift(-1)">‹</button>
+    <div class="mtitle">${esc(title)}</div><button class="calnav" onclick="calShift(1)">›</button>
+    <button class="btn ghost sm" style="margin-left:auto" onclick="calToday()">Today</button></div>`;
+}
+/* Monday-free, Sunday-start week to match the month grid's Su…Sa columns */
+function weekStart(ds){return addDays(ds,-dowOf(ds));}
 function renderCalendar(jobs){
   const t=today();const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
   const first=new Date(CALY,CALM,1);const startDow=first.getDay();
   const dim=new Date(CALY,CALM+1,0).getDate();
-  const mname=first.toLocaleString(undefined,{month:"long"});
   const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
   let cells=dows.map(d=>`<div class="caldow">${d}</div>`).join("");
   for(let i=0;i<startDow;i++)cells+=`<div class="calcell out"></div>`;
@@ -84,14 +112,56 @@ function renderCalendar(jobs){
     if(dj.length>2)inner+=`<div class="calmore">+${dj.length-2} more</div>`;
     cells+=`<div class="calcell${ds===t?' today':''}" onclick="openDay('${ds}')">${inner}</div>`;
   }
-  return `<div class="calhead"><button class="calnav" onclick="calShift(-1)">‹</button>
-    <div class="mtitle">${mname} ${CALY}</div><button class="calnav" onclick="calShift(1)">›</button>
-    <button class="btn ghost sm" style="margin-left:auto" onclick="calToday()">Today</button></div>
-    <div class="calgrid">${cells}</div>`;
+  return `<div class="calgrid">${cells}</div>`;
 }
-window.calShift=function(n){CALM+=n;if(CALM<0){CALM=11;CALY--;}if(CALM>11){CALM=0;CALY++;}render();};
-window.calToday=function(){const d=new Date();CALY=d.getFullYear();CALM=d.getMonth();render();};
+/* a job row for the Week/Day lists — time (if set), title, customer, crew chips; taps open the job */
+function calJobRow(j){
+  const ini=crewInitials(j.crew),conf=jobHasConflict(j);
+  return `<div class="li" onclick="closeModal();openJobPage('${j.id}')" style="cursor:pointer">
+    <div class="grow"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${j.time?`<span class="badge" style="background:var(--soft);color:var(--ink);margin-right:6px">${esc(j.time)}</span>`:""}${esc(j.title||"Job")}</div>
+    <div class="sub">${j.customerId?esc(custName(j.customerId)):"No customer"}${ini?" · "+esc(ini):""}${conf?` <span style="color:var(--danger)">⚠ crew off</span>`:""}</div></div></div>`;
+}
+/* Week view — the 7 days containing the anchor. Each day is a tappable header (its date → openDay)
+   with its jobs stacked under it; a free day invites adding one. Mobile = stacked; wide = 7 columns. */
+function renderWeekView(jobs){
+  const t=today(),ws=weekStart(calAnchor());const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
+  let cols="";
+  for(let i=0;i<7;i++){const ds=addDays(ws,i),dj=(byDate[ds]||[]).slice().sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+    const isToday=ds===t,isSel=ds===calAnchor();
+    const rows=dj.length?dj.map(calJobRow).join("")
+      :`<div class="muted" style="padding:8px 4px;cursor:pointer" onclick="closeModal();openJob(null,'','${ds}')">No jobs — <span style="color:var(--brand-text);font-weight:700">add one</span>.</div>`;
+    cols+=`<div class="weekday${isToday?" today":""}${isSel?" sel":""}">
+      <div class="weekdayhd" onclick="openDay('${ds}')"><span class="wd-dow">${DOW[dowOf(ds)]}</span> <span class="wd-num">${ds.slice(8)}</span>${dj.length?`<span class="ct" style="margin-left:auto">${dj.length}</span>`:`<span class="wd-add" style="margin-left:auto" onclick="event.stopPropagation();closeModal();openJob(null,'','${ds}')">＋</span>`}</div>
+      <div class="weekdayjobs">${rows}</div></div>`;
+  }
+  return `<div class="weekgrid">${cols}</div>`;
+}
+/* Day view — a single day's jobs in time order; an empty day invites adding one. Reuses the sanity
+   + team-availability context that the month day-modal shows, so the Day view is the full picture. */
+function renderDayView(jobs){
+  const ds=calAnchor(),dj=jobs.filter(j=>j.date===ds).slice().sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+  let h=(typeof daySanityBanner==="function"?daySanityBanner(ds):"");
+  h+=`<div class="secthd" style="margin-top:0"><h2>Jobs</h2><span class="ct">${dj.length}</span></div>`;
+  h+=dj.length?`<div class="card">`+dj.map(calJobRow).join("")+`</div>`
+    :`<div class="card"><div class="muted" style="padding:6px 2px">No jobs scheduled this day. <a href="#" onclick="closeModal();openJob(null,'','${ds}');return false" style="color:var(--brand-text);font-weight:700">Add one</a>.</div></div>`;
+  const team=(typeof teamAvailListHTML==="function")?teamAvailListHTML(ds):"";
+  if(team){const cnt=(typeof teamAvailCounts==="function")?teamAvailCounts(ds):null,cntOff=cnt?(cnt.off+cnt.timeoff):0;
+    const hdr=(cnt&&cnt.total)?`<span style="color:var(--accent)">${cnt.available} free</span>${cntOff?`, <span style="color:var(--danger)">${cntOff} off</span>`:""}`:"";
+    h+=`<div class="secthd"><h2>Team availability</h2><span class="ct" style="font-weight:700">${hdr}</span></div><div class="card">${team}</div>`;}
+  h+=`<button class="btn acc" style="margin-top:8px" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`;
+  return h;
+}
+window.calSwitch=function(v){calSetView(v);render();};
+window.calShift=function(n){
+  if(CALVIEW==="month"){CALM+=n;if(CALM<0){CALM=11;CALY--;}if(CALM>11){CALM=0;CALY++;}
+    /* keep the anchor inside the shown month so a Month→Week/Day switch lands there */
+    const dim=new Date(CALY,CALM+1,0).getDate();const cur=new Date(calAnchor()+"T00:00:00").getDate();
+    CAL_SEL=CALY+"-"+String(CALM+1).padStart(2,"0")+"-"+String(Math.min(cur,dim)).padStart(2,"0");}
+  else CAL_SEL=addDays(calAnchor(),(CALVIEW==="week"?7:1)*n);
+  render();};
+window.calToday=function(){CAL_SEL=today();render();};
 window.openDay=function(ds){
+  CAL_SEL=ds;   // tapping a day moves the calendar anchor here, so a view switch stays centered on it
   const jobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJobPage('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
   const team=(typeof teamAvailListHTML==="function")?teamAvailListHTML(ds):"";

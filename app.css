@@ -170,6 +170,27 @@
   .caljob{background:var(--brand);color:#fff;border-radius:4px;font-size:10px;line-height:1.3;padding:1px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .calmore{font-size:10px;color:var(--muted)}
   @media(min-width:900px){.calcell{min-height:92px}.caljob{font-size:11px}}
+  /* Month / Week / Day view switcher — segmented control */
+  .calviews{display:flex;gap:4px;margin:0 4px 10px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .calviewbtn{flex:1;background:transparent;border:none;color:var(--muted);border-radius:8px;padding:8px 0;font-size:14px;font-weight:700}
+  .calviewbtn.on{background:var(--card);color:var(--brand-text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  /* Week view — stacked days on phone, 7 columns on wide screens */
+  .weekgrid{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+  .weekday{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .weekday.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .weekday.sel{border-color:var(--brand-text)}
+  .weekdayhd{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--soft);font-weight:800;cursor:pointer}
+  .weekdayhd .wd-dow{color:var(--muted);font-size:13px}
+  .weekdayhd .wd-num{font-size:15px}
+  .weekday.today .weekdayhd .wd-num{color:var(--brand-text)}
+  .weekdayhd .wd-add{color:var(--brand-text);font-size:18px;font-weight:800;width:26px;height:26px;line-height:26px;text-align:center}
+  .weekdayjobs{padding:2px 8px}
+  .weekdayjobs .li{padding:8px 2px}
+  @media(min-width:900px){
+    .weekgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;align-items:start}
+    .weekday{min-height:120px}
+    .weekdayhd .wd-dow{display:block;font-size:11px}
+  }
   /* ---------- DESKTOP ---------- */
   @media(min-width:900px){
     body{font-size:17px;padding-bottom:0}
