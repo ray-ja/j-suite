@@ -22,7 +22,7 @@
 var SAMPLE_TOOLS = [
   { tab:"escape", label:"Room scheduler", icon:"🚪", cols:["escapeRooms","escapeBookings"] },
   { tab:"life",   label:"Life tracker",   icon:"🌱", cols:["lifeTrackers","lifeNotes","lifeLogs"] },
-  { tab:"budget", label:"Budget",         icon:"💵", cols:["budgetCats","budgetTx","budgetAccounts","budgetBudgets"] },
+  { tab:"budget", label:"Budget",         icon:"💵", cols:["budgetCats","budgetTx","budgetAccounts","budgetBudgets","budgetBills"] },
   { tab:"booking",label:"Booking",        icon:"🎟️", cols:[] }   // stateless scaffold — nothing to seed
 ];
 
@@ -130,9 +130,11 @@ function sampleSeedBudget(d){
   var cats=[
     { id:sampleId("cat","pay"),    name:"SAMPLE — Paycheck",  kind:"in",  target:3200, order:0 },
     { id:sampleId("cat","side"),   name:"SAMPLE — Side work", kind:"in",  target:400,  order:1 },
-    { id:sampleId("cat","rent"),   name:"SAMPLE — Rent",      kind:"out", target:1200, order:2 },
+    { id:sampleId("cat","rent"),   name:"SAMPLE — Rent",      kind:"out", target:1200, order:2, group:"bill" },
     { id:sampleId("cat","food"),   name:"SAMPLE — Groceries", kind:"out", target:500,  order:3 },
-    { id:sampleId("cat","gas"),    name:"SAMPLE — Gas",       kind:"out", target:160,  order:4 }
+    { id:sampleId("cat","gas"),    name:"SAMPLE — Gas",       kind:"out", target:160,  order:4 },
+    { id:sampleId("cat","elec"),   name:"SAMPLE — Electric",  kind:"out", target:0,    order:5, group:"bill" },
+    { id:sampleId("cat","subs"),   name:"SAMPLE — Streaming", kind:"out", target:0,    order:6, group:"subscription" }
   ];
   cats.forEach(function(c){ c.bookId=bookId; sampleUpsert(d,"budgetCats",c); });
   var m=sampleThisMonth();
@@ -149,13 +151,26 @@ function sampleSeedBudget(d){
   txs.forEach(function(t,i){
     sampleUpsert(d,"budgetTx",{ id:sampleId("tx",i+1), date:t.date, amount:t.amount, catId:t.cat, dir:t.dir, note:t.note, bookId:bookId });
   });
+  /* HISTORICAL electric bills across the last 3 months so the Bills tab's historical-average suggestion has data
+     to chew on (avg ≈ $147, min $128, max $171). This is the "look at historical electric bills" demo. */
+  function shiftMo(delta){ return (typeof budgetShiftMonth==="function")?budgetShiftMonth(m,delta):m; }
+  var elecHist=[ {m:shiftMo(-1),amt:142.18}, {m:shiftMo(-2),amt:128.40}, {m:shiftMo(-3),amt:171.05} ];
+  elecHist.forEach(function(e,i){
+    sampleUpsert(d,"budgetTx",{ id:sampleId("tx","elec"+(i+1)), date:e.m+"-12", amount:e.amt, catId:cats[5].id, dir:"out", note:"SAMPLE — electric bill", bookId:bookId });
+  });
+  /* recurring/scheduled BILLS: electric (monthly, auto-estimate from history) + streaming subscription */
+  sampleUpsert(d,"budgetBills",{ id:sampleId("bill","rent"), bookId:bookId, catId:cats[2].id, name:"SAMPLE — Rent",      amount:1200, frequency:"monthly", dueDay:1,  nextDue:"", autoEstimate:false, active:true });
+  sampleUpsert(d,"budgetBills",{ id:sampleId("bill","elec"), bookId:bookId, catId:cats[5].id, name:"SAMPLE — Electric",  amount:147,  frequency:"monthly", dueDay:15, nextDue:"", autoEstimate:true,  active:true });
+  sampleUpsert(d,"budgetBills",{ id:sampleId("bill","subs"), bookId:bookId, catId:cats[6].id, name:"SAMPLE — Netflix",   amount:15.49,frequency:"monthly", dueDay:22, nextDue:"", autoEstimate:false, active:true });
   /* P1: a sample CHECKING account (real cash) + a couple envelope allocations so the YNAB Month view
      demos out of the box — cash present, a few envelopes funded, TBB shows money still to assign */
   sampleUpsert(d,"budgetAccounts",{ id:sampleId("acct","chk"), bookId:bookId, name:"SAMPLE — Checking", type:"checking", balance:2600, mask:"0000", order:0 });
   var allocs=[
-    { cat:cats[2].id, amount:1200 },   // Rent — funded to goal
+    { cat:cats[2].id, amount:1200 },   // Rent — funded to goal (bill covered ahead)
     { cat:cats[3].id, amount:500  },   // Groceries — funded to goal
-    { cat:cats[4].id, amount:160  }    // Gas — funded to goal
+    { cat:cats[4].id, amount:160  },   // Gas — funded to goal
+    { cat:cats[5].id, amount:100  },   // Electric — partly funded ($100 of ~$147 → a gap to demo "fund the gap")
+    { cat:cats[6].id, amount:15.49 }   // Streaming — funded to the subscription amount
   ];
   allocs.forEach(function(a,i){
     sampleUpsert(d,"budgetBudgets",{ id:sampleId("alloc",i+1), bookId:bookId, catId:a.cat, month:m, allocated:a.amount });

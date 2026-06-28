@@ -38,6 +38,7 @@ function migrateBudgetBooks(o,oid){
   if(!Array.isArray(o.budgetBooks))o.budgetBooks=[];
   if(!Array.isArray(o.budgetAccounts))o.budgetAccounts=[];   // P1 (YNAB): real cash accounts — additive
   if(!Array.isArray(o.budgetBudgets))o.budgetBudgets=[];     // P1 (YNAB): monthly envelope allocations — additive
+  if(!Array.isArray(o.budgetBills))o.budgetBills=[];         // v2: recurring/scheduled bills linked to a category — additive
   var hasBudget=(o.budgetCats&&o.budgetCats.length)||(o.budgetTx&&o.budgetTx.length)||o.budgetBooks.length;
   if(!hasBudget)return o;                                  // org never used the budget tool → leave untouched
   var defId="bgt-book-default-"+oid;
@@ -315,6 +316,7 @@ window.budgetSetBook=function(id){ BUDGET_BOOK=id||"__all__"; render(); };
 window.budgetFabAdd=function(){
   if(BUDGET_SUB==="settings")openBudgetCat(null);
   else if(BUDGET_SUB==="tax")openTaxProfile();
+  else if(BUDGET_SUB==="bills")openBudgetBill(null);      // adding on the Bills tab = add a recurring bill
   else if(BUDGET_SUB==="debts")openBudgetAccount(null);   // adding on the Debts tab = add a credit-card/debt account
   else openBudgetTx(null);
 };
@@ -337,6 +339,7 @@ function rBudget(){
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(BUDGET_SUB==="month"?"on":"")+'" onclick="budgetSetSub(\'month\')">📅 Month</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tx"?"on":"")+'" onclick="budgetSetSub(\'tx\')">🧾 Transactions</button>'
+    +'<button class="subbtn '+(BUDGET_SUB==="bills"?"on":"")+'" onclick="budgetSetSub(\'bills\')">🔁 Bills</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="debts"?"on":"")+'" onclick="budgetSetSub(\'debts\')">💳 Debts</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tax"?"on":"")+'" onclick="budgetSetSub(\'tax\')">🧮 Tax</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="settings"?"on":"")+'" onclick="budgetSetSub(\'settings\')">⚙️ Settings</button>'
@@ -344,6 +347,7 @@ function rBudget(){
   /* the Tax sub-tab has its own combined view (one taxpayer) — no per-book bar there */
   view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+'<div id="budget_body"></div>';
   if(BUDGET_SUB==="tx")budgetRenderTx();
+  else if(BUDGET_SUB==="bills")budgetRenderBills();
   else if(BUDGET_SUB==="debts")budgetRenderDebts();
   else if(BUDGET_SUB==="tax")budgetRenderTax();
   else if(BUDGET_SUB==="settings")budgetRenderSettings();
@@ -402,6 +406,7 @@ function budgetRenderMonth(){
       +'<b style="font-size:16px">'+aom+' day'+(aom===1?"":"s")+'</b>'
       +'<span class="sub"> — how long your money sits before you spend it</span></div>';
   }
+  h+=budgetBillsMonthCard(m);
   h+=budgetEnvelopeSection("Envelopes — spending","out",cats,m);
   h+=budgetPaymentEnvelopesCard(m);
   h+=budgetEnvelopeSection("Income","in",cats,m);
@@ -957,6 +962,394 @@ window.delBudgetTransfer=function(transferId){
   save(); closeModal(); render();
 };
 
+/* ============================================================================================================
+   RECURRING / SCHEDULED BILLS + HISTORICAL-AVERAGE PLANNING (budget v2 — Ray's core "fund ahead" workflow).
+   A budgetBill {id,bookId,catId,name,amount,frequency,dueDay,nextDue,autoEstimate,active,deleted,updatedAt}
+   links to a budget CATEGORY (its envelope). Multiple bills can share one category (e.g. subscriptions). The
+   workflow: look at HISTORICAL spending for a bill/category → set how much to set aside → FUND that envelope
+   IN ADVANCE → pay everything debit/cash. The Bills tab manages the schedule, shows the historical average to
+   apply with one tap, and surfaces a fund-ahead view (this month's bills total, funded vs needed, fund the gap).
+
+   FUNDED = the bill's category envelope AVAILABLE (carryover + this-month allocation − spent), shared across the
+   bills under that category. FUNDING = allocating to that envelope (budgetSetAllocation, the same plumbing the
+   Month view uses). PAY a bill = log a budgetTx in its category (linked via openBudgetTx). All DERIVED — no
+   side-effect records beyond the bill itself and the normal alloc/tx, so the sync round-trip stays loss-free. */
+
+var BUDGET_FREQS=[
+  {k:"weekly",   label:"Weekly",    perMonth:52/12, perYear:52},
+  {k:"monthly",  label:"Monthly",   perMonth:1,     perYear:12},
+  {k:"quarterly",label:"Quarterly", perMonth:1/3,   perYear:4},
+  {k:"annual",   label:"Annual",    perMonth:1/12,  perYear:1}
+];
+function budgetFreqMeta(k){ return BUDGET_FREQS.find(function(f){return f.k===k;})||BUDGET_FREQS[1]; }
+/* a bill's contribution to a SINGLE month's needed-to-fund total (weekly ≈ 4.33×, quarterly ⅓, annual 1/12) */
+function budgetBillMonthlyAmount(b){ return Math.round((+b.amount||0)*budgetFreqMeta(b.frequency).perMonth*100)/100; }
+
+/* active (non-deleted, in-scope) bills */
+function actBudgetBills(){ return (D().budgetBills||[]).filter(function(b){return !b.deleted&&budgetInBook(b);})
+  .sort(function(a,b){ return (a.nextDue||"").localeCompare(b.nextDue||"") || (a.name||"").localeCompare(b.name||""); }); }
+function budgetBill(id){ return (D().budgetBills||[]).filter(function(b){return !b.deleted;}).find(function(b){return b.id===id;}); }
+
+/* ---- NEXT-DUE math: from a frequency + a dueDay (1-28 for monthly/quarterly/annual; weekday 0-6 for weekly),
+   compute the next due date on/after a reference date. Stored nextDue (an explicit override) wins when present
+   and still in the future; otherwise we roll it forward from today so a bill always shows its upcoming date. ---- */
+function budgetDateAddDays(ds,n){ var d=new Date(ds+"T12:00:00"); d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function budgetDateOnDay(year,month0,day){ var dim=new Date(year,month0+1,0).getDate(); var dd=Math.min(Math.max(1,day||1),dim);
+  return year+"-"+String(month0+1).padStart(2,"0")+"-"+String(dd).padStart(2,"0"); }
+/* compute the next due date (>= ref) for a bill from its frequency + dueDay */
+function budgetBillNextDue(b,ref){
+  ref=ref||today();
+  if(b.nextDue&&b.nextDue>=ref)return b.nextDue;   // explicit, still-future override wins
+  var freq=b.frequency||"monthly";
+  var r=new Date(ref+"T12:00:00");
+  if(freq==="weekly"){
+    var wd=(b.dueDay!=null&&b.dueDay!=="")?(((+b.dueDay)%7)+7)%7:r.getDay();
+    var diff=(wd-r.getDay()+7)%7;   // 0..6 days ahead
+    return budgetDateAddDays(ref,diff);
+  }
+  var day=(b.dueDay!=null&&b.dueDay!=="")?(+b.dueDay):1;
+  if(freq==="monthly"){
+    var cand=budgetDateOnDay(r.getFullYear(),r.getMonth(),day);
+    if(cand>=ref)return cand;
+    return budgetDateOnDay(r.getFullYear(),r.getMonth()+1,day);   // JS Date normalizes month overflow
+  }
+  if(freq==="quarterly"){
+    for(var i=0;i<5;i++){ var c=budgetDateOnDay(r.getFullYear(),r.getMonth()+i*3-((r.getMonth())%3),day); if(c>=ref)return c; }
+    return budgetDateOnDay(r.getFullYear()+1,0,day);
+  }
+  /* annual: anchor month from nextDue if set, else use the ref month; roll to next year if past */
+  var anchorMonth=(b.nextDue?(+b.nextDue.slice(5,7)-1):r.getMonth());
+  var ca=budgetDateOnDay(r.getFullYear(),anchorMonth,day);
+  if(ca>=ref)return ca;
+  return budgetDateOnDay(r.getFullYear()+1,anchorMonth,day);
+}
+/* a bill is "due in month m" if its next due date falls inside that calendar month */
+function budgetBillDueInMonth(b,m){ return budgetMonthOf(budgetBillNextDue(b,m+"-01"))===m; }
+
+/* ---- HISTORICAL AVERAGE: average / min / max of actual ACTUAL out-spending in a category over the last N
+   COMPLETE months (excluding the current, partial month). Used to suggest a bill amount or an envelope target.
+   Returns {avg,min,max,n,months} where n = how many of those months actually had spending. ---- */
+function budgetHistoryStats(catId,nMonths){
+  nMonths=nMonths||6;
+  var cur=budgetThisMonth();
+  var vals=[], considered=0;
+  for(var i=1;i<=nMonths;i++){
+    var m=budgetShiftMonth(cur,-i);
+    var spent=budgetCatSpent(catId,m);
+    considered++;
+    if(spent>0.005)vals.push(spent);   // only months WITH spending count toward the average (skip empty months)
+  }
+  if(!vals.length)return {avg:0,min:0,max:0,n:0,months:considered};
+  var sum=vals.reduce(function(s,v){return s+v;},0);
+  return {
+    avg:Math.round(sum/vals.length*100)/100,
+    min:Math.round(Math.min.apply(null,vals)*100)/100,
+    max:Math.round(Math.max.apply(null,vals)*100)/100,
+    n:vals.length, months:considered
+  };
+}
+
+/* FUNDED toward a category's bills THIS month = cash actually set aside now: a non-negative carry-in (prior
+   unfunded overspend never counts AGAINST this month's bill money) + this month's allocation − this month's
+   spend. Floored at 0. This is "how much is sitting in the envelope ready to pay the bill," which is what the
+   fund-ahead prompt needs (vs the raw rollover balance, which ancient unfunded spending can drag negative). */
+function budgetBillFunded(catId,m){
+  var carry=budgetCarryIn(catId,m); if(carry<0)carry=0;
+  var v=carry+budgetAllocated(catId,m)-budgetCatSpent(catId,m);
+  return Math.round((v>0?v:0)*100)/100;
+}
+
+/* ---- FUND-AHEAD rollup for a month: every active bill due that month, grouped by category, with that
+   category's envelope AVAILABLE (funded) vs the bills' total (needed). Returns the per-category rows + totals. ---- */
+function budgetBillsFundPlan(m){
+  var bills=actBudgetBills().filter(function(b){return b.active!==false&&budgetBillDueInMonth(b,m);});
+  var byCat={};
+  bills.forEach(function(b){
+    var k=b.catId||"__none__";
+    (byCat[k]=byCat[k]||{catId:b.catId,bills:[],needed:0}).bills.push(b);
+    byCat[k].needed+=(+b.amount||0);
+  });
+  var rows=Object.keys(byCat).map(function(k){
+    var g=byCat[k];
+    var funded=g.catId?budgetBillFunded(g.catId,m):0;   // cash set aside in the envelope this month (floored at 0)
+    g.needed=Math.round(g.needed*100)/100;
+    g.funded=Math.round(funded*100)/100;
+    g.gap=Math.round(Math.max(0,g.needed-g.funded)*100)/100;
+    return g;
+  }).sort(function(a,b){ return (budgetCatName(a.catId)||"").localeCompare(budgetCatName(b.catId)||""); });
+  var needed=Math.round(rows.reduce(function(s,r){return s+r.needed;},0)*100)/100;
+  var funded=Math.round(rows.reduce(function(s,r){return s+r.funded;},0)*100)/100;
+  var gap=Math.round(rows.reduce(function(s,r){return s+r.gap;},0)*100)/100;
+  return {rows:rows, needed:needed, funded:funded, gap:gap, count:bills.length};
+}
+
+/* ---------- BILLS render: fund-ahead summary (this month) + upcoming list + the scheduled-bills manager ---------- */
+function budgetRenderBills(){
+  var body=document.getElementById("budget_body"); if(!body)return;
+  var m=BUDGET_MONTH||budgetThisMonth();
+  var books=actBudgetBooks();
+
+  var h='<div class="card"><div class="row" style="gap:8px;align-items:center">'
+    +'<button class="btn ghost sm" onclick="budgetNavMonth(-1)" title="Previous month">‹</button>'
+    +'<input type="month" value="'+m+'" onchange="budgetSetMonth(this.value)" style="flex:1;text-align:center">'
+    +'<button class="btn ghost sm" onclick="budgetNavMonth(1)" title="Next month">›</button>'
+    +'</div><div class="sub" style="text-align:center;margin-top:6px"><b>Bills · '+budgetMonthLabel(m)+'</b>'
+    +(budgetIsAll()?' · all books':' · '+esc(budgetBookName(BUDGET_BOOK)))+'</div></div>';
+
+  if(!books.length){
+    h+='<div class="empty"><div class="big">🔁</div>No books yet. Create one on the <b>Settings</b> tab first.</div>';
+    body.innerHTML=h; return;
+  }
+
+  h+='<button class="btn acc" style="width:100%;margin-bottom:10px" onclick="openBudgetBill(null)">＋ Add a recurring bill</button>';
+
+  var bills=actBudgetBills();
+  if(!bills.length){
+    h+='<div class="empty"><div class="big">🔁</div>No recurring bills yet'+(budgetIsAll()?'':' in this book')+'.<br>Add your bills + subscriptions (electric, rent, internet, streaming…) so you can <b>fund the month in advance</b> and pay them from cash. Each bill links to a category envelope.</div>';
+    body.innerHTML=h; return;
+  }
+
+  /* ---- FUND-AHEAD headline: this month's bills total, funded vs needed, fund the gap ---- */
+  h+=budgetBillsFundCard(m);
+
+  /* ---- UPCOMING — next due dates this month (+ a peek at next month) ---- */
+  h+=budgetBillsUpcoming(m);
+
+  /* ---- the scheduled bills, grouped bill / subscription / other ---- */
+  h+=budgetBillsManager();
+
+  body.innerHTML=h;
+}
+/* FUND-AHEAD card: "this month you need $X, you've set aside $Y — fund the $Z gap now." One-tap fund-the-gap. */
+function budgetBillsFundCard(m){
+  var plan=budgetBillsFundPlan(m);
+  if(!plan.count){
+    return '<div class="card" style="text-align:center;border-left:4px solid var(--ok,#1b7f4d)"><div class="sub">No bills due in '+budgetMonthLabel(m)+'.</div></div>';
+  }
+  var color=plan.gap<0.005?"var(--ok,#1b7f4d)":"#d98a00";
+  var h='<div class="card" style="text-align:center;border-left:4px solid '+color+'">'
+    +'<div class="sub">Bills due in '+budgetMonthLabel(m)+' ('+plan.count+')</div>'
+    +'<div style="font-weight:800;font-size:28px">'+budgetMoney(plan.needed)+'</div>'
+    +'<div class="sub" style="margin-top:4px;border-top:1px solid var(--line,#eee);padding-top:6px">'
+    +'Set aside <b style="color:var(--ok,#1b7f4d)">'+budgetMoney(plan.funded)+'</b> · still need <b style="color:'+color+'">'+budgetMoney(plan.gap)+'</b></div>';
+  if(plan.gap>0.005){
+    h+='<div class="sub" style="margin-top:6px;color:'+color+'">⚠ Fund the '+budgetMoney(plan.gap)+' gap now so every bill is covered before it\'s due.</div>'
+      +'<button class="btn acc sm" style="margin-top:8px" onclick="budgetFundBillGap(\''+m+'\')">💧 Fund the gap ('+budgetMoney(plan.gap)+')</button>';
+  }else{
+    h+='<div class="sub" style="margin-top:6px;color:var(--ok,#1b7f4d)">✓ Every bill this month is funded ahead. 🎯</div>';
+  }
+  /* per-category breakdown (funded vs needed) */
+  h+='<div style="margin-top:8px;text-align:left;border-top:1px solid var(--line,#eee);padding-top:6px">'
+    +plan.rows.map(function(r){
+      var nm=r.catId?budgetCatName(r.catId):"Uncategorized";
+      var rc=r.gap>0.005?"#d98a00":"var(--ok,#1b7f4d)";
+      return '<div class="row" style="justify-content:space-between;align-items:baseline;margin:2px 0">'
+        +'<span class="sub">'+esc(nm)+' <span style="font-weight:400">('+r.bills.length+')</span></span>'
+        +'<span style="font-weight:600;color:'+rc+'">'+budgetMoney(r.funded)+' / '+budgetMoney(r.needed)+'</span></div>';
+    }).join("")
+    +'</div>';
+  return h+'</div>';
+}
+/* compact bills card for the MONTH view — links to the Bills tab; shows this month's needed vs funded + the gap */
+function budgetBillsMonthCard(m){
+  var bills=actBudgetBills();
+  if(!bills.length)return "";
+  var plan=budgetBillsFundPlan(m);
+  if(!plan.count)return "";
+  var color=plan.gap<0.005?"var(--ok,#1b7f4d)":"#d98a00";
+  var h='<div class="secthd"><h2>Bills this month</h2><span class="ct" style="cursor:pointer" onclick="budgetSetSub(\'bills\')">Bills ›</span></div>';
+  h+='<div class="card" style="padding:8px 10px;border-left:4px solid '+color+'">'
+    +'<div class="row" style="justify-content:space-between;align-items:baseline">'
+    +'<span class="sub">'+plan.count+' bill'+(plan.count===1?"":"s")+' due · need '+budgetMoney(plan.needed)+'</span>'
+    +'<span style="font-weight:700;color:'+color+'">'+(plan.gap<0.005?'✓ funded':'gap '+budgetMoney(plan.gap))+'</span></div>'
+    +'<div class="sub" style="margin-top:4px">Set aside '+budgetMoney(plan.funded)+' of '+budgetMoney(plan.needed)+'.'
+    +(plan.gap>0.005?' <span style="cursor:pointer;text-decoration:underline" onclick="budgetSetSub(\'bills\')">Fund the gap →</span>':' Funded ahead. 🎯')+'</div>'
+    +'</div>';
+  return h;
+}
+/* one-tap: top up each due-this-month bill category's allocation so its envelope covers the bills due (the gap). */
+window.budgetFundBillGap=function(m){
+  var plan=budgetBillsFundPlan(m);
+  var todo=plan.rows.filter(function(r){return r.catId&&r.gap>0.005;});
+  if(!todo.length){ alert("Every bill this month is already funded."); return; }
+  if(!confirm("Fund "+budgetMoney(plan.gap)+" across "+todo.length+" envelope"+(todo.length===1?"":"s")+" so this month's bills are covered ahead of time?\n\nTo Be Budgeted will drop by that amount."))return;
+  todo.forEach(function(r){
+    var cur=budgetAllocated(r.catId,m);
+    budgetSetAllocation(r.catId,m,Math.round((cur+r.gap)*100)/100);   // add exactly the gap to the current allocation
+  });
+  render();
+};
+/* UPCOMING list — bills due this month (and a peek at next month), each with its next due date + amount + funded mark */
+function budgetBillsUpcoming(m){
+  var nextM=budgetShiftMonth(m,1);
+  var thisMo=actBudgetBills().filter(function(b){return b.active!==false&&budgetBillDueInMonth(b,m);})
+    .map(function(b){return {b:b,due:budgetBillNextDue(b,m+"-01")};}).sort(function(a,b){return a.due.localeCompare(b.due);});
+  var peek=actBudgetBills().filter(function(b){return b.active!==false&&budgetBillDueInMonth(b,nextM);})
+    .map(function(b){return {b:b,due:budgetBillNextDue(b,nextM+"-01")};}).sort(function(a,b){return a.due.localeCompare(b.due);});
+  if(!thisMo.length&&!peek.length)return "";
+  var h='<div class="secthd"><h2>Upcoming</h2></div>';
+  function row(x){
+    var b=x.b, freq=budgetFreqMeta(b.frequency);
+    var funded=b.catId?budgetBillFunded(b.catId,budgetMonthOf(x.due)):0;
+    var covered=funded>=(+b.amount||0)-0.005;
+    var catTag=b.catId?('<span class="sub" style="font-weight:400"> · '+esc(budgetCatName(b.catId))+'</span>'):'';
+    var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(b.bookId))+'</span>'):'';
+    return '<div class="li" style="cursor:pointer" onclick="openBudgetBill(\''+b.id+'\')">'
+      +'<div class="grow"><div class="nm">'+(covered?'✅':'⏳')+' '+esc(b.name||"Bill")+catTag+bookTag+'</div>'
+      +'<div class="sub">due '+esc(fmtDate(x.due))+' · '+esc(freq.label.toLowerCase())+(covered?' · funded':' · not yet funded')+'</div></div>'
+      +'<div style="font-weight:800">'+budgetMoney(b.amount)+'</div></div>';
+  }
+  h+='<div class="card" style="padding:6px 10px">';
+  if(thisMo.length)h+='<div class="sub" style="font-weight:600;margin:2px 0 4px">'+budgetMonthLabel(m)+'</div>'+thisMo.map(row).join("");
+  if(peek.length)h+='<div class="sub" style="font-weight:600;margin:8px 0 4px;border-top:1px solid var(--line,#eee);padding-top:6px">'+budgetMonthLabel(nextM)+' (next)</div>'+peek.map(row).join("");
+  h+='</div>';
+  return h;
+}
+/* MANAGER — every scheduled bill, grouped bill / subscription / other; tap to edit; shows amount + frequency + cat */
+function budgetBillsManager(){
+  var bills=actBudgetBills();
+  var groups=[{key:"bill",label:"🔁 Bills",icon:"🔁"},{key:"subscription",label:"📺 Subscriptions"},{key:"other",label:"📄 Other recurring"}];
+  var monthlyTotal=Math.round(bills.filter(function(b){return b.active!==false;}).reduce(function(s,b){return s+budgetBillMonthlyAmount(b);},0)*100)/100;
+  var h='<div class="secthd"><h2>Scheduled bills</h2><span class="ct">'+budgetMoney(monthlyTotal)+'/mo</span></div>';
+  groups.forEach(function(grp){
+    var list=bills.filter(function(b){
+      var g=budgetBillGroupOf(b);
+      return grp.key==="other"?(g!=="bill"&&g!=="subscription"):(g===grp.key);
+    });
+    if(!list.length)return;
+    h+='<div class="sub" style="font-weight:600;margin:8px 4px 4px">'+esc(grp.label)+'</div>';
+    h+='<div class="card" style="padding:6px 10px">'+list.map(function(b){
+      var freq=budgetFreqMeta(b.frequency);
+      var catTag=b.catId?('<span class="sub" style="font-weight:400"> · '+esc(budgetCatName(b.catId))+'</span>'):'<span class="sub" style="font-weight:400"> · no category</span>';
+      var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(b.bookId))+'</span>'):'';
+      var inactive=b.active===false?' <span class="sub" style="font-weight:400">· paused</span>':'';
+      return '<div class="li" style="cursor:pointer'+(b.active===false?';opacity:.6':'')+'" onclick="openBudgetBill(\''+b.id+'\')">'
+        +'<div class="grow"><div class="nm">'+esc(b.name||"Bill")+catTag+bookTag+inactive+'</div>'
+        +'<div class="sub">'+esc(freq.label)+' · next '+esc(fmtDate(budgetBillNextDue(b)))+'</div></div>'
+        +'<div style="font-weight:800">'+budgetMoney(b.amount)+'</div></div>';
+    }).join("")+'</div>';
+  });
+  return h;
+}
+/* a bill's group = its category's group flag (bill/subscription) — that's how bills cluster */
+function budgetBillGroupOf(b){ var c=b.catId?budgetCat(b.catId):null; return (c&&c.group)||""; }
+
+/* ---------- BILL editor — add/edit a recurring bill; historical-average suggestion with one-tap apply ---------- */
+window.openBudgetBill=function(id){
+  var isNew=!id;
+  var books=actBudgetBooks();
+  if(isNew&&!books.length){ alert("Create a book first (Settings → Books), then add a bill."); return; }
+  var b=isNew?{id:"bgt-bill-"+uid(),name:"",amount:"",frequency:"monthly",dueDay:1,catId:"",bookId:budgetDefaultBookId(),autoEstimate:false,active:true}
+             :budgetBill(id);
+  if(!b)return;
+  var bid=b.bookId||budgetDefaultBookId();
+  /* spending categories in this book (a bill funds a spending envelope); payment/tax envelopes excluded */
+  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid&&(c.kind||"out")==="out"&&!c.paymentEnvelope&&!c.taxEnvelope;})
+    .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
+  var catOpts='<option value="">— pick a category envelope —</option>'+cats.map(function(c){
+    var g=c.group==="bill"?" 🔁":(c.group==="subscription"?" 📺":"");
+    return '<option value="'+c.id+'"'+(b.catId===c.id?" selected":"")+'>'+esc(c.name)+g+'</option>';
+  }).join("");
+  var freqOpts=BUDGET_FREQS.map(function(f){return '<option value="'+f.k+'"'+((b.frequency||"monthly")===f.k?" selected":"")+'>'+f.label+'</option>';}).join("");
+  var bookSel=books.length>1?('<label>Book</label><select id="bl_book" onchange="budgetBillBookChange(this.value)">'
+    +books.map(function(bk){return '<option value="'+bk.id+'"'+(bid===bk.id?" selected":"")+'>'+esc(bk.name)+'</option>';}).join("")+'</select>'):'<input type="hidden" id="bl_book" value="'+esc(bid)+'">';
+  var stats=b.catId?budgetHistoryStats(b.catId,6):null;
+  var suggestBox=(stats&&stats.n)?(
+    '<div id="bl_suggest" class="card" style="padding:8px 10px;margin:6px 0;background:var(--accent-soft,#eef7f1)">'
+    +'<div class="sub">📊 Suggested <b>'+budgetMoney(stats.avg)+'</b> — avg of '+stats.n+' month'+(stats.n===1?"":"s")+' with '+esc(budgetCatName(b.catId))+' spending (min '+budgetMoney(stats.min)+', max '+budgetMoney(stats.max)+')</div>'
+    +'<button type="button" class="btn ghost sm" style="margin-top:6px" onclick="budgetBillApplySuggestion('+stats.avg+')">Use '+budgetMoney(stats.avg)+'</button></div>'
+  ):'<div id="bl_suggest"></div>';
+  modal(isNew?"Add a recurring bill":"Edit bill",''
+    +'<p class="muted" style="margin:0 0 8px;font-size:13px">Schedule a bill or subscription so you can fund it ahead. It links to a category envelope — fund the envelope, pay the bill from cash.</p>'
+    +bookSel
+    +'<label>Name</label><input id="bl_name" value="'+esc(b.name||"")+'" placeholder="e.g. Electric · Internet · Netflix">'
+    +'<label>Category envelope</label><select id="bl_cat" onchange="budgetBillCatChange()">'+catOpts+'</select>'
+    +(cats.length?'':'<div class="sub" style="margin:4px 0">No spending categories in this book yet — add one on the Settings tab (tip: set its Group to “Bill” or “Subscription”).</div>')
+    +suggestBox
+    +'<label>Amount</label><input id="bl_amount" type="number" inputmode="decimal" step="0.01" value="'+esc(b.amount!=null&&b.amount!==""?b.amount:"")+'" placeholder="0.00">'
+    +'<label>Frequency</label><select id="bl_freq" onchange="budgetBillFreqChange(this.value)">'+freqOpts+'</select>'
+    +'<div id="bl_duewrap"></div>'
+    +'<label class="row" style="gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="bl_active" '+(b.active!==false?"checked":"")+' style="width:auto"> Active (counts toward fund-ahead)</label>'
+    +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetBill(\''+b.id+'\','+isNew+')">Save bill</button>'
+    +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetBill(\''+b.id+'\')">Delete bill</button>')
+  );
+  budgetBillRenderDue(b.frequency||"monthly",b.dueDay,b.nextDue);
+};
+/* render the due-day control appropriate to the frequency (weekday for weekly, day-of-month otherwise) */
+function budgetBillRenderDue(freq,dueDay,nextDue){
+  var wrap=document.getElementById("bl_duewrap"); if(!wrap)return;
+  if(freq==="weekly"){
+    var DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    var sel=(dueDay!=null&&dueDay!=="")?(+dueDay):0;
+    wrap.innerHTML='<label>Due weekday</label><select id="bl_dueday">'
+      +DOW.map(function(d,i){return '<option value="'+i+'"'+(sel===i?" selected":"")+'>'+d+'</option>';}).join("")+'</select>';
+  }else{
+    var dd=(dueDay!=null&&dueDay!=="")?(+dueDay):1;
+    wrap.innerHTML='<label>Due day of month (1–28)</label><input id="bl_dueday" type="number" inputmode="numeric" min="1" max="28" step="1" value="'+dd+'">'
+      +(freq==="annual"||freq==="quarterly"?'<label>Next due (anchors the '+(freq==="annual"?"month":"cycle")+')</label><input id="bl_nextdue" type="date" value="'+esc(nextDue||"")+'">':'');
+  }
+}
+window.budgetBillFreqChange=function(freq){
+  var dd=(document.getElementById("bl_dueday")||{}).value;
+  var nd=(document.getElementById("bl_nextdue")||{}).value;
+  budgetBillRenderDue(freq,dd,nd);
+};
+/* switching the book re-builds the category list to that book's spending envelopes */
+window.budgetBillBookChange=function(bid){
+  var sel=document.getElementById("bl_cat"); if(!sel)return;
+  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid&&(c.kind||"out")==="out"&&!c.paymentEnvelope&&!c.taxEnvelope;})
+    .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
+  sel.innerHTML='<option value="">— pick a category envelope —</option>'+cats.map(function(c){
+    var g=c.group==="bill"?" 🔁":(c.group==="subscription"?" 📺":"");
+    return '<option value="'+c.id+'">'+esc(c.name)+g+'</option>';
+  }).join("");
+  budgetBillCatChange();
+};
+/* when the category changes, refresh the historical-average suggestion box */
+window.budgetBillCatChange=function(){
+  var catId=(document.getElementById("bl_cat")||{}).value||"";
+  var box=document.getElementById("bl_suggest"); if(!box)return;
+  if(!catId){ box.innerHTML=""; return; }
+  var stats=budgetHistoryStats(catId,6);
+  if(!stats.n){ box.innerHTML='<div class="sub" style="margin:6px 0">No spending history yet for '+esc(budgetCatName(catId))+' — enter the amount manually; the suggestion appears once you log a few months.</div>'; return; }
+  box.innerHTML='<div class="card" style="padding:8px 10px;margin:6px 0;background:var(--accent-soft,#eef7f1)">'
+    +'<div class="sub">📊 Suggested <b>'+budgetMoney(stats.avg)+'</b> — avg of '+stats.n+' month'+(stats.n===1?"":"s")+' with '+esc(budgetCatName(catId))+' spending (min '+budgetMoney(stats.min)+', max '+budgetMoney(stats.max)+')</div>'
+    +'<button type="button" class="btn ghost sm" style="margin-top:6px" onclick="budgetBillApplySuggestion('+stats.avg+')">Use '+budgetMoney(stats.avg)+'</button></div>';
+};
+window.budgetBillApplySuggestion=function(amt){
+  var inp=document.getElementById("bl_amount"); if(inp)inp.value=(+amt||0).toFixed(2);
+};
+/* apply a historical-average suggestion to the category editor's goal field */
+window.budgetBillApplyTarget=function(amt){
+  var inp=document.getElementById("bc_target"); if(inp)inp.value=(+amt||0).toFixed(2);
+};
+window.saveBudgetBill=function(id,isNew){
+  var d=D(); if(!d.budgetBills)d.budgetBills=[];
+  var b=isNew?{id:id}:d.budgetBills.find(function(x){return x.id===id;});
+  if(!b){closeModal();return;}
+  b.name=val("bl_name"); if(!b.name){alert("Give the bill a name.");return;}
+  var amt=parseFloat(val("bl_amount"));
+  if(isNaN(amt)||amt<=0){alert("Enter an amount greater than zero.");return;}
+  b.amount=Math.round(amt*100)/100;
+  b.frequency=(document.getElementById("bl_freq")||{}).value||"monthly";
+  b.bookId=(document.getElementById("bl_book")||{}).value||b.bookId||budgetDefaultBookId();
+  b.catId=(document.getElementById("bl_cat")||{}).value||"";
+  var ddEl=document.getElementById("bl_dueday");
+  if(ddEl){ var dv=parseInt(ddEl.value,10); b.dueDay=isNaN(dv)?(b.frequency==="weekly"?0:1):dv; }
+  var ndEl=document.getElementById("bl_nextdue");
+  b.nextDue=(ndEl&&ndEl.value)?ndEl.value:(b.nextDue||"");
+  var act=document.getElementById("bl_active"); b.active=act?!!act.checked:true;
+  if(b.autoEstimate==null)b.autoEstimate=false;
+  b.deleted=false; touch(b); if(isNew)d.budgetBills.push(b);
+  save(); closeModal(); render();
+};
+window.delBudgetBill=function(id){
+  if(!confirm("Delete this recurring bill? (Your transactions + envelope stay.)"))return;
+  var b=budgetBill(id); if(!b)return;
+  b.deleted=true; touch(b); save(); closeModal(); render();
+};
+
 /* ---------- SETTINGS — books + categories + monthly targets + export/backup (decentralized) ---------- */
 function budgetRenderSettings(){
   var body=document.getElementById("budget_body"); if(!body)return;
@@ -1101,9 +1494,18 @@ window.openBudgetCat=function(id){
     +'<option value="in" '+(kind==="in"?"selected":"")+'>Income (money in)</option>'
     +'</select>'
     +'<label>Monthly goal (optional)</label><input id="bc_target" type="number" inputmode="decimal" step="0.01" value="'+esc(c.target!=null&&c.target!==""?c.target:"")+'" placeholder="0.00 — how much you aim to fund this each month">'
+    +((!isNew&&kind==="out"&&(function(){var s=budgetHistoryStats(c.id,6);return s.n;})())?(function(){var s=budgetHistoryStats(c.id,6);
+       return '<div class="sub" style="margin:4px 0">📊 Suggested <b>'+budgetMoney(s.avg)+'</b> — avg of '+s.n+' month'+(s.n===1?"":"s")+' of actual spending (min '+budgetMoney(s.min)+', max '+budgetMoney(s.max)+'). '
+       +'<button type="button" class="btn ghost sm" onclick="budgetBillApplyTarget('+s.avg+')">Use as goal</button></div>';})():'')
     +'<div class="sub" style="margin:4px 0">A goal just powers the “fill from goal” shortcut on the Month tab — you still assign cash to the envelope yourself.</div>'
     +(kind==="out"?('<label class="row" style="gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="bc_rollover" '+((c.rollover!==false)?"checked":"")+' style="width:auto"> Roll leftover into next month</label>'
-      +'<div class="sub" style="margin:2px 0 0">On = a sinking fund (savings build up). Off = resets each month (e.g. rent — unused cash goes back to To Be Budgeted).</div>'):'')
+      +'<div class="sub" style="margin:2px 0 0">On = a sinking fund (savings build up). Off = resets each month (e.g. rent — unused cash goes back to To Be Budgeted).</div>'
+      +'<label>Group</label><select id="bc_group">'
+      +'<option value=""'+(!c.group?" selected":"")+'>None — regular spending</option>'
+      +'<option value="bill"'+(c.group==="bill"?" selected":"")+'>🔁 Bill (electric, rent, utilities…)</option>'
+      +'<option value="subscription"'+(c.group==="subscription"?" selected":"")+'>📺 Subscription (streaming, software…)</option>'
+      +'</select>'
+      +'<div class="sub" style="margin:2px 0 0">Grouping a category as a bill/subscription clusters it on the <b>Bills</b> tab and the Month view. Recurring bills you schedule live there too.</div>'):'')
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetCat(\''+c.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetCat(\''+c.id+'\')">Delete category</button>')
   );
@@ -1118,6 +1520,8 @@ window.saveBudgetCat=function(id,isNew){
   var tgt=parseFloat(val("bc_target")); c.target=(isNaN(tgt)||tgt<0)?0:Math.round(tgt*100)/100;
   var roll=document.getElementById("bc_rollover");
   c.rollover=(c.kind==="out")?(roll?!!roll.checked:(c.rollover!==false)):true;   // income cats: rollover flag irrelevant
+  var grp=(document.getElementById("bc_group")||{}).value||"";
+  c.group=(c.kind==="out")?grp:"";   // "bill" | "subscription" | "" — clusters bills/subs (out cats only)
   c.deleted=false; touch(c); if(isNew)d.budgetCats.push(c);
   save(); closeModal(); BUDGET_SUB="settings"; render();
 };
