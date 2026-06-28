@@ -328,6 +328,26 @@ function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary ha
         L.push("TAX set-aside (1099, combined): reserve rate " + (Math.round(est.effectiveRate * 1000) / 10).toFixed(1) + "%" + (profile.overrideRate != null ? " (manual override)" : " (estimated: SE $" + est.se.toFixed(0) + " + fed $" + est.federal.toFixed(0) + " + NC $" + est.state.toFixed(0) + ")") + "; YTD business net $" + ytdNet.toFixed(2) + "; reserved YTD $" + reservedYtd.toFixed(2) + " vs estimated owed $" + owedYtd.toFixed(2) + (reservedYtd + 0.005 >= owedYtd ? " (on track)" : " (BEHIND by $" + (owedYtd - reservedYtd).toFixed(2) + ")") + "; next quarterly due " + due.label + " " + due.due);
       }
     } catch (e) { /* tax estimate is advisory — never break the context build */ }
+    // CREDIT-CARD + DEBT (budget v2): total owed, highest-APR card, total minimum payments. Combined across books.
+    try {
+      const allTx = live("budgetTx");
+      const cards = baccts.filter(a => a.type === "credit");
+      if (cards.length) {
+        const liveBal = a => {           // credit live balance = stored(debt, negative) − charges + payments
+          const charges = sum(allTx.filter(t => !t.isTransfer && !t.isCardPayment && t.dir === "out" && t.accountId === a.id), "amount");
+          const pays = sum(allTx.filter(t => t.isCardPayment && t.cardId === a.id), "amount");
+          return Math.round(((+a.balance || 0) - charges + pays) * 100) / 100;
+        };
+        const owed = a => { const b = liveBal(a); return b < 0 ? -b : 0; };
+        const totalDebt = Math.round(cards.reduce((s, a) => s + owed(a), 0) * 100) / 100;
+        const minTotal = Math.round(cards.reduce((s, a) => s + (+a.minPayment || 0), 0) * 100) / 100;
+        const withApr = cards.filter(a => owed(a) > 0.005 && (+a.apr || 0) > 0).sort((x, y) => (+y.apr || 0) - (+x.apr || 0));
+        const hi = withApr[0];
+        L.push("DEBT (credit cards/loans, combined): total owed $" + totalDebt.toFixed(2) + " across " + cards.length + " account(s)" +
+          (hi ? "; highest-APR = " + (hi.name || "?") + " @ " + (+hi.apr) + "% ($" + owed(hi).toFixed(2) + " owed)" : "") +
+          (minTotal > 0 ? "; total minimum payments $" + minTotal.toFixed(2) + "/mo" : ""));
+      }
+    } catch (e) { /* debt summary is advisory — never break the context build */ }
   }
   return L.join("\n").slice(0, 6000);
 }

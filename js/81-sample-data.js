@@ -160,6 +160,15 @@ function sampleSeedBudget(d){
   allocs.forEach(function(a,i){
     sampleUpsert(d,"budgetBudgets",{ id:sampleId("alloc",i+1), bookId:bookId, catId:a.cat, month:m, allocated:a.amount });
   });
+  /* budget v2 (credit + debt): a CARD HE USES (Visa) with a charge on it, its auto Payment envelope, plus a
+     DEBT-ONLY card so the Debts tab + snowball/avalanche demo out of the box. */
+  var visaId=sampleId("acct","visa");
+  sampleUpsert(d,"budgetAccounts",{ id:visaId, bookId:bookId, name:"SAMPLE — Visa", type:"credit", balance:-120, apr:22.99, minPayment:35, creditLimit:5000, debtOnly:false, mask:"4242", order:3 });
+  sampleUpsert(d,"budgetAccounts",{ id:sampleId("acct","store"), bookId:bookId, name:"SAMPLE — Store Card", type:"credit", balance:-1450, apr:27.99, minPayment:45, creditLimit:2000, debtOnly:true, order:4 });
+  /* the active card's auto-managed Payment envelope (stable id keyed off the card account id) */
+  sampleUpsert(d,"budgetCats",{ id:"bgt-cat-cardpay-"+visaId, name:"Payment: SAMPLE — Visa", kind:"out", rollover:true, paymentEnvelope:true, creditAccountId:visaId, bookId:bookId, order:-2 });
+  /* a $64 grocery charge ON the Visa (Groceries envelope is funded → it funds the Payment: Visa envelope) */
+  sampleUpsert(d,"budgetTx",{ id:sampleId("tx","cc1"), date:dm(16), amount:64, catId:cats[3].id, dir:"out", accountId:visaId, note:"SAMPLE — groceries on Visa", bookId:bookId });
   /* P2 (tax): a sample BUSINESS book with a month of 1099 income + heavy expenses so the Tax tab demos a
      real (low) effective reserve rate out of the box. One taxpayer → this net drives the tax estimate. */
   var bizBook=sampleId("book","biz");

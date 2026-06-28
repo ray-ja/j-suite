@@ -74,10 +74,10 @@ function budgetDefaultBookId(){
 function budgetInBook(r){ return budgetIsAll()||r.bookId===BUDGET_BOOK; }
 function actBudgetCats(){ return (D().budgetCats||[]).filter(function(c){return !c.deleted&&budgetInBook(c);})
   .sort(function(a,b){ return (a.order||0)-(b.order||0) || (a.name||"").localeCompare(b.name||""); }); }
-/* transactions in scope, EXCLUDING transfers (which never count as income/spending) */
-function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.isTransfer&&budgetInBook(t);}); }
-/* transfers in scope (for the Transactions list display) */
-function actBudgetTransfers(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&t.isTransfer&&budgetInBook(t);}); }
+/* transactions in scope, EXCLUDING transfers + card payments (neither counts as income/spending — they only move cash) */
+function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.isTransfer&&!t.isCardPayment&&budgetInBook(t);}); }
+/* transfers + card payments in scope (for the Transactions list display) */
+function actBudgetTransfers(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&(t.isTransfer||t.isCardPayment)&&budgetInBook(t);}); }
 function budgetCat(id){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.id===id;}); }
 function budgetCatName(id){ var c=budgetCat(id); return c?c.name:"Uncategorized"; }
 function budgetBookName(id){ var b=budgetBook(id); return b?b.name:"—"; }
@@ -88,12 +88,119 @@ function actBudgetMemo(){ return (D().budgetMemo||[]).filter(function(m){return 
 function actBudgetAccounts(){ return (D().budgetAccounts||[]).filter(function(a){return !a.deleted&&budgetInBook(a);})
   .sort(function(a,b){ return (a.order||0)-(b.order||0) || (a.name||"").localeCompare(b.name||""); }); }
 function budgetAccount(id){ return (D().budgetAccounts||[]).filter(function(a){return !a.deleted;}).find(function(a){return a.id===id;}); }
-/* total cash in scope = Σ account balances (credit accounts carry a negative balance — money owed) */
-function budgetTotalCash(){ return actBudgetAccounts().reduce(function(s,a){return s+(+a.balance||0);},0); }
+
+/* ============================================================================================================
+   BUDGET v2 — YNAB CREDIT-CARD + DEBT (cards Ray USES) + debt-payoff (cards he OWES on). Built on P1 accounts.
+   A credit account carries a NEGATIVE balance = debt owed. Two flavors of credit account:
+     • a card he USES → full YNAB credit-card flow (spend funds a "Payment: <card>" envelope; balance grows; pay it down).
+     • debtOnly:true → a card/loan he OWES on but doesn't use → no spend flow, just a balance to pay down.
+   ADDITIVE, MIGRATION-SAFE — no new collections. New account fields default empty/false:
+     apr (decimal %, e.g. 24.99), minPayment ($), creditLimit ($), debtOnly (bool).
+   New budgetTx field: accountId = the PAYMENT SOURCE (which account the money came from). Empty = legacy/unassigned
+   (behaves exactly as before P1). A spend with accountId on a CREDIT account = a charge to that card.
+   CARD PAYMENT = a budgetTx with isCardPayment:true, accountId=<checking source>, cardId=<credit acct>, dir:"out".
+   Like a transfer it is EXCLUDED from income/spending totals; it moves cash to the card (debt → 0) and draws the
+   card's Payment envelope down. All math below is DERIVED (no side-effect records) — keeps the round-trip loss-free.
+
+   THE MECHANIC, exactly:
+     1. Charge $X to card C, category Food: Food's envelope draws down $X (spent += X, same as cash). Up to the
+        amount Food HAD available, that $X moves INTO C's Payment envelope (cash now set aside to pay C). C's live
+        balance goes $X more negative. If Food was underfunded, only the funded portion moves to the Payment
+        envelope — the unfunded (overspent) portion stays as debt you DIDN'T budget for → it reduces TBB (classic
+        YNAB "you spent money you hadn't budgeted").
+     2. Pay card C $Y from Checking: Checking cash −$Y, C's debt +$Y toward zero, C's Payment envelope drawn −$Y.
+   Payment-envelope available(C) = Σ(funded portion of charges to C) + Σ(manual allocations to it) − Σ(payments to C). */
+
+/* a credit-type account that is NOT debtOnly = a card he actively uses (full payment-envelope flow) */
+function budgetIsActiveCard(a){ return a&&a.type==="credit"&&!a.debtOnly; }
+/* charges put ON a card (spends whose accountId is that credit account); excludes transfers/payments */
+function budgetCardCharges(acctId){
+  return (D().budgetTx||[]).filter(function(t){ return !t.deleted&&!t.isTransfer&&!t.isCardPayment&&t.dir==="out"&&t.accountId===acctId; });
+}
+function budgetCardChargesTotal(acctId){ return budgetCardCharges(acctId).reduce(function(s,t){return s+(+t.amount||0);},0); }
+/* payments made TO a card (cash → card; reduces debt). isCardPayment legs carry cardId=<the card> + accountId=<source cash acct> */
+function budgetCardPayments(acctId){
+  return (D().budgetTx||[]).filter(function(t){ return !t.deleted&&t.isCardPayment&&t.cardId===acctId; });
+}
+function budgetCardPaymentsTotal(acctId){ return budgetCardPayments(acctId).reduce(function(s,t){return s+(+t.amount||0);},0); }
+/* payments SOURCED FROM a (cash) account — they reduce its real cash */
+function budgetCardPaymentsFrom(acctId){
+  return (D().budgetTx||[]).filter(function(t){ return !t.deleted&&t.isCardPayment&&t.accountId===acctId; })
+    .reduce(function(s,t){return s+(+t.amount||0);},0);
+}
+/* LIVE balance of any account. Credit: stored(debt, negative) − charges + payments. Cash: stored − card-payments sourced here. */
+function budgetAccountBalance(a){
+  if(!a)return 0;
+  var stored=+a.balance||0;
+  if(a.type==="credit") return Math.round((stored-budgetCardChargesTotal(a.id)+budgetCardPaymentsTotal(a.id))*100)/100;
+  return Math.round((stored-budgetCardPaymentsFrom(a.id))*100)/100;
+}
+/* SPENDABLE cash in scope = Σ LIVE balances of NON-credit accounts. Credit-card debt is NOT spendable cash; it is
+   represented entirely by its Payment envelope (YNAB model) — so it never inflates To-Be-Budgeted. */
+function budgetTotalCash(){ return Math.round(actBudgetAccounts().filter(function(a){return a.type!=="credit";})
+  .reduce(function(s,a){return s+budgetAccountBalance(a);},0)*100)/100; }
+/* total DEBT in scope = Σ |live balance| of every credit account (active cards + debtOnly), as a positive number */
+function budgetTotalDebt(){ return Math.round(actBudgetAccounts().filter(function(a){return a.type==="credit";})
+  .reduce(function(s,a){ var b=budgetAccountBalance(a); return s+(b<0?-b:0); },0)*100)/100; }
 /* allocation record for a cat+month (book implied by the cat) */
 function budgetAllocRec(catId,m){ return (D().budgetBudgets||[]).filter(function(x){return !x.deleted;})
   .find(function(x){return x.catId===catId&&x.month===m;}); }
 function budgetAllocated(catId,m){ var r=budgetAllocRec(catId,m); return r?(+r.allocated||0):0; }
+/* ---- PAYMENT ENVELOPE per active card: a special spending category creditAccountId=<card>, stable id. ----
+   Its AVAILABLE = funded inflow from charges + manual allocations − payments made to the card. This is the cash
+   you've set aside to pay this card; paying the card draws it down. */
+function paymentCatId(acctId){ return "bgt-cat-cardpay-"+acctId; }
+function budgetPaymentCat(acctId){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.creditAccountId===acctId||c.id===paymentCatId(acctId);}); }
+/* ensure a Payment envelope category exists for a card (same book as the card; rollover; flagged paymentEnvelope) */
+function ensurePaymentCat(a){
+  if(!a||a.type!=="credit"||a.debtOnly)return null;
+  var c=budgetPaymentCat(a.id); if(c){ if(c.deleted){c.deleted=false;touch(c);} return c; }
+  var d=D(); if(!d.budgetCats)d.budgetCats=[];
+  c={id:paymentCatId(a.id),name:"Payment: "+(a.name||"Card"),kind:"out",target:0,rollover:true,
+     paymentEnvelope:true,creditAccountId:a.id,bookId:a.bookId||budgetDefaultBookId(),order:-2,deleted:false};
+  touch(c); d.budgetCats.push(c); save();
+  return c;
+}
+/* keep every active card's Payment envelope present + named (idempotent; called on render) */
+function ensureAllPaymentCats(){
+  (D().budgetAccounts||[]).filter(function(a){return !a.deleted&&budgetIsActiveCard(a);}).forEach(function(a){
+    var c=ensurePaymentCat(a); if(c&&c.name!=="Payment: "+(a.name||"Card")){ c.name="Payment: "+(a.name||"Card"); touch(c); }
+    if(c&&c.bookId!==a.bookId){ c.bookId=a.bookId; touch(c); }
+  });
+}
+/* a spending category is "regular" (user-facing) when it is NOT a payment envelope or the tax envelope */
+function budgetIsRegularSpend(c){ return c&&(c.kind||"out")==="out"&&!c.paymentEnvelope&&!c.taxEnvelope; }
+/* FUNDED inflow into a card's Payment envelope from charges: each charge contributes up to what its spending
+   category had AVAILABLE at the charge's month (the funded portion). Underfunded (overspent) credit purchases
+   contribute nothing here → that debt was never budgeted (it shows as reduced TBB via the envelope going negative). */
+function budgetPaymentFundedInflow(cardId){
+  var charges=budgetCardCharges(cardId);
+  if(!charges.length)return 0;
+  // group charges by spending category + month, cap each (cat,month) group's inflow by that envelope's funded spend
+  var byKey={};
+  charges.forEach(function(t){
+    var cat=budgetCat(t.catId); if(!cat||!budgetIsRegularSpend(cat))return;   // uncategorized/payment/tax charges fund nothing
+    var k=t.catId+"|"+budgetMonthOf(t.date);
+    (byKey[k]=byKey[k]||{catId:t.catId,m:budgetMonthOf(t.date),amt:0}).amt+=(+t.amount||0);
+  });
+  var funded=0;
+  Object.keys(byKey).forEach(function(k){
+    var g=byKey[k];
+    // available in that envelope BEFORE this month's spending = carryover-in + this month's allocation
+    var avail=budgetCarryIn(g.catId,g.m)+budgetAllocated(g.catId,g.m);
+    if(avail<0)avail=0;
+    funded+=Math.min(g.amt,avail);   // only the covered portion of the charges moves to the payment envelope
+  });
+  return Math.round(funded*100)/100;
+}
+/* AVAILABLE in a card's Payment envelope (current) = funded inflow + manual allocations − payments made to the card */
+function budgetPaymentEnvelopeAvailable(cardId){
+  var alloc=0;
+  (D().budgetBudgets||[]).forEach(function(x){ if(!x.deleted&&x.catId===paymentCatId(cardId))alloc+=(+x.allocated||0); });
+  var v=budgetPaymentFundedInflow(cardId)+alloc-budgetCardPaymentsTotal(cardId);
+  return Math.round(v*100)/100;
+}
+
 function ACCT_TYPES(){ return [
   {k:"checking",label:"Checking",icon:"🏦"},
   {k:"savings", label:"Savings", icon:"🐖"},
@@ -121,7 +228,9 @@ function budgetCatFirstMonth(catId,upto){
 }
 /* envelope balance available in a cat AT THE END of month m (carryover + allocated − spent, walked forward) */
 function budgetEnvelopeBalance(catId,m){
-  var cat=budgetCat(catId); var rollover=cat?(cat.rollover!==false):true;   // default rollover = true
+  var cat=budgetCat(catId);
+  if(cat&&cat.paymentEnvelope&&cat.creditAccountId) return budgetPaymentEnvelopeAvailable(cat.creditAccountId);  // special derived (funded inflow + allocs − payments)
+  var rollover=cat?(cat.rollover!==false):true;   // default rollover = true
   var start=budgetCatFirstMonth(catId,m);
   var bal=0, cur=start, guard=0;
   while(cur<=m && guard<600){
@@ -141,13 +250,19 @@ function budgetCarryIn(catId,m){
   if(!rollover&&c>0)c=0;
   return Math.round(c*100)/100;
 }
-/* Σ of every spending envelope's CURRENT balance (end of month m), in scope — the cash that's "spoken for" */
+/* Σ of every spending envelope's POSITIVE balance (end of month m), in scope — cash "spoken for" (incl. Payment envelopes) */
 function budgetEnvelopesTotal(m){
   return actBudgetCats().filter(function(c){return (c.kind||"out")==="out";})
     .reduce(function(s,c){ var b=budgetEnvelopeBalance(c.id,m); return s+(b>0?b:0); },0);
 }
-/* To-Be-Budgeted (in scope) = total cash − Σ positive envelope balances. Drive to zero. */
-function budgetTBB(m){ return Math.round((budgetTotalCash()-budgetEnvelopesTotal(m))*100)/100; }
+/* Σ of NEGATIVE (overspent) balances across regular spending envelopes — the classic YNAB "you spent money you
+   hadn't budgeted." Overspending on a CREDIT card lands here (cash didn't move) and so reduces To-Be-Budgeted. */
+function budgetOverspendTotal(m){
+  return actBudgetCats().filter(function(c){return budgetIsRegularSpend(c);})
+    .reduce(function(s,c){ var b=budgetEnvelopeBalance(c.id,m); return s+(b<0?-b:0); },0);
+}
+/* To-Be-Budgeted (in scope) = spendable cash − Σ positive envelope balances − Σ overspending. Drive to zero. */
+function budgetTBB(m){ return Math.round((budgetTotalCash()-budgetEnvelopesTotal(m)-budgetOverspendTotal(m))*100)/100; }
 
 /* ---- AGE OF MONEY (derived, FIFO): for the most-recently spent dollars, how many days since the income
    that funded them arrived. Compute per scope across ALL history up to the end of month m. No new storage. ---- */
@@ -200,6 +315,7 @@ window.budgetSetBook=function(id){ BUDGET_BOOK=id||"__all__"; render(); };
 window.budgetFabAdd=function(){
   if(BUDGET_SUB==="settings")openBudgetCat(null);
   else if(BUDGET_SUB==="tax")openTaxProfile();
+  else if(BUDGET_SUB==="debts")openBudgetAccount(null);   // adding on the Debts tab = add a credit-card/debt account
   else openBudgetTx(null);
 };
 
@@ -217,15 +333,18 @@ function budgetCatActual(catId,m){
 /* ---------- main render ---------- */
 function rBudget(){
   budgetCurrentBookId();        // clamp selection to a still-existing book
+  ensureAllPaymentCats();       // every active credit card has its auto-managed "Payment: <card>" envelope
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(BUDGET_SUB==="month"?"on":"")+'" onclick="budgetSetSub(\'month\')">📅 Month</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tx"?"on":"")+'" onclick="budgetSetSub(\'tx\')">🧾 Transactions</button>'
+    +'<button class="subbtn '+(BUDGET_SUB==="debts"?"on":"")+'" onclick="budgetSetSub(\'debts\')">💳 Debts</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tax"?"on":"")+'" onclick="budgetSetSub(\'tax\')">🧮 Tax</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="settings"?"on":"")+'" onclick="budgetSetSub(\'settings\')">⚙️ Settings</button>'
     +'</div>';
   /* the Tax sub-tab has its own combined view (one taxpayer) — no per-book bar there */
   view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+'<div id="budget_body"></div>';
   if(BUDGET_SUB==="tx")budgetRenderTx();
+  else if(BUDGET_SUB==="debts")budgetRenderDebts();
   else if(BUDGET_SUB==="tax")budgetRenderTax();
   else if(BUDGET_SUB==="settings")budgetRenderSettings();
   else budgetRenderMonth();
@@ -284,6 +403,7 @@ function budgetRenderMonth(){
       +'<span class="sub"> — how long your money sits before you spend it</span></div>';
   }
   h+=budgetEnvelopeSection("Envelopes — spending","out",cats,m);
+  h+=budgetPaymentEnvelopesCard(m);
   h+=budgetEnvelopeSection("Income","in",cats,m);
 
   if(!cats.length){
@@ -320,19 +440,22 @@ function budgetAccountsSection(){
     return h;
   }
   h+='<div class="card" style="padding:6px 10px">'+accts.map(function(a){
-    var meta=acctTypeMeta(a.type), bal=+a.balance||0;
+    var meta=acctTypeMeta(a.type), bal=budgetAccountBalance(a);   // LIVE balance (credit reflects charges + payments)
     var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(a.bookId))+'</span>'):'';
+    var sub=esc(meta.label)+(a.type==="credit"?(a.debtOnly?" · debt only":""):"");
     return '<div class="li" style="cursor:pointer" onclick="openBudgetAccount(\''+a.id+'\')">'
       +'<div class="grow"><div class="nm">'+meta.icon+' '+esc(a.name)+(a.mask?' <span class="sub" style="font-weight:400">··'+esc(a.mask)+'</span>':'')+bookTag+'</div>'
-      +'<div class="sub">'+esc(meta.label)+'</div></div>'
+      +'<div class="sub">'+sub+'</div></div>'
       +'<div style="font-weight:800;color:'+(bal<0?"var(--danger)":"var(--ink,#111)")+'">'+budgetMoney(bal)+'</div></div>';
   }).join("")+'</div>';
+  var debt=budgetTotalDebt();
+  if(debt>0.005)h+='<div class="sub" style="margin:4px 8px 0">💳 Credit-card debt <b style="color:var(--danger)">'+budgetMoney(debt)+'</b> — see the <span style="cursor:pointer;text-decoration:underline" onclick="budgetSetSub(\'debts\')">Debts</span> tab to pay it down. (Card debt is shown separately, not as spendable cash.)</div>';
   h+='<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="openBudgetAccount(null)">＋ Add account</button>';
   return h;
 }
 /* ENVELOPE rows: spending cats show AVAILABLE NOW (envelope balance) + allocate controls + spent + activity */
 function budgetEnvelopeSection(title,kind,cats,m){
-  var list=cats.filter(function(c){return (c.kind||"out")===kind;});
+  var list=cats.filter(function(c){return (c.kind||"out")===kind&&!c.paymentEnvelope;});   // Payment envelopes render in their own card
   if(!list.length)return "";
   if(kind==="in")return budgetIncomeSection(list,m);
   var allocTotal=list.reduce(function(s,c){return s+budgetAllocated(c.id,m);},0);
@@ -385,6 +508,141 @@ function budgetIncomeSection(list,m){
 /* tap an envelope → jump to its transactions for the month */
 window.budgetOpenCatTx=function(catId){ var c=budgetCat(catId); if(c&&c.bookId)BUDGET_BOOK=c.bookId; budgetSetSub("tx"); };
 
+/* ---------- CREDIT-CARD PAYMENT ENVELOPES card (Month view) — one per active card he uses ---------- */
+function budgetPaymentEnvelopesCard(m){
+  var cards=actBudgetAccounts().filter(function(a){return budgetIsActiveCard(a);});
+  if(!cards.length)return "";
+  var h='<div class="secthd"><h2>Credit-card payments</h2><span class="ct" style="cursor:pointer" onclick="budgetSetSub(\'debts\')">Debts ›</span></div>';
+  h+='<div class="card" style="padding:6px 10px">'+cards.map(function(a){
+    var avail=budgetPaymentEnvelopeAvailable(a.id);   // cash set aside to pay this card
+    var owed=-budgetAccountBalance(a);                 // positive = debt owed
+    var col=avail<-0.005?"var(--danger)":(avail<0.005?"var(--muted)":"var(--ok,#1b7f4d)");
+    var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(a.bookId))+'</span>'):'';
+    return '<div class="li" style="align-items:flex-start;flex-direction:column">'
+      +'<div class="row" style="width:100%;justify-content:space-between;align-items:flex-start">'
+      +'<div class="grow"><div class="nm">💳 '+esc(a.name)+bookTag+'</div>'
+      +'<div class="sub">owed '+budgetMoney(owed>0?owed:0)+' · budgeted to pay '+budgetMoney(avail)+'</div></div>'
+      +'<div style="text-align:right;flex:0 0 auto"><div class="sub">to pay</div>'
+      +'<div style="font-weight:800;font-size:17px;color:'+col+'">'+budgetMoney(avail)+'</div></div></div>'
+      +'<div class="row" style="gap:6px;width:100%;margin-top:6px">'
+      +'<button class="btn ghost sm" style="flex:1" onclick="budgetAllocSet(\''+paymentCatId(a.id)+'\',\''+m+'\')" title="Set aside more cash to pay this card">Set aside…</button>'
+      +(owed>0.005?'<button class="btn acc sm" style="flex:1" onclick="openCardPayment(\''+a.id+'\')">Pay this card</button>':'')
+      +'</div></div>';
+  }).join("")+'</div>'
+    +'<div class="sub" style="margin:4px 8px 0">Spending on a card moves that cash here automatically. Paying the card draws this down + shrinks the balance.</div>';
+  return h;
+}
+
+/* ---------- DEBTS — payoff view: every credit + debtOnly account, total debt, utilization, snowball/avalanche ---------- */
+function budgetRenderDebts(){
+  var body=document.getElementById("budget_body"); if(!body)return;
+  var debts=actBudgetAccounts().filter(function(a){return a.type==="credit";});
+  var h='';
+  if(!debts.length){
+    h+='<div class="empty"><div class="big">💳</div>No credit cards or debts yet. On the <b>Month</b> tab (Accounts) add a <b>Credit card</b> — a card you <b>use</b> gets the full YNAB payment flow; tick <b>Debt only</b> for a card/loan you just owe on and want to pay down.</div>';
+    body.innerHTML=h; return;
+  }
+  /* total debt headline */
+  var total=budgetTotalDebt();
+  var minTotal=debts.reduce(function(s,a){return s+(+a.minPayment||0);},0);
+  h+='<div class="card" style="text-align:center;border-left:4px solid var(--danger)">'
+    +'<div class="sub">Total debt'+(budgetIsAll()?' · all books':'')+'</div>'
+    +'<div style="font-weight:800;font-size:30px;color:var(--danger)">'+budgetMoney(total)+'</div>'
+    +'<div class="sub" style="margin-top:4px">across '+debts.length+' account'+(debts.length===1?'':'s')
+    +(minTotal>0?(' · minimum payments '+budgetMoney(minTotal)+'/mo'):'')+'</div></div>';
+
+  /* snowball (smallest balance first) vs avalanche (highest APR first) ordering suggestion */
+  var owed=function(a){ var b=budgetAccountBalance(a); return b<0?-b:0; };
+  var withDebt=debts.filter(function(a){return owed(a)>0.005;});
+  var snowball=withDebt.slice().sort(function(x,y){ return owed(x)-owed(y); });
+  var avalanche=withDebt.slice().sort(function(x,y){ return (+y.apr||0)-(+x.apr||0); });
+  if(withDebt.length>1){
+    h+='<div class="secthd"><h2>Payoff order</h2></div>';
+    h+='<div class="card" style="padding:8px 10px">'
+      +'<div class="sub" style="margin-bottom:4px"><b>❄️ Snowball</b> (smallest balance first — fastest wins):</div>'
+      +'<div style="margin-bottom:8px">'+snowball.map(function(a,i){return (i+1)+'. '+esc(a.name)+' '+budgetMoney(owed(a));}).join('<br>')+'</div>'
+      +'<div class="sub" style="margin-bottom:4px"><b>🏔️ Avalanche</b> (highest APR first — least interest):</div>'
+      +'<div>'+avalanche.map(function(a,i){var apr=+a.apr||0;return (i+1)+'. '+esc(a.name)+(apr>0?' @ '+apr+'%':' (no APR set)');}).join('<br>')+'</div>'
+      +'</div>';
+  }
+
+  /* per-account detail: balance, limit/utilization, APR, min payment, payoff timeline, Make a payment */
+  h+='<div class="secthd"><h2>Accounts</h2></div>';
+  h+=debts.map(function(a){
+    var bal=budgetAccountBalance(a), debt=bal<0?-bal:0;
+    var limit=+a.creditLimit||0, util=(limit>0)?(debt/limit):null;
+    var apr=+a.apr||0, minp=+a.minPayment||0;
+    var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(a.bookId))+'</span>'):'';
+    var pay=budgetIsActiveCard(a)?budgetPaymentEnvelopeAvailable(a.id):null;
+    var months=budgetPayoffMonths(debt,apr,minp);
+    var h2='<div class="card" style="padding:10px">'
+      +'<div class="row" style="justify-content:space-between;align-items:flex-start">'
+      +'<div class="grow"><div class="nm">💳 '+esc(a.name)+(a.debtOnly?' <span class="sub" style="font-weight:400">· debt only</span>':'')+bookTag+'</div>'
+      +'<div class="sub">'+(apr>0?apr+'% APR':'no APR set')+(minp>0?' · min '+budgetMoney(minp)+'/mo':'')+'</div></div>'
+      +'<div style="text-align:right;flex:0 0 auto"><div class="sub">owed</div>'
+      +'<div style="font-weight:800;font-size:18px;color:var(--danger)">'+budgetMoney(debt)+'</div></div></div>';
+    if(util!=null){
+      var uc=util>0.7?"var(--danger)":(util>0.3?"#d98a00":"var(--ok,#1b7f4d)");
+      h2+='<div style="margin-top:8px"><div class="sub">utilization '+Math.round(util*100)+'% of '+budgetMoney(limit)+' limit</div>'
+        +'<div style="height:7px;border-radius:4px;background:var(--line,#eee);overflow:hidden;margin-top:3px"><div style="height:100%;width:'+Math.min(100,Math.round(util*100))+'%;background:'+uc+'"></div></div></div>';
+    }
+    if(pay!=null&&pay>0.005)h2+='<div class="sub" style="margin-top:6px">Set aside to pay: <b style="color:var(--ok,#1b7f4d)">'+budgetMoney(pay)+'</b></div>';
+    if(debt>0.005&&months!=null)h2+='<div class="sub" style="margin-top:6px">At '+budgetMoney(minp)+'/mo'+(apr>0?' & '+apr+'% APR':'')+': paid off in <b>~'+months+' month'+(months===1?'':'s')+'</b>'+(months>=600?' (min barely covers interest — pay more)':'')+'</div>';
+    else if(debt>0.005&&minp<=0)h2+='<div class="sub" style="margin-top:6px">Set a minimum payment to estimate a payoff timeline.</div>';
+    h2+='<div class="row" style="gap:6px;margin-top:8px">';
+    if(debt>0.005)h2+='<button class="btn acc sm" style="flex:1" onclick="openCardPayment(\''+a.id+'\')">＋ Make a payment</button>';
+    h2+='<button class="btn ghost sm" style="flex:1" onclick="openBudgetAccount(\''+a.id+'\')">Edit card</button></div>';
+    return h2+'</div>';
+  }).join("");
+  body.innerHTML=h;
+}
+/* estimate months to pay off a balance at a fixed monthly payment + APR. null if no payment; cap at 600 (≈never). */
+function budgetPayoffMonths(balance,aprPct,monthly){
+  balance=+balance||0; if(balance<=0)return 0;
+  monthly=+monthly||0; if(monthly<=0)return null;
+  var r=(+aprPct||0)/100/12;
+  if(r<=0)return Math.min(600,Math.ceil(balance/monthly));
+  if(monthly<=balance*r)return 600;                 // payment doesn't even cover the interest
+  var n=Math.log(monthly/(monthly-balance*r))/Math.log(1+r);
+  return Math.min(600,Math.max(1,Math.ceil(n)));
+}
+
+/* ---------- MAKE A PAYMENT — cash from a checking/savings/cash account → pay down a card (reduces debt + draws
+   the card's Payment envelope). Stored as a budgetTx isCardPayment:true {accountId:<source>, cardId:<card>, dir:out}. ---------- */
+window.openCardPayment=function(cardId){
+  var card=budgetAccount(cardId); if(!card){ alert("Card not found."); return; }
+  var sources=actBudgetAccounts().filter(function(a){return a.type!=="credit"&&!a.deleted;});
+  if(!sources.length){ alert("Add a checking/savings/cash account first — that's where the payment comes from."); return; }
+  var owed=-budgetAccountBalance(card); if(owed<0)owed=0;
+  var setAside=budgetIsActiveCard(card)?budgetPaymentEnvelopeAvailable(cardId):null;
+  var srcOpts=sources.map(function(a){return '<option value="'+a.id+'">'+esc(a.name)+' — '+budgetMoney(budgetAccountBalance(a))+'</option>';}).join("");
+  var suggest=setAside!=null&&setAside>0?Math.min(setAside,owed):owed;
+  modal("Pay "+esc(card.name),''
+    +'<p class="muted" style="margin:0 0 8px;font-size:13px">Move cash to pay this card down. Reduces the card balance toward $0'
+    +(setAside!=null?' and draws its Payment envelope':'')+'.</p>'
+    +'<div class="sub" style="margin-bottom:6px">Owed <b>'+budgetMoney(owed)+'</b>'+(setAside!=null?(' · set aside to pay <b>'+budgetMoney(setAside)+'</b>'):'')+'</div>'
+    +'<label>Pay from</label><select id="cp_src">'+srcOpts+'</select>'
+    +'<label>Amount</label><input id="cp_amount" type="number" inputmode="decimal" step="0.01" value="'+(suggest>0?suggest.toFixed(2):"")+'" placeholder="0.00">'
+    +'<label>Date</label><input id="cp_date" type="date" value="'+today()+'">'
+    +'<button class="btn acc" style="margin-top:12px" onclick="saveCardPayment(\''+cardId+'\')">Pay card</button>'
+  );
+};
+window.saveCardPayment=function(cardId){
+  var card=budgetAccount(cardId); if(!card){ closeModal(); return; }
+  var src=(document.getElementById("cp_src")||{}).value;
+  if(!src){ alert("Pick an account to pay from."); return; }
+  var amt=parseFloat(val("cp_amount"));
+  if(isNaN(amt)||amt<=0){ alert("Enter an amount greater than zero."); return; }
+  amt=Math.round(amt*100)/100;
+  var d=D(); if(!d.budgetTx)d.budgetTx=[];
+  var pay={ id:"bgt-pay-"+uid(), date:val("cp_date")||today(), dir:"out", amount:amt,
+            isCardPayment:true, cardId:cardId, accountId:src, bookId:card.bookId||budgetDefaultBookId(),
+            note:"Payment to "+(card.name||"card"), catId:"", deleted:false };
+  touch(pay); d.budgetTx.push(pay);
+  BUDGET_MONTH=budgetMonthOf(pay.date);
+  save(); closeModal(); render();
+};
+
 /* ---------- ALLOCATION — write/adjust a budgetBudgets {bookId,catId,month,allocated} record ---------- */
 function budgetSetAllocation(catId,m,amount){
   var c=budgetCat(catId); if(!c)return;
@@ -434,17 +692,32 @@ window.openBudgetAccount=function(id){
   var typeOpts=ACCT_TYPES().map(function(t){return '<option value="'+t.k+'"'+((a.type||"checking")===t.k?" selected":"")+'>'+t.icon+' '+t.label+'</option>';}).join("");
   var bookSel=books.length>1?('<label>Book</label><select id="ba_book">'
     +books.map(function(b){return '<option value="'+b.id+'"'+(bid===b.id?" selected":"")+'>'+esc(b.name)+'</option>';}).join("")+'</select>'):'<input type="hidden" id="ba_book" value="'+esc(bid)+'">';
+  var isCredit=(a.type==="credit");
+  var live=(!isNew&&a.type==="credit")?budgetAccountBalance(a):null;
+  /* credit-only fields (APR / min payment / limit / debt-only) — shown when type=credit; toggled live by ba_type onchange */
+  var creditBox='<div id="ba_credit" style="display:'+(isCredit?"block":"none")+'">'
+    +'<label>APR % (optional)</label><input id="ba_apr" type="number" inputmode="decimal" step="0.01" value="'+esc(a.apr!=null&&a.apr!==""?a.apr:"")+'" placeholder="e.g. 24.99">'
+    +'<label>Minimum payment $/mo (optional)</label><input id="ba_minpay" type="number" inputmode="decimal" step="0.01" value="'+esc(a.minPayment!=null&&a.minPayment!==""?a.minPayment:"")+'" placeholder="e.g. 35">'
+    +'<label>Credit limit $ (optional)</label><input id="ba_limit" type="number" inputmode="decimal" step="0.01" value="'+esc(a.creditLimit!=null&&a.creditLimit!==""?a.creditLimit:"")+'" placeholder="e.g. 5000">'
+    +'<label class="row" style="gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="ba_debtonly" '+(a.debtOnly?"checked":"")+' style="width:auto"> Debt only — I owe on it but don\'t use it</label>'
+    +'<div class="sub" style="margin:2px 0 0">Debt-only cards/loans skip the spending flow — they just show up in <b>Debts</b> to pay down.</div></div>';
   modal(isNew?"Add account":"Edit account",''
     +'<p class="muted" style="margin:0 0 8px;font-size:13px">Enter the real balance — this is the cash the budget works from. (Bank-link comes later; for now keep it current by hand.)</p>'
     +bookSel
     +'<label>Name</label><input id="ba_name" value="'+esc(a.name||"")+'" placeholder="e.g. Checking · Savings · Wallet · Visa">'
-    +'<label>Type</label><select id="ba_type">'+typeOpts+'</select>'
-    +'<label>Current balance</label><input id="ba_balance" type="number" inputmode="decimal" step="0.01" value="'+esc(a.balance!=null&&a.balance!==""?a.balance:"")+'" placeholder="0.00">'
-    +'<div class="sub" style="margin:4px 0">For a credit card, enter what you OWE as a negative number (e.g. −250).</div>'
+    +'<label>Type</label><select id="ba_type" onchange="budgetAccountTypeChange(this.value)">'+typeOpts+'</select>'
+    +'<label>'+(isCredit?"Balance owed":"Current balance")+'</label><input id="ba_balance" type="number" inputmode="decimal" step="0.01" value="'+esc(a.balance!=null&&a.balance!==""?a.balance:"")+'" placeholder="0.00">'
+    +'<div class="sub" style="margin:4px 0">For a credit card, enter what you OWE as a negative number (e.g. −250). Charges + payments you log adjust it from there.</div>'
+    +(live!=null?('<div class="sub" style="margin:4px 0">Live balance (after logged charges/payments): <b style="color:'+(live<0?"var(--danger)":"var(--ok,#1b7f4d)")+'">'+budgetMoney(live)+'</b></div>'):'')
+    +creditBox
     +'<label>Last 4 (optional)</label><input id="ba_mask" value="'+esc(a.mask||"")+'" placeholder="1234" maxlength="4" inputmode="numeric">'
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetAccount(\''+a.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetAccount(\''+a.id+'\')">Delete account</button>')
   );
+};
+/* toggle the credit-only fields when the account type changes in the dialog */
+window.budgetAccountTypeChange=function(type){
+  var box=document.getElementById("ba_credit"); if(box)box.style.display=(type==="credit")?"block":"none";
 };
 window.saveBudgetAccount=function(id,isNew){
   var d=D(); if(!d.budgetAccounts)d.budgetAccounts=[];
@@ -455,7 +728,16 @@ window.saveBudgetAccount=function(id,isNew){
   a.bookId=(document.getElementById("ba_book")||{}).value||a.bookId||budgetDefaultBookId();
   var bal=parseFloat(val("ba_balance")); a.balance=isNaN(bal)?0:Math.round(bal*100)/100;
   a.mask=(val("ba_mask")||"").replace(/[^0-9]/g,"").slice(0,4);
+  if(a.type==="credit"){
+    var apr=parseFloat(val("ba_apr")); a.apr=(isNaN(apr)||apr<0)?"":Math.round(apr*100)/100;
+    var mp=parseFloat(val("ba_minpay")); a.minPayment=(isNaN(mp)||mp<0)?"":Math.round(mp*100)/100;
+    var cl=parseFloat(val("ba_limit")); a.creditLimit=(isNaN(cl)||cl<0)?"":Math.round(cl*100)/100;
+    var dbo=document.getElementById("ba_debtonly"); a.debtOnly=!!(dbo&&dbo.checked);
+  }else{ a.apr=""; a.minPayment=""; a.creditLimit=""; a.debtOnly=false; }   // non-credit never carries debt fields
   a.deleted=false; touch(a); if(isNew)d.budgetAccounts.push(a);
+  /* an active card (credit, not debt-only) needs its auto-managed Payment envelope; a debt-only card retires it */
+  if(budgetIsActiveCard(a))ensurePaymentCat(a);
+  else { var pc=budgetPaymentCat(a.id); if(pc&&!pc.deleted){ pc.deleted=true; touch(pc); } }
   save(); closeModal(); render();
 };
 window.delBudgetAccount=function(id){
@@ -487,11 +769,14 @@ function budgetRenderTx(){
     h+='<div class="empty"><div class="big">🧾</div>No transactions this month'+(budgetIsAll()?'':' in this book')+'. Tap <b>Add</b> to log income or spending, or <b>Transfer</b> to move money between books.</div>';
   }else{
     h+='<div class="card" style="padding:6px 10px">'+all.map(function(t){
+      if(t.isCardPayment)return budgetCardPaymentRow(t);
       if(t.isTransfer)return budgetTransferRow(t);
       var inc=t.dir==="in";
+      var acct=t.accountId?budgetAccount(t.accountId):null;
+      var onCard=acct&&acct.type==="credit"?(' <span class="sub" style="font-weight:400">💳 '+esc(acct.name)+'</span>'):'';
       var bookTag=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(t.bookId))+'</span>'):'';
       return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openBudgetTx(\''+t.id+'\')">'
-        +'<div class="grow"><div class="nm">'+esc(budgetCatName(t.catId))+(t.note?' <span class="sub" style="font-weight:400">· '+esc(t.note)+'</span>':'')+bookTag+'</div>'
+        +'<div class="grow"><div class="nm">'+esc(budgetCatName(t.catId))+(t.note?' <span class="sub" style="font-weight:400">· '+esc(t.note)+'</span>':'')+onCard+bookTag+'</div>'
         +'<div class="sub">'+esc(fmtDate(t.date))+'</div></div>'
         +'<div style="font-weight:800;color:'+(inc?"var(--ok,#1b7f4d)":"var(--danger)")+'">'+(inc?"+":"−")+budgetMoney(t.amount)+'</div></div>';
     }).join("")+'</div>';
@@ -509,6 +794,20 @@ function budgetTransferRow(t){
     +'<div class="sub">'+esc(fmtDate(t.date))+' · transfer</div></div>'
     +'<div style="font-weight:800;color:var(--muted)">'+(out?"−":"+")+budgetMoney(t.amount)+'</div></div>';
 }
+/* a card-payment row (cash → card) — muted, flagged 💳, tap to delete (payments aren't edited in place) */
+function budgetCardPaymentRow(t){
+  var card=budgetAccount(t.cardId||""), src=budgetAccount(t.accountId||"");
+  var here=budgetIsAll()?('<span class="sub" style="font-weight:400"> · '+esc(budgetBookName(t.bookId))+'</span>'):'';
+  return '<div class="li" style="align-items:flex-start;cursor:pointer;opacity:.85" onclick="delCardPayment(\''+t.id+'\')">'
+    +'<div class="grow"><div class="nm">💳 Paid '+esc(card?card.name:"card")+(src?' <span class="sub" style="font-weight:400">from '+esc(src.name)+'</span>':'')+here+'</div>'
+    +'<div class="sub">'+esc(fmtDate(t.date))+' · card payment</div></div>'
+    +'<div style="font-weight:800;color:var(--muted)">−'+budgetMoney(t.amount)+'</div></div>';
+}
+window.delCardPayment=function(id){
+  var t=(D().budgetTx||[]).find(function(x){return x.id===id&&x.isCardPayment;}); if(!t)return;
+  if(!confirm("Delete this card payment? The card balance goes back up by "+budgetMoney(t.amount)+"."))return;
+  t.deleted=true; touch(t); save(); render();
+};
 window.openBudgetTx=function(id){
   var isNew=!id;
   var books=actBudgetBooks();
@@ -516,9 +815,10 @@ window.openBudgetTx=function(id){
              :(D().budgetTx||[]).filter(function(x){return !x.deleted;}).find(function(x){return x.id===id;});
   if(!t)return;
   if(t.isTransfer){ openBudgetTransfer(t.transferId); return; }   // transfers edit via their own dialog
-  /* categories available for THIS tx's book (so a tx always pairs with a same-book category) */
+  if(t.isCardPayment){ openCardPayment(t.cardId); return; }       // card payments use their own dialog
+  /* categories available for THIS tx's book (so a tx always pairs with a same-book category); Payment envelopes are auto-managed, not picked */
   var bid=t.bookId||budgetDefaultBookId();
-  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid;})
+  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid&&!c.paymentEnvelope;})
     .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
   var dir=t.dir||"out";
   var catOpts='<option value="">— pick a category —</option>'+cats.map(function(c){
@@ -535,20 +835,45 @@ window.openBudgetTx=function(id){
     +'<label>Amount</label><input id="bt_amount" type="number" inputmode="decimal" step="0.01" value="'+esc(t.amount!=null?t.amount:"")+'" placeholder="0.00">'
     +'<label>Category</label><select id="bt_cat">'+catOpts+'</select>'
     +(cats.length?'':'<div class="sub" style="margin:4px 0">No categories in this book yet — add some on the Settings tab. You can still log this; it\'ll show as uncategorized.</div>')
+    +budgetTxAccountSelect(bid,t.accountId)
     +'<label>Date</label><input id="bt_date" type="date" value="'+(t.date||today())+'">'
     +'<label>Note (optional)</label><input id="bt_note" value="'+esc(t.note||"")+'" placeholder="e.g. groceries, paycheck">'
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetTx(\''+t.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetTx(\''+t.id+'\')">Delete</button>')
   );
 };
-/* switching the book in the tx dialog: re-render so the category list matches the new book */
-window.budgetTxBookChange=function(bid){
-  var sel=document.getElementById("bt_cat"); if(!sel)return;
-  var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid;})
+/* "Paid from" account picker for a tx (which account the money came from). A credit account = a charge to that
+   card (funds its Payment envelope + grows its debt). Empty = unassigned/cash (legacy behavior, no account effect). */
+function budgetTxAccountSelect(bid,sel){
+  var accts=(D().budgetAccounts||[]).filter(function(a){return !a.deleted&&a.bookId===bid&&!a.debtOnly;})
     .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
-  sel.innerHTML='<option value="">— pick a category —</option>'+cats.map(function(c){
-    return '<option value="'+c.id+'" data-kind="'+(c.kind||"out")+'">'+esc(c.name)+' ('+((c.kind||"out")==="in"?"income":"spending")+')</option>';
+  if(!accts.length)return '<input type="hidden" id="bt_acct" value="'+esc(sel||"")+'">';
+  var opts='<option value="">— cash / unassigned —</option>'+accts.map(function(a){
+    var meta=acctTypeMeta(a.type);
+    return '<option value="'+a.id+'"'+(sel===a.id?" selected":"")+'>'+meta.icon+' '+esc(a.name)+(a.type==="credit"?" (credit)":"")+'</option>';
   }).join("");
+  return '<label>Paid from</label><select id="bt_acct">'+opts+'</select>'
+    +'<div class="sub" style="margin:2px 0">Pick a credit card to charge it — that sets cash aside in its Payment envelope and grows the balance.</div>';
+}
+/* switching the book in the tx dialog: re-render so the category + account lists match the new book */
+window.budgetTxBookChange=function(bid){
+  var sel=document.getElementById("bt_cat");
+  if(sel){
+    var cats=(D().budgetCats||[]).filter(function(c){return !c.deleted&&c.bookId===bid&&!c.paymentEnvelope;})
+      .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
+    sel.innerHTML='<option value="">— pick a category —</option>'+cats.map(function(c){
+      return '<option value="'+c.id+'" data-kind="'+(c.kind||"out")+'">'+esc(c.name)+' ('+((c.kind||"out")==="in"?"income":"spending")+')</option>';
+    }).join("");
+  }
+  var asel=document.getElementById("bt_acct");
+  if(asel&&asel.tagName==="SELECT"){
+    var accts=(D().budgetAccounts||[]).filter(function(a){return !a.deleted&&a.bookId===bid&&!a.debtOnly;})
+      .sort(function(a,b){ return (a.order||0)-(b.order||0)||(a.name||"").localeCompare(b.name||""); });
+    asel.innerHTML='<option value="">— cash / unassigned —</option>'+accts.map(function(a){
+      var meta=acctTypeMeta(a.type);
+      return '<option value="'+a.id+'">'+meta.icon+' '+esc(a.name)+(a.type==="credit"?" (credit)":"")+'</option>';
+    }).join("");
+  }
 };
 window.budgetTxDir=function(btn,dir){
   var d=document.getElementById("bt_dir"); if(d)d.value=dir;
@@ -567,6 +892,9 @@ window.saveBudgetTx=function(id,isNew){
   t.dir=(document.getElementById("bt_dir")||{}).value||"out";
   t.catId=(document.getElementById("bt_cat")||{}).value||"";
   t.bookId=(document.getElementById("bt_book")||{}).value||t.bookId||budgetDefaultBookId();
+  var acct=(document.getElementById("bt_acct")||{}).value||"";
+  t.accountId=(t.dir==="out")?acct:"";   // payment-source only applies to spending; income lands in cash via TBB
+  if(t.accountId){ var pa=budgetAccount(t.accountId); if(pa&&budgetIsActiveCard(pa))ensurePaymentCat(pa); }   // make sure the card's Payment envelope exists
   t.date=val("bt_date")||today();
   t.note=val("bt_note");
   t.deleted=false; touch(t); if(isNew)d.budgetTx.push(t);
@@ -739,7 +1067,7 @@ window.budgetMoveBook=function(id,dir){
   save(); render();
 };
 function budgetCatSection(title,kind,cats){
-  var list=cats.filter(function(c){return (c.kind||"out")===kind;});
+  var list=cats.filter(function(c){return (c.kind||"out")===kind&&!c.paymentEnvelope;});   // Payment envelopes are auto-managed by their card, not edited here
   var planTotal=list.reduce(function(s,c){return s+(+c.target||0);},0);
   var h='<div class="secthd"><h2>'+esc(title)+'</h2>'+(list.length&&planTotal>0?'<span class="ct">goals '+budgetMoney(planTotal)+'/mo</span>':'')+'</div>';
   if(!list.length)return h+'<div class="card"><div class="sub">None yet.</div></div>';

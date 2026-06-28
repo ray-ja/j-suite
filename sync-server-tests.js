@@ -238,6 +238,52 @@ const taxCtx = t.orgAiContext(taxM, "rbjvl");
 ok("orgAiContext surfaces the tax set-aside status (rate, reserved vs owed, next quarterly due)", taxCtx.indexOf("TAX set-aside (1099, combined)") >= 0 && /reserve rate \d/.test(taxCtx) && taxCtx.indexOf("reserved YTD") >= 0 && /next quarterly due Q\d/.test(taxCtx), taxCtx.split("\n").filter(l => l.indexOf("TAX set-aside") >= 0));
 ok("orgAiContext tax line reflects the auto-funded reserve ($450 reserved YTD)", taxCtx.indexOf("reserved YTD $450.00") >= 0, taxCtx.split("\n").filter(l => l.indexOf("TAX set-aside") >= 0));
 
+console.log("— BUDGET v2 (credit-card + debt) fixture: a card spend grows debt + funds the Payment envelope; paying the card reduces debt + the envelope; a debtOnly card's payoff math; zero-loss round-trip; Cap debt line —");
+// A populated budget store with: an ACTIVE card (Visa, used) + a charge on it + a payment to it, plus a DEBT-ONLY card (Store).
+// Charge $400 on Visa (Food cat had $400 assigned) → Visa live balance = -100 (start) - 400 charge + 250 payment = -250 (owed $250);
+// Food envelope funded the charge → Payment: Visa envelope = +400 funded - 250 paid = $150 still set aside.
+const ccStored = {
+  registry: [{ id: "rbjvl", name: "Ray — Personal", updatedAt: 1 }],
+  users: [{ id: "u1", role: "owner", superAdmin: true, updatedAt: 1 }],
+  rbjvl: {
+    customers: [], quotes: [], jobs: [],
+    budgetBooks: [{ id: "bgt-book-default-rbjvl", name: "Personal", kind: "personal", order: 0, updatedAt: 1 }],
+    budgetCats: [
+      { id: "c-food", name: "Food", kind: "out", rollover: true, bookId: "bgt-book-default-rbjvl", order: 0, updatedAt: 5 },
+      { id: "bgt-cat-cardpay-a-visa", name: "Payment: Visa", kind: "out", rollover: true, paymentEnvelope: true, creditAccountId: "a-visa", bookId: "bgt-book-default-rbjvl", order: -2, updatedAt: 5 }
+    ],
+    budgetTx: [
+      { id: "btx-charge", date: thisMo + "-04", dir: "out", amount: 400, catId: "c-food", accountId: "a-visa", bookId: "bgt-book-default-rbjvl", updatedAt: 5 },   // charge on the card
+      { id: "btx-pay", date: thisMo + "-20", dir: "out", amount: 250, isCardPayment: true, cardId: "a-visa", accountId: "a-chk", bookId: "bgt-book-default-rbjvl", updatedAt: 5 }   // payment to the card
+    ],
+    budgetAccounts: [
+      { id: "a-chk", bookId: "bgt-book-default-rbjvl", name: "Checking", type: "checking", balance: 3000, order: 0, updatedAt: 5 },
+      { id: "a-visa", bookId: "bgt-book-default-rbjvl", name: "Visa", type: "credit", balance: -100, apr: 22.99, minPayment: 35, creditLimit: 5000, debtOnly: false, order: 1, updatedAt: 5 },
+      { id: "a-store", bookId: "bgt-book-default-rbjvl", name: "Store Card", type: "credit", balance: -1200, apr: 27.99, minPayment: 50, creditLimit: 2000, debtOnly: true, order: 2, updatedAt: 5 }
+    ],
+    budgetBudgets: [{ id: "al-food", bookId: "bgt-book-default-rbjvl", catId: "c-food", month: thisMo, allocated: 400, updatedAt: 5 }]
+  }
+};
+const ccM = t.migrateStore(JSON.parse(JSON.stringify(ccStored)));
+ok("budget v2 migration is loss-free: every account + tx survives (3 accounts, 2 tx, 2 cats)", ccM.rbjvl.budgetAccounts.length === 3 && ccM.rbjvl.budgetTx.length === 2 && ccM.rbjvl.budgetCats.length === 2, { a: ccM.rbjvl.budgetAccounts.length, tx: ccM.rbjvl.budgetTx.length });
+ok("new account fields (apr/minPayment/creditLimit/debtOnly) survive untouched", (function () { const v = ccM.rbjvl.budgetAccounts.find(a => a.id === "a-visa"); const s = ccM.rbjvl.budgetAccounts.find(a => a.id === "a-store"); return v.apr === 22.99 && v.minPayment === 35 && v.creditLimit === 5000 && v.debtOnly === false && s.debtOnly === true && s.apr === 27.99; })(), ccM.rbjvl.budgetAccounts);
+const ccRound = t.mergeState(ccM, ccM);
+ok("budget v2 round-trip: zero loss (accounts/tx/budgets/cats stable, ids intact)", ccRound.rbjvl.budgetAccounts.length === 3 && ccRound.rbjvl.budgetTx.length === 2 && ccRound.rbjvl.budgetBudgets.length === 1 && !!ccRound.rbjvl.budgetTx.find(x => x.id === "btx-charge" && x.accountId === "a-visa") && !!ccRound.rbjvl.budgetTx.find(x => x.id === "btx-pay" && x.isCardPayment && x.cardId === "a-visa"), ccRound.rbjvl.budgetTx);
+// CORE MECHANIC at the data layer: derived live balance = stored − charges + payments (matches the client's budgetAccountBalance).
+const liveBal = (store, id) => { const a = store.rbjvl.budgetAccounts.find(x => x.id === id); const tx = store.rbjvl.budgetTx; const charges = tx.filter(t => !t.isTransfer && !t.isCardPayment && t.dir === "out" && t.accountId === id).reduce((s, t) => s + (+t.amount || 0), 0); const pays = tx.filter(t => t.isCardPayment && t.cardId === id).reduce((s, t) => s + (+t.amount || 0), 0); return Math.round(((+a.balance || 0) - charges + pays) * 100) / 100; };
+ok("a card spend GROWS the debt: Visa start −$100, +$400 charge → before payment owes $500", (function () { const noPay = JSON.parse(JSON.stringify(ccM)); noPay.rbjvl.budgetTx = noPay.rbjvl.budgetTx.filter(x => !x.isCardPayment); return liveBal(noPay, "a-visa") === -500; })());
+ok("paying the card REDUCES the debt: −$500 + $250 payment → live balance −$250 (owes $250)", liveBal(ccM, "a-visa") === -250, liveBal(ccM, "a-visa"));
+// payoff math (pure — mirrors client budgetPayoffMonths): store card $1200 @ 27.99% APR, $50/mo → ~ amortization months
+const payoffMonths = (balance, aprPct, monthly) => { balance = +balance || 0; if (balance <= 0) return 0; monthly = +monthly || 0; if (monthly <= 0) return null; const r = (+aprPct || 0) / 100 / 12; if (r <= 0) return Math.min(600, Math.ceil(balance / monthly)); if (monthly <= balance * r) return 600; return Math.min(600, Math.max(1, Math.ceil(Math.log(monthly / (monthly - balance * r)) / Math.log(1 + r)))); };
+ok("debtOnly payoff math: $1,200 @ 27.99% APR, $50/mo → a finite payoff (~36 months), not a never-ending 600", (function () { const mo = payoffMonths(1200, 27.99, 50); return mo > 30 && mo < 45; })(), payoffMonths(1200, 27.99, 50));
+ok("payoff math flags a min that barely covers interest as ~never (600 cap): $1,200 @ 27.99%, $20/mo", payoffMonths(1200, 27.99, 20) === 600, payoffMonths(1200, 27.99, 20));
+ok("payoff math with no APR: $1,200 at $100/mo = 12 months flat", payoffMonths(1200, 0, 100) === 12, payoffMonths(1200, 0, 100));
+// Cap context: total owed = $250 (Visa) + $1200 (Store) = $1450; highest APR = Store @ 27.99%; min payments = $35 + $50 = $85
+const ccCtx = t.orgAiContext(ccM, "rbjvl");
+ok("orgAiContext surfaces total debt owed ($1,450 across 2 accounts)", /DEBT \(credit cards\/loans, combined\): total owed \$1450\.00 across 2 account/.test(ccCtx), ccCtx.split("\n").filter(l => l.indexOf("DEBT") === 0));
+ok("orgAiContext names the highest-APR card (Store Card @ 27.99%)", ccCtx.indexOf("highest-APR = Store Card @ 27.99%") >= 0, ccCtx.split("\n").filter(l => l.indexOf("DEBT") === 0));
+ok("orgAiContext sums total minimum payments ($85.00/mo)", ccCtx.indexOf("total minimum payments $85.00/mo") >= 0, ccCtx.split("\n").filter(l => l.indexOf("DEBT") === 0));
+
 console.log("— changelog (activity log) syncs per business, append-union —");
 const cl = t.mergeState(
   { obx: { changelog: [{ id: "e1", ts: 10, action: "create", entity: "customer", entityId: "c1", user: "u1", summary: "Logged Smith", updatedAt: 10 }] } },
