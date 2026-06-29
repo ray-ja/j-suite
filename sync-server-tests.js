@@ -340,9 +340,11 @@ const refToday = new Date().getFullYear() + "-" + String(new Date().getMonth() +
 const nextDueMonthly = (day) => { const r = new Date(refToday + "T12:00:00"); const c = onDay(r.getFullYear(), r.getMonth(), day); return c >= refToday ? c : onDay(r.getFullYear(), r.getMonth() + 1, day); };
 ok("a monthly bill's next due is always today-or-later (rolls forward when the day has passed)", nextDueMonthly(15) >= refToday && nextDueMonthly(1) >= refToday, { d15: nextDueMonthly(15), d1: nextDueMonthly(1) });
 // FUNDED-VS-NEEDED (fund-ahead): the Cap line is the cleanest cross-check of the whole pipeline.
-// Use a nextDue override pinned to THIS month so the fund-ahead math is deterministic regardless of run date.
+// Pin nextDue to TODAY (this month, never already-passed) so the due-this-month fund-ahead math is
+// deterministic on EVERY run — a fixed day-of-month (e.g. the 28th) ages out once the real date passes it.
 const fixedBills = JSON.parse(JSON.stringify(billStored));
-fixedBills.rbjvl.budgetBills = [{ id: "b-fix", bookId: "bgt-book-default-rbjvl", catId: "c-elec", name: "Electric", amount: 147, frequency: "monthly", dueDay: 28, nextDue: thisMo + "-28", autoEstimate: false, active: true, updatedAt: 5 }];
+const todayDom = String(new Date().getDate()).padStart(2, "0");
+fixedBills.rbjvl.budgetBills = [{ id: "b-fix", bookId: "bgt-book-default-rbjvl", catId: "c-elec", name: "Electric", amount: 147, frequency: "monthly", dueDay: new Date().getDate(), nextDue: thisMo + "-" + todayDom, autoEstimate: false, active: true, updatedAt: 5 }];
 const fixedM = t.migrateStore(fixedBills);
 const fixedCtx = t.orgAiContext(fixedM, "rbjvl");
 const fixedLine = fixedCtx.split("\n").filter(l => l.indexOf("BILLS (fund-ahead") === 0)[0] || "";
