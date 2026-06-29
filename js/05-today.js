@@ -46,12 +46,18 @@ function rToday(){
   else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
   else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
 
-  // 5) Money first (owner) — invoices to send · awaiting payment · open quotes
+  // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
   if(owner){
-    const moneySect=(title,arr)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
-      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="openQuote('${q.id}')"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
+    // a booked quote's job is "done" once its linked job is checked off (matches the pipeline split: to-do vs ready-to-bill)
+    const jobDone=q=>{ if(!q.jobId)return false; const j=actJ().find(x=>x.id===q.jobId); return !!(j&&j.done); };
+    const moneySect=(title,arr,go)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
+      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="${(go&&go(q))||`openQuote('${q.id}')`}"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
+    const booked=actQ().filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid);   // accepted, not yet invoiced
     h+=moneySect("📝 Open quotes",actQ().filter(q=>!q.deleted&&!q.accepted&&!q.invoiced&&!q.paid));
-    h+=moneySect("📤 Invoices to send",actQ().filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid));
+    // Confirmed jobs = the whole booked-but-not-invoiced pipeline whose work isn't finished yet (distinct from "Today's jobs", which is just today's scheduled work) → tap opens the job
+    h+=moneySect("🔧 Confirmed jobs",booked.filter(q=>!jobDone(q)),q=>q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`);
+    // Invoices to send = booked work that's done → ready to bill
+    h+=moneySect("📤 Invoices to send",booked.filter(jobDone));
     h+=moneySect("⏳ Awaiting payment",actQ().filter(q=>!q.deleted&&q.invoiced&&!q.paid));
   }
 
