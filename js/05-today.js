@@ -15,25 +15,22 @@ function rToday(){
     }
   }
 
-  // 0b) Discoverability nudge — owner-facing, when this org has opt-in tools available but none enabled yet
-  if(owner && typeof orgOptinHint==="function") h+=orgOptinHint();
-
   // 1) Notice board — at the very top
   const dir=(D().docs.find(x=>x.id==="ceo"&&!x.deleted)||{}).text||"";
   h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>
     <div class="card" style="border-left:4px solid var(--accent)"><div style="white-space:pre-wrap;font-size:14px;line-height:1.5">${dir?esc(dir):'<span class="muted">Nothing posted — tap Edit.</span>'}</div></div>`;
 
-  // 2) Clock
+  // 2) Clock — only the active "clocked in" banner; the clock-in control lives in the header
   if(me){
     const open=(typeof tcMyOpen==="function")?tcMyOpen():null;
     if(open){ const oj=actJ().find(x=>x.id===open.jobId); const since=new Date(open.clockIn).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
       h+=`<div class="card" style="border-left:5px solid var(--accent)"><div class="row"><div class="grow"><div class="nm">⏱️ Clocked in${oj?` · ${esc(oj.title||"job")}`:""}</div><div class="sub">since ${since}</div></div><button class="btn danger sm" onclick="tcClockOut('${open.id}')">Clock out</button></div></div>`;
-    } else h+=`<div class="card"><div class="sub">⏱️ Not clocked in — open a job below to clock in.</div></div>`;
+    }
   }
 
-  // 3) Who's working today (+ when)
+  // 3) Who's working today (+ when) — with a link to the full Schedule
   if(mem.length){
-    h+=`<div class="secthd"><h2>👥 Who's working today</h2></div><div class="card">`;
+    h+=`<div class="secthd"><h2>👥 Who's working today</h2>${(typeof navSub==="function")?`<button class="btn ghost sm" style="margin-left:auto" onclick="navSub('schedule')">Schedule →</button>`:""}</div><div class="card">`;
     h+=mem.map(u=>{ const a=(typeof availOn==="function")?availOn(u,t):{status:"unknown",label:""};
       const col=a.status==="on"?"var(--accent)":a.status==="partial"?"#e0a800":a.status==="oncall"?"#2f6fed":(a.status==="off"||a.status==="timeoff")?"var(--danger)":"var(--muted)";
       const lbl=a.status==="on"?"Available all day":a.status==="partial"?(a.label||"Part of day"):a.status==="oncall"?"On call":a.status==="off"?"Off":a.status==="timeoff"?(a.label||"Time off"):"Not confirmed";
@@ -49,13 +46,19 @@ function rToday(){
   else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
   else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
 
-  // 5) Money first (owner) — invoices to send · awaiting payment · open quotes
+  // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
   if(owner){
-    const moneySect=(title,arr)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
-      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="openQuote('${q.id}')"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
-    h+=moneySect("📤 Invoices to send",actQ().filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid));
-    h+=moneySect("⏳ Awaiting payment",actQ().filter(q=>!q.deleted&&q.invoiced&&!q.paid));
+    // a booked quote's job is "done" once its linked job is checked off (matches the pipeline split: to-do vs ready-to-bill)
+    const jobDone=q=>{ if(!q.jobId)return false; const j=actJ().find(x=>x.id===q.jobId); return !!(j&&j.done); };
+    const moneySect=(title,arr,go)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
+      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="${(go&&go(q))||`openQuote('${q.id}')`}"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
+    const booked=actQ().filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid);   // accepted, not yet invoiced
     h+=moneySect("📝 Open quotes",actQ().filter(q=>!q.deleted&&!q.accepted&&!q.invoiced&&!q.paid));
+    // Confirmed jobs = the whole booked-but-not-invoiced pipeline whose work isn't finished yet (distinct from "Today's jobs", which is just today's scheduled work) → tap opens the job
+    h+=moneySect("🔧 Confirmed jobs",booked.filter(q=>!jobDone(q)),q=>q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`);
+    // Invoices to send = booked work that's done → ready to bill
+    h+=moneySect("📤 Invoices to send",booked.filter(jobDone));
+    h+=moneySect("⏳ Awaiting payment",actQ().filter(q=>!q.deleted&&q.invoiced&&!q.paid));
   }
 
   // 6) Payouts — monthly, paid the first workday of next month (owner: everyone; crew: yourself)
