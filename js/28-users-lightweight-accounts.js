@@ -70,8 +70,8 @@ function loginMsg(t){const e=document.getElementById("lg_msg");if(e)e.textConten
 function defaultServerUrl(){return (S.sync&&S.sync.url)||((location.protocol.indexOf("http")===0)?location.origin:"");}
 function renderLogin(){
   if(typeof jsResetToken==="function"&&jsResetToken()&&typeof renderResetPw==="function"){return renderResetPw();}   // arrived via an emailed reset link
-  const hasLocal=!!users().length;
-  view.innerHTML=`<div class="card" style="max-width:420px;margin:40px auto;border-top:4px solid var(--accent)">
+  view.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;min-height:70vh;padding:20px 0">
+    <div class="card" style="width:100%;max-width:420px;margin:0 auto;border-top:4px solid var(--accent)">
     <h2 style="margin-top:0">Sign in</h2>
     <form onsubmit="appLogin();return false">
     <label>Username or email</label><input id="lg_user" name="username" autocomplete="username">
@@ -80,7 +80,7 @@ function renderLogin(){
     </form>
     <p class="muted" id="lg_msg" style="margin-top:8px;min-height:16px"></p>
     <p style="margin-top:2px;text-align:center"><a href="#" onclick="appForgotPw();return false" class="muted" style="text-decoration:underline">Forgot password?</a></p>
-    ${hasLocal?`<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="useOffline()">Use this device offline</button>`:""}
+    </div>
   </div>`;
 }
 window.appLogin=async function(){
