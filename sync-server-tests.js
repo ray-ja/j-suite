@@ -1017,6 +1017,69 @@ ok("pushWorthy: Cap's own post → skip (notified via /api/ceo)", t.pushWorthy({
 ok("pushWorthy: thread/read record → skip (not a message)", t.pushWorthy({ id: "t1", kind: "thread", threadId: "t1", senderId: "ray", ts: _pwNow }, new Set(), _pwNow) === false, null);
 ok("pushWorthy: stale/backfilled message → skip", t.pushWorthy({ id: "m3", threadId: "t1", senderId: "ray", ts: _pwNow - 7 * 3600000 }, new Set(), _pwNow) === false, null);
 
+console.log("\n— MESSAGES soft-delete + permission (tombstones ride the messages collection via LWW; non-admin can NEVER tombstone another's message/thread) —");
+// realistic pre-change store: obx with a Cap DM thread + two messages (joe's + ray's), a read marker, a thread record.
+const msgStored = {
+  obx: { customers: [{ id: "mc1", name: "Cust", updatedAt: 1 }], jobs: [{ id: "mj1", title: "Haul", updatedAt: 1 }],
+    messages: [
+      { id: "thr_cap_joe", kind: "thread", threadId: "thr_cap_joe", title: "Joe ↔ Cap", type: "dm", toStrategy: true, members: ["joe"], createdBy: "joe", deleted: false, updatedAt: 10 },
+      { id: "msg_a", threadId: "thr_cap_joe", senderId: "joe", senderLabel: "joe", body: "hi cap", ts: 11, deleted: false, updatedAt: 11 },
+      { id: "msg_b", threadId: "thr_cap_joe", senderId: "ray", senderLabel: "ray", body: "owner note", ts: 12, deleted: false, updatedAt: 12 },
+      { id: "rd_thr_cap_joe_joe", kind: "read", threadId: "thr_cap_joe", userId: "joe", lastReadTs: 12, updatedAt: 12 },
+    ] },
+  jam: { customers: [], jobs: [] },
+  registry: [{ id: "obx", name: "OBX", updatedAt: 1 }, { id: "jam", name: "Jam", updatedAt: 1 }],
+  users: [
+    { id: "ray", username: "ray", role: "owner", updatedAt: 1 },
+    { id: "joe", username: "joe", role: "crew", updatedAt: 1 },
+    { id: "mem_obx_ray", kind: "membership", orgId: "obx", accountId: "ray", role: "owner", active: true, updatedAt: 1 },
+    { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "crew", active: true, updatedAt: 1 },
+  ],
+};
+const msgPre = t.migrateStore(JSON.parse(JSON.stringify(msgStored)));   // load() the fixture
+ok("messages fixture: every pre-change record survives load() (cust/job/thread/2 msgs/read)", !!(msgPre.obx.customers.find(x => x.id === "mc1") && msgPre.obx.jobs.find(x => x.id === "mj1") && msgPre.obx.messages.length === 4), { n: msgPre.obx.messages.length });
+const msgGet = (st, id) => (((st.obx || {}).messages) || []).find(m => m && m.id === id);
+
+// 1) crew joe deletes his OWN message → allowed
+const joeOwn = t.sanitizeMessageDeletes({ obx: { messages: [Object.assign({}, msgGet(msgPre, "msg_a"), { deleted: true, updatedAt: 100 })] } }, msgPre, "joe");
+ok("crew deletes OWN message → tombstone allowed (deleted:true survives)", msgGet(t.mergeState(msgPre, joeOwn), "msg_a").deleted === true, msgGet(t.mergeState(msgPre, joeOwn), "msg_a"));
+
+// 2) crew joe tries to delete RAY's message → blocked server-side (reverted to stored, NOT deleted)
+const joeOther = t.sanitizeMessageDeletes({ obx: { messages: [Object.assign({}, msgGet(msgPre, "msg_b"), { deleted: true, updatedAt: 100 })] } }, msgPre, "joe");
+ok("crew deletes ANOTHER's message → BLOCKED (record reverts, stays visible)", msgGet(t.mergeState(msgPre, joeOther), "msg_b").deleted !== true, msgGet(t.mergeState(msgPre, joeOther), "msg_b"));
+
+// 3) owner ray deletes joe's message → allowed (admin may delete any)
+const rayAny = t.sanitizeMessageDeletes({ obx: { messages: [Object.assign({}, msgGet(msgPre, "msg_a"), { deleted: true, updatedAt: 100 })] } }, msgPre, "ray");
+ok("owner deletes ANY message → tombstone allowed", msgGet(t.mergeState(msgPre, rayAny), "msg_a").deleted === true, msgGet(t.mergeState(msgPre, rayAny), "msg_a"));
+
+// 4) owner deletes the whole thread (+ tombstones its messages) → allowed
+const rayThread = t.sanitizeMessageDeletes({ obx: { messages: [
+  Object.assign({}, msgGet(msgPre, "thr_cap_joe"), { deleted: true, updatedAt: 100 }),
+  Object.assign({}, msgGet(msgPre, "msg_a"), { deleted: true, updatedAt: 100 }),
+  Object.assign({}, msgGet(msgPre, "msg_b"), { deleted: true, updatedAt: 100 }),
+] } }, msgPre, "ray");
+const rayThreadM = t.mergeState(msgPre, rayThread);
+ok("owner deletes a THREAD → thread + its messages all tombstoned", msgGet(rayThreadM, "thr_cap_joe").deleted === true && msgGet(rayThreadM, "msg_a").deleted === true && msgGet(rayThreadM, "msg_b").deleted === true, null);
+
+// 5) crew joe tries to delete the thread → blocked (thread reverts, stays alive)
+const joeThread = t.sanitizeMessageDeletes({ obx: { messages: [Object.assign({}, msgGet(msgPre, "thr_cap_joe"), { deleted: true, updatedAt: 100 })] } }, msgPre, "joe");
+ok("crew deletes a THREAD → BLOCKED (thread reverts, stays alive)", msgGet(t.mergeState(msgPre, joeThread), "thr_cap_joe").deleted !== true, null);
+
+// 6) ZERO loss after a sync round-trip — including the legit tombstone (nothing resurrects, nothing dropped)
+const afterDelete = t.mergeState(msgPre, joeOwn);                       // joe's own msg now tombstoned
+const round1 = t.mergeState(afterDelete, afterDelete);                  // re-push the merged store
+ok("round-trip: every message record survives (4 records, none dropped)", (((round1.obx || {}).messages) || []).length === 4, { n: (((round1.obx || {}).messages) || []).length });
+ok("round-trip: the tombstone does NOT resurrect (deleted msg_a stays deleted)", msgGet(round1, "msg_a").deleted === true, msgGet(round1, "msg_a"));
+ok("round-trip: NON-deleted messages + thread + read marker all intact", msgGet(round1, "msg_b").deleted !== true && !!msgGet(round1, "thr_cap_joe") && msgGet(round1, "rd_thr_cap_joe_joe").lastReadTs === 12, null);
+ok("round-trip: customers/jobs/accounts all survive the message-delete merge", !!(round1.obx.customers.find(x => x.id === "mc1") && round1.obx.jobs.find(x => x.id === "mj1") && round1.users.find(x => x.id === "joe") && round1.users.find(x => x.id === "ray")), null);
+
+// 7) a brand-new tombstone (record not yet on the server) from its sender is allowed (not "another user's")
+const newTomb = t.sanitizeMessageDeletes({ obx: { messages: [{ id: "msg_new", threadId: "thr_cap_joe", senderId: "joe", body: "x", ts: 50, deleted: true, updatedAt: 50 }] } }, msgPre, "joe");
+ok("new (not-yet-stored) tombstone passes through (nothing to protect)", (((newTomb.obx || {}).messages) || [])[0].deleted === true, null);
+
+// 8) msgAdminInOrg: owner/super-admin = admin; crew = not. (the server permission predicate)
+ok("msgAdminInOrg: owner is admin in their org; crew is not", t.msgAdminInOrg(msgPre, "ray", "obx") === true && t.msgAdminInOrg(msgPre, "joe", "obx") === false, null);
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");
