@@ -62,9 +62,13 @@ window.logoutUser=function(){
 window.AUTH_401=false;   // set when the server rejects our token; forces the sign-in screen
 function needLogin(){
   if(window.AUTH_401)return true;                          // server said our token is no good
-  if(S.sync&&S.sync.token)return false;                    // have a token → connected
-  if(localStorage.getItem("jra_offline_ok"))return false;  // user chose offline on this device
-  return true;                                             // no token, not offline → must sign in
+  if(S.sync&&S.sync.token)return false;                    // have a token → connected (also the genuine #token= first-run bootstrap, before any account exists)
+  // user chose offline on this device — but only honor it for a device that is genuinely SIGNED IN
+  // (a session resolving to a real account). A cleared store leaves no token AND no resolvable user, so the
+  // stale offline flag alone must NOT keep an account-less, sessionless device "in" — that's the
+  // browse-while-signed-out hole. Offline-after-login (a real session, no network) still passes here.
+  if(localStorage.getItem("jra_offline_ok")&&(typeof curUser==="function"?curUser():null))return false;
+  return true;                                             // no token, no signed-in offline session → must sign in
 }
 function loginMsg(t){const e=document.getElementById("lg_msg");if(e)e.textContent=t||"";}
 function defaultServerUrl(){return (S.sync&&S.sync.url)||((location.protocol.indexOf("http")===0)?location.origin:"");}
