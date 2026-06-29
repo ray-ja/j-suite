@@ -83,18 +83,26 @@ function roleByKey(key) { return allRoles().find(r => r.key === key) || (key ===
 function touchRoles() { rolesRec().updatedAt = now(); }
 
 function hasAnyAccount() { return realAccounts().length > 0; }
+/* Genuine first-run BOOTSTRAP context — the ONLY signed-out state allowed to act as owner so the very first
+   device can reach Admin/Data and create the initial owner account. It requires BOTH:
+     (1) zero real accounts (a fresh server / pre-account device), AND
+     (2) a live connection to that server — a sync token (the deliberate #token= bootstrap link, or a token
+         from a server confirmed to have zero accounts).
+   This deliberately EXCLUDES a cleared cache: clearing localStorage wipes the token too, so an empty store
+   WITHOUT a token is just a signed-out device, not a fresh server — it must NOT get owner-browse. */
+function bootstrapContext() { return !hasAnyAccount() && !!(S && S.sync && S.sync.token); }
 /* role for the current session. No signed-in user:
-   - while NO accounts exist yet (brand-new server / #token= bootstrap) ⇒ owner, so the very
-     first device can reach Admin/Data and create the initial owner account to finish setup;
-   - once any account exists, a signed-out / offline device is RESTRICTED to a crew-equivalent
-     view (never owner) — a logged-out device must not see owner-only tabs. */
+   - in the genuine bootstrap context (fresh server reached via #token=, no accounts yet) ⇒ owner, so the
+     very first device can reach Admin/Data and create the initial owner account to finish setup;
+   - otherwise a signed-out / offline / cleared-cache device is RESTRICTED to a crew-equivalent view
+     (never owner) — a logged-out device must not see owner-only tabs. */
 const NO_SESSION_ROLE = "__nosession__";
 function curRoleKey() {
   const u = (typeof curUser === "function") ? curUser() : null;
   let real;
   if (u && u.superAdmin) real = "owner";   // MULTI-ORG: platform owner → owner in every org
   else if (u) real = ((typeof roleInOrg === "function" && S.biz) ? roleInOrg(u.id, S.biz) : null) || u.role || "crew";   // role in the ACTIVE org; fall back to the global role (transition / no membership)
-  else real = hasAnyAccount() ? NO_SESSION_ROLE : "owner";   // signed out → crew unless bootstrapping the first owner
+  else real = bootstrapContext() ? "owner" : NO_SESSION_ROLE;   // signed out → crew-equivalent unless genuinely bootstrapping the first owner
   // Owner "view-as" preview (js/48): downgrade only, and only for a real owner — never escalates.
   if (window.VIEW_AS && real === "owner" && window.VIEW_AS !== "owner") return window.VIEW_AS;
   return real;
