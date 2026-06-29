@@ -34,13 +34,35 @@ function threadById(tid) { return msgColl().find(m => m && m.kind === "thread" &
 function threadMsgs(tid) { return msgColl().filter(m => m && !m.kind && !m.deleted && m.threadId === tid).sort((a, b) => (a.ts || 0) - (b.ts || 0)); }
 function myUid() { const u = (typeof curUser === "function") ? curUser() : null; return u ? u.id : null; }
 function msgCanBroadcast() { const k = (typeof curRoleKey === "function") ? curRoleKey() : "crew"; return k === "owner" || k === "admin" || k === "ceo"; }
+/* the crew (user ids) assigned to a jobId thread's job — the shared-job-thread membership source of truth.
+   Looks up the job in the active biz first, then any loaded biz (migration runs per-biz, not just active). */
+function jobThreadCrew(t) {
+  if (!t || !t.jobId) return [];
+  let j = (typeof actJ === "function") ? actJ().find(x => x && x.id === t.jobId && !x.deleted) : null;
+  if (!j) { for (const b of ["obx", "jam"]) { const Sb = S[b]; if (Sb && Array.isArray(Sb.jobs)) { const f = Sb.jobs.find(x => x && x.id === t.jobId && !x.deleted); if (f) { j = f; break; } } } }
+  return (j && Array.isArray(j.crew)) ? j.crew.filter(Boolean) : [];
+}
 function threadVisible(t, uid) {
   if (!uid) return false;
   if (t.type === "broadcast") return true;   // a broadcast is for EVERYONE signed in (crew included) — not just the post-time member snapshot (a crew member who joins/logs-in later must still see it)
+  // A JOB thread is the ONE shared "📋 Job: …" conversation everyone on the job + Cap share. Visible to
+  // any member OR anyone currently on the job's crew (so the whole crew sees the same thread even if the
+  // member snapshot lags). This widen is ONLY for jobId threads — DMs stay strict (below).
+  if (t.jobId) return (t.members || []).indexOf(uid) >= 0 || jobThreadCrew(t).indexOf(uid) >= 0;
   // EVERYTHING else (DM / availability / ops) is PARTICIPANT-STRICT: only members can see it.
   // Owner/admin do NOT pierce a private DM — role grants the ability to BROADCAST (msgCanBroadcast,
   // used for composing), never the ability to READ someone's private thread. (Cap privacy fix.)
   return (t.members || []).indexOf(uid) >= 0;
+}
+/* fold the job's crew (+ the current viewer) into a shared job thread's members, so server-side push /
+   Cap-reply fan-out (which is members-driven) reaches the whole crew. Returns true if it changed. */
+function ensureJobThreadMembers(t) {
+  if (!t || !t.jobId) return false;
+  const want = jobThreadCrew(t).slice(); const me = myUid(); if (me && want.indexOf(me) < 0) want.push(me);
+  const have = t.members || (t.members = []); let changed = false;
+  want.forEach(id => { if (id && have.indexOf(id) < 0) { have.push(id); changed = true; } });
+  if (changed) t.updatedAt = now();
+  return changed;
 }
 function readMarker(tid, uid) { return msgColl().find(m => m && m.kind === "read" && m.threadId === tid && m.userId === uid); }
 function unreadCount(tid, uid) { const rm = readMarker(tid, uid), last = rm ? (rm.lastReadTs || 0) : 0; return threadMsgs(tid).filter(m => (m.ts || 0) > last && m.senderId !== uid).length; }
@@ -78,6 +100,8 @@ function markRead(tid) {
 /* ----- inbox ----- */
 function rMessages() {
   if (!msgEnabled()) { view.innerHTML = `<div class="card"><div class="nm">Messages</div><div class="sub">Not active yet.</div></div>`; return; }
+  // keep shared job threads' members in step with the job crew (crew added to a job later → see the thread)
+  let _mc = false; msgThreads().forEach(t => { if (t.jobId && ensureJobThreadMembers(t)) _mc = true; }); if (_mc && typeof save === "function") save();
   if (MSG_OPEN) {   // a thread is open → keep rendering IT across sync re-renders (the kick-back fix)
     const ot = threadById(MSG_OPEN);
     if (ot && threadVisible(ot, myUid())) { renderThread(MSG_OPEN); return; }
@@ -260,8 +284,28 @@ function migrateThreadIA() {
       if (t.type === "broadcast" && t.title === "Cap") { t.deleted = true; t.updatedAt = now(); return; }
       // the real crew broadcast (incl. the leftover "Strategy" name) → one unmistakable label
       if (t.type === "broadcast") { if (t.title !== "Crew — Broadcast") { t.title = "Crew — Broadcast"; t.updatedAt = now(); } return; }
-      // a per-job Cap thread keeps its job-scoped title (rendered live by threadTitle) — never relabel it to "who ↔ Cap"
-      if (t.jobId) return;
+      // a JOB thread is the ONE shared "📋 Job: …" conversation. Old per-user threads were keyed
+      // thr_job_<jobId>_<uid>; migrate them into the shared thr_job_<jobId> (re-point messages + reads,
+      // retire the per-user thread record) so nothing is lost and the crew converges on one thread.
+      if (t.jobId) {
+        const shared = "thr_job_" + t.jobId;
+        if (t.threadId !== shared) {
+          // re-point this per-user thread's messages + read markers onto the shared thread id
+          coll.forEach(m => {
+            if (!m || m.deleted || m.threadId !== t.threadId) return;
+            if (!m.kind) { m.threadId = shared; m.updatedAt = now(); }                 // a message → move it
+            else if (m.kind === "read") { m.deleted = true; m.updatedAt = now(); }      // a per-user read marker → drop (re-derived against the shared thread)
+          });
+          // ensure the shared thread record exists (reuse this record's title if we're the first)
+          let sh = coll.find(x => x && x.kind === "thread" && x.threadId === shared && !x.deleted);
+          if (!sh) { sh = { id: shared, kind: "thread", threadId: shared, title: t.title || "Job", type: "dm", toStrategy: true, jobId: t.jobId, members: [], createdBy: t.createdBy || "__ceo__", deleted: false, updatedAt: now() }; coll.push(sh); }
+          ensureJobThreadMembers(sh);
+          t.deleted = true; t.updatedAt = now();   // retire the per-user thread record
+        } else {
+          ensureJobThreadMembers(t);   // already shared → keep its members in step with the job crew
+        }
+        return;
+      }
       // a person's DM with Cap → labeled by who; kill the bare "Cap"/"Strategy"; drop the stray availability tag
       if (t.toStrategy || t.title === "Cap" || t.title === "Strategy") {
         const who = (typeof userName === "function" && userName((t.members || [])[0])) || "Crew";

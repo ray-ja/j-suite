@@ -129,8 +129,9 @@ function rJobPage(j) {
 
   // 6b) Ask Cap about THIS job — context-aware (Cap pulls the job's customer/address/notes/equipment)
   const me2 = (typeof curUser === "function") ? curUser() : null;
-  const capTid = "thr_job_" + j.id + "_" + (me2 ? me2.id : "x");
-  const capMsgs = (D().messages || []).filter(m => m && !m.kind && !m.deleted && m.threadId === capTid).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  const capTid = "thr_job_" + j.id;   // ONE shared thread per job — the whole crew + Cap share it
+  const _legacyPrefix = capTid + "_";  // tolerate un-migrated per-user threads (thr_job_<id>_<uid>) so no message is lost
+  const capMsgs = (D().messages || []).filter(m => m && !m.kind && !m.deleted && (m.threadId === capTid || (m.threadId || "").indexOf(_legacyPrefix) === 0)).sort((a, b) => (a.ts || 0) - (b.ts || 0));
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap <span class="sub" style="font-weight:400">· attach a photo</span></div>`;
   h += capMsgs.length
     ? capMsgs.slice(-6).map(m => { const isCap = m.senderId === "__ceo__" || m.senderId === "__cap__"; const _ma = (m.attachments || []).filter(a => a && a.id && !a.deleted); return `<div class="li" style="${isCap ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${isCap ? "🤖 Cap" : esc(m.senderLabel || "You")} <span style="font-weight:400">· ${typeof relTime === "function" ? relTime(m.ts) : ""}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_ma.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);margin-top:6px" loading="lazy"></a>`).join("")}</div></div>`; }).join("")
@@ -232,22 +233,25 @@ window.jobAddPhoto = function (jobId, input) {
     if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
   }).catch(function (e) { alert("Upload failed: " + (e.message || e)); });
 };
-/* Ask Cap a question scoped to this job — posts to a per-user, jobId-tagged Cap thread (1 member so Cap
-   converses; toStrategy so it's a Cap channel). The server tags the projection with jobId → Cap pulls
-   the job's customer/address/notes/equipment as context when he answers. His reply syncs back here. */
+/* Ask Cap a question scoped to this job — posts to the ONE shared per-job Cap thread (thr_job_<jobId>):
+   the whole crew on the job + Cap share it, so everyone sees the same conversation. members carries the
+   job crew (drives server push / Cap-reply fan-out); js/47 threadVisible also widens to the live job crew.
+   toStrategy marks it a Cap channel; the server tags the projection with jobId so Cap pulls the job's
+   customer/address/notes/equipment as context. His reply syncs back here. */
 window.jobAskCap = function (jobId) {
   const q = (val("jobcap_q") || "").trim();
   const pinput = document.getElementById("jobcap_photo"); const pfile = pinput && pinput.files && pinput.files[0];
   if (!q && !pfile) return;
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) { alert("Sign in first."); return; }
-  const tid = "thr_job_" + jobId + "_" + me.id;
+  const tid = "thr_job_" + jobId;
   const coll = D().messages || (D().messages = []);
   let thr = coll.find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted);
   const _cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
   const _jtTitle = "📋 Job: " + (j.title || "Job") + ((_cust && _cust !== "—") ? " · " + _cust : "");   // clear job-scoped title on the Messages page (threadTitle renders this live too)
-  if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: _jtTitle, type: "dm", toStrategy: true, jobId: jobId, members: [me.id], createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
-  else if (!thr.jobId) { thr.jobId = jobId; thr.updatedAt = now(); }
+  const _crew = (Array.isArray(j.crew) ? j.crew.filter(Boolean) : []).slice(); if (_crew.indexOf(me.id) < 0) _crew.push(me.id);   // job crew + me share this thread
+  if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: _jtTitle, type: "dm", toStrategy: true, jobId: jobId, members: _crew, createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
+  else { if (!thr.jobId) thr.jobId = jobId; _crew.forEach(id => { if ((thr.members || (thr.members = [])).indexOf(id) < 0) thr.members.push(id); }); thr.updatedAt = now(); }
   const post = function (atts) {
     coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q || "(photo)", ts: now(), attachments: (atts && atts.length) ? atts : undefined, deleted: false, updatedAt: now() });
     if (typeof save === "function") save(); if (typeof render === "function") render();
