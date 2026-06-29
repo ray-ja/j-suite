@@ -19,8 +19,15 @@ window.msgResetOpen = function () { MSG_OPEN = null; };
 /* ----- accessors ----- */
 function msgColl() { return (D().messages || (D().messages = [])); }
 function msgThreads() { return msgColl().filter(m => m && m.kind === "thread" && !m.deleted); }
-/* viewer-relative title: who you're talking to — "Broadcast" / "Cap" / the other member's name(s). */
-function threadTitle(t){ if(!t) return "Thread"; if(t.type==="broadcast") return "Broadcast"; const me=myUid(); const o=(t.members||[]).filter(id=>id!==me).map(id=>userName(id)).filter(Boolean); return o.length?o.join(", "):"Cap"; }
+/* viewer-relative title: who you're talking to — pinned 📢 Broadcast / 📋 a per-job Cap thread / "Cap" / the other member's name(s). */
+function jobThreadLabel(t){
+  if(!t||!t.jobId) return "";
+  const j=(typeof actJ==="function")?actJ().find(x=>x&&x.id===t.jobId):null;
+  const cust=(j&&j.customerId&&typeof custName==="function")?custName(j.customerId):"";
+  const name=(j&&j.title)||(t.title?String(t.title).replace(/^Cap\s·\s/,""):"")||"Job";
+  return "📋 Job: "+name+((cust&&cust!=="—")?" · "+cust:"");
+}
+function threadTitle(t){ if(!t) return "Thread"; if(t.type==="broadcast") return "📢 Broadcast"; if(t.jobId) return jobThreadLabel(t); const me=myUid(); const o=(t.members||[]).filter(id=>id!==me).map(id=>userName(id)).filter(Boolean); return o.length?o.join(", "):"Cap"; }
 /* one canonical crew broadcast thread — reuse, never spawn a new one. */
 function ensureBroadcastThread(){ const t=msgThreads().find(x=>x.type==="broadcast"); if(t) return t.threadId; const tid="thr_crew_broadcast"; const crew=(typeof realAccounts==="function"?realAccounts():(S.users||[]).filter(x=>x&&!x.kind&&!x.deleted)).filter(x=>x.active!==false).map(x=>x.id); msgColl().push({id:tid,kind:"thread",threadId:tid,title:"Broadcast",type:"broadcast",members:crew,createdBy:myUid(),deleted:false,updatedAt:now()}); return tid; }
 function threadById(tid) { return msgColl().find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted); }
@@ -78,12 +85,12 @@ function rMessages() {
   }
   const uid2 = myUid();
   const mine = msgThreads().filter(t => threadVisible(t, uid2)).sort((a, b) => {
+    // the broadcast thread is always pinned first, above DMs / job threads
+    if ((a.type === "broadcast") !== (b.type === "broadcast")) return a.type === "broadcast" ? -1 : 1;
     const la = threadMsgs(a.threadId).slice(-1)[0], lb = threadMsgs(b.threadId).slice(-1)[0];
     return ((lb ? lb.ts : b.updatedAt || 0) - (la ? la.ts : a.updatedAt || 0));
   });
-  let h = `<div class="secthd"><h2>Messages</h2><div style="display:flex;gap:6px">
-    <button class="btn acc sm" onclick="msgToStrategy()">✉️ Message Cap</button>
-    ${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div></div>`;
+  let h = `<div class="secthd"><h2>Messages</h2>${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div>`;
   if (!mine.length) h += `<div class="empty"><div class="big">💬</div>No messages yet.</div>`;
   else h += mine.map(t => {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
@@ -253,6 +260,8 @@ function migrateThreadIA() {
       if (t.type === "broadcast" && t.title === "Cap") { t.deleted = true; t.updatedAt = now(); return; }
       // the real crew broadcast (incl. the leftover "Strategy" name) → one unmistakable label
       if (t.type === "broadcast") { if (t.title !== "Crew — Broadcast") { t.title = "Crew — Broadcast"; t.updatedAt = now(); } return; }
+      // a per-job Cap thread keeps its job-scoped title (rendered live by threadTitle) — never relabel it to "who ↔ Cap"
+      if (t.jobId) return;
       // a person's DM with Cap → labeled by who; kill the bare "Cap"/"Strategy"; drop the stray availability tag
       if (t.toStrategy || t.title === "Cap" || t.title === "Strategy") {
         const who = (typeof userName === "function" && userName((t.members || [])[0])) || "Crew";

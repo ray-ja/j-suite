@@ -244,7 +244,9 @@ window.jobAskCap = function (jobId) {
   const tid = "thr_job_" + jobId + "_" + me.id;
   const coll = D().messages || (D().messages = []);
   let thr = coll.find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted);
-  if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: "Cap · " + (j.title || "Job"), type: "dm", toStrategy: true, jobId: jobId, members: [me.id], createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
+  const _cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+  const _jtTitle = "📋 Job: " + (j.title || "Job") + ((_cust && _cust !== "—") ? " · " + _cust : "");   // clear job-scoped title on the Messages page (threadTitle renders this live too)
+  if (!thr) { thr = { id: tid, kind: "thread", threadId: tid, title: _jtTitle, type: "dm", toStrategy: true, jobId: jobId, members: [me.id], createdBy: me.id, deleted: false, updatedAt: now() }; coll.push(thr); }
   else if (!thr.jobId) { thr.jobId = jobId; thr.updatedAt = now(); }
   const post = function (atts) {
     coll.push({ id: "msg_" + uid(), threadId: tid, senderId: me.id, senderLabel: me.username || "—", body: q || "(photo)", ts: now(), attachments: (atts && atts.length) ? atts : undefined, deleted: false, updatedAt: now() });
