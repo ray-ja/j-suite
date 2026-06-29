@@ -27,7 +27,7 @@ function jobThreadLabel(t){
   const name=(j&&j.title)||(t.title?String(t.title).replace(/^Cap\s·\s/,""):"")||"Job";
   return "📋 Job: "+name+((cust&&cust!=="—")?" · "+cust:"");
 }
-function threadTitle(t){ if(!t) return "Thread"; if(t.type==="broadcast") return "📢 Broadcast"; if(t.jobId) return jobThreadLabel(t); const me=myUid(); const o=(t.members||[]).filter(id=>id!==me).map(id=>userName(id)).filter(Boolean); return o.length?o.join(", "):"Cap"; }
+function threadTitle(t){ if(!t) return "Thread"; if(t.type==="broadcast") return "📢 Broadcast"; if(t.jobId) return jobThreadLabel(t); if(t.sender==="sentinel"||t.title==="Sentinel") return "Sentinel"; const me=myUid(); const o=(t.members||[]).filter(id=>id!==me).map(id=>userName(id)).filter(Boolean); return o.length?o.join(", "):"Cap"; }
 /* one canonical crew broadcast thread — reuse, never spawn a new one. */
 function ensureBroadcastThread(){ const t=msgThreads().find(x=>x.type==="broadcast"); if(t) return t.threadId; const tid="thr_crew_broadcast"; const crew=(typeof realAccounts==="function"?realAccounts():(S.users||[]).filter(x=>x&&!x.kind&&!x.deleted)).filter(x=>x.active!==false).map(x=>x.id); msgColl().push({id:tid,kind:"thread",threadId:tid,title:"Broadcast",type:"broadcast",members:crew,createdBy:myUid(),deleted:false,updatedAt:now()}); return tid; }
 function threadById(tid) { return msgColl().find(m => m && m.kind === "thread" && m.threadId === tid && !m.deleted); }
@@ -114,14 +114,18 @@ function rMessages() {
     const la = threadMsgs(a.threadId).slice(-1)[0], lb = threadMsgs(b.threadId).slice(-1)[0];
     return ((lb ? lb.ts : b.updatedAt || 0) - (la ? la.ts : a.updatedAt || 0));
   });
-  let h = `<div class="secthd"><h2>Messages</h2>${msgCanBroadcast() ? `<button class="btn ghost sm" onclick="msgNew()">+ New</button>` : ``}</div>`;
+  // "+ New" on its OWN row below the title (mobile-friendly — no longer crammed into the header)
+  let h = `<div class="secthd"><h2>Messages</h2></div>`;
+  if (msgCanBroadcast()) h += `<div class="row" style="margin-bottom:10px"><button class="btn ghost sm" onclick="msgNew()">+ New</button></div>`;
   if (!mine.length) h += `<div class="empty"><div class="big">💬</div>No messages yet.</div>`;
   else h += mine.map(t => {
     const last = threadMsgs(t.threadId).slice(-1)[0], un = unreadCount(t.threadId, uid2);
     const snip = last ? (esc(last.senderLabel) + ": " + esc((last.body || "").slice(0, 60))) : `<span class="muted">No messages</span>`;
     const capTick = last ? (last.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : last.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : "") : "";
+    // owner/admin may delete a whole thread (soft-delete + tombstone its messages) — never on broadcast (the one canonical crew channel)
+    const delThread = (msgCanBroadcast() && t.type !== "broadcast") ? `<button class="btn ghost sm" title="Delete thread" onclick="event.stopPropagation();msgDeleteThread('${t.threadId}')" style="color:var(--danger)">🗑</button>` : ``;
     return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(threadTitle(t))}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
-      <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${relTime(last.ts)}</span>` : ``)}</div>`;
+      <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${relTime(last.ts)}</span>` : ``)}${delThread}</div>`;
   }).join("");
   view.innerHTML = h;
 }
@@ -150,7 +154,10 @@ function renderThread(tid) {
     const mineMsg = m.senderId === uid2;
     const _att = (m.attachments || []).filter(a => a && a.id && !a.deleted);
     const _attHtml = _att.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">` + _att.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="max-width:180px;max-height:180px;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>` : "";
-    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_attHtml}</div></div>`;
+    // delete control: your OWN message always; any message for owner/admin. Soft-delete only (tombstone).
+    const canDel = mineMsg || msgCanBroadcast();
+    const delBtn = canDel ? `<button class="btn ghost sm" title="Delete message" onclick="msgDelete('${tid}','${m.id}')" style="color:var(--danger);align-self:flex-start">🗑</button>` : ``;
+    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_attHtml}</div>${delBtn}</div>`;
   }).join("") || `<div class="muted">No messages yet.</div>`;
   let h = `<div class="secthd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
   if (t.availAsk) h += msgAvailChips(tid);
@@ -173,6 +180,30 @@ window.msgBack = function () { MSG_OPEN = null; render(); };
 window.msgSendReply = function (tid) { const b = val("msg_reply"); const atts = MSG_PENDING ? [{ id: MSG_PENDING, ts: now() }] : []; if (!b && !atts.length) return; msgPost(tid, b, null, atts); MSG_PENDING = null; render(); };
 window.msgAddPhoto = function (input) { const file = input && input.files && input.files[0]; if (!file) return; if (typeof jsUpload !== "function") { alert("Photo needs a connection."); return; } jsUpload(file).then(function (id) { MSG_PENDING = id; render(); }).catch(function (e) { alert("Upload failed: " + (e.message || e)); }); };
 window.msgClearPhoto = function () { MSG_PENDING = null; render(); };
+
+/* ----- soft-delete (tombstone) — your own message always; any message + whole threads for owner/admin.
+   Client-side check is UX-only; the SERVER re-enforces it (sanitizeMessageDeletes) so a non-admin can
+   never tombstone another user's record. NEVER hard-remove — bump updatedAt so LWW keeps the tombstone. */
+window.msgDelete = function (tid, mid) {
+  if (!msgEnabled()) return;
+  const u = (typeof curUser === "function") ? curUser() : null; if (!u) { alert("Sign in first."); return; }
+  const m = msgColl().find(x => x && x.id === mid && !x.kind); if (!m || m.deleted) return;
+  if (!(m.senderId === u.id || msgCanBroadcast())) { alert("You can only delete your own messages."); return; }
+  if (!confirm("Delete this message?")) return;
+  m.deleted = true; m.updatedAt = now();
+  if (typeof logChange === "function") logChange("delete", "message", mid, "Message deleted in " + tid);
+  save(); render();
+};
+window.msgDeleteThread = function (tid) {
+  if (!msgEnabled() || !msgCanBroadcast()) return;
+  const t = threadById(tid); if (!t || t.type === "broadcast") return;
+  if (!confirm("Delete this whole thread? This hides it for everyone.")) return;
+  t.deleted = true; t.updatedAt = now();                                  // tombstone the thread record
+  msgColl().forEach(m => { if (m && m.threadId === tid && !m.deleted) { m.deleted = true; m.updatedAt = now(); } });   // + tombstone its messages/read markers (LWW-safe)
+  if (typeof logChange === "function") logChange("delete", "thread", tid, "Thread deleted");
+  if (MSG_OPEN === tid) MSG_OPEN = null;
+  save(); render();
+};
 
 /* ----- availability quick-replies: write STRUCTURED availability data, not text ----- */
 function msgAvailChips(tid) {
@@ -213,10 +244,12 @@ window.availQuickSet = function (tid, ds, v) {
    Strategy reads it via GET /api/ceo?view=messages and replies via the scoped write path. */
 /* the (existing or new) private DM thread between this user and Cap (participant-scoped: [user]; Cap reads via the read path) */
 function capDmTitle(u) { return ((typeof userName === "function" && userName(u.id)) || u.username || "Crew") + " ↔ Cap"; }
+function capThreadId(u) { return "thr_cap_" + u.id; }   // DETERMINISTIC → one canonical Cap DM per user (so receipt-checks/briefs fold into it instead of spawning dup "Cap" rows; multi-device converges, no dup)
 function ensureCapThread(u) {
-  const t = msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
+  // reuse the canonical thread, then ANY pre-existing toStrategy thread for this user (legacy random ids)
+  const t = threadById(capThreadId(u)) || msgThreads().find(x => x.toStrategy && (x.members || []).indexOf(u.id) >= 0);
   if (t) return t.threadId;
-  const tid = "thr_" + uid();
+  const tid = capThreadId(u);
   msgColl().push({ id: tid, kind: "thread", threadId: tid, title: capDmTitle(u), type: "dm", toStrategy: true, members: [u.id], createdBy: u.id, deleted: false, updatedAt: now() });
   save();
   return tid;
@@ -306,13 +339,31 @@ function migrateThreadIA() {
         }
         return;
       }
-      // a person's DM with Cap → labeled by who; kill the bare "Cap"/"Strategy"; drop the stray availability tag
-      if (t.toStrategy || t.title === "Cap" || t.title === "Strategy") {
-        const who = (typeof userName === "function" && userName((t.members || [])[0])) || "Crew";
-        const nt = who + " ↔ Cap";
-        if (t.title !== nt) { t.title = nt; t.updatedAt = now(); }
-        if (!t.toStrategy) { t.toStrategy = true; t.updatedAt = now(); }
-        if (t.availAsk && !t.availChannel) { t.availAsk = false; t.updatedAt = now(); }   // a DM is not an availability channel
+      // a Sentinel-sender thread → its OWN unmistakable "Sentinel" label, kept distinct from Cap. Never folded.
+      if (t.sender === "sentinel" || t.title === "Sentinel") { if (t.title !== "Sentinel") { t.title = "Sentinel"; t.updatedAt = now(); } return; }
+      // a per-user DM with Cap (incl. receipt-checks/briefs Cap spawned titled "Cap") → CONSOLIDATE into the
+      // ONE canonical Cap DM per user (thr_cap_<uid>), so the inbox never shows multiple identical "Cap" rows.
+      const member = (t.members || []).filter(Boolean)[0];
+      // a dedicated per-crew Availability CHANNEL is its own intentional thread — never fold it into the Cap DM
+      const isCapDm = member && !t.availChannel && (t.members || []).filter(Boolean).length === 1 && (t.toStrategy || t.title === "Cap" || t.title === "Strategy" || t.createdBy === "__ceo__");
+      if (isCapDm) {
+        const canon = "thr_cap_" + member;
+        if (t.threadId !== canon) {
+          // re-point this duplicate's messages onto the canonical Cap thread; drop its per-user read marker; retire it
+          coll.forEach(m => {
+            if (!m || m.deleted || m.threadId !== t.threadId) return;
+            if (!m.kind) { m.threadId = canon; m.updatedAt = now(); }
+            else if (m.kind === "read") { m.deleted = true; m.updatedAt = now(); }
+          });
+          let sh = coll.find(x => x && x.kind === "thread" && x.threadId === canon && !x.deleted);
+          if (!sh) { sh = { id: canon, kind: "thread", threadId: canon, title: ((typeof userName === "function" && userName(member)) || "Crew") + " ↔ Cap", type: "dm", toStrategy: true, members: [member], createdBy: member, deleted: false, updatedAt: now() }; coll.push(sh); }
+          t.deleted = true; t.updatedAt = now();
+        } else {
+          const nt = ((typeof userName === "function" && userName(member)) || "Crew") + " ↔ Cap";
+          if (t.title !== nt) { t.title = nt; t.updatedAt = now(); }
+          if (!t.toStrategy) { t.toStrategy = true; t.updatedAt = now(); }
+          if (t.availAsk && !t.availChannel) { t.availAsk = false; t.updatedAt = now(); }   // a DM is not an availability channel
+        }
         return;
       }
     });

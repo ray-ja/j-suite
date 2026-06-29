@@ -104,6 +104,30 @@ async function main() {
     let rayafter = await sync(rayTok, {});
     check("a NON-super CANNOT create an org (slab + registry both dropped)", orgsIn(rayafter).indexOf("joeorg") < 0 && !(rayafter.state.registry || []).some(r => r.id === "joeorg"));
 
+    // ===== MESSAGES soft-delete permission (end-to-end /sync): own-message delete OK; another's BLOCKED; owner deletes any + a thread =====
+    // moe is still plain obx CREW here (promoted to admin below). joe is the obx OWNER. Seed a thread + two messages.
+    const msgOf = (st, id) => (((st && st.state && st.state.obx) || {}).messages || []).find(m => m && m.id === id);
+    await sync(moeTok, { obx: { messages: [
+      { id: "om_thr", kind: "thread", threadId: "om_thr", title: "Crew", type: "dm", members: ["moe", "joe"], createdBy: "moe", deleted: false, updatedAt: now() },
+      { id: "om_moe", threadId: "om_thr", senderId: "moe", senderLabel: "moe", body: "moe says hi", ts: now(), deleted: false, updatedAt: now() },
+      { id: "om_joe", threadId: "om_thr", senderId: "joe", senderLabel: "joe", body: "joe says hi", ts: now(), deleted: false, updatedAt: now() },
+    ] } });
+    await sync(moeTok, { obx: { messages: [{ id: "om_moe", threadId: "om_thr", senderId: "moe", senderLabel: "moe", body: "moe says hi", ts: 1, deleted: true, updatedAt: now() }] } });   // moe deletes his OWN
+    let mst = await sync(joeTok, {});
+    check("crew deletes OWN message (e2e) → tombstoned", !!msgOf(mst, "om_moe") && msgOf(mst, "om_moe").deleted === true);
+    await sync(moeTok, { obx: { messages: [{ id: "om_joe", threadId: "om_thr", senderId: "joe", senderLabel: "joe", body: "joe says hi", ts: 1, deleted: true, updatedAt: now() }] } });   // moe (crew) tries to delete JOE's
+    mst = await sync(joeTok, {});
+    check("crew deletes ANOTHER's message (e2e) → BLOCKED server-side (stays visible)", !!msgOf(mst, "om_joe") && msgOf(mst, "om_joe").deleted !== true);
+    await sync(joeTok, { obx: { messages: [{ id: "om_joe", threadId: "om_thr", senderId: "joe", senderLabel: "joe", body: "joe says hi", ts: 1, deleted: true, updatedAt: now() }] } });   // owner deletes ANY
+    mst = await sync(joeTok, {});
+    check("owner deletes ANY message (e2e) → tombstoned", !!msgOf(mst, "om_joe") && msgOf(mst, "om_joe").deleted === true);
+    await sync(moeTok, { obx: { messages: [{ id: "om_thr", kind: "thread", threadId: "om_thr", title: "Crew", type: "dm", members: ["moe", "joe"], createdBy: "moe", deleted: true, updatedAt: now() }] } });   // crew tries to delete the THREAD
+    mst = await sync(joeTok, {});
+    check("crew deletes a THREAD (e2e) → BLOCKED (thread stays alive)", !!msgOf(mst, "om_thr") && msgOf(mst, "om_thr").deleted !== true);
+    await sync(joeTok, { obx: { messages: [{ id: "om_thr", kind: "thread", threadId: "om_thr", title: "Crew", type: "dm", members: ["moe", "joe"], createdBy: "moe", deleted: true, updatedAt: now() }] } });   // owner deletes the THREAD
+    mst = await sync(joeTok, {});
+    check("owner deletes a THREAD (e2e) → tombstoned (its messages still present, no resurrection)", msgOf(mst, "om_thr").deleted === true && !!msgOf(mst, "om_moe") && msgOf(mst, "om_moe").deleted === true);
+
     // ===== org-admin tier: an org OWNER manages their org's memberships (but only theirs) =====
     await sync(joeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "admin", active: true, updatedAt: now() }] });   // joe (obx OWNER) promotes moe
     rayst = await sync(rayTok, {});

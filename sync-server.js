@@ -118,6 +118,47 @@ function sanitizeUserWrites(incoming, pre, selfId) {
   }
   return Object.assign({}, incoming, { users: safe });
 }
+// MESSAGE-DELETE authz (soft-delete only). A delete = a tombstone (deleted:true) riding the per-org `messages`
+// collection via LWW. ANYONE may delete their OWN message; an owner/admin (or super-admin) may delete ANY
+// message OR a whole thread (+ tombstone its messages). This sanitizer runs on the /sync write path BEFORE
+// mergeState: for each incoming `messages` record that would NEWLY tombstone a STORED record (not-deleted →
+// deleted), if the caller isn't authorized we REVERT that record to its stored form (drop the deletion) — a
+// non-admin can never tombstone another user's message/thread. New (not-yet-stored) records and non-delete
+// edits pass through untouched (msgPost etc. is unchanged); reads/availability markers are unaffected.
+function msgAdminInOrg(store, selfId, orgId) {
+  const me = accountById(store, selfId); if (!me) return false;
+  if (me.superAdmin) return true;                      // platform owner → admin everywhere
+  const r = storedRoleInOrg(store, selfId, orgId);     // per STORED memberships only (never the claimed incoming)
+  return r === "owner" || r === "admin";
+}
+function sanitizeMessageDeletes(incoming, pre, selfId) {
+  if (!incoming || typeof incoming !== "object") return incoming;
+  let out = incoming;
+  for (const oid of orgIdsOf(incoming)) {
+    const slab = incoming[oid];
+    if (!slab || !Array.isArray(slab.messages) || !slab.messages.length) continue;
+    const stored = ((pre && pre[oid]) || {}).messages || [];
+    const storedMap = {}; stored.forEach(m => { if (m && m.id) storedMap[m.id] = m; });
+    const admin = msgAdminInOrg(pre, selfId, oid);     // may this caller delete ANY message/thread in this org?
+    let mutated = false;
+    const safe = slab.messages.map(m => {
+      if (!m || !m.id || !m.deleted) return m;          // only guard records the caller is trying to tombstone
+      const old = storedMap[m.id];
+      if (!old || old.deleted) return m;                // brand-new tombstone (nothing to protect) or already deleted → allow
+      if (admin) return m;                              // owner/admin/super-admin may delete anything
+      // a plain message → its sender may delete their own; a read marker → only its owner; a thread → admin-only (reverted below unless admin)
+      const ownsMsg = !m.kind && (old.senderId === selfId);
+      const ownsRead = m.kind === "read" && (old.userId === selfId);
+      if (ownsMsg || ownsRead) return m;
+      mutated = true; return old;                       // unauthorized delete → revert to the stored (non-deleted) record
+    });
+    if (mutated) {
+      if (out === incoming) out = Object.assign({}, incoming);
+      out[oid] = Object.assign({}, slab, { messages: safe });
+    }
+  }
+  return out;
+}
 // Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
 // (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
@@ -1409,7 +1450,8 @@ const server = http.createServer((req, res) => {
       const myOrgs = me ? orgsForUser(pre, me) : ["obx", "jam"].filter(o => pre[o]);   // ISOLATION: identified user → their member orgs; legacy shared token → original orgs only (new orgs stay isolated from it)
       const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
       const scoped = (me && me.superAdmin) ? (payload.state || {}) : scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: a SUPER-ADMIN may write ANY org (incl. creating a brand-new one — its slab must persist); everyone else is scoped to their member orgs
-      const incomingState = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
+      const afterUsers = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
+      const incomingState = sanitizeMessageDeletes(afterUsers, pre, syncUserId);   // a non-admin can never tombstone another user's message/thread (owner/admin/super-admin may delete any)
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -1508,4 +1550,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, sanitizeUserWrites, sanitizeMessageDeletes, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
