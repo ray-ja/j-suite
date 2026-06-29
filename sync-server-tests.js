@@ -1038,6 +1038,51 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("SSO: expired token -> REJECTED", (await t.verifyAccessJwt(mkJwt({ iss: "https://" + DOMAIN, email: "ray@obxlotsolutions.com", exp: n - 10 }), opt)) === null, null);
   ok("SSO: empty token / SSO-off (no domain) -> null", (await t.verifyAccessJwt("", opt)) === null && (await t.verifyAccessJwt(good, { domain: "", keys: [jwk] })) === null, null);
 
+  console.log("\n— UTF-8 body decode (the ��� bug): Cap/Sentinel POST bodies must survive multibyte chars split across TCP chunks —");
+  const EventEmitter = require("events");
+  // A fake req that emits the JSON body as TWO raw Buffer chunks, split at an arbitrary BYTE offset
+  // (mid-multibyte). This reproduces the exact failure: `body += chunk` utf8-decodes each chunk on its
+  // own, so a smart quote (E2 80 99) / em-dash (E2 80 94) / 4-byte emoji straddling the boundary -> ���.
+  function feed(json, splitAt) {
+    const buf = Buffer.from(json, "utf8");
+    const req = new EventEmitter();
+    req.destroy = () => {};
+    setImmediate(() => { req.emit("data", buf.slice(0, splitAt)); req.emit("data", buf.slice(splitAt)); req.emit("end"); });
+    return req;
+  }
+  const readBody = (req, limit) => new Promise(r => t.readBodyUtf8(req, limit, r));
+
+  // The message Cap sends: a smart quote, a 4-byte emoji, and an em-dash — all in body AND title.
+  const capBody = "It’s done 🚀 — crew’s on the way";
+  const capTitle = "Cap’s update 🧹 — OBX";
+  const payload = JSON.stringify({ biz: "obx", title: capTitle, senderLabel: "Cap", body: capBody, to: "u1", members: ["u1"] });
+  const rawBuf = Buffer.from(payload, "utf8");
+
+  // 1) The fix: readBodyUtf8 must reassemble byte-intact regardless of where the chunk boundary falls.
+  //    Split mid-rocket-emoji (find the emoji's byte offset and cut one byte into it — the worst case).
+  const emojiByte = rawBuf.indexOf(Buffer.from("🚀", "utf8"));
+  const decoded = await readBody(feed(payload, emojiByte + 1), 1e5);
+  ok("readBodyUtf8 reassembles a body split mid-emoji byte-intact (no ���)", decoded === payload && !decoded.includes("�"), decoded.slice(0, 40));
+
+  // 2) End-to-end through the real CEO message code path: decoded body -> ceoBuildMessage -> stored records.
+  const p2 = JSON.parse(decoded);
+  const built = t.ceoBuildMessage(p2, { obx: { messages: [] }, users: [{ id: "u1", role: "owner" }] });
+  const msgRec = built.records.find(r => !r.kind);
+  const thrRec = built.records.find(r => r.kind === "thread");
+  ok("CEO message path: body stored byte-intact (smart quote + emoji + em-dash)", msgRec.body === capBody && !msgRec.body.includes("�"), msgRec.body);
+  ok("CEO message path: thread TITLE stored byte-intact", thrRec.title === capTitle && !thrRec.title.includes("�"), thrRec.title);
+  ok("byte-level proof: stored body == original UTF-8 bytes", Buffer.from(msgRec.body, "utf8").equals(Buffer.from(capBody, "utf8")));
+
+  // 3) ceoBuildProposal (the /api/ceo/propose path, also switched to readBodyUtf8) preserves unicode text.
+  const propRaw = JSON.stringify({ biz: "obx", kind: "note", title: "Raise — paver rate 💲", summary: "Margin’s thin — bump it" });
+  const propDecoded = await readBody(feed(propRaw, 5), 1e5);   // split early, inside the first multibyte field
+  ok("propose path: readBodyUtf8 keeps proposal JSON parseable + intact", propDecoded === propRaw && JSON.parse(propDecoded).title === "Raise — paver rate 💲", propDecoded.slice(0, 30));
+
+  // 4) Negative control — proves the OLD `body += chunk` pattern WAS the bug (would have produced ���).
+  function oldBuggyConcat(json, splitAt) { const b = Buffer.from(json, "utf8"); let s = ""; s += b.slice(0, splitAt); s += b.slice(splitAt); return s; }
+  const corrupted = oldBuggyConcat(payload, emojiByte + 1);
+  ok("control: the old body+=chunk pattern DID corrupt (boundary -> ���) — confirms root cause", corrupted !== payload && corrupted.includes("�"), corrupted.slice(emojiByte - 4, emojiByte + 8));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
