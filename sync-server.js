@@ -1030,6 +1030,16 @@ function buildIcs(store, user, nowDate) {
   return L.map(icsFold).join("\r\n") + "\r\n";
 }
 
+// Read a POST body as ONE complete UTF-8 string. Buffers raw chunks and decodes the FULL buffer at
+// once — never `body += chunk`, which utf8-decodes each TCP chunk independently and turns any multibyte
+// char (smart quote E2 80 99, em-dash E2 80 94, 4-byte emoji) split across a chunk boundary into ���.
+// cb(body) fires on 'end'; over `limit` bytes destroys the socket (cb never fires — caller already returned).
+function readBodyUtf8(req, limit, cb) {
+  const chunks = []; let len = 0;
+  req.on("data", c => { chunks.push(c); len += c.length; if (len > limit) req.destroy(); });
+  req.on("end", () => cb(Buffer.concat(chunks).toString("utf8")));
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -1101,9 +1111,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
       if (!p || typeof p !== "object") p = {};
       const store = loadStore();
@@ -1122,9 +1130,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
       if (!p || typeof p !== "object") p = {};
       const store = loadStore();
@@ -1143,9 +1149,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e5, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       const store = loadStore();
       const built = ceoBuildProposal(p, store);
@@ -1161,9 +1165,7 @@ const server = http.createServer((req, res) => {
 
   // PUSH PEEK — SW fetches the real message body on wake (device id'd by its own sub endpoint).
   if (req.method === "POST" && req.url === "/api/push/peek") {
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"ok":false,"error":"bad json"}'); }
       const out = pushPeek(loadStore(), p && p.endpoint);
       res.writeHead(out.ok ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -1217,8 +1219,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/config") {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const acct = apiAccount(tok);
-    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const org = p && p.org;
       if (!acct || !org || !writerOwnsOrg(loadStore(), acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
@@ -1236,8 +1237,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/ask") {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const acct = apiAccount(tok);
-    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const store = loadStore(), org = p && p.org;
       if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
@@ -1256,8 +1256,7 @@ const server = http.createServer((req, res) => {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    let body = ""; req.on("data", c => { body += c; if (body.length > 2e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const ALLOW = ["resendKey", "accessAud"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination)
       const key = p && p.key, value = p && p.value;
@@ -1309,9 +1308,7 @@ const server = http.createServer((req, res) => {
     const ip = req.socket && req.socket.remoteAddress || "?";
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e5) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e5, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       const store = loadStore();
       const accounts = (((store && store.users) || []).filter(u => u && !u.deleted && !u.kind)).length;
@@ -1334,9 +1331,7 @@ const server = http.createServer((req, res) => {
     const ip = req.socket && req.socket.remoteAddress || "?";
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
       if (!p || typeof p !== "object") p = {};
       const store = loadStore();
@@ -1359,9 +1354,7 @@ const server = http.createServer((req, res) => {
     const ip = req.socket && req.socket.remoteAddress || "?";
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
-    let body = "";
-    req.on("data", c => { body += c; if (body.length > 1e4) req.destroy(); });
-    req.on("end", () => {
+    readBodyUtf8(req, 1e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { p = {}; }
       if (!p || typeof p !== "object") p = {};
       if (!p.password || String(p.password).length < 8) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"password must be at least 8 characters"}'); }
@@ -1448,7 +1441,7 @@ const server = http.createServer((req, res) => {
       return;
     }
     if (req.method === "POST" && req.url === "/qb/create-invoice") {
-      let b = ""; req.on("data", c => b += c); req.on("end", () => {
+      readBodyUtf8(req, 1e5, (b) => {
         let p; try { p = JSON.parse(b); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
         QB.createInvoice(p).then(r => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(r)); })
           .catch(e => { res.writeHead(500, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: e.message })); });
@@ -1515,4 +1508,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive };
+module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
