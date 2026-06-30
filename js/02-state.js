@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -61,6 +61,14 @@ function load(){
     if(!S[b].customJobs)S[b].customJobs=[];          // WORKSHOP: user-defined scheduled AI tasks (custom cron jobs) — per-org, synced
     seedCustomJobsExample(S[b],b);                   // seed the Sentinel EXAMPLE job into obx once (inactive, clonable; runner skips it)
     migrateBudgetBooks(S[b],b);});            // ensure a default Personal book + tag untagged cats/tx (loss-free, idempotent)
+  // RESEARCH library (Data → Research): backfill the synced `research` array on EVERY org slab (obx/jam + any
+  // created org) so an org predating this feature still has the array the sync layer / module expect. Then seed
+  // the crew-comp note into obx exactly once (idempotent on a stable id; only if absent). Loss-free.
+  (typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(b=>{
+    if(!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
+    if(!Array.isArray(S[b].research))S[b].research=[];
+    if(typeof seedResearchNotes==="function")seedResearchNotes(S[b],b);
+  });
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);
     emb.forEach(ep=>{S[b].properties.push({id:ep.id||uid(),label:ep.label||"Main",address:ep.address||"",accessNotes:"",lat:null,lng:null,customerIds:[c.id],updatedAt:now()});});
@@ -96,6 +104,94 @@ function seedCustomJobsExample(slab,oid){
     action:{mode:"report"},
     model:null,maxRows:null,active:false,example:true,
     createdBy:"__system__",lastRun:null,createdAt:1,updatedAt:1,deleted:false
+  });
+}
+// RESEARCH library seed — the crew-comp research note. Seeded into obx ONLY, exactly once (idempotent on the
+// stable id "research_crewcomp"; only added if absent). Stable id + updatedAt:1 so a re-seed on a fresh device
+// dedupes via sync LWW instead of duplicating, and never overrides the owner's later edit/delete. Other orgs
+// just get the empty array (no seed). This is reference content, not legal advice.
+const RESEARCH_CREWCOMP_BODY =
+"Research (2026-06-30) on bringing 2 friends onto the OBX crew — DYAD Holdings LLC, North Carolina.\n"+
+"This is RESEARCH, not legal or tax advice. Confirm everything with a NC attorney + a CPA before acting.\n\n"+
+"THE QUESTION\nRay wants to add two friends to the crew. They want \"in on the startup,\" not just a paycheck. "+
+"What's the cleanest, cheapest, lowest-risk way to pay and structure them?\n\n"+
+"RECOMMENDATION\nAdmit them as PROFITS-INTEREST LLC MEMBERS, paid through the existing revenue split (a % of "+
+"each completed job via the 80% field-work slice), with VESTING. It fits \"friends who want a piece of the "+
+"startup,\" it avoids the workers'-comp / payroll / insurance burden Ray can't afford yet, and it is simply "+
+"the revenue-split model the company already runs — extended to two more people.\n\n"+
+"THE FOUR OPTIONS\n\n"+
+"1) W-2 HOURLY EMPLOYEES\n"+
+"  Pros: simplest to explain; total control/direction; familiar.\n"+
+"  Cons: payroll + employer FICA + unemployment; a 3rd non-member W-2 worker TRIGGERS mandatory NC workers' "+
+"comp (~$3,100–7,700/yr depending on class code); piece-rate still owes minimum-wage true-up + overtime "+
+"regardless of whether the customer has paid; doesn't give them the \"ownership\" they want.\n\n"+
+"2) 1099 INDEPENDENT CONTRACTORS\n"+
+"  Pros: looks cheap and easy on paper.\n"+
+"  Cons: UNSAFE for a daily crew. They'd use your truck and tools, work daily, be owner-directed, and work "+
+"only for you — that fails the IRS, FLSA, and NC (the Hayes test) tests for contractor status. "+
+"Misclassification exposes you to back taxes across four NC agencies (Revenue, DES, Industrial Commission, "+
+"DOL), the §97-19 statutory-employer workers'-comp trap if someone is hurt, and personal liability that can "+
+"reach the members. Do not do this.\n\n"+
+"3) LLC MEMBERS (recommended structure)\n"+
+"  Pros: members are NOT counted as employees, so headcount stays at 0 and no workers' comp is required "+
+"(NC requires it at 3+ EMPLOYEES; Ray's 3 owner-operators count as 0). No payroll, no W-2, no employer FICA. "+
+"Income flows via a K-1 distributive share + guaranteed payments; they self-pay the 15.3% self-employment "+
+"tax through quarterly estimates. It gives them real ownership — the thing they actually want.\n"+
+"  Cons: members are hard to remove and gain governance + fiduciary rights; they must handle their own "+
+"quarterly taxes; phantom income on a K-1 can surprise them (handled with a mandatory tax-distribution "+
+"clause — see the path below).\n\n"+
+"4) % OF EACH COMPLETED JOB\n"+
+"  This is HOW members get paid, not a separate legal status. Pros: pay-as-paid and seasonally fair — it "+
+"matches the revenue-split startup model. Cons: \"pay only when the customer pays\" is ONLY lawful for "+
+"owners/members. For a W-2 employee, piece-rate still requires the minimum-wage true-up + overtime no matter "+
+"when the customer pays — so this clean model only works if they're members.\n\n"+
+"WHAT \"PROFITS INTEREST\" MEANS (and why it's the tax-efficient kind)\n"+
+"A profits interest (Rev. Proc. 93-27 / 2001-43) is sweat equity done the smart way: it's a share of FUTURE "+
+"profits and growth, worth $0 if the company were liquidated today — so it is NOT taxable when granted, and "+
+"future upside is often taxed at capital-gains rates. The alternative, a CAPITAL interest granted for "+
+"services, IS taxable as ordinary income right now — avoid it. File a protective 83(b) election within 30 "+
+"days of the grant to lock in the favorable treatment.\n\n"+
+"WHAT \"GRANT\" AND \"VESTING\" MEAN (plain language)\n"+
+"GRANT = the act of issuing the ownership stake — \"here is your X% profits interest.\"\n"+
+"VESTING = earning that grant over time instead of owning it all on day one. A common shape is a 1-YEAR "+
+"CLIFF and a 4-YEAR VEST: nothing is earned until they've stuck it out one full year (the cliff), then the "+
+"rest is earned gradually over four years. If they leave early, the unvested portion is FORFEITED (bought "+
+"back per the agreement). Vesting is the \"prove themselves first\" mechanism — they get real ownership, but "+
+"they have to stay and earn it, and a friend who walks after two months doesn't keep a permanent stake.\n\n"+
+"EMPLOYEES vs MEMBERS — the tradeoff\n"+
+"Employees are simple and easy to remove, but cost payroll/comp/overtime and give no ownership. Members cost "+
+"none of that and give the ownership the friends want, but they are co-owners — harder to remove, with "+
+"governance and fiduciary rights, and they must self-manage their taxes. For two trusted friends who want "+
+"in on the startup, members win; for a hired hand you might fire next month, an employee is cleaner.\n\n"+
+"THE PATH (step by step)\n"+
+"1) Attorney drafts an Operating-Agreement amendment that includes: the profits interest; the vesting "+
+"schedule (e.g. 1-yr cliff / 4-yr vest); a buy-back / forfeiture clause on departure; and a MANDATORY "+
+"tax-distribution clause so K-1 phantom income never surprises them.\n"+
+"2) Each new member files an 83(b) election within 30 days of the grant.\n"+
+"3) Pay them through the field-work split (their % of each completed job).\n"+
+"4) Issue K-1s at year end.\n"+
+"5) They self-manage their estimated quarterly taxes (the 15.3% SE tax).\n\n"+
+"DECISIONS FOR RAY\n"+
+"• How much equity each friend gets, and how fast it vests.\n"+
+"• Whether he truly wants these two as long-term CO-OWNERS (members are hard to remove and gain real "+
+"governance / fiduciary rights).\n"+
+"• Whether they're ready and able to self-pay quarterly taxes.\n"+
+"• Watch the line: a 3rd NON-member W-2 worker makes workers' comp mandatory (~$3,100–7,700/yr).\n\n"+
+"THE CAVEAT\nThis is research, not legal or tax advice. Confirm the whole plan with a NC attorney and a CPA "+
+"before acting. Citations behind the findings: ic.nc.gov, IRS, NC DES / NC DOL.";
+function seedResearchNotes(slab,oid){
+  if(!slab||typeof slab!=="object"||Array.isArray(slab))return;
+  if(!Array.isArray(slab.research))slab.research=[];
+  if(oid!=="obx")return;
+  if(slab.research.some(r=>r&&r.id==="research_crewcomp"))return;
+  slab.research.push({
+    id:"research_crewcomp",
+    title:"Adding crew — comp & legal options (research)",
+    body:RESEARCH_CREWCOMP_BODY,
+    tags:"crew, comp, legal, LLC, equity",
+    createdBy:"__system__",
+    updatedAt:1,
+    deleted:false
   });
 }
 function seedCeo(){
