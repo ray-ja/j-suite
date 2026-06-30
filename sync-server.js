@@ -172,7 +172,7 @@ function sanitizeMessageDeletes(incoming, pre, selfId) {
 // REVERT those privileged fields to the STORED value (or drop them if the org had none) — order/visibility can
 // only be changed by an org admin. New-org creation, name, and other fields are unaffected; super-admin/verified
 // owner already bypass this (they may write anything). Mirrors sanitizeMessageDeletes (per stored memberships).
-const REG_ADMIN_FIELDS = ["navOrder", "tabs"];
+const REG_ADMIN_FIELDS = ["navOrder", "tabs", "vehicles"];
 function sanitizeRegistryWrites(incoming, pre, selfId) {
   if (!incoming || !Array.isArray(incoming.registry) || !incoming.registry.length) return incoming;
   const stored = (pre && pre.registry) || [];
@@ -303,6 +303,13 @@ function migrateStore(s) {
   s.registry.forEach(r => { if (r && r.id && !r.deleted && !RESERVED.has(r.id) && (!s[r.id] || typeof s[r.id] !== "object" || Array.isArray(s[r.id]))) s[r.id] = blankBiz(); });
   for (const oid of orgIdsOf(s)) if (!s.registry.find(r => r && r.id === oid))   // scaffold a registry record for every org lacking one (idempotent)
     s.registry.push({ id: oid, slug: oid, name: ORG_NAMES[oid] || oid, settings: {}, aiConfig: null, createdAt: 1, updatedAt: 1, deleted: false });
+  // MILEAGE — managed truck list (registry[org].vehicles, owner/admin-managed). Backfill an empty vehicles[]
+  // on every org, then SEED obx with Ray's F-150 ONLY if absent (stable id → re-seed dedupes via LWW).
+  // updatedAt is NOT bumped, so a real owner edit always wins on merge. Loss-free + idempotent.
+  s.registry.forEach(r => { if (r && !Array.isArray(r.vehicles)) r.vehicles = []; });
+  { const obxReg = s.registry.find(r => r && r.id === "obx");
+    if (obxReg) { if (!Array.isArray(obxReg.vehicles)) obxReg.vehicles = [];
+      if (!obxReg.vehicles.find(v => v && v.id === "veh_obx_f150")) obxReg.vehicles.push({ id: "veh_obx_f150", name: "F-150", plate: "LCW-4430", active: true }); } }
   // migrate pre-multi-org accounts (those with NO membership) → members of the original orgs (obx+jam); owner → super-admin. Idempotent + authoritative (so isolation works from the first sync).
   s.users.filter(u => u && !u.kind && !u.deleted).forEach(u => {
     if (s.users.some(m => m && m.kind === "membership" && m.accountId === u.id)) return;

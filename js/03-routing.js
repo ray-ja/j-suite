@@ -44,6 +44,7 @@ function render(){
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
   if(typeof renderClockPill==="function")renderClockPill();
+  if(typeof renderOdoBanner==="function")renderOdoBanner();   // header "enter your odometer" reminder (js/85)
   if(typeof renderOrgSwitcher==="function")renderOrgSwitcher();   // keep the header org name/dropdown in sync with the active org + role
   if(typeof renderViewAsBanner==="function")renderViewAsBanner();   // "Viewing as <role>" tester banner (js/28)
 }

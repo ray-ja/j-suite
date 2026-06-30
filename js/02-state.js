@@ -11,6 +11,14 @@ function load(){
   if(!S.users)S.users=[];
   if(!Array.isArray(S.registry))S.registry=[];   // MULTI-ORG: org metadata (id,name,…); orgs are top-level keys (obx, jam, + future). Scaffold obx/jam idempotently.
   {const ON={obx:"OBX Lot Solutions",jam:"Jamieson Automation"};["obx","jam"].forEach(oid=>{if(S[oid]&&!S.registry.find(r=>r&&r.id===oid))S.registry.push({id:oid,slug:oid,name:ON[oid]||oid,settings:{},aiConfig:null,createdAt:1,updatedAt:1,deleted:false});});}
+  // MILEAGE — managed per-org TRUCK LIST on registry[org].vehicles (owner/admin-managed; rides registry LWW).
+  // Backfill an empty vehicles[] on every org idempotently, then SEED obx with Ray's truck ONLY if absent
+  // (matched on a stable id so a re-seed across devices dedupes via sync instead of duplicating). updatedAt:1
+  // so this local seed always LOSES to any real owner edit on merge.
+  (S.registry||[]).forEach(r=>{if(r&&!Array.isArray(r.vehicles))r.vehicles=[];});
+  {const obxReg=(S.registry||[]).find(r=>r&&r.id==="obx");
+   if(obxReg){if(!Array.isArray(obxReg.vehicles))obxReg.vehicles=[];
+     if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true});}}
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
@@ -32,6 +40,22 @@ function load(){
     // j.date stays the START/primary day. Legacy jobs (no workDays) default to [j.date] so they're unchanged.
     // Additive, rides the job record's LWW — no new collection. Loss-free + idempotent.
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.workDays)||!j.workDays.length){j.workDays=j.date?[j.date]:[];}});
+    // MILEAGE / ODOMETER / GPS — ADDITIVE timeclock fields (no new collection). Legacy entries get sane defaults:
+    //   stops[] = multi-stop pickups (GPS-stamped); odoStart now nullable (odometer no longer blocks clock-in);
+    //   milesSource derived from how the entry's miles were set ("odometer"|"gps"|"manual"); vehicleId for the
+    //   managed truck list. Loss-free + idempotent — rides the timeclock record's LWW.
+    (S[b].timeclock||[]).forEach(e=>{
+      if(!e||e.deleted)return;
+      if(!Array.isArray(e.stops))e.stops=[];
+      if(e.odoStart===undefined)e.odoStart=null;
+      if(e.odoEnd===undefined)e.odoEnd=null;
+      if(e.vehicleId===undefined)e.vehicleId=null;   // null = personal/no managed truck (legacy entries kept the "<name>'s vehicle" string in e.vehicle)
+      if(!e.milesSource){   // derive provenance from how miles were captured: odometer delta → "odometer"; else if miles set → "gps"
+        if(e.odoStart!=null&&e.odoEnd!=null)e.milesSource="odometer";
+        else if(e.miles!=null)e.milesSource="gps";
+        else e.milesSource=null;   // still open / no miles yet
+      }
+    });
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });

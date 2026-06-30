@@ -259,6 +259,63 @@ window.navOrderMove = function (key, dir) {
   orgSetNavOrder(order);
 };
 window.navOrderReset = function () { orgSetNavOrder(null); };   // drop the override → back to the default NAV_GROUPS order
+
+/* ----- MANAGED VEHICLE LIST (owner/admin) — registry[org].vehicles, the company trucks the crew picks at
+   clock-in (alongside "No vehicle" + each member's personal vehicle). Rides registry LWW; the server
+   (sanitizeRegistryWrites → REG_ADMIN_FIELDS) reverts a non-admin's write, so this UI gate mirrors that. */
+function canManageVehicles() { return (typeof isOwner === "function" && isOwner()) || ((typeof canDo === "function") && canDo("edit-settings")); }
+function orgVehiclesReg() { return (S.registry || []).find(x => x && x.id === S.biz) || null; }
+function orgVehicles() { const r = orgVehiclesReg(); return (r && Array.isArray(r.vehicles)) ? r.vehicles : []; }
+function vehiclesCard() {
+  const vs = orgVehicles().filter(v => v && !v.deleted);
+  let h = `<div class="card"><div class="nm" style="font-size:15px">🚚 Vehicles for ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div>
+    <div class="sub" style="margin-bottom:8px">Company trucks the crew can pick when clocking in (alongside “No vehicle” and personal vehicles). Mileage logs at $0.725/mi against the chosen vehicle.</div>`;
+  if (!vs.length) h += `<div class="muted" style="margin:4px 0 8px">No company trucks yet — add one below.</div>`;
+  else h += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">` + vs.map(v => `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
+      <span class="grow"><b>${esc(v.name || "Truck")}</b>${v.plate ? ` <span class="sub">· ${esc(v.plate)}</span>` : ""}${v.active === false ? ` <span class="badge" style="background:var(--soft);color:var(--muted)">retired</span>` : ""}</span>
+      <button class="btn ghost sm" onclick="vehEdit('${esc(v.id)}')">Edit</button>
+      <button class="btn ghost sm" onclick="vehToggleActive('${esc(v.id)}')">${v.active === false ? "Reactivate" : "Retire"}</button>
+      <button class="btn danger sm" onclick="vehRemove('${esc(v.id)}')">✕</button>
+    </div>`).join("") + `</div>`;
+  h += `<button class="btn acc sm" onclick="vehAdd()">+ Add truck</button></div>`;
+  return h;
+}
+function vehSave() { const r = orgVehiclesReg(); if (!r) return; r.updatedAt = now(); save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); render(); }
+window.vehAdd = function () {
+  if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
+  const name = prompt("Truck name / nickname (e.g. F-150):"); if (name == null) return;
+  if (!name.trim()) { alert("Give the truck a name."); return; }
+  const plate = (prompt("License plate (optional):") || "").trim();
+  const r = orgVehiclesReg(); if (!r) return; if (!Array.isArray(r.vehicles)) r.vehicles = [];
+  r.vehicles.push({ id: "veh_" + uid(), name: name.trim(), plate: plate, active: true });
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Added vehicle “" + name.trim() + "”");
+  vehSave();
+};
+window.vehEdit = function (id) {
+  if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
+  const v = orgVehicles().find(x => x && x.id === id); if (!v) return;
+  const name = prompt("Truck name / nickname:", v.name || ""); if (name == null) return;
+  if (!name.trim()) { alert("Give the truck a name."); return; }
+  const plate = prompt("License plate (optional):", v.plate || ""); if (plate == null) return;
+  v.name = name.trim(); v.plate = plate.trim();
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Edited vehicle “" + v.name + "”");
+  vehSave();
+};
+window.vehToggleActive = function (id) {
+  if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
+  const v = orgVehicles().find(x => x && x.id === id); if (!v) return;
+  v.active = v.active === false ? true : false;
+  if (typeof logChange === "function") logChange("update", "account", S.biz, (v.active ? "Reactivated" : "Retired") + " vehicle “" + (v.name || "Truck") + "”");
+  vehSave();
+};
+window.vehRemove = function (id) {
+  if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
+  const v = orgVehicles().find(x => x && x.id === id); if (!v) return;
+  if (!confirm("Remove “" + (v.name || "Truck") + "”? Past shifts that used it keep their logged mileage.")) return;
+  v.deleted = true;   // soft-delete: rides registry LWW (the vehicles sub-array is replaced wholesale, so a tombstone is the safe signal)
+  if (typeof logChange === "function") logChange("delete", "account", S.biz, "Removed vehicle “" + (v.name || "Truck") + "”");
+  vehSave();
+};
 function myOrgIds() {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return [];
   if (me.superAdmin) return (S.registry || []).filter(r => r && !r.deleted).map(r => r.id);   // super-admin sees every org
@@ -322,6 +379,7 @@ function rAdmin() {
   const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
   if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
   if (canEditNav() && typeof navOrderCard === "function") h += navOrderCard();   // per-org left-nav GROUP order (owner/manager)
+  if (canManageVehicles() && typeof vehiclesCard === "function") h += vehiclesCard();   // managed company-truck list (owner/settings-manager)
   if (owner && typeof sampleDataCard === "function") h += sampleDataCard();   // Load/Clear obvious SAMPLE records for the enabled org tools (owner-only)
   if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   if (typeof workshopCard === "function") h += workshopCard();   // WORKSHOP: user-defined scheduled AI tasks — owner/admin (self-gates finance/broadcast/propose to owner)
