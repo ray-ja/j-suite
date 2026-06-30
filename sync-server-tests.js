@@ -93,6 +93,76 @@ ok("nav-order GATE: an ADMIN (manager-tier) CAN set navOrder (write passes throu
 const crewName = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "Renamed by crew", updatedAt: 34 }] }, noMig, "crw");
 ok("nav-order GATE: a crew write that does NOT touch navOrder/tabs passes through untouched (non-privileged fields free)", crewName.registry[0].name === "Renamed by crew");
 
+console.log("\n— MILEAGE / ODOMETER / GPS (managed truck list + timeclock additive fields): migration fixture (zero loss + legacy defaults) + F-150 seed + vehicles write-authz gate —");
+// Realistic PRE-mileage store: legacy timeclock entries with the OLD shape (no stops[]/vehicleId/milesSource;
+// a required odoStart per the old blocking flow), plus a no-vehicle-era entry. Two orgs, owner+admin+crew.
+const mlStored = {
+  obx: {
+    customers: [{ id: "c1", name: "Acme", updatedAt: 10 }], jobs: [{ id: "j1", title: "Haul", updatedAt: 10 }],
+    timeclock: [
+      { id: "tc1", jobId: "j1", userId: "crw", userName: "joe", clockIn: 100, clockOut: 200, inLoc: { lat: 36, lng: -75 }, outLoc: { lat: 36.1, lng: -75.1 }, pings: [], computedMiles: 8.2, miles: 9, milesConfirmed: true, odoStart: 1000, odoEnd: 1009, vehicle: "joe's vehicle", vehicleOwnerId: "crw", rate: 0.725, updatedAt: 10 },
+      { id: "tc2", jobId: "j1", userId: "crw", userName: "joe", clockIn: 300, clockOut: 400, inLoc: null, outLoc: null, pings: [], computedMiles: 4.4, miles: null, milesConfirmed: false, odoStart: null, odoEnd: null, vehicle: "ray's vehicle", vehicleOwnerId: "own", rate: 0.725, updatedAt: 10 }
+    ]
+  },
+  jam: { customers: [{ id: "jc1", name: "Mill", updatedAt: 10 }], timeclock: [{ id: "jtc1", jobId: "jj1", userId: "own", clockIn: 1, clockOut: 2, miles: 3, milesConfirmed: true, updatedAt: 10 }] },
+  registry: [{ id: "obx", name: "OBX Lot Solutions", updatedAt: 5 }, { id: "jam", name: "Jamieson", updatedAt: 5 }],
+  users: [
+    { id: "own", username: "ray", role: "owner", superAdmin: true, updatedAt: 1 },
+    { id: "adm", username: "amy", role: "crew", updatedAt: 1 },
+    { id: "crw", username: "joe", role: "crew", updatedAt: 1 },
+    { id: "mem_obx_own", kind: "membership", orgId: "obx", accountId: "own", role: "owner", active: true, updatedAt: 1 },
+    { id: "mem_obx_adm", kind: "membership", orgId: "obx", accountId: "adm", role: "admin", active: true, updatedAt: 1 },
+    { id: "mem_obx_crw", kind: "membership", orgId: "obx", accountId: "crw", role: "crew", active: true, updatedAt: 1 }
+  ]
+};
+const mlMig = t.migrateStore(JSON.parse(JSON.stringify(mlStored)));
+ok("mileage fixture: migrate keeps EVERY legacy timeclock entry across both orgs (zero loss)",
+  mlMig.obx.timeclock.length === 2 && mlMig.obx.timeclock.some(e => e.id === "tc1") && mlMig.obx.timeclock.some(e => e.id === "tc2") && mlMig.jam.timeclock.some(e => e.id === "jtc1"));
+ok("mileage fixture: legacy entries keep their existing fields intact (odometer, miles, vehicleOwnerId)",
+  (function () { const a = mlMig.obx.timeclock.find(e => e.id === "tc1"); return a.odoStart === 1000 && a.odoEnd === 1009 && a.miles === 9 && a.milesConfirmed === true && a.vehicleOwnerId === "crw"; })());
+ok("mileage fixture: customers/jobs/accounts all survive migration (zero loss)",
+  mlMig.obx.customers.some(c => c.id === "c1") && mlMig.obx.jobs.some(j => j.id === "j1") && mlMig.jam.customers.some(c => c.id === "jc1") && mlMig.users.filter(u => !u.kind).length === 3);
+// F-150 SEED: obx's managed truck list is seeded idempotently with Ray's truck
+const obxReg = mlMig.registry.find(r => r.id === "obx");
+ok("mileage: obx registry seeded with the F-150 (name + plate, active)",
+  Array.isArray(obxReg.vehicles) && obxReg.vehicles.some(v => v.id === "veh_obx_f150" && v.name === "F-150" && v.plate === "LCW-4430" && v.active === true));
+ok("mileage: jam gets an (empty) vehicles[] but is NOT seeded with the obx truck",
+  Array.isArray(mlMig.registry.find(r => r.id === "jam").vehicles) && mlMig.registry.find(r => r.id === "jam").vehicles.length === 0);
+ok("mileage: F-150 seed is IDEMPOTENT (re-migrate does not duplicate it)",
+  t.migrateStore(t.migrateStore(mlMig)).registry.find(r => r.id === "obx").vehicles.filter(v => v.id === "veh_obx_f150").length === 1);
+// A full sync round-trip preserves every timeclock entry AND the seeded vehicles
+const mlRound = t.mergeState(mlMig, t.projectForUser(mlMig, ["obx", "jam"], { id: "own", superAdmin: true }));
+ok("mileage: a sync round-trip preserves all timeclock entries + the F-150 vehicle (zero loss)",
+  mlRound.obx.timeclock.length === 2 && mlRound.jam.timeclock.some(e => e.id === "jtc1") && mlRound.registry.find(r => r.id === "obx").vehicles.some(v => v.id === "veh_obx_f150"));
+// VEHICLES WRITE-AUTHZ GATE (server is the authority): owner/admin can manage the truck list; crew cannot.
+const admVeh = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", vehicles: [{ id: "veh_obx_f150", name: "F-150", plate: "LCW-4430", active: true }, { id: "veh_x", name: "Dump trailer", active: true }], updatedAt: 40 }] }, mlMig, "own");
+ok("mileage GATE: an owner CAN add a vehicle (write passes through)", admVeh.registry[0].vehicles.some(v => v.id === "veh_x"));
+const crewVeh = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", vehicles: [{ id: "veh_hax", name: "Crew's fake truck", active: true }], updatedAt: 41 }] }, mlMig, "crw");
+ok("mileage GATE: a CREW member's vehicles write is REVERTED to the stored (seeded F-150 only) list",
+  JSON.stringify(crewVeh.registry[0].vehicles) === JSON.stringify(obxReg.vehicles) && !crewVeh.registry[0].vehicles.some(v => v.id === "veh_hax"));
+const mlMerged = t.mergeState(mlMig, admVeh);
+ok("mileage GATE: the owner's vehicle add survives the LWW merge without dropping any timeclock data",
+  mlMerged.registry.find(r => r.id === "obx").vehicles.some(v => v.id === "veh_x") && mlMerged.obx.timeclock.length === 2);
+
+// CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource.
+// We replicate the exact derivation here so the server suite proves the client migration is loss-free + sane.
+function clientTimeclockDefault(e) {
+  if (!Array.isArray(e.stops)) e.stops = [];
+  if (e.odoStart === undefined) e.odoStart = null;
+  if (e.odoEnd === undefined) e.odoEnd = null;
+  if (e.vehicleId === undefined) e.vehicleId = null;
+  if (!e.milesSource) { if (e.odoStart != null && e.odoEnd != null) e.milesSource = "odometer"; else if (e.miles != null) e.milesSource = "gps"; else e.milesSource = null; }
+  return e;
+}
+const cd1 = clientTimeclockDefault({ id: "x", odoStart: 1000, odoEnd: 1009, miles: 9, clockOut: 2 });
+ok("client default: an odometer-pair legacy entry derives milesSource=odometer + gets stops[]/vehicleId",
+  cd1.milesSource === "odometer" && Array.isArray(cd1.stops) && cd1.stops.length === 0 && cd1.vehicleId === null);
+const cd2 = clientTimeclockDefault({ id: "y", miles: 4, clockOut: 2 });   // miles set but no odometer → gps
+ok("client default: a miles-only legacy entry (no odometer) derives milesSource=gps", cd2.milesSource === "gps");
+const cd3 = clientTimeclockDefault({ id: "z", clockOut: null });   // still open, no miles → null source, nullable odo
+ok("client default: an open/no-miles legacy entry gets nullable odometer + milesSource=null (no false provenance)",
+  cd3.odoStart === null && cd3.odoEnd === null && cd3.milesSource === null);
+
 console.log("\n— WORKSHOP (customJobs): migration fixture (zero loss) + seeded Sentinel example + write-authz gate —");
 // realistic pre-Workshop store: real data + accounts + memberships, a pre-existing customJob, NO seeded example yet
 const wsStored = {

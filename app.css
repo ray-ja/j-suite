@@ -251,6 +251,23 @@
   body.has-viewas-banner.has-dev-banner #viewasbanner{top:24px}
   body.has-viewas-banner.has-dev-banner header{top:52px}
   @media(min-width:900px){ body.has-viewas-banner nav{top:88px} body.has-viewas-banner.has-dev-banner nav{top:112px} }
+  /* MILEAGE odometer reminder banner (js/85) — fixed 28px top bar shown while clocked-in with a vehicle but
+     no odometer yet; tap → enter the (GPS-anchored) start reading. Shifts header+body down like the others;
+     stacks UNDER the dev bar when both are present. Owner-preview (view-as) and being mid-shift rarely
+     coincide, but if they do, this sits under that bar too so nothing overlaps. */
+  #odobanner{position:fixed;top:0;left:0;right:0;height:28px;z-index:62;border:none;cursor:pointer;background:#c0392b;color:#fff;font:700 13px/28px -apple-system,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;width:100%}
+  body.has-odo-banner{padding-top:28px}
+  body.has-odo-banner header{top:28px}
+  body.has-odo-banner.has-dev-banner{padding-top:52px}
+  body.has-odo-banner.has-dev-banner #odobanner{top:24px}
+  body.has-odo-banner.has-dev-banner header{top:52px}
+  body.has-odo-banner.has-viewas-banner{padding-top:56px}
+  body.has-odo-banner.has-viewas-banner #odobanner{top:28px}
+  body.has-odo-banner.has-viewas-banner header{top:56px}
+  body.has-odo-banner.has-viewas-banner.has-dev-banner{padding-top:80px}
+  body.has-odo-banner.has-viewas-banner.has-dev-banner #odobanner{top:52px}
+  body.has-odo-banner.has-viewas-banner.has-dev-banner header{top:80px}
+  @media(min-width:900px){ body.has-odo-banner nav{top:88px} body.has-odo-banner.has-dev-banner nav{top:112px} body.has-odo-banner.has-viewas-banner nav{top:116px} body.has-odo-banner.has-viewas-banner.has-dev-banner nav{top:140px} }
   /* in-use soft-lock banner (js/35-locks.js) */
   .lockbanner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-left:4px solid var(--danger);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:14px}
   .lockbanner .btn{width:auto;flex:0 0 auto}

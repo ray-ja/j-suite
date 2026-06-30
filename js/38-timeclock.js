@@ -17,6 +17,7 @@
 
 const TC_RATE = 0.725;        // $/mile — owner-confirmable mileage reimbursement / cost rate
 const TC_PING_MS = 120000;    // foreground ping cadence (~2 min) — enough to shape the path, easy on battery
+const TC_TOL = 0.25;          // GPS-vs-odometer verification tolerance (25%, ASYMMETRIC — see tcVerify)
 let TCSUB = "clock";          // "clock" (crew) | "report" (owner: hours + miles per job/user)
 let _tcPing = null, _tcClock = null;
 
@@ -44,10 +45,10 @@ function renderClockPill() {
   }
   const j = (typeof actJ === "function") ? actJ().find(x => x && x.id === open.jobId) : null;
   const dur = (typeof tcFmtDur === "function") ? tcFmtDur(Date.now() - (open.clockIn || Date.now())) : "";
-  const noVeh = !open.vehicle;
-  el.style.cssText = "display:inline-flex;align-items:center;gap:5px;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:none;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;" + (noVeh ? "background:var(--danger);color:#fff" : "background:var(--accent);color:var(--accent-ink)");
+  const needOdo = (typeof tcNeedsOdo === "function") ? tcNeedsOdo(open) : false;   // vehicle chosen but no odometer yet → warn
+  el.style.cssText = "display:inline-flex;align-items:center;gap:5px;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:none;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;" + (needOdo ? "background:var(--danger);color:#fff" : "background:var(--accent);color:var(--accent-ink)");
   el.title = "Clocked in — tap to open the job";
-  el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + (open.vehicle ? " · 🚚 " + esc(open.vehicle) : " · ⚠ no vehicle");
+  el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + (open.vehicle ? " · 🚚 " + esc(open.vehicle) + (needOdo ? " · ⚠ odo" : "") : " · 🚶");
 }
 window.clockPillTap = function () {
   const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null;
@@ -55,7 +56,7 @@ window.clockPillTap = function () {
   if (open.jobId && typeof openJobPage === "function") openJobPage(open.jobId);
   else { TAB = "schedule"; if (typeof render === "function") render(); }
 };
-try { setInterval(function () { if (typeof renderClockPill === "function") renderClockPill(); }, 30000); } catch (e) {}
+try { setInterval(function () { if (typeof renderClockPill === "function") renderClockPill(); if (typeof renderOdoBanner === "function") renderOdoBanner(); }, 30000); } catch (e) {}
 function tcJob(id) { return (D().jobs || []).find(j => j.id === id) || null; }
 /* ===== estimated vs ACTUAL job time (the learning loop). Estimate = the quote's hours-each × crew (incl.
    drive + setup). Actual = the SUM of every clocked segment on the job across the whole crew — breaks
@@ -90,6 +91,29 @@ function tcRound(n) { return Math.round((n || 0) * 10) / 10; }
 /* confirmed miles if set, else the rounded GPS estimate */
 function tcMiles(e) { return (e.miles != null) ? e.miles : tcRound(e.computedMiles); }
 function tcMileageCost(e) { return tcMiles(e) * (e.rate || TC_RATE); }
+/* odometer-delta miles (null if either reading is missing) — odometer is ALWAYS the number of record */
+function tcOdoMiles(e) { return (e && e.odoStart != null && e.odoEnd != null) ? Math.max(0, e.odoEnd - e.odoStart) : null; }
+/* GPS-vs-odometer VERIFICATION (25% ASYMMETRIC). The odometer stays the number of record; GPS only FLAGS a
+   discrepancy (or substitutes when the odometer is absent). The asymmetry tolerates a normal GPS UNDERCOUNT
+   (a backgrounded PWA misses route) but flags an odometer that's implausibly HIGH vs GPS, OR an odometer that
+   reads LOWER than the GPS path (you can't drive fewer real miles than the GPS already traced).
+   Returns { flag:bool, kind, odo, gps, deltaPct } or null when there's nothing to compare. */
+function tcVerify(e) {
+  const odo = tcOdoMiles(e); if (odo == null) return null;       // no odometer → nothing to verify against
+  const gps = tcRound(e.computedMiles); if (!(gps > 0.3)) return null;   // negligible GPS path → can't verify
+  const hi = gps * (1 + TC_TOL);                                  // odometer implausibly higher than GPS allows
+  if (odo > hi) return { flag: true, kind: "odo-high", odo: odo, gps: gps, deltaPct: Math.round((odo - gps) / gps * 100) };
+  if (odo < gps * (1 - 0.02)) return { flag: true, kind: "odo-low", odo: odo, gps: gps, deltaPct: Math.round((gps - odo) / gps * 100) };  // odometer below the GPS-traced distance (impossible) — tiny epsilon for rounding
+  return { flag: false, kind: "ok", odo: odo, gps: gps, deltaPct: Math.round(Math.abs(odo - gps) / gps * 100) };
+}
+/* source badge — where the entry's miles came from (provenance) */
+function tcSourceBadge(e) {
+  const s = e && e.milesSource;
+  if (s === "odometer") return `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">odometer</span>`;
+  if (s === "manual") return `<span class="badge" style="background:var(--brand,#1B2A4E);color:#fff">manual</span>`;
+  if (s === "gps") return `<span class="badge" style="background:var(--soft);color:var(--muted)">GPS est</span>`;
+  return "";
+}
 
 /* ----- geolocation (permission-gated; resolves null on deny/unavailable so time-tracking still works) ----- */
 function tcGetPos() {
@@ -122,19 +146,20 @@ window.tcClockIn = async function () {
   if (!jobId) { alert("Pick the job you're working on."); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
-  const vehOwnerId = val("tc_vehicle_owner") || who.userId;
-  const vehicle = tcVehOwnerName(vehOwnerId) + "'s vehicle";
-  const odoStart = parseFloat(val("tc_odo_start"));
-  if (!(odoStart >= 0)) { alert("Enter your starting odometer reading."); return; }
+  const veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
+  // Odometer NEVER blocks clock-in (you may not be in the truck yet). It's optional here; a header reminder
+  // (js/85) nags until it's entered. Only read it if a vehicle was chosen AND a value was typed.
+  let odoStart = null;
+  if (tcEntryHasVehicle(veh)) { const o = parseFloat(val("tc_odo_start")); if (o >= 0) odoStart = o; }
   const btn = document.getElementById("tc_inbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
   const loc = await tcGetPos();
   const e = {
     id: uid(), jobId: jobId, userId: who.userId, userName: who.name,
     clockIn: now(), clockOut: null,
-    inLoc: loc, outLoc: null, pings: [],
-    computedMiles: 0, miles: null, milesConfirmed: false,
+    inLoc: loc, outLoc: null, pings: [], stops: [],
+    computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
     odoStart: odoStart, odoEnd: null,
-    vehicle: vehicle, vehicleOwnerId: vehOwnerId, rate: TC_RATE, updatedAt: now()
+    vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
@@ -142,25 +167,60 @@ window.tcClockIn = async function () {
 };
 window.tcClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  // refresh the GPS estimate so the "Use GPS estimate" tap + verification reflect the latest path
+  e.computedMiles = tcComputeMiles(e);
+  const gpsEst = tcRound(e.computedMiles);
+  if (!tcEntryHasVehicle(e)) {   // No-vehicle shift → no odometer, no mileage; just close it out
+    modal("Clock out", `
+      <p class="muted" style="margin-bottom:8px">No vehicle on this shift — clocking out logs your time only (no mileage).</p>
+      <button class="btn acc" style="margin-top:8px;width:100%" onclick="tcFinishClockOut('${id}')">⏱ Clock out</button>`);
+    return;
+  }
   modal("Clock out — odometer", `
-    <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>.</p>
+    <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
     <label>End odometer</label>
-    <input id="tc_odo_end" type="number" inputmode="decimal" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
-    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcFinishClockOut('${id}')">📍 Clock out</button>`);
+    <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
+    <div class="sub" style="margin-top:6px">${e.odoStart != null ? "Start was " + e.odoStart + "." : "No start reading — the GPS estimate is " + gpsEst + " mi."} </div>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcFinishClockOut('${id}')">📍 Clock out</button>
+    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="tcClockOutGps('${id}')">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
+};
+/* one-tap: clock out using the GPS estimate as the miles (odometer left blank). milesSource = "gps". */
+window.tcClockOutGps = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  if (typeof closeModal === "function") closeModal();
+  e.clockOut = now(); e.odoEnd = null;
+  e.computedMiles = tcComputeMiles(e);
+  e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; e.milesConfirmed = false;   // GPS estimate → owner still confirms
+  touch(e); tcPingStop();
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcJobTitle(e.jobId));
+  save(); render();
+  try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
 window.tcFinishClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
-  const odoEnd = parseFloat(val("tc_odo_end"));
-  if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading."); return; }
-  if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
+  const hasVeh = tcEntryHasVehicle(e);
+  let odoEnd = null;
+  if (hasVeh) {
+    odoEnd = parseFloat(val("tc_odo_end"));
+    if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading, or tap “use GPS estimate”."); return; }
+    if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
+  }
   if (typeof closeModal === "function") closeModal();
   // clock out IMMEDIATELY — never block on GPS (it hangs at the dump / when location is off). The odometer is the truth.
   e.clockOut = now(); e.odoEnd = odoEnd;
   e.computedMiles = tcComputeMiles(e);
-  if (e.odoStart != null) { e.miles = Math.max(0, odoEnd - e.odoStart); e.milesConfirmed = true; }   // odometer = auto-confirmed for payout
-  else if (e.miles == null) { e.miles = tcRound(e.computedMiles); }
+  if (hasVeh && e.odoStart != null && odoEnd != null) {   // full odometer pair → odometer is the number of record, auto-confirmed
+    e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = true;
+    const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;   // GPS only FLAGS; never overrides the odometer
+  } else if (hasVeh && odoEnd != null && e.odoStart == null) {   // only an end reading, no start → can't compute a delta; fall back to GPS
+    if (e.miles == null) { e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; }
+  } else if (!hasVeh) {   // no vehicle → no mileage
+    e.miles = 0; e.milesSource = null; e.milesConfirmed = true;
+  } else if (e.miles == null) {   // vehicle but no odometer entered at all → GPS estimate
+    e.miles = tcRound(e.computedMiles); e.milesSource = "gps";
+  }
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
   save(); render();
   // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out
   try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
@@ -170,34 +230,181 @@ window.tcFinishClockOut = function (id) {
    Each person's vehicle is "<name>'s vehicle" (one personal vehicle each until there's a company truck). ===== */
 function tcVehMembers() { return (typeof schedMembers === "function") ? schedMembers() : []; }
 function tcVehOwnerName(id) { const u = tcVehMembers().find(x => x.id === id); return u ? u.username : "Crew"; }
-function tcVehOwnerOptions(selId) { return tcVehMembers().map(u => `<option value="${esc(u.id)}" ${selId === u.id ? "selected" : ""}>${esc(u.username)}'s vehicle</option>`).join(""); }
-function tcDefaultVehOwner(uid) {   // default to this driver's last-used vehicle owner (they mostly drive the same one), else their own
-  const last = (tcoll() || []).filter(e => e.userId === uid && e.vehicleOwnerId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
-  return (last && last.vehicleOwnerId) || uid;
+
+/* ===== managed per-org truck list (registry[org].vehicles — owner/admin-managed in Admin) =====
+   A unified vehicle picker offers, in order: 🚶 No vehicle · the org's managed trucks (active) · each member's
+   personal vehicle ("<name>'s vehicle"). The chosen option encodes WHICH bucket via the option value:
+     ""              → No vehicle (no odometer)
+     "truck:<id>"    → a managed company truck (registry vehicle)
+     "owner:<uid>"   → a member's personal vehicle (legacy model: reimburses that owner)
+   On clock-in we resolve this to e.vehicleId (truck id or null) + e.vehicleOwnerId + e.vehicle (display string). */
+function tcOrgVehicles() { const r = (S.registry || []).find(x => x && x.id === S.biz); return (r && Array.isArray(r.vehicles)) ? r.vehicles.filter(v => v && !v.deleted) : []; }
+function tcActiveTrucks() { return tcOrgVehicles().filter(v => v.active !== false); }
+function tcTruckById(id) { return tcOrgVehicles().find(v => v && v.id === id) || null; }
+function tcTruckLabel(v) { return v ? ((v.name || "Truck") + (v.plate ? " · " + v.plate : "")) : "Truck"; }
+/* the value (per the encoding above) that should be SELECTED by default for this driver: their account
+   defaultVehicleId if set + still active, else their last-used vehicle (truck or personal), else No vehicle. */
+function tcDefaultVehVal(driverId) {
+  const me = (typeof curUser === "function") ? curUser() : null;
+  if (me && me.id === driverId && me.defaultVehicleId) {
+    if (me.defaultVehicleId === "__none__") return "";
+    const t = tcTruckById(me.defaultVehicleId); if (t && t.active !== false) return "truck:" + t.id;
+  }
+  const last = (tcoll() || []).filter(e => e.userId === driverId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
+  if (last) {
+    if (last.vehicleId && tcTruckById(last.vehicleId) && (tcTruckById(last.vehicleId).active !== false)) return "truck:" + last.vehicleId;
+    if (last.vehicleId === null && last.vehicleOwnerId) return "owner:" + last.vehicleOwnerId;
+    if (!last.vehicle && last.vehicleId == null) return "";   // last shift had no vehicle
+    if (last.vehicleOwnerId) return "owner:" + last.vehicleOwnerId;
+  }
+  return "";   // default to No vehicle (one tap away to pick a truck)
 }
+/* the unified picker <select> options. selVal = current encoded value to pre-select. */
+function tcVehicleOptions(selVal, driverId) {
+  let h = `<option value="" ${selVal === "" ? "selected" : ""}>🚶 No vehicle</option>`;
+  const trucks = tcActiveTrucks();
+  if (trucks.length) h += `<optgroup label="Company trucks">` + trucks.map(v => `<option value="truck:${esc(v.id)}" ${selVal === ("truck:" + v.id) ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("") + `</optgroup>`;
+  h += `<optgroup label="Personal vehicles">` + tcVehMembers().map(u => `<option value="owner:${esc(u.id)}" ${selVal === ("owner:" + u.id) ? "selected" : ""}>🚗 ${esc(u.username)}'s vehicle</option>`).join("") + `</optgroup>`;
+  return h;
+}
+/* resolve an encoded picker value → {vehicleId, vehicleOwnerId, vehicle} written onto the entry */
+function tcResolveVehicle(encVal, driverId) {
+  if (!encVal) return { vehicleId: null, vehicleOwnerId: null, vehicle: "" };           // No vehicle
+  if (encVal.indexOf("truck:") === 0) { const v = tcTruckById(encVal.slice(6)); return { vehicleId: v ? v.id : null, vehicleOwnerId: null, vehicle: v ? tcTruckLabel(v) : "Truck" }; }
+  if (encVal.indexOf("owner:") === 0) { const oid = encVal.slice(6); return { vehicleId: null, vehicleOwnerId: oid, vehicle: tcVehOwnerName(oid) + "'s vehicle" }; }
+  return { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
+}
+/* does the entry / picked value involve a vehicle (→ odometer is relevant)? */
+function tcEntryHasVehicle(e) { return !!(e && (e.vehicleId || e.vehicleOwnerId || e.vehicle)); }
+/* live toggle: show/hide the odometer field when the picker changes (vehicle chosen ⇒ odometer relevant) */
+window.tcVehChanged = function () {
+  const v = val("tc_vehicle"), wrap = document.getElementById("tc_odo_wrap");
+  if (wrap) wrap.style.display = v ? "" : "none";
+};
+
+/* ===== per-user DEFAULT vehicle (account.defaultVehicleId) — set from the clock tab ===== */
+window.tcSetDefaultVehicle = function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) { alert("Sign in to set a default vehicle."); return; }
+  const cur = me.defaultVehicleId || "";
+  const trucks = tcActiveTrucks();
+  modal("Your default vehicle", `
+    <p class="muted" style="margin-bottom:8px">Pre-selected every time you clock in. You can still change it per shift.</p>
+    <select id="tc_defveh">
+      <option value="__none__" ${cur === "__none__" ? "selected" : ""}>🚶 No vehicle</option>
+      ${trucks.map(v => `<option value="${esc(v.id)}" ${cur === v.id ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("")}
+    </select>
+    <p class="muted" style="margin-top:8px;font-size:12px">Personal vehicles default to your last-used; only company trucks (and “No vehicle”) can be pinned as your default.</p>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcSaveDefaultVehicle()">Save default</button>`);
+};
+window.tcSaveDefaultVehicle = function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
+  const v = val("tc_defveh");
+  me.defaultVehicleId = v || null; touch(me); save();
+  if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+  if (typeof closeModal === "function") closeModal(); render();
+};
+
+/* ===== multi-stop material pickups (stops[] on the entry) — runs hit several places (quarry, Lowe's,
+   Home Depot, Ace). Each stop is GPS-stamped at the moment it's added (tcGetPos) so the path + audit are
+   real; quick-pick chips come from the org's saved `places`. Stops are descriptive (they feed the route +
+   audit trail); the odometer delta remains the number of record. ===== */
+function tcStops(e) { return Array.isArray(e && e.stops) ? e.stops.filter(s => s && !s.deleted) : []; }
+window.tcAddStop = async function (id, presetName) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  let name = presetName;
+  if (!name) { name = prompt("Stop / pickup location (e.g. Barnes quarry, Lowe's, Home Depot):"); if (name == null) return; name = name.trim(); }
+  if (!name) return;
+  if (!Array.isArray(e.stops)) e.stops = [];
+  const loc = await tcGetPos();   // GPS-stamp the stop as it's added
+  e.stops.push({ id: uid(), name: name, loc: loc, ts: now() });
+  touch(e);
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added stop “" + name + "” — " + tcJobTitle(e.jobId));
+  save(); render();
+};
+window.tcDelStop = function (id, stopId) {
+  const e = tcoll().find(x => x.id === id); if (!e || !Array.isArray(e.stops)) return;
+  const s = e.stops.find(x => x && x.id === stopId); if (!s) return;
+  s.deleted = true; touch(e);
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Removed a stop — " + tcJobTitle(e.jobId));
+  save(); render();
+};
+/* quick-pick chips from saved places (Map pins) — distinct names, capped so the row stays mobile-friendly */
+function tcStopQuickPicks(id) {
+  const places = (D().places || []).filter(p => p && !p.deleted && p.name);
+  const seen = {}, picks = [];
+  places.forEach(p => { const n = p.name.trim(); if (n && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; picks.push(n); } });
+  if (!picks.length) return "";
+  return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">` +
+    picks.slice(0, 8).map(n => `<button class="btn ghost sm" style="padding:4px 10px" onclick="tcAddStop('${id}',${JSON.stringify(n).replace(/"/g, "&quot;")})">📍 ${esc(n)}</button>`).join("") + `</div>`;
+}
+/* the stops block on the active-shift card (add + list + delete) */
+function tcStopsBlock(id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return "";
+  const stops = tcStops(e);
+  let h = `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+    <div class="row" style="align-items:center"><div class="grow"><b style="font-size:14px">🛒 Stops / pickups</b> <span class="sub">${stops.length || ""}</span></div>
+      <button class="btn ghost sm" onclick="tcAddStop('${id}')">+ Add stop</button></div>`;
+  if (stops.length) h += stops.map(s => `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:13px">📍 ${esc(s.name)}</div><div class="sub">${(function(){try{return new Date(s.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(x){return ""}})()}${s.loc ? " · GPS-stamped" : " · no GPS"}</div></div><button class="btn ghost sm" style="padding:2px 8px" onclick="tcDelStop('${id}','${s.id}')">✕</button></div>`).join("");
+  else h += `<div class="sub" style="margin-top:4px">No stops yet. Add the quarry, Lowe's, Home Depot, Ace…</div>`;
+  h += tcStopQuickPicks(id);
+  return h + `</div>`;
+}
+
+/* ===== HEADER ODOMETER REMINDER (js/85 reads this) — is the current user clocked in with a vehicle but
+   no starting odometer recorded yet? GPS-ACCRUED LATE-ENTRY ANCHORING: when they finally enter the reading,
+   we anchor it to the GPS miles ALREADY accrued so the late entry stays auditable (the reading-as-entered +
+   the miles already driven before it was logged). ===== */
+function tcNeedsOdo(e) { return !!(e && !e.clockOut && tcEntryHasVehicle(e) && e.odoStart == null); }
+window.tcReminderEntry = function () { const e = tcMyOpen(); return tcNeedsOdo(e) ? e : null; };
+window.tcEnterStartOdo = function () {
+  const e = tcMyOpen(); if (!tcNeedsOdo(e)) { render(); return; }
+  const accrued = tcRound(tcComputeMiles(e));
+  const reading = prompt("Starting odometer on " + (e.vehicle || "your vehicle") + " — enter the miles showing NOW:" + (accrued > 0.3 ? "\n\n(You've already driven ~" + accrued + " mi since clocking in — that's anchored so the late entry stays accurate.)" : ""));
+  if (reading == null) return;
+  const o = parseFloat(reading);
+  if (!(o >= 0)) { alert("Enter a number for the odometer."); return; }
+  // ANCHOR the late entry: the reading is "now", but `accrued` miles were already driven since clock-in. We
+  // back-date the START so odometer-delta still captures the whole shift's driving. Audit fields keep the raw.
+  e.odoStart = Math.max(0, o - accrued);
+  e.odoStartEnteredAt = now(); e.odoStartReading = o; e.odoStartAccruedAtEntry = accrued;   // auditable provenance
+  touch(e);
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Entered start odometer " + o + (accrued > 0.3 ? " (anchored −" + accrued + " mi already driven)" : "") + " — " + tcJobTitle(e.jobId));
+  save(); render();
+};
 
 /* ===== owner: edit / confirm an entry's mileage + vehicle ===== */
 window.tcOpenEntry = function (id) {
   if (typeof isOwner === "function" && !isOwner()) { alert("Only the owner can adjust logged time + mileage."); return; }
   const e = tcoll().find(x => x.id === id); if (!e) return;
-  const veh = (typeof schedMembers === "function") ? schedMembers().map(u => u.username) : [];
+  const v = tcVerify(e), odoM = tcOdoMiles(e), stops = tcStops(e);
+  const curVal = e.vehicleId ? ("truck:" + e.vehicleId) : (e.vehicleOwnerId ? ("owner:" + e.vehicleOwnerId) : "");
+  let flagHtml = "";
+  if (e.milesFlag === "odo-high" || (v && v.kind === "odo-high")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) reads <b>${(v||{}).deltaPct||""}% higher</b> than the GPS path (${(v||{}).gps||tcRound(e.computedMiles)} mi). Odometer is still the number of record — verify it's right.</div></div>`;
+  else if (e.milesFlag === "odo-low" || (v && v.kind === "odo-low")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) is <b>lower than the GPS-traced distance</b> (${(v||{}).gps||tcRound(e.computedMiles)} mi) — that's not possible. Check the readings.</div></div>`;
+  else if (v && !v.flag && odoM != null) flagHtml = `<div class="sub" style="margin-bottom:8px;color:var(--ok,#1a9a5a)">✓ Odometer ${odoM} mi matches the GPS path (${v.gps} mi) within tolerance.</div>`;
   modal("Time entry — " + esc(tcJobTitle(e.jobId)), `
-    <div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(e.userName || "Crew")}</div>
+    <div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}</div>
       <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur((e.clockOut || now()) - e.clockIn)} worked${e.clockOut ? "" : " · still open"}</div>
-      <div class="sub">GPS estimate: <b>${tcRound(e.computedMiles)} mi</b> from ${e.inLoc ? "in" : "no in"}${e.outLoc ? " + out" : ""}${(e.pings||[]).length ? " + " + e.pings.length + " ping(s)" : ""}</div></div>
+      ${odoM != null ? `<div class="sub">Odometer: <b>${e.odoStart}</b> → <b>${e.odoEnd}</b> = <b>${odoM} mi</b>${e.odoStartEnteredAt ? " (late-entered, GPS-anchored)" : ""}</div>` : ""}
+      <div class="sub">GPS estimate: <b>${tcRound(e.computedMiles)} mi</b> from ${e.inLoc ? "in" : "no in"}${e.outLoc ? " + out" : ""}${(e.pings||[]).length ? " + " + e.pings.length + " ping(s)" : ""}${stops.length ? " · " + stops.length + " stop(s)" : ""}</div></div>
+    ${flagHtml}
+    ${stops.length ? `<div class="sub" style="margin:4px 0 8px"><b>Stops:</b> ${stops.map(s => esc(s.name)).join(" · ")}</div>` : ""}
     <label>Miles (owner-confirmed)</label>
     <input id="tc_e_miles" type="number" step="0.1" value="${tcMiles(e)}">
-    <div class="sub" style="margin-top:4px">Mileage cost @ $${TC_RATE}/mi updates on save. GPS distance is an estimate — confirm the real driven miles.</div>
-    <label style="margin-top:10px">Whose vehicle? <span class="sub">(mileage reimburses the owner, not the driver)</span></label>
-    <select id="tc_e_veh_owner">${tcVehOwnerOptions(e.vehicleOwnerId || e.userId)}</select>
+    <div class="sub" style="margin-top:4px">Mileage cost @ $${TC_RATE}/mi updates on save. Editing miles by hand marks the source as <b>manual</b>. Odometer is the number of record; GPS is only a cross-check.</div>
+    <label style="margin-top:10px">Vehicle</label>
+    <select id="tc_e_veh">${tcVehicleOptions(curVal, e.userId)}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="tc_e_conf" style="width:20px;height:20px;flex:0 0 auto" ${e.milesConfirmed ? "checked" : ""}><div class="grow"><div class="nm" style="font-size:15px">Confirm mileage</div><div class="sub">Marks it owner-verified (no longer an estimate)</div></div></label>
     <button class="btn acc" style="margin-top:14px" onclick="tcSaveEntry('${e.id}')">Save</button>
     <button class="btn danger" style="margin-top:10px" onclick="tcDelEntry('${e.id}')">Delete entry</button>`);
 };
 window.tcSaveEntry = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e) return;
+  const prevMiles = tcMiles(e);
   const m = parseFloat(val("tc_e_miles")); e.miles = isNaN(m) ? tcRound(e.computedMiles) : Math.max(0, m);
-  e.vehicleOwnerId = val("tc_e_veh_owner") || e.vehicleOwnerId || e.userId; e.vehicle = tcVehOwnerName(e.vehicleOwnerId) + "'s vehicle";
+  if (!isNaN(m) && Math.abs(m - prevMiles) > 0.05) e.milesSource = "manual";   // a hand-edit of the miles → provenance = manual
+  const veh = tcResolveVehicle(val("tc_e_veh"), e.userId);
+  e.vehicleId = veh.vehicleId; e.vehicleOwnerId = veh.vehicleOwnerId; e.vehicle = veh.vehicle;
   e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
   touch(e);
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
@@ -242,8 +449,10 @@ function tcClockHTML() {
         <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>
         <div><div style="font-size:24px;font-weight:800" id="tc_miles">${tcRound(open.computedMiles)} mi est</div><div class="sub" id="tc_pings">${(open.pings || []).length} ping${(open.pings || []).length === 1 ? "" : "s"}</div></div>
       </div>
-      ${open.vehicle ? `<div class="sub">🚚 ${esc(open.vehicle)}</div>` : ""}
-      <div class="sub" style="margin-top:6px;white-space:normal">📍 GPS pings only while this app is open and on-screen — a phone-locked or backgrounded route isn't tracked. Mileage is an estimate the owner confirms.</div>
+      ${open.vehicle ? `<div class="sub">🚚 ${esc(open.vehicle)}${open.odoStart != null ? " · odo start " + open.odoStart : ""}</div>` : `<div class="sub">🚶 No vehicle</div>`}
+      ${tcNeedsOdo(open) ? `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:8px"><div class="sub" style="white-space:normal">⏱ No starting odometer yet. <a href="#" onclick="tcEnterStartOdo();return false" style="color:var(--brand-text);font-weight:700">Enter it now</a> — already-driven miles are anchored so a late entry stays accurate.</div></div>` : ""}
+      ${tcStopsBlock(open.id)}
+      <div class="sub" style="margin-top:6px;white-space:normal">📍 GPS pings only while this app is open and on-screen — a phone-locked or backgrounded route isn't tracked. The odometer is the number of record; GPS only cross-checks it.</div>
       <button class="btn danger" id="tc_outbtn" style="margin-top:12px" onclick="tcClockOut('${open.id}')">Clock out</button>
     </div>`;
   } else {
@@ -261,16 +470,19 @@ function tcClockHTML() {
     if (!jobs.length) {
       h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
     } else {
+      const _defVal = tcDefaultVehVal(who.userId), _hasVeh = !!_defVal;
       h += `<div class="card" style="border-top:4px solid var(--accent)">
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
         <label>Job</label>
         <select id="tc_job">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
-        <label>Whose vehicle? <span class="sub">(mileage reimburses the owner — pick Ray if you're in his truck)</span></label>
-        <select id="tc_vehicle_owner">${tcVehOwnerOptions(tcDefaultVehOwner(who.userId))}</select>
-        <label>Odometer — start (required)</label>
-        <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
+        <label>Vehicle <span class="sub">· “No vehicle” if you're not driving${(typeof curUser==="function"&&curUser())?` · <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a>`:""}</span></label>
+        <select id="tc_vehicle" onchange="tcVehChanged()">${tcVehicleOptions(_defVal, who.userId)}</select>
+        <div id="tc_odo_wrap" style="${_hasVeh ? "" : "display:none"}">
+          <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
+          <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
+        </div>
         <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>
-        <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Asks for location to stamp where you started; time tracks even if you decline GPS.</div>
+        <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Odometer never blocks clocking in; a header reminder nags you until it's entered. Time tracks even if you decline GPS.</div>
       </div>`;
     }
   }
@@ -279,7 +491,7 @@ function tcClockHTML() {
   if (recent.length) {
     h += `<div class="secthd"><h2>Your recent shifts</h2><span class="ct">${recent.length}</span></div><div class="card">` +
       recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcJobTitle(e.jobId))}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div></div>`).join("") + `</div>`;
+        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}${e.milesFlag ? " · ⚠" : ""}</div></div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
   }
   return h;
 }
@@ -307,7 +519,7 @@ function tcReportHTML() {
     const es = byJob[jid], jh = es.reduce((s, e) => s + tcHours(e), 0), jm = es.reduce((s, e) => s + tcMiles(e), 0);
     const j = tcJob(jid);
     h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(tcJobTitle(jid))}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div></div></div>` +
-      es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")}</div>
+      es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}</div>
         <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
   });
 
