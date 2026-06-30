@@ -1,5 +1,18 @@
 /* ---------- SCHEDULE ---------- */
+/* MULTI-DAY jobs: a job can be worked on several NON-contiguous days. j.workDays[] holds every YYYY-MM-DD
+   the job is worked; j.date stays the START/primary day. jobWorkDays(j) returns that set (deduped, with the
+   start day always included), falling back to [j.date] for legacy/single-day jobs so nothing regresses. */
+function jobWorkDays(j){
+  if(!j)return [];
+  const out=new Set();
+  if(Array.isArray(j.workDays))j.workDays.forEach(d=>{if(d)out.add(d);});
+  if(j.date)out.add(j.date);   // the start day is always a work day
+  return [...out].sort();
+}
+/* true if the job is worked on the given YYYY-MM-DD (any of its work days) */
+function jobOnDay(j,ds){return jobWorkDays(j).indexOf(ds)>=0;}
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
+let JOBWORKDAYS=[];   // live multi-day work-day set for the open job modal (mirrors JOBCREW)
 /* Calendar view mode (month/week/day) + the single selected-date anchor that carries across switches.
    The mode is remembered per-device; the anchor defaults to today and follows ‹ › / Today + day taps. */
 let CALVIEW=(function(){try{const v=localStorage.getItem("jra_calview");return (v==="week"||v==="day"||v==="month")?v:"month";}catch(e){return "month";}})();
@@ -45,7 +58,7 @@ function rCrewSchedule(){
   const ds=SCHED_DATE||today(),mem=(typeof schedMembers==="function")?schedMembers():[];
   let h=`<div class="card"><label>Pick a date</label><input type="date" value="${ds}" onchange="schedDate(this.value)">
     <div class="sub" style="margin-top:6px">${DOW[dowOf(ds)]} · ${fmtDate(ds)}</div></div>`;
-  const dayJobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+  const dayJobs=actJ().filter(j=>jobOnDay(j,ds)).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   h+=`<div class="secthd"><h2>Jobs this day</h2><span class="ct">${dayJobs.length}</span></div>`;
   h+=dayJobs.length?`<div class="card">`+dayJobs.map(j=>`<div class="li"><div class="grow" onclick="openJobPage('${j.id}')" style="cursor:pointer"><div class="nm">${esc(j.title||"Job")}</div><div class="sub">${j.time?esc(j.time)+" · ":""}${j.customerId?esc(custName(j.customerId))+" · ":""}</div><div style="margin-top:4px">${crewChips(j)}</div></div></div>`).join("")+`</div>`
     :`<div class="card"><div class="muted">No jobs scheduled. <a href="#" onclick="closeModal();openJob(null,'','${ds}');return false" style="color:var(--brand-text);font-weight:700">Add one</a>.</div></div>`;
@@ -59,7 +72,7 @@ function rCrewSchedule(){
       <div class="sub">${esc(a.label)}${on.length?` · on ${on.length} job${on.length>1?"s":""}`:""}${flags?" · "+flags:""}</div></div>
       ${canEdit?`<button class="btn ghost sm" onclick="openAvailability('${u.id}')">Edit</button>`:""}</div>`;}).join("")+`</div>`;
   h+=`<div class="secthd"><h2>Next 7 days</h2></div><div class="card">`+[0,1,2,3,4,5,6].map(i=>{const d=addDays(today(),i);
-    const jc=actJ().filter(j=>j.date===d).length,free=mem.filter(u=>isFree(u,d)).length;
+    const jc=actJ().filter(j=>jobOnDay(j,d)).length,free=mem.filter(u=>isFree(u,d)).length;
     return `<div class="li" style="cursor:pointer" onclick="schedDate('${d}')"><div class="grow"><div class="nm" style="font-size:14px${d===ds?";color:var(--brand-text)":""}">${DOW[dowOf(d)]} ${fmtDate(d)}</div></div><div class="sub">${jc} job${jc!==1?"s":""} · ${free} free</div></div>`;}).join("")+`</div>`;
   return h;
 }
@@ -97,7 +110,7 @@ function calNavBar(){
 /* Monday-free, Sunday-start week to match the month grid's Su…Sa columns */
 function weekStart(ds){return addDays(ds,-dowOf(ds));}
 function renderCalendar(jobs){
-  const t=today();const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
+  const t=today();const byDate={};jobs.forEach(j=>{jobWorkDays(j).forEach(d=>{(byDate[d]=byDate[d]||[]).push(j);});});
   const first=new Date(CALY,CALM,1);const startDow=first.getDay();
   const dim=new Date(CALY,CALM+1,0).getDate();
   const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -141,7 +154,7 @@ function weekDayAvail(ds){
    with a crew-availability line + its jobs stacked under it; a free day invites adding one. Mobile =
    stacked; wide = 7 columns. */
 function renderWeekView(jobs){
-  const t=today(),ws=weekStart(calAnchor());const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
+  const t=today(),ws=weekStart(calAnchor());const byDate={};jobs.forEach(j=>{jobWorkDays(j).forEach(d=>{(byDate[d]=byDate[d]||[]).push(j);});});
   let cols="";
   for(let i=0;i<7;i++){const ds=addDays(ws,i),dj=(byDate[ds]||[]).slice().sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
     const isToday=ds===t,isSel=ds===calAnchor();
@@ -157,7 +170,7 @@ function renderWeekView(jobs){
 /* Day view — a single day's jobs in time order; an empty day invites adding one. Reuses the sanity
    + team-availability context that the month day-modal shows, so the Day view is the full picture. */
 function renderDayView(jobs){
-  const ds=calAnchor(),dj=jobs.filter(j=>j.date===ds).slice().sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+  const ds=calAnchor(),dj=jobs.filter(j=>jobOnDay(j,ds)).slice().sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   let h=(typeof daySanityBanner==="function"?daySanityBanner(ds):"");
   h+=`<div class="secthd" style="margin-top:0"><h2>Jobs</h2><span class="ct">${dj.length}</span></div>`;
   h+=dj.length?`<div class="card">`+dj.map(calJobRow).join("")+`</div>`
@@ -180,7 +193,7 @@ window.calShift=function(n){
 window.calToday=function(){CAL_SEL=today();render();};
 window.openDay=function(ds){
   CAL_SEL=ds;   // tapping a day moves the calendar anchor here, so a view switch stays centered on it
-  const jobs=actJ().filter(j=>j.date===ds).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
+  const jobs=actJ().filter(j=>jobOnDay(j,ds)).sort((a,b)=>(a.time||"")<(b.time||"")?-1:1);
   const list=jobs.length?jobs.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJobPage('${j.id}')"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title)}</div><div class="sub">${esc(j.time||"")}${j.customerId?" · "+esc(custName(j.customerId)):""}</div></div></div>`).join(""):`<div class="muted">No jobs this day.</div>`;
   const team=(typeof teamAvailListHTML==="function")?teamAvailListHTML(ds):"";
   const cnt=(typeof teamAvailCounts==="function")?teamAvailCounts(ds):null,cntOff=cnt?(cnt.off+cnt.timeoff):0;
@@ -213,6 +226,8 @@ window.openJob=function(id,customerId,presetDate){
   const d=D();const j=id?d.jobs.find(x=>x.id===id):{id:uid(),date:presetDate||today(),customerId:customerId||""};
   const isNew=!id;
   JOBCREW=new Set(j.crew||[]);   // live assignment set for this modal
+  JOBWORKDAYS=jobWorkDays(j);     // live multi-day work-day set (start day always included)
+  JOBWDAY_ANCHOR=(JOBWORKDAYS[0]||j.date||today());   // which month the mini-picker shows
   JOBEQUIP=(typeof jobEquip==="function")?jobEquip(j):[];JOBEQUIP_JID=j.id;   // live required-equipment list for this modal
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
@@ -227,8 +242,10 @@ window.openJob=function(id,customerId,presetDate){
     <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
     <label>Customer</label><select id="j_cust">${opts}</select>
     <label>Property (for the job route map)</label><select id="j_prop"><option value="">— none —</option>${actProps().map(p=>`<option value="${p.id}" ${j.propertyId===p.id?"selected":""}>${esc(p.label||p.address||"Property")}${p.lat==null?" (no location)":""}</option>`).join("")}</select>
-    <div class="row" style="gap:8px"><div class="grow"><label>Date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="renderJobCrew();renderJobEquip()"></div>
+    <div class="row" style="gap:8px"><div class="grow"><label>Start date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="jobStartDateChanged()"></div>
     <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
+    <label style="margin-top:6px">Work days <span class="sub" style="font-weight:400">· tap every day you'll work this job (can skip days)</span></label>
+    <div id="j_workdays"></div>
     <label>Assign crew</label>
     <div id="j_crew"></div>
     <div class="sub" id="j_crew_note" style="margin-top:6px"></div>
@@ -241,8 +258,62 @@ window.openJob=function(id,customerId,presetDate){
     <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
-  renderJobCrew();renderJobEquip();if(!isNew){renderJobExpenses(j.id);renderJobResale(j.id);}
+  renderJobCrew();renderJobEquip();renderJobWorkDays();if(!isNew){renderJobExpenses(j.id);renderJobResale(j.id);}
   if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
+};
+/* ---- multi-day work-day picker — a tap-on/off mini month grid, mobile-first. Tapping a day toggles it in
+   JOBWORKDAYS (non-contiguous OK). The START date (j_date) is always included and can't be turned off here
+   (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips. */
+let JOBWDAY_ANCHOR=null;
+function renderJobWorkDays(){
+  const box=document.getElementById("j_workdays");if(!box)return;
+  const start=val("j_date")||today();
+  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);   // start day is always a work day
+  if(!JOBWDAY_ANCHOR)JOBWDAY_ANCHOR=start;
+  const sel=new Set(JOBWORKDAYS);
+  const anc=new Date((JOBWDAY_ANCHOR||start)+"T00:00:00"),y=anc.getFullYear(),m=anc.getMonth();
+  const first=new Date(y,m,1),startDow=first.getDay(),dim=new Date(y,m+1,0).getDate();
+  const title=first.toLocaleString(undefined,{month:"long"})+" "+y;
+  const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
+  let cells=dows.map(d=>`<div class="wdpk-dow">${d}</div>`).join("");
+  for(let i=0;i<startDow;i++)cells+=`<div class="wdpk-cell out"></div>`;
+  const t=today();
+  for(let day=1;day<=dim;day++){
+    const ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+    const on=sel.has(ds),isStart=ds===start;
+    const cls="wdpk-cell"+(on?" on":"")+(isStart?" start":"")+(ds===t?" today":"");
+    cells+=`<div class="${cls}" onclick="jobToggleWorkDay('${ds}')" title="${isStart?'Start day (change above)':on?'Working — tap to remove':'Tap to add'}">${day}</div>`;
+  }
+  const chips=JOBWORKDAYS.slice().sort().map(ds=>{
+    const isStart=ds===start;
+    return `<span class="wdpk-chip${isStart?" start":""}">${esc(fmtDate(ds))}${isStart?"":` <span onclick="jobToggleWorkDay('${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
+  }).join("");
+  box.innerHTML=`<div class="wdpk">
+    <div class="wdpk-head"><button type="button" class="calnav" onclick="jobWorkDayMonth(-1)">‹</button><div class="wdpk-title">${esc(title)}</div><button type="button" class="calnav" onclick="jobWorkDayMonth(1)">›</button></div>
+    <div class="wdpk-grid">${cells}</div>
+    <div class="wdpk-chips">${chips}</div>
+    <div class="sub" style="margin-top:4px">${JOBWORKDAYS.length>1?`Worked across <b>${JOBWORKDAYS.length} days</b> — shows on each on the schedule.`:"Single day. Tap more days above for a multi-day job."}</div></div>`;
+}
+window.jobToggleWorkDay=function(ds){
+  const start=val("j_date")||today();
+  if(ds===start)return;   // can't remove the start day here
+  const i=JOBWORKDAYS.indexOf(ds);
+  if(i>=0)JOBWORKDAYS.splice(i,1);else JOBWORKDAYS.push(ds);
+  renderJobWorkDays();
+};
+window.jobWorkDayMonth=function(n){
+  const a=new Date((JOBWDAY_ANCHOR||val("j_date")||today())+"T00:00:00");
+  a.setDate(1);a.setMonth(a.getMonth()+n);
+  JOBWDAY_ANCHOR=a.getFullYear()+"-"+String(a.getMonth()+1).padStart(2,"0")+"-01";
+  renderJobWorkDays();
+};
+/* start date changed → keep it in the work-day set (drop the old start if it was only there as the start),
+   re-anchor the picker to the new month, and refresh crew/equipment availability for the new date */
+window.jobStartDateChanged=function(){
+  const start=val("j_date")||today();
+  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);
+  JOBWDAY_ANCHOR=start;
+  renderJobWorkDays();renderJobCrew();renderJobEquip();
 };
 /* ---- per-job expenses (hard cost; Cap #3). Writes straight to job.expenses[] (rides job LWW) so a
    crew member logging a cost in the field persists immediately. Categories per the cost model —
@@ -340,6 +411,8 @@ window.saveJob=function(id,isNew){
   const d=D();let j=isNew?{id}:d.jobs.find(x=>x.id===id);
   j.title=val("j_title");j.customerId=val("j_cust");j.propertyId=val("j_prop");j.date=val("j_date");j.time=val("j_time");j.notes=val("j_notes");
   j.crew=[...JOBCREW];
+  // MULTI-DAY: persist the picked work days (deduped, start day always in, sorted). Single-day jobs store [date].
+  {const wd=new Set(JOBWORKDAYS);if(j.date)wd.add(j.date);j.workDays=[...wd].filter(Boolean).sort();}
   j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
   if(!j.title){alert("Give the job a name.");return;}
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);

@@ -247,9 +247,16 @@ function tcClockHTML() {
       <button class="btn danger" id="tc_outbtn" style="margin-top:12px" onclick="tcClockOut('${open.id}')">Clock out</button>
     </div>`;
   } else {
-    const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => (b.date || "") < (a.date || "") ? -1 : 1);
+    // MULTI-DAY: a job is clock-in-able on ANY of its work days. Surface jobs being worked TODAY first,
+    // then the rest by date — so the crew picks the right one even if its START date was earlier in the week.
+    const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+    const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
+    const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => {
+      const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;   // today's work days first
+      return (b.date || "") < (a.date || "") ? -1 : 1;
+    });
     const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
-    const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
+    const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
     const veh = (typeof schedMembers === "function") ? schedMembers().map(u => u.username) : [];
     if (!jobs.length) {
       h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
