@@ -421,6 +421,56 @@ const ovrBc = t.mergeState(
 ok("legacy account without overrides survives untouched (backward compatible)",
   (() => { const u = ovrBc.users.find(x => x.id === "u2") || {}; return u.avail && !u.avail.overrides && u.avail.start === "09:00"; })(), ovrBc.users);
 
+// REGRESSION (crew availability lost on a deploy, 2026-06-27): a CREW self-write of avail must survive the
+// FULL write-authz path — scopedIncoming → sanitizeUserWrites(non-owner) → mergeState → projectForUser — and
+// come back to the crew. Direct mergeState tests above didn't cover the non-owner sanitizer + the down-projection,
+// which is exactly where a future write-authz change could silently drop a self-owned profile field again.
+console.log("— REGRESSION: a CREW member's OWN availability survives the full write-authz + projection round-trip —");
+(function () {
+  const pre = {
+    obx: { customers: [] }, jam: { customers: [] },
+    registry: [{ id: "obx", name: "OBX", updatedAt: 1 }, { id: "jam", name: "JAM", updatedAt: 1 }],
+    users: [
+      { id: "owner", username: "ray", passhash: "OH", role: "owner", active: true, avail: { overrides: { "2026-07-01": "full" } }, updatedAt: 1 },
+      { id: "crew", username: "joe", passhash: "CH", role: "crew", active: true, avail: { days: [false, true, true, true, true, true, false], start: "08:00", end: "17:00", overrides: { "2026-07-01": "full" } }, updatedAt: 5 },
+      { kind: "membership", id: "mo1", accountId: "owner", orgId: "obx", role: "owner", updatedAt: 1 },
+      { kind: "membership", id: "mo2", accountId: "owner", orgId: "jam", role: "owner", updatedAt: 1 },
+      { kind: "membership", id: "mc1", accountId: "crew", orgId: "obx", role: "crew", updatedAt: 1 },
+      { kind: "membership", id: "mc2", accountId: "crew", orgId: "jam", role: "crew", updatedAt: 1 },
+      { kind: "roles", id: "__roles__", roles: {}, updatedAt: 1 },
+    ],
+  };
+  const myOrgs = ["obx", "jam"], meRec = pre.users.find(u => u.id === "crew");
+  // the crew client edits its OWN avail (touch bumps updatedAt) and pushes its FULL local users array (incl. memberships + the roles sentinel + the owner's record), exactly as the client does
+  const crewEdit = JSON.parse(JSON.stringify(meRec));
+  crewEdit.avail.overrides["2026-07-20"] = "off";                 // new per-day override
+  crewEdit.avail.overrides["2026-07-21"] = { s: "partial", start: "08:00", end: "12:00" };
+  crewEdit.avail.days = [false, true, true, true, true, false, false];   // edited base weekly pattern
+  crewEdit.updatedAt = 100;
+  const pushedUsers = pre.users.map(u => u.id === "crew" ? crewEdit : JSON.parse(JSON.stringify(u)));
+  // server /sync path for a NON-owner crew token
+  const scoped = t.scopedIncoming({ users: pushedUsers, obx: {}, jam: {} }, myOrgs);
+  const sanitized = t.sanitizeUserWrites(scoped, pre, "crew");    // crew is NOT a verified owner → runs the sanitizer
+  const merged = t.mergeState(pre, sanitized);
+  const projected = t.projectForUser(merged, myOrgs, meRec);      // the ONLY thing /sync returns
+  const back = (projected.users || []).find(u => u.id === "crew") || {};
+  ok("crew sees its OWN account back in the projection (not dropped)", !!back.id, projected.users.map(u => u.id + (u.kind ? "/" + u.kind : "")));
+  ok("crew's NEW per-day override persists (2026-07-20 = off)", back.avail && back.avail.overrides && back.avail.overrides["2026-07-20"] === "off", back.avail);
+  ok("crew's partial-day override persists with hours", back.avail && back.avail.overrides && back.avail.overrides["2026-07-21"] && back.avail.overrides["2026-07-21"].s === "partial" && back.avail.overrides["2026-07-21"].start === "08:00", back.avail && back.avail.overrides);
+  ok("crew's PRE-EXISTING override is not lost in the same write", back.avail && back.avail.overrides && back.avail.overrides["2026-07-01"] === "full", back.avail);
+  ok("crew's edited base weekly pattern persists", back.avail && Array.isArray(back.avail.days) && back.avail.days[5] === false && back.avail.start === "08:00", back.avail);
+  // SECURITY: the same self-write must NOT let the crew escalate or touch other accounts
+  ok("crew CANNOT escalate role on the avail write", back.role === "crew", back.role);
+  ok("crew's passhash is untouched (not dropped, not changed)", back.passhash === "CH", back.passhash);
+  const ownerBack = (merged.users || []).find(u => u.id === "owner") || {};
+  ok("the owner's record is untouched by the crew's push", ownerBack.role === "owner" && ownerBack.passhash === "OH" && ownerBack.avail.overrides["2026-07-01"] === "full", ownerBack);
+  // a malicious crew that tries to revert the owner's avail (push a stale owner record) cannot
+  const evil = pre.users.map(u => u.id === "owner" ? Object.assign(JSON.parse(JSON.stringify(u)), { avail: { overrides: {} }, role: "crew", passhash: "HACKED", updatedAt: 999 }) : (u.id === "crew" ? crewEdit : u));
+  const evilMerged = t.mergeState(pre, t.sanitizeUserWrites(t.scopedIncoming({ users: evil, obx: {}, jam: {} }, myOrgs), pre, "crew"));
+  const ownerAfterEvil = (evilMerged.users || []).find(u => u.id === "owner") || {};
+  ok("crew CANNOT wipe the owner's avail / role / passhash even with a newer updatedAt", ownerAfterEvil.role === "owner" && ownerAfterEvil.passhash === "OH" && ownerAfterEvil.avail.overrides["2026-07-01"] === "full", ownerAfterEvil);
+})();
+
 console.log("— quote → job conversion: the link survives the merge (per-record LWW) —");
 const qj = t.mergeState(
   { obx: { quotes: [{ id: "q1", cust: "Acme", total: 400, accepted: false, updatedAt: 5 }],
