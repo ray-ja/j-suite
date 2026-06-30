@@ -28,6 +28,10 @@ function load(){
     if(!S[b].knowledge)S[b].knowledge=[];   // Cap's Playbook — synced facts Cap references when answering
     if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
+    // MULTI-DAY jobs: workDays[] = the set of YYYY-MM-DD the job is actually worked (non-contiguous OK).
+    // j.date stays the START/primary day. Legacy jobs (no workDays) default to [j.date] so they're unchanged.
+    // Additive, rides the job record's LWW — no new collection. Loss-free + idempotent.
+    (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.workDays)||!j.workDays.length){j.workDays=j.date?[j.date]:[];}});
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });

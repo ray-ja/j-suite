@@ -39,11 +39,14 @@ function rToday(){
   }
 
   // 4) Today's jobs (+ quick-add task) — if none today, show the next upcoming job
-  const jobs=actJ().filter(j=>!j.done&&j.date===t);
-  const nextJob=jobs.length?null:(actJ().filter(j=>!j.done&&j.date&&j.date>t).sort((a,b)=>(a.date||"").localeCompare(b.date||""))[0]||null);
+  // MULTI-DAY: a job shows on Today if ANY of its work days is today (not just its start date).
+  const _onDay=(typeof jobOnDay==="function")?jobOnDay:((j,d)=>j.date===d);
+  const _nextDay=j=>{const ds=(typeof jobWorkDays==="function"?jobWorkDays(j):(j.date?[j.date]:[])).filter(d=>d>t).sort();return ds[0]||"";};
+  const jobs=actJ().filter(j=>!j.done&&_onDay(j,t));
+  const nextJob=jobs.length?null:(actJ().filter(j=>!j.done&&_nextDay(j)).sort((a,b)=>_nextDay(a).localeCompare(_nextDay(b)))[0]||null);
   h+=`<div class="secthd"><h2>📅 Today's jobs</h2><span class="ct">${jobs.length}</span><button class="btn ghost sm" style="margin-left:auto" onclick="openQuickTask()">+ Add</button></div>`;
   if(jobs.length) h+=`<div class="card">`+jobs.map(liJob).join("")+`</div>`;
-  else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
+  else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
   else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
 
   // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
