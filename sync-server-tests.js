@@ -93,6 +93,78 @@ ok("nav-order GATE: an ADMIN (manager-tier) CAN set navOrder (write passes throu
 const crewName = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "Renamed by crew", updatedAt: 34 }] }, noMig, "crw");
 ok("nav-order GATE: a crew write that does NOT touch navOrder/tabs passes through untouched (non-privileged fields free)", crewName.registry[0].name === "Renamed by crew");
 
+console.log("\n— WORKSHOP (customJobs): migration fixture (zero loss) + seeded Sentinel example + write-authz gate —");
+// realistic pre-Workshop store: real data + accounts + memberships, a pre-existing customJob, NO seeded example yet
+const wsStored = {
+  obx: {
+    customers: [{ id: "c1", name: "Acme", updatedAt: 10 }], quotes: [{ id: "q1", num: 1, updatedAt: 10 }],
+    jobs: [{ id: "j1", title: "Haul", updatedAt: 10 }], properties: [{ id: "p1", address: "1 Sea", updatedAt: 10 }],
+    income: [{ id: "i1", amount: 500, updatedAt: 10 }], expenses: [{ id: "e1", amount: 73, updatedAt: 10 }],
+    customJobs: [{ id: "cjob_existing", org: "obx", name: "My quotes check", dataScope: ["quotes"], prompt: "list open quotes", schedule: { kind: "daily", hour: 7, min: 0 }, deliverTo: { mode: "private" }, action: { mode: "report" }, active: true, createdBy: "own", updatedAt: 10, deleted: false }]
+  },
+  jam: { customers: [{ id: "jc1", name: "Mill", updatedAt: 10 }] },
+  registry: [{ id: "obx", name: "OBX Lot Solutions", updatedAt: 5 }, { id: "jam", name: "Jamieson", updatedAt: 5 }],
+  users: [
+    { id: "own", username: "ray", role: "owner", superAdmin: true, updatedAt: 1 },
+    { id: "adm", username: "amy", role: "crew", updatedAt: 1 },
+    { id: "crw", username: "joe", role: "crew", updatedAt: 1 },
+    { id: "mem_obx_own", kind: "membership", orgId: "obx", accountId: "own", role: "owner", active: true, updatedAt: 1 },
+    { id: "mem_obx_adm", kind: "membership", orgId: "obx", accountId: "adm", role: "admin", active: true, updatedAt: 1 },
+    { id: "mem_obx_crw", kind: "membership", orgId: "obx", accountId: "crw", role: "crew", active: true, updatedAt: 1 }
+  ]
+};
+const wsMig = t.migrateStore(JSON.parse(JSON.stringify(wsStored)));
+ok("customJobs fixture: migrate keeps every customer/quote/job/property/income/expense/account + the pre-existing job (zero loss)",
+  wsMig.obx.customers.some(c => c.id === "c1") && wsMig.obx.quotes.some(q => q.id === "q1") && wsMig.obx.jobs.some(j => j.id === "j1") &&
+  wsMig.obx.properties.some(p => p.id === "p1") && wsMig.obx.income.some(i => i.id === "i1") && wsMig.obx.expenses.some(e => e.id === "e1") &&
+  wsMig.jam.customers.some(c => c.id === "jc1") && wsMig.users.filter(u => !u.kind).length === 3 && wsMig.obx.customJobs.some(j => j.id === "cjob_existing"));
+ok("customJobs: every org slab has a customJobs array after migrate", Array.isArray(wsMig.obx.customJobs) && Array.isArray(wsMig.jam.customJobs));
+ok("customJobs: the Sentinel EXAMPLE is seeded into obx (example:true, active:false, broadcast — runner skips it)",
+  (function () { const ex = wsMig.obx.customJobs.find(j => j.id === "cjob_sentinel_example"); return !!ex && ex.example === true && ex.active === false && ex.deliverTo.mode === "broadcast"; })());
+ok("customJobs: jam (no obx) does NOT get the obx example", !wsMig.jam.customJobs.some(j => j.id === "cjob_sentinel_example"));
+ok("customJobs: example seed is idempotent (re-migrate does not duplicate it)", t.migrateStore(JSON.parse(JSON.stringify(wsMig))).obx.customJobs.filter(j => j.id === "cjob_sentinel_example").length === 1);
+// SYNC ROUND-TRIP: the existing job + the seeded example survive a no-op merge with zero loss
+const wsRound = t.mergeState(wsMig, t.projectForUser(wsMig, ["obx", "jam"], { id: "own", superAdmin: true }));
+ok("customJobs: a sync round-trip preserves the existing job, the example, AND all business data (zero loss)",
+  wsRound.obx.customJobs.some(j => j.id === "cjob_existing") && wsRound.obx.customJobs.some(j => j.id === "cjob_sentinel_example") &&
+  wsRound.obx.customers.some(c => c.id === "c1") && wsRound.obx.income.some(i => i.id === "i1"));
+// WRITE AUTHZ (sanitizeCustomJobWrites). owner=own, admin=adm, crew=crw (per stored memberships).
+const wsNewJob = (over) => Object.assign({ id: "cjob_new", org: "obx", name: "New", dataScope: ["quotes"], prompt: "x", schedule: { kind: "daily", hour: 7, min: 0 }, deliverTo: { mode: "private", threadId: null }, action: { mode: "report" }, model: null, maxRows: null, active: true, createdBy: "x", lastRun: null, createdAt: 50, updatedAt: 50, deleted: false }, over || {});
+// crew → dropped entirely
+const wsCrew = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob()] } }, wsMig, "crw");
+ok("customJobs GATE: a CREW member's new job is DROPPED server-side", !(wsCrew.obx.customJobs || []).some(j => j.id === "cjob_new"));
+// crew editing an existing job → reverted to stored
+const wsCrewEdit = t.sanitizeCustomJobWrites({ obx: { customJobs: [Object.assign({}, wsMig.obx.customJobs.find(j => j.id === "cjob_existing"), { prompt: "HACKED", updatedAt: 99 })] } }, wsMig, "crw");
+ok("customJobs GATE: a CREW edit of an existing job is REVERTED to the stored record", (wsCrewEdit.obx.customJobs.find(j => j.id === "cjob_existing") || {}).prompt === "list open quotes");
+// admin → a plain REPORT job persists
+const wsAdmin = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob()] } }, wsMig, "adm");
+ok("customJobs: an ADMIN's plain report job PERSISTS (write passes through)", (wsAdmin.obx.customJobs || []).some(j => j.id === "cjob_new" && j.action.mode === "report"));
+// admin → a FINANCE job is coerced safe (finance scope stripped, delivery forced private)
+const wsAdminFin = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob({ id: "cjob_fin", dataScope: ["income", "expenses"], deliverTo: { mode: "broadcast", threadId: null } })] } }, wsMig, "adm");
+ok("customJobs GATE: an ADMIN's FINANCE+broadcast job is COERCED (finance scope stripped, delivery → private)",
+  (function () { const j = (wsAdminFin.obx.customJobs || []).find(x => x.id === "cjob_fin"); return !!j && j.dataScope.indexOf("income") < 0 && j.dataScope.indexOf("expenses") < 0 && j.deliverTo.mode === "private"; })());
+// admin → a BROADCAST (non-finance) job is coerced to private
+const wsAdminBcast = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob({ id: "cjob_bc", deliverTo: { mode: "broadcast", threadId: null } })] } }, wsMig, "adm");
+ok("customJobs GATE: an ADMIN's BROADCAST job is coerced to private (broadcast is owner-only)", (wsAdminBcast.obx.customJobs.find(j => j.id === "cjob_bc") || {}).deliverTo.mode === "private");
+// admin → a PROPOSE job is coerced to report
+const wsAdminProp = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob({ id: "cjob_pr", action: { mode: "propose" } })] } }, wsMig, "adm");
+ok("customJobs GATE: an ADMIN's PROPOSE job is coerced to report (propose is owner-only)", (wsAdminProp.obx.customJobs.find(j => j.id === "cjob_pr") || {}).action.mode === "report");
+// owner → finance + broadcast + propose all pass through
+const wsOwner = t.sanitizeCustomJobWrites({ obx: { customJobs: [wsNewJob({ id: "cjob_own", dataScope: ["income"], deliverTo: { mode: "private", threadId: null }, action: { mode: "propose" } })] } }, wsMig, "own");
+ok("customJobs: an OWNER's finance+propose job PASSES THROUGH unchanged", (function () { const j = wsOwner.obx.customJobs.find(x => x.id === "cjob_own"); return !!j && j.dataScope.indexOf("income") >= 0 && j.action.mode === "propose"; })());
+ok("customJobIsFinance / customJobNeedsOwner helpers agree", t.customJobIsFinance({ dataScope: ["income"] }) === true && t.customJobIsFinance({ dataScope: ["jobs"] }) === false && t.customJobNeedsOwner({ dataScope: ["jobs"], deliverTo: { mode: "broadcast" }, action: { mode: "report" } }) === true);
+// SCOPED CONTEXT (data-scope + cost cap): only requested collections appear; out-of-scope data is invisible
+const wsCtxStore = { registry: [{ id: "obx", name: "OBX Lot Solutions", updatedAt: 1 }], obx: {
+  customers: [{ id: "c1", name: "Secret Customer", updatedAt: 1 }],
+  quotes: [{ id: "q1", num: 7, cust: "Acme", total: 200, accepted: false, updatedAt: 1 }],
+  income: [{ id: "i1", amount: 999, date: "2026-06-01", source: "job", updatedAt: 1 }]
+} };
+const wsCtx = t.orgAiScopedContext(wsCtxStore, "obx", ["quotes"], { maxRows: 5 });
+ok("orgAiScopedContext: includes ONLY the requested scope (quotes present, customers + income absent)",
+  wsCtx.indexOf("#7") >= 0 && wsCtx.indexOf("Secret Customer") < 0 && wsCtx.indexOf("999") < 0);
+ok("orgAiScopedContext: an empty/garbage scope yields no data sections (safe)", t.orgAiScopedContext(wsCtxStore, "obx", ["bogus"], {}).indexOf("Acme") < 0);
+ok("orgAiScopedContext: caps total output at ~6000 chars", t.orgAiScopedContext(wsCtxStore, "obx", ["customers", "quotes", "income"], { maxRows: 200 }).length <= 6000);
+
 console.log("— knowledge (Cap's Playbook) is a synced collection + survives merge with zero loss —");
 const kbStored = { obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", title: "Job", updatedAt: 10 }], properties: [{ id: "p1", address: "X", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }] } };   // legacy: NO knowledge key
 const km = t.mergeState(kbStored, { obx: { knowledge: [{ id: "k1", topic: "Currituck", fact: "Free for brush", updatedAt: 5 }] } });

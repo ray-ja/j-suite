@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -54,6 +54,8 @@ function load(){
     if(!S[b].budgetBudgets)S[b].budgetBudgets=[];    // budget P1 (YNAB): monthly envelope allocations {bookId,catId,month,allocated}
     if(!S[b].budgetTax)S[b].budgetTax=[];            // budget P2 (tax): ONE taxProfile settings record per org {id,filing,state,spouseIncome,dependents,overrideRate}
     if(!S[b].budgetBills)S[b].budgetBills=[];        // budget v2 (recurring bills): scheduled/recurring bills {id,bookId,catId,name,amount,frequency,dueDay,nextDue,autoEstimate,active}
+    if(!S[b].customJobs)S[b].customJobs=[];          // WORKSHOP: user-defined scheduled AI tasks (custom cron jobs) — per-org, synced
+    seedCustomJobsExample(S[b],b);                   // seed the Sentinel EXAMPLE job into obx once (inactive, clonable; runner skips it)
     migrateBudgetBooks(S[b],b);});            // ensure a default Personal book + tag untagged cats/tx (loss-free, idempotent)
   if(!S.propsV2){["obx","jam"].forEach(b=>{(S[b].customers||[]).forEach(c=>{
     const emb=(c.properties&&c.properties.length)?c.properties:(c.address?[{label:"Main",address:c.address}]:[]);
@@ -72,6 +74,25 @@ function load(){
   if(typeof adminMigrate==="function")adminMigrate();
   if(typeof membershipMigrate==="function")membershipMigrate();   // MULTI-ORG: existing crew → obx/jam memberships, owner → super-admin (one-time)
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
+}
+// WORKSHOP — seed the Sentinel EXAMPLE custom-job into obx exactly once (idempotent on a deterministic id).
+// active:false + example:true so the future ~/sentinel runner SKIPS it (no double-run with the real Sentinel
+// cron); it exists purely so admins can VIEW and CLONE it to learn the feature. Mirrors the server seed shape.
+function seedCustomJobsExample(slab,oid){
+  if(!slab||typeof slab!=="object"||Array.isArray(slab))return;
+  if(!Array.isArray(slab.customJobs))slab.customJobs=[];
+  if(oid!=="obx")return;
+  if(slab.customJobs.some(j=>j&&j.id==="cjob_sentinel_example"))return;
+  slab.customJobs.push({
+    id:"cjob_sentinel_example",org:oid,name:"Sentinel — daily OBX brief (example)",
+    dataScope:["income","expenses","jobs","quotes","timeclock"],
+    prompt:"You are Sentinel, the daily operations brief for this company. From the org data below, write a short morning brief for the crew: cash in vs out this week, jobs scheduled or still open, any quotes awaiting a decision, and ONE thing to watch today. Keep it under 8 lines, plain and practical.",
+    schedule:{kind:"daily",dow:null,hour:6,min:30,tz:"America/New_York"},
+    deliverTo:{mode:"broadcast",threadId:null},
+    action:{mode:"report"},
+    model:null,maxRows:null,active:false,example:true,
+    createdBy:"__system__",lastRun:null,createdAt:1,updatedAt:1,deleted:false
+  });
 }
 function seedCeo(){
   const set=(biz,text)=>{let dc=S[biz].docs.find(x=>x.id==="ceo");if(dc){dc.text=text;dc.updatedAt=now();}else S[biz].docs.push({id:"ceo",text:text,updatedAt:now()});};
