@@ -189,6 +189,7 @@
   .weekdayhd .wd-num{font-size:15px}
   .weekday.today .weekdayhd .wd-num{color:var(--brand-text)}
   .weekdayhd .wd-add{color:var(--brand-text);font-size:18px;font-weight:800;width:26px;height:26px;line-height:26px;text-align:center}
+  .weekdayavail{padding:5px 10px;border-bottom:1px solid var(--line);font-size:12px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
   .weekdayjobs{padding:2px 8px}
   .weekdayjobs .li{padding:8px 2px}
   @media(min-width:900px){
