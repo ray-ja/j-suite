@@ -55,6 +55,85 @@ function finSplitEqual(cents, ids) {
   return { perMember: out, unallocated: 0 };
 }
 
+/* split `cents` among ids WEIGHTED by each id's clocked hours (`weights` = {id: hours}); the largest
+   cent remainders go to the highest-weight ids (deterministic, ties broken by lowest id). The field pool
+   per job is unchanged (it sums to `cents` exactly) — only the SPLIT AMONG THE CREW differs from equal:
+   whoever clocked more hours on the job earns proportionally more of that job's field share. If no id has
+   any clocked weight (e.g. nobody clocked in), this falls back to an EQUAL split — so the per-person total
+   still reconciles to the pooled "owed to members" number under every data shape. */
+function finSplitWeighted(cents, ids, weights) {
+  cents = Math.max(0, Math.round(cents || 0));
+  ids = (ids || []).filter(Boolean);
+  if (ids.length === 0) return { perMember: {}, unallocated: cents };
+  var total = 0; ids.forEach(function (id) { total += Math.max(0, (weights && weights[id]) || 0); });
+  if (!(total > 0)) return finSplitEqual(cents, ids);          // no clocked hours → equal (existing behavior)
+  var out = {}, assigned = 0, frac = [];
+  ids.forEach(function (id) {
+    var exact = cents * (Math.max(0, weights[id] || 0) / total);
+    var base = Math.floor(exact);
+    out[id] = base; assigned += base; frac.push({ id: id, f: exact - base });
+  });
+  var rem = cents - assigned;                                   // distribute leftover cents by largest fractional part
+  frac.sort(function (a, b) { return (b.f - a.f) || (a.id < b.id ? -1 : 1); });
+  for (var i = 0; i < rem; i++) out[frac[i % frac.length].id] += 1;
+  return { perMember: out, unallocated: 0 };
+}
+
+/* ---------- PER-PERSON EARNINGS (one source of truth; reconciles to the pooled "owed to members") ----------
+   Re-derives the SAME per-job field pool the rollup computes (fieldBeforeAdmin + admin overflow), but splits
+   each job's field pool by who actually CLOCKED the job, weighted by their hours (finSplitWeighted). Sales
+   credit + admin come straight from finRollup (originator / admin member — identical to the pooled engine).
+   Mileage is the per-owner reimbursement (finMileage). Payouts already paid (disbursements carrying a
+   memberId) are subtracted. RECONCILIATION GUARANTEE: the sum of every person's field+sales+admin plus the
+   unallocated field equals rollup.totals.field+sales+admin — so per-person never invents or loses a cent vs
+   the pooled engine; only the per-crew SPLIT of each job's field pool changes (hours-weighted vs equal). */
+function finHoursByJob(entries, opts) {
+  opts = opts || {}; var by = {};
+  (entries || []).forEach(function (e) {
+    if (!e || e.deleted || !e.clockOut || !e.jobId || !e.userId) return;
+    var day = (typeof e.clockIn === "number") ? finDayOf(e.clockIn) : String(e.clockIn || "").slice(0, 10);
+    if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) return;
+    var ci = (typeof e.clockIn === "number") ? e.clockIn : Date.parse(e.clockIn);
+    var co = (typeof e.clockOut === "number") ? e.clockOut : Date.parse(e.clockOut);
+    var hrs = Math.max(0, (co - ci) / 3600000);
+    if (!(hrs > 0)) return;
+    (by[e.jobId] = by[e.jobId] || {});
+    by[e.jobId][e.userId] = (by[e.jobId][e.userId] || 0) + hrs;
+  });
+  return by;
+}
+function finPerPerson(rollup, mileage, hoursByJob, payouts) {
+  rollup = rollup || { member: {}, perJob: [], totals: {} };
+  mileage = mileage || { perMember: {} }; hoursByJob = hoursByJob || {}; payouts = payouts || {};
+  var member = {}, unallocatedField = 0;
+  function M(id) { return member[id] || (member[id] = { field: 0, sales: 0, admin: 0, earned: 0, mileage: 0, paid: 0, owed: 0 }); }
+  // 1) sales + admin come straight from the pooled engine (same originator / admin-member math)
+  Object.keys(rollup.member || {}).forEach(function (id) {
+    var m = rollup.member[id]; if (m.sales) M(id).sales += m.sales; if (m.admin) M(id).admin += m.admin;
+  });
+  // 2) field — re-split each job's field POOL (identical total) weighted by clocked hours on that job
+  (rollup.perJob || []).forEach(function (pj) {
+    var crew = Object.keys(pj.field || {});                                   // the crew the rollup distributed to (income.crew)
+    if (pj.unallocated) unallocatedField += pj.unallocated;                   // job had no crew → stays unassigned (matches pool)
+    if (!crew.length) return;
+    var ws = finSplitWeighted(pj.fieldPool, crew, hoursByJob[pj.jobId] || {});
+    Object.keys(ws.perMember).forEach(function (id) { M(id).field += ws.perMember[id]; });
+    unallocatedField += ws.unallocated || 0;
+  });
+  // 3) mileage reimbursement (per vehicle owner) + payouts already paid → owed
+  Object.keys(mileage.perMember || {}).forEach(function (id) { M(id).mileage += mileage.perMember[id] || 0; });
+  Object.keys(payouts).forEach(function (id) { M(id).paid += payouts[id] || 0; });
+  var totals = { field: 0, sales: 0, admin: 0, earned: 0, mileage: 0, paid: 0, owed: 0 };
+  Object.keys(member).forEach(function (id) {
+    var m = member[id];
+    m.earned = m.field + m.sales + m.admin;
+    m.owed = m.earned + m.mileage - m.paid;                                   // what to still pay this person
+    totals.field += m.field; totals.sales += m.sales; totals.admin += m.admin;
+    totals.earned += m.earned; totals.mileage += m.mileage; totals.paid += m.paid; totals.owed += m.owed;
+  });
+  return { member: member, totals: totals, unallocatedField: unallocatedField };
+}
+
 /* per-job split with the Sales redirect resolved. Admin is returned raw — its monthly cap is a
    period-level constraint, so it is applied in finRollup (overflow → that job's field pool). */
 function finJobSplit(income) {
@@ -166,7 +245,8 @@ function finPayouts(rollup, mileage, fault) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     FIN: FIN, finCents: finCents, finDollars: finDollars, finSplitAmount: finSplitAmount,
-    finWithinSalesWindow: finWithinSalesWindow, finSplitEqual: finSplitEqual, finJobSplit: finJobSplit,
-    finRollup: finRollup, finMileage: finMileage, finAccounts: finAccounts, finPayouts: finPayouts, finDayOf: finDayOf
+    finWithinSalesWindow: finWithinSalesWindow, finSplitEqual: finSplitEqual, finSplitWeighted: finSplitWeighted, finJobSplit: finJobSplit,
+    finRollup: finRollup, finMileage: finMileage, finAccounts: finAccounts, finPayouts: finPayouts, finDayOf: finDayOf,
+    finHoursByJob: finHoursByJob, finPerPerson: finPerPerson
   };
 }
