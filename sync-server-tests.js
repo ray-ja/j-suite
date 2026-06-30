@@ -144,24 +144,71 @@ const mlMerged = t.mergeState(mlMig, admVeh);
 ok("mileage GATE: the owner's vehicle add survives the LWW merge without dropping any timeclock data",
   mlMerged.registry.find(r => r.id === "obx").vehicles.some(v => v.id === "veh_x") && mlMerged.obx.timeclock.length === 2);
 
-// CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource.
-// We replicate the exact derivation here so the server suite proves the client migration is loss-free + sane.
+// CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
+// + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
+// server suite proves the client migration is loss-free + sane.
 function clientTimeclockDefault(e) {
   if (!Array.isArray(e.stops)) e.stops = [];
   if (e.odoStart === undefined) e.odoStart = null;
   if (e.odoEnd === undefined) e.odoEnd = null;
   if (e.vehicleId === undefined) e.vehicleId = null;
   if (!e.milesSource) { if (e.odoStart != null && e.odoEnd != null) e.milesSource = "odometer"; else if (e.miles != null) e.milesSource = "gps"; else e.milesSource = null; }
+  // RIDER ROLE: a legacy entry WITH a vehicle/owner logged the truck's miles ⇒ "driver"; a no-vehicle entry ⇒ "none".
+  if (!e.riderRole) e.riderRole = (e.vehicleId || e.vehicleOwnerId || e.vehicle) ? "driver" : "none";
+  if (e.trailerId === undefined) e.trailerId = null;
+  if (e.rodeWith === undefined) e.rodeWith = null;
   return e;
 }
-const cd1 = clientTimeclockDefault({ id: "x", odoStart: 1000, odoEnd: 1009, miles: 9, clockOut: 2 });
+const cd1 = clientTimeclockDefault({ id: "x", odoStart: 1000, odoEnd: 1009, miles: 9, clockOut: 2, vehicle: "joe's vehicle", vehicleOwnerId: "crw" });
 ok("client default: an odometer-pair legacy entry derives milesSource=odometer + gets stops[]/vehicleId",
   cd1.milesSource === "odometer" && Array.isArray(cd1.stops) && cd1.stops.length === 0 && cd1.vehicleId === null);
-const cd2 = clientTimeclockDefault({ id: "y", miles: 4, clockOut: 2 });   // miles set but no odometer → gps
+ok("rider-role default: a legacy entry that logged miles (had a vehicle) → riderRole=driver, trailerId/rodeWith null",
+  cd1.riderRole === "driver" && cd1.trailerId === null && cd1.rodeWith === null);
+const cd2 = clientTimeclockDefault({ id: "y", miles: 4, clockOut: 2 });   // miles set but no odometer/vehicle → gps + driver? no vehicle → none
 ok("client default: a miles-only legacy entry (no odometer) derives milesSource=gps", cd2.milesSource === "gps");
 const cd3 = clientTimeclockDefault({ id: "z", clockOut: null });   // still open, no miles → null source, nullable odo
 ok("client default: an open/no-miles legacy entry gets nullable odometer + milesSource=null (no false provenance)",
   cd3.odoStart === null && cd3.odoEnd === null && cd3.milesSource === null);
+ok("rider-role default: a no-vehicle legacy entry → riderRole=none (logs no miles, can't be double-counted)",
+  cd3.riderRole === "none");
+// EQUIPMENT KIND: the server migration tags every registry vehicle with a kind; legacy + the F-150 → "vehicle".
+ok("equipment kind: migration defaults the seeded F-150 to kind=vehicle (carries odometer + reimbursement owner)",
+  obxReg.vehicles.find(v => v.id === "veh_obx_f150").kind === "vehicle");
+ok("equipment kind: a pre-kind legacy registry vehicle is defaulted to kind=vehicle (idempotent, loss-free)",
+  (function () { const s = t.migrateStore({ obx: {}, jam: {}, registry: [{ id: "obx", vehicles: [{ id: "veh_old", name: "Old truck", active: true }], updatedAt: 5 }], users: [] }); const v = s.registry.find(r => r.id === "obx").vehicles.find(x => x.id === "veh_old"); return v.kind === "vehicle"; })());
+ok("equipment kind: an admin-added TRAILER (kind=trailer) keeps its kind through migration + sync round-trip",
+  (function () {
+    const s0 = { obx: {}, jam: {}, registry: [{ id: "obx", vehicles: [{ id: "veh_obx_f150", name: "F-150", plate: "LCW-4430", active: true, kind: "vehicle" }, { id: "veh_trl", name: "Dump trailer", active: true, kind: "trailer" }], updatedAt: 50 }], users: [{ id: "own", role: "owner", superAdmin: true, updatedAt: 1 }] };
+    const sm = t.migrateStore(JSON.parse(JSON.stringify(s0)));
+    const rt = t.mergeState(sm, t.projectForUser(sm, ["obx"], { id: "own", superAdmin: true }));
+    const trl = rt.registry.find(r => r.id === "obx").vehicles.find(v => v.id === "veh_trl");
+    return trl && trl.kind === "trailer" && trl.name === "Dump trailer";
+  })());
+// FULL RIDER-ROLE FIXTURE: a passenger entry (no miles) + a driver entry (miles) survive migration with ZERO loss,
+// and the passenger's milesConfirmed/miles stay absent so finance (jobMileageCost keys off miles+milesConfirmed)
+// attributes ZERO mileage to the passenger — no double-counting on a shared truck.
+const rrStored = {
+  obx: {
+    customers: [{ id: "c1", name: "Acme", updatedAt: 10 }], jobs: [{ id: "j1", title: "Haul", updatedAt: 10 }],
+    timeclock: [
+      { id: "drv", jobId: "j1", userId: "own", clockIn: 100, clockOut: 200, riderRole: "driver", vehicleId: "veh_obx_f150", trailerId: "veh_trl", miles: 12, milesConfirmed: true, milesSource: "odometer", odoStart: 1000, odoEnd: 1012, updatedAt: 10 },
+      { id: "pax", jobId: "j1", userId: "crw", clockIn: 100, clockOut: 200, riderRole: "passenger", rodeWith: "own", miles: null, milesConfirmed: false, milesSource: null, updatedAt: 10 }
+    ]
+  },
+  jam: {}, registry: [{ id: "obx", vehicles: [{ id: "veh_obx_f150", name: "F-150", active: true, kind: "vehicle" }, { id: "veh_trl", name: "Trailer", active: true, kind: "trailer" }], updatedAt: 5 }],
+  users: [{ id: "own", role: "owner", superAdmin: true, updatedAt: 1 }, { id: "crw", role: "crew", updatedAt: 1 }]
+};
+const rrMig = t.migrateStore(JSON.parse(JSON.stringify(rrStored)));
+const rrRound = t.mergeState(rrMig, t.projectForUser(rrMig, ["obx"], { id: "own", superAdmin: true }));
+ok("rider-role fixture: driver + passenger entries both survive migration + sync (zero loss)",
+  rrRound.obx.timeclock.length === 2 && rrRound.obx.timeclock.some(e => e.id === "drv") && rrRound.obx.timeclock.some(e => e.id === "pax"));
+ok("rider-role fixture: the DRIVER keeps its vehicle + trailer + miles (logs the truck's mileage)",
+  (function () { const d = rrRound.obx.timeclock.find(e => e.id === "drv"); return d.riderRole === "driver" && d.vehicleId === "veh_obx_f150" && d.trailerId === "veh_trl" && d.miles === 12 && d.milesConfirmed === true; })());
+ok("rider-role fixture: the PASSENGER logs ZERO confirmed miles → contributes no mileage cost (no double-counting)",
+  (function () { const p = rrRound.obx.timeclock.find(e => e.id === "pax"); return p.riderRole === "passenger" && p.rodeWith === "own" && !p.miles && p.milesConfirmed === false; })());
+// finance parity: jobMileageCost sums only confirmed miles → the shared-truck job's mileage = the driver's 12 mi ONLY
+ok("rider-role fixture: finance (confirmed-miles sum) counts the shared truck ONCE — driver's 12 mi, passenger 0",
+  (function () { const es = rrRound.obx.timeclock.filter(e => e.clockOut && e.milesConfirmed); const mi = es.reduce((s, e) => s + (+e.miles || 0), 0); return mi === 12; })());
 
 console.log("\n— WORKSHOP (customJobs): migration fixture (zero loss) + seeded Sentinel example + write-authz gate —");
 // realistic pre-Workshop store: real data + accounts + memberships, a pre-existing customJob, NO seeded example yet

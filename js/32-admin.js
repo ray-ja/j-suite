@@ -268,39 +268,50 @@ window.navOrderReset = function () { orgSetNavOrder(null); };   // drop the over
 function canManageVehicles() { return (typeof isOwner === "function" && isOwner()) || ((typeof canDo === "function") && canDo("edit-settings")); }
 function orgVehiclesReg() { return (S.registry || []).find(x => x && x.id === S.biz) || null; }
 function orgVehicles() { const r = orgVehiclesReg(); return (r && Array.isArray(r.vehicles)) ? r.vehicles : []; }
+function vehIsTrailer(v) { return !!(v && v.kind === "trailer"); }   // kind=trailer (no odometer); everything else is a driveable vehicle
 function vehiclesCard() {
-  const vs = orgVehicles().filter(v => v && !v.deleted);
-  let h = `<div class="card"><div class="nm" style="font-size:15px">🚚 Vehicles for ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div>
-    <div class="sub" style="margin-bottom:8px">Company trucks the crew can pick when clocking in (alongside “No vehicle” and personal vehicles). Mileage logs at $0.725/mi against the chosen vehicle.</div>`;
-  if (!vs.length) h += `<div class="muted" style="margin:4px 0 8px">No company trucks yet — add one below.</div>`;
-  else h += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">` + vs.map(v => `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
-      <span class="grow"><b>${esc(v.name || "Truck")}</b>${v.plate ? ` <span class="sub">· ${esc(v.plate)}</span>` : ""}${v.active === false ? ` <span class="badge" style="background:var(--soft);color:var(--muted)">retired</span>` : ""}</span>
+  const all = orgVehicles().filter(v => v && !v.deleted);
+  const trucks = all.filter(v => !vehIsTrailer(v)), trailers = all.filter(vehIsTrailer);
+  const row = v => `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
+      <span class="grow"><b>${esc(v.name || (vehIsTrailer(v) ? "Trailer" : "Truck"))}</b>${v.plate ? ` <span class="sub">· ${esc(v.plate)}</span>` : ""}${v.active === false ? ` <span class="badge" style="background:var(--soft);color:var(--muted)">retired</span>` : ""}</span>
       <button class="btn ghost sm" onclick="vehEdit('${esc(v.id)}')">Edit</button>
       <button class="btn ghost sm" onclick="vehToggleActive('${esc(v.id)}')">${v.active === false ? "Reactivate" : "Retire"}</button>
       <button class="btn danger sm" onclick="vehRemove('${esc(v.id)}')">✕</button>
-    </div>`).join("") + `</div>`;
-  h += `<button class="btn acc sm" onclick="vehAdd()">+ Add truck</button></div>`;
+    </div>`;
+  let h = `<div class="card"><div class="nm" style="font-size:15px">🚚 Vehicles &amp; trailers for ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div>
+    <div class="sub" style="margin-bottom:8px">Company trucks the crew's <b>driver</b> picks at clock-in (mileage logs at $0.725/mi against the chosen truck). Trailers can be attached in addition — they carry <b>no odometer</b>.</div>`;
+  h += `<div class="sub" style="font-weight:600;margin:4px 0 4px">🚚 Vehicles</div>`;
+  if (!trucks.length) h += `<div class="muted" style="margin:0 0 6px">No company trucks yet — add one below.</div>`;
+  else h += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px">` + trucks.map(row).join("") + `</div>`;
+  h += `<button class="btn acc sm" onclick="vehAdd('vehicle')">+ Add truck</button>`;
+  h += `<div class="sub" style="font-weight:600;margin:14px 0 4px">🚛 Trailers <span class="sub" style="font-weight:400">· no odometer</span></div>`;
+  if (!trailers.length) h += `<div class="muted" style="margin:0 0 6px">No trailers yet — add one below (e.g. dump trailer, equipment trailer).</div>`;
+  else h += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px">` + trailers.map(row).join("") + `</div>`;
+  h += `<button class="btn acc sm" onclick="vehAdd('trailer')">+ Add trailer</button></div>`;
   return h;
 }
 function vehSave() { const r = orgVehiclesReg(); if (!r) return; r.updatedAt = now(); save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); render(); }
-window.vehAdd = function () {
+window.vehAdd = function (kind) {
   if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
-  const name = prompt("Truck name / nickname (e.g. F-150):"); if (name == null) return;
-  if (!name.trim()) { alert("Give the truck a name."); return; }
+  const isTrailer = kind === "trailer";   // trailers carry no odometer; everything else is a driveable vehicle
+  const noun = isTrailer ? "trailer" : "truck";
+  const name = prompt(isTrailer ? "Trailer name / nickname (e.g. Dump trailer):" : "Truck name / nickname (e.g. F-150):"); if (name == null) return;
+  if (!name.trim()) { alert("Give the " + noun + " a name."); return; }
   const plate = (prompt("License plate (optional):") || "").trim();
   const r = orgVehiclesReg(); if (!r) return; if (!Array.isArray(r.vehicles)) r.vehicles = [];
-  r.vehicles.push({ id: "veh_" + uid(), name: name.trim(), plate: plate, active: true });
-  if (typeof logChange === "function") logChange("update", "account", S.biz, "Added vehicle “" + name.trim() + "”");
+  r.vehicles.push({ id: "veh_" + uid(), name: name.trim(), plate: plate, active: true, kind: isTrailer ? "trailer" : "vehicle" });
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Added " + noun + " “" + name.trim() + "”");
   vehSave();
 };
 window.vehEdit = function (id) {
   if (!canManageVehicles()) { alert("Owner or settings-manager only."); return; }
   const v = orgVehicles().find(x => x && x.id === id); if (!v) return;
-  const name = prompt("Truck name / nickname:", v.name || ""); if (name == null) return;
-  if (!name.trim()) { alert("Give the truck a name."); return; }
+  const isTrailer = vehIsTrailer(v), noun = isTrailer ? "trailer" : "truck";
+  const name = prompt((isTrailer ? "Trailer" : "Truck") + " name / nickname:", v.name || ""); if (name == null) return;
+  if (!name.trim()) { alert("Give the " + noun + " a name."); return; }
   const plate = prompt("License plate (optional):", v.plate || ""); if (plate == null) return;
   v.name = name.trim(); v.plate = plate.trim();
-  if (typeof logChange === "function") logChange("update", "account", S.biz, "Edited vehicle “" + v.name + "”");
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Edited " + noun + " “" + v.name + "”");
   vehSave();
 };
 window.vehToggleActive = function (id) {

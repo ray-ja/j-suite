@@ -306,10 +306,12 @@ function migrateStore(s) {
   // MILEAGE — managed truck list (registry[org].vehicles, owner/admin-managed). Backfill an empty vehicles[]
   // on every org, then SEED obx with Ray's F-150 ONLY if absent (stable id → re-seed dedupes via LWW).
   // updatedAt is NOT bumped, so a real owner edit always wins on merge. Loss-free + idempotent.
-  s.registry.forEach(r => { if (r && !Array.isArray(r.vehicles)) r.vehicles = []; });
+  // EQUIPMENT KIND — every registry vehicle carries a `kind`: "vehicle" (truck w/ odometer) or "trailer" (no
+  // odometer). Legacy entries (incl. the F-150) default to "vehicle". Idempotent; updatedAt is not bumped.
+  s.registry.forEach(r => { if (r && !Array.isArray(r.vehicles)) r.vehicles = []; if (r && Array.isArray(r.vehicles)) r.vehicles.forEach(v => { if (v && !v.kind) v.kind = "vehicle"; }); });
   { const obxReg = s.registry.find(r => r && r.id === "obx");
     if (obxReg) { if (!Array.isArray(obxReg.vehicles)) obxReg.vehicles = [];
-      if (!obxReg.vehicles.find(v => v && v.id === "veh_obx_f150")) obxReg.vehicles.push({ id: "veh_obx_f150", name: "F-150", plate: "LCW-4430", active: true }); } }
+      if (!obxReg.vehicles.find(v => v && v.id === "veh_obx_f150")) obxReg.vehicles.push({ id: "veh_obx_f150", name: "F-150", plate: "LCW-4430", active: true, kind: "vehicle" }); } }
   // migrate pre-multi-org accounts (those with NO membership) → members of the original orgs (obx+jam); owner → super-admin. Idempotent + authoritative (so isolation works from the first sync).
   s.users.filter(u => u && !u.kind && !u.deleted).forEach(u => {
     if (s.users.some(m => m && m.kind === "membership" && m.accountId === u.id)) return;
