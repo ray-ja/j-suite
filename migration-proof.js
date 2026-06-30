@@ -11,6 +11,15 @@ function census(store) {
   const c = { _accounts: (store.users || []).filter(u => u && !u.kind && !u.deleted).length };
   const orgIds = Object.keys(store).filter(k => k !== "users" && k !== "registry" && store[k] && typeof store[k] === "object" && !Array.isArray(store[k]));
   orgIds.forEach(o => COLS.forEach(col => { const a = (store[o] && store[o][col]) || []; if (a.length) c[o + "." + col] = a.filter(r => r && !r.deleted).length; }));
+  // AVAILABILITY is account-record content (u.avail.overrides + base pattern), NOT a COLLECTIONS collection —
+  // it rides the users-array LWW, so a count-only census would miss it being silently dropped (the 2026-06-27
+  // crew-availability regression class). Census the per-day OVERRIDE COUNT per account so migration + a sync
+  // round-trip must preserve every posted availability day (additive: a count may never drop).
+  (store.users || []).forEach(u => {
+    if (!u || u.kind || u.deleted || !u.avail) return;
+    const ov = u.avail.overrides;
+    if (ov && typeof ov === "object") { const n = Object.keys(ov).length; if (n) c["avail." + u.id] = n; }
+  });
   return c;
 }
 const before = census(raw);

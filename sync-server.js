@@ -112,8 +112,14 @@ function sanitizeUserWrites(incoming, pre, selfId) {
     const old = storedMap[u.id];
     if (!old) continue;                       // new account / new sentinel from a non-owner → drop
     if (u.kind || old.kind) continue;         // role-config sentinel (__roles__) → drop incoming, keep stored
+    // A non-owner re-pushes the WHOLE projected users array (it sees co-members), so an incoming record for
+    // SOMEONE ELSE's account must never be applied — keep the stored record verbatim. Otherwise a crew member
+    // could overwrite a teammate's self-owned profile fields (e.g. wipe their availability) by pushing a stale
+    // copy with a newer updatedAt — the regression that lost crew availability's blast-radius. Only the caller's
+    // OWN account is writable here, and even then SENSITIVE owner-only fields are reverted to stored.
+    if (u.id !== selfId) { safe.push(old); continue; }   // not my account → no changes from a non-owner
     const m = Object.assign({}, u);
-    SENSITIVE.forEach(f => { if (f === "adminPin" && u.id === selfId) return; if (f in old) m[f] = old[f]; else delete m[f]; });   // you may set your OWN admin PIN; role/passhash/active/logoutAt + others' adminPin stay owner-only
+    SENSITIVE.forEach(f => { if (f === "adminPin") return; if (f in old) m[f] = old[f]; else delete m[f]; });   // self-write: you may set your OWN admin PIN; role/passhash/active/logoutAt stay owner-only even on your own record
     safe.push(m);
   }
   return Object.assign({}, incoming, { users: safe });
