@@ -92,5 +92,40 @@ const pay = f.finPayouts(R, milAll);
 ok("m1 payout = field+sales+admin distribution + mileage", pay.m1.distribution === 485000 + 180000 && pay.m1.total === 485000 + 180000 + 1044, pay.m1);
 ok("admin member appears with admin-only distribution", pay.admin1.distribution === 50000 && pay.admin1.mileage === 0, pay.admin1);
 
+console.log("— hours-weighted field split (per-person earnings) —");
+// $1000 field pool, crew m1+m2; m1 clocked 3h, m2 clocked 1h → m1 gets 750¢, m2 250¢
+const w = f.finSplitWeighted(1000, ["m1", "m2"], { m1: 3, m2: 1 });
+ok("weighted split 3h:1h of 1000¢ → m1 750, m2 250", w.perMember.m1 === 750 && w.perMember.m2 === 250, w.perMember);
+ok("weighted split sums to the pool exactly (no cent invented/lost)", w.perMember.m1 + w.perMember.m2 === 1000, w);
+const wNoHrs = f.finSplitWeighted(1001, ["m1", "m2"], {});   // nobody clocked → falls back to EQUAL
+ok("no clocked hours → falls back to equal split (501/500), still sums to pool", wNoHrs.perMember.m1 + wNoHrs.perMember.m2 === 1001, wNoHrs.perMember);
+let wleak = null;   // sweep: weighted split never leaks a cent across many pools/weights
+for (let c = 0; c <= 5000; c += 7) { const x = f.finSplitWeighted(c, ["a", "b", "c"], { a: 2.5, b: 1.1, c: 0.4 }); const sum = x.perMember.a + x.perMember.b + x.perMember.c; if (sum !== c) { wleak = { c: c, x: x }; break; } }
+ok("weighted split never leaks a cent across a sweep", wleak === null, wleak);
+
+console.log("— per-person earnings RECONCILE to the pooled rollup —");
+// reuse R (two $100 jobs, crew m1+m2, m1 originator, admin1) + a timeclock with uneven hours on job1
+const tcHrs = [
+  { id: "h1", userId: "m1", jobId: "j1", clockIn: 0, clockOut: 3 * 3600000, deleted: false },   // m1: 3h on j1
+  { id: "h2", userId: "m2", jobId: "j1", clockIn: 0, clockOut: 1 * 3600000, deleted: false },   // m2: 1h on j1
+  // job2 has NO clocked hours → that pool falls back to EQUAL between m1/m2
+];
+const hByJob = f.finHoursByJob(tcHrs, {});
+ok("finHoursByJob keys by jobId then member, in hours", hByJob.j1.m1 === 3 && hByJob.j1.m2 === 1, hByJob);
+const payouts = { m1: 12345 };   // m1 already got a $123.45 payout
+const pp = f.finPerPerson(R, milAll, hByJob, payouts);
+// reconciliation: sum of per-person field+sales+admin + unallocated === pooled labor distribution
+const ppDist = pp.totals.field + pp.totals.sales + pp.totals.admin + pp.unallocatedField;
+const poolDist = R.totals.field + R.totals.sales + R.totals.admin;
+ok("Σ per-person (field+sales+admin) + unallocated === pooled labor distribution", ppDist === poolDist, { ppDist: ppDist, poolDist: poolDist });
+ok("per-person field total === pooled field total (no cent moved out of the pool)", pp.totals.field === R.totals.field, { pp: pp.totals.field, pool: R.totals.field });
+ok("m1 sales/admin come straight from the pooled engine", pp.member.m1.sales === R.member.m1.sales, pp.member.m1);
+// job1 pool = 480,000¢ split 3:1 → m1 360,000 / m2 120,000 ; job2 pool = 490,000¢ EQUAL → 245,000 each
+ok("m1 field = 360,000 (j1 weighted) + 245,000 (j2 equal) = 605,000", pp.member.m1.field === 605000, pp.member.m1.field);
+ok("m2 field = 120,000 (j1 weighted) + 245,000 (j2 equal) = 365,000", pp.member.m2.field === 365000, pp.member.m2.field);
+ok("the two members' field still sums to the pooled field (970,000)", pp.member.m1.field + pp.member.m2.field === R.totals.field, [pp.member.m1.field, pp.member.m2.field, R.totals.field]);
+ok("m1 earned = field+sales+admin; owed = earned + mileage − paid", pp.member.m1.earned === 605000 + 180000 && pp.member.m1.owed === 605000 + 180000 + 1044 - 12345, pp.member.m1);
+ok("payout subtracted only from m1 (m2 unpaid)", pp.member.m2.paid === 0 && pp.member.m1.paid === 12345, { m1: pp.member.m1.paid, m2: pp.member.m2.paid });
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);

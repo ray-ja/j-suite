@@ -136,6 +136,11 @@ function rFinCash(){
     <div class="li"><div class="grow"><div class="nm">🏢 Business fund</div><div class="sub" style="white-space:normal">15% ${fm(a.businessIn)}${a.unalloc ? " + unassigned " + fm(a.unalloc) : ""} − expenses ${fm(a.expCents)} − mileage ${fm(a.mileage)}${a.drawPaid ? " − draws " + fm(a.drawPaid) : ""}</div></div><b style="${a.businessBal < 0 ? "color:var(--danger)" : ""}">${fm(a.businessBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
 
+  // per-person breakdown of the pooled "Owed to members" — each tappable to record a payout to that member
+  if (typeof finOwedPerPersonHTML === "function") {
+    h += `<div class="secthd"><h2>👷 Owed — by person</h2><span class="ct">${fm(a.owedBal)}</span></div>` + finOwedPerPersonHTML();
+  }
+
   h += `<div class="secthd"><h2>Record money paid out</h2></div><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">
     <button class="btn ghost grow" onclick="recordDisbursement('payout')">👷 Payout paid</button>
     <button class="btn ghost grow" onclick="recordDisbursement('tax')">🏦 Tax payment</button>
@@ -149,14 +154,15 @@ function rFinCash(){
   return h;
 }
 
-window.recordDisbursement = function(type, id){
+window.recordDisbursement = function(type, id, presetMember){
   const d = D(); const ex = id ? (d.disbursements || []).find(x => x && x.id === id) : null;
   const t0 = ex ? ex.type : type, members = finMembers();
+  const selMember = ex ? ex.memberId : (presetMember || "");   // per-person breakdown can preselect the member to pay
   const title = t0 === "tax" ? "Tax payment" : t0 === "payout" ? "Payout paid" : "Owner draw";
   modal((ex ? "Edit " : "Record ") + title, `
     <div class="row" style="gap:8px"><div class="grow"><label>Amount ($)</label><input id="db_amt" type="number" inputmode="decimal" value="${ex ? ex.amount : ""}"></div>
       <div class="grow"><label>Date</label><input id="db_date" type="date" value="${ex ? ex.date : today()}"></div></div>
-    ${t0 === "payout" ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${ex && ex.memberId === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
+    ${t0 === "payout" ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${selMember === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
     <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "payout" ? "e.g. June payout" : "what for"}">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveDisbursement('${t0}','${ex ? ex.id : ""}')">Save</button>
     ${ex ? `<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delDisbursement('${ex.id}')">Delete</button>` : ""}`);

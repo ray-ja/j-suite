@@ -15,6 +15,9 @@ function rToday(){
     }
   }
 
+  // 0.5) New-crew quick-start — first-login dismissible checklist (js/86). Shows until done/dismissed.
+  if(typeof crewQuickStartHTML==="function") h+=crewQuickStartHTML();
+
   // 1) Notice board — at the very top
   const dir=(D().docs.find(x=>x.id==="ceo"&&!x.deleted)||{}).text||"";
   h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>
