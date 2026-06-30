@@ -48,7 +48,8 @@ function renderClockPill() {
   const needOdo = (typeof tcNeedsOdo === "function") ? tcNeedsOdo(open) : false;   // vehicle chosen but no odometer yet → warn
   el.style.cssText = "display:inline-flex;align-items:center;gap:5px;max-width:50vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:none;border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;" + (needOdo ? "background:var(--danger);color:#fff" : "background:var(--accent);color:var(--accent-ink)");
   el.title = "Clocked in — tap to open the job";
-  el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + (open.vehicle ? " · 🚚 " + esc(open.vehicle) + (needOdo ? " · ⚠ odo" : "") : " · 🚶");
+  const _pillVeh = (open.riderRole === "driver" && open.vehicle) ? (" · 🚚 " + esc(open.vehicle) + (needOdo ? " · ⚠ odo" : "")) : (open.riderRole === "passenger" ? " · 🧍" : " · 🚶");
+  el.innerHTML = "⏱️ " + esc(j ? (j.title || "Job") : "On the clock") + " · " + dur + _pillVeh;
 }
 window.clockPillTap = function () {
   const open = (typeof tcMyOpen === "function") ? tcMyOpen() : null;
@@ -146,11 +147,20 @@ window.tcClockIn = async function () {
   if (!jobId) { alert("Pick the job you're working on."); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
-  const veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
-  // Odometer NEVER blocks clock-in (you may not be in the truck yet). It's optional here; a header reminder
-  // (js/85) nags until it's entered. Only read it if a vehicle was chosen AND a value was typed.
-  let odoStart = null;
-  if (tcEntryHasVehicle(veh)) { const o = parseFloat(val("tc_odo_start")); if (o >= 0) odoStart = o; }
+  // RIDER ROLE — only the DRIVER logs a vehicle's miles. A passenger / no-vehicle shift carries NO vehicle, so the
+  // truck is never double-counted. Default to driver if the form predates the picker (defensive).
+  let role = val("tc_role") || "driver";
+  let veh = { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
+  let trailerId = null, rodeWith = null, odoStart = null;
+  if (role === "driver") {
+    veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
+    trailerId = val("tc_trailer") || null;   // optional towed trailer (no odometer)
+    // Odometer NEVER blocks clock-in (you may not be in the truck yet). It's optional here; a header reminder
+    // (js/85) nags until it's entered. Only read it if a value was typed.
+    const o = parseFloat(val("tc_odo_start")); if (o >= 0) odoStart = o;
+  } else if (role === "passenger") {
+    rodeWith = val("tc_rodewith") || null;   // who drove (record-only); this person logs NO miles
+  }   // role === "none": no vehicle, no mileage
   const btn = document.getElementById("tc_inbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
   const loc = await tcGetPos();
   const e = {
@@ -159,6 +169,7 @@ window.tcClockIn = async function () {
     inLoc: loc, outLoc: null, pings: [], stops: [],
     computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
     odoStart: odoStart, odoEnd: null,
+    riderRole: role, trailerId: trailerId, rodeWith: rodeWith,
     vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
@@ -230,6 +241,20 @@ window.tcFinishClockOut = function (id) {
    Each person's vehicle is "<name>'s vehicle" (one personal vehicle each until there's a company truck). ===== */
 function tcVehMembers() { return (typeof schedMembers === "function") ? schedMembers() : []; }
 function tcVehOwnerName(id) { const u = tcVehMembers().find(x => x.id === id); return u ? u.username : "Crew"; }
+/* display name of whoever a passenger rode with (record-only) */
+function tcRodeWithName(id) { const u = tcVehMembers().find(x => x.id === id); return u ? u.username : "a teammate"; }
+/* trailer display string from a trailerId, or "" */
+function tcTrailerLabel(id) { const v = id ? tcTruckById(id) : null; return v ? tcTruckLabel(v) : ""; }
+/* one-line role/vehicle/trailer summary for a shift card (driver shows the truck + optional trailer; passenger
+   shows who they rode with + zero miles; none shows on-site). */
+function tcShiftVehLine(e) {
+  if (!e) return "";
+  const trailer = tcTrailerLabel(e.trailerId);
+  if (e.riderRole === "passenger") return `<div class="sub">🧍 Passenger${e.rodeWith ? " · rode with " + esc(tcRodeWithName(e.rodeWith)) : ""} · no mileage</div>`;
+  if (e.riderRole === "none" || (!e.vehicle && e.riderRole !== "driver")) return `<div class="sub">🚶 No vehicle · no mileage</div>`;
+  // driver
+  return `<div class="sub">🚗 Driver · 🚚 ${esc(e.vehicle || "Vehicle")}${e.odoStart != null ? " · odo start " + e.odoStart : ""}${trailer ? " · 🚛 " + esc(trailer) : ""}</div>`;
+}
 
 /* ===== managed per-org truck list (registry[org].vehicles — owner/admin-managed in Admin) =====
    A unified vehicle picker offers, in order: 🚶 No vehicle · the org's managed trucks (active) · each member's
@@ -239,8 +264,13 @@ function tcVehOwnerName(id) { const u = tcVehMembers().find(x => x.id === id); r
      "owner:<uid>"   → a member's personal vehicle (legacy model: reimburses that owner)
    On clock-in we resolve this to e.vehicleId (truck id or null) + e.vehicleOwnerId + e.vehicle (display string). */
 function tcOrgVehicles() { const r = (S.registry || []).find(x => x && x.id === S.biz); return (r && Array.isArray(r.vehicles)) ? r.vehicles.filter(v => v && !v.deleted) : []; }
-function tcActiveTrucks() { return tcOrgVehicles().filter(v => v.active !== false); }
+/* a registry entry is a TRAILER when kind==="trailer"; everything else (incl. legacy entries with no kind) is a
+   driveable VEHICLE that carries an odometer + reimbursement owner. */
+function tcIsTrailer(v) { return !!(v && v.kind === "trailer"); }
+function tcActiveTrucks() { return tcOrgVehicles().filter(v => v.active !== false && !tcIsTrailer(v)); }   // driveable trucks only (kind=vehicle)
+function tcActiveTrailers() { return tcOrgVehicles().filter(v => v.active !== false && tcIsTrailer(v)); }   // attached trailers (kind=trailer, no odometer)
 function tcTruckById(id) { return tcOrgVehicles().find(v => v && v.id === id) || null; }
+function tcTrailerById(id) { return tcActiveTrailers().find(v => v && v.id === id) || null; }
 function tcTruckLabel(v) { return v ? ((v.name || "Truck") + (v.plate ? " · " + v.plate : "")) : "Truck"; }
 /* the value (per the encoding above) that should be SELECTED by default for this driver: their account
    defaultVehicleId if set + still active, else their last-used vehicle (truck or personal), else No vehicle. */
@@ -274,32 +304,119 @@ function tcResolveVehicle(encVal, driverId) {
   if (encVal.indexOf("owner:") === 0) { const oid = encVal.slice(6); return { vehicleId: null, vehicleOwnerId: oid, vehicle: tcVehOwnerName(oid) + "'s vehicle" }; }
   return { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
 }
-/* does the entry / picked value involve a vehicle (→ odometer is relevant)? */
-function tcEntryHasVehicle(e) { return !!(e && (e.vehicleId || e.vehicleOwnerId || e.vehicle)); }
-/* live toggle: show/hide the odometer field when the picker changes (vehicle chosen ⇒ odometer relevant) */
+/* does the entry / picked value involve a vehicle (→ odometer is relevant)? Mileage only matters on the DRIVER
+   path: a passenger / no-vehicle shift carries no vehicleId/owner, so this stays false → no odometer, no miles. */
+function tcEntryHasVehicle(e) { return !!(e && e.riderRole === "driver" && (e.vehicleId || e.vehicleOwnerId || e.vehicle)); }
+/* live toggle: show/hide the odometer field when the DRIVER's vehicle picker changes */
 window.tcVehChanged = function () {
   const v = val("tc_vehicle"), wrap = document.getElementById("tc_odo_wrap");
   if (wrap) wrap.style.display = v ? "" : "none";
 };
 
+/* ===== RIDER ROLE (clock-in redesign) — at clock-in the person picks their ROLE for the trip so a shared
+   truck's mileage is logged exactly ONCE (by the driver):
+     🚗 driver    → pick a VEHICLE (odometer/GPS-verify) + an OPTIONAL trailer; this person logs the truck's miles
+     🧍 passenger → rode with someone → NO vehicle mileage (so the truck isn't double-counted); optionally name the driver
+     🚶 none      → on-site only / didn't travel by truck → no vehicle, no mileage
+   The role drives which detail fields show. Default = their last shift's role (else driver if they have a default
+   vehicle, else none). ===== */
+function tcDefaultRole(driverId) {
+  const last = (tcoll() || []).filter(e => e.userId === driverId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
+  if (last && (last.riderRole === "driver" || last.riderRole === "passenger" || last.riderRole === "none")) return last.riderRole;
+  return tcDefaultVehVal(driverId) ? "driver" : "none";   // never driven before → default to whatever their vehicle default implies
+}
+/* the 3-way role chooser (segmented buttons → a hidden <select> #tc_role that the rest of the form reads) */
+function tcRolePicker(sel) {
+  const opt = (val, ico, lab) => `<button type="button" class="btn ${sel === val ? "acc" : "ghost"} sm" id="tc_roleb_${val}" onclick="tcRoleChanged('${val}')" style="flex:1;min-width:96px">${ico} ${lab}</button>`;
+  return `<input type="hidden" id="tc_role" value="${esc(sel)}">
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">
+      ${opt("driver", "🚗", "Driver")}${opt("passenger", "🧍", "Passenger")}${opt("none", "🚶", "No vehicle")}
+    </div>`;
+}
+/* the role-specific detail block (re-rendered into #tc_role_detail when the role changes) */
+function tcRoleDetail(role, defVehVal, driverId) {
+  let h = `<div id="tc_role_detail">`;
+  if (role === "driver") {
+    const _hasVeh = !!defVehVal;
+    const trailers = tcActiveTrailers(), defTrailer = tcDefaultTrailerVal(driverId);
+    h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
+      <select id="tc_vehicle" onchange="tcVehChanged()">${tcDriverVehicleOptions(defVehVal, driverId)}</select>
+      <div id="tc_odo_wrap" style="${_hasVeh ? "" : "display:none"}">
+        <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
+        <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
+      </div>`;
+    if (trailers.length) h += `<label style="margin-top:10px">🚛 Trailer <span class="sub">· optional · towed in addition (no odometer)</span></label>
+      <select id="tc_trailer">${tcTrailerOptions(defTrailer)}</select>`;
+  } else if (role === "passenger") {
+    h += `<label style="margin-top:10px">Who drove? <span class="sub">· optional, for the record — they log the truck's miles, you don't</span></label>
+      <select id="tc_rodewith">${tcDriverWhoOptions(null, driverId)}</select>
+      <div class="sub" style="margin-top:6px;white-space:normal">🧍 You rode with someone — your shift logs <b>your time only, zero miles</b>, so the truck isn't counted twice.</div>`;
+  } else {
+    h += `<div class="sub" style="margin-top:8px;white-space:normal">🚶 On-site only / no truck travel — your shift logs <b>your time, no mileage</b>.</div>`;
+  }
+  return h + `</div>`;
+}
+/* the DRIVER vehicle dropdown — kind=vehicle trucks + personal vehicles (NO trailers, NO "No vehicle" since the
+   role IS the driver). Reuses the same encoding as tcVehicleOptions but without the "No vehicle" head option. */
+function tcDriverVehicleOptions(selVal, driverId) {
+  let h = "";
+  const trucks = tcActiveTrucks();
+  if (trucks.length) h += `<optgroup label="Company trucks">` + trucks.map(v => `<option value="truck:${esc(v.id)}" ${selVal === ("truck:" + v.id) ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("") + `</optgroup>`;
+  h += `<optgroup label="Personal vehicles">` + tcVehMembers().map(u => `<option value="owner:${esc(u.id)}" ${selVal === ("owner:" + u.id) ? "selected" : ""}>🚗 ${esc(u.username)}'s vehicle</option>`).join("") + `</optgroup>`;
+  // pre-select the first option when nothing matched (a driver always has a vehicle)
+  if (selVal === "" || (h.indexOf("selected") < 0)) h = h.replace("<option ", "<option selected ");   // first option becomes the default
+  return h;
+}
+/* trailer dropdown (kind=trailer only; "None" head option since a trailer is optional) */
+function tcTrailerOptions(selVal) {
+  let h = `<option value="" ${selVal === "" ? "selected" : ""}>— No trailer —</option>`;
+  return h + tcActiveTrailers().map(v => `<option value="${esc(v.id)}" ${selVal === v.id ? "selected" : ""}>🚛 ${esc(tcTruckLabel(v))}</option>`).join("");
+}
+/* "who drove" dropdown for a passenger — crew members (record-only). Excludes the passenger themself. */
+function tcDriverWhoOptions(selVal, exceptId) {
+  let h = `<option value="" ${!selVal ? "selected" : ""}>— Not sure / skip —</option>`;
+  return h + tcVehMembers().filter(u => u.id !== exceptId).map(u => `<option value="${esc(u.id)}" ${selVal === u.id ? "selected" : ""}>🚗 ${esc(u.username)}</option>`).join("");
+}
+/* this driver's default trailer encoded value (account.defaultTrailerId if still active) */
+function tcDefaultTrailerVal(driverId) {
+  const me = (typeof curUser === "function") ? curUser() : null;
+  if (me && me.id === driverId && me.defaultTrailerId && tcTrailerById(me.defaultTrailerId)) return me.defaultTrailerId;
+  return "";
+}
+/* role-button tap → swap the detail block + the segmented highlight (no full re-render, so a typed odometer/job survives) */
+window.tcRoleChanged = function (role) {
+  const hid = document.getElementById("tc_role"); if (hid) hid.value = role;
+  const who = tcWho();
+  ["driver", "passenger", "none"].forEach(r => { const b = document.getElementById("tc_roleb_" + r); if (b) { b.classList.toggle("acc", r === role); b.classList.toggle("ghost", r !== role); } });
+  const wrap = document.getElementById("tc_role_detail");
+  if (wrap) wrap.outerHTML = tcRoleDetail(role, role === "driver" ? tcDefaultVehVal(who.userId) : "", who.userId);
+};
+
 /* ===== per-user DEFAULT vehicle (account.defaultVehicleId) — set from the clock tab ===== */
 window.tcSetDefaultVehicle = function () {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) { alert("Sign in to set a default vehicle."); return; }
-  const cur = me.defaultVehicleId || "";
-  const trucks = tcActiveTrucks();
+  const cur = me.defaultVehicleId || "", curT = me.defaultTrailerId || "";
+  const trucks = tcActiveTrucks(), trailers = tcActiveTrailers();
   modal("Your default vehicle", `
-    <p class="muted" style="margin-bottom:8px">Pre-selected every time you clock in. You can still change it per shift.</p>
+    <p class="muted" style="margin-bottom:8px">Pre-selected every time you clock in as the driver. You can still change it per shift.</p>
     <select id="tc_defveh">
       <option value="__none__" ${cur === "__none__" ? "selected" : ""}>🚶 No vehicle</option>
       ${trucks.map(v => `<option value="${esc(v.id)}" ${cur === v.id ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("")}
     </select>
+    ${trailers.length ? `<label style="margin-top:10px">Default trailer <span class="sub">· optional</span></label>
+    <select id="tc_deftrl">
+      <option value="" ${!curT ? "selected" : ""}>— No trailer —</option>
+      ${trailers.map(v => `<option value="${esc(v.id)}" ${curT === v.id ? "selected" : ""}>🚛 ${esc(tcTruckLabel(v))}</option>`).join("")}
+    </select>` : ""}
     <p class="muted" style="margin-top:8px;font-size:12px">Personal vehicles default to your last-used; only company trucks (and “No vehicle”) can be pinned as your default.</p>
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcSaveDefaultVehicle()">Save default</button>`);
 };
 window.tcSaveDefaultVehicle = function () {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
   const v = val("tc_defveh");
-  me.defaultVehicleId = v || null; touch(me); save();
+  me.defaultVehicleId = v || null;
+  if (document.getElementById("tc_deftrl")) me.defaultTrailerId = val("tc_deftrl") || null;
+  touch(me); save();
   if (typeof scheduleAutoPush === "function") scheduleAutoPush();
   if (typeof closeModal === "function") closeModal(); render();
 };
@@ -405,6 +522,8 @@ window.tcSaveEntry = function (id) {
   if (!isNaN(m) && Math.abs(m - prevMiles) > 0.05) e.milesSource = "manual";   // a hand-edit of the miles → provenance = manual
   const veh = tcResolveVehicle(val("tc_e_veh"), e.userId);
   e.vehicleId = veh.vehicleId; e.vehicleOwnerId = veh.vehicleOwnerId; e.vehicle = veh.vehicle;
+  // keep riderRole in lock-step with the assigned vehicle: a vehicle ⇒ driver (logs miles); cleared ⇒ none
+  e.riderRole = (veh.vehicleId || veh.vehicleOwnerId || veh.vehicle) ? "driver" : "none";
   e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
   touch(e);
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
@@ -449,7 +568,7 @@ function tcClockHTML() {
         <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>
         <div><div style="font-size:24px;font-weight:800" id="tc_miles">${tcRound(open.computedMiles)} mi est</div><div class="sub" id="tc_pings">${(open.pings || []).length} ping${(open.pings || []).length === 1 ? "" : "s"}</div></div>
       </div>
-      ${open.vehicle ? `<div class="sub">🚚 ${esc(open.vehicle)}${open.odoStart != null ? " · odo start " + open.odoStart : ""}</div>` : `<div class="sub">🚶 No vehicle</div>`}
+      ${tcShiftVehLine(open)}
       ${tcNeedsOdo(open) ? `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:8px"><div class="sub" style="white-space:normal">⏱ No starting odometer yet. <a href="#" onclick="tcEnterStartOdo();return false" style="color:var(--brand-text);font-weight:700">Enter it now</a> — already-driven miles are anchored so a late entry stays accurate.</div></div>` : ""}
       ${tcStopsBlock(open.id)}
       <div class="sub" style="margin-top:6px;white-space:normal">📍 GPS pings only while this app is open and on-screen — a phone-locked or backgrounded route isn't tracked. The odometer is the number of record; GPS only cross-checks it.</div>
@@ -471,18 +590,16 @@ function tcClockHTML() {
       h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
     } else {
       const _defVal = tcDefaultVehVal(who.userId), _hasVeh = !!_defVal;
+      const _role = tcDefaultRole(who.userId);   // driver / passenger / none — only the driver logs the truck's miles
       h += `<div class="card" style="border-top:4px solid var(--accent)">
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
         <label>Job</label>
         <select id="tc_job">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
-        <label>Vehicle <span class="sub">· “No vehicle” if you're not driving${(typeof curUser==="function"&&curUser())?` · <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a>`:""}</span></label>
-        <select id="tc_vehicle" onchange="tcVehChanged()">${tcVehicleOptions(_defVal, who.userId)}</select>
-        <div id="tc_odo_wrap" style="${_hasVeh ? "" : "display:none"}">
-          <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
-          <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
-        </div>
+        <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
+        ${tcRolePicker(_role)}
+        ${tcRoleDetail(_role, _defVal, who.userId)}
         <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>
-        <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Odometer never blocks clocking in; a header reminder nags you until it's entered. Time tracks even if you decline GPS.</div>
+        <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Only the <b>driver</b> logs the truck's miles so a shared truck is never counted twice; passengers still log their time. Odometer never blocks clocking in. Time tracks even if you decline GPS.</div>
       </div>`;
     }
   }
@@ -491,7 +608,7 @@ function tcClockHTML() {
   if (recent.length) {
     h += `<div class="secthd"><h2>Your recent shifts</h2><span class="ct">${recent.length}</span></div><div class="card">` +
       recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcJobTitle(e.jobId))}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}${e.milesFlag ? " · ⚠" : ""}</div></div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
+        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}</div></div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
   }
   return h;
 }

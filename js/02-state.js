@@ -15,10 +15,13 @@ function load(){
   // Backfill an empty vehicles[] on every org idempotently, then SEED obx with Ray's truck ONLY if absent
   // (matched on a stable id so a re-seed across devices dedupes via sync instead of duplicating). updatedAt:1
   // so this local seed always LOSES to any real owner edit on merge.
-  (S.registry||[]).forEach(r=>{if(r&&!Array.isArray(r.vehicles))r.vehicles=[];});
+  // EQUIPMENT KIND — each registry vehicle gets a `kind`: "vehicle" (truck: odometer + reimbursement owner) or
+  // "trailer" (attached asset, no odometer). Legacy entries (incl. the F-150) default to "vehicle". Idempotent;
+  // does NOT bump registry updatedAt, so this local default always loses to a real owner edit on merge.
+  (S.registry||[]).forEach(r=>{if(r&&!Array.isArray(r.vehicles))r.vehicles=[];if(r&&Array.isArray(r.vehicles))r.vehicles.forEach(v=>{if(v&&!v.kind)v.kind="vehicle";});});
   {const obxReg=(S.registry||[]).find(r=>r&&r.id==="obx");
    if(obxReg){if(!Array.isArray(obxReg.vehicles))obxReg.vehicles=[];
-     if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true});}}
+     if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true,kind:"vehicle"});}}
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
@@ -55,6 +58,13 @@ function load(){
         else if(e.miles!=null)e.milesSource="gps";
         else e.milesSource=null;   // still open / no miles yet
       }
+      // RIDER ROLE (clock-in redesign) — only the DRIVER logs a truck's miles; passengers/no-vehicle log zero, so
+      // a shared truck is never double-counted. Legacy entries WITH a vehicle/owner → "driver" (they logged miles);
+      // a no-vehicle legacy entry → "none". trailerId (optional attached trailer) + rodeWith (who drove, if passenger)
+      // default null. Additive + idempotent.
+      if(!e.riderRole)e.riderRole=(e.vehicleId||e.vehicleOwnerId||e.vehicle)?"driver":"none";
+      if(e.trailerId===undefined)e.trailerId=null;
+      if(e.rodeWith===undefined)e.rodeWith=null;
     });
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
