@@ -206,6 +206,59 @@ window.orgToolToggle = function (tab) {
   const i = cur.indexOf(tab); if (i >= 0) cur.splice(i, 1); else cur.push(tab);
   orgSetTabs(cur);
 };
+/* ----- per-org NAV ORDER (admin-controlled): reorder the left-nav GROUPS for THIS org -----
+   Persisted in registry[org].navOrder (synced LWW). A mobile-friendly REORDER LIST with ▲/▼ buttons
+   (no live-bar dragging on touch). renderNav (js/03) applies it, defaulting any unlisted group to the
+   NAV_GROUPS order. Gate: owner OR a manager-tier role granted edit-tools — same gate as the tools card;
+   the server (sanitizeRegistryWrites) is the real authority and reverts a non-admin's navOrder write. */
+function canEditNav() { return (typeof isOwner === "function" && isOwner()) || ((typeof canDo === "function") && canDo("edit-tools")); }
+// the FULL ordered group-key list for this org (saved order + any unlisted groups appended in default order)
+function navOrderEditable() {
+  const def = (typeof NAV_GROUPS !== "undefined") ? NAV_GROUPS.map(g => g.key) : [];
+  const saved = (typeof orgNavOrder === "function") ? orgNavOrder() : null;
+  if (!saved || !saved.length) return def.slice();
+  const seen = {}, out = [];
+  saved.forEach(k => { if (def.indexOf(k) >= 0 && !seen[k]) { seen[k] = 1; out.push(k); } });
+  def.forEach(k => { if (!seen[k]) out.push(k); });
+  return out;
+}
+function navOrderCard() {
+  const groups = (typeof NAV_GROUPS !== "undefined") ? NAV_GROUPS : [];
+  const byKey = {}; groups.forEach(g => byKey[g.key] = g);
+  const order = navOrderEditable();
+  const custom = !!(typeof orgNavOrder === "function" && orgNavOrder());
+  let h = `<div class="card"><div class="nm" style="font-size:15px">🧭 Menu order</div>
+    <div class="sub" style="margin-bottom:8px">Reorder the left-nav groups for <b>${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</b>. The order syncs to everyone in this org. Visibility is unchanged — this only sets the order.${custom ? "" : " <i>(default order)</i>"}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">`;
+  order.forEach((k, i) => {
+    const g = byKey[k] || { label: k, icon: "" };
+    h += `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
+      <span style="font-size:18px;width:22px;text-align:center">${g.icon || ""}</span>
+      <span class="grow" style="font-weight:600">${esc(g.label || k)}</span>
+      <button class="btn ghost sm" aria-label="Move up" ${i === 0 ? "disabled" : ""} onclick="navOrderMove('${esc(k)}',-1)" style="padding:4px 10px;font-size:16px">▲</button>
+      <button class="btn ghost sm" aria-label="Move down" ${i === order.length - 1 ? "disabled" : ""} onclick="navOrderMove('${esc(k)}',1)" style="padding:4px 10px;font-size:16px">▼</button>
+    </div>`;
+  });
+  h += `</div>`;
+  if (custom) h += `<div class="row" style="margin-top:10px"><button class="btn ghost sm" onclick="navOrderReset()">↩︎ Reset to default order</button></div>`;
+  return h + `</div>`;
+}
+function orgSetNavOrder(order) {
+  if (!canEditNav()) { alert("Owner or manager only."); return; }
+  const r = (S.registry || []).find(x => x && x.id === S.biz); if (!r) return;
+  if (order == null) delete r.navOrder; else r.navOrder = order;
+  r.updatedAt = now();
+  if (typeof logChange === "function") logChange("update", "account", S.biz, "Changed menu order for " + (typeof orgName === "function" ? orgName(S.biz) : S.biz));
+  save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); render();
+}
+window.navOrderMove = function (key, dir) {
+  if (!canEditNav()) { alert("Owner or manager only."); return; }
+  const order = navOrderEditable(); const i = order.indexOf(key); const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  order[i] = order[j]; order[j] = key;   // swap
+  orgSetNavOrder(order);
+};
+window.navOrderReset = function () { orgSetNavOrder(null); };   // drop the override → back to the default NAV_GROUPS order
 function myOrgIds() {
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return [];
   if (me.superAdmin) return (S.registry || []).filter(r => r && !r.deleted).map(r => r.id);   // super-admin sees every org
@@ -268,6 +321,7 @@ function rAdmin() {
 
   const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
   if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
+  if (canEditNav() && typeof navOrderCard === "function") h += navOrderCard();   // per-org left-nav GROUP order (owner/manager)
   if (owner && typeof sampleDataCard === "function") h += sampleDataCard();   // Load/Clear obvious SAMPLE records for the enabled org tools (owner-only)
   if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */

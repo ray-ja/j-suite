@@ -53,6 +53,46 @@ ok("LWW: newer customer record wins", (m.obx.customers.find(x => x.id === "c1") 
 ok("merge brings in new record", !!m.obx.customers.find(x => x.id === "c2"), m.obx.customers);
 ok("incoming-only collection merged", m.obx.quotes.length === 1, m.obx.quotes);
 
+console.log("\n— PER-ORG NAV ORDER (admin-controlled menu order) migration fixture + LWW + permission gate —");
+// Realistic pre-navOrder store: two orgs with real data + accounts/memberships. Owner+admin in obx, a crew member, all on the registry (no navOrder yet).
+const noStored = {
+  obx: { customers: [{ id: "c1", name: "Acme", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }], jobs: [{ id: "j1", title: "Haul", updatedAt: 10 }], properties: [{ id: "p1", address: "1 Sea", updatedAt: 10 }] },
+  jam: { customers: [{ id: "jc1", name: "Mill", updatedAt: 10 }] },
+  registry: [{ id: "obx", name: "OBX Lot Solutions", tabs: null, updatedAt: 5 }, { id: "jam", name: "Jamieson", updatedAt: 5 }],
+  users: [
+    { id: "own", username: "ray", role: "owner", superAdmin: true, updatedAt: 1 },
+    { id: "adm", username: "amy", role: "crew", updatedAt: 1 },
+    { id: "crw", username: "joe", role: "crew", updatedAt: 1 },
+    { id: "mem_obx_own", kind: "membership", orgId: "obx", accountId: "own", role: "owner", active: true, updatedAt: 1 },
+    { id: "mem_obx_adm", kind: "membership", orgId: "obx", accountId: "adm", role: "admin", active: true, updatedAt: 1 },
+    { id: "mem_obx_crw", kind: "membership", orgId: "obx", accountId: "crw", role: "crew", active: true, updatedAt: 1 }
+  ]
+};
+const noMig = t.migrateStore(JSON.parse(JSON.stringify(noStored)));
+ok("nav-order fixture: migrate keeps every customer/quote/job/property/account (zero loss; org without navOrder unaffected)",
+  noMig.obx.customers.some(c => c.id === "c1") && noMig.obx.quotes.some(q => q.id === "q1") && noMig.obx.jobs.some(j => j.id === "j1") &&
+  noMig.obx.properties.some(p => p.id === "p1") && noMig.jam.customers.some(c => c.id === "jc1") &&
+  noMig.users.filter(u => !u.kind).length === 3 && !noMig.registry.find(r => r.id === "obx").navOrder);
+// an admin (msgAdminInOrg=true) sets navOrder → it survives the registry LWW merge + a round-trip with zero loss
+const noWrite = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", navOrder: ["admin", "today", "money"], updatedAt: 20 }] }, noMig, "own");
+const noMerged = t.mergeState(noMig, noWrite);
+ok("nav-order: an admin's navOrder write survives sanitize + LWW merge", JSON.stringify((noMerged.registry.find(r => r.id === "obx") || {}).navOrder) === JSON.stringify(["admin", "today", "money"]));
+ok("nav-order: setting navOrder did NOT drop the org's other data (customers/jobs intact)", noMerged.obx.customers.some(c => c.id === "c1") && noMerged.obx.jobs.some(j => j.id === "j1"));
+const noRound = t.mergeState(noMerged, t.projectForUser(noMerged, ["obx", "jam"], { id: "own", superAdmin: true }));   // full round-trip
+ok("nav-order: navOrder survives a sync round-trip (re-push) with zero loss", JSON.stringify((noRound.registry.find(r => r.id === "obx") || {}).navOrder) === JSON.stringify(["admin", "today", "money"]) && noRound.obx.customers.some(c => c.id === "c1"));
+ok("nav-order: the OTHER org (jam, no navOrder) is unaffected by the migration/round-trip", !(noRound.registry.find(r => r.id === "jam") || {}).navOrder && noRound.jam.customers.some(c => c.id === "jc1"));
+// PERMISSION GATE (server is the authority): a CREW member cannot set navOrder
+const crewSet = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", navOrder: ["admin"], updatedAt: 30 }] }, noMerged, "crw");
+ok("nav-order GATE: a crew member's navOrder write is REVERTED to the stored admin-set order", JSON.stringify(crewSet.registry[0].navOrder) === JSON.stringify(["admin", "today", "money"]));
+const crewSet2 = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", navOrder: ["money"], updatedAt: 31 }] }, noMig, "crw");
+ok("nav-order GATE: a crew write is STRIPPED when the org had no prior navOrder (no privileged field leaks in)", !Object.prototype.hasOwnProperty.call(crewSet2.registry[0], "navOrder"));
+const crewTabs = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX", tabs: ["today"], updatedAt: 32 }] }, noMig, "crw");
+ok("nav-order GATE: the same gate also protects `tabs` (crew cannot set the org's tool set → reverted to stored null)", crewTabs.registry[0].tabs === null);
+const admSet = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX", navOrder: ["money", "today"], updatedAt: 33 }] }, noMig, "adm");
+ok("nav-order GATE: an ADMIN (manager-tier) CAN set navOrder (write passes through)", JSON.stringify(admSet.registry[0].navOrder) === JSON.stringify(["money", "today"]));
+const crewName = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "Renamed by crew", updatedAt: 34 }] }, noMig, "crw");
+ok("nav-order GATE: a crew write that does NOT touch navOrder/tabs passes through untouched (non-privileged fields free)", crewName.registry[0].name === "Renamed by crew");
+
 console.log("— knowledge (Cap's Playbook) is a synced collection + survives merge with zero loss —");
 const kbStored = { obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", title: "Job", updatedAt: 10 }], properties: [{ id: "p1", address: "X", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }] } };   // legacy: NO knowledge key
 const km = t.mergeState(kbStored, { obx: { knowledge: [{ id: "k1", topic: "Currituck", fact: "Free for brush", updatedAt: 5 }] } });

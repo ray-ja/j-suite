@@ -86,6 +86,18 @@ const ORG_TEMPLATES = {
   personal: ["life","budget","todo","plan","finance","playbook"]              // e.g. a personal area — life tracker (notes/journal + habits), budget (income/spend + monthly plan), planning (+ Cap via the org AI)
 };
 function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
+// PER-ORG NAV ORDER (admin-controlled): registry[org].navOrder = [groupKey,…]. renderNav applies it; any
+// listed-but-unknown key is ignored, and any group NOT listed (incl. a NEW group added later) is appended
+// in the default NAV_GROUPS order — so an org with an old/partial navOrder never loses a menu. Unset → default.
+function orgNavOrder(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.navOrder))?r.navOrder:null; }
+function navGroupsOrdered(){
+  const order=orgNavOrder(); if(!order||!order.length) return NAV_GROUPS;
+  const byKey={}; NAV_GROUPS.forEach(g=>byKey[g.key]=g);
+  const seen={}, out=[];
+  order.forEach(k=>{ if(byKey[k]&&!seen[k]){ seen[k]=1; out.push(byKey[k]); } });   // saved order first (dedup, ignore unknown keys)
+  NAV_GROUPS.forEach(g=>{ if(!seen[g.key]) out.push(g); });                          // then any group not listed, in default order (append new groups)
+  return out;
+}
 function orgHasTab(tab){ const t=orgTabs(); if(ORG_CORE_TABS.indexOf(tab)>=0) return true; if(ORG_OPTIN_TABS.indexOf(tab)>=0) return !!t && t.indexOf(tab)>=0; return !t || t.indexOf(tab)>=0; }
 function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !msgEnabled() : true)) return false; return (typeof canSee==="function") ? canSee(t) : true; }
 function tabGroup(t){ return NAV_GROUPS.find(g=>g.tabs.indexOf(t)>=0) || NAV_GROUPS[0]; }
@@ -93,7 +105,7 @@ function groupTabs(g){ return g.tabs.filter(navCanSee); }
 function renderNav(){
   const nav=document.querySelector("nav"); if(!nav) return;
   const curKey=tabGroup(TAB).key;
-  nav.innerHTML = NAV_GROUPS.map(g=>{
+  nav.innerHTML = navGroupsOrdered().map(g=>{
     const tabs=groupTabs(g); if(!tabs.length) return "";
     const badge = g.key==="messages" ? `<span id="msgbadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px"></span>` : "";
     return `<button data-group="${g.key}" class="${g.key===curKey?"on":""}"><span class="ic">${g.icon}</span>${g.label}${badge}</button>`;
