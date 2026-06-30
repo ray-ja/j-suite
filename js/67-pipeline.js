@@ -23,10 +23,7 @@ function rPipeline() {
   const numP = q => (typeof quoteNum === "function" && quoteNum(q)) ? quoteNum(q) + " · " : "";
   const tyAgo = q => { const ty = (typeof quoteType === "function" && quoteType(q)) || ""; const ago = q.date ? ((typeof agoStr === "function" ? agoStr(q.date) : "") || fmtDate(q.date)) : ""; return [ty, ago].filter(Boolean).join(" · "); };
 
-  // the flow, drawn linear at the top
-  const flow = [["🎯", "Sales", leads.length], ["📝", "Quote", G.quote.length], ["🔧", "Job", G.job.length], ["📤", "Invoice", G.bill.length], ["💸", "Paid", G.pay.length], ["⭐", "Review", G.review.length]];
-  let h = `<div class="card" style="overflow-x:auto"><div class="row" style="gap:2px;white-space:nowrap;align-items:center;font-size:12px">` +
-    flow.map((s, i) => `${i ? `<span style="color:var(--muted)">→</span>` : ""}<span style="font-weight:700;padding:2px 4px">${s[0]} ${s[1]}${s[2] ? ` <span class="badge" style="background:var(--accent);color:var(--accent-ink)">${s[2]}</span>` : ""}</span>`).join("") + `</div></div>`;
+  let h = "";
 
   const sect = (icon, title, n, body, lead) => { h += `<div class="secthd"><h2>${icon} ${title}</h2><span class="ct">${n}</span></div>`; if (lead) h += lead; h += n ? `<div class="card">${body}</div>` : `<div class="empty" style="padding:14px;font-size:14px">Nothing here right now.</div>`; };
 

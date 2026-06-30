@@ -261,8 +261,7 @@ function rAdmin() {
   }
   const roleOpts = sel => roles.map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("");
 
-  let h = `<div class="secthd"><h2>Admin</h2><button class="btn ghost sm" onclick="adminOpenCreate()">+ Account</button></div>
-    <div class="card" style="margin-bottom:6px;border-left:3px solid var(--acc)"><div class="nm" style="font-size:14px">🏢 Managing: ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)}</div><div class="sub">${(typeof isSuperAdmin === "function" && isSuperAdmin()) ? "Super-admin — switch organization (👤 menu) to manage another. " : ""}People here belong to this organization only.</div></div>
+  let h = `<div class="secthd"><h2>Admin</h2></div>
     <p class="muted" style="margin:0 4px 6px">Manage who can sign in, what role they hold, and which tabs each role sees. Roles &amp; access sync to every device.</p>`;
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
