@@ -121,8 +121,25 @@ function calJobRow(j){
     <div class="grow"><div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${j.time?`<span class="badge" style="background:var(--soft);color:var(--ink);margin-right:6px">${esc(j.time)}</span>`:""}${esc(j.title||"Job")}</div>
     <div class="sub">${j.customerId?esc(custName(j.customerId)):"No customer"}${ini?" · "+esc(ini):""}${conf?` <span style="color:var(--danger)">⚠ crew off</span>`:""}</div></div></div>`;
 }
+/* per-day availability line for the Week view — a "N free" count + the same crew chips the Month grid
+   draws (calDayChips), so a member's availability SURFACES in Week too (was jobs-only → people on the
+   persisted Week view saw zero availability even though the data was intact). Tap the day for the full
+   per-member list. Open to every role, same as Month/Day. */
+function weekDayAvail(ds){
+  const mem=(typeof schedMembers==="function")?schedMembers():[];
+  if(!mem.length||typeof availOn!=="function")return"";
+  const cnt=(typeof teamAvailCounts==="function")?teamAvailCounts(ds):null;
+  const chips=(typeof calDayChips==="function")?calDayChips(ds):"";
+  const cntOff=cnt?(cnt.off+cnt.timeoff):0;
+  const summary=cnt&&cnt.total
+    ?`<span style="color:var(--accent);font-weight:700">${cnt.available} free</span>${cnt.partial?` · <span style="color:#b07d00;font-weight:700">${cnt.partial} part</span>`:""}${cntOff?` · <span style="color:var(--danger);font-weight:700">${cntOff} off</span>`:""}`
+    :"";
+  if(!summary&&!chips)return"";
+  return `<div class="weekdayavail" onclick="openDay('${ds}')" title="Tap for the full availability list">${summary}${chips}</div>`;
+}
 /* Week view — the 7 days containing the anchor. Each day is a tappable header (its date → openDay)
-   with its jobs stacked under it; a free day invites adding one. Mobile = stacked; wide = 7 columns. */
+   with a crew-availability line + its jobs stacked under it; a free day invites adding one. Mobile =
+   stacked; wide = 7 columns. */
 function renderWeekView(jobs){
   const t=today(),ws=weekStart(calAnchor());const byDate={};jobs.forEach(j=>{(byDate[j.date]=byDate[j.date]||[]).push(j);});
   let cols="";
@@ -132,6 +149,7 @@ function renderWeekView(jobs){
       :`<div class="muted" style="padding:8px 4px;cursor:pointer" onclick="closeModal();openJob(null,'','${ds}')">No jobs — <span style="color:var(--brand-text);font-weight:700">add one</span>.</div>`;
     cols+=`<div class="weekday${isToday?" today":""}${isSel?" sel":""}">
       <div class="weekdayhd" onclick="openDay('${ds}')"><span class="wd-dow">${DOW[dowOf(ds)]}</span> <span class="wd-num">${ds.slice(8)}</span>${dj.length?`<span class="ct" style="margin-left:auto">${dj.length}</span>`:`<span class="wd-add" style="margin-left:auto" onclick="event.stopPropagation();closeModal();openJob(null,'','${ds}')">＋</span>`}</div>
+      ${weekDayAvail(ds)}
       <div class="weekdayjobs">${rows}</div></div>`;
   }
   return `<div class="weekgrid">${cols}</div>`;
