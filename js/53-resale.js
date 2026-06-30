@@ -14,7 +14,7 @@ const RESALE_PLATFORMS = ["", "Facebook Marketplace", "OfferUp", "Craigslist", "
 const RESALE_TOLIST_STALE = 7, RESALE_POSTED_STALE = 21;   // days before "aging" (mirror tools/ops-sweep.js)
 
 /* OBX-area default platforms to LIST on (Ray: confirm / extend — these are sensible defaults, not set in stone). */
-const RESALE_POST_DEFAULTS = ["Facebook Marketplace", "OfferUp", "Craigslist"];
+const RESALE_POST_DEFAULTS = ["Facebook Marketplace", "Nextdoor", "OfferUp", "Craigslist"];
 
 /* Item TYPES — branch the staging/posing guidance. Crew picks one when adding the item. */
 const RESALE_TYPES = [
