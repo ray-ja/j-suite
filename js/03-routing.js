@@ -40,7 +40,7 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday)}[TAB])||rToday)();
+  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday)}[TAB])||rToday)();
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
   if(typeof renderClockPill==="function")renderClockPill();
@@ -60,7 +60,7 @@ const NAV_GROUPS = [
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
   { key:"money",     label:"Money",     icon:"💰", tabs:["finance","receipts"] },
-  { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo"] },
+  { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
@@ -70,7 +70,7 @@ const TAB_META = {
   accounts:{l:"Customers",i:"👥"}, sales:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, budget:{l:"Budget",i:"💵"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, budget:{l:"Budget",i:"💵"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.

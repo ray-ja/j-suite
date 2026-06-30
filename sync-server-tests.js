@@ -172,6 +172,24 @@ ok("knowledge collection scaffolded on a legacy biz (no knowledge key)", Array.i
 ok("knowledge record round-trips through the merge", (km.obx.knowledge.find(x => x.id === "k1") || {}).fact === "Free for brush", km.obx.knowledge);
 ok("every pre-existing record survives the knowledge migration (customer/job/property/quote)", !!(km.obx.customers.find(x => x.id === "c1") && km.obx.jobs.find(x => x.id === "j1") && km.obx.properties.find(x => x.id === "p1") && km.obx.quotes.find(x => x.id === "q1")), km.obx);
 
+console.log("— RESEARCH library (Data → Research): the `research` collection is synced + survives load()/merge with ZERO loss; a seeded note round-trips; orgs without it get an empty array —");
+// realistic PRE-CHANGE store: obx + jam full of real records, NO research key anywhere; a third org (jam) must
+// just gain an empty array (no seed). The seeded crew-comp note arrives from another device's push.
+const rsStored = {
+  obx: { customers: [{ id: "c1", name: "Cust", updatedAt: 10 }], jobs: [{ id: "j1", title: "Job", updatedAt: 10 }], properties: [{ id: "p1", address: "X", updatedAt: 10 }], quotes: [{ id: "q1", updatedAt: 10 }] },   // legacy: NO research key
+  jam: { customers: [{ id: "jc1", name: "JamCust", updatedAt: 10 }], jobs: [{ id: "jj1", title: "Install", updatedAt: 10 }], quotes: [{ id: "jq1", updatedAt: 10 }], properties: [{ id: "jp1", address: "Y", updatedAt: 10 }] }
+};
+const rsNote = { id: "research_crewcomp", title: "Adding crew — comp & legal options (research)", body: "Recommendation: profits-interest LLC members, paid via the field-work split, with vesting.", tags: "crew, comp, legal", createdBy: "__system__", updatedAt: 1, deleted: false };
+const rm = t.mergeState(rsStored, { obx: { research: [rsNote] } });
+ok("research collection scaffolded on a legacy biz (no research key)", Array.isArray(rm.obx.research), Object.keys(rm.obx));
+ok("the seeded crew-comp note round-trips through the merge (title + body intact)", (function () { const r = rm.obx.research.find(x => x.id === "research_crewcomp") || {}; return r.title === rsNote.title && r.body === rsNote.body && r.tags === "crew, comp, legal"; })(), rm.obx.research);
+ok("every pre-existing obx record survives the research migration (customer/job/property/quote)", !!(rm.obx.customers.find(x => x.id === "c1") && rm.obx.jobs.find(x => x.id === "j1") && rm.obx.properties.find(x => x.id === "p1") && rm.obx.quotes.find(x => x.id === "q1")), rm.obx);
+ok("an org WITHOUT the seed survives + gets an empty research array (jam: no note, all records intact)", (function () { return Array.isArray(rm.jam.research) && rm.jam.research.length === 0 && rm.jam.customers.find(x => x.id === "jc1") && rm.jam.jobs.find(x => x.id === "jj1") && rm.jam.quotes.find(x => x.id === "jq1") && rm.jam.properties.find(x => x.id === "jp1"); })(), rm.jam);
+// stable-id LWW: a re-seed on a fresh device (same id, updatedAt:1) dedupes — never duplicates the note
+const rm2 = t.mergeState(rm, { obx: { research: [rsNote] } });
+ok("research note dedupes by stable id across a re-push (no duplicate)", rm2.obx.research.filter(x => x.id === "research_crewcomp").length === 1, rm2.obx.research);
+ok("never-drop-an-org: jam (+ every record) survives an obx-only research push", !!(rm.jam.customers.find(x => x.id === "jc1") && rm.jam.jobs.find(x => x.id === "jj1")), rm.jam);
+
 console.log("— disbursements (account payouts/taxes paid) is a synced collection + survives merge —");
 const dm = t.mergeState({ obx: { income: [{ id: "in1", amount: 100, date: "2026-06-01", updatedAt: 10 }] } }, { obx: { disbursements: [{ id: "db1", type: "payout", amount: 50, date: "2026-06-02", updatedAt: 5 }] } });
 ok("disbursements scaffolded + record round-trips through the merge", Array.isArray(dm.obx.disbursements) && (dm.obx.disbursements.find(x => x.id === "db1") || {}).type === "payout", dm.obx.disbursements);
