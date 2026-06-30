@@ -931,6 +931,20 @@ ok("resale status advance LWW-merges (sold + price/buyer win, item intact)", (()
 ok("resale delete tombstone LWW-merges", (() => { const m = t.mergeState({ obx: { resale: [{ id: "rs4", item: "Lamp", status: "to-list", updatedAt: 5 }] } }, { obx: { resale: [{ id: "rs4", item: "Lamp", status: "to-list", deleted: true, updatedAt: 9 }] } }); const r = m.obx.resale.find(x => x.id === "rs4") || {}; return r.deleted === true; })(), null);
 // (d) a pre-resale store (no resale key) round-trips zero-loss + scaffolds resale empty
 ok("pre-resale store: every customer/quote/job survives + resale scaffolds (zero loss)", (() => { const m = t.mergeState({ obx: { customers: [{ id: "c1", updatedAt: 5 }], quotes: [{ id: "q1", updatedAt: 5 }], jobs: [{ id: "j1", updatedAt: 5 }] } }, {}); return m.obx.customers.length === 1 && m.obx.quotes.length === 1 && m.obx.jobs.length === 1 && Array.isArray(m.obx.resale); })(), null);
+// (e) GUIDED PROCESS migration fixture: pre-change resale items (no `type`, no `steps`) survive migrate + a
+//     round-trip with ZERO loss; the new intra-record fields are additive and never overwrite legacy data.
+const rsLegacy = { obx: { customers: [{ id: "c9", name: "Acme", updatedAt: 5 }], quotes: [{ id: "q9", updatedAt: 5 }], jobs: [{ id: "j9", updatedAt: 5 }], resale: [{ id: "rsOld1", item: "Pre-process dresser", status: "to-list", jobId: "j9", createdAt: 5, updatedAt: 5 }, { id: "rsOld2", item: "Pre-process bike", status: "sold", price: 60, buyer: "Lee", soldDate: "2026-06-01", updatedAt: 5 }] }, jam: {}, users: [{ id: "u9", updatedAt: 5 }] };
+const rsMig = t.migrateStore(JSON.parse(JSON.stringify(rsLegacy)));
+const rsRound = t.mergeState(rsMig, {});
+ok("guided-process migration: every legacy resale item survives migrate + round-trip (zero loss)", (() => { const a = (rsRound.obx.resale || []).filter(r => !r.deleted); return a.length === 2 && a.some(r => r.id === "rsOld1" && r.item === "Pre-process dresser") && a.some(r => r.id === "rsOld2" && r.price === 60 && r.buyer === "Lee"); })(), (rsRound.obx.resale || []).map(r => r.id));
+ok("guided-process migration: customers/quotes/jobs/account also survive alongside resale (zero loss)", rsRound.obx.customers.length === 1 && rsRound.obx.quotes.length === 1 && rsRound.obx.jobs.length === 1 && (rsRound.users || []).some(u => u.id === "u9"), null);
+ok("guided-process migration: legacy items carry no type/steps and don't fabricate them (additive)", (() => { const r = (rsMig.obx.resale || []).find(x => x.id === "rsOld1") || {}; return r.type === undefined && r.steps === undefined; })(), null);
+// (f) the new `type` + `steps` (checklist progress) fields RIDE the record LWW: newer device's checklist + type win, item intact
+const rsSteps = t.mergeState(
+  { obx: { resale: [{ id: "rsP", item: "Drill", status: "to-list", type: "tools", steps: { photo: true }, updatedAt: 5 }] } },
+  { obx: { resale: [{ id: "rsP", item: "Drill", status: "to-list", type: "tools", steps: { photo: true, clean: true, stage: true }, updatedAt: 9 }] } }
+);
+ok("resale checklist progress (steps{}) + type ride LWW (newer wins, item intact)", (() => { const r = rsSteps.obx.resale.find(x => x.id === "rsP") || {}; return r.type === "tools" && r.steps && r.steps.stage === true && Object.keys(r.steps).length === 3 && r.item === "Drill"; })(), null);
 
 console.log("— Step 2 data spine: pendingChanges approval queue (synced collection, LWW, zero-loss migration) —");
 // (a) scaffolds on both businesses; proposals from two devices union-merge
