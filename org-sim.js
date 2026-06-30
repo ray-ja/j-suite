@@ -202,6 +202,45 @@ async function main() {
     check("a NON-member CANNOT read another org's AI status (403)", aiEve.status === 403);
     let aiAsk = await api("POST", "/api/org-ai/ask", { org: "jam", question: "hi" }, rayTok);
     check("ask fails cleanly when an org has no AI configured (400)", aiAsk.status === 400);
+
+    // ===== WORKSHOP (customJobs) — end-to-end /sync write-authz + the preview route =====
+    // roles now: joe = obx OWNER, moe = obx ADMIN (promoted earlier), eve = escaperoom only.
+    const jobOf = (st, id) => (((st && st.state && st.state.obx) || {}).customJobs || []).find(j => j && j.id === id);
+    const mkJob = (over) => Object.assign({ id: "cjob_x", org: "obx", name: "Job", dataScope: ["quotes"], prompt: "list open quotes", schedule: { kind: "daily", hour: 7, min: 0, tz: "America/New_York" }, deliverTo: { mode: "private", threadId: null }, action: { mode: "report" }, model: null, maxRows: null, active: true, createdBy: "x", lastRun: null, createdAt: now(), updatedAt: now(), deleted: false }, over || {});
+    // obx members RECEIVE the seeded Sentinel example
+    let joeWs = await sync(joeTok, {});
+    check("WORKSHOP: obx members receive the seeded Sentinel EXAMPLE (inactive, broadcast, example:true)", (function () { const ex = jobOf(joeWs, "cjob_sentinel_example"); return !!ex && ex.example === true && ex.active === false; })());
+    // ADMIN writes a plain REPORT job → persists
+    await sync(moeTok, { obx: { customJobs: [mkJob({ id: "cjob_rep" })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP: an ADMIN's plain report job PERSISTS (e2e)", !!jobOf(rayst, "cjob_rep") && jobOf(rayst, "cjob_rep").action.mode === "report");
+    // ADMIN writes a FINANCE + BROADCAST job → coerced safe (finance scope stripped, delivery → private)
+    await sync(moeTok, { obx: { customJobs: [mkJob({ id: "cjob_finbc", dataScope: ["income", "expenses"], deliverTo: { mode: "broadcast", threadId: null } })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP GATE: an ADMIN's finance+broadcast job is COERCED (finance stripped + delivery private) (e2e)", (function () { const j = jobOf(rayst, "cjob_finbc"); return !!j && j.dataScope.indexOf("income") < 0 && j.deliverTo.mode === "private"; })());
+    // ADMIN writes a PROPOSE job → coerced to report
+    await sync(moeTok, { obx: { customJobs: [mkJob({ id: "cjob_prop", action: { mode: "propose" } })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP GATE: an ADMIN's propose job is coerced to report (propose is owner-only) (e2e)", (jobOf(rayst, "cjob_prop") || {}).action && jobOf(rayst, "cjob_prop").action.mode === "report");
+    // OWNER writes a FINANCE + PROPOSE job → passes through unchanged
+    await sync(joeTok, { obx: { customJobs: [mkJob({ id: "cjob_ownfin", dataScope: ["income"], action: { mode: "propose" } })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP: an OWNER's finance+propose job PASSES THROUGH (e2e)", (function () { const j = jobOf(rayst, "cjob_ownfin"); return !!j && j.dataScope.indexOf("income") >= 0 && j.action.mode === "propose"; })());
+    // OWNER writes a BROADCAST job → passes through
+    await sync(joeTok, { obx: { customJobs: [mkJob({ id: "cjob_ownbc", deliverTo: { mode: "broadcast", threadId: null } })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP: an OWNER's broadcast job PASSES THROUGH (e2e)", (jobOf(rayst, "cjob_ownbc") || {}).deliverTo && jobOf(rayst, "cjob_ownbc").deliverTo.mode === "broadcast");
+    // CROSS-ORG: eve (escaperoom only) cannot write into obx's customJobs (scoped out)
+    await sync(eveTok, { obx: { customJobs: [mkJob({ id: "cjob_evehack" })] } });
+    rayst = await sync(rayTok, {});
+    check("WORKSHOP: a non-member CANNOT write another org's customJobs (cross-org write dropped)", !jobOf(rayst, "cjob_evehack"));
+    // PREVIEW route: gated. crew/non-member 403; manager 400 when no AI key set; finance preview owner-only.
+    let pvEve = await api("POST", "/api/workshop/preview", { org: "obx", job: mkJob({}) }, eveTok);
+    check("WORKSHOP preview: a non-member is forbidden (403)", pvEve.status === 403);
+    let pvNoKey = await api("POST", "/api/workshop/preview", { org: "jam", job: mkJob({ org: "jam" }) }, rayTok);
+    check("WORKSHOP preview: 400 when the org has no AI key configured (no token burned)", pvNoKey.status === 400);
+    let pvAdminFin = await api("POST", "/api/workshop/preview", { org: "obx", job: mkJob({ dataScope: ["income"] }) }, moeTok);
+    check("WORKSHOP preview: an ADMIN's FINANCE preview is owner-only (403)", pvAdminFin.status === 403);
   } catch (e) { console.log("  ✗ FAIL: simulation threw " + (e && e.message)); fail++; }
   finally { srv.kill(); try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {} }
   console.log("\n  =========  " + pass + " passed, " + fail + " failed  =========");
