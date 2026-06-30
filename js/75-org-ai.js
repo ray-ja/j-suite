@@ -21,6 +21,11 @@ function orgAiCardInner() {
       <button class="btn ghost sm" onclick="orgAiSetKey()">${st.hasKey ? "🔑 Replace API key" : "🔑 Set API key"}</button>
       <button class="btn ghost sm" onclick="orgAiSetModel()">Model: ${esc((st.model || "").replace("claude-", "") || "default")}</button>
       ${st.enabled && st.hasKey ? `<button class="btn acc sm" onclick="orgAiAsk()">💬 Ask a question</button>` : ""}
+    </div>
+    <div class="sub" style="white-space:normal;margin-top:8px;font-size:12px;line-height:1.4">
+      Needs an <b>Anthropic API key</b> (powers this assistant + its Sentinel daily brief).
+      Get one at <b>console.anthropic.com → Settings → API Keys → Create Key</b> — a standard key works, no special scopes.
+      Billing is on your own Anthropic account. The key is stored <b>server-side only and never shown again</b> after saving.
     </div>`;
 }
 function orgAiCard() { setTimeout(orgAiLoadStatus, 30); return `<div class="card" id="orgai-card" style="margin-top:8px;border-left:3px solid var(--acc)">${orgAiCardInner()}</div>`; }
@@ -32,7 +37,7 @@ async function orgAiPost(bodyObj) {
   const el = document.getElementById("orgai-card"); if (el) el.innerHTML = orgAiCardInner();
 }
 window.orgAiToggle = function (on) { orgAiPost({ enabled: !!on }); };
-window.orgAiSetKey = function () { const k = prompt("Paste this organization's Anthropic API key (sk-ant-…).\n\nIt is stored on the server only and never shown again. You can get one at console.anthropic.com."); if (k == null || !k.trim()) return; orgAiPost({ apiKey: k.trim(), enabled: true }).then(() => alert("Key saved. The assistant is ready.")); };
+window.orgAiSetKey = function () { const k = prompt("Paste this organization's Anthropic API key (sk-ant-…).\n\nGet one at console.anthropic.com → Settings → API Keys → Create Key. A standard key works — no special scopes needed. Billing is on your own Anthropic account.\n\nIt is stored on the server only and never shown again."); if (k == null || !k.trim()) return; orgAiPost({ apiKey: k.trim(), enabled: true }).then(() => alert("Key saved. The assistant is ready.")); };
 window.orgAiSetModel = function () { const m = prompt("Model id:\n• claude-haiku-4-5-20251001 — cheapest, fast\n• claude-sonnet-4-6 — smarter", (ORG_AI_ST && ORG_AI_ST.model) || "claude-haiku-4-5-20251001"); if (m == null || !m.trim()) return; orgAiPost({ model: m.trim() }); };
 window.orgAiAsk = function () {
   modal("Ask the " + ((typeof orgName === "function") ? orgName(S.biz) : S.biz) + " assistant", `
