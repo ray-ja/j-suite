@@ -128,6 +128,20 @@ async function main() {
     mst = await sync(joeTok, {});
     check("owner deletes a THREAD (e2e) → tombstoned (its messages still present, no resurrection)", msgOf(mst, "om_thr").deleted === true && !!msgOf(mst, "om_moe") && msgOf(mst, "om_moe").deleted === true);
 
+    // ===== per-org NAV ORDER (admin-controlled menu order) — end-to-end /sync permission gate =====
+    const regOf = (st, id) => ((st && st.state && st.state.registry) || []).find(r => r && r.id === id);
+    // joe is the obx OWNER → may set navOrder; it lands and syncs to the whole org.
+    await sync(joeTok, { registry: [{ id: "obx", name: "OBX", navOrder: ["admin", "today", "money"], updatedAt: now() }] });
+    rayst = await sync(rayTok, {});
+    check("org-owner CAN set navOrder (e2e) — it lands", JSON.stringify((regOf(rayst, "obx") || {}).navOrder) === JSON.stringify(["admin", "today", "money"]));
+    let joeSees = await sync(joeTok, {});
+    check("the org's members RECEIVE the admin-set navOrder (everyone in the org sees it)", JSON.stringify((regOf(joeSees, "obx") || {}).navOrder) === JSON.stringify(["admin", "today", "money"]));
+    // moe is still obx CREW here → a navOrder write must be REVERTED to the owner's stored order.
+    await sync(moeTok, { registry: [{ id: "obx", name: "OBX", navOrder: ["money", "admin", "today"], updatedAt: now() }] });
+    rayst = await sync(rayTok, {});
+    check("crew CANNOT set navOrder (e2e) → reverted to the admin's order", JSON.stringify((regOf(rayst, "obx") || {}).navOrder) === JSON.stringify(["admin", "today", "money"]));
+    check("...and the crew navOrder attempt did NOT corrupt the org name", (regOf(rayst, "obx") || {}).name === "OBX");
+
     // ===== org-admin tier: an org OWNER manages their org's memberships (but only theirs) =====
     await sync(joeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "admin", active: true, updatedAt: now() }] });   // joe (obx OWNER) promotes moe
     rayst = await sync(rayTok, {});
@@ -138,6 +152,10 @@ async function main() {
     await sync(moeTok, { users: [{ id: "mem_obx_moe", kind: "membership", orgId: "obx", accountId: "moe", role: "owner", active: true, updatedAt: now() }] });   // moe (now admin, not owner) tries to self-promote to owner
     rayst = await sync(rayTok, {});
     check("a non-owner member CANNOT self-promote to org owner", memRole(rayst, "moe", "obx") === "admin");
+    // moe is now an obx ADMIN → may set navOrder (admin, not just owner).
+    await sync(moeTok, { registry: [{ id: "obx", name: "OBX", navOrder: ["today", "money", "admin"], updatedAt: now() }] });
+    rayst = await sync(rayTok, {});
+    check("an org ADMIN CAN set navOrder (e2e) — the admin's order lands", JSON.stringify((regOf(rayst, "obx") || {}).navOrder) === JSON.stringify(["today", "money", "admin"]));
 
     // ===== role hierarchy (Phase 3e): the escaperoom MANAGER tier may manage members, but RESTRICTED =====
     const lizTok = (await login("liz")).token, gusTok = (await login("gus")).token;

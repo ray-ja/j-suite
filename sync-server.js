@@ -165,6 +165,39 @@ function sanitizeMessageDeletes(incoming, pre, selfId) {
   }
   return out;
 }
+// REGISTRY-WRITE authz. The registry record carries org SETTINGS that are admin-controlled: which tools the
+// org sees (`tabs`) and the left-nav GROUP order (`navOrder`). These ride the LWW `registry` collection, so a
+// crew member (a member of the org, hence allowed to sync its registry record at all) could otherwise set them
+// by pushing a newer record. For each incoming registry record whose org the caller is NOT owner/admin/super in,
+// REVERT those privileged fields to the STORED value (or drop them if the org had none) — order/visibility can
+// only be changed by an org admin. New-org creation, name, and other fields are unaffected; super-admin/verified
+// owner already bypass this (they may write anything). Mirrors sanitizeMessageDeletes (per stored memberships).
+const REG_ADMIN_FIELDS = ["navOrder", "tabs"];
+function sanitizeRegistryWrites(incoming, pre, selfId) {
+  if (!incoming || !Array.isArray(incoming.registry) || !incoming.registry.length) return incoming;
+  const stored = (pre && pre.registry) || [];
+  const storedMap = {}; stored.forEach(r => { if (r && r.id) storedMap[r.id] = r; });
+  let mutated = false;
+  const safe = incoming.registry.map(r => {
+    if (!r || !r.id) return r;
+    if (msgAdminInOrg(pre, selfId, r.id)) return r;                 // owner/admin/super-admin in this org → unrestricted
+    const old = storedMap[r.id];
+    let changed = false, m = r;
+    REG_ADMIN_FIELDS.forEach(f => {
+      const inHas = Object.prototype.hasOwnProperty.call(r, f);
+      const oldHas = old && Object.prototype.hasOwnProperty.call(old, f);
+      const same = inHas && oldHas && JSON.stringify(r[f]) === JSON.stringify(old[f]);
+      if (inHas && !same) {                                         // a non-admin is trying to set/change a privileged field
+        if (m === r) m = Object.assign({}, r);
+        if (oldHas) m[f] = old[f]; else delete m[f];                // revert to stored, or strip if the org never had it
+        changed = true;
+      }
+    });
+    if (changed) mutated = true;
+    return m;
+  });
+  return mutated ? Object.assign({}, incoming, { registry: safe }) : incoming;
+}
 // Per-user sync tokens — server-side ONLY (gitignored, never synced to devices, so one user can't read another's
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
 // (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
@@ -1457,7 +1490,8 @@ const server = http.createServer((req, res) => {
       const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
       const scoped = (me && me.superAdmin) ? (payload.state || {}) : scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: a SUPER-ADMIN may write ANY org (incl. creating a brand-new one — its slab must persist); everyone else is scoped to their member orgs
       const afterUsers = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
-      const incomingState = sanitizeMessageDeletes(afterUsers, pre, syncUserId);   // a non-admin can never tombstone another user's message/thread (owner/admin/super-admin may delete any)
+      const afterReg = (me && me.superAdmin) ? afterUsers : sanitizeRegistryWrites(afterUsers, pre, syncUserId);   // a non-admin can never set an org's navOrder/tabs (super-admin bypasses)
+      const incomingState = sanitizeMessageDeletes(afterReg, pre, syncUserId);   // a non-admin can never tombstone another user's message/thread (owner/admin/super-admin may delete any)
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -1556,4 +1590,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, sanitizeUserWrites, sanitizeMessageDeletes, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
