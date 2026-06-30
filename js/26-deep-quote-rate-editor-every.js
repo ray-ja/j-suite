@@ -47,7 +47,6 @@ window.saveCostsEditor=function(){try{const o=JSON.parse(document.getElementById
 window.resetCosts=function(){if(!confirm("Reset job costs to defaults?"))return;setCosts(JSON.parse(JSON.stringify(COST_DEFAULT)));closeModal();alert("Job costs reset to defaults.");};
 window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
 function rData(){
-  const counts=b=>`${S[b].customers.filter(x=>!x.deleted).length} customers · ${S[b].quotes.filter(x=>!x.deleted).length} quotes · ${S[b].jobs.filter(x=>!x.deleted).length} jobs`;
   const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
   view.innerHTML=`<h2>Sync</h2>
     <div class="card">
@@ -64,13 +63,6 @@ function rData(){
     <div class="card" style="border-left:4px solid var(--accent)"><div class="row" style="align-items:center"><div class="grow"><strong>🔄 Get the latest version</strong><div class="sub" style="white-space:normal">If a fix or change isn't showing up, tap this — it force-reloads the newest build (clears the app cache; your data is safe).</div></div><button class="btn acc sm" style="flex:0 0 auto" onclick="forceUpdate()">Update now</button></div></div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
-    <h2>Team</h2>
-    <div class="card">
-      <div class="row"><div class="grow"><div class="nm">${curUser()?esc(curUser().username):"Not signed in"}</div><div class="sub">${curUser()?"signed in on this device":"sign in to tag your work"}</div></div>
-      ${curUser()?`<button class="btn ghost sm" onclick="logoutUser()">Sign out</button>`:`<button class="btn ghost sm" onclick="openLogin()">Sign in</button>`}</div>
-      ${users().length?`<div style="margin-top:8px">`+users().map(u=>`<div class="li"><div class="grow">${esc(u.username)}${curUser()&&curUser().id===u.id?" · you":""}</div><button class="btn danger sm" onclick="delUser('${u.id}')">Remove</button></div>`).join("")+`</div>`:`<div class="muted" style="margin-top:8px">No accounts yet.</div>`}
-      <button class="btn ghost" style="margin-top:10px" onclick="openCreateAccount()">+ Add account</button>
-    </div>
     <h2>Pricing rates</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Edit every rate, modifier, and minimum behind the <b>deep line-item estimators</b> — with the source of each number shown so you know what you're changing. Flows straight into the Guided Quote.</p>
       <button class="btn acc" onclick="openDeepEditor()">⚙️ Edit deep quote rates</button>
@@ -81,14 +73,11 @@ function rData(){
     <h2>Job costs (COGS)</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Material/hardware cost defaults behind each service — these drive the live <b>Cost / Profit / Margin</b> strip on every quote.</p>
       <button class="btn ghost" onclick="openCostsEditor()">Edit job costs (JSON)</button></div>
-    <h2>📍 Home base — ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2>
-    <div class="card"><p class="muted" style="margin-bottom:8px">Where this business's jobs start &amp; end — sets pickup + travel mileage. Each business keeps its <b>own</b> home base (switch the business in the ⌄ account menu, top-right, to set the other one).</p>
+    <h2>📍 Home base — ${typeof orgName==="function"?esc(orgName(S.biz)):esc(S.biz)}</h2>
+    <div class="card"><p class="muted" style="margin-bottom:8px">Where this business's jobs start &amp; end — sets pickup + travel mileage. Each business keeps its <b>own</b> home base (switch organizations with the name dropdown in the header to set another one's).</p>
       <div class="row" style="align-items:center"><div class="grow"><strong>${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set to fix"):"Not set yet — pickup mileage needs this"}</strong></div><button class="btn acc sm" style="flex:0 0 auto" onclick="setHomeBase()">${(typeof homeBase==="function"&&homeBase()&&homeBase().address)?"Change":"Set"}</button></div></div>
     <h2>Archive</h2>
     <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🗑 Deleted jobs &amp; quotes</strong><div class="sub">${(typeof archiveCount==="function"?archiveCount():0)} in the archive · restorable for 60 days, then auto-clears</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="openArchive()">Open</button></div></div>
-    <h2>This device</h2>
-    <div class="card"><div class="nm">OBX Lot Solutions</div><div class="sub">${counts("obx")}</div></div>
-    <div class="card"><div class="nm">Jamieson Automation</div><div class="sub">${counts("jam")}</div></div>
     <h2>Backups</h2>
     <div class="card">
       <div id="bk_status" class="sub" style="margin-bottom:12px">🗄️ Checking server backups…</div>
@@ -107,11 +96,6 @@ function rData(){
       <label style="margin:0">Resend email key <span id="sec_resendKey" class="sub"></span></label>
       <input type="password" id="in_resendKey" placeholder="re_…" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('resendKey','in_resendKey')">Save Resend key</button>
-      <div style="border-top:1px solid var(--line);margin:14px 0 10px"></div>
-      <label style="margin:0">Cloudflare Access AUD tag <span id="sec_accessAud" class="sub"></span></label>
-      <input type="password" id="in_accessAud" placeholder="64-char tag from Cloudflare" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('accessAud','in_accessAud')">Save AUD — arms SSO protection</button>
-      <p class="muted" style="margin-top:8px;font-size:12px">Cloudflare → Zero Trust → Access → Applications → your j-Suite app → <b>Application Audience (AUD) Tag</b>. Saving it locks SSO login to this app only.</p>
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);

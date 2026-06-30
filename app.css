@@ -28,6 +28,11 @@
   .logo .ac{color:var(--accent)}
   .bizsel{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:600}
   .bizsel option{color:#1b2330;background:#fff;font-weight:600}
+  /* HEADER org switcher (lives next to the logo). A <select> when the user belongs to ≥2 orgs; plain text otherwise. */
+  .orgsw{display:flex;align-items:center;min-width:0;flex-shrink:1}
+  .orgsw select{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:700;max-width:42vw;text-overflow:ellipsis}
+  .orgsw select option{color:#1b2330;background:#fff;font-weight:600}
+  .orgsw .orgname{font-weight:800;font-size:15px;color:#fff;max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hdrbtn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 9px;font-size:16px;line-height:1;cursor:pointer}
   .wrap{max-width:780px;margin:0 auto;padding:14px}
   h2{font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 4px 8px}
@@ -221,6 +226,16 @@
   body.has-dev-banner{padding-top:24px}
   body.has-dev-banner header{top:24px}
   @media(min-width:900px){ body.has-dev-banner nav{top:84px} }
+  /* ROLE-VIEW tester banner (js/28) — fixed 28px top bar with a one-tap restore, shown only while an admin
+     is previewing another role (body.has-viewas-banner). Shifts header+body down like the dev banner; when
+     BOTH are present it sits just below the 24px dev bar so they don't overlap. */
+  #viewasbanner{position:fixed;top:0;left:0;right:0;height:28px;z-index:61;border:none;cursor:pointer;background:#e0a800;color:#1a1a1a;font:700 13px/28px -apple-system,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;width:100%}
+  body.has-viewas-banner{padding-top:28px}
+  body.has-viewas-banner header{top:28px}
+  body.has-viewas-banner.has-dev-banner{padding-top:52px}
+  body.has-viewas-banner.has-dev-banner #viewasbanner{top:24px}
+  body.has-viewas-banner.has-dev-banner header{top:52px}
+  @media(min-width:900px){ body.has-viewas-banner nav{top:88px} body.has-viewas-banner.has-dev-banner nav{top:112px} }
   /* in-use soft-lock banner (js/35-locks.js) */
   .lockbanner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-left:4px solid var(--danger);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:14px}
   .lockbanner .btn{width:auto;flex:0 0 auto}
