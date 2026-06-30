@@ -2,12 +2,33 @@
 let TAB="today";
 const view=document.getElementById("view");
 function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
-  var meta=((S.registry||[]).find(function(r){return r&&r.id===b;}))||{name:b};
   var logo=(typeof BIZ!=="undefined"&&BIZ[b])?BIZ[b].logo:"";
-  var nm=(typeof esc==="function")?esc(meta.name||b):(meta.name||b);
   var el=document.getElementById("logo");
-  if(el)el.innerHTML=logo?('<img src="'+logo+'" alt="'+nm+'" style="max-height:54px;width:auto;max-width:248px;object-fit:contain;display:block">'):('<div style="font-weight:800;font-size:20px;padding:6px 0">'+nm+'</div>');
-  var _bs=document.getElementById("bizsel");if(_bs)_bs.value=b;render()}
+  // The ORG NAME now lives in the header org switcher (renderOrgSwitcher); the logo shows the image only
+  // (or a small generic mark when there's no logo image), so the name isn't printed twice.
+  if(el)el.innerHTML=logo?('<img src="'+logo+'" alt="" style="max-height:54px;width:auto;max-width:200px;object-fit:contain;display:block">'):'<div style="font-weight:800;font-size:20px;padding:6px 0">◆</div>';
+  if(typeof renderOrgSwitcher==="function")renderOrgSwitcher();
+  render()}
+/* HEADER org switcher — the active org's NAME next to the logo. A real switcher only when the signed-in
+   user belongs to ≥2 orgs (then click → setBiz); a single-org user sees the name as plain text. Owners get
+   a "➕ New organization…" choice (the affordance the old profile menu had). */
+function renderOrgSwitcher(){
+  var box=document.getElementById("orgsw"); if(!box) return;
+  var orgs=(typeof myOrgs==="function")?myOrgs():[];
+  var canCreate=(typeof isOwner==="function"&&isOwner());
+  var b=S.biz, nm=(typeof orgName==="function")?orgName(b):b;
+  // single org and no create option → plain text, no dropdown
+  if(orgs.length<2 && !canCreate){ box.innerHTML='<span class="orgname">'+esc(nm)+'</span>'; return; }
+  box.innerHTML='<select aria-label="Organization" onchange="orgSwitchPick(this.value)">'
+    +orgs.map(function(o){return '<option value="'+esc(o.id)+'"'+(b===o.id?" selected":"")+'>'+esc(o.name)+'</option>';}).join("")
+    +(canCreate?'<option value="__new__">➕ New organization…</option>':'')
+    +'</select>';
+}
+window.renderOrgSwitcher=renderOrgSwitcher;
+window.orgSwitchPick=function(v){
+  if(v==="__new__"){ var sel=document.querySelector("#orgsw select"); if(sel)sel.value=S.biz; if(typeof createOrgPrompt==="function")createOrgPrompt(); return; }
+  setBiz(v);
+};
 function render(){
   if(typeof jsResetToken==="function"&&jsResetToken()&&typeof renderResetPw==="function"){   // an emailed ?reset= link always wins, even if already logged in
     document.body.classList.add("signedout");renderResetPw();return;
@@ -23,6 +44,8 @@ function render(){
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
   if(typeof renderClockPill==="function")renderClockPill();
+  if(typeof renderOrgSwitcher==="function")renderOrgSwitcher();   // keep the header org name/dropdown in sync with the active org + role
+  if(typeof renderViewAsBanner==="function")renderViewAsBanner();   // "Viewing as <role>" tester banner (js/28)
 }
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
@@ -87,7 +110,6 @@ function renderSubnav(){
 }
 window.navGroup=function(key){ const g=NAV_GROUPS.find(x=>x.key===key); if(!g) return; const tabs=groupTabs(g); if(!tabs.length) return; TAB=(NAV_LAST[key]&&tabs.indexOf(NAV_LAST[key])>=0)?NAV_LAST[key]:tabs[0]; window.JOB_OPEN=null; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 window.navSub=function(t){ NAV_LAST[tabGroup(t).key]=t; TAB=t; window.JOB_OPEN=null; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
-var _bz=document.getElementById("bizsel");if(_bz)_bz.onchange=e=>setBiz(e.target.value);
 document.getElementById("fab").onclick=()=>{
   if(TAB==="quotes")openQuote();else if(TAB==="pipeline"){if(typeof startWizard==="function")startWizard();}else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="map"||TAB==="data"||TAB==="sales"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
 };

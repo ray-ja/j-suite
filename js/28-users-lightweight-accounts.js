@@ -36,22 +36,73 @@ window.loginUser=async function(){
   if(u.active===false){alert("This account is deactivated. Ask an owner to reactivate it.");return;}
   localStorage.setItem("jra_session",u.id);closeModal();render();
 };
+/* ===== ROLE-VIEW TESTER (admin/owner-only) — see the app AS another role, for testing =====
+   This is a CLIENT-SIDE VIEW OVERRIDE for an ALREADY-AUTHENTICATED admin, NOT a login. It writes
+   window.VIEW_AS, which curRoleKey() (js/32) reads to DOWNGRADE the role used by canSee()/nav gating —
+   and ONLY when the real signed-in user is an owner (js/32 enforces "real === 'owner'"), so it can never
+   escalate, never creates a real account, never grants real access, and never touches the sync token or
+   auth. A FAKE/template role view, fully reversible with one tap (Restore). It does NOT change what the
+   SERVER authorizes — every write still carries the real user's real token; this only changes what THIS
+   device chooses to SHOW. */
+window.VIEW_AS = window.VIEW_AS || null;   // null = real role · a role key = previewing that role (read by curRoleKey, js/32)
+// realRoleKey(): the real signed-in role, ignoring any VIEW_AS override (mirrors curRoleKey's base logic).
+function realRoleKey(){
+  var u=(typeof curUser==="function")?curUser():null;
+  if(u&&u.superAdmin)return "owner";
+  if(u)return ((typeof roleInOrg==="function"&&S.biz)?roleInOrg(u.id,S.biz):null)||u.role||"crew";
+  return (typeof bootstrapContext==="function"&&bootstrapContext())?"owner":"crew";
+}
+// Only a REAL owner/super-admin can drive the tester — and only their override actually takes effect in
+// js/32 (which gates VIEW_AS to real owners). This keeps the entry point honest about what works.
+function canRoleView(){ return realRoleKey()==="owner"; }
+// previewable roles: every non-owner role from the roles config (owner = "back to my real self" = restore)
+function roleViewList(){
+  var keys=(typeof allRoles==="function")?allRoles().map(function(r){return r.key;}):["admin","crew"];
+  return keys.filter(function(k){return k&&k!=="owner";});
+}
+function roleLabel(key){ var r=(typeof roleByKey==="function")?roleByKey(key):null; return (r&&r.label)?r.label:(key?key.charAt(0).toUpperCase()+key.slice(1):key); }
+window.setRoleView=function(role){
+  if(!canRoleView())return;                       // never let a non-owner engage the override
+  window.VIEW_AS=(!role||role==="owner")?null:role;
+  closeModal();render();
+};
+window.clearRoleView=function(){ window.VIEW_AS=null; render(); };
+window.roleViewMenu=function(){
+  if(!canRoleView()){ alert("Role-view testing is owner-only."); return; }
+  var roles=roleViewList();
+  modal("View the app as…", `
+    <p class="muted" style="margin-bottom:10px">Preview how j-Suite looks to each role — a <b>fake view override</b> for testing only. It does <b>not</b> sign you in as anyone, create an account, or grant access; you stay you. One tap on the banner restores your real view.</p>
+    ${roles.map(function(r){return `<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="setRoleView('${r}')">👁 View as ${esc(roleLabel(r))}</button>`;}).join("")||`<p class="muted">No other roles configured.</p>`}
+    <button class="btn" style="width:100%;margin-top:4px" onclick="setRoleView('owner')">↩ Stay as myself</button>
+  `);
+};
+/* "Viewing as <role>" banner — a fixed top bar with a one-tap RESTORE, visible whenever a view override is
+   active. Reuses the env-banner's body shift (has-dev-banner) so the sticky header stays aligned. */
+function renderViewAsBanner(){
+  var on=!!window.VIEW_AS && canRoleView();
+  var b=document.getElementById("viewasbanner");
+  if(!on){ if(b)b.remove(); document.body.classList.remove("has-viewas-banner"); if(window.VIEW_AS&&!canRoleView())window.VIEW_AS=null; return; }
+  if(!b){ b=document.createElement("button"); b.id="viewasbanner"; b.type="button"; b.onclick=window.clearRoleView; document.body.insertBefore(b,document.body.firstChild); }
+  b.innerHTML="👁 Viewing as <b>"+esc(roleLabel(window.VIEW_AS))+"</b> — tap to restore your view";
+  document.body.classList.add("has-viewas-banner");
+}
+window.renderViewAsBanner=renderViewAsBanner;
+
+/* PROFILE — stripped to almost nothing (per owner). Tap the 👤 → a small confirm: Sign out (default) or,
+   for an admin/owner, Switch user (the role-view tester). Org switcher → header; dark mode/home base → Settings. */
 window.profileMenu=function(){
-  var u=curUser(), dk=(typeof themePref==="function"&&themePref()==="dark");
+  var u=curUser();
   modal("Account", `
     <div class="card"><div class="sub">Signed in as</div><div style="font-weight:800;font-size:17px">${u?esc(u.username):"—"}</div></div>
-    <div class="card"><label style="margin-top:0">Organization</label>
-      <select onchange="if(this.value==='__new__'){this.value=S.biz;createOrgPrompt();}else{setBiz(this.value);closeModal();}">
-        ${(typeof myOrgs==="function"?myOrgs():[]).map(o=>`<option value="${esc(o.id)}" ${S.biz===o.id?"selected":""}>${esc(o.name)}</option>`).join("")}
-        ${(typeof isOwner==="function"&&isOwner())?`<option value="__new__">➕ New organization…</option>`:""}
-      </select></div>
-    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>Dark mode</strong></div><input type="checkbox" style="width:auto;flex:0 0 auto" ${dk?"checked":""} onchange="toggleTheme()"></div></div>
-    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🏠 Home base — ${typeof orgName==="function"?esc(orgName(S.biz)):esc(S.biz)}</strong><div class="sub" style="white-space:normal">${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set"):"Not set — pickup/drive mileage needs this"}</div></div><button class="btn ghost sm" onclick="closeModal();setHomeBase()">Set</button></div></div>
-    <button class="btn" style="width:100%;margin-top:6px;background:var(--danger);color:#fff" onclick="closeModal();logoutUser()">Sign out</button>
+    <p class="muted" style="margin:2px 4px 12px">Sign out, or switch the app into another role's view to test it.</p>
+    <button class="btn" style="width:100%;background:var(--danger);color:#fff" onclick="closeModal();logoutUser()">Sign out</button>
+    ${canRoleView()?`<button class="btn ghost" style="width:100%;margin-top:8px" onclick="roleViewMenu()">👁 Switch user — preview another role</button>`:""}
+    <button class="btn ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>
   `);
 };
 window.logoutUser=function(){
   if(!confirm("Sign out?"))return;
+  window.VIEW_AS=null;   // drop any role-view override on sign-out (never carries across a session)
   localStorage.removeItem("jra_session");localStorage.removeItem("jra_offline_ok");
   try{sessionStorage.removeItem("jra_admin_ok");}catch(e){}   // re-lock the Admin PIN on next sign-in
   if(S.sync)S.sync.token="";save();
