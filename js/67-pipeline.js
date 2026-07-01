@@ -3,17 +3,22 @@
    quote accepted/invoiced/paid, job done) — each stage shows what's there + the one button to advance
    it. The final REQUIRED stage is the Review (after-action): it appends to the job notes that Cap learns
    from, and flips a reviewed flag. Owner/admin view. */
-function plReviewed(q) { const j = q.jobId ? (D().jobs || []).find(x => x.id === q.jobId) : null; return !!(q.reviewed || (j && j.reviewed)); }
+function plReviewed(q, jobMap) { const j = q.jobId ? (jobMap ? (jobMap.get(q.jobId) || null) : (D().jobs || []).find(x => x.id === q.jobId)) : null; return !!(q.reviewed || (j && j.reviewed)); }
 
 function rPipeline() {
   const quotes = (typeof actQ === "function") ? actQ().filter(q => (q.total || q.finalPrice)) : [];
   const leads = (typeof actC === "function") ? actC().filter(c => c.status === "Lead") : [];
-  const jobById = id => id ? (D().jobs || []).find(j => j.id === id && !j.deleted) : null;   // a deleted job shouldn't keep its quote in the pipeline
+  // index EVERY job by id ONCE (incl. deleted, matching the old .find scans) — the per-quote lookups below
+  // become O(1) instead of a full jobs scan per quote (was O(quotes × jobs)). Behavior preserved: jobById
+  // still returns null for a deleted job; plReviewed still sees a deleted-but-reviewed job (via _jobAll).
+  const _jobAll = new Map();
+  (D().jobs || []).forEach(j => { if (j && j.id != null) _jobAll.set(j.id, j); });
+  const jobById = id => { if (!id) return null; const j = _jobAll.get(id); return (j && !j.deleted) ? j : null; };
   const G = { quote: [], job: [], bill: [], pay: [], review: [] };
   quotes.forEach(q => {
     const j = jobById(q.jobId);
     if (q.jobId && !j && !q.paid && !q.invoiced) return;   // its job was deleted → the funnel entry is dead; drop it (handles pre-cascade orphans too)
-    if (q.paid) { if (!plReviewed(q)) G.review.push(q); }
+    if (q.paid) { if (!plReviewed(q, _jobAll)) G.review.push(q); }
     else if (q.invoiced) G.pay.push(q);
     else if (q.accepted || q.jobId) { if (j && j.done) G.bill.push(q); else G.job.push(q); }
     else G.quote.push(q);

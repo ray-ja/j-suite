@@ -45,8 +45,9 @@ function rToday(){
   // MULTI-DAY: a job shows on Today if ANY of its work days is today (not just its start date).
   const _onDay=(typeof jobOnDay==="function")?jobOnDay:((j,d)=>j.date===d);
   const _nextDay=j=>{const ds=(typeof jobWorkDays==="function"?jobWorkDays(j):(j.date?[j.date]:[])).filter(d=>d>t).sort();return ds[0]||"";};
-  const jobs=actJ().filter(j=>!j.done&&_onDay(j,t));
-  const nextJob=jobs.length?null:(actJ().filter(j=>!j.done&&_nextDay(j)).sort((a,b)=>_nextDay(a).localeCompare(_nextDay(b)))[0]||null);
+  const _aj=actJ();   // active jobs, computed ONCE for this render (was re-filtered on every actJ() call below)
+  const jobs=_aj.filter(j=>!j.done&&_onDay(j,t));
+  const nextJob=jobs.length?null:(_aj.filter(j=>!j.done&&_nextDay(j)).sort((a,b)=>_nextDay(a).localeCompare(_nextDay(b)))[0]||null);
   h+=`<div class="secthd"><h2>📅 Today's jobs</h2><span class="ct">${jobs.length}</span><button class="btn ghost sm" style="margin-left:auto" onclick="openQuickTask()">+ Add</button></div>`;
   if(jobs.length) h+=`<div class="card">`+jobs.map(liJob).join("")+`</div>`;
   else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
@@ -54,17 +55,20 @@ function rToday(){
 
   // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
   if(owner){
+    // index active jobs by id ONCE — jobDone below was doing a full actJ().find() per booked quote (O(quotes×jobs))
+    const _jByIdToday=new Map(); _aj.forEach(j=>{ if(j&&j.id!=null&&!_jByIdToday.has(j.id))_jByIdToday.set(j.id,j); });
     // a booked quote's job is "done" once its linked job is checked off (matches the pipeline split: to-do vs ready-to-bill)
-    const jobDone=q=>{ if(!q.jobId)return false; const j=actJ().find(x=>x.id===q.jobId); return !!(j&&j.done); };
+    const jobDone=q=>{ if(!q.jobId)return false; const j=_jByIdToday.get(q.jobId); return !!(j&&j.done); };
     const moneySect=(title,arr,go)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
       arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="${(go&&go(q))||`openQuote('${q.id}')`}"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
-    const booked=actQ().filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid);   // accepted, not yet invoiced
-    h+=moneySect("📝 Open quotes",actQ().filter(q=>!q.deleted&&!q.accepted&&!q.invoiced&&!q.paid));
+    const _aq=actQ();   // active quotes, computed ONCE (was re-filtered on every actQ() call below)
+    const booked=_aq.filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid);   // accepted, not yet invoiced
+    h+=moneySect("📝 Open quotes",_aq.filter(q=>!q.deleted&&!q.accepted&&!q.invoiced&&!q.paid));
     // Confirmed jobs = the whole booked-but-not-invoiced pipeline whose work isn't finished yet (distinct from "Today's jobs", which is just today's scheduled work) → tap opens the job
     h+=moneySect("🔧 Confirmed jobs",booked.filter(q=>!jobDone(q)),q=>q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`);
     // Invoices to send = booked work that's done → ready to bill
     h+=moneySect("📤 Invoices to send",booked.filter(jobDone));
-    h+=moneySect("⏳ Awaiting payment",actQ().filter(q=>!q.deleted&&q.invoiced&&!q.paid));
+    h+=moneySect("⏳ Awaiting payment",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid));
   }
 
   // 6) Payouts — monthly, paid the first workday of next month (owner: everyone; crew: yourself)
