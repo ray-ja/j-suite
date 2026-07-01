@@ -1,6 +1,20 @@
 /* ---------- routing ---------- */
 let TAB="today";
 const view=document.getElementById("view");
+// Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
+// notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
+// to the dispatch so the two can't drift.
+const ROUTE_TABS=["today","accounts","quotes","pipeline","schedule","messages","map","sales","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget"];
+/* Is `t` a real, currently-accessible screen? Used to sanitize tabs that arrive from OUTSIDE the app (a ?tab=
+   deep link, or the SW's {type:"navigate"} postMessage on a notification click). A notification sent on an OLD
+   build can carry a tab that no longer exists — routing to it must never blank the app. Returns true only when
+   the tab is a known route AND (if access-gating is loaded) visible to this user/org. */
+function validTab(t){
+  if(!t || ROUTE_TABS.indexOf(t)<0) return false;
+  if(typeof canSee==="function"){ try{ return !!canSee(t); }catch(e){ return true; } }
+  return true;
+}
+window.validTab=validTab;
 function setBiz(b){S.biz=b;save();document.body.dataset.biz=b;
   var logo=(typeof BIZ!=="undefined"&&BIZ[b])?BIZ[b].logo:"";
   var el=document.getElementById("logo");
@@ -40,7 +54,19 @@ function render(){
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
   renderNav(); renderSubnav();
-  (({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday)}[TAB])||rToday)();
+  // BLANK-SCREEN GUARD — a blank #view is the cardinal sin (it blanks the tool the owner runs his business on).
+  // A screen's render fn can throw on a stale-build device (old cached JS meets new data shape — e.g. the app
+  // opened from a push notification that was sent on an OLD build) and, unguarded, leave #view empty → white
+  // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
+  // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
+  // shows a white void.
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,pipeline:rPipeline,schedule:rSchedule,messages:rMessages,map:rMap,sales:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday)}[TAB])||rToday;
+  try{ _screen(); }
+  catch(_e1){
+    try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
+    if(_screen!==rToday){ try{ TAB="today"; rToday(); } catch(_e2){ renderRecovery(_e2); } }   // fall back to Today
+    else renderRecovery(_e1);                                                                    // even Today failed
+  }
   if(typeof lockCheckAlive==="function")lockCheckAlive();   // release a held lock once its editor stops being shown (navigate-away)
   renderSyncPill();
   if(typeof renderClockPill==="function")renderClockPill();
@@ -48,6 +74,32 @@ function render(){
   if(typeof renderOrgSwitcher==="function")renderOrgSwitcher();   // keep the header org name/dropdown in sync with the active org + role
   if(typeof renderViewAsBanner==="function")renderViewAsBanner();   // "Viewing as <role>" tester banner (js/28)
 }
+/* LAST-RESORT recovery card — the app must ALWAYS show something actionable, never a white void. Written into
+   #view when even the Today fallback throws (a badly stale/skewed build). The primary button reuses the existing
+   manual SW-clear escape hatch (window.forceUpdate in js/29-boot: unregister SW + purge caches + reload → fresh
+   build). No dependency on any other render helper — this must work even when much of the app is broken. */
+function renderRecovery(err){
+  try{
+    var v=document.getElementById("view")||view; if(!v)return;
+    var msg=(err&&(err.message||String(err)))||"";
+    v.innerHTML=
+      '<div style="max-width:520px;margin:40px auto;padding:20px;border:1px solid var(--line,#ddd);border-radius:12px;'
+        +'background:var(--card,#fff);color:var(--ink,#111);font:15px system-ui;text-align:center">'
+      +'<div style="font-size:34px;line-height:1">🧰</div>'
+      +'<div style="font-weight:800;font-size:19px;margin:10px 0 6px">This screen needs a quick refresh</div>'
+      +'<div style="opacity:.8;margin-bottom:16px">Your app is running an older version. Tap below to get the latest — your data is safe (this only clears the app cache, never your saved records).</div>'
+      +'<button onclick="if(window.forceUpdate){forceUpdate()}else{location.reload()}" '
+        +'style="display:block;width:100%;padding:14px;border:0;border-radius:10px;background:#1B2A4E;color:#fff;font:700 16px system-ui;margin-bottom:10px">Get the latest</button>'
+      +'<button onclick="try{TAB=\'today\';render()}catch(e){location.reload()}" '
+        +'style="display:block;width:100%;padding:12px;border:1px solid var(--line,#ccc);border-radius:10px;background:transparent;color:var(--ink,#111);font:600 15px system-ui">Back to Today</button>'
+      +(msg?'<div style="opacity:.5;font-size:11px;margin-top:14px;word-break:break-word">'+((typeof esc==="function")?esc(msg):msg)+'</div>':'')
+      +'</div>';
+  }catch(_){
+    /* Absolute floor: even DOM helpers unavailable → write raw so it's never a white void. */
+    try{ (document.getElementById("view")||document.body).innerHTML='<div style="padding:24px;font:16px system-ui">App needs a refresh. <a href="./" onclick="if(window.forceUpdate)forceUpdate()">Tap to get the latest</a>.</div>'; }catch(__){}
+  }
+}
+window.renderRecovery=renderRecovery;
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },

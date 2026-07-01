@@ -13,7 +13,9 @@ if(typeof attemptAccessLogin==="function" && needLogin()){attemptAccessLogin().t
 /* deep-link: a notification (or a ?tab= link) opens straight to that tab */
 (function(){try{
   var t=new URLSearchParams(location.search).get("tab");
-  if(t && ["today","messages","schedule","quotes","accounts","time","todo"].indexOf(t)>=0){
+  // Validate against the authoritative route/access set (validTab in js/03) — a ?tab= from an OLD-build
+  // notification can name a screen that no longer exists; an invalid one is ignored (stays on Today), never routed.
+  if(t && (typeof validTab==="function"?validTab(t):["today","messages","schedule","quotes","accounts","time","todo"].indexOf(t)>=0)){
     TAB=t; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen();
     try{history.replaceState(null,"",location.pathname);}catch(e){}   // strip the param so a refresh doesn't re-pin it
   }
@@ -49,7 +51,13 @@ if("serviceWorker" in navigator && window.isSecureContext){
   /* the SW posts {type:"navigate",tab} when a notification is clicked while the app is already open */
   navigator.serviceWorker.addEventListener("message",function(e){
     if(e.data && e.data.type==="navigate" && e.data.tab){
-      TAB=e.data.tab; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen();
+      // Validate the incoming tab (a notification sent on an OLD build can name a screen that no longer exists,
+      // or one this role/org can't see). Only switch to a real, accessible tab; otherwise land on a safe default
+      // ("messages" if visible, else "today") instead of routing into a dead/blank screen. render() itself is
+      // also blank-guarded (js/03), so this is defense-in-depth, not the sole protection.
+      var t=e.data.tab;
+      if(typeof validTab==="function"&&!validTab(t)) t=(validTab("messages")?"messages":"today");
+      TAB=t; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen();
       if(typeof render==="function")render();
     }
   });
