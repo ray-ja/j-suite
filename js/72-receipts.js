@@ -192,6 +192,8 @@ function rcptSortedRows() {
   let rows = rcptAllRows();
   if (RCPT_FILTER === "review") rows = rows.filter(r => r.store === "review");
   else if (RCPT_FILTER === "filed") rows = rows.filter(r => r.store !== "review");
+  else if (RCPT_FILTER === "owed") rows = rows.filter(r => r.paidBy && !r.reimbursedAt);        // personal-card, not yet reimbursed
+  else if (RCPT_FILTER === "paidback") rows = rows.filter(r => r.paidBy && r.reimbursedAt);      // reimbursed / settled
   return rows.sort(rcptSortCmp);
 }
 window.rcptSortBy = function (col) {
@@ -229,6 +231,8 @@ function rReceipts() {
     <button class="btn ${RCPT_FILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('all')">All ${rcptAllRows().length}</button>
     <button class="btn ${RCPT_FILTER === "review" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('review')">Needs review ${reviewCount}</button>
     <button class="btn ${RCPT_FILTER === "filed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('filed')">Filed ${filed.length}</button>
+    <button class="btn ${RCPT_FILTER === "owed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('owed')">💸 Owed ${rcptAllRows().filter(r => r.paidBy && !r.reimbursedAt).length}</button>
+    <button class="btn ${RCPT_FILTER === "paidback" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('paidback')">✓ Paid back ${rcptAllRows().filter(r => r.paidBy && r.reimbursedAt).length}</button>
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
