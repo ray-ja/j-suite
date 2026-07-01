@@ -318,6 +318,15 @@ function migrateStore(s) {
     ["obx", "jam"].forEach(oid => { if (s[oid]) s.users.push({ id: "mem_" + oid + "_" + u.id, kind: "membership", orgId: oid, accountId: u.id, role: u.role || "crew", active: true, updatedAt: 1 }); });
     if (u.role === "owner") u.superAdmin = true;
   });
+  // TEAM CONTACT PROFILES — additive contact fields on every real account (phone/email/avatarId/title). Optional,
+  // backfilled with safe defaults so legacy accounts render cleanly in the Team directory. updatedAt is NOT
+  // bumped, so this local default always LOSES to a real profile edit on merge. Loss-free + idempotent.
+  s.users.filter(u => u && !u.kind && !u.deleted).forEach(u => {
+    if (u.phone === undefined) u.phone = "";
+    if (u.email === undefined) u.email = "";
+    if (u.avatarId === undefined) u.avatarId = null;
+    if (u.title === undefined) u.title = "";
+  });
   // BUDGET BOOKS (P0): every org slab that has any budget data (or a budgetBooks array) gets a default
   // "Personal" book; every existing budgetCat/budgetTx that lacks a bookId is assigned to it. Loss-free +
   // idempotent: the default book id is DETERMINISTIC per org, so independent devices converge (no dup books).

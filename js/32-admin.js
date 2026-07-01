@@ -28,7 +28,7 @@ const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // NOT "finance" (the business books / margins / everyone's pay), which stays owner/admin via finCanView().
 // Crew see "pay" (their OWN earnings) and "receipts" (upload + their own / attributed-to-them review queue —
 // rReceipts() self-gates the full financial table/editing to owner+admin), but NOT "finance".
-const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time", "pay", "receipts"];
+const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time", "pay", "receipts", "team"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 
 /* ----- ACTIONS (Phase 3e — role hierarchy) -----
@@ -123,6 +123,10 @@ function roleAllows(key, tab) {
   // is deliberately page-level (not the synced role-list) so crew upload works on existing installs without
   // reconfiguring roles. A signed-out / no-session device is still excluded.
   if (tab === "receipts") return key !== NO_SESSION_ROLE;
+  // TEAM directory — a shared contact directory every SIGNED-IN role may reach (crew need to reach each other).
+  // It only shows contact info (no finance), and every member's edit-authz is enforced separately (self, or an
+  // owner/manager) client- and server-side. Signed-out (NO_SESSION) is excluded, like receipts.
+  if (tab === "team") return key !== NO_SESSION_ROLE;
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user
