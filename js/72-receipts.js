@@ -67,7 +67,8 @@ function rcptRowMeta(r) {
   let jobLabel = "", cust = "";
   if (r.jobId) { const j = (D().jobs || []).find(x => x && x.id === r.jobId); if (j) { jobLabel = j.title || "Job"; cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : ""; } }
   const uploader = (r.uploadedBy && typeof userName === "function" && userName(r.uploadedBy)) || r.by || "";
-  return { type: type, status: status, jobLabel: jobLabel, cust: cust, uploader: uploader };
+  const forName = (r.attributedTo && typeof userName === "function" && userName(r.attributedTo)) || "";   // "For" = whose receipt it is / who gets paid back
+  return { type: type, status: status, jobLabel: jobLabel, cust: cust, uploader: uploader, forName: forName };
 }
 const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🏢 Business", "job-expense": "💵 Job expense", "pass-through": "🧱 Pass-through" };
 
@@ -175,6 +176,8 @@ function rcptSortVal(r, col) {
     case "type": return m.type;
     case "job": return (m.cust || m.jobLabel || "").toLowerCase();
     case "uploader": return String(m.uploader || "").toLowerCase();
+    case "attributedTo": return String(m.forName || "").toLowerCase();
+    case "category": return String(r.category || "").toLowerCase();
     case "status": return m.status;
     case "date": default: return rcptDate(r) || "0000-00-00";
   }
@@ -244,7 +247,7 @@ function rcptTableHTML(rows, dups) {
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("job", "Job / Customer")}${th("uploader", "By")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
+    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
   rows.slice(0, 500).forEach(r => {
     const m = rcptRowMeta(r);
     const isDup = !!(r.amount && dups[rcptDupKey(r)]);
@@ -252,14 +255,20 @@ function rcptTableHTML(rows, dups) {
     const d = rcptDate(r);
     const statusBadge = m.status === "review"
       ? `<span class="badge" style="background:var(--accent);color:#fff">review</span>`
-      : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
+      : r.paidBy
+        ? (r.reimbursedAt
+            ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Paid back</span>`
+            : `<span class="badge" style="background:#e0a800;color:#fff">Owed</span>`)
+        : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${isDup ? ";background:var(--danger-soft,#fdecea)" : ""}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
       <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(RCPT_TYPE_LABEL[m.type] || m.type)}</td>
+      <td style="padding:8px 6px;white-space:nowrap">${r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`}</td>
       <td style="padding:8px 6px;white-space:normal">${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(m.uploader || "—")}</td>
+      <td style="padding:8px 6px;white-space:nowrap">${m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`}</td>
       <td style="padding:8px 6px" onclick="event.stopPropagation()">${r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener">📎</a>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   });
