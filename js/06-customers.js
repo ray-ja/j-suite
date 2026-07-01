@@ -11,10 +11,17 @@ function customersListHTML(){
     list=list.filter(c=>((c.name||"")+(c.company||"")+(c.phone||"")).toLowerCase().includes(q));}
   if(!actC().length)return `<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
   if(!list.length)return `<div class="empty">No matches.</div>`;
-  return `<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
+  /* Load-more cap: sort+search ABOVE run on the FULL list; slice ONLY the display array. list.length<=CSHOWN → no
+     button, byte-identical to pre-cap. */
+  const more=list.length>CSHOWN?`<button class="btn ghost" onclick="cLoadMore()">Load more (${Math.min(150,list.length-CSHOWN)} of ${list.length-CSHOWN} left)</button>`:"";
+  return `<div class="card grid2">`+list.slice(0,CSHOWN).map(liCustomer).join("")+`</div>`+more;
 }
-/* scoped SEARCH re-render: rebuild ONLY #clist so #csearch is never destroyed (mirrors adminFilterAccounts, js/32) */
-window.cSearchOn=function(v){ CSEARCH=v; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
+/* Per-list shown cap (initial 150). cLoadMore bumps by 150 and repaints ONLY #clist. */
+let CSHOWN=150;
+window.cLoadMore=function(){ CSHOWN+=150; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
+/* scoped SEARCH re-render: rebuild ONLY #clist so #csearch is never destroyed (mirrors adminFilterAccounts, js/32).
+   RESET the cap first so a new filtered result set re-caps from the top. */
+window.cSearchOn=function(v){ CSHOWN=150; CSEARCH=v; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
 function rCustomers(){
   let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}" oninput="cSearchOn(this.value)">`;
   h+=`<div id="clist">${customersListHTML()}</div>`;
@@ -26,9 +33,16 @@ function propertiesListHTML(){
   if(PSEARCH){const q=PSEARCH.toLowerCase();list=list.filter(p=>((p.label||"")+(p.address||"")).toLowerCase().includes(q));}
   if(!actProps().length)return `<div class="empty"><div class="big">📍</div>No properties yet.<br>Add one, or they're created when you quote.</div>`;
   if(!list.length)return `<div class="empty">No matches.</div>`;
-  return `<div class="card grid2">`+list.map(liProp).join("")+`</div>`;
+  /* Load-more cap: sort+search ABOVE run on the FULL list; slice ONLY the display array. list.length<=PSHOWN → no
+     button, byte-identical to pre-cap. */
+  const more=list.length>PSHOWN?`<button class="btn ghost" onclick="pLoadMore()">Load more (${Math.min(150,list.length-PSHOWN)} of ${list.length-PSHOWN} left)</button>`:"";
+  return `<div class="card grid2">`+list.slice(0,PSHOWN).map(liProp).join("")+`</div>`+more;
 }
-window.pSearchOn=function(v){ PSEARCH=v; const c=document.getElementById("plist"); if(c)c.innerHTML=propertiesListHTML(); };
+/* Per-list shown cap (initial 150). pLoadMore bumps by 150 and repaints ONLY #plist. */
+let PSHOWN=150;
+window.pLoadMore=function(){ PSHOWN+=150; const c=document.getElementById("plist"); if(c)c.innerHTML=propertiesListHTML(); };
+/* scoped SEARCH re-render — RESET the cap first so a new filtered result set re-caps from the top. */
+window.pSearchOn=function(v){ PSHOWN=150; PSEARCH=v; const c=document.getElementById("plist"); if(c)c.innerHTML=propertiesListHTML(); };
 function rProperties(){
   let h=acctSubnav()+`<input class="search" id="psearch" placeholder="Search properties…" value="${esc(PSEARCH)}" oninput="pSearchOn(this.value)">`;
   h+=`<div id="plist">${propertiesListHTML()}</div>`;
