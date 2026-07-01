@@ -41,7 +41,14 @@ global.fmtDate = function (d) { return d; };
 global.jsUploadUrl = function (id) { return id ? "/uploads/" + id : ""; };
 global.jsUpload = function () { return Promise.resolve("blob_" + (++_n)); };   // overridden per-test
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8");
+/* stubs for the Cap auto-categorize client module (js/88) — org-AI plumbing lives in js/75 (not loaded here) */
+global.orgAiBase = function () { return "http://x"; };
+global.orgAiHeaders = function () { return { "Content-Type": "application/json" }; };
+global.S = { biz: "obx" };
+let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
+global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
+
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -156,6 +163,68 @@ async function main() {
   const e7 = seedReview({ receiptId: "b1", suggested: { vendor: "Depot", amount: 99, type: "pass-through", confidence: 0.8 } });
   rcptApplyEdit({ store: "review", jobId: null, recId: e7.id }, { type: null, jobId: null, vendor: "", receiptId: "b1" });
   ok("suggested survives editing while unfiled", rcptReview()[0].suggested && rcptReview()[0].suggested.amount === 99, rcptReview()[0].suggested);
+
+  // ========================= CAP AUTO-CATEGORIZE =========================
+  const SS = require("./sync-server.js");
+  // RCPT_CATS is `const` inside the eval'd js/72 (block-scoped, doesn't leak) — mirror it here for the server-arg tests
+  const CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "office/admin", "other"];
+  const JOBIDS = ["j1", "j2"];
+
+  console.log("— server: rcptParseSuggestion returns the EXACT shape the edit modal reads —");
+  const parsed = SS.rcptParseSuggestion('{"vendor":"Home Depot","amount":42.5,"date":"2026-06-30","desc":"pavers","type":"pass-through","category":"materials","jobId":"j1","confidence":0.82}', CATS, JOBIDS);
+  ok("parsed has every field js/87 reads", parsed && "vendor" in parsed && "amount" in parsed && "type" in parsed && "jobId" in parsed && "category" in parsed && "confidence" in parsed, parsed);
+  ok("amount coerced to a number", typeof parsed.amount === "number" && parsed.amount === 42.5, parsed && parsed.amount);
+  ok("type kept (valid enum)", parsed.type === "pass-through");
+  ok("category clamped to RCPT_CATS", CATS.indexOf(parsed.category) >= 0);
+  ok("jobId clamped to a real active job", parsed.jobId === "j1");
+
+  console.log("— server: model wrapping prose + fences is still parsed —");
+  const wrapped = SS.rcptParseSuggestion('Here you go:\n```json\n{"vendor":"Dump","amount":73,"type":"job-expense","category":"disposal","confidence":0.6}\n```', CATS, JOBIDS);
+  ok("JSON extracted from wrapping prose", wrapped && wrapped.vendor === "Dump" && wrapped.type === "job-expense", wrapped);
+
+  console.log("— server: a MALFORMED reply is skipped (null), never crashes —");
+  ok("garbage → null", SS.rcptParseSuggestion("sorry, I can't read this", CATS, JOBIDS) === null);
+  ok("empty → null", SS.rcptParseSuggestion("", CATS, JOBIDS) === null);
+  ok("half-JSON → null", SS.rcptParseSuggestion('{"vendor":"x", amount:', CATS, JOBIDS) === null);
+  ok("bogus type/category/job coerced to safe values, not applied", (function () { const s = SS.rcptParseSuggestion('{"vendor":"X","amount":"nope","type":"delete-everything","category":"hacked","jobId":"j999","confidence":9}', CATS, JOBIDS); return s && s.type === null && s.category === "" && s.jobId === null && s.amount === null && s.confidence === 1; })());
+
+  console.log("— server: rcptOwnedByOrg guards cross-org blob reads —");
+  const vstore = { obx: { receipts: [{ receiptId: "mine.jpg" }], jobs: [{ materials: [{ receiptId: "jobmat.jpg" }], expenses: [] }], expenses: [{ receiptId: "biz.jpg" }] }, jam: { receipts: [], jobs: [], expenses: [] } };
+  ok("own review blob → true", SS.rcptOwnedByOrg(vstore, "obx", "mine.jpg"));
+  ok("own job-material blob → true", SS.rcptOwnedByOrg(vstore, "obx", "jobmat.jpg"));
+  ok("own business blob → true", SS.rcptOwnedByOrg(vstore, "obx", "biz.jpg"));
+  ok("another org's blob → false", !SS.rcptOwnedByOrg(vstore, "jam", "mine.jpg"));
+  ok("unknown blob → false", !SS.rcptOwnedByOrg(vstore, "obx", "nope.jpg"));
+
+  console.log("— client: Cap stamps ONLY `suggested` (never a real field) on approve-in-edit —");
+  resetStore();
+  const capRec = seedReview({ receiptId: "cap1.jpg", vendor: "", amount: null, type: null, jobId: null, category: "" });
+  const before = JSON.stringify(capRec);
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ suggested: { vendor: "Depot", amount: 88, date: "2026-06-30", desc: "pavers", type: "pass-through", category: "materials", jobId: "j1", confidence: 0.9 } }); } }); };
+  global.finCanView = function () { return true; };   // owner/admin
+  await capRcptRun();
+  const capAfter = rcptReview().find(r => r.id === capRec.id);
+  ok("Cap wrote receipt.suggested", capAfter && capAfter.suggested && capAfter.suggested.amount === 88, capAfter && capAfter.suggested);
+  ok("suggested is the exact shape the edit modal reads", capAfter.suggested && "vendor" in capAfter.suggested && "amount" in capAfter.suggested && "type" in capAfter.suggested && "jobId" in capAfter.suggested && "category" in capAfter.suggested && "confidence" in capAfter.suggested);
+  ok("real fields UNCHANGED (only suggested added — no auto-apply)", capAfter.vendor === "" && capAfter.amount === null && capAfter.type === null && capAfter.jobId === null && capAfter.category === "" && capAfter.status === "review", { v: capAfter.vendor, a: capAfter.amount, t: capAfter.type });
+  ok("everything except suggested is byte-identical to before", (function () { const c = Object.assign({}, capAfter); delete c.suggested; delete c.updatedAt; const b = JSON.parse(before); delete b.suggested; delete b.updatedAt; return JSON.stringify(c) === JSON.stringify(b); })());
+
+  console.log("— client: crew (non owner/admin) can NOT trigger Cap —");
+  resetStore();
+  const crewRec = seedReview({ receiptId: "crew1.jpg" });
+  let fetched = false;
+  CAP_FETCH = function () { fetched = true; return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ suggested: { vendor: "X", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.5 } }); } }); };
+  global.finCanView = function () { return false; };   // crew
+  await capRcptRun();
+  ok("crew trigger is blocked (no network call, no suggestion written)", !fetched && !rcptReview().find(r => r.id === crewRec.id).suggested);
+  global.finCanView = function () { return true; };
+
+  console.log("— client: a malformed/empty AI response does not crash the batch or stamp anything —");
+  resetStore();
+  const badRec = seedReview({ receiptId: "bad1.jpg" });
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ skip: true, reason: "unparseable" }); } }); };
+  await capRcptRun();
+  ok("skip reply → no suggested written, no throw", !rcptReview().find(r => r.id === badRec.id).suggested);
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
