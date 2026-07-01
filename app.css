@@ -24,16 +24,38 @@
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px;padding-bottom:72px}
   header{background:var(--brand);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px}
-  .logo{font-weight:800;font-size:18px;letter-spacing:.5px;line-height:1}
+  .logo{font-weight:800;font-size:18px;letter-spacing:.5px;line-height:1;flex-shrink:0}
   .logo .ac{color:var(--accent)}
   .bizsel{margin-left:auto;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:8px 10px;font-size:14px;font-weight:600}
   .bizsel option{color:#1b2330;background:#fff;font-weight:600}
-  /* HEADER org switcher (lives next to the logo). A <select> when the user belongs to ≥2 orgs; plain text otherwise. */
-  .orgsw{display:flex;align-items:center;min-width:0;flex-shrink:1}
-  .orgsw select{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:700;max-width:42vw;text-overflow:ellipsis}
+  /* HEADER org switcher (lives next to the logo). A <select> when the user belongs to ≥2 orgs; plain text otherwise.
+     BUG FIX (mobile): this used to be `min-width:0`, which — unlike every other header item, which keeps the
+     browser's automatic min-content floor — opted OUT of that floor. On a narrow phone the header row overflows
+     (logo + clock pill + sync pill + profile button already fill it), and flexbox dumps 100% of that overflow
+     onto the one item allowed to shrink past its content: this control got crushed to a sliver (a few px),
+     matching the "ninety percent cut off" report. Fix: give the CONTAINER a real min-width floor (like its
+     siblings), and instead let the SELECT/NAME INSIDE shrink + ellipsis-truncate a long org name. */
+  .orgsw{display:flex;align-items:center;min-width:64px;max-width:42vw;flex-shrink:1}
+  .orgsw select{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 8px;font-size:14px;font-weight:700;min-width:0;width:100%;max-width:100%;text-overflow:ellipsis}
   .orgsw select option{color:#1b2330;background:#fff;font-weight:600}
-  .orgsw .orgname{font-weight:800;font-size:15px;color:#fff;max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hdrbtn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 9px;font-size:16px;line-height:1;cursor:pointer}
+  .orgsw .orgname{font-weight:800;font-size:15px;color:#fff;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hdrbtn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:6px 9px;font-size:16px;line-height:1;cursor:pointer;flex-shrink:0}
+  /* narrow phones: reclaim a little header space so the org-switcher floor above doesn't just push the
+     overflow onto the profile button instead — a wide (landscape-logo) org especially needs the logo cap. */
+  @media(max-width:480px){
+    header{gap:6px;padding:12px 8px}
+    #logo img{max-width:72px!important;max-height:36px!important}
+    .orgsw{min-width:56px;max-width:34vw}
+    header .syncpill{max-width:30vw}
+  }
+  /* genuinely tiny phones (iPhone SE 1st-gen class, 320px CSS width): shave a little further so the row
+     still fits without giving the org switcher back its old zero-width squeeze. */
+  @media(max-width:340px){
+    header{gap:4px;padding:12px 6px}
+    #logo img{max-width:52px!important;max-height:32px!important}
+    .orgsw{min-width:44px;max-width:28vw}
+    header .syncpill{max-width:24vw}
+  }
   .wrap{max-width:780px;margin:0 auto;padding:14px}
   h2{font-size:15px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:18px 4px 8px}
   h2:first-child{margin-top:4px}
