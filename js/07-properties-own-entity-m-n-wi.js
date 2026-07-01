@@ -31,6 +31,7 @@ window.saveProperty=function(id,isNew){
   const d=D();let p=isNew?{id:id,lat:null,lng:null,customerIds:[]}:d.properties.find(x=>x.id===id);
   p.label=val("p_label");p.address=val("p_addr");p.accessNotes=val("p_access");p.customerIds=PCUSTS.slice();
   if(!p.label&&!p.address){alert("Add a label or address.");return;}
+  if(typeof submitGuard==="function"&&!submitGuard("saveProperty:"+id))return;   // rapid-tap dupe guard
   touch(p);if(isNew)d.properties.push(p);
   if(typeof logChange==="function")logChange(isNew?"create":"update","property",p.id,(isNew?"Added property ":"Updated property ")+(p.label||p.address||""));
   geocodeProp(p);save();closeModal();render();

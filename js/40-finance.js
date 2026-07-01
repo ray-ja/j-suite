@@ -198,6 +198,7 @@ window.saveIncome = function (id, isNew) {
   const d = D(); let e = isNew ? { id } : d.income.find(x => x.id === id);
   const amt = parseFloat(val("in_amt")) || 0;
   if (amt <= 0) { alert("Enter an amount."); return; }
+  if (typeof submitGuard === "function" && !submitGuard("saveIncome:" + id)) return;   // rapid-tap dupe guard
   e.amount = amt; e.date = val("in_date") || today(); e.invoice = val("in_inv"); e.jobId = (document.getElementById("in_job") ? val("in_job") : e.jobId) || e.jobId || "";
   e.crew = [...FININCOME_CREW]; e.originator = val("in_orig"); e.bookedAt = val("in_booked"); e.houseAccount = !!(document.getElementById("in_house") || {}).checked;
   if (e.jobId) { const j = d.jobs.find(x => x.id === e.jobId); if (j) { e.quoteId = j.quoteId || e.quoteId || ""; } }
@@ -238,6 +239,7 @@ window.saveExpense = function (id, isNew) {
   const d = D(); let e = isNew ? { id } : d.expenses.find(x => x.id === id);
   const amt = parseFloat(val("ex_amt")) || 0;
   if (amt <= 0) { alert("Enter an amount."); return; }
+  if (typeof submitGuard === "function" && !submitGuard("saveExpense:" + id)) return;   // rapid-tap dupe guard
   e.amount = amt; e.date = val("ex_date") || today(); e.category = val("ex_cat") || "other"; e.note = val("ex_note"); e.vendor = val("ex_vendor"); e.memberId = val("ex_member");
   touch(e); if (isNew) d.expenses.push(e);
   if (typeof logChange === "function") logChange(isNew ? "create" : "update", "expense", e.id, (isNew ? "Logged " : "Updated ") + (e.category || "expense") + " " + money(amt));

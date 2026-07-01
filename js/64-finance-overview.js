@@ -169,6 +169,7 @@ window.recordDisbursement = function(type, id, presetMember){
 };
 window.saveDisbursement = function(type, id){
   const amt = parseFloat(val("db_amt")) || 0; if (amt <= 0) { alert("Enter the amount."); return; }
+  if (typeof submitGuard === "function" && !submitGuard("saveDisbursement:" + (id || type))) return;   // rapid-tap dupe guard (id or type keys create vs edit)
   const d = D(); if (!Array.isArray(d.disbursements)) d.disbursements = [];
   let e = id ? d.disbursements.find(x => x && x.id === id) : null;
   if (!e) { e = { id: uid() }; d.disbursements.push(e); }
