@@ -79,6 +79,11 @@ function rJobPage(j) {
   }
   h += `</div>`;
 
+  // 1a) Work days — fast, low-friction multi-day editing from the field, without opening the full job editor.
+  // Compact chip list of the job's work days (jobWorkDays), today's chip marked, start-day un-removable;
+  // "+ Add today" is a one-tap no-modal add; "+ Add another day" opens a small mini-calendar-only picker.
+  h += jobPageWorkDaysCard(j);
+
   // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up.
   // sharedJobIds[] generalizes the old scalar parentJobId (0/1/N jobs); this single-select stays the UNCHANGED
   // common-case UI (1 parent) and writes sharedJobIds=[oneId] under the hood — the multi-job case is the new
@@ -449,4 +454,101 @@ window.jobSplitSubmit = function (kind) {
   };
   if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
   else finish(null);
+};
+
+/* ===== FAST WORK-DAYS EDITING (crew job page) — add/remove the days a multi-day job is worked WITHOUT opening
+   the full job editor + scrolling. Writes straight to j.workDays (touch + save), so it stays in sync with the
+   full editor (js/09), which reads/writes the same field on its own Save. "+ Add today" is one tap, no modal;
+   "+ Add another day" opens a SMALL modal that contains ONLY the mini tap-on/off month grid (the SAME grid +
+   chip HTML the full editor draws — via the shared wdpkGridHtml/wdpkChipsHtml helpers in js/09 — so the two
+   can't visually drift). The start day (j.date) is always a work day and can't be removed here. */
+function jobPageWorkDays(j) { return (typeof jobWorkDays === "function") ? jobWorkDays(j) : ((Array.isArray(j && j.workDays) ? j.workDays : (j && j.date ? [j.date] : [])).slice().sort()); }
+/* the compact card that sits near the top of the crew job page */
+function jobPageWorkDaysCard(j) {
+  const days = jobPageWorkDays(j);
+  const start = j.date || (days[0] || "");
+  const t = (typeof today === "function") ? today() : "";
+  const hasToday = days.indexOf(t) >= 0;
+  const chips = days.map(ds => {
+    const isStart = ds === start, isToday = ds === t;
+    return `<span class="wdpk-chip${isStart ? " start" : ""}"${isToday ? ' style="outline:2px solid var(--accent);outline-offset:1px"' : ""}>${isToday ? "📍 " : ""}${esc((typeof fmtDate === "function") ? fmtDate(ds) : ds)}${isStart ? "" : ` <span onclick="jobPageRemoveDay('${j.id}','${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
+  }).join("");
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📅 Work days${days.length > 1 ? ` · <span class="sub" style="font-weight:400">${days.length} days</span>` : ""}</div>`;
+  h += `<div class="wdpk-chips">${chips}</div>`;
+  h += `<div class="row" style="gap:8px;margin-top:10px">`;
+  h += hasToday
+    ? `<button class="btn ghost grow" disabled style="opacity:.7">✓ Today's already a work day</button>`
+    : `<button class="btn acc grow" onclick="jobPageAddToday('${j.id}')">+ Add today</button>`;
+  h += `<button class="btn ghost grow" onclick="jobPageAddDay('${j.id}')">+ Add another day</button>`;
+  h += `</div></div>`;
+  return h;
+}
+/* commit helper: dedupe + keep the start day + sort, write to j.workDays, then touch/save */
+function jobPageCommitDays(j, days) {
+  const wd = new Set((days || []).filter(Boolean));
+  if (j.date) wd.add(j.date);   // start day is always a work day
+  j.workDays = [...wd].sort();
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Work days → " + j.workDays.length + " day" + (j.workDays.length === 1 ? "" : "s") + " · " + (j.title || "job"));
+  if (typeof save === "function") save();
+}
+/* "+ Add today" — one tap, no modal. Guarded no-op if today is already a work day. */
+window.jobPageAddToday = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const t = (typeof today === "function") ? today() : "";
+  const days = jobPageWorkDays(j);
+  if (days.indexOf(t) >= 0) return;   // already a work day — stray re-tap is a no-op
+  jobPageCommitDays(j, days.concat([t]));
+  if (typeof render === "function") render();
+};
+/* remove a day from both the compact card and the picker — never the start day */
+window.jobPageRemoveDay = function (jobId, ds) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (ds === (j.date || "")) return;   // can't remove the start day
+  jobPageCommitDays(j, jobPageWorkDays(j).filter(d => d !== ds));
+  if (typeof render === "function") render();
+  if (JP_WD_JOB === jobId && document.getElementById("jpwd_box")) jobPageWdRender();   // keep an open picker in step
+};
+/* ---- "+ Add another day" — a SMALL modal with ONLY the mini tap-on/off month grid (no full-editor fields).
+   Each day-tap commits instantly (availability-calendar feel). Reuses the SAME shared grid/chip HTML the full
+   editor uses (js/09 wdpkGridHtml/wdpkChipsHtml) so they can't drift. ‹ › step the shown month. */
+let JP_WD_JOB = null, JP_WD_ANCHOR = null;
+window.jobPageAddDay = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  JP_WD_JOB = jobId;
+  const days = jobPageWorkDays(j);
+  JP_WD_ANCHOR = (j.date || days[0] || ((typeof today === "function") ? today() : ""));
+  modal("📅 Add work days", `<div id="jpwd_box"></div><button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal()">Done</button>`);
+  jobPageWdRender();
+};
+function jobPageWdRender() {
+  const box = document.getElementById("jpwd_box"); if (!box) return;
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === JP_WD_JOB) : null; if (!j) return;
+  const days = jobPageWorkDays(j);
+  const start = j.date || (days[0] || "");
+  const sel = new Set(days);
+  const anc = new Date((JP_WD_ANCHOR || start || ((typeof today === "function") ? today() : "")) + "T00:00:00");
+  const y = anc.getFullYear(), m = anc.getMonth();
+  const title = new Date(y, m, 1).toLocaleString(undefined, { month: "long" }) + " " + y;
+  const cells = (typeof wdpkGridHtml === "function") ? wdpkGridHtml(sel, start, y, m, "jobPageWdToggle") : "";
+  const chips = (typeof wdpkChipsHtml === "function") ? wdpkChipsHtml(days, start, "jobPageWdToggle") : "";
+  box.innerHTML = `<div class="wdpk">
+    <div class="wdpk-head"><button type="button" class="calnav" onclick="jobPageWdMonth(-1)">‹</button><div class="wdpk-title">${esc(title)}</div><button type="button" class="calnav" onclick="jobPageWdMonth(1)">›</button></div>
+    <div class="wdpk-grid">${cells}</div>
+    <div class="wdpk-chips">${chips}</div>
+    <div class="sub" style="margin-top:4px">${days.length > 1 ? `Worked across <b>${days.length} days</b> — shows on each on the schedule.` : "Single day. Tap a day above to add it."}</div></div>`;
+}
+/* tap a day → toggle it in j.workDays instantly (start day is a no-op), re-render the grid + the page behind */
+window.jobPageWdToggle = function (ds) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === JP_WD_JOB) : null; if (!j) return;
+  if (ds === (j.date || "")) return;   // can't toggle the start day off
+  const days = jobPageWorkDays(j);
+  jobPageCommitDays(j, days.indexOf(ds) >= 0 ? days.filter(d => d !== ds) : days.concat([ds]));
+  jobPageWdRender();
+};
+window.jobPageWdMonth = function (n) {
+  const a = new Date((JP_WD_ANCHOR || ((typeof today === "function") ? today() : "")) + "T00:00:00");
+  a.setDate(1); a.setMonth(a.getMonth() + n);
+  JP_WD_ANCHOR = a.getFullYear() + "-" + String(a.getMonth() + 1).padStart(2, "0") + "-01";
+  jobPageWdRender();
 };
