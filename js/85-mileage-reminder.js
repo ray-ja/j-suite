@@ -2,8 +2,9 @@
    A persistent HEADER bar that shows whenever the signed-in user is clocked in WITH a vehicle but hasn't
    recorded a starting odometer reading. The odometer NEVER blocks clock-in (you may not be in the truck yet,
    and driving changes the reading) — instead this nags until it's entered. Tapping it opens the
-   GPS-anchored late-entry prompt (tcEnterStartOdo, js/38), which back-dates the start by the miles already
-   driven since clock-in so a late reading stays accurate + auditable.
+   GPS-anchored late-entry modal (tcEnterStartOdo, js/38 — a real DOM modal, not window.prompt(), which is
+   unreliable/silent in an installed standalone PWA), which back-dates the start by the miles already driven
+   since clock-in so a late reading stays accurate + auditable.
 
    Clones the env-banner / view-as-banner pattern (js/55, js/28): a fixed top bar + a body class
    (has-odo-banner) so app.css shifts the sticky header + fixed desktop sidebar + body down to make room.
