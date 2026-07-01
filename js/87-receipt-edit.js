@@ -110,7 +110,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     ${sugg}
     <div class="row" style="gap:10px;align-items:flex-start">
       <a href="${base}" target="_blank" rel="noopener" style="flex:0 0 auto"><img id="rcpt_photoimg" src="${base}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>
-      <div class="grow"><input type="file" id="rcpt_photo" accept="image/*,application/pdf,.pdf" capture="environment" style="display:none" onchange="rcptReplacePhoto(this)"><button class="btn ghost sm" style="width:100%" onclick="document.getElementById('rcpt_photo').click()"><span id="rcpt_photolbl">🔄 Replace photo</span></button>
+      <div class="grow"><input type="file" id="rcpt_photo" accept="image/*,application/pdf,.pdf" style="display:none" onchange="rcptReplacePhoto(this)"><button class="btn ghost sm" style="width:100%" onclick="document.getElementById('rcpt_photo').click()"><span id="rcpt_photolbl">🔄 Replace photo</span></button>
       <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div></div>
     </div>
     <div class="row" style="gap:8px;margin-top:10px"><div style="flex:0 0 96px"><label style="margin-top:0">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${rec.amount != null ? esc(rec.amount) : ""}" placeholder="0.00"></div>

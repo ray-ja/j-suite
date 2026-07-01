@@ -213,7 +213,7 @@ function rReceipts() {
   // MASS UPLOAD
   h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)">
     <div class="sub" style="white-space:normal">Dump a whole <b>stack</b> of receipts in now — snap or pick several at once, or <b>drag &amp; drop</b> them here. Each lands in <b>Needs review</b>; tap any row below to set vendor/amount/type/job and file it.</div>
-    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" capture="environment" multiple style="display:none" onchange="rcptUpload(this)">
+    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div>
     <div class="sub" style="text-align:center;opacity:.6">⬇ or drag photos onto this box (desktop)</div></div>`;
@@ -279,7 +279,7 @@ function rcptCrewView() {
   let h = `<div class="secthd"><h2>📸 Receipts</h2></div>`;
   h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)">
     <div class="sub" style="white-space:normal">Snap or pick your receipts — pile them all in at once. They go to the owner to categorize &amp; file. You don't need to sort them. Check the list below first so you don't re-upload one that's already here.</div>
-    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" capture="environment" multiple style="display:none" onchange="rcptUpload(this)">
+    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div></div>`;
   h += `<div class="secthd" style="margin-top:14px"><h2>Your receipts on file</h2><span class="ct">${mine.length}${pending ? " · " + pending + " pending" : ""}</span></div>`;

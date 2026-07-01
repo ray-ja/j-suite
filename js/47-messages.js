@@ -163,7 +163,7 @@ function renderThread(tid) {
   if (t.availAsk) h += msgAvailChips(tid);
   h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>`;
   if (MSG_PENDING) h += `<div class="row" style="gap:8px;margin-top:6px;align-items:center"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(MSG_PENDING) : ""}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="sub">photo attached</span><button class="btn ghost sm" onclick="msgClearPhoto()">✕</button></div>`;
-  h += `<input type="file" id="msg_photo" accept="image/*" capture="environment" style="display:none" onchange="msgAddPhoto(this)">
+  h += `<input type="file" id="msg_photo" accept="image/*" style="display:none" onchange="msgAddPhoto(this)">
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('msg_photo').click()">📷 Photo</button><button class="btn acc grow" onclick="msgSendReply('${tid}')">Send</button></div>`;
   view.innerHTML = h;
   const _ta = document.getElementById("msg_reply");
