@@ -210,6 +210,38 @@ ok("rider-role fixture: the PASSENGER logs ZERO confirmed miles → contributes 
 ok("rider-role fixture: finance (confirmed-miles sum) counts the shared truck ONCE — driver's 12 mi, passenger 0",
   (function () { const es = rrRound.obx.timeclock.filter(e => e.clockOut && e.milesConfirmed); const mi = es.reduce((s, e) => s + (+e.miles || 0), 0); return mi === 12; })());
 
+console.log("\n— ADMIN-PLANNED JOB ROUTE STOPS (plannedStops[]): additive job field, migration fixture (zero loss) —");
+// Realistic PRE-plannedStops store: a legacy job with no plannedStops key at all (every job before this
+// feature), alongside a NEW job that already carries an admin-planned 2-stop route (materials supplier,
+// then the job site is implicit — the crew page appends it). Both must survive migrateStore + a sync
+// round-trip untouched: plannedStops is purely additive to the existing `jobs` collection (no new
+// collection, no COLLECTIONS/blank() change needed), so a legacy job must NOT gain the key, and a job
+// that already has stops must keep them byte-for-byte (id/label/address/lat/lng).
+const psStored = {
+  obx: {
+    customers: [{ id: "c1", name: "Legacy Cust", updatedAt: 1 }],
+    jobs: [
+      { id: "jlegacy", title: "Old job, no stops field", customerId: "c1", date: "2026-01-01", updatedAt: 1 },
+      { id: "jstops", title: "Paver job — needs base rock", customerId: "c1", date: "2026-06-01", address: "1 Client Rd, Kill Devil Hills, NC", plannedStops: [
+        { id: "ps1", label: "Stoneworks — pick up base", address: "200 Stoneworks Rd, Point Harbor, NC", lat: null, lng: null },
+        { id: "ps2", label: "Lowe's — sand", address: "1400 S Croatan Hwy, Kill Devil Hills, NC", lat: 36.02, lng: -75.67 }
+      ], updatedAt: 1 }
+    ]
+  },
+  jam: {}, users: [{ id: "own", role: "owner", superAdmin: true, updatedAt: 1 }]
+};
+const psMig = t.migrateStore(JSON.parse(JSON.stringify(psStored)));
+const psRound = t.mergeState(psMig, {});   // no-op sync round-trip
+ok("plannedStops fixture: both jobs survive migration + round-trip (zero loss)",
+  psRound.obx.jobs.length === 2 && !!psRound.obx.jobs.find(j => j.id === "jlegacy") && !!psRound.obx.jobs.find(j => j.id === "jstops"));
+ok("plannedStops fixture: a LEGACY job with no plannedStops key is unaffected (stays undefined, not backfilled to something lossy)",
+  (function () { const j = psRound.obx.jobs.find(x => x.id === "jlegacy"); return j.plannedStops === undefined; })());
+ok("plannedStops fixture: a job's planned route keeps every stop, in order, with label + address + lat/lng intact",
+  (function () {
+    const j = psRound.obx.jobs.find(x => x.id === "jstops"); const s = (j && j.plannedStops) || [];
+    return s.length === 2 && s[0].id === "ps1" && s[0].label === "Stoneworks — pick up base" && s[0].address.indexOf("Stoneworks") >= 0 && s[1].id === "ps2" && s[1].lat === 36.02;
+  })());
+
 console.log("\n— WORKSHOP (customJobs): migration fixture (zero loss) + seeded Sentinel example + write-authz gate —");
 // realistic pre-Workshop store: real data + accounts + memberships, a pre-existing customJob, NO seeded example yet
 const wsStored = {

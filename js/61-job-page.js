@@ -13,6 +13,19 @@ function jobAddr(j) {
   const _c = (typeof actC === "function") ? actC().find(c => c.id === j.customerId) : null;
   return (_p && _p.address) || j.address || (_c && _c.address) || (_c && typeof propsForCust === "function" && (propsForCust(_c.id)[0] || {}).address) || "";
 }
+/* ===== Google Maps link builders — labels at the call site must always say WHERE the link goes (never bare
+   "Google Maps" — that's how a one-way job-site link and a round-trip-from-base link both got tapped by
+   mistake looking for the materials supplier: neither was labeled, neither WAS the supplier). No API key
+   needed: the standard /maps/dir/?api=1 deep link opens turn-by-turn from wherever the phone already is. */
+function gmapsDirUrl(destination, waypoints) {
+  let u = "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(destination || "");
+  if (waypoints && waypoints.length) u += "&waypoints=" + waypoints.map(w => encodeURIComponent(w)).join("|");
+  return u;
+}
+/* ADMIN-PLANNED route for a job — ordered [{id,label,address,lat,lng}] set on the job editor (js/09), e.g.
+   "Stoneworks — pick up base" before the job site itself. Distinct from js/38's crew-added ad hoc timeclock
+   stops[] (logged as-driven, after the fact) — this is the route planned in ADVANCE by the owner/admin. */
+function jobPlannedStops(j) { return (Array.isArray(j && j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address); }
 
 function rJobPage(j) {
   const cust = (typeof custName === "function") ? custName(j.customerId) : "";
@@ -44,9 +57,23 @@ function rJobPage(j) {
   if (_drive) h += `<div class="sub" style="margin-top:3px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;
   h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
   if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
-  if (addr || phone) {
+  const _stops = jobPlannedStops(j);
+  if (_stops.length) {
+    // ADMIN-PLANNED ROUTE: each stop gets its OWN correctly-labeled link (e.g. "Stoneworks — pick up base"),
+    // the job site is always the final stop, and ≥2 total stops also get ONE combined multi-stop link
+    // (waypoints chained in order) so the crew can tap once and get turn-by-turn through the whole run.
+    h += `<div class="sub" style="margin-top:10px;font-weight:700">🧭 Planned route <span class="sub" style="font-weight:400">· ${_stops.length} stop${_stops.length > 1 ? "s" : ""}${addr ? " + job site" : ""}</span></div>`;
+    h += _stops.map((s, i) => `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${i + 1}. ${esc(s.label || "Stop")}</div><div class="sub" style="white-space:normal">${esc(s.address)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(s.address)}" target="_blank" rel="noopener">🧭 Directions</a></div>`).join("");
+    if (addr) h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_stops.length + 1}. 🏁 Job site</div><div class="sub" style="white-space:normal">${esc(addr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">🧭 Directions</a></div>`;
+    const _allDest = _stops.map(s => s.address).concat(addr ? [addr] : []);
+    if (_allDest.length >= 2) {
+      const _dest = _allDest[_allDest.length - 1], _wps = _allDest.slice(0, -1);
+      h += `<a class="btn acc" style="width:100%;margin-top:8px;text-align:center" href="${gmapsDirUrl(_dest, _wps)}" target="_blank" rel="noopener">🗺 Full route — ${_allDest.length} stops</a>`;
+    }
+    if (phone) h += `<div class="row" style="gap:8px;margin-top:8px"><a class="btn ghost grow" href="tel:${tel(phone)}">📞 Call</a></div>`;
+  } else if (addr || phone) {
     h += `<div class="row" style="gap:8px;margin-top:10px">`;
-    if (addr) h += `<a class="btn ghost grow" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener">🗺️ Directions</a>`;
+    if (addr) h += `<a class="btn ghost grow" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">📍 Job site — Directions</a>`;
     if (phone) h += `<a class="btn ghost grow" href="tel:${tel(phone)}">📞 Call</a>`;
     h += `</div>`;
   }
@@ -117,7 +144,7 @@ function rJobPage(j) {
       <div class="grow"><label style="margin-top:0">On-site hrs each</label><input id="jt_onsite" type="number" inputmode="decimal" step="0.25" value="${j.onSiteHrs || ""}" placeholder="0"></div></div>
     <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Drive min (round trip)</label><input id="jt_drivemin" type="number" inputmode="numeric" value="${j.driveMin || ""}" placeholder="0"></div>
       <div class="grow"><label style="margin-top:0">Drive miles (round trip)</label><input id="jt_drivemiles" type="number" inputmode="decimal" value="${j.driveMiles || ""}" placeholder="0"></div></div>
-    <div class="row" style="gap:8px;margin-top:8px">${_ll ? `<button class="btn ghost grow" onclick="jobEstimateDrive('${j.id}')">📍 Estimate from base</button>` : ""}${(addr && _hb && _hb.address) ? `<a class="btn ghost grow" href="https://www.google.com/maps/dir/${encodeURIComponent(_hb.address)}/${encodeURIComponent(addr)}/${encodeURIComponent(_hb.address)}" target="_blank" rel="noopener">🗺️ Google Maps</a>` : ""}</div>
+    <div class="row" style="gap:8px;margin-top:8px">${_ll ? `<button class="btn ghost grow" onclick="jobEstimateDrive('${j.id}')">📍 Estimate from base</button>` : ""}${(addr && _hb && _hb.address) ? `<a class="btn ghost grow" href="https://www.google.com/maps/dir/${encodeURIComponent(_hb.address)}/${encodeURIComponent(addr)}/${encodeURIComponent(_hb.address)}" target="_blank" rel="noopener">🔄 Round trip: base → job → base</a>` : ""}</div>
     <button class="btn acc sm" style="margin-top:8px;width:100%" onclick="jobSaveTravel('${j.id}')">Save time &amp; travel</button>`;
   if (hh && hh.perHr != null) h += `<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div class="row" style="align-items:center"><div class="grow"><div class="sub" style="white-space:normal">${hh.crew}p × ${(hh.onsite + hh.driveH).toFixed(1)}h = ${hh.personHrs.toFixed(1)} crew-hrs · cost ${money(hh.cost)} · profit ${money(hh.profit)}</div></div><b style="font-size:17px;${hh.perHr < 35 ? "color:var(--danger)" : hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(hh.perHr)}/hr ea</b></div></div>`;
   h += `</div>`;
