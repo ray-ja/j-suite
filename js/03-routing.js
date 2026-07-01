@@ -106,13 +106,14 @@ const NAV_GROUPS = [
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   { key:"booking",   label:"Booking",   icon:"🎟️", tabs:["booking"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
+  { key:"receipts",  label:"Receipts",  icon:"📸", tabs:["receipts"] },   // OWN top-level tab (crew-visible entry point to snap/upload receipts; page self-gates finance to owner/admin)
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
   { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts"] },
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
-  { key:"money",     label:"Money",     icon:"💰", tabs:["pay","finance","receipts"] },
+  { key:"money",     label:"Money",     icon:"💰", tabs:["pay","finance"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","sales"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
@@ -176,6 +177,6 @@ function renderSubnav(){
 window.navGroup=function(key){ const g=NAV_GROUPS.find(x=>x.key===key); if(!g) return; const tabs=groupTabs(g); if(!tabs.length) return; TAB=(NAV_LAST[key]&&tabs.indexOf(NAV_LAST[key])>=0)?NAV_LAST[key]:tabs[0]; window.JOB_OPEN=null; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 window.navSub=function(t){ NAV_LAST[tabGroup(t).key]=t; TAB=t; window.JOB_OPEN=null; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes")openQuote();else if(TAB==="pipeline"){if(typeof startWizard==="function")startWizard();}else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="map"||TAB==="data"||TAB==="sales"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
+  if(TAB==="quotes")openQuote();else if(TAB==="pipeline"){if(typeof startWizard==="function")startWizard();}else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="receipts"){if(typeof rcptPickFiles==="function")rcptPickFiles();}else if(TAB==="map"||TAB==="data"||TAB==="sales"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
 };
 

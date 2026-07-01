@@ -64,6 +64,12 @@ async function main() {
     st = await sync(crewTok, { obx: { customers: [{ id: "c1", name: "Jane", updatedAt: now() }] }, jam: {} });
     check("crew CAN write business data", custs(st).some(c => c.id === "c1"));
 
+    // RECEIPTS: crew are the ones in the field holding receipts, so a crew device MUST be able to push an
+    // unattributed "needs review" receipt into the synced receipts collection (the mass-upload path).
+    const rcpts = s => (((s && s.state && s.state.obx) || {}).receipts || []);
+    st = await sync(crewTok, { obx: { receipts: [{ id: "rc1", receiptId: "blob1", status: "review", type: null, jobId: null, amount: null, uploadedBy: "crew", attributedTo: "crew", updatedAt: now() }] }, jam: {} });
+    check("crew CAN upload a review receipt (mass-upload path syncs)", rcpts(st).some(r => r.id === "rc1" && r.status === "review"));
+
     st = await sync(crewTok, { users: [Object.assign(clone(C), { role: "owner", updatedAt: now() })], obx: {}, jam: {} });
     check("crew CANNOT escalate self to owner", find(st, "crew").role === "crew");
     check("...and the escalation attempt did not drop the crew's password", !!find(st, "crew").passhash);

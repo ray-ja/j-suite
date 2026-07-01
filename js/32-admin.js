@@ -26,7 +26,9 @@ const ADMIN_PAGES = [
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew see "pay" (their OWN earnings only — js/86 rPay hard-gates a non-owner/admin to their own userId) but
 // NOT "finance" (the business books / margins / everyone's pay), which stays owner/admin via finCanView().
-const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time", "pay"];
+// Crew see "pay" (their OWN earnings) and "receipts" (upload + their own / attributed-to-them review queue —
+// rReceipts() self-gates the full financial table/editing to owner+admin), but NOT "finance".
+const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time", "pay", "receipts"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 
 /* ----- ACTIONS (Phase 3e — role hierarchy) -----
@@ -115,6 +117,12 @@ function roleAllows(key, tab) {
   if (key === "owner") return true;            // owner sees everything, incl. the admin panel
   if (tab === "approvals") return false;       // approvals inbox is owner-only, always (hard-gated: hidden AND coerced-away)
   if (tab === "admin") return roleActionAllows(key, "manage-members");   // Admin panel: owner OR a manager-tier role (it self-gates owner-only cards inside)
+  // RECEIPTS — any SIGNED-IN role (incl. crew, who hold the receipts in the field) may reach the Receipts page
+  // to UPLOAD + see THEIR OWN review queue. The page hard-gates the full financial table / editing / re-bucketing
+  // / reimbursements to owner+admin (rReceipts checks finCanView(), and every mutating handler re-checks). This
+  // is deliberately page-level (not the synced role-list) so crew upload works on existing installs without
+  // reconfiguring roles. A signed-out / no-session device is still excluded.
+  if (tab === "receipts") return key !== NO_SESSION_ROLE;
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user

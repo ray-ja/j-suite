@@ -37,7 +37,10 @@ ok("CREW_PAGES INCLUDES 'pay'", CREW_PAGES.indexOf("pay") >= 0, CREW_PAGES);
 ok("CREW_PAGES EXCLUDES 'finance'", CREW_PAGES.indexOf("finance") < 0);
 ok("crew CAN reach its own pay page", can(crew, "pay") === true);
 ok("crew CANNOT reach the finance page (books/margins/everyone's pay)", can(crew, "finance") === false);
-ok("crew CANNOT reach receipts (business expense entry)", can(crew, "receipts") === false);
+// Crew ARE the ones in the field holding receipts — they CAN reach the Receipts page to UPLOAD (mass/batch)
+// and see their own review queue. The page itself hard-gates the financial table / editing / re-bucketing /
+// reimbursements to owner+admin (rReceipts → rcptFinFull()); reaching the tab exposes no owner-only finance data.
+ok("crew CAN reach receipts to upload (page self-gates finance content)", can(crew, "receipts") === true);
 ok("owner CAN reach pay", can(owner, "pay") === true);
 ok("owner CAN reach finance", can(owner, "finance") === true);
 
@@ -46,6 +49,7 @@ sandbox.__curUser = null;   // no session
 ok("no-session role is the restricted pseudo-role", curRoleKey() === NO_SESSION_ROLE);
 ok("signed-out CAN see pay (crew-equivalent set)", roleAllows(NO_SESSION_ROLE, "pay") === true);
 ok("signed-out CANNOT see finance", roleAllows(NO_SESSION_ROLE, "finance") === false);
+ok("signed-out CANNOT reach receipts (upload requires a signed-in account)", roleAllows(NO_SESSION_ROLE, "receipts") === false);
 
 console.log("— per-person earnings expose ONLY the target member's numbers —");
 const f = require("./js/39-finance-core");

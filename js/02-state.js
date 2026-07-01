@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -33,6 +33,12 @@ function load(){
     if(!S[b].timeclock)S[b].timeclock=[];
     if(!S[b].income)S[b].income=[];
     if(!S[b].expenses)S[b].expenses=[];
+    // RECEIPTS — synced top-level home for UNASSIGNED / "needs review" receipt photos (the mass-upload dump
+    // queue). Additive collection, empty by default. ATTRIBUTED receipts still live in their billing arrays
+    // (job.materials / job.expenses / this org's `expenses`), which are UNCHANGED — so job P&L + customer
+    // invoicing math stay byte-identical. A review receipt MOVES into the right billing array (same id + photo)
+    // when it's attributed; only unattributed uploads live here. Loss-free + idempotent.
+    if(!S[b].receipts)S[b].receipts=[];
     if(!S[b].messages)S[b].messages=[];
     if(!S[b].resale)S[b].resale=[];   // resale tracker: first-class collection (junk-pulled items, own lifecycle)
     if(!S[b].pendingChanges)S[b].pendingChanges=[];   // Step 2: approval queue — Cap PROPOSES here; Ray approves; code applies (synced, per-biz)
