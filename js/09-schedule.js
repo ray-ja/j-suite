@@ -523,7 +523,7 @@ window.acceptQuoteToJob=function(quoteId){
   if(pickLine){
     let sub=q.pickupJobId?d.jobs.find(j=>j.id===q.pickupJobId):null;const isNewSub=!sub;
     if(!sub){sub={id:uid(),done:false,crew:[]};d.jobs.push(sub);}
-    sub.title=pickLine.name||"Materials pickup";sub.parentJobId=job.id;
+    sub.title=pickLine.name||"Materials pickup";sub.parentJobId=job.id;sub.sharedJobIds=[job.id];sub.stopKind="pickup";
     sub.customerId=q.customerId||sub.customerId||"";sub.propertyId=q.propertyId||sub.propertyId||"";
     sub.address=q.address||sub.address||"";sub.date=date;sub.time=time;sub.quoteId=q.id;sub.pickupRun=true;
     sub.estHours=+pickLine.estHours||0;sub.estCrew=Math.max(1,+pickLine.estCrew||2);
