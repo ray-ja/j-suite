@@ -35,4 +35,21 @@ window.jsUpload=function(file){
   });
 };
 window.jsUploadUrl=function(id){if(!id)return"";const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,"");return base+"/uploads/"+encodeURIComponent(id);};
+/* ---------- submit guard — the "5 RJs on one job" / rapid-tap duplicate-submit fix ----------
+   On weak jobsite signal a save looks like a no-op, so the crew jams the button 5-20 times and every tap
+   mints its own record. This guard is called at the TOP of each create/save handler (AFTER validation passes,
+   so a "enter an amount" no-op tap doesn't burn the window). It covers BOTH cases:
+     (a) DEBOUNCE — a repeat of the same action within `ms` (~1.2s) of the last accepted one is dropped. A human
+         can't fill a fresh form + resubmit in <1.2s, so this only ever blocks accidental rapid re-taps.
+     (b) BUSY-FLAG — for any handler that awaits (upload), the flag stays true across the await.
+   Returns true if this submit should proceed, false if it's a dup to ignore. Unique `key` per handler. */
+window.submitGuard=function(key,ms){
+  ms=ms||1200; var t=Date.now();
+  window.__subAt=window.__subAt||{}; window.__subBusy=window.__subBusy||{};
+  if(window.__subBusy[key])return false;            // an await-based save is still in flight
+  if(t-(window.__subAt[key]||0)<ms)return false;    // rapid re-tap of the same action — drop it
+  window.__subAt[key]=t; window.__subBusy[key]=true;
+  setTimeout(function(){window.__subBusy[key]=false;},ms);
+  return true;
+};
 

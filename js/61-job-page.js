@@ -283,6 +283,7 @@ window.jobDelMaterial = function (jobId, mId) {
 window.jobAddChangeOrder = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const desc = val("co_desc"); if (!desc) { alert("Describe what changed first."); return; }
+  if (typeof submitGuard === "function" && !submitGuard("jobAddChangeOrder:" + jobId)) return;   // rapid-tap dupe guard
   const amt = parseFloat(val("co_amt")) || 0;
   const who = (typeof tcWho === "function" && tcWho()) ? tcWho().name : ((typeof curUser === "function" && curUser()) ? curUser().username : "");
   if (!Array.isArray(j.changeOrders)) j.changeOrders = [];

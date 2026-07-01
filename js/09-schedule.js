@@ -481,6 +481,7 @@ window.saveJob=function(id,isNew){
   j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
   j.plannedStops=JOBSTOPS.map(s=>({id:s.id,label:s.label,address:s.address,lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null}));   // admin-planned route (js/61 renders these as labeled links); untouched (echoed back) when the editor is hidden for non-owners
   if(!j.title){alert("Give the job a name.");return;}
+  if(typeof submitGuard==="function"&&!submitGuard("saveJob:"+id))return;   // rapid-tap dupe guard
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
   if(typeof logChange==="function")logChange(isNew?"create":"update","job",j.id,(isNew?"Scheduled ":"Updated ")+(j.title||"job")+(j.date?" · "+fmtDate(j.date):""));
   save();closeModal();render();

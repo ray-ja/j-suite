@@ -40,6 +40,7 @@ window.saveTodo=function(id,isNew){
   const d=D();let td=isNew?{id,done:false}:d.todos.find(x=>x.id===id);
   td.title=val("td_title");td.priority=val("td_pri");td.due=val("td_due");td.notes=val("td_notes");td.assignee=val("td_assignee");
   if(!td.title){alert("Give the to-do a title.");return;}
+  if(typeof submitGuard==="function"&&!submitGuard("saveTodo:"+id))return;   // rapid-tap dupe guard
   touch(td);if(isNew)d.todos.push(td);
   if(typeof logChange==="function")logChange(isNew?"create":"update","todo",td.id,(isNew?"Added to-do ":"Updated to-do ")+(td.title||""));
   save();closeModal();render();

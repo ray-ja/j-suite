@@ -400,6 +400,7 @@ window.saveInvItem=function(id,isNew){
   i.section=val("iv_section"); i.notes=val("iv_notes");
   i.have=(document.getElementById("iv_have")||{}).checked===true;
   i.tags=Array.prototype.slice.call(document.querySelectorAll(".inv_tag:checked")).map(function(c){return c.value;});
+  if(typeof submitGuard==="function"&&!submitGuard("saveInvItem:"+id))return;   // rapid-tap dupe guard
   touch(i); if(isNew)d.inventory.push(i);
   save(); closeModal(); render();
 };

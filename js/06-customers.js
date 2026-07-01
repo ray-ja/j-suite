@@ -83,6 +83,7 @@ window.openCustomer=function(id){
   if(typeof lockGuard==="function")lockGuard("customer",isNew?null:c.id,()=>openCustomer(id));
 };
 window.saveCustomer=function(id,isNew){
+  if(typeof submitGuard==="function"&&!submitGuard("saveCustomer:"+id))return;   // rapid-tap dupe guard
   const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);
   ["name","company","phone","email"].forEach(k=>c[k]=val("f_"+k));
   c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");c.manager=val("f_manager");c.soldBy=val("f_soldby");c.source=val("f_source");
