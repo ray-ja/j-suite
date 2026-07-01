@@ -4,8 +4,8 @@
 
    One source of truth: the pooled split engine (js/39 finRollup) computes each job's field POOL + the
    sales/admin shares exactly as the owner Payouts/Cash pages already do. finPerPerson (js/39) then re-splits
-   each job's field pool by who actually CLOCKED that job (timeclock hours), so the per-person totals SUM
-   BACK to the pooled total — only the per-crew split changes (hours-weighted instead of equal). Mileage is
+   each job's field pool EQUALLY among whoever worked that job, so the per-person totals SUM
+   BACK to the pooled total — only the per-crew split changes (even split among the job's crew). Mileage is
    the per-vehicle-owner reimbursement; payouts already paid (disbursements with a memberId) are subtracted.
 
    PRIVACY: a crew member sees ONLY their own earned/paid/owed + their own per-job breakdown. They never see
@@ -116,7 +116,7 @@ function rPay() {
 
   // earned breakdown (field / sales / admin) — the person's own shares only
   h += `<div class="secthd"><h2>How it adds up</h2></div><div class="card">
-    <div class="li"><div class="grow"><div class="nm">👷 Field work</div><div class="sub">your share of jobs you worked (by your clocked hours)</div></div><b>${fm(m.field)}</b></div>
+    <div class="li"><div class="grow"><div class="nm">👷 Field work</div><div class="sub">your equal share of each job you worked (split evenly among that job's crew)</div></div><b>${fm(m.field)}</b></div>
     ${m.sales ? `<div class="li"><div class="grow"><div class="nm">🤝 Sales credit</div><div class="sub">15% on jobs you booked (3-month window)</div></div><b>${fm(m.sales)}</b></div>` : ""}
     ${m.admin ? `<div class="li"><div class="grow"><div class="nm">🗂️ Admin</div><div class="sub">5% admin share (capped $500/mo)</div></div><b>${fm(m.admin)}</b></div>` : ""}
     <div class="li"><div class="grow"><div class="nm">⛽ Gas reimbursement</div><div class="sub">your vehicle's confirmed miles @ $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi — covers fuel, not earnings</div></div><b>${fm(m.mileage)}</b></div>
@@ -137,7 +137,7 @@ function rPay() {
       jb.sales.map(r => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(r.title)}</div><div class="sub">${(typeof fmtDate === "function") ? fmtDate(r.date) : r.date} · sales credit</div></div><b>${fm(r.sales)}</b></div>`).join("") + `</div>`;
   }
 
-  h += `<div class="card" style="background:var(--soft)"><div class="sub" style="white-space:normal">This is your pay only. Field work splits each job's crew pool by the hours you clocked; sales credit is 15% on jobs you booked within 3 months; gas reimbursement is your confirmed mileage. Ask Ray about a payout.</div></div>`;
+  h += `<div class="card" style="background:var(--soft)"><div class="sub" style="white-space:normal">This is your pay only. Field work splits each job's crew pool evenly among whoever worked it — the same whether you're fast or slow; sales credit is 15% on jobs you booked within 3 months; gas reimbursement is your confirmed mileage. Ask Ray about a payout.</div></div>`;
   view.innerHTML = h;
 }
 window.rPay = rPay;
