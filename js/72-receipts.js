@@ -224,6 +224,9 @@ function rReceipts() {
     <div class="sub" style="text-align:center;opacity:.6">⬇ or drag photos onto this box (desktop)</div></div>`;
 
   if (reviewCount) h += `<div class="card" style="border-left:4px solid var(--accent)"><b>🕓 ${reviewCount} receipt${reviewCount > 1 ? "s" : ""} need${reviewCount > 1 ? "" : "s"} review</b> — untagged uploads. Tap one to set vendor, amount, type &amp; job.</div>`;
+  if (typeof capRcptButtonHTML === "function") h += capRcptButtonHTML();   // 🤖 Cap: categorize needs-review (owner/admin only)
+  const suggCount = rows.filter(r => r && r.suggested).length;
+  if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + description filed more than once. Flagged in the table; open &amp; delete the extras.</div>`;
 
   // FILTER + EXPORT bar
