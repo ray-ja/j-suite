@@ -106,9 +106,8 @@ ok("weighted split never leaks a cent across a sweep", wleak === null, wleak);
 console.log("— per-person earnings RECONCILE to the pooled rollup —");
 // reuse R (two $100 jobs, crew m1+m2, m1 originator, admin1) + a timeclock with uneven hours on job1
 const tcHrs = [
-  { id: "h1", userId: "m1", jobId: "j1", clockIn: 0, clockOut: 3 * 3600000, deleted: false },   // m1: 3h on j1
+  { id: "h1", userId: "m1", jobId: "j1", clockIn: 0, clockOut: 3 * 3600000, deleted: false },   // m1: 3h on j1 (hours are tracked/shown but no longer size the split)
   { id: "h2", userId: "m2", jobId: "j1", clockIn: 0, clockOut: 1 * 3600000, deleted: false },   // m2: 1h on j1
-  // job2 has NO clocked hours → that pool falls back to EQUAL between m1/m2
 ];
 const hByJob = f.finHoursByJob(tcHrs, {});
 ok("finHoursByJob keys by jobId then member, in hours", hByJob.j1.m1 === 3 && hByJob.j1.m2 === 1, hByJob);
@@ -120,11 +119,11 @@ const poolDist = R.totals.field + R.totals.sales + R.totals.admin;
 ok("Σ per-person (field+sales+admin) + unallocated === pooled labor distribution", ppDist === poolDist, { ppDist: ppDist, poolDist: poolDist });
 ok("per-person field total === pooled field total (no cent moved out of the pool)", pp.totals.field === R.totals.field, { pp: pp.totals.field, pool: R.totals.field });
 ok("m1 sales/admin come straight from the pooled engine", pp.member.m1.sales === R.member.m1.sales, pp.member.m1);
-// job1 pool = 480,000¢ split 3:1 → m1 360,000 / m2 120,000 ; job2 pool = 490,000¢ EQUAL → 245,000 each
-ok("m1 field = 360,000 (j1 weighted) + 245,000 (j2 equal) = 605,000", pp.member.m1.field === 605000, pp.member.m1.field);
-ok("m2 field = 120,000 (j1 weighted) + 245,000 (j2 equal) = 365,000", pp.member.m2.field === 365000, pp.member.m2.field);
+// Ray's call: EQUAL split regardless of hours — job1 pool 480,000¢ → 240,000 each; job2 pool 490,000¢ → 245,000 each
+ok("m1 field = 240,000 (j1 equal) + 245,000 (j2 equal) = 485,000 — unaffected by 3h vs 1h", pp.member.m1.field === 485000, pp.member.m1.field);
+ok("m2 field = 240,000 (j1 equal) + 245,000 (j2 equal) = 485,000 — same as m1 despite fewer hours", pp.member.m2.field === 485000, pp.member.m2.field);
 ok("the two members' field still sums to the pooled field (970,000)", pp.member.m1.field + pp.member.m2.field === R.totals.field, [pp.member.m1.field, pp.member.m2.field, R.totals.field]);
-ok("m1 earned = field+sales+admin; owed = earned + mileage − paid", pp.member.m1.earned === 605000 + 180000 && pp.member.m1.owed === 605000 + 180000 + 1044 - 12345, pp.member.m1);
+ok("m1 earned = field+sales+admin; owed = earned + mileage − paid", pp.member.m1.earned === 485000 + 180000 && pp.member.m1.owed === 485000 + 180000 + 1044 - 12345, pp.member.m1);
 ok("payout subtracted only from m1 (m2 unpaid)", pp.member.m2.paid === 0 && pp.member.m1.paid === 12345, { m1: pp.member.m1.paid, m2: pp.member.m2.paid });
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");

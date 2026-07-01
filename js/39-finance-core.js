@@ -111,14 +111,15 @@ function finPerPerson(rollup, mileage, hoursByJob, payouts) {
   Object.keys(rollup.member || {}).forEach(function (id) {
     var m = rollup.member[id]; if (m.sales) M(id).sales += m.sales; if (m.admin) M(id).admin += m.admin;
   });
-  // 2) field — re-split each job's field POOL (identical total) weighted by clocked hours on that job
+  // 2) field — re-split each job's field POOL (identical total) EQUALLY among whoever was on the job.
+  // Ray's call: not hours-weighted — a faster crew member shouldn't earn less for finishing quicker.
   (rollup.perJob || []).forEach(function (pj) {
     var crew = Object.keys(pj.field || {});                                   // the crew the rollup distributed to (income.crew)
     if (pj.unallocated) unallocatedField += pj.unallocated;                   // job had no crew → stays unassigned (matches pool)
     if (!crew.length) return;
-    var ws = finSplitWeighted(pj.fieldPool, crew, hoursByJob[pj.jobId] || {});
-    Object.keys(ws.perMember).forEach(function (id) { M(id).field += ws.perMember[id]; });
-    unallocatedField += ws.unallocated || 0;
+    var es = finSplitEqual(pj.fieldPool, crew);
+    Object.keys(es.perMember).forEach(function (id) { M(id).field += es.perMember[id]; });
+    unallocatedField += es.unallocated || 0;
   });
   // 3) mileage reimbursement (per vehicle owner) + payouts already paid → owed
   Object.keys(mileage.perMember || {}).forEach(function (id) { M(id).mileage += mileage.perMember[id] || 0; });

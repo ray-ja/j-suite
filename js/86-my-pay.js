@@ -44,15 +44,17 @@ function payPerPerson(opts) {
 }
 
 /* per-person, per-job breakdown for ONE member: which jobs they earned a field share on + how much.
-   Built from the same rollup.perJob the pooled engine produced, re-split by clocked hours. Self-only data:
-   it returns only THIS member's share per job (no margins, no other members' shares, no customer money). */
+   Built from the same rollup.perJob the pooled engine produced, re-split EQUALLY among that job's crew
+   (matches finPerPerson — not hours-weighted; a faster crew member isn't paid less for finishing quicker).
+   Self-only data: it returns only THIS member's share per job (no margins, no other members' shares, no
+   customer money). Hours are still shown per job (informational), just not used to size the share. */
 function payJobsForMember(pp, memberId) {
   const rows = [];
   (pp.roll.perJob || []).forEach(pj => {
     const crew = Object.keys(pj.field || {});
     if (crew.indexOf(memberId) < 0) return;
-    const ws = finSplitWeighted(pj.fieldPool, crew, pp.hoursByJob[pj.jobId] || {});
-    const share = ws.perMember[memberId] || 0;
+    const es = finSplitEqual(pj.fieldPool, crew);
+    const share = es.perMember[memberId] || 0;
     if (!(share > 0)) return;
     const j = (D().jobs || []).find(x => x && x.id === pj.jobId);
     const myHrs = (pp.hoursByJob[pj.jobId] && pp.hoursByJob[pj.jobId][memberId]) || 0;

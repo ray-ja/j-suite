@@ -59,10 +59,11 @@ ok("the view is keyed by member id (joe + moe both present in the OWNER view)", 
 // the My-Pay page hands rPay exactly curUser().id for a crew member; simulate that selection:
 const crewTargetId = crew.id;                 // a crew member can only ever be handed their OWN id (rPay gating)
 const mine = pp.member[crewTargetId];
-// $100 → labor 6000¢; no originator/admin ⇒ whole labor pool becomes field (6000¢); 3h:1h ⇒ joe 4500 / moe 1500
-ok("joe's self view = joe's own field share (3h of 4h ⇒ 75% of the 6000¢ pool = 4500)", mine.field === 4500, mine.field);
-ok("joe's self view does NOT carry moe's numbers (separate object)", pp.member.moe.field === 1500 && mine.field !== pp.member.moe.field, { joe: mine.field, moe: pp.member.moe.field });
-ok("per-person field reconciles to the pooled field (4500+1500 = 6000)", pp.member.joe.field + pp.member.moe.field === R.totals.field, [pp.member.joe.field, pp.member.moe.field, R.totals.field]);
+// $100 → labor 6000¢; no originator/admin ⇒ whole labor pool becomes field (6000¢). Ray's call: split EQUALLY
+// among whoever was on the job, regardless of hours (3h vs 1h doesn't change the split) ⇒ joe 3000 / moe 3000.
+ok("joe's self view = an EQUAL field share regardless of hours (2-person job ⇒ 50% of the 6000¢ pool = 3000)", mine.field === 3000, mine.field);
+ok("joe's self view does NOT carry moe's numbers (separate object)", pp.member.moe.field === 3000 && mine.field === pp.member.moe.field, { joe: mine.field, moe: pp.member.moe.field });
+ok("per-person field reconciles to the pooled field (3000+3000 = 6000)", pp.member.joe.field + pp.member.moe.field === R.totals.field, [pp.member.joe.field, pp.member.moe.field, R.totals.field]);
 
 console.log("— MIGRATION FIXTURE: the additive account fields survive migrate + a sync round-trip (zero loss) —");
 // The pay system adds NO collection; it adds additive ACCOUNT fields (onboardDismissed / playbookSeen) +
