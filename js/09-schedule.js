@@ -315,15 +315,11 @@ function jobStopGeocode(s){
 }
 /* ---- multi-day work-day picker — a tap-on/off mini month grid, mobile-first. Tapping a day toggles it in
    JOBWORKDAYS (non-contiguous OK). The START date (j_date) is always included and can't be turned off here
-   (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips. */
-let JOBWDAY_ANCHOR=null;
-function renderJobWorkDays(){
-  const box=document.getElementById("j_workdays");if(!box)return;
-  const start=val("j_date")||today();
-  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);   // start day is always a work day
-  if(!JOBWDAY_ANCHOR)JOBWDAY_ANCHOR=start;
-  const sel=new Set(JOBWORKDAYS);
-  const anc=new Date((JOBWDAY_ANCHOR||start)+"T00:00:00"),y=anc.getFullYear(),m=anc.getMonth();
+   (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips.
+   The grid + chip renderers below (wdpkGridHtml/wdpkChipsHtml) are factored out so js/61's fast crew-facing
+   "+ Add another day" picker draws the SAME widget against job.workDays directly, instead of a second
+   diverging implementation — this file's picker and js/61's stay pixel-for-pixel identical. */
+function wdpkGridHtml(y,m,selectedSet,startDs,toggleFn){
   const first=new Date(y,m,1),startDow=first.getDay(),dim=new Date(y,m+1,0).getDate();
   const title=first.toLocaleString(undefined,{month:"long"})+" "+y;
   const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
@@ -332,17 +328,31 @@ function renderJobWorkDays(){
   const t=today();
   for(let day=1;day<=dim;day++){
     const ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
-    const on=sel.has(ds),isStart=ds===start;
+    const on=selectedSet.has(ds),isStart=!!startDs&&ds===startDs;
     const cls="wdpk-cell"+(on?" on":"")+(isStart?" start":"")+(ds===t?" today":"");
-    cells+=`<div class="${cls}" onclick="jobToggleWorkDay('${ds}')" title="${isStart?'Start day (change above)':on?'Working — tap to remove':'Tap to add'}">${day}</div>`;
+    cells+=`<div class="${cls}" onclick="${toggleFn}('${ds}')" title="${isStart?'Start day (change above)':on?'Working — tap to remove':'Tap to add'}">${day}</div>`;
   }
-  const chips=JOBWORKDAYS.slice().sort().map(ds=>{
-    const isStart=ds===start;
-    return `<span class="wdpk-chip${isStart?" start":""}">${esc(fmtDate(ds))}${isStart?"":` <span onclick="jobToggleWorkDay('${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
+  return {title:title,cells:cells};
+}
+function wdpkChipsHtml(days,startDs,toggleFn){
+  return days.slice().sort().map(function(ds){
+    const isStart=!!startDs&&ds===startDs;
+    return `<span class="wdpk-chip${isStart?" start":""}">${esc(fmtDate(ds))}${isStart?"":` <span onclick="${toggleFn}('${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
   }).join("");
+}
+let JOBWDAY_ANCHOR=null;
+function renderJobWorkDays(){
+  const box=document.getElementById("j_workdays");if(!box)return;
+  const start=val("j_date")||today();
+  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);   // start day is always a work day
+  if(!JOBWDAY_ANCHOR)JOBWDAY_ANCHOR=start;
+  const sel=new Set(JOBWORKDAYS);
+  const anc=new Date((JOBWDAY_ANCHOR||start)+"T00:00:00"),y=anc.getFullYear(),m=anc.getMonth();
+  const g=wdpkGridHtml(y,m,sel,start,"jobToggleWorkDay");
+  const chips=wdpkChipsHtml(JOBWORKDAYS,start,"jobToggleWorkDay");
   box.innerHTML=`<div class="wdpk">
-    <div class="wdpk-head"><button type="button" class="calnav" onclick="jobWorkDayMonth(-1)">‹</button><div class="wdpk-title">${esc(title)}</div><button type="button" class="calnav" onclick="jobWorkDayMonth(1)">›</button></div>
-    <div class="wdpk-grid">${cells}</div>
+    <div class="wdpk-head"><button type="button" class="calnav" onclick="jobWorkDayMonth(-1)">‹</button><div class="wdpk-title">${esc(g.title)}</div><button type="button" class="calnav" onclick="jobWorkDayMonth(1)">›</button></div>
+    <div class="wdpk-grid">${g.cells}</div>
     <div class="wdpk-chips">${chips}</div>
     <div class="sub" style="margin-top:4px">${JOBWORKDAYS.length>1?`Worked across <b>${JOBWORKDAYS.length} days</b> — shows on each on the schedule.`:"Single day. Tap more days above for a multi-day job."}</div></div>`;
 }

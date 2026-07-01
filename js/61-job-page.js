@@ -27,6 +27,85 @@ function gmapsDirUrl(destination, waypoints) {
    stops[] (logged as-driven, after the fact) — this is the route planned in ADVANCE by the owner/admin. */
 function jobPlannedStops(j) { return (Array.isArray(j && j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address); }
 
+/* ===== FAST work-day add/remove — Cap's live tonight-notes: the full job-edit modal (js/09 openJob) already
+   has a "Work days" tap-on/off mini-calendar, but it's buried behind customer/service/crew/equipment fields,
+   and the owner's real workflow is "mark today, hop back in later and add the next day" — not "open the big
+   editor and scroll to find it". This gives that a one-tap home right on the page the crew already live on
+   day to day. Both paths write straight to the same j.workDays[] (via jobWorkDays(), js/09), so whichever was
+   used most recently is exactly what the other shows — there's no separate state to drift out of sync. ===== */
+function rJobWorkDaysCard(j) {
+  const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : [j.date].filter(Boolean);
+  const t = (typeof today === "function") ? today() : "";
+  const hasToday = wd.indexOf(t) >= 0;
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📅 Work days${wd.length > 1 ? ` <span class="sub" style="font-weight:400">· ${wd.length} days</span>` : ""}</div>`;
+  h += `<div class="wdpk-chips">` + wd.map(ds => {
+    const isStart = ds === j.date, isToday = ds === t;
+    return `<span class="wdpk-chip${isStart ? " start" : ""}"${isToday && !isStart ? ' style="outline:2px solid var(--accent)"' : ""}>${esc(fmtDate(ds))}${isToday ? " · today" : ""}${isStart ? "" : ` <span onclick="jobWdToggle('${j.id}','${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
+  }).join("") + `</div>`;
+  h += `<div class="row" style="gap:8px;margin-top:10px">`;
+  h += hasToday
+    ? `<div class="sub grow" style="align-self:center">✓ Today's already a work day.</div>`
+    : `<button class="btn acc grow" style="padding:13px" onclick="jobWdAddToday('${j.id}')">+ Add today</button>`;
+  h += `<button class="btn ghost grow" style="padding:13px" onclick="jobWdOpenPicker('${j.id}')">+ Add another day</button>`;
+  h += `</div></div>`;
+  return h;
+}
+/* one tap, no modal, no navigation — covers "still working this job today" with zero friction */
+window.jobWdAddToday = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const t = today(), wd = new Set((typeof jobWorkDays === "function") ? jobWorkDays(j) : []);
+  if (wd.has(t)) return;   // already covered — button is hidden in this case, but never double-add on a stray tap
+  wd.add(t); j.workDays = [...wd].filter(Boolean).sort();
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+  if (typeof logChange === "function") logChange("update", "job", jobId, "Added today (" + fmtDate(t) + ") as a work day — " + (j.title || "job"));
+  if (typeof render === "function") render();
+};
+/* single toggle used by BOTH the compact chip list's ✕ (remove) and the "+ Add another day" mini-calendar
+   below (add/remove) — one function, one place j.workDays actually changes, so there's nothing to drift. */
+window.jobWdToggle = function (jobId, ds) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (ds === (j.date || "")) return;   // start day can't be removed here — same rule as the full editor (js/09)
+  const wd = new Set((typeof jobWorkDays === "function") ? jobWorkDays(j) : []);
+  const adding = !wd.has(ds);
+  if (adding) wd.add(ds); else wd.delete(ds);
+  j.workDays = [...wd].filter(Boolean).sort();
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+  if (typeof logChange === "function") logChange("update", "job", jobId, (adding ? "Added " : "Removed ") + fmtDate(ds) + " as a work day — " + (j.title || "job"));
+  if (document.getElementById("jpwd_box")) jpWdRender();   // the picker modal is open — refresh its grid + chips too
+  if (typeof render === "function") render();
+};
+/* "+ Add another day" — a SMALL, focused modal: just the mini tap-on/off calendar + a Done button, not the
+   full job-edit form. Reuses the exact grid widget (wdpkGridHtml, js/09) the full editor's picker draws, so
+   it looks and behaves identically — open, tap a day, done, same as the availability calendar (js/44). */
+let JPWD_JID = null, JPWD_ANCHOR = null;
+window.jobWdOpenPicker = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  JPWD_JID = jobId; JPWD_ANCHOR = today();
+  modal("Add a work day", `<div id="jpwd_box"></div>
+    <button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="closeModal();if(typeof render==='function')render()">Done</button>`);
+  jpWdRender();
+};
+function jpWdRender() {
+  const box = document.getElementById("jpwd_box"); if (!box) return;
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === JPWD_JID) : null; if (!j) return;
+  const sel = new Set((typeof jobWorkDays === "function") ? jobWorkDays(j) : []);
+  const anc = new Date((JPWD_ANCHOR || today()) + "T00:00:00"), y = anc.getFullYear(), m = anc.getMonth();
+  const g = (typeof wdpkGridHtml === "function") ? wdpkGridHtml(y, m, sel, j.date || null, "jobWdPickerToggle") : { title: "", cells: "" };
+  const chips = (typeof wdpkChipsHtml === "function") ? wdpkChipsHtml([...sel], j.date || null, "jobWdPickerToggle") : "";
+  box.innerHTML = `<div class="wdpk">
+    <div class="wdpk-head"><button type="button" class="calnav" onclick="jobWdPickerMonth(-1)">‹</button><div class="wdpk-title">${esc(g.title)}</div><button type="button" class="calnav" onclick="jobWdPickerMonth(1)">›</button></div>
+    <div class="wdpk-grid">${g.cells}</div>
+    <div class="wdpk-chips">${chips}</div>
+    <div class="sub" style="margin-top:4px">Tap a day to add or remove it — saved instantly, no separate Save needed.</div></div>`;
+}
+window.jobWdPickerToggle = function (ds) { if (JPWD_JID) window.jobWdToggle(JPWD_JID, ds); };
+window.jobWdPickerMonth = function (n) {
+  const a = new Date((JPWD_ANCHOR || today()) + "T00:00:00");
+  a.setDate(1); a.setMonth(a.getMonth() + n);
+  JPWD_ANCHOR = a.getFullYear() + "-" + String(a.getMonth() + 1).padStart(2, "0") + "-01";
+  jpWdRender();
+};
+
 function rJobPage(j) {
   const cust = (typeof custName === "function") ? custName(j.customerId) : "";
   const _cust = (typeof actC === "function") ? actC().find(c => c.id === j.customerId) : null;
@@ -78,6 +157,11 @@ function rJobPage(j) {
     h += `</div>`;
   }
   h += `</div>`;
+
+  // 1a) Work days — fast day-to-day add/remove, reachable right where the crew already are (no full-editor
+  // hunt). Reads/writes j.workDays directly via jobWorkDays(j) (js/09) — the SAME field the full job-editor
+  // "Work days" picker (openJob) writes, so whichever path was used most recently is what shows in both.
+  h += rJobWorkDaysCard(j);
 
   // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up
   const _subs = (typeof subJobsOf === "function") ? subJobsOf(j.id) : [];
