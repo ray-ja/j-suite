@@ -8,10 +8,10 @@ function nextQuoteNum(){ return (D().quotes||[]).reduce((m,q)=>Math.max(m,+q.num
 function quoteNum(q){ return (q&&q.num)?("#"+String(q.num).padStart(4,"0")):""; }
 /* "today" / "yesterday" / "3 days ago" / "in 2 days" for a YYYY-MM-DD date */
 function agoStr(dateStr){ if(!dateStr)return ""; const d=new Date(dateStr+"T00:00:00"); if(isNaN(d))return ""; const t=new Date(); t.setHours(0,0,0,0); const days=Math.round((t-d)/86400000); if(days===0)return "today"; if(days===1)return "yesterday"; if(days===-1)return "tomorrow"; return days>1?(days+" days ago"):("in "+(-days)+" days"); }
-window.quoteFilter=function(k){ QSTAGE_FILTER=k; rQuotes(); };
+window.quoteFilter=function(k){ QSHOWN=150; QSTAGE_FILTER=k; rQuotes(); };   // reset cap on filter change
 let QCREW_FILTER="";
 function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }
-window.quoteCrewFilter=function(id){ QCREW_FILTER=id; rQuotes(); };
+window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); };   // reset cap on filter change
 /* PURE results-list HTML — the empty / "No matches" / card branch ONLY. Everything OUTSIDE this
    (draft card, guided button, search input, subnav, crew select) is built by rQuotes(). Kept pure so the
    SEARCH keystroke path can rebuild just #qlist without re-rendering — and destroying — the #qsearch input. */
@@ -26,17 +26,26 @@ function quotesListHTML(){
   list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
   if(!all.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   if(!list.length)return `<div class="empty">No matches.</div>`;
-  return `<div class="card grid2">`+list.map(q=>{
+  /* Load-more cap: filter/sort ABOVE run on the FULL list; we slice ONLY the final display array so search/sort
+     always cover everything (a match beyond #150 is found, then shown when you load more). When list.length<=QSHOWN
+     the slice is a no-op and NO button renders → output is byte-identical to pre-cap. Never cap a funnel (js/67). */
+  const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
+  const shown=list.slice(0,QSHOWN);
+  return `<div class="card grid2">`+shown.map(q=>{
     const st=quoteStage(q),m=QSTAGE_META[st],cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
     return `<div class="li" onclick="openQuote('${q.id}')" style="border-left:4px solid ${m.color};padding-left:10px">
       <div class="grow"><div class="nm" style="white-space:normal">${cust}${type?` <span style="font-weight:600;color:var(--muted)">· ${esc(type)}</span>`:""}</div>
       <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${m.label}</span>${q.recurring?" · recurring":""}</div></div>
       <div style="font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"};text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`;
-  }).join("")+`</div>`;
+  }).join("")+`</div>`+more;
 }
+/* Per-list shown cap (initial 150). qLoadMore bumps by 150 and repaints ONLY #qlist via the scoped path. */
+let QSHOWN=150;
+window.qLoadMore=function(){ QSHOWN+=150; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
 /* scoped SEARCH re-render: rebuild ONLY #qlist so the #qsearch input is never destroyed — focus & caret
-   survive with NO setSelectionRange refocus hack (mirrors adminFilterAccounts in js/32). */
-window.qSearchOn=function(v){ QSEARCH=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+   survive with NO setSelectionRange refocus hack (mirrors adminFilterAccounts in js/32).
+   RESET the cap first so a new filtered result set re-caps from the top. */
+window.qSearchOn=function(v){ QSHOWN=150; QSEARCH=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
