@@ -26,6 +26,37 @@
    elapsed/miles pair now uses a `.tc-metrics` class that STACKS full-width by default (mobile-first) and
    only goes side-by-side at >=480px (app.css).
 
+   DUPLICATE CLOCK-IN (June 30 incident, confirmed in prod data.json) — rapid-tapping "Clock in" created 5
+   identical OPEN shifts ~15-90ms apart, all for the same job. ROOT CAUSE: the only guard was
+   `tcOpenShift(who.userId)`, a check-then-act race — it reads tcoll() SYNCHRONOUSLY, but the new entry isn't
+   pushed until AFTER `await tcGetPos()` resolves, and a real phone's GPS fix can take anywhere from tens of ms
+   to its full 12s timeout. Every tap landing before the FIRST call's fix resolved saw "no open shift yet" and
+   independently created its own entry — there was ZERO re-entrancy protection during that async gap.
+   FIX: same busy-flag + 20s watchdog + button disable/relabel pattern already used for the dupe-expense/
+   dupe-material bug in js/61-job-page.js (_tcInBusy, checked synchronously before anything else runs).
+
+   VEHICLE NOT ATTACHING (June 30 incident, same session — 6 duplicate entries all had riderRole:"driver",
+   vehicleId:null, vehicleOwnerId:null, vehicle:"", despite a REAL odometer reading (58366.5) having been
+   typed). ROOT CAUSE: tcClockIn() never validated that resolving the vehicle picker's value actually
+   produced a vehicle — it trusted tcResolveVehicle(val("tc_vehicle"), ...) unconditionally. The picker
+   (tcDriverVehicleOptions) is supposed to ALWAYS force-select a real option for the driver role, but its old
+   implementation detected "did anything get selected" by string-searching the built HTML for the literal
+   substring "selected" and could only fall back to "select the first option" if there WAS a first option —
+   when an org has zero assignable vehicles (no company trucks AND no resolvable crew members), there is
+   nothing to select at all and the <select> silently rendered with ZERO <option>s. Reading its value then
+   returned "", and the code proceeded to save riderRole:"driver" with no vehicle whatsoever.
+   FIX: tcDriverVehicleOptions rebuilt around an explicit options array + selected INDEX (no string-sniffing),
+   returns "" when genuinely empty; tcRoleDetail shows a clear "no vehicles set up" warning instead of a dead
+   <select>; tcClockIn now blocks (alert + no entry created) if the driver role ever resolves to no vehicle at
+   all, rather than silently saving that combination.
+
+   FEATURE — "Change job": the active shift is really ONE continuous work session (same truck, same trip)
+   that sometimes needs re-attributing to a different job partway through. tcChangeJob() picks a different
+   open job, then CLOSES the current segment exactly like a normal clock-out (reuses tcClockOut's odometer/
+   GPS-estimate modal + the new shared tcFinalizeSegment() math — not duplicated) and immediately OPENS a new
+   segment on the picked job, carrying over vehicle/trailer/rider-role (no re-pick) and anchoring the new
+   segment's start-odometer to the old segment's real end-odometer (continuous driving, no gap).
+
    Runs inside the real app via verify-app.js, which now boots at a 390x844 (narrow-phone) viewport by
    default so mobile-only layout bugs are exercised on every run:
        node verify-app.js "$(cat timeclock-regression-tests.js)"
@@ -140,3 +171,145 @@ var stillNowrap = contentLines.filter(function (el) { return getComputedStyle(el
 diag("content .sub lines checked=" + contentLines.length + " | still forced nowrap=" + stillNowrap.length);
 stillNowrap.forEach(function (el) { diag("  nowrap line text: " + (el.textContent || "").slice(0, 60)); });
 if (stillNowrap.length) __errs.push("BUG 3 regression: a descriptive line in the active-shift card is still forced single-line (will cut off on a narrow phone)");
+
+// ============================================================================================
+// ===== DUPLICATE CLOCK-IN — 5 rapid taps must create exactly ONE open shift (June 30 incident) =====
+// ============================================================================================
+await (function () {
+  var u = { id: "u_dupe_test", username: "DupeTest", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var job = { id: "j_dupe_test", title: "Dupe-tap test job", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(job);
+  TAB = "time"; render();
+  tcRoleChanged("driver");   // pick a real vehicle, like Ray had
+  // mock a slow real-device GPS fix so the async gap tcClockIn awaits on is wide open — a real phone's
+  // getCurrentPosition() can take anywhere from tens of ms to seconds, which is exactly the window the June 30
+  // taps landed in (they were 15-90ms apart)
+  var _origGetPos = tcGetPos;
+  window.tcGetPos = function () { return new Promise(function (res) { setTimeout(function () { res(null); }, 120); }); };
+  var calls = [];
+  for (var i = 0; i < 5; i++) { calls.push(new Promise(function (resolve) { setTimeout(function () { tcClockIn().then(resolve); }, i * 20); })); }
+  return Promise.all(calls).then(function () {
+    window.tcGetPos = _origGetPos;
+    var open = D().timeclock.filter(function (e) { return e.jobId === "j_dupe_test" && !e.clockOut; });
+    diag("rapid-tap open entries created=" + open.length);
+    if (open.length !== 1) __errs.push("DUPLICATE CLOCK-IN regression: 5 rapid taps created " + open.length + " open entries, expected exactly 1");
+    // clean up so it doesn't collide with later sections' open-shift checks
+    open.forEach(function (e) { e.deleted = true; });
+    localStorage.removeItem("jra_session");
+  });
+})();
+
+// ============================================================================================
+// ===== VEHICLE NOT ATTACHING — a driver clock-in with a real vehicle available must ALWAYS
+//       capture a real vehicleId/vehicleOwnerId; an org with zero vehicles must block, not
+//       silently save "driver" with nothing attached (June 30 incident) =====
+// ============================================================================================
+await (async function () {
+  // (b) normal case: a vehicle IS available -> must attach
+  var u = { id: "u_veh_test", username: "VehTest", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var job = { id: "j_veh_test", title: "Vehicle-attach test job", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(job);
+  TAB = "time"; render();
+  tcRoleChanged("driver");
+  var vehSel = document.getElementById("tc_vehicle");
+  diag("veh-attach test: tc_vehicle value=" + (vehSel && vehSel.value));
+  await tcClockIn();
+  var e = D().timeclock.find(function (x) { return x.jobId === "j_veh_test"; });
+  diag("veh-attach test: created entry vehicleId=" + (e && e.vehicleId) + " vehicleOwnerId=" + (e && e.vehicleOwnerId) + " vehicle=" + (e && e.vehicle));
+  if (!e) __errs.push("VEHICLE NOT ATTACHING regression: clock-in as driver created no entry at all");
+  else if (!e.vehicleId && !e.vehicleOwnerId && !e.vehicle) __errs.push("VEHICLE NOT ATTACHING regression: driver clock-in saved with NO vehicle attached even though a vehicle was available");
+  if (e) { e.deleted = true; e.clockOut = e.clockOut || now(); }   // close it out so later sections don't see it as this user's open shift
+  localStorage.removeItem("jra_session");
+
+  // guard case: an org with ZERO vehicles (no company trucks, no crew members) must refuse to save
+  // riderRole:"driver" with an empty vehicle, and must say so — not silently proceed
+  var u2 = { id: "u_veh_none", username: "VehNone", active: true };
+  S.users = [u2];   // the ONLY account -> personal-vehicle list is forced empty too
+  if (typeof orgSetRole === "function") orgSetRole(u2.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u2.id); localStorage.setItem("jra_offline_ok", "1");
+  var savedVehicles = ((S.registry || []).find(function (r) { return r && r.id === "obx"; }) || {}).vehicles;
+  var reg = (S.registry || []).find(function (r) { return r && r.id === "obx"; });
+  if (reg) reg.vehicles = [];
+  var _origSchedMembers = window.schedMembers;
+  window.schedMembers = function () { return []; };
+  var job2 = { id: "j_veh_none", title: "No-vehicle-org test job", customerId: null, date: today(), crew: [u2.id], done: false, updatedAt: now() };
+  D().jobs.push(job2);
+  TAB = "time"; render();
+  tcRoleChanged("driver");
+  var detailHtml = (document.getElementById("tc_role_detail") || {}).innerHTML || "";
+  diag("no-vehicle-org: warning shown=" + /No vehicles are set up/.test(detailHtml) + " | select present=" + !!document.getElementById("tc_vehicle"));
+  if (!/No vehicles are set up/.test(detailHtml)) __errs.push("VEHICLE NOT ATTACHING regression: no clear warning shown when the org has zero assignable vehicles");
+  var alertMsgs = [];
+  var _origAlert = window.alert;
+  window.alert = function (m) { alertMsgs.push(m); };
+  await tcClockIn();
+  window.alert = _origAlert;
+  var e2 = D().timeclock.find(function (x) { return x.jobId === "j_veh_none"; });
+  diag("no-vehicle-org: entry created=" + !!e2 + " | alerts=" + JSON.stringify(alertMsgs));
+  if (e2) __errs.push("VEHICLE NOT ATTACHING regression: an entry was created despite zero vehicle options for the driver role");
+  if (!alertMsgs.length) __errs.push("VEHICLE NOT ATTACHING regression: no blocking alert shown when clocking in as driver with zero vehicle options");
+  window.schedMembers = _origSchedMembers;
+  if (reg) reg.vehicles = savedVehicles;
+  localStorage.removeItem("jra_session");
+})();
+
+// ============================================================================================
+// ===== FEATURE — Change job: closes the old segment (real clockOut + computed miles), opens a new
+//       one on the picked job carrying vehicle/trailer/role + odometer continuity =====
+// ============================================================================================
+await (async function () {
+  var u = { id: "u_chg_test", username: "ChgTest", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var jobA = { id: "j_chg_a", title: "Change-job A", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  var jobB = { id: "j_chg_b", title: "Change-job B", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(jobA, jobB);
+  TAB = "time"; render();
+  tcRoleChanged("driver");
+  var startOdoEl = document.getElementById("tc_odo_start");
+  if (startOdoEl) { startOdoEl.value = "1000"; startOdoEl.dispatchEvent(new Event("input", { bubbles: true })); }
+  await tcClockIn();
+  var segA = D().timeclock.find(function (e) { return e.jobId === "j_chg_a" && !e.clockOut; });
+  if (!segA) { __errs.push("Change Job regression: could not set up job A's open segment"); return; }
+  diag("job A segment: vehicleId=" + segA.vehicleId + " riderRole=" + segA.riderRole + " odoStart=" + segA.odoStart);
+
+  render();   // re-render so the active-shift card (with the Change job button) is current
+  var cardHtml2 = tcClockHTML();
+  if (!/Change job/.test(cardHtml2) || !/tcChangeJob\('/.test(cardHtml2)) __errs.push("Change Job regression: the Change job button is missing from the active-shift card");
+
+  tcChangeJob(segA.id);   // opens the job picker modal
+  var jobSel = document.getElementById("tc_changejob_sel");
+  if (!jobSel) { __errs.push("Change Job regression: job picker did not render"); return; }
+  jobSel.value = "j_chg_b";
+  tcChangeJobPicked(segA.id);   // closes segA via the SAME odometer modal used by a normal clock-out
+  var odoEndEl = document.getElementById("tc_odo_end");
+  if (!odoEndEl) { __errs.push("Change Job regression: the odometer-end modal did not open (should reuse tcClockOut's modal)"); return; }
+  odoEndEl.value = "1042"; odoEndEl.dispatchEvent(new Event("input", { bubbles: true }));
+  var switchBtn = document.querySelector('button[onclick*="tcFinishChangeJob"]');
+  if (!switchBtn) { __errs.push("Change Job regression: no Switch-job button wired to tcFinishChangeJob"); return; }
+  switchBtn.click();
+
+  var segAafter = D().timeclock.find(function (e) { return e.id === segA.id; });
+  var segB = D().timeclock.find(function (e) { return e.jobId === "j_chg_b" && !e.clockOut; });
+  diag("segA after change: clockOut=" + (segAafter && segAafter.clockOut) + " miles=" + (segAafter && segAafter.miles) + " milesSource=" + (segAafter && segAafter.milesSource));
+  diag("segB after change: vehicleId=" + (segB && segB.vehicleId) + " riderRole=" + (segB && segB.riderRole) + " odoStart=" + (segB && segB.odoStart));
+
+  if (!segAafter || segAafter.clockOut == null) __errs.push("Change Job regression: job A's segment was not closed (clockOut still null)");
+  if (!segAafter || segAafter.miles == null || !(segAafter.miles > 0)) __errs.push("Change Job regression: job A's segment has no computed miles after Change Job (expected 42 mi from the odometer delta)");
+  if (segAafter && segAafter.milesSource !== "odometer") __errs.push("Change Job regression: job A's closing miles should be sourced from the odometer, got " + (segAafter && segAafter.milesSource));
+  if (!segB) { __errs.push("Change Job regression: no new open segment was created for job B"); }
+  else {
+    if (segB.clockOut != null) __errs.push("Change Job regression: job B's new segment should be OPEN");
+    if (segB.vehicleId !== segA.vehicleId) __errs.push("Change Job regression: job B's segment vehicleId (" + segB.vehicleId + ") should match job A's (" + segA.vehicleId + ")");
+    if (segB.riderRole !== "driver") __errs.push("Change Job regression: job B's segment should carry over riderRole=driver, got " + segB.riderRole);
+    if (segAafter && segB.odoStart !== segAafter.odoEnd) __errs.push("Change Job regression: job B's start-odometer (" + segB.odoStart + ") should equal job A's end-odometer (" + (segAafter && segAafter.odoEnd) + ")");
+  }
+  localStorage.removeItem("jra_session");
+})();

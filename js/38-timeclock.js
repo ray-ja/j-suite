@@ -174,7 +174,18 @@ async function tcPingTick() {
 }
 
 /* ===== clock in / out ===== */
+/* BUG FIX (June 30 duplicate-clock-in incident): rapid-tapping "Clock in" created N identical OPEN shifts a
+   few dozen ms apart. Root cause: the ONLY guard was `tcOpenShift(who.userId)` — a check-then-act race. That
+   check reads tcoll() SYNCHRONOUSLY, but the new entry isn't pushed until AFTER `await tcGetPos()` resolves.
+   On a real phone, getCurrentPosition() can take anywhere from tens of ms to its full 12s timeout, so every
+   tap that lands before the FIRST call's GPS fix resolves sees "no open shift yet" and independently creates
+   its own entry — there was zero re-entrancy protection during that async gap. Same class of bug (and same
+   fix) as the dupe-expense/material incident in js/61-job-page.js: a module-level busy flag set SYNCHRONOUSLY
+   before the first await, a 20s watchdog so a hung GPS fix can never permanently soft-lock the button, and
+   the button disables/relabels so a slow save is visibly in-flight, not stuck. */
+let _tcInBusy = false, _tcInWatchdog = null;
 window.tcClockIn = async function () {
+  if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
   const jobId = val("tc_job");
   if (!jobId) { alert("Pick the job you're working on."); return; }
   const who = tcWho();
@@ -186,6 +197,20 @@ window.tcClockIn = async function () {
   let trailerId = null, rodeWith = null, odoStart = null;
   if (role === "driver") {
     veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
+    /* BUG FIX (vehicleId not attaching): the clock-in form's vehicle <select> is built by
+       tcDriverVehicleOptions(), which is supposed to ALWAYS force-select a real option for the driver role —
+       but if the org genuinely has zero assignable vehicles at render time (no company trucks AND no crew
+       members resolvable — e.g. a transient membership-list read, or an org that hasn't set up a truck yet),
+       that function has nothing to select and the <select> renders with ZERO <option>s. Reading its .value
+       then silently returns "", tcResolveVehicle("") resolves to {vehicleId:null, vehicleOwnerId:null,
+       vehicle:""}, and — until this fix — the code proceeded anyway: riderRole:"driver" saved with NO vehicle
+       attached at all (confirmed against the June 30 prod incident, reproduced in timeclock-regression-tests.js).
+       Never silently save that combination — block and say so, so it's fixed instead of discovered at
+       clock-out ("No vehicle on this shift"). */
+    if (!veh.vehicleId && !veh.vehicleOwnerId && !veh.vehicle) {
+      alert(tcHasVehicleOptions() ? "Pick a vehicle before clocking in as the driver (or switch to Passenger / No vehicle)." : "No vehicles are set up for this crew yet — ask the owner to add one in Admin, or pick Passenger / No vehicle instead.");
+      return;
+    }
     trailerId = val("tc_trailer") || null;   // optional towed trailer (no odometer)
     // Odometer NEVER blocks clock-in (you may not be in the truck yet). It's optional here; a header reminder
     // (js/85) nags until it's entered. Only read it if a value was typed.
@@ -193,7 +218,9 @@ window.tcClockIn = async function () {
   } else if (role === "passenger") {
     rodeWith = val("tc_rodewith") || null;   // who drove (record-only); this person logs NO miles
   }   // role === "none": no vehicle, no mileage
-  const btn = document.getElementById("tc_inbtn"); if (btn) { btn.disabled = true; btn.textContent = "Getting location…"; }
+  const btn = document.getElementById("tc_inbtn");
+  _tcInBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
+  clearTimeout(_tcInWatchdog); _tcInWatchdog = setTimeout(function () { _tcInBusy = false; }, 20000); // safety: never permanently soft-lock the button if GPS hangs
   const loc = await tcGetPos();
   const e = {
     id: uid(), jobId: jobId, userId: who.userId, userName: who.name,
@@ -206,27 +233,56 @@ window.tcClockIn = async function () {
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
+  clearTimeout(_tcInWatchdog); _tcInBusy = false;
   save(); tcPingStart(); render();
 };
-window.tcClockOut = function (id) {
+/* clock-out (and — when contJobId is given — the "close the old segment" half of Change Job, see below) share
+   this SAME modal: a driver shift asks for the ending odometer (or "use GPS estimate"), a no-vehicle shift is
+   a single confirm tap. contJobId just re-targets the buttons to the change-job finish handlers instead of the
+   plain clock-out ones, so there is exactly ONE odometer/GPS-estimate UI in this file, not two. */
+window.tcClockOut = function (id, contJobId) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
   // refresh the GPS estimate so the "Use GPS estimate" tap + verification reflect the latest path
   e.computedMiles = tcComputeMiles(e);
   const gpsEst = tcRound(e.computedMiles);
+  const finishFn = contJobId ? `tcFinishChangeJob('${id}','${contJobId}')` : `tcFinishClockOut('${id}')`;
+  const gpsFn = contJobId ? `tcChangeJobGps('${id}','${contJobId}')` : `tcClockOutGps('${id}')`;
+  const title = contJobId ? "Change job" : "Clock out";
+  const doneLabel = contJobId ? "🔁 Switch job" : "⏱ Clock out";
+  const odoLabel = contJobId ? "🔁 Switch job" : "📍 Clock out";
   if (!tcEntryHasVehicle(e)) {   // No-vehicle shift → no odometer, no mileage; just close it out
-    modal("Clock out", `
-      <p class="muted" style="margin-bottom:8px">No vehicle on this shift — clocking out logs your time only (no mileage).</p>
-      <button class="btn acc" style="margin-top:8px;width:100%" onclick="tcFinishClockOut('${id}')">⏱ Clock out</button>`);
+    modal(title, `
+      <p class="muted" style="margin-bottom:8px">No vehicle on this shift — ${contJobId ? "switching jobs" : "clocking out"} logs your time only (no mileage).</p>
+      <button class="btn acc" style="margin-top:8px;width:100%" onclick="${finishFn}">${doneLabel}</button>`);
     return;
   }
-  modal("Clock out — odometer", `
+  modal(title + " — odometer", `
     <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
     <label>End odometer</label>
     <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
     <div class="sub" style="margin-top:6px">${e.odoStart != null ? "Start was " + e.odoStart + "." : "No start reading — the GPS estimate is " + gpsEst + " mi."} </div>
-    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcFinishClockOut('${id}')">📍 Clock out</button>
-    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="tcClockOutGps('${id}')">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="${finishFn}">${odoLabel}</button>
+    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="${gpsFn}">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
 };
+/* the actual odometer/GPS mileage math for closing a segment — shared by a normal clock-out AND by Change
+   Job's "close the old segment" step, computed exactly once. Mutates e; does NOT touch/save/render/log —
+   callers differ in what happens next (stay clocked out vs. immediately open a new segment on another job). */
+function tcFinalizeSegment(e, odoEnd) {
+  const hasVeh = tcEntryHasVehicle(e);
+  // clock out IMMEDIATELY — never block on GPS (it hangs at the dump / when location is off). The odometer is the truth.
+  e.clockOut = now(); e.odoEnd = odoEnd;
+  e.computedMiles = tcComputeMiles(e);
+  if (hasVeh && e.odoStart != null && odoEnd != null) {   // full odometer pair → odometer is the number of record, auto-confirmed
+    e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = true;
+    const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;   // GPS only FLAGS; never overrides the odometer
+  } else if (hasVeh && odoEnd != null && e.odoStart == null) {   // only an end reading, no start → can't compute a delta; fall back to GPS
+    if (e.miles == null) { e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; }
+  } else if (!hasVeh) {   // no vehicle → no mileage
+    e.miles = 0; e.milesSource = null; e.milesConfirmed = true;
+  } else if (e.miles == null) {   // vehicle but no odometer entered at all → GPS estimate
+    e.miles = tcRound(e.computedMiles); e.milesSource = "gps";
+  }
+}
 /* one-tap: clock out using the GPS estimate as the miles (odometer left blank). milesSource = "gps". */
 window.tcClockOutGps = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
@@ -251,19 +307,7 @@ window.tcFinishClockOut = function (id) {
     if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
   }
   if (typeof closeModal === "function") closeModal();
-  // clock out IMMEDIATELY — never block on GPS (it hangs at the dump / when location is off). The odometer is the truth.
-  e.clockOut = now(); e.odoEnd = odoEnd;
-  e.computedMiles = tcComputeMiles(e);
-  if (hasVeh && e.odoStart != null && odoEnd != null) {   // full odometer pair → odometer is the number of record, auto-confirmed
-    e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = true;
-    const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;   // GPS only FLAGS; never overrides the odometer
-  } else if (hasVeh && odoEnd != null && e.odoStart == null) {   // only an end reading, no start → can't compute a delta; fall back to GPS
-    if (e.miles == null) { e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; }
-  } else if (!hasVeh) {   // no vehicle → no mileage
-    e.miles = 0; e.milesSource = null; e.milesConfirmed = true;
-  } else if (e.miles == null) {   // vehicle but no odometer entered at all → GPS estimate
-    e.miles = tcRound(e.computedMiles); e.milesSource = "gps";
-  }
+  tcFinalizeSegment(e, odoEnd);
   touch(e); tcPingStop();
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
   save(); render();
@@ -273,6 +317,87 @@ window.tcFinishClockOut = function (id) {
   // honest estimate gap (the job-level planned drive-miles estimate still covers costing; see jobMilesCost).
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
+
+/* ===== FEATURE: "Change job" — the active shift is really ONE continuous work session (same truck, same
+   trip) that just needs re-attributing to a different job partway through. Change Job CLOSES the current
+   segment exactly like a normal clock-out (same modal, same odometer/GPS math — tcClockOut/tcFinalizeSegment
+   above, not duplicated) and then immediately OPENS a new segment on the picked job, carrying over the
+   vehicle/trailer/rider-role (no need to re-pick — it's the same drive) and using the OLD segment's
+   end-odometer as the NEW segment's start-odometer so mileage stays gap-free. If the old segment closed on a
+   GPS estimate (no odometer) or had no vehicle at all, the new segment just starts the same way — no odometer
+   required, per the rest of this file's "odometer never blocks" rule. ===== */
+window.tcChangeJob = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  const who = tcWho();
+  // same job-picker construction as the clock-in form above (today's jobs first, then by date; "your jobs" first)
+  const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+  const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done && j.id !== e.jobId).sort((a, b) => {
+    const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;
+    return (b.date || "") < (a.date || "") ? -1 : 1;
+  });
+  if (!jobs.length) { alert("No other open jobs to switch to."); return; }
+  const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
+  const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
+  modal("Change job", `
+    <p class="muted" style="margin-bottom:8px">Ends your time on <b>${esc(tcJobTitle(e.jobId))}</b> right now and starts a new segment on the job you pick — same vehicle, trailer, and role carry over, no re-entry.</p>
+    <label>Switch to</label>
+    <select id="tc_changejob_sel">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcChangeJobPicked('${id}')">Continue</button>`);
+};
+window.tcChangeJobPicked = function (id) {
+  const newJobId = val("tc_changejob_sel"); if (!newJobId) { alert("Pick a job to switch to."); return; }
+  // reuse the EXACT clock-out modal (odometer entry or the no-vehicle message) — its buttons now finish into
+  // tcFinishChangeJob/tcChangeJobGps (below) instead of the plain clock-out handlers, because contJobId is set.
+  tcClockOut(id, newJobId);
+};
+window.tcFinishChangeJob = function (id, newJobId) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  const hasVeh = tcEntryHasVehicle(e);
+  let odoEnd = null;
+  if (hasVeh) {
+    odoEnd = parseFloat(val("tc_odo_end"));
+    if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading, or tap “use GPS estimate”."); return; }
+    if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
+  }
+  if (typeof closeModal === "function") closeModal();
+  tcFinalizeSegment(e, odoEnd);
+  touch(e); tcPingStop();
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  tcOpenNewSegmentFrom(e, newJobId);
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+};
+window.tcChangeJobGps = function (id, newJobId) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  if (typeof closeModal === "function") closeModal();
+  e.clockOut = now(); e.odoEnd = null;
+  e.computedMiles = tcComputeMiles(e);
+  e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; e.milesConfirmed = false;
+  touch(e); tcPingStop();
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job (GPS) — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcJobTitle(e.jobId));
+  tcOpenNewSegmentFrom(e, newJobId);
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+};
+/* open the new segment: carries vehicle/trailer/rider-role continuity from the just-closed old segment, and
+   anchors the new start-odometer to the old end-odometer (a real reading only — a GPS-estimate close or a
+   no-vehicle shift simply has no odometer to carry, and the new segment starts the same honest way). */
+function tcOpenNewSegmentFrom(oldEntry, newJobId) {
+  const n = {
+    id: uid(), jobId: newJobId, userId: oldEntry.userId, userName: oldEntry.userName,
+    clockIn: now(), clockOut: null,
+    inLoc: oldEntry.outLoc || null, outLoc: null, pings: [], stops: [],
+    computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
+    odoStart: (oldEntry.milesSource === "odometer" && oldEntry.odoEnd != null) ? oldEntry.odoEnd : null, odoEnd: null,
+    riderRole: oldEntry.riderRole, trailerId: oldEntry.trailerId || null, rodeWith: oldEntry.rodeWith || null,
+    vehicleId: oldEntry.vehicleId || null, vehicle: oldEntry.vehicle || "", vehicleOwnerId: oldEntry.vehicleOwnerId || null,
+    rate: oldEntry.rate || TC_RATE, changedFromEntryId: oldEntry.id, updatedAt: now()
+  };
+  tcoll().push(n);
+  if (typeof logChange === "function") logChange("create", "timeclock", n.id, "Changed job — now on " + tcJobTitle(newJobId) + " · " + (oldEntry.userName || "Crew"));
+  save(); tcPingStart(); render();
+  // best-effort fresh location for the new segment, non-blocking (mirrors the clock-in / clock-out pattern)
+  try { tcGetPos().then(function (loc) { if (loc && !n.inLoc) { n.inLoc = loc; touch(n); save(); } }).catch(function () {}); } catch (ex) {}
+}
 
 /* ===== vehicle ownership — the mileage reimburses whoever OWNS the vehicle, not the driver.
    Each person's vehicle is "<name>'s vehicle" (one personal vehicle each until there's a company truck). ===== */
@@ -372,16 +497,25 @@ function tcRoleDetail(role, defVehVal, driverId) {
   let h = `<div id="tc_role_detail">`;
   if (role === "driver") {
     const trailers = tcActiveTrailers(), defTrailer = tcDefaultTrailerVal(driverId);
-    // the odometer field is ALWAYS shown for the driver role: tcDriverVehicleOptions never leaves the
-    // <select> blank (it force-selects the first option when there's no default), so a vehicle is always
-    // chosen the instant this block renders — hiding the field on an unset default (the old `_hasVeh`
-    // check) meant a first-time driver's odometer input was invisible even though a vehicle WAS selected.
-    h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
-      <select id="tc_vehicle">${tcDriverVehicleOptions(defVehVal, driverId)}</select>
-      <div id="tc_odo_wrap">
-        <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
-        <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
-      </div>`;
+    const vehOpts = tcDriverVehicleOptions(defVehVal, driverId);
+    if (!vehOpts) {
+      // BUG FIX (vehicleId not attaching): the org genuinely has no company trucks AND no crew members to
+      // offer as a personal vehicle — an empty <select> used to render silently, its .value read as "", and
+      // clock-in saved riderRole:"driver" with NO vehicle at all. Say so instead of pretending a vehicle was
+      // picked; tcClockIn() also blocks this combination server-side-of-the-form as a second guard.
+      h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:10px"><div class="sub" style="white-space:normal">⚠ No vehicles are set up for this crew yet — ask the owner to add one in Admin (Vehicles), or pick 🧍 Passenger / 🚶 No vehicle instead.</div></div>`;
+    } else {
+      // the odometer field is ALWAYS shown for the driver role: tcDriverVehicleOptions never leaves the
+      // <select> blank (it force-selects the first option when there's no default), so a vehicle is always
+      // chosen the instant this block renders — hiding the field on an unset default (the old `_hasVeh`
+      // check) meant a first-time driver's odometer input was invisible even though a vehicle WAS selected.
+      h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
+        <select id="tc_vehicle">${vehOpts}</select>
+        <div id="tc_odo_wrap">
+          <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
+          <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
+        </div>`;
+    }
     if (trailers.length) h += `<label style="margin-top:10px">🚛 Trailer <span class="sub">· optional · towed in addition (no odometer)</span></label>
       <select id="tc_trailer">${tcTrailerOptions(defTrailer)}</select>`;
   } else if (role === "passenger") {
@@ -393,16 +527,32 @@ function tcRoleDetail(role, defVehVal, driverId) {
   }
   return h + `</div>`;
 }
+/* is there ANYTHING a driver could pick — a company truck or a crew member's personal vehicle? Used to tell
+   "nothing is selected because nothing exists" apart from "nothing is selected but something should be". */
+function tcHasVehicleOptions() { return !!(tcActiveTrucks().length || tcVehMembers().length); }
 /* the DRIVER vehicle dropdown — kind=vehicle trucks + personal vehicles (NO trailers, NO "No vehicle" since the
-   role IS the driver). Reuses the same encoding as tcVehicleOptions but without the "No vehicle" head option. */
+   role IS the driver). Reuses the same encoding as tcVehicleOptions but without the "No vehicle" head option.
+   BUG FIX (vehicleId not attaching): this used to build the <option> list as one big HTML string and detect
+   "did anything get selected" by string-searching the result for the literal substring "selected" — fragile
+   (a truck name/plate or username containing that word would false-positive) and, worse, its "select the
+   first option when nothing matched" fallback had NOTHING to select when there are truly zero options (no
+   trucks, no crew members), silently returning a <select> with no <option>s at all — .value then reads ""
+   and the driver's vehicle vanishes. Now built from a real options array with an explicit selected INDEX
+   (never string-sniffed), and callers (tcRoleDetail / tcClockIn) get told plainly via "" when the org has
+   nothing to offer, instead of the code pretending a vehicle was picked. */
 function tcDriverVehicleOptions(selVal, driverId) {
-  let h = "";
-  const trucks = tcActiveTrucks();
-  if (trucks.length) h += `<optgroup label="Company trucks">` + trucks.map(v => `<option value="truck:${esc(v.id)}" ${selVal === ("truck:" + v.id) ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("") + `</optgroup>`;
-  h += `<optgroup label="Personal vehicles">` + tcVehMembers().map(u => `<option value="owner:${esc(u.id)}" ${selVal === ("owner:" + u.id) ? "selected" : ""}>🚗 ${esc(u.username)}'s vehicle</option>`).join("") + `</optgroup>`;
-  // pre-select the first option when nothing matched (a driver always has a vehicle)
-  if (selVal === "" || (h.indexOf("selected") < 0)) h = h.replace("<option ", "<option selected ");   // first option becomes the default
-  return h;
+  const opts = [];
+  tcActiveTrucks().forEach(v => opts.push({ group: "Company trucks", value: "truck:" + v.id, label: "🚚 " + tcTruckLabel(v) }));
+  tcVehMembers().forEach(u => opts.push({ group: "Personal vehicles", value: "owner:" + u.id, label: "🚗 " + u.username + "'s vehicle" }));
+  if (!opts.length) return "";   // nothing at all to offer — caller must handle this, not render a dead <select>
+  let idx = opts.findIndex(o => o.value === selVal);
+  if (idx < 0) idx = 0;   // no match (or no default set) — the driver role ALWAYS has SOME vehicle chosen
+  let h = "", curGroup = null;
+  opts.forEach((o, i) => {
+    if (o.group !== curGroup) { if (curGroup !== null) h += "</optgroup>"; h += `<optgroup label="${o.group}">`; curGroup = o.group; }
+    h += `<option value="${esc(o.value)}" ${i === idx ? "selected" : ""}>${esc(o.label)}</option>`;
+  });
+  return h + "</optgroup>";
 }
 /* trailer dropdown (kind=trailer only; "None" head option since a trailer is optional) */
 function tcTrailerOptions(selVal) {
@@ -632,7 +782,10 @@ function tcClockHTML() {
       ${tcNeedsOdo(open) ? `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:8px"><div class="sub" style="white-space:normal">⏱ No starting odometer yet. <a href="#" onclick="tcEnterStartOdo();return false" style="color:var(--brand-text);font-weight:700">Enter it now</a> — already-driven miles are anchored so a late entry stays accurate.</div></div>` : ""}
       ${tcStopsBlock(open.id)}
       <div class="sub" style="margin-top:6px;white-space:normal">📍 GPS pings only while this app is open and on-screen — a phone-locked or backgrounded route isn't tracked. The odometer is the number of record; GPS only cross-checks it.</div>
-      <button class="btn danger" id="tc_outbtn" style="margin-top:12px" onclick="tcClockOut('${open.id}')">Clock out</button>
+      <div class="row" style="margin-top:12px;gap:8px">
+        <button class="btn danger grow" id="tc_outbtn" onclick="tcClockOut('${open.id}')">Clock out</button>
+        <button class="btn ghost grow" id="tc_changejobbtn" onclick="tcChangeJob('${open.id}')">🔁 Change job</button>
+      </div>
     </div>`;
   } else {
     // MULTI-DAY: a job is clock-in-able on ANY of its work days. Surface jobs being worked TODAY first,
