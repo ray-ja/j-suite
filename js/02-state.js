@@ -39,6 +39,12 @@ function load(){
     if(!S[b].knowledge)S[b].knowledge=[];   // Cap's Playbook — synced facts Cap references when answering
     if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
+    // MULTI-JOB STOPS: job.sharedJobIds[] generalizes the old scalar job.parentJobId — []=generic/overhead
+    // (charged to no job), [id]=today's 1:1 sub-job behavior (no-op divide), [id,id,...]=even split across N
+    // jobs. null=not a stop-job at all (an ordinary job, never touched by the sub-job mechanism). READ-promotion
+    // only: parentJobId is left untouched/unread by new code (audit trail, zero-loss) — only existing sub-jobs
+    // (parentJobId set) get promoted to a 1-element array; every normal job gets null, not [].
+    (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.sharedJobIds))j.sharedJobIds=j.parentJobId?[j.parentJobId]:null;});
     // MULTI-DAY jobs: workDays[] = the set of YYYY-MM-DD the job is actually worked (non-contiguous OK).
     // j.date stays the START/primary day. Legacy jobs (no workDays) default to [j.date] so they're unchanged.
     // Additive, rides the job record's LWW — no new collection. Loss-free + idempotent.

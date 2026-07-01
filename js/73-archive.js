@@ -8,7 +8,8 @@ const ARCHIVE_DAYS = 60;
 function _softDel(r){ if (r && !r.deleted){ r.deleted = true; r.deletedAt = now(); if (typeof touch==="function") touch(r); } }
 function _unDel(r){ if (r){ r.deleted = false; r.deletedAt = null; r.purged = false; if (typeof touch==="function") touch(r); } }
 function _purge(r){ if (r){ r.purged = true; r.purgedAt = now(); if (typeof touch==="function") touch(r); } }
-function _subJobs(d, jobId){ return (d.jobs||[]).filter(x => x && x.parentJobId === jobId); }
+// membership match (not just the legacy scalar parentJobId) — a stop-job cascades with EVERY job it's linked to via sharedJobIds
+function _subJobs(d, jobId){ return (d.jobs||[]).filter(x => x && (x.parentJobId === jobId || (Array.isArray(x.sharedJobIds) && x.sharedJobIds.indexOf(jobId) >= 0))); }
 
 // CASCADE soft-delete — job + its sub-jobs + its originating quote, or quote + its job + sub-jobs.
 function archiveDeleteJob(jobId){
@@ -28,7 +29,9 @@ function archiveItems(){
   const within = x => x && x.deleted && !x.purged && (x.deletedAt==null || x.deletedAt > cut);
   const delQ = new Set((d.quotes||[]).filter(within).map(q => q.id));
   const items = (d.quotes||[]).filter(within).map(q => ({type:"quote", rec:q}));
-  (d.jobs||[]).filter(x => within(x) && !x.parentJobId && !(x.quoteId && delQ.has(x.quoteId))).forEach(j => items.push({type:"job", rec:j}));
+  // a job LINKED to ≥1 other job (sharedJobIds non-empty, or the legacy parentJobId) rides in under that job's
+  // cascade, not as its own row; a sharedJobIds=[] generic/overhead stop is linked to nothing, so it IS standalone
+  (d.jobs||[]).filter(x => within(x) && !x.parentJobId && !(Array.isArray(x.sharedJobIds) && x.sharedJobIds.length) && !(x.quoteId && delQ.has(x.quoteId))).forEach(j => items.push({type:"job", rec:j}));
   return items.sort((a,b) => (b.rec.deletedAt||0) - (a.rec.deletedAt||0));
 }
 function archiveCount(){ try { return archiveItems().length; } catch(e){ return 0; } }

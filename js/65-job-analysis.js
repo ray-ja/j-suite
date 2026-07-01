@@ -23,7 +23,7 @@ function jaGroupCard(title, groups, max) {
 function rJobAnalysis() {
   if (!plCanView()) return `<div class="card"><div class="nm">Owner / Admin only</div></div>`;
   const r = jaRange();
-  const rows = (typeof actJ === "function" ? actJ() : []).filter(j => j.date && !j.parentJobId && j.date >= r.from && j.date <= r.to).map(jobProfit).filter(x => x.price > 0 || x.cost > 0);
+  const rows = (typeof actJ === "function" ? actJ() : []).filter(j => j.date && !Array.isArray(j.sharedJobIds) && j.date >= r.from && j.date <= r.to).map(jobProfit).filter(x => x.price > 0 || x.cost > 0);
 
   let h = `<div class="card"><div class="subnav" style="margin-bottom:0">` +
     [["month", "Month"], ["90", "90 days"], ["year", "Year"], ["all", "All"]].map(o => `<button class="subbtn ${JA_PERIOD === o[0] ? "on" : ""}" onclick="JA_PERIOD='${o[0]}';render()">${o[1]}</button>`).join("") + `</div></div>`;

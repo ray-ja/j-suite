@@ -79,12 +79,28 @@ function rJobPage(j) {
   }
   h += `</div>`;
 
-  // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up
+  // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up.
+  // sharedJobIds[] generalizes the old scalar parentJobId (0/1/N jobs); this single-select stays the UNCHANGED
+  // common-case UI (1 parent) and writes sharedJobIds=[oneId] under the hood — the multi-job case is the new
+  // "🔀 Split across other jobs" picker below, on the OTHER job's page (the one the stop-job is created from).
   const _subs = (typeof subJobsOf === "function") ? subJobsOf(j.id) : [];
-  const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && x.parentJobId !== j.id && !x.parentJobId);
-  h += `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${j.parentJobId === x.id ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
-  if (j.parentJobId) h += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
-  if (_subs.length) h += `<div class="sub" style="margin-top:8px;font-weight:700">Sub-jobs rolled into this one:</div>` + _subs.map(sj => `<div class="li" onclick="openJobPage('${sj.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↳ ${esc(sj.title || "Job")}${sj.date ? " · " + fmtDate(sj.date) : ""}</div></div><span class="sub">open →</span></div>`).join("");
+  const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && !Array.isArray(x.sharedJobIds));
+  h += `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${(Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1 && j.sharedJobIds[0] === x.id) ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
+  if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1) h += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
+  else if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length > 1) {
+    const _names = j.sharedJobIds.map(id => { const oj = (typeof actJ === "function" ? actJ() : []).find(x => x.id === id); return oj ? (oj.title || "Job") : null; }).filter(Boolean);
+    h += `<div class="sub" style="margin-top:6px;white-space:normal">Split evenly across ${j.sharedJobIds.length} jobs: ${_names.map(esc).join(", ")}.</div>`;
+  } else if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 0) {
+    h += `<div class="sub" style="margin-top:6px;white-space:normal">Marked as general business overhead — not charged to any job.</div>`;
+  }
+  if (_subs.length) h += `<div class="sub" style="margin-top:8px;font-weight:700">Stops rolled into this job:</div>` + _subs.map(sj => {
+    const n = Math.max(1, (sj.sharedJobIds || []).length);
+    const _total = (typeof plExpenses === "function" ? plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) : 0) + (typeof plMaterials === "function" ? plMaterials(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) : 0);
+    const _share = _total / n;
+    const _assignee = (sj.crew && sj.crew[0] && typeof userName === "function") ? (userName(sj.crew[0]) || "") : "";
+    const _others = (sj.sharedJobIds || []).filter(id => id !== j.id).map(id => { const oj = (typeof actJ === "function" ? actJ() : []).find(x => x.id === id); return oj ? (oj.title || "Job") : null; }).filter(Boolean);
+    return `<div class="li" onclick="openJobPage('${sj.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${(typeof stopEmoji === "function" ? stopEmoji(sj.stopKind) : "🔀")} ${esc(sj.title || "Job")}${_assignee ? " · " + esc(_assignee) : ""}${sj.date ? " · " + fmtDate(sj.date) : ""}</div><div class="sub" style="white-space:normal">${money(_total)} total${n > 1 ? ` · split ${n} ways${_others.length ? " with " + _others.map(esc).join(", ") : ""} · this job's share ${money(_share)}` : ""}</div></div><span class="sub">open →</span></div>`;
+  }).join("");
   h += `</div>`;
 
   // 2) Load checklist — load the truck before you drive
@@ -124,7 +140,7 @@ function rJobPage(j) {
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
   h += `<input id="exp_desc" placeholder="What for — dump fee, materials… (required)" style="margin-top:6px">`;
   h += `<label style="margin-top:8px">Whose mistake caused this? <span class="sub">(optional — docks <i>their</i> payout, not the whole crew's)</span></label><select id="exp_fault"><option value="">— nobody's fault / shared job cost —</option>${_members.map(u => `<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("")}</select>`;
-  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="exp_add_btn" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
+  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="exp_add_btn" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','expense')">🔀 Split across other jobs / mark as generic</button></div>`;
 
   // 5a) Pass-through materials — billed to the customer at cost (reimbursed), tracked SEPARATELY from real expenses + their own receipt pile
   const mats = (j.materials || []).filter(x => x && !x.deleted);
@@ -134,7 +150,7 @@ function rJobPage(j) {
   h += mats.length ? mats.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelMaterial('${j.id}','${e.id}')">✕</button></div></div>`).join("") : `<div class="muted">No materials logged. Enter the amount + what it was; the receipt photo is optional.</div>`;
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="mat_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="mat_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
   h += `<input id="mat_desc" placeholder="What — pavers, base rock, edging… (required)" style="margin-top:6px">`;
-  h += `<input type="file" id="mat_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="mat_add_btn" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div></div>`;
+  h += `<input type="file" id="mat_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="mat_add_btn" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','material')">🔀 Split across other jobs / mark as generic</button></div>`;
 
   // 5b) Time & travel — reconstruct/log for the real effective $/hr (drive time is the silent cost)
   const hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
@@ -184,7 +200,9 @@ function rJobPage(j) {
 
 window.jobSetParent = function (jobId, parentId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  j.parentJobId = parentId || ""; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+  j.parentJobId = parentId || "";   // kept for back-compat/audit trail — unread by new code
+  j.sharedJobIds = parentId ? [parentId] : null;   // the model going forward: membership match, not equality
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 window.jobToggleLoaded = function (jobId, itemId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
@@ -335,4 +353,100 @@ window.jobSaveAsTemplate = function (jobId) {
   const item = { id: uid(), label: String(j.title || "Common job").slice(0, 30), title: j.title || "Job", address: addr, crewN: (+j.crewN || (j.crew || []).length || 1), onSiteHrs: +j.onSiteHrs || 0, driveMin: +j.driveMin || 0, driveMiles: +j.driveMiles || 0, deleted: false };
   tdoc.list.push(item); tdoc.updatedAt = now(); if (typeof touch === "function") touch(tdoc); save();
   alert('Saved "' + item.label + '" as a common job — tap "+ Add" on Today to reuse it in one tap.');
+};
+
+/* ===== "🔀 Split across other jobs / mark as generic" — multi-job (0/1/N) attribution for a dump run /
+   material pickup, next to +Add expense / +Add material. Picks which job(s) a stop's cost belongs to —
+   any active job, not just ones the current user is crewed on — plus an assignee (defaults to you, editable
+   → becomes the stop-job's crew). THE IDENTICAL-BEHAVIOR GUARANTEE: if exactly ONE job is checked and it IS
+   the job whose page you opened this from, this writes straight into THAT job's expenses[]/materials[] —
+   byte-identical to the plain +Add flow, zero new records. Any other case (0, ≥2, or a different single job)
+   creates-or-reuses a stop-job (job.sharedJobIds=selection, job.stopKind) and logs into ITS array instead;
+   its cost then rolls up (or, if 0 jobs, surfaces as overhead) via js/52's subJobsOf/overheadStops. */
+let SPLIT_JOB = null, SPLIT_KIND = null, SPLIT_SEL = new Set();
+window.jobOpenSplitPicker = function (jobId, kind) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  SPLIT_JOB = jobId; SPLIT_KIND = kind; SPLIT_SEL = new Set([jobId]);   // default: just this job — matches today's behavior until the crew changes the selection
+  const me = (typeof curUser === "function") ? curUser() : null;
+  const members = (typeof schedMembers === "function") ? schedMembers() : [];
+  modal("🔀 Split across other jobs / mark as generic", `
+    <p class="muted" style="margin-bottom:8px">For a dump run, a shared materials pickup, or any cost that isn't just this job — pick every job it applies to (or none, for a general business cost). The amount splits evenly across whatever's checked.</p>
+    <label style="margin-top:0">Category</label>
+    <select id="split_cat"><option value="dump">🚛 Dump run</option><option value="pickup">📦 Materials pickup</option><option value="other" selected>🔀 Other</option></select>
+    <label>Which job(s)? <span class="sub">(search ALL active jobs — leave none checked for a generic/overhead cost)</span></label>
+    <input id="split_search" placeholder="Search jobs by title or customer…" autocomplete="off" oninput="splitRenderJobs()">
+    <div id="split_joblist" style="max-height:240px;overflow:auto;margin-top:4px"></div>
+    <label>Assignee <span class="sub">(who did the run — defaults to you; becomes the stop's crew)</span></label>
+    <select id="split_assignee">${members.map(u => `<option value="${esc(u.id)}" ${me && me.id === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>
+    <div class="row" style="gap:8px;margin-top:8px"><input id="split_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="split_vendor" placeholder="Vendor / store" style="flex:2"></div>
+    <input id="split_desc" placeholder="What for… (required)" style="margin-top:6px">
+    <input type="file" id="split_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('split_receipt_lbl');if(l)l.textContent='✓ Receipt ready'">
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('split_receipt').click()"><span id="split_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="split_add_btn" onclick="jobSplitSubmit('${kind}')">+ Add ${kind === "material" ? "material" : "expense"}</button></div>`);
+  splitRenderJobs();
+};
+/* the searchable multi-select list — excludes stop-jobs themselves (only ordinary jobs are valid attribution targets) */
+function splitRenderJobs() {
+  const box = document.getElementById("split_joblist"); if (!box) return;
+  const q = (val("split_search") || "").trim().toLowerCase();
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(x => x && !Array.isArray(x.sharedJobIds));
+  const list = jobs.filter(x => {
+    if (!q) return true;
+    const cust = (x.customerId && typeof custName === "function") ? custName(x.customerId) : "";
+    return (x.title || "").toLowerCase().indexOf(q) >= 0 || cust.toLowerCase().indexOf(q) >= 0;
+  }).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  box.innerHTML = list.length ? list.map(x => {
+    const cust = (x.customerId && typeof custName === "function") ? custName(x.customerId) : "";
+    const on = SPLIT_SEL.has(x.id);
+    return `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:20px;height:20px;flex:0 0 auto" ${on ? "checked" : ""} onchange="splitToggleJob('${x.id}')"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${esc(x.title || "Job")}</div><div class="sub">${cust ? esc(cust) + " · " : ""}${x.date ? fmtDate(x.date) : ""}</div></div></label>`;
+  }).join("") : `<div class="muted">No jobs match.</div>`;
+}
+window.splitToggleJob = function (id) { if (SPLIT_SEL.has(id)) SPLIT_SEL.delete(id); else SPLIT_SEL.add(id); splitRenderJobs(); };
+/* create-or-reuse a stop-job for a given job-selection + category, logged today. Reuse key: same day + same
+   category + the exact same set of linked jobs — so several costs logged on one visit (e.g. dump fee + gas)
+   land on ONE stop-job instead of one each. sharedJobIds carries the split; parentJobId mirrors it ONLY when
+   there's a single linked job (audit trail — unread by new code). */
+function jobFindOrCreateStop(selectedIds, stopKind, assigneeId) {
+  const ids = (selectedIds || []).slice().sort(), d = today();
+  const existing = (typeof actJ === "function" ? actJ() : []).find(x => x && Array.isArray(x.sharedJobIds) && x.date === d && (x.stopKind || "other") === stopKind && x.sharedJobIds.slice().sort().join(",") === ids.join(","));
+  if (existing) return existing;
+  const titles = { dump: "Dump run", pickup: "Materials pickup", other: "Stop" };
+  const sj = { id: uid(), title: titles[stopKind] || "Stop", date: d, done: false, sharedJobIds: (selectedIds || []).slice(), stopKind: stopKind, parentJobId: selectedIds.length === 1 ? selectedIds[0] : "", crew: assigneeId ? [assigneeId] : [], expenses: [], materials: [] };
+  D().jobs.push(sj); if (typeof touch === "function") touch(sj);
+  return sj;
+}
+let _splitAddBusy = false, _splitAddWatchdog = null;
+window.jobSplitSubmit = function (kind) {
+  if (_splitAddBusy) return;   // same anti-dupe guard as jobAddExpense/jobAddMaterial (June 2026 dupe incident)
+  const jobId = SPLIT_JOB; if (!jobId) return;
+  const amt = parseFloat(val("split_amt")); if (!(amt > 0)) { alert("Enter the amount."); return; }
+  const desc = (val("split_desc") || "").trim(); if (!desc) { alert("Enter what it was for."); return; }
+  const vendor = (val("split_vendor") || "").trim();
+  const cat = val("split_cat") || "other";
+  const assignee = val("split_assignee") || "";
+  const selected = Array.from(SPLIT_SEL);
+  const input = document.getElementById("split_receipt");
+  const file = input && input.files && input.files[0];
+  const btn = document.getElementById("split_add_btn");
+  _splitAddBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
+  clearTimeout(_splitAddWatchdog); _splitAddWatchdog = setTimeout(function () { _splitAddBusy = false; }, 20000);
+  const finish = function (receiptId) {
+    clearTimeout(_splitAddWatchdog);
+    const by = ((typeof curUser === "function" && curUser()) ? curUser().username : "");
+    const entry = { id: uid(), amount: amt, vendor: vendor, desc: desc, receiptId: receiptId || null, by: by, ts: now() };
+    if (kind === "expense") entry.faultMemberId = null;
+    let target;
+    if (selected.length === 1 && selected[0] === jobId) target = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null;   // the common case: identical to today's plain +Add — no new record
+    else target = jobFindOrCreateStop(selected, cat, assignee);
+    if (target) {
+      const arrKey = kind === "material" ? "materials" : "expenses";
+      if (!Array.isArray(target[arrKey])) target[arrKey] = [];
+      target[arrKey].push(entry);
+      if (typeof touch === "function") touch(target);
+    }
+    if (typeof save === "function") save();
+    if (btn) btn.textContent = "✓ Added";
+    setTimeout(function () { _splitAddBusy = false; if (typeof closeModal === "function") closeModal(); if (typeof render === "function") render(); }, 450);
+  };
+  if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
+  else finish(null);
 };
