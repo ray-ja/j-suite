@@ -3,28 +3,36 @@ let CSEARCH="",PSEARCH="",ACCTSUB="customers";
 function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button></div>`;}
 window.switchAcct=function(s){ACCTSUB=s;render();};
 function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
-function rCustomers(){
+/* PURE results-list HTML (empty / "No matches" / card grid) — kept pure so the SEARCH keystroke path can
+   rebuild ONLY #clist without re-rendering the #csearch input (focus & caret survive, no setSelectionRange). */
+function customersListHTML(){
   let list=actC().slice().sort((a,b)=>(a.name||a.company||"").localeCompare(b.name||b.company||""));
   if(CSEARCH){const q=CSEARCH.toLowerCase();
     list=list.filter(c=>((c.name||"")+(c.company||"")+(c.phone||"")).toLowerCase().includes(q));}
-  let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}">`;
-  if(!actC().length)h+=`<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
-  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
-  else h+=`<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
-  view.innerHTML=h;
-  const s=document.getElementById("csearch");
-  if(s)s.oninput=e=>{CSEARCH=e.target.value;const p=s.selectionStart;rCustomers();const n=document.getElementById("csearch");n.focus();n.setSelectionRange(p,p);};
+  if(!actC().length)return `<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
+  if(!list.length)return `<div class="empty">No matches.</div>`;
+  return `<div class="card grid2">`+list.map(liCustomer).join("")+`</div>`;
 }
-function rProperties(){
+/* scoped SEARCH re-render: rebuild ONLY #clist so #csearch is never destroyed (mirrors adminFilterAccounts, js/32) */
+window.cSearchOn=function(v){ CSEARCH=v; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
+function rCustomers(){
+  let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}" oninput="cSearchOn(this.value)">`;
+  h+=`<div id="clist">${customersListHTML()}</div>`;
+  view.innerHTML=h;
+}
+/* PURE results-list HTML — see customersListHTML above. */
+function propertiesListHTML(){
   let list=actProps().slice().sort((a,b)=>(a.label||a.address||"").localeCompare(b.label||b.address||""));
   if(PSEARCH){const q=PSEARCH.toLowerCase();list=list.filter(p=>((p.label||"")+(p.address||"")).toLowerCase().includes(q));}
-  let h=acctSubnav()+`<input class="search" id="psearch" placeholder="Search properties…" value="${esc(PSEARCH)}">`;
-  if(!actProps().length)h+=`<div class="empty"><div class="big">📍</div>No properties yet.<br>Add one, or they're created when you quote.</div>`;
-  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
-  else h+=`<div class="card grid2">`+list.map(liProp).join("")+`</div>`;
+  if(!actProps().length)return `<div class="empty"><div class="big">📍</div>No properties yet.<br>Add one, or they're created when you quote.</div>`;
+  if(!list.length)return `<div class="empty">No matches.</div>`;
+  return `<div class="card grid2">`+list.map(liProp).join("")+`</div>`;
+}
+window.pSearchOn=function(v){ PSEARCH=v; const c=document.getElementById("plist"); if(c)c.innerHTML=propertiesListHTML(); };
+function rProperties(){
+  let h=acctSubnav()+`<input class="search" id="psearch" placeholder="Search properties…" value="${esc(PSEARCH)}" oninput="pSearchOn(this.value)">`;
+  h+=`<div id="plist">${propertiesListHTML()}</div>`;
   view.innerHTML=h;
-  const s=document.getElementById("psearch");
-  if(s)s.oninput=e=>{PSEARCH=e.target.value;const p=s.selectionStart;rProperties();const n=document.getElementById("psearch");n.focus();n.setSelectionRange(p,p);};
 }
 function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const _drive=(p.lat!=null&&typeof driveBadge==="function")?driveBadge(p.lat,p.lng):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}${_drive?" · "+_drive:""}</div></div></div>`;}
 /* pretty US phone: (252) 475-4152 */

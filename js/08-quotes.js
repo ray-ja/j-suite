@@ -12,12 +12,10 @@ window.quoteFilter=function(k){ QSTAGE_FILTER=k; rQuotes(); };
 let QCREW_FILTER="";
 function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }
 window.quoteCrewFilter=function(id){ QCREW_FILTER=id; rQuotes(); };
-function rQuotes(){
-  if(WZON)return wizRender();
-  const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
-  let h=`<h2>Jobs</h2>`;
-  if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
-  h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>`;
+/* PURE results-list HTML — the empty / "No matches" / card branch ONLY. Everything OUTSIDE this
+   (draft card, guided button, search input, subnav, crew select) is built by rQuotes(). Kept pure so the
+   SEARCH keystroke path can rebuild just #qlist without re-rendering — and destroying — the #qsearch input. */
+function quotesListHTML(){
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
   if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);
@@ -26,25 +24,35 @@ function rQuotes(){
     list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
   }
   list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
-  if(all.length){
-    h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}">`;
-    const stages=[["all","All"],["quoted","Quoted"],["scheduled","Scheduled"],["invoiced","Invoiced"],["paid","Paid"]];
-    h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
-    const crewM=(typeof realAccounts==="function"?realAccounts():[]);
-    if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
-  }
-  if(!all.length)h+=`<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
-  else if(!list.length)h+=`<div class="empty">No matches.</div>`;
-  else h+=`<div class="card grid2">`+list.map(q=>{
+  if(!all.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
+  if(!list.length)return `<div class="empty">No matches.</div>`;
+  return `<div class="card grid2">`+list.map(q=>{
     const st=quoteStage(q),m=QSTAGE_META[st],cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
     return `<div class="li" onclick="openQuote('${q.id}')" style="border-left:4px solid ${m.color};padding-left:10px">
       <div class="grow"><div class="nm" style="white-space:normal">${cust}${type?` <span style="font-weight:600;color:var(--muted)">· ${esc(type)}</span>`:""}</div>
       <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${m.label}</span>${q.recurring?" · recurring":""}</div></div>
       <div style="font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"};text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`;
   }).join("")+`</div>`;
+}
+/* scoped SEARCH re-render: rebuild ONLY #qlist so the #qsearch input is never destroyed — focus & caret
+   survive with NO setSelectionRange refocus hack (mirrors adminFilterAccounts in js/32). */
+window.qSearchOn=function(v){ QSEARCH=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+function rQuotes(){
+  if(WZON)return wizRender();
+  const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
+  let h=`<h2>Jobs</h2>`;
+  if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
+  h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>`;
+  const all=actQ();
+  if(all.length){
+    h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}" oninput="qSearchOn(this.value)">`;
+    const stages=[["all","All"],["quoted","Quoted"],["scheduled","Scheduled"],["invoiced","Invoiced"],["paid","Paid"]];
+    h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+    const crewM=(typeof realAccounts==="function"?realAccounts():[]);
+    if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
+  }
+  h+=`<div id="qlist">${quotesListHTML()}</div>`;
   view.innerHTML=h;
-  const s=document.getElementById("qsearch");
-  if(s)s.oninput=e=>{QSEARCH=e.target.value;const p=s.selectionStart;rQuotes();const n=document.getElementById("qsearch");if(n){n.focus();n.setSelectionRange(p,p);}};
 }
 let QITEMS=[];let CURQ=null;
 /* The standalone quote modal has been RETIRED — saved quotes now open INTO the guided
