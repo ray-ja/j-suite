@@ -317,15 +317,13 @@ function jobStopGeocode(s){
    JOBWORKDAYS (non-contiguous OK). The START date (j_date) is always included and can't be turned off here
    (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips. */
 let JOBWDAY_ANCHOR=null;
-function renderJobWorkDays(){
-  const box=document.getElementById("j_workdays");if(!box)return;
-  const start=val("j_date")||today();
-  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);   // start day is always a work day
-  if(!JOBWDAY_ANCHOR)JOBWDAY_ANCHOR=start;
-  const sel=new Set(JOBWORKDAYS);
-  const anc=new Date((JOBWDAY_ANCHOR||start)+"T00:00:00"),y=anc.getFullYear(),m=anc.getMonth();
+/* ---- SHARED work-day-picker HTML builders (factored out of renderJobWorkDays so the full-editor picker
+   AND the crew job-page picker draw the exact same grid + chips — they can't visually drift). Behaviour-
+   preserving extraction only: pass the selected-day set, the (un-removable) start day, the anchor month,
+   and the name of the toggle handler to wire each day/✕ to (jobToggleWorkDay in the editor; a job-page
+   equivalent on the crew page). Output is byte-identical to the old inline code for the editor call. */
+function wdpkGridHtml(sel,start,y,m,toggleFn){
   const first=new Date(y,m,1),startDow=first.getDay(),dim=new Date(y,m+1,0).getDate();
-  const title=first.toLocaleString(undefined,{month:"long"})+" "+y;
   const dows=["Su","Mo","Tu","We","Th","Fr","Sa"];
   let cells=dows.map(d=>`<div class="wdpk-dow">${d}</div>`).join("");
   for(let i=0;i<startDow;i++)cells+=`<div class="wdpk-cell out"></div>`;
@@ -334,12 +332,27 @@ function renderJobWorkDays(){
     const ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
     const on=sel.has(ds),isStart=ds===start;
     const cls="wdpk-cell"+(on?" on":"")+(isStart?" start":"")+(ds===t?" today":"");
-    cells+=`<div class="${cls}" onclick="jobToggleWorkDay('${ds}')" title="${isStart?'Start day (change above)':on?'Working — tap to remove':'Tap to add'}">${day}</div>`;
+    cells+=`<div class="${cls}" onclick="${toggleFn}('${ds}')" title="${isStart?'Start day (change above)':on?'Working — tap to remove':'Tap to add'}">${day}</div>`;
   }
-  const chips=JOBWORKDAYS.slice().sort().map(ds=>{
+  return cells;
+}
+function wdpkChipsHtml(days,start,toggleFn){
+  return days.slice().sort().map(ds=>{
     const isStart=ds===start;
-    return `<span class="wdpk-chip${isStart?" start":""}">${esc(fmtDate(ds))}${isStart?"":` <span onclick="jobToggleWorkDay('${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
+    return `<span class="wdpk-chip${isStart?" start":""}">${esc(fmtDate(ds))}${isStart?"":` <span onclick="${toggleFn}('${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
   }).join("");
+}
+function renderJobWorkDays(){
+  const box=document.getElementById("j_workdays");if(!box)return;
+  const start=val("j_date")||today();
+  if(JOBWORKDAYS.indexOf(start)<0)JOBWORKDAYS.push(start);   // start day is always a work day
+  if(!JOBWDAY_ANCHOR)JOBWDAY_ANCHOR=start;
+  const sel=new Set(JOBWORKDAYS);
+  const anc=new Date((JOBWDAY_ANCHOR||start)+"T00:00:00"),y=anc.getFullYear(),m=anc.getMonth();
+  const first=new Date(y,m,1);
+  const title=first.toLocaleString(undefined,{month:"long"})+" "+y;
+  const cells=wdpkGridHtml(sel,start,y,m,"jobToggleWorkDay");
+  const chips=wdpkChipsHtml(JOBWORKDAYS,start,"jobToggleWorkDay");
   box.innerHTML=`<div class="wdpk">
     <div class="wdpk-head"><button type="button" class="calnav" onclick="jobWorkDayMonth(-1)">‹</button><div class="wdpk-title">${esc(title)}</div><button type="button" class="calnav" onclick="jobWorkDayMonth(1)">›</button></div>
     <div class="wdpk-grid">${cells}</div>
