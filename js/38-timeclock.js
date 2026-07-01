@@ -117,15 +117,47 @@ function tcSourceBadge(e) {
 }
 
 /* ----- geolocation (permission-gated; resolves null on deny/unavailable so time-tracking still works) ----- */
+/* BUG 2 (cross-device clock in/out): clock-in and clock-out are the SAME synced timeclock record and can
+   legitimately happen on different devices (crew clocks in on their phone, the owner closes it out later from
+   a desktop). Every location fix we capture gets tagged with a rough device-class hint so we can prefer a
+   PHONE's GPS fix (accurate) over a desktop's (usually coarse IP-geolocation, or no permission at all) when
+   reconciling which fix to trust for a given moment — see tcBestLoc / tcFinalizeOutLoc below. */
+function tcDeviceClass() {
+  try {
+    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer:coarse)").matches) return "mobile";
+    if (navigator.maxTouchPoints > 0) return "mobile";
+    if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "")) return "mobile";
+  } catch (e) {}
+  return "desktop";
+}
 function tcGetPos() {
   return new Promise(function (resolve) {
     if (!navigator.geolocation) { resolve(null); return; }
     navigator.geolocation.getCurrentPosition(
-      function (p) { resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, ts: now() }); },
+      function (p) { resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy, ts: now(), dev: tcDeviceClass() }); },
       function () { resolve(null); },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   });
+}
+/* pick the best location fix for a moment out of whatever candidates exist: prefer a MOBILE-tagged fix over
+   a desktop one (a phone's on-board GPS beats a desktop's coarse/absent location); among same-class
+   candidates prefer the most recent; if nothing usable was captured at all, return null (an honest estimate
+   gap) rather than guessing — callers must not crash on that. */
+function tcBestLoc() {
+  const cands = Array.prototype.slice.call(arguments).filter(Boolean);
+  if (!cands.length) return null;
+  const mobile = cands.filter(c => c.dev === "mobile").sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (mobile.length) return mobile[0];
+  return cands.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];   // whichever device recorded it
+}
+/* the effective CLOCK-OUT location for an entry: the freshly-captured fix (from whichever device pressed
+   clock out) vs. the most recent foreground ping already on the entry (which may have come from the OTHER,
+   original device, e.g. the phone that clocked in and pinged right up until it was locked/backgrounded) —
+   mobile wins per tcBestLoc. Falls back to any prior e.outLoc, then null (no crash, just an estimate gap). */
+function tcFinalizeOutLoc(e, freshLoc) {
+  const lastPing = (e && e.pings && e.pings.length) ? e.pings[e.pings.length - 1] : null;
+  return tcBestLoc(freshLoc, lastPing, e && e.outLoc);
 }
 
 /* ----- foreground ping loop (only runs while the tab is visible AND a shift is open) ----- */
@@ -205,7 +237,9 @@ window.tcClockOutGps = function (id) {
   touch(e); tcPingStop();
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcJobTitle(e.jobId));
   save(); render();
-  try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+  // cross-device: prefer a mobile-tagged fix (this capture, or the last foreground ping — which may be
+  // from the OTHER device that actually clocked in) over a desktop one; never overwrite a better fix already set.
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
 window.tcFinishClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
@@ -233,8 +267,11 @@ window.tcFinishClockOut = function (id) {
   touch(e); tcPingStop();
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
   save(); render();
-  // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out
-  try { tcGetPos().then(function (loc) { if (loc && !e.outLoc) { e.outLoc = loc; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+  // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out.
+  // Cross-device: prefer a mobile-tagged fix (this capture, or the last foreground ping, which may be from the
+  // OTHER device) over a desktop one; if nothing usable exists on either device, this just stays unset — an
+  // honest estimate gap (the job-level planned drive-miles estimate still covers costing; see jobMilesCost).
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
 
 /* ===== vehicle ownership — the mileage reimburses whoever OWNS the vehicle, not the driver.
@@ -250,10 +287,12 @@ function tcTrailerLabel(id) { const v = id ? tcTruckById(id) : null; return v ? 
 function tcShiftVehLine(e) {
   if (!e) return "";
   const trailer = tcTrailerLabel(e.trailerId);
-  if (e.riderRole === "passenger") return `<div class="sub">🧍 Passenger${e.rodeWith ? " · rode with " + esc(tcRodeWithName(e.rodeWith)) : ""} · no mileage</div>`;
-  if (e.riderRole === "none" || (!e.vehicle && e.riderRole !== "driver")) return `<div class="sub">🚶 No vehicle · no mileage</div>`;
+  // white-space:normal — this line (vehicle + odometer reading) can run long; the global .sub is
+  // single-line-ellipsis (right for tight list rows) but wrongly clipped it here on a narrow phone.
+  if (e.riderRole === "passenger") return `<div class="sub" style="white-space:normal">🧍 Passenger${e.rodeWith ? " · rode with " + esc(tcRodeWithName(e.rodeWith)) : ""} · no mileage</div>`;
+  if (e.riderRole === "none" || (!e.vehicle && e.riderRole !== "driver")) return `<div class="sub" style="white-space:normal">🚶 No vehicle · no mileage</div>`;
   // driver
-  return `<div class="sub">🚗 Driver · 🚚 ${esc(e.vehicle || "Vehicle")}${e.odoStart != null ? " · odo start " + e.odoStart : ""}${trailer ? " · 🚛 " + esc(trailer) : ""}</div>`;
+  return `<div class="sub" style="white-space:normal">🚗 Driver · 🚚 ${esc(e.vehicle || "Vehicle")}${e.odoStart != null ? " · odo start " + e.odoStart : ""}${trailer ? " · 🚛 " + esc(trailer) : ""}</div>`;
 }
 
 /* ===== managed per-org truck list (registry[org].vehicles — owner/admin-managed in Admin) =====
@@ -307,11 +346,6 @@ function tcResolveVehicle(encVal, driverId) {
 /* does the entry / picked value involve a vehicle (→ odometer is relevant)? Mileage only matters on the DRIVER
    path: a passenger / no-vehicle shift carries no vehicleId/owner, so this stays false → no odometer, no miles. */
 function tcEntryHasVehicle(e) { return !!(e && e.riderRole === "driver" && (e.vehicleId || e.vehicleOwnerId || e.vehicle)); }
-/* live toggle: show/hide the odometer field when the DRIVER's vehicle picker changes */
-window.tcVehChanged = function () {
-  const v = val("tc_vehicle"), wrap = document.getElementById("tc_odo_wrap");
-  if (wrap) wrap.style.display = v ? "" : "none";
-};
 
 /* ===== RIDER ROLE (clock-in redesign) — at clock-in the person picks their ROLE for the trip so a shared
    truck's mileage is logged exactly ONCE (by the driver):
@@ -337,11 +371,14 @@ function tcRolePicker(sel) {
 function tcRoleDetail(role, defVehVal, driverId) {
   let h = `<div id="tc_role_detail">`;
   if (role === "driver") {
-    const _hasVeh = !!defVehVal;
     const trailers = tcActiveTrailers(), defTrailer = tcDefaultTrailerVal(driverId);
+    // the odometer field is ALWAYS shown for the driver role: tcDriverVehicleOptions never leaves the
+    // <select> blank (it force-selects the first option when there's no default), so a vehicle is always
+    // chosen the instant this block renders — hiding the field on an unset default (the old `_hasVeh`
+    // check) meant a first-time driver's odometer input was invisible even though a vehicle WAS selected.
     h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
-      <select id="tc_vehicle" onchange="tcVehChanged()">${tcDriverVehicleOptions(defVehVal, driverId)}</select>
-      <div id="tc_odo_wrap" style="${_hasVeh ? "" : "display:none"}">
+      <select id="tc_vehicle">${tcDriverVehicleOptions(defVehVal, driverId)}</select>
+      <div id="tc_odo_wrap">
         <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
         <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
       </div>`;
@@ -462,7 +499,7 @@ function tcStopsBlock(id) {
     <div class="row" style="align-items:center"><div class="grow"><b style="font-size:14px">🛒 Stops / pickups</b> <span class="sub">${stops.length || ""}</span></div>
       <button class="btn ghost sm" onclick="tcAddStop('${id}')">+ Add stop</button></div>`;
   if (stops.length) h += stops.map(s => `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:13px">📍 ${esc(s.name)}</div><div class="sub">${(function(){try{return new Date(s.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(x){return ""}})()}${s.loc ? " · GPS-stamped" : " · no GPS"}</div></div><button class="btn ghost sm" style="padding:2px 8px" onclick="tcDelStop('${id}','${s.id}')">✕</button></div>`).join("");
-  else h += `<div class="sub" style="margin-top:4px">No stops yet. Add the quarry, Lowe's, Home Depot, Ace…</div>`;
+  else h += `<div class="sub" style="margin-top:4px;white-space:normal">No stops yet. Add the quarry, Lowe's, Home Depot, Ace…</div>`;
   h += tcStopQuickPicks(id);
   return h + `</div>`;
 }
@@ -473,20 +510,42 @@ function tcStopsBlock(id) {
    the miles already driven before it was logged). ===== */
 function tcNeedsOdo(e) { return !!(e && !e.clockOut && tcEntryHasVehicle(e) && e.odoStart == null); }
 window.tcReminderEntry = function () { const e = tcMyOpen(); return tcNeedsOdo(e) ? e : null; };
+/* BUG FIX (odometer silently not saving): this used to be window.prompt()/alert(). Native JS dialogs are
+   unreliable in an INSTALLED (standalone/home-screen) PWA — this app is explicitly installable (manifest +
+   service worker, see js/34) — where prompt()/alert() can silently no-op or never surface the typed value
+   back to the page. The old code then did `if (reading == null) return;` with ZERO feedback: the crew member
+   types the reading, taps OK, and it vanishes with no error and no save. Using the app's own modal (already
+   used for every other timeclock dialog: clock-out, entry edit, default vehicle) reads the value from a real
+   DOM input we control, which works identically in the browser, the installed PWA, and headless tests. */
 window.tcEnterStartOdo = function () {
   const e = tcMyOpen(); if (!tcNeedsOdo(e)) { render(); return; }
   const accrued = tcRound(tcComputeMiles(e));
-  const reading = prompt("Starting odometer on " + (e.vehicle || "your vehicle") + " — enter the miles showing NOW:" + (accrued > 0.3 ? "\n\n(You've already driven ~" + accrued + " mi since clocking in — that's anchored so the late entry stays accurate.)" : ""));
-  if (reading == null) return;
-  const o = parseFloat(reading);
-  if (!(o >= 0)) { alert("Enter a number for the odometer."); return; }
+  modal("Starting odometer", `
+    <p class="muted" style="margin-bottom:8px">Odometer on <b>${esc(e.vehicle || "your vehicle")}</b> — enter the miles showing NOW.${accrued > 0.3 ? " You've already driven ~" + accrued + " mi since clocking in — that's anchored so this late entry stays accurate." : ""}</p>
+    <label>Odometer reading</label>
+    <input id="tc_late_odo" type="number" inputmode="decimal" placeholder="miles showing now">
+    <div id="tc_late_odo_err" class="sub" style="white-space:normal;color:var(--danger);display:none;margin-top:6px"></div>
+    <button class="btn acc" style="margin-top:14px" onclick="tcSaveLateOdo('${e.id}')">Save odometer</button>`);
+  setTimeout(function () { const el = document.getElementById("tc_late_odo"); if (el) el.focus(); }, 30);
+};
+window.tcSaveLateOdo = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  const o = parseFloat(val("tc_late_odo"));
+  if (!(o >= 0)) {
+    const errEl = document.getElementById("tc_late_odo_err");
+    if (errEl) { errEl.textContent = "Enter a number for the odometer."; errEl.style.display = ""; }
+    return;
+  }
+  // recompute accrued FRESH at save time (not the value shown when the modal opened) — a ping could have
+  // landed while the modal was open, and the anchor needs to reflect miles driven up to THIS moment.
+  const accrued = tcRound(tcComputeMiles(e));
   // ANCHOR the late entry: the reading is "now", but `accrued` miles were already driven since clock-in. We
   // back-date the START so odometer-delta still captures the whole shift's driving. Audit fields keep the raw.
   e.odoStart = Math.max(0, o - accrued);
   e.odoStartEnteredAt = now(); e.odoStartReading = o; e.odoStartAccruedAtEntry = accrued;   // auditable provenance
   touch(e);
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Entered start odometer " + o + (accrued > 0.3 ? " (anchored −" + accrued + " mi already driven)" : "") + " — " + tcJobTitle(e.jobId));
-  save(); render();
+  save(); if (typeof closeModal === "function") closeModal(); render();
 };
 
 /* ===== owner: edit / confirm an entry's mileage + vehicle ===== */
@@ -561,10 +620,11 @@ function tcClockHTML() {
   if (open) {
     const j = tcJob(open.jobId);
     h += `<div class="card" style="border-left:5px solid var(--accent)">
-      <div class="sub">⏱ On the clock — ${esc(who.name)}</div>
-      <div class="nm" style="font-size:18px;margin:2px 0">${esc(open.jobId ? tcJobTitle(open.jobId) : "Job")}${j && j.customerId ? ` <span class="sub">· ${esc(custName(j.customerId))}</span>` : ""}</div>
-      ${(j && jobEstHrsEach(j)) ? `<div class="sub" style="color:var(--brand-text);font-weight:600">⏱ Est ~${jobEstHrsEach(j)} hr (your share) · likely finish ~${(function(){try{return new Date(open.clockIn+jobEstHrsEach(j)*3600000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(e){return""}})()} · breaks don't count</div>` : ""}
-      <div style="display:flex;gap:14px;margin:8px 0;flex-wrap:wrap">
+      <div class="sub" style="white-space:normal">⏱ On the clock — ${esc(who.name)}</div>
+      <div class="nm" style="font-size:18px;margin:4px 0 2px;white-space:normal">${esc(open.jobId ? tcJobTitle(open.jobId) : "Job")}</div>
+      ${j && j.customerId ? `<div class="sub" style="white-space:normal;margin-bottom:2px">${esc(custName(j.customerId))}</div>` : ""}
+      ${(j && jobEstHrsEach(j)) ? `<div class="sub" style="white-space:normal;color:var(--brand-text);font-weight:600">⏱ Est ~${jobEstHrsEach(j)} hr (your share) · likely finish ~${(function(){try{return new Date(open.clockIn+jobEstHrsEach(j)*3600000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(e){return""}})()} · breaks don't count</div>` : ""}
+      <div class="tc-metrics">
         <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>
         <div><div style="font-size:24px;font-weight:800" id="tc_miles">${tcRound(open.computedMiles)} mi est</div><div class="sub" id="tc_pings">${(open.pings || []).length} ping${(open.pings || []).length === 1 ? "" : "s"}</div></div>
       </div>
