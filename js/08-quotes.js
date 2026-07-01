@@ -21,7 +21,10 @@ function rQuotes(){
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
   if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);
-  if(QCREW_FILTER)list=list.filter(q=>quoteCrew(q).indexOf(QCREW_FILTER)>=0);
+  if(QCREW_FILTER){   // index active jobs by id ONCE (was actJ().find() per quote via quoteCrew → O(quotes×jobs))
+    const _jm=new Map();(typeof actJ==="function"?actJ():[]).forEach(j=>{if(j&&j.id!=null&&!_jm.has(j.id))_jm.set(j.id,j);});
+    list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
+  }
   list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
   if(all.length){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}">`;
