@@ -22,6 +22,9 @@ function calSetView(v){CALVIEW=v;try{localStorage.setItem("jra_calview",v);}catc
 /* keep CALY/CALM (used by the month grid) in step with the selected anchor */
 function calSyncMonth(){const a=calAnchor();const d=new Date(a+"T00:00:00");CALY=d.getFullYear();CALM=d.getMonth();}
 let JOBEQUIP=[],JOBEQUIP_JID=null;   // live required-equipment list for the open job modal (mirrors JOBCREW)
+let JOBSTOPS=[];   // live ADMIN-PLANNED route stops for the open job modal — {id,label,address,lat,lng}, in order,
+                    // materials pickups etc. BEFORE the job site (mirrors JOBCREW/JOBEQUIP). Distinct from the
+                    // crew-added ad hoc timeclock stops[] (js/38) — this is set in advance by the owner/admin.
 function rSchedule(){
   if(window.JOB_OPEN && typeof rJobPage==="function"){ const _j=(typeof actJ==="function")&&actJ().find(x=>x.id===window.JOB_OPEN&&!x.deleted); if(_j){ const _ids=["job_notes","jobcap_q","exp_amt","exp_desc","co_desc","co_amt","jt_crew","jt_onsite","jt_drivemin","jt_drivemiles"]; const _save=_ids.map(function(id){const el=document.getElementById(id);return el?{id:id,v:el.value,f:document.activeElement===el,s:el.selectionStart,e:el.selectionEnd}:null;}).filter(Boolean); view.innerHTML=rJobPage(_j); _save.forEach(function(o){const el=document.getElementById(o.id);if(el){el.value=o.v;if(o.f){el.focus();try{el.setSelectionRange(o.s,o.e);}catch(e){}}}}); return; } window.JOB_OPEN=null; }
   if(SCHEDSUB==="crew")SCHEDSUB="calendar";   // crew-availability tab retired (Ray's request)
@@ -229,6 +232,7 @@ window.openJob=function(id,customerId,presetDate){
   JOBWORKDAYS=jobWorkDays(j);     // live multi-day work-day set (start day always included)
   JOBWDAY_ANCHOR=(JOBWORKDAYS[0]||j.date||today());   // which month the mini-picker shows
   JOBEQUIP=(typeof jobEquip==="function")?jobEquip(j):[];JOBEQUIP_JID=j.id;   // live required-equipment list for this modal
+  JOBSTOPS=(Array.isArray(j.plannedStops)?j.plannedStops:[]).map(s=>({id:s.id||uid(),label:s.label||"",address:s.address||"",lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null}));   // live planned-route list for this modal
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
   /* crew-on-phone: tap-to-call/text the customer + one-tap Directions to the job (best address: property → job → customer) */
@@ -242,6 +246,8 @@ window.openJob=function(id,customerId,presetDate){
     <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
     <label>Customer</label><select id="j_cust">${opts}</select>
     <label>Property (for the job route map)</label><select id="j_prop"><option value="">— none —</option>${actProps().map(p=>`<option value="${p.id}" ${j.propertyId===p.id?"selected":""}>${esc(p.label||p.address||"Property")}${p.lat==null?" (no location)":""}</option>`).join("")}</select>
+    ${(typeof isOwner==="function"&&isOwner())?`<label style="margin-top:12px">🧭 Planned route <span class="sub" style="font-weight:400">· stops BEFORE the job site — e.g. a materials supplier — in order</span></label>
+    <div id="j_stops"></div>`:""}
     <div class="row" style="gap:8px"><div class="grow"><label>Start date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="jobStartDateChanged()"></div>
     <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
     <label style="margin-top:6px">Work days <span class="sub" style="font-weight:400">· tap every day you'll work this job (can skip days)</span></label>
@@ -258,9 +264,55 @@ window.openJob=function(id,customerId,presetDate){
     <button class="btn acc" style="margin-top:14px" onclick="saveJob('${j.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn danger" style="margin-top:10px" onclick="delJob('${j.id}')">Delete job</button>`:""}
   `);
-  renderJobCrew();renderJobEquip();renderJobWorkDays();if(!isNew){renderJobExpenses(j.id);renderJobResale(j.id);}
+  renderJobCrew();renderJobEquip();renderJobWorkDays();renderJobStops();if(!isNew){renderJobExpenses(j.id);renderJobResale(j.id);}
   if(typeof lockGuard==="function")lockGuard("job",isNew?null:j.id,()=>openJob(id));
 };
+/* ===== ADMIN-PLANNED job stops (route) — the owner/admin sets an ORDERED list of stops the job needs
+   BEFORE the job site (e.g. "Stoneworks — pick up base", then "Lowe's — sand", then the job). This is what
+   the crew sees on the job page as clearly-labeled, correct map links (js/61 rJobPage) instead of guessing
+   between generic "Google Maps" links that only ever pointed at the job site. Distinct from the crew-added
+   ad hoc timeclock stops[] (js/38 tcAddStop) which log where the crew ACTUALLY went, after the fact. */
+function renderJobStops(){
+  const box=document.getElementById("j_stops");if(!box)return;   // hidden for non-owners — nothing to render
+  const rows=JOBSTOPS.map((s,i)=>`<div class="li" style="align-items:center;padding:6px 0">
+    <div class="grow"><div class="nm" style="font-size:14px">${i+1}. ${esc(s.label||s.address||"Stop")}</div>${s.label&&s.address?`<div class="sub" style="white-space:normal">${esc(s.address)}</div>`:""}</div>
+    <div class="row" style="gap:4px;flex:0 0 auto">
+      <button type="button" class="btn ghost sm" ${i===0?"disabled":""} onclick="jobStopMove(${i},-1)" title="Move up">▲</button>
+      <button type="button" class="btn ghost sm" ${i===JOBSTOPS.length-1?"disabled":""} onclick="jobStopMove(${i},1)" title="Move down">▼</button>
+      <button type="button" class="btn ghost sm" onclick="jobStopDel(${i})" title="Remove">✕</button>
+    </div></div>`).join("");
+  box.innerHTML=(rows||`<div class="muted" style="margin-bottom:6px">No planned stops — the crew gets a direct link to the job site only.</div>`)
+    +`<div class="row" style="gap:8px;margin-top:8px"><input id="jstop_label" placeholder="Label — e.g. Stoneworks: pick up base" style="flex:1 1 160px"><input id="jstop_addr" placeholder="Address" style="flex:1 1 160px"></div>
+      <button type="button" class="btn ghost sm" style="margin-top:6px;width:100%" onclick="jobStopAdd()">+ Add stop</button>
+      <div class="sub" style="margin-top:4px;white-space:normal">Then the job site itself, automatically, last. Order matters — the crew's "Full route" link follows this list top to bottom.</div>`;
+}
+window.jobStopAdd=function(){
+  const label=(val("jstop_label")||"").trim();
+  const address=(val("jstop_addr")||"").trim();
+  if(!address){alert("Enter the stop's address.");return;}
+  const s={id:uid(),label:label||address,address:address,lat:null,lng:null};
+  JOBSTOPS.push(s);
+  if(typeof jobStopGeocode==="function")jobStopGeocode(s);   // best-effort, non-blocking — the map link uses the address text either way
+  renderJobStops();
+};
+window.jobStopMove=function(i,dir){
+  const j2=i+dir;if(j2<0||j2>=JOBSTOPS.length)return;
+  const tmp=JOBSTOPS[i];JOBSTOPS[i]=JOBSTOPS[j2];JOBSTOPS[j2]=tmp;
+  renderJobStops();
+};
+window.jobStopDel=function(i){
+  if(i<0||i>=JOBSTOPS.length)return;
+  JOBSTOPS.splice(i,1);
+  renderJobStops();
+};
+/* best-effort geocode (same free OSM Nominatim path as js/62 hbGeocode) — fills lat/lng in the background so a
+   future drive-estimate can use them; the Google Maps links themselves work off the address text regardless,
+   so a slow/failed lookup never blocks anything. */
+function jobStopGeocode(s){
+  if(!s||!s.address||typeof fetch!=="function")return;
+  fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(s.address))
+    .then(r=>r.json()).then(g=>{if(g&&g[0]){s.lat=+g[0].lat;s.lng=+g[0].lon;}}).catch(function(){});
+}
 /* ---- multi-day work-day picker — a tap-on/off mini month grid, mobile-first. Tapping a day toggles it in
    JOBWORKDAYS (non-contiguous OK). The START date (j_date) is always included and can't be turned off here
    (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips. */
@@ -414,6 +466,7 @@ window.saveJob=function(id,isNew){
   // MULTI-DAY: persist the picked work days (deduped, start day always in, sorted). Single-day jobs store [date].
   {const wd=new Set(JOBWORKDAYS);if(j.date)wd.add(j.date);j.workDays=[...wd].filter(Boolean).sort();}
   j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
+  j.plannedStops=JOBSTOPS.map(s=>({id:s.id,label:s.label,address:s.address,lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null}));   // admin-planned route (js/61 renders these as labeled links); untouched (echoed back) when the editor is hidden for non-owners
   if(!j.title){alert("Give the job a name.");return;}
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
   if(typeof logChange==="function")logChange(isNew?"create":"update","job",j.id,(isNew?"Scheduled ":"Updated ")+(j.title||"job")+(j.date?" · "+fmtDate(j.date):""));
