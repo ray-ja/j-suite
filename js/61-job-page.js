@@ -97,7 +97,7 @@ function rJobPage(j) {
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
   h += `<input id="exp_desc" placeholder="What for — dump fee, materials… (required)" style="margin-top:6px">`;
   h += `<label style="margin-top:8px">Whose mistake caused this? <span class="sub">(optional — docks <i>their</i> payout, not the whole crew's)</span></label><select id="exp_fault"><option value="">— nobody's fault / shared job cost —</option>${_members.map(u => `<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("")}</select>`;
-  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
+  h += `<input type="file" id="exp_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="exp_add_btn" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div></div>`;
 
   // 5a) Pass-through materials — billed to the customer at cost (reimbursed), tracked SEPARATELY from real expenses + their own receipt pile
   const mats = (j.materials || []).filter(x => x && !x.deleted);
@@ -107,7 +107,7 @@ function rJobPage(j) {
   h += mats.length ? mats.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelMaterial('${j.id}','${e.id}')">✕</button></div></div>`).join("") : `<div class="muted">No materials logged. Enter the amount + what it was; the receipt photo is optional.</div>`;
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="mat_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="mat_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
   h += `<input id="mat_desc" placeholder="What — pavers, base rock, edging… (required)" style="margin-top:6px">`;
-  h += `<input type="file" id="mat_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div></div>`;
+  h += `<input type="file" id="mat_receipt" accept="image/*" capture="environment" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="mat_add_btn" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div></div>`;
 
   // 5b) Time & travel — reconstruct/log for the real effective $/hr (drive time is the silent cost)
   const hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
@@ -164,39 +164,63 @@ window.jobToggleLoaded = function (jobId, itemId) {
   const e = (j.equipment || []).find(x => x.itemId === itemId); if (!e) return;
   e.loaded = !e.loaded; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
+/* Submit-in-flight guards for "+ Add expense" / "+ Add material": a slow save over a weak jobsite
+   connection used to look like a no-op, so a tap-happy user would fire the handler a dozen times —
+   each one independently reading the SAME amount/vendor/desc/receipt-file off the DOM and creating its
+   OWN duplicate record. The guard below makes every repeat tap while a save is in flight a silent no-op
+   (button also disables + shows "Adding…" → "✓ Added" so it's visibly NOT stuck), so at most one record
+   — carrying the one photo that was actually selected — gets created per tap. */
+let _jobExpAddBusy = false, _jobExpAddWatchdog = null;
 window.jobAddExpense = function (jobId) {
+  if (_jobExpAddBusy) return;   // ignore rapid re-taps while a save is already in flight
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const amt = parseFloat(val("exp_amt")); if (!(amt > 0)) { alert("Enter the expense amount."); return; }
   const desc = (val("exp_desc") || "").trim(); if (!desc) { alert("Enter what the expense was for."); return; }
   const vendor = (val("exp_vendor") || "").trim();
   const fault = val("exp_fault") || "";
-  const input = document.getElementById("exp_receipt"); const file = input && input.files && input.files[0];
-  const add = function (receiptId) {
+  const input = document.getElementById("exp_receipt");
+  const file = input && input.files && input.files[0];   // captured NOW, before the lock's async gate — nothing else can read/clear this input until we're done
+  const btn = document.getElementById("exp_add_btn");
+  _jobExpAddBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
+  clearTimeout(_jobExpAddWatchdog); _jobExpAddWatchdog = setTimeout(function () { _jobExpAddBusy = false; }, 20000); // safety: never permanently soft-lock the button if a save hangs
+  const finish = function (receiptId) {
+    clearTimeout(_jobExpAddWatchdog);
     if (!Array.isArray(j.expenses)) j.expenses = [];
     j.expenses.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, receiptId: receiptId || null, faultMemberId: fault || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
-    if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+    if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+    if (btn) btn.textContent = "✓ Added";
+    setTimeout(function () { _jobExpAddBusy = false; if (typeof render === "function") render(); }, 450);
   };
-  if (file && typeof jsUpload === "function") jsUpload(file).then(add).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); add(null); });
-  else add(null);
+  if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
+  else finish(null);
 };
 window.jobDelExpense = function (jobId, expId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.expenses)) return;
   const e = j.expenses.find(x => x && x.id === expId); if (!e) return;
   e.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
+let _jobMatAddBusy = false, _jobMatAddWatchdog = null;
 window.jobAddMaterial = function (jobId) {
+  if (_jobMatAddBusy) return;   // ignore rapid re-taps while a save is already in flight — this is the June 2026 dupe-material bug
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   const amt = parseFloat(val("mat_amt")); if (!(amt > 0)) { alert("Enter the material amount."); return; }
   const desc = (val("mat_desc") || "").trim(); if (!desc) { alert("Enter what the material was."); return; }
   const vendor = (val("mat_vendor") || "").trim();
-  const input = document.getElementById("mat_receipt"); const file = input && input.files && input.files[0];
-  const add = function (receiptId) {
+  const input = document.getElementById("mat_receipt");
+  const file = input && input.files && input.files[0];   // captured NOW, before the lock's async gate — nothing else can read/clear this input until we're done
+  const btn = document.getElementById("mat_add_btn");
+  _jobMatAddBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
+  clearTimeout(_jobMatAddWatchdog); _jobMatAddWatchdog = setTimeout(function () { _jobMatAddBusy = false; }, 20000); // safety: never permanently soft-lock the button if a save hangs
+  const finish = function (receiptId) {
+    clearTimeout(_jobMatAddWatchdog);
     if (!Array.isArray(j.materials)) j.materials = [];
     j.materials.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, receiptId: receiptId || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
-    if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+    if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+    if (btn) btn.textContent = "✓ Added";
+    setTimeout(function () { _jobMatAddBusy = false; if (typeof render === "function") render(); }, 450);
   };
-  if (file && typeof jsUpload === "function") jsUpload(file).then(add).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); add(null); });
-  else add(null);
+  if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
+  else finish(null);
 };
 window.jobDelMaterial = function (jobId, mId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.materials)) return;
