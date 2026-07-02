@@ -229,7 +229,7 @@ window.tcClockIn = async function () {
     computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
     odoStart: odoStart, odoEnd: null,
     riderRole: role, trailerId: trailerId, rodeWith: rodeWith,
-    vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, rate: TC_RATE, updatedAt: now()
+    vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, invVehicleId: veh.invVehicleId || null, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
@@ -389,7 +389,7 @@ function tcOpenNewSegmentFrom(oldEntry, newJobId) {
     computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
     odoStart: (oldEntry.milesSource === "odometer" && oldEntry.odoEnd != null) ? oldEntry.odoEnd : null, odoEnd: null,
     riderRole: oldEntry.riderRole, trailerId: oldEntry.trailerId || null, rodeWith: oldEntry.rodeWith || null,
-    vehicleId: oldEntry.vehicleId || null, vehicle: oldEntry.vehicle || "", vehicleOwnerId: oldEntry.vehicleOwnerId || null,
+    vehicleId: oldEntry.vehicleId || null, vehicle: oldEntry.vehicle || "", vehicleOwnerId: oldEntry.vehicleOwnerId || null, invVehicleId: oldEntry.invVehicleId || null,
     rate: oldEntry.rate || TC_RATE, changedFromEntryId: oldEntry.id, updatedAt: now()
   };
   tcoll().push(n);
@@ -436,9 +436,42 @@ function tcActiveTrailers() { return tcOrgVehicles().filter(v => v.active !== fa
 function tcTruckById(id) { return tcOrgVehicles().find(v => v && v.id === id) || null; }
 function tcTrailerById(id) { return tcActiveTrailers().find(v => v && v.id === id) || null; }
 function tcTruckLabel(v) { return v ? ((v.name || "Truck") + (v.plate ? " · " + v.plate : "")) : "Truck"; }
+/* ===== INVENTORY vehicles (vehicle unification) — the clock-in picker now ALSO draws pickable vehicles from
+   the crew-writable `inventory` collection (js/31), so anyone can add a vehicle (personal or shared) and it
+   flows straight into clock-in. A row counts ONLY when it's a real, pickable vehicle: cat "vehicle" + clockIn
+   flag + active + not deleted — the aspirational INV_SEED rows (inv-pickup-truck…) lack clockIn and never
+   pollute the picker. Encoded as "inv:<itemId>". personal (item.ownerId set) → reimburses the OWNER; a shared
+   company-inventory vehicle (no ownerId) → reimburses the driver, exactly like a registry truck. ===== */
+function tcInvVehicles() { return (typeof actInv === "function" ? actInv() : []).filter(i => i && i.cat === "vehicle" && i.clockIn && i.active !== false && !i.deleted); }
+function tcInvVehById(id) { return (typeof actInv === "function" ? actInv() : []).find(i => i && i.id === id && i.cat === "vehicle") || null; }
+function tcInvVehLabel(i) { return i ? ((i.name || "Vehicle") + (i.plate ? " · " + i.plate : "")) : "Vehicle"; }
+/* this member's own personal inventory clock-in vehicle (first, if any) — used to prefer it as a default and
+   to replace the legacy synthesized "<name>'s vehicle" option once the member has a real inventory vehicle */
+function tcMemberInvVeh(uid) { return tcInvVehicles().find(i => i.ownerId === uid) || null; }
+/* the union of everything pickable at clock-in: registry active trucks + inventory clock-in vehicles. Excludes
+   aspirational inventory rows (no clockIn flag). Used by callers/tests to reason about "what can be driven". */
+function tcClockableVehicles() { return tcActiveTrucks().concat(tcInvVehicles()); }
+/* the ordered driver-pickable option list (excludes the head "No vehicle") shared by every picker:
+     Company trucks   → registry active trucks (truck:<id>) + shared inventory vehicles with no owner (inv:<id>)
+     Personal vehicles→ each active member's inventory personal vehicle (inv:<id>), else a legacy synthesized
+                        fallback (owner:<uid>) so the picker is never empty (zero clock-in regression).
+   PHASE 2: once a member has a real inventory personal vehicle the synthesized option is dropped for them;
+   tcResolveVehicle still honors historical owner:<uid> entries. */
+function tcVehicleOptionList() {
+  const opts = [];
+  tcActiveTrucks().forEach(v => opts.push({ group: "Company trucks", value: "truck:" + v.id, label: "🚚 " + tcTruckLabel(v) }));
+  const inv = tcInvVehicles();
+  inv.filter(i => !i.ownerId).forEach(i => opts.push({ group: "Company trucks", value: "inv:" + i.id, label: "🚚 " + tcInvVehLabel(i) }));
+  const members = tcVehMembers(), memberIds = {}; members.forEach(u => { memberIds[u.id] = 1; });
+  const ownersShown = {};
+  inv.filter(i => i.ownerId && memberIds[i.ownerId]).forEach(i => { ownersShown[i.ownerId] = 1; opts.push({ group: "Personal vehicles", value: "inv:" + i.id, label: "🚗 " + tcInvVehLabel(i) }); });
+  members.forEach(u => { if (!ownersShown[u.id]) opts.push({ group: "Personal vehicles", value: "owner:" + u.id, label: "🚗 " + u.username + "'s vehicle" }); });
+  return opts;
+}
 /* the value (per the encoding above) that should be SELECTED by default for this driver: their account
    defaultVehicleId if set + still active, else their last-used vehicle (truck or personal), else No vehicle. */
 function tcDefaultVehVal(driverId) {
+  if (_tcPreselectInvVeh && tcInvVehById(_tcPreselectInvVeh)) return "inv:" + _tcPreselectInvVeh;   // just-added-from-clock-in vehicle → select it on this render
   const me = (typeof curUser === "function") ? curUser() : null;
   if (me && me.id === driverId && me.defaultVehicleId) {
     if (me.defaultVehicleId === "__none__") return "";
@@ -447,26 +480,34 @@ function tcDefaultVehVal(driverId) {
   const last = (tcoll() || []).filter(e => e.userId === driverId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
   if (last) {
     if (last.vehicleId && tcTruckById(last.vehicleId) && (tcTruckById(last.vehicleId).active !== false)) return "truck:" + last.vehicleId;
-    if (last.vehicleId === null && last.vehicleOwnerId) return "owner:" + last.vehicleOwnerId;
+    if (last.invVehicleId && tcInvVehById(last.invVehicleId)) return "inv:" + last.invVehicleId;   // prefer the last shift's inventory vehicle
+    if (last.vehicleId === null && last.vehicleOwnerId) { const iv = tcMemberInvVeh(last.vehicleOwnerId); return iv ? "inv:" + iv.id : "owner:" + last.vehicleOwnerId; }   // map a legacy personal-vehicle default onto that owner's inventory vehicle when one now exists
     if (!last.vehicle && last.vehicleId == null) return "";   // last shift had no vehicle
-    if (last.vehicleOwnerId) return "owner:" + last.vehicleOwnerId;
+    if (last.vehicleOwnerId) { const iv = tcMemberInvVeh(last.vehicleOwnerId); return iv ? "inv:" + iv.id : "owner:" + last.vehicleOwnerId; }
   }
   return "";   // default to No vehicle (one tap away to pick a truck)
 }
-/* the unified picker <select> options. selVal = current encoded value to pre-select. */
+/* the unified picker <select> options (head "No vehicle" + the shared option list). selVal = pre-select. */
 function tcVehicleOptions(selVal, driverId) {
   let h = `<option value="" ${selVal === "" ? "selected" : ""}>🚶 No vehicle</option>`;
-  const trucks = tcActiveTrucks();
-  if (trucks.length) h += `<optgroup label="Company trucks">` + trucks.map(v => `<option value="truck:${esc(v.id)}" ${selVal === ("truck:" + v.id) ? "selected" : ""}>🚚 ${esc(tcTruckLabel(v))}</option>`).join("") + `</optgroup>`;
-  h += `<optgroup label="Personal vehicles">` + tcVehMembers().map(u => `<option value="owner:${esc(u.id)}" ${selVal === ("owner:" + u.id) ? "selected" : ""}>🚗 ${esc(u.username)}'s vehicle</option>`).join("") + `</optgroup>`;
+  let cur = null;
+  tcVehicleOptionList().forEach(o => {
+    if (o.group !== cur) { if (cur !== null) h += "</optgroup>"; h += `<optgroup label="${esc(o.group)}">`; cur = o.group; }
+    h += `<option value="${esc(o.value)}" ${selVal === o.value ? "selected" : ""}>${esc(o.label)}</option>`;
+  });
+  if (cur !== null) h += "</optgroup>";
   return h;
 }
-/* resolve an encoded picker value → {vehicleId, vehicleOwnerId, vehicle} written onto the entry */
+/* resolve an encoded picker value → {vehicleId, vehicleOwnerId, vehicle, invVehicleId} written onto the entry.
+   The mileage math NEVER keys off invVehicleId — it stays keyed on vehicleOwnerId (finMileage) + the odometer,
+   so a personal inventory vehicle reimburses its OWNER and a shared/company one reimburses the driver, byte
+   identical to before. invVehicleId is a purely additive provenance link back to the inventory record. */
 function tcResolveVehicle(encVal, driverId) {
-  if (!encVal) return { vehicleId: null, vehicleOwnerId: null, vehicle: "" };           // No vehicle
-  if (encVal.indexOf("truck:") === 0) { const v = tcTruckById(encVal.slice(6)); return { vehicleId: v ? v.id : null, vehicleOwnerId: null, vehicle: v ? tcTruckLabel(v) : "Truck" }; }
-  if (encVal.indexOf("owner:") === 0) { const oid = encVal.slice(6); return { vehicleId: null, vehicleOwnerId: oid, vehicle: tcVehOwnerName(oid) + "'s vehicle" }; }
-  return { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
+  if (!encVal) return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null };           // No vehicle
+  if (encVal.indexOf("truck:") === 0) { const v = tcTruckById(encVal.slice(6)); return { vehicleId: v ? v.id : null, vehicleOwnerId: null, vehicle: v ? tcTruckLabel(v) : "Truck", invVehicleId: null }; }
+  if (encVal.indexOf("inv:") === 0) { const i = tcInvVehById(encVal.slice(4)); if (i) return { vehicleId: null, vehicleOwnerId: i.ownerId || null, vehicle: i.name || tcInvVehLabel(i), invVehicleId: i.id }; return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null }; }
+  if (encVal.indexOf("owner:") === 0) { const oid = encVal.slice(6); return { vehicleId: null, vehicleOwnerId: oid, vehicle: tcVehOwnerName(oid) + "'s vehicle", invVehicleId: null }; }
+  return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null };
 }
 /* does the entry / picked value involve a vehicle (→ odometer is relevant)? Mileage only matters on the DRIVER
    path: a passenger / no-vehicle shift carries no vehicleId/owner, so this stays false → no odometer, no miles. */
@@ -480,6 +521,7 @@ function tcEntryHasVehicle(e) { return !!(e && e.riderRole === "driver" && (e.ve
    The role drives which detail fields show. Default = their last shift's role (else driver if they have a default
    vehicle, else none). ===== */
 function tcDefaultRole(driverId) {
+  if (_tcPreselectInvVeh && tcInvVehById(_tcPreselectInvVeh)) return "driver";   // just added a vehicle from clock-in → land on the driver role with it selected
   const last = (tcoll() || []).filter(e => e.userId === driverId && !e.deleted).sort((a, b) => (b.clockIn || 0) - (a.clockIn || 0))[0];
   if (last && (last.riderRole === "driver" || last.riderRole === "passenger" || last.riderRole === "none")) return last.riderRole;
   return tcDefaultVehVal(driverId) ? "driver" : "none";   // never driven before → default to whatever their vehicle default implies
@@ -503,7 +545,7 @@ function tcRoleDetail(role, defVehVal, driverId) {
       // offer as a personal vehicle — an empty <select> used to render silently, its .value read as "", and
       // clock-in saved riderRole:"driver" with NO vehicle at all. Say so instead of pretending a vehicle was
       // picked; tcClockIn() also blocks this combination server-side-of-the-form as a second guard.
-      h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:10px"><div class="sub" style="white-space:normal">⚠ No vehicles are set up for this crew yet — ask the owner to add one in Admin (Vehicles), or pick 🧍 Passenger / 🚶 No vehicle instead.</div></div>`;
+      h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft);margin-top:10px"><div class="sub" style="white-space:normal">⚠ No vehicles are set up for this crew yet — <a href="#" onclick="tcAddMyVehicle(true);return false" style="color:var(--brand-text);font-weight:700">＋ Add your vehicle</a> (or ask the owner to add a company truck in Admin), or pick 🧍 Passenger / 🚶 No vehicle instead.</div></div>`;
     } else {
       // the odometer field is ALWAYS shown for the driver role: tcDriverVehicleOptions never leaves the
       // <select> blank (it force-selects the first option when there's no default), so a vehicle is always
@@ -511,6 +553,7 @@ function tcRoleDetail(role, defVehVal, driverId) {
       // check) meant a first-time driver's odometer input was invisible even though a vehicle WAS selected.
       h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
         <select id="tc_vehicle">${vehOpts}</select>
+        <div class="sub" style="margin-top:4px;white-space:normal">Driving your own? <a href="#" onclick="tcAddMyVehicle(true);return false" style="color:var(--brand-text);font-weight:700">＋ Add your vehicle</a></div>
         <div id="tc_odo_wrap">
           <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
           <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
@@ -529,7 +572,7 @@ function tcRoleDetail(role, defVehVal, driverId) {
 }
 /* is there ANYTHING a driver could pick — a company truck or a crew member's personal vehicle? Used to tell
    "nothing is selected because nothing exists" apart from "nothing is selected but something should be". */
-function tcHasVehicleOptions() { return !!(tcActiveTrucks().length || tcVehMembers().length); }
+function tcHasVehicleOptions() { return tcVehicleOptionList().length > 0; }
 /* the DRIVER vehicle dropdown — kind=vehicle trucks + personal vehicles (NO trailers, NO "No vehicle" since the
    role IS the driver). Reuses the same encoding as tcVehicleOptions but without the "No vehicle" head option.
    BUG FIX (vehicleId not attaching): this used to build the <option> list as one big HTML string and detect
@@ -541,9 +584,7 @@ function tcHasVehicleOptions() { return !!(tcActiveTrucks().length || tcVehMembe
    (never string-sniffed), and callers (tcRoleDetail / tcClockIn) get told plainly via "" when the org has
    nothing to offer, instead of the code pretending a vehicle was picked. */
 function tcDriverVehicleOptions(selVal, driverId) {
-  const opts = [];
-  tcActiveTrucks().forEach(v => opts.push({ group: "Company trucks", value: "truck:" + v.id, label: "🚚 " + tcTruckLabel(v) }));
-  tcVehMembers().forEach(u => opts.push({ group: "Personal vehicles", value: "owner:" + u.id, label: "🚗 " + u.username + "'s vehicle" }));
+  const opts = tcVehicleOptionList();   // registry trucks + inventory clock-in vehicles + per-member personal (inv or synthesized fallback)
   if (!opts.length) return "";   // nothing at all to offer — caller must handle this, not render a dead <select>
   let idx = opts.findIndex(o => o.value === selVal);
   if (idx < 0) idx = 0;   // no match (or no default set) — the driver role ALWAYS has SOME vehicle chosen
@@ -606,6 +647,55 @@ window.tcSaveDefaultVehicle = function () {
   touch(me); save();
   if (typeof scheduleAutoPush === "function") scheduleAutoPush();
   if (typeof closeModal === "function") closeModal(); render();
+};
+
+/* ===== "＋ Add my vehicle (for clock-in)" — the crew-writable path (vehicle unification). ANY member creates
+   their OWN pickable, personal vehicle as a normal INVENTORY write: the `inventory` collection has no server
+   write-authz (unlike registry.vehicles, which is owner-only), so Chase can add his car and pick it in one
+   flow. Reachable from the Inventory screen AND inline at clock-in when a driver has no vehicle. The vehicle is
+   personal (ownerId = the member) so mileage reimburses THEM — same semantics as the old synthesized personal
+   vehicle, now a first-class, editable record. `afterClockIn` pre-selects it on the clock-in form so they can
+   clock in immediately. ===== */
+let _tcPreselectInvVeh = null;   // set when adding from clock-in → the next clock-in render selects this inv vehicle
+window.tcAddMyVehicle = function (afterClockIn) {
+  const me = (typeof curUser === "function") ? curUser() : null;
+  const who = tcWho();
+  const defName = ((me ? me.username : who.name) || "My") + "'s vehicle";
+  modal("Add your vehicle", `
+    <p class="muted" style="margin-bottom:8px">Adds your personal vehicle to Inventory so you can pick it when you clock in as the driver. Mileage is reimbursed to <b>you</b>.</p>
+    <label>Vehicle</label>
+    <input id="tc_mv_name" value="${esc(defName)}" placeholder="e.g. Chase's Silverado">
+    <label style="margin-top:10px">Plate <span class="sub">· optional</span></label>
+    <input id="tc_mv_plate" placeholder="e.g. ABC-1234">
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcSaveMyVehicle(${afterClockIn ? "true" : "false"})">Save vehicle</button>`);
+  setTimeout(function () { const el = document.getElementById("tc_mv_name"); if (el) { el.focus(); el.select(); } }, 30);
+};
+window.tcSaveMyVehicle = function (afterClockIn) {
+  const me = (typeof curUser === "function") ? curUser() : null;
+  const who = tcWho();
+  const ownerId = me ? me.id : who.userId;
+  const name = (val("tc_mv_name") || "").trim(); if (!name) { alert("Give your vehicle a name."); return; }
+  const plate = (val("tc_mv_plate") || "").trim();
+  if (typeof submitGuard === "function" && !submitGuard("tcSaveMyVehicle:" + ownerId + ":" + name)) return;   // rapid-tap dupe guard
+  const d = D(); if (!d.inventory) d.inventory = [];
+  const item = { id: "inv-veh-" + uid(), name: name, cat: "vehicle", personal: true, ownerId: ownerId, clockIn: true, active: true, have: true, qty: "", plate: plate, tags: [], section: "Vehicle & transport", updatedAt: now() };
+  d.inventory.push(item);
+  if (typeof logChange === "function") logChange("create", "inventory", item.id, "Added personal vehicle — " + name);
+  save();
+  if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+  if (typeof closeModal === "function") closeModal();
+  _tcPreselectInvVeh = afterClockIn ? item.id : null;
+  render();
+  if (afterClockIn) {
+    // switch to the driver role + select the just-added vehicle so they can clock in on it right away
+    setTimeout(function () {
+      try {
+        if (typeof tcRoleChanged === "function") tcRoleChanged("driver");
+        const sel = document.getElementById("tc_vehicle"); if (sel) sel.value = "inv:" + item.id;
+      } catch (e) {}
+      _tcPreselectInvVeh = null;
+    }, 30);
+  }
 };
 
 /* ===== multi-stop material pickups (stops[] on the entry) — runs hit several places (quarry, Lowe's,
@@ -703,7 +793,7 @@ window.tcOpenEntry = function (id) {
   if (typeof isOwner === "function" && !isOwner()) { alert("Only the owner can adjust logged time + mileage."); return; }
   const e = tcoll().find(x => x.id === id); if (!e) return;
   const v = tcVerify(e), odoM = tcOdoMiles(e), stops = tcStops(e);
-  const curVal = e.vehicleId ? ("truck:" + e.vehicleId) : (e.vehicleOwnerId ? ("owner:" + e.vehicleOwnerId) : "");
+  const curVal = e.vehicleId ? ("truck:" + e.vehicleId) : (e.invVehicleId && tcInvVehById(e.invVehicleId) ? ("inv:" + e.invVehicleId) : (e.vehicleOwnerId ? ("owner:" + e.vehicleOwnerId) : ""));
   let flagHtml = "";
   if (e.milesFlag === "odo-high" || (v && v.kind === "odo-high")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) reads <b>${(v||{}).deltaPct||""}% higher</b> than the GPS path (${(v||{}).gps||tcRound(e.computedMiles)} mi). Odometer is still the number of record — verify it's right.</div></div>`;
   else if (e.milesFlag === "odo-low" || (v && v.kind === "odo-low")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) is <b>lower than the GPS-traced distance</b> (${(v||{}).gps||tcRound(e.computedMiles)} mi) — that's not possible. Check the readings.</div></div>`;
@@ -730,7 +820,7 @@ window.tcSaveEntry = function (id) {
   const m = parseFloat(val("tc_e_miles")); e.miles = isNaN(m) ? tcRound(e.computedMiles) : Math.max(0, m);
   if (!isNaN(m) && Math.abs(m - prevMiles) > 0.05) e.milesSource = "manual";   // a hand-edit of the miles → provenance = manual
   const veh = tcResolveVehicle(val("tc_e_veh"), e.userId);
-  e.vehicleId = veh.vehicleId; e.vehicleOwnerId = veh.vehicleOwnerId; e.vehicle = veh.vehicle;
+  e.vehicleId = veh.vehicleId; e.vehicleOwnerId = veh.vehicleOwnerId; e.vehicle = veh.vehicle; e.invVehicleId = veh.invVehicleId || null;
   // keep riderRole in lock-step with the assigned vehicle: a vehicle ⇒ driver (logs miles); cleared ⇒ none
   e.riderRole = (veh.vehicleId || veh.vehicleOwnerId || veh.vehicle) ? "driver" : "none";
   e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;

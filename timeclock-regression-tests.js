@@ -313,3 +313,113 @@ await (async function () {
   }
   localStorage.removeItem("jra_session");
 })();
+
+// ============================================================================================
+// ===== VEHICLE UNIFICATION — an inventory vehicle flows into clock-in; mileage reimburses the right
+//       person (personal → OWNER, company truck → DRIVER); the "＋ Add my vehicle" inline flow writes a
+//       real inventory record; the legacy migration is idempotent; aspirational seed rows never pollute
+//       the picker. The mileage math (finMileage, keyed vehicleOwnerId || userId) is UNCHANGED. =====
+// ============================================================================================
+
+// ---- (2) a COMPANY truck (vehicleOwnerId null) still reimburses the DRIVER (finMileage falls back to userId),
+//          and mileage NEVER keys on vehicleId — proves the invariant is untouched by the inv: additions ----
+(function () {
+  if (typeof finMileage !== "function") { __errs.push("VEHICLE UNIFICATION regression: finMileage global not available"); return; }
+  var e = { id: "tc_truck_mi", jobId: "x", userId: "driverX", clockIn: 1, clockOut: 2, miles: 30, milesConfirmed: true, vehicleId: "veh_obx_f150", vehicleOwnerId: null, rate: 0.725 };
+  var mil = finMileage([e], { confirmedOnly: true });
+  diag("finMileage company truck: perMember=" + JSON.stringify(mil.perMember));
+  if (!(mil.perMember["driverX"] > 0)) __errs.push("VEHICLE UNIFICATION regression: a company truck (vehicleOwnerId null) must reimburse the DRIVER (userId)");
+  if (mil.perMember["veh_obx_f150"] != null) __errs.push("VEHICLE UNIFICATION regression: mileage must NOT key on vehicleId");
+})();
+
+await (async function () {
+  var u = { id: "u_inv_veh", username: "InvVeh", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  D().inventory = D().inventory || [];
+
+  // ---- (5) aspirational INV_SEED vehicle rows (no clockIn flag) must NOT be clockable ----
+  var clockableHasAspirational = tcClockableVehicles().some(function (v) { return v && v.id === "inv-pickup-truck"; });
+  diag("aspirational inv-pickup-truck in tcClockableVehicles=" + clockableHasAspirational);
+  if (clockableHasAspirational) __errs.push("VEHICLE UNIFICATION regression: an aspirational inventory row (inv-pickup-truck, no clockIn flag) leaked into tcClockableVehicles()");
+
+  // ---- (1) a PERSONAL inventory vehicle resolves to vehicleOwnerId = its owner (reimburses the OWNER) ----
+  var pv = { id: "inv-veh-test-personal", name: "InvVeh's Subaru", cat: "vehicle", personal: true, ownerId: u.id, clockIn: true, active: true, have: true, plate: "OBX-1", updatedAt: now() };
+  D().inventory.push(pv);
+  if (!tcClockableVehicles().some(function (v) { return v.id === pv.id; })) __errs.push("VEHICLE UNIFICATION regression: a clockIn inventory vehicle is missing from tcClockableVehicles()");
+  var resolved = tcResolveVehicle("inv:" + pv.id, u.id);
+  diag("resolve inv personal: vehicleOwnerId=" + resolved.vehicleOwnerId + " vehicleId=" + resolved.vehicleId + " invVehicleId=" + resolved.invVehicleId);
+  if (resolved.vehicleOwnerId !== u.id) __errs.push("VEHICLE UNIFICATION regression: inv: personal vehicle must resolve vehicleOwnerId=owner (reimburses owner), got " + resolved.vehicleOwnerId);
+  if (resolved.vehicleId !== null) __errs.push("VEHICLE UNIFICATION regression: inv: personal vehicle must have vehicleId=null (not a registry truck)");
+  if (resolved.invVehicleId !== pv.id) __errs.push("VEHICLE UNIFICATION regression: inv: resolve must set invVehicleId provenance");
+
+  // clock in as driver on the inventory personal vehicle → odometer/GPS flow active + reimburses the OWNER
+  var jobIV = { id: "j_inv_veh", title: "Airport pickup — personal car", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(jobIV);
+  TAB = "time"; render();
+  tcRoleChanged("driver");
+  var sel = document.getElementById("tc_vehicle"); if (sel) sel.value = "inv:" + pv.id;
+  var jsel = document.getElementById("tc_job"); if (jsel) jsel.value = "j_inv_veh";
+  await tcClockIn();
+  var eIV = D().timeclock.find(function (e) { return e.jobId === "j_inv_veh" && !e.clockOut; });
+  diag("inv-veh clock-in: vehicleOwnerId=" + (eIV && eIV.vehicleOwnerId) + " invVehicleId=" + (eIV && eIV.invVehicleId) + " hasVehicle=" + (eIV && tcEntryHasVehicle(eIV)));
+  if (!eIV) __errs.push("VEHICLE UNIFICATION regression: clock-in on an inventory personal vehicle created no entry");
+  else {
+    if (eIV.vehicleOwnerId !== u.id) __errs.push("VEHICLE UNIFICATION regression: clocked-in entry vehicleOwnerId should be the vehicle owner, got " + eIV.vehicleOwnerId);
+    if (eIV.vehicleId !== null) __errs.push("VEHICLE UNIFICATION regression: an inv: personal shift must have vehicleId=null");
+    if (eIV.invVehicleId !== pv.id) __errs.push("VEHICLE UNIFICATION regression: clocked-in entry should carry invVehicleId");
+    if (!tcEntryHasVehicle(eIV)) __errs.push("VEHICLE UNIFICATION regression: an inv: driver shift must count as having a vehicle (odometer/GPS flow)");
+    eIV.clockOut = eIV.clockIn + 3600000; eIV.miles = 20; eIV.milesConfirmed = true; touch(eIV);
+    var mil2 = finMileage([eIV], { confirmedOnly: true });
+    diag("finMileage inv personal: perMember=" + JSON.stringify(mil2.perMember));
+    if (!(mil2.perMember[u.id] > 0)) __errs.push("VEHICLE UNIFICATION regression: personal inventory vehicle mileage must reimburse the OWNER (vehicleOwnerId)");
+    eIV.deleted = true;
+  }
+  localStorage.removeItem("jra_session");
+})();
+
+// ---- (3) a crew member can ADD a clock-in vehicle inline (tcAddMyVehicle → tcSaveMyVehicle inventory write) ----
+await (async function () {
+  var u = { id: "u_add_veh", username: "Chase", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "crew");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var before = (D().inventory || []).length;
+  tcAddMyVehicle(false);
+  var nameEl = document.getElementById("tc_mv_name");
+  if (!nameEl) { __errs.push("VEHICLE UNIFICATION regression: Add-my-vehicle modal did not open"); }
+  else {
+    nameEl.value = "Chase's Silverado"; nameEl.dispatchEvent(new Event("input", { bubbles: true }));
+    var plateEl = document.getElementById("tc_mv_plate"); if (plateEl) { plateEl.value = "NC-777"; plateEl.dispatchEvent(new Event("input", { bubbles: true })); }
+    var saveBtn = document.querySelector('button[onclick*="tcSaveMyVehicle"]');
+    if (!saveBtn) __errs.push("VEHICLE UNIFICATION regression: no Save button wired to tcSaveMyVehicle");
+    else saveBtn.click();
+  }
+  var mine = (D().inventory || []).filter(function (i) { return i.cat === "vehicle" && i.personal && i.ownerId === u.id && i.clockIn && i.name === "Chase's Silverado"; });
+  diag("add-my-vehicle: inventory " + before + "->" + (D().inventory || []).length + " | mine=" + mine.length);
+  if (!mine.length) __errs.push("VEHICLE UNIFICATION regression: tcSaveMyVehicle did not create a personal clock-in inventory vehicle owned by the member");
+  else if (!tcClockableVehicles().some(function (v) { return v.id === mine[0].id; })) __errs.push("VEHICLE UNIFICATION regression: a just-added personal vehicle is not clockable");
+  var reloaded = JSON.parse(localStorage.getItem(KEY));
+  var reInv = reloaded && reloaded.obx && (reloaded.obx.inventory || []).some(function (i) { return i.name === "Chase's Silverado" && i.ownerId === u.id; });
+  if (!reInv) __errs.push("VEHICLE UNIFICATION regression: the added vehicle did not persist to localStorage");
+  localStorage.removeItem("jra_session");
+})();
+
+// ---- (4) the legacy migration (seedClockInVehicles) is idempotent — a double run makes NO duplicate rows ----
+(function () {
+  if (typeof seedClockInVehicles !== "function") { __errs.push("VEHICLE UNIFICATION regression: seedClockInVehicles not defined"); return; }
+  S.biz = "obx";
+  seedClockInVehicles();
+  var members = (typeof schedMembers === "function") ? schedMembers() : [];
+  var stableIds = members.map(function (m) { return "inv-veh-personal-" + m.id; });
+  var count1 = (D().inventory || []).filter(function (i) { return stableIds.indexOf(i.id) >= 0; }).length;
+  seedClockInVehicles();   // run again — must dedupe on the stable id
+  var count2 = (D().inventory || []).filter(function (i) { return stableIds.indexOf(i.id) >= 0; }).length;
+  var seen = {}, dup = false;
+  (D().inventory || []).forEach(function (i) { if (i && i.id && i.id.indexOf("inv-veh-personal-") === 0) { if (seen[i.id]) dup = true; seen[i.id] = 1; } });
+  diag("seedClockInVehicles idempotency: members=" + members.length + " seeded1=" + count1 + " seeded2=" + count2 + " anyDup=" + dup);
+  if (members.length && count1 === 0) __errs.push("VEHICLE UNIFICATION regression: seedClockInVehicles seeded nothing for active members");
+  if (count2 !== count1) __errs.push("VEHICLE UNIFICATION regression: seedClockInVehicles is NOT idempotent (row count changed " + count1 + " -> " + count2 + ")");
+  if (dup) __errs.push("VEHICLE UNIFICATION regression: duplicate inv-veh-personal-* rows after a double seed run");
+})();
