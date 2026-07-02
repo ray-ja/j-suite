@@ -128,6 +128,10 @@ function load(){
   if(!S.msgIAv1&&typeof migrateThreadIA==="function"){migrateThreadIA();S.msgIAv1=true;save();}   // Messages IA cleanup: clear labels, per-crew availability channels, no system noise in crew view
   /* inventory master — seeded/refreshed from js/31-inventory.js (its INV_SEED is the import of OBX-Ops/Inventory/master-inventory.md); preserves the user's Have?/Qty marks. Runs at boot after all modules parse. */
   if(typeof seedInventory==="function")seedInventory();
+  /* VEHICLE UNIFICATION (Phase 2) — migrate each active member's personal vehicle into a first-class inventory
+     clock-in vehicle (stable id inv-veh-personal-<uid>; idempotent; additive — inventory rows only, never
+     touches timeclock/mileage). Runs after seedInventory + after accounts exist so schedMembers() resolves. */
+  if(typeof seedClockInVehicles==="function")seedClockInVehicles();
   /* admin/roles — backfill roles + the synced access-map record on accounts (js/32-admin.js) */
   if(typeof adminMigrate==="function")adminMigrate();
   if(typeof teamProfileMigrate==="function")teamProfileMigrate();   // TEAM PROFILES: backfill additive contact fields (phone/email/avatarId/title) on every account (loss-free, no updatedAt bump)

@@ -169,6 +169,31 @@ function seedInventory(){
   S.invSeedV=INV_SEED_V; save();
 }
 
+/* PHASE 2 (vehicle unification) — idempotently migrate the legacy synthesized personal vehicles into real,
+   first-class INVENTORY vehicles: seed ONE personal clock-in vehicle per ACTIVE member (schedMembers()) into
+   this biz's inventory, keyed on a STABLE id (inv-veh-personal-<uid>) so a re-seed or a second device dedupes
+   via the inventory LWW sync instead of duplicating. Each is personal (ownerId=member) + clockIn:true, so it
+   flows into the clock-in picker and mileage reimburses the OWNER — identical semantics to the old synthesized
+   "<name>'s vehicle" option, which is now dropped from the picker UI (js/38 tcVehicleOptionList), while
+   historical owner:<uid> entries still resolve via tcResolveVehicle. ADDITIVE: creates inventory rows only —
+   never touches timeclock entries or mileage math. */
+function seedClockInVehicles(){
+  var members=(typeof schedMembers==="function")?schedMembers():[];
+  if(!members.length)return;
+  var d=D(); if(!d.inventory)d.inventory=[];
+  var byId={}; d.inventory.forEach(function(r){if(r&&r.id)byId[r.id]=r;});
+  var added=false;
+  members.forEach(function(u){
+    if(!u||!u.id)return;
+    var id="inv-veh-personal-"+u.id;
+    if(byId[id])return;   // already seeded (stable id) — no dup on re-run / another device
+    d.inventory.push({id:id,name:(u.username||"Crew")+"'s vehicle",cat:"vehicle",personal:true,ownerId:u.id,
+      clockIn:true,active:true,have:true,qty:"",tags:[],section:"Vehicle & transport",updatedAt:now()});
+    added=true;
+  });
+  if(added)save();
+}
+
 /* active (non-deleted) inventory for the current biz */
 function actInv(){return (D().inventory||[]).filter(function(i){return !i.deleted;});}
 /* items tagged for a job (its tag or the catch-all "all") */
@@ -236,6 +261,8 @@ function invRenderMaster(){
     +'<div class="k"><div class="kn">'+(all.length-owned)+'</div><div class="kl">still needed</div></div>'
     +'</div>';
   h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">This is the single source of truth — set <b>Have?</b> and <b>Qty</b> here, once. The <b>By job type</b> views are read-only lenses that inherit this status. Est. price / brand are rough 2026 reference examples — confirm locally.</p>';
+  // VEHICLE UNIFICATION — anyone can add their own vehicle here; it flows straight into the clock-in picker.
+  h+='<button class="btn ghost" style="width:100%;margin:0 4px 10px;width:calc(100% - 8px)" onclick="tcAddMyVehicle(false)">🚗 ＋ Add my vehicle (for clock-in)</button>';
   h+='<input class="search" placeholder="Search items, brands, tags…" oninput="invSearchOn(this.value)" value="'+esc(INVSEARCH)+'">';
 
   if(!list.length){h+='<div class="empty">No items match "'+esc(INVSEARCH)+'".</div>';body.innerHTML=h;return;}
@@ -381,6 +408,9 @@ window.openInvItem=function(id){
       +INV_CATS.map(function(c){return '<option '+((i.cat||"tool")===c?"selected":"")+'>'+c+'</option>';}).join("")
     +'</select></div><div class="grow"><label>Qty</label><input id="iv_qty" value="'+esc(i.qty||"")+'" placeholder="e.g. 2"></div></div>'
     +'<div class="toggle"><input type="checkbox" id="iv_have" '+(i.have?"checked":"")+'><label style="margin:0">Have it (owned)</label></div>'
+    // VEHICLE UNIFICATION — flag a vehicle item as pickable at clock-in (only takes effect for cat "vehicle").
+    +'<div class="toggle"><input type="checkbox" id="iv_clockin" '+(i.clockIn?"checked":"")+'><label style="margin:0">Usable at clock-in (a real vehicle crew can pick)</label></div>'
+    +(i.personal&&i.ownerId?'<div class="note" style="margin-top:6px;font-size:12.5px">Personal vehicle — mileage is reimbursed to its owner.</div>':"")
     +'<label>Est. price</label><input id="iv_price" value="'+esc(i.price||"")+'" placeholder="e.g. $80–300">'
     +'<label>Brand / model (e.g.)</label><input id="iv_brand" value="'+esc(i.brand||"")+'" placeholder="e.g. BE Whirlaway 24\"">'
     +'<label>Section</label><input id="iv_section" value="'+esc(i.section||"")+'" placeholder="e.g. Wash equipment">'
@@ -399,6 +429,8 @@ window.saveInvItem=function(id,isNew){
   i.cat=val("iv_cat"); i.qty=val("iv_qty"); i.price=val("iv_price"); i.brand=val("iv_brand");
   i.section=val("iv_section"); i.notes=val("iv_notes");
   i.have=(document.getElementById("iv_have")||{}).checked===true;
+  i.clockIn=(document.getElementById("iv_clockin")||{}).checked===true;   // pickable at clock-in (used only for cat "vehicle"); additive, preserves personal/ownerId
+  if(i.clockIn&&i.active===undefined)i.active=true;
   i.tags=Array.prototype.slice.call(document.querySelectorAll(".inv_tag:checked")).map(function(c){return c.value;});
   if(typeof submitGuard==="function"&&!submitGuard("saveInvItem:"+id))return;   // rapid-tap dupe guard
   touch(i); if(isNew)d.inventory.push(i);

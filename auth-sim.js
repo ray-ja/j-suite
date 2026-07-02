@@ -70,6 +70,16 @@ async function main() {
     st = await sync(crewTok, { obx: { receipts: [{ id: "rc1", receiptId: "blob1", status: "review", type: null, jobId: null, amount: null, uploadedBy: "crew", attributedTo: "crew", updatedAt: now() }] }, jam: {} });
     check("crew CAN upload a review receipt (mass-upload path syncs)", rcpts(st).some(r => r.id === "rc1" && r.status === "review"));
 
+    // VEHICLE UNIFICATION — inventory is crew-writable (no write-authz) so anyone can add a clock-in vehicle;
+    // registry.vehicles is owner-only (REG_ADMIN_FIELDS) so a crew push of a registry vehicle is REVERTED. This
+    // is exactly why personal/shared vehicles live in inventory, not registry.
+    const invOf = s => (((s && s.state && s.state.obx) || {}).inventory || []);
+    st = await sync(crewTok, { obx: { inventory: [{ id: "inv-veh-personal-crew", name: "Joe's vehicle", cat: "vehicle", personal: true, ownerId: "crew", clockIn: true, active: true, have: true, updatedAt: now() }] }, jam: {} });
+    check("crew CAN add an inventory clock-in vehicle (inventory has no write-authz)", invOf(st).some(i => i.id === "inv-veh-personal-crew" && i.clockIn && i.ownerId === "crew"));
+    const regOf = (s, id) => (((s && s.state && s.state.registry) || []).find(r => r && r.id === id) || null);
+    st = await sync(crewTok, { registry: [{ id: "obx", vehicles: [{ id: "hack-truck", name: "HACK", active: true, kind: "vehicle" }], updatedAt: now() }], obx: {}, jam: {} });
+    check("crew CANNOT add a registry vehicle (registry.vehicles server-protected)", (r => !(r && (r.vehicles || []).some(v => v && v.id === "hack-truck")))(regOf(st, "obx")));
+
     st = await sync(crewTok, { users: [Object.assign(clone(C), { role: "owner", updatedAt: now() })], obx: {}, jam: {} });
     check("crew CANNOT escalate self to owner", find(st, "crew").role === "crew");
     check("...and the escalation attempt did not drop the crew's password", !!find(st, "crew").passhash);
