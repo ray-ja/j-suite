@@ -423,3 +423,102 @@ await (async function () {
   if (count2 !== count1) __errs.push("VEHICLE UNIFICATION regression: seedClockInVehicles is NOT idempotent (row count changed " + count1 + " -> " + count2 + ")");
   if (dup) __errs.push("VEHICLE UNIFICATION regression: duplicate inv-veh-personal-* rows after a double seed run");
 })();
+
+// ============================================================================================
+// ===== SUGGESTED CLOCK-OUT (home GPS) — when a shift's own GPS pings show the phone got back home a
+//       while ago (the forgot-to-clock-out case), the clock-out modal recommends that time; using it sets
+//       clockOut to the home-arrival ts (so hours = arrival − clockIn) + clockOutSource:"home-gps". No home
+//       location OR no home-matching ping → NO suggestion, and the normal clock-out still works. Miles/odometer/
+//       verify are unchanged; hours stay clockOut−clockIn (role-independent for passenger vs driver). =====
+// ============================================================================================
+
+// (a) a home-arrival ping → suggestion detected + using it re-times the clock-out (no vehicle shift)
+await (async function () {
+  var u = { id: "u_home_test", username: "HomeTest", active: true, homeLocation: { lat: 36.10, lng: -75.72, label: "Home" } };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var jobH = { id: "j_home", title: "Home-suggest job", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(jobH);
+  var cin = now() - 5 * 3600000;          // clocked in 5h ago (from home, when leaving)
+  var homeArr = now() - 90 * 60000;       // phone back home 90 min ago (forgot to clock out)
+  var e = {
+    id: "tc_home_entry", jobId: "j_home", userId: u.id, userName: "HomeTest",
+    clockIn: cin, clockOut: null,
+    inLoc: { lat: 36.10, lng: -75.72, ts: cin, dev: "mobile" },          // at home at clock-in (must be ignored)
+    outLoc: null,
+    pings: [
+      { lat: 36.20, lng: -75.80, ts: cin + 30 * 60000, dev: "mobile" },  // at the job site (left home)
+      { lat: 36.20, lng: -75.80, ts: cin + 120 * 60000, dev: "mobile" }, // still on the job
+      { lat: 36.10, lng: -75.72, ts: homeArr, dev: "mobile" }            // back home
+    ],
+    stops: [], computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
+    odoStart: null, odoEnd: null, riderRole: "none", trailerId: null, rodeWith: null,
+    vehicleId: null, vehicle: "", vehicleOwnerId: null, rate: 0.725, updatedAt: now()
+  };
+  D().timeclock.push(e);
+  var arr = tcHomeArrival(e, tcUserHome(u.id));
+  diag("home arrival detected=" + arr + " expected=" + homeArr);
+  if (arr !== homeArr) __errs.push("SUGGESTED CLOCK-OUT regression: home arrival must be the FIRST home-match AFTER leaving (ignoring the at-home clock-in), got " + arr);
+  tcClockOut("tc_home_entry");   // real clock-out modal → should carry the recommendation
+  var recBtn = document.querySelector('button[onclick*="tcHomeClockOut"]');
+  diag("recommendation button present=" + !!recBtn);
+  if (!recBtn) __errs.push("SUGGESTED CLOCK-OUT regression: the recommended-clock-out button did not render in the modal");
+  tcHomeClockOut("tc_home_entry", homeArr);   // pick the recommended time
+  var after = D().timeclock.find(function (x) { return x.id === "tc_home_entry"; });
+  diag("after home clockout: clockOut=" + (after && after.clockOut) + " source=" + (after && after.clockOutSource) + " hours=" + (after && tcHours(after)));
+  if (!after || after.clockOut !== homeArr) __errs.push("SUGGESTED CLOCK-OUT regression: using the recommendation must set clockOut to the home-arrival ts");
+  if (after && after.clockOutSource !== "home-gps") __errs.push("SUGGESTED CLOCK-OUT regression: clockOutSource should be 'home-gps'");
+  var expHrs = (homeArr - cin) / 3600000;
+  if (after && Math.abs(tcHours(after) - expHrs) > 0.001) __errs.push("SUGGESTED CLOCK-OUT regression: hours must equal arrival − clockIn (" + expHrs + "), got " + tcHours(after));
+  localStorage.removeItem("jra_session");
+})();
+
+// (b) no home location AND no home ping → NO suggestion; the normal clock-out still closes the shift
+await (async function () {
+  var u = { id: "u_nohome_test", username: "NoHome", active: true };   // no homeLocation
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var job = { id: "j_nohome", title: "No-home job", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(job);
+  var cin = now() - 2 * 3600000;
+  var e = {
+    id: "tc_nohome_entry", jobId: "j_nohome", userId: u.id, userName: "NoHome",
+    clockIn: cin, clockOut: null, inLoc: null, outLoc: null,
+    pings: [{ lat: 36.20, lng: -75.80, ts: cin + 60 * 60000, dev: "mobile" }],   // only a job-site ping, never home
+    stops: [], computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
+    odoStart: null, odoEnd: null, riderRole: "none", trailerId: null, rodeWith: null,
+    vehicleId: null, vehicle: "", vehicleOwnerId: null, rate: 0.725, updatedAt: now()
+  };
+  D().timeclock.push(e);
+  if (tcUserHome(u.id) !== null) __errs.push("SUGGESTED CLOCK-OUT regression: a user with no homeLocation must return null from tcUserHome");
+  tcClockOut("tc_nohome_entry");
+  if (document.querySelector('button[onclick*="tcHomeClockOut"]')) __errs.push("SUGGESTED CLOCK-OUT regression: no suggestion may show when the user has no home location");
+  var finishBtn = document.querySelector('button[onclick*="tcFinishClockOut"]');
+  if (!finishBtn) __errs.push("SUGGESTED CLOCK-OUT regression: the normal clock-out button is missing for a no-home no-vehicle shift");
+  else finishBtn.click();
+  var after = D().timeclock.find(function (x) { return x.id === "tc_nohome_entry"; });
+  diag("no-home clockout: clockOut=" + (after && after.clockOut) + " source=" + (after && after.clockOutSource));
+  if (!after || after.clockOut == null) __errs.push("SUGGESTED CLOCK-OUT regression: the normal clock-out must still close the shift");
+  if (after && after.clockOutSource) __errs.push("SUGGESTED CLOCK-OUT regression: a normal clock-out must NOT set clockOutSource=home-gps");
+  localStorage.removeItem("jra_session");
+})();
+
+// (c) home set but the phone never recorded LEAVING home (backgrounded whole drive) → no arrival, no suggestion
+(function () {
+  var home = { lat: 36.10, lng: -75.72, label: "Home" };
+  var e = { id: "x_bg", clockIn: now() - 3600000, inLoc: { lat: 36.10, lng: -75.72, ts: now() - 3600000 }, pings: [], stops: [] };
+  if (tcHomeArrival(e, home) !== null) __errs.push("SUGGESTED CLOCK-OUT regression: arrival must be null when the phone never recorded leaving home (backgrounded)");
+  if (tcHomeArrival(e, null) !== null) __errs.push("SUGGESTED CLOCK-OUT regression: arrival must be null when no home location is set");
+})();
+
+// (d) hours stay role-INDEPENDENT (passenger vs driver) and are exactly clockOut − clockIn, unaffected by any suggestion
+(function () {
+  var cin = now() - 4 * 3600000, cout = now() - 1 * 3600000;
+  var driver = { clockIn: cin, clockOut: cout, riderRole: "driver" };
+  var passenger = { clockIn: cin, clockOut: cout, riderRole: "passenger" };
+  diag("role-independent hours: driver=" + tcHours(driver) + " passenger=" + tcHours(passenger));
+  if (tcHours(driver) !== tcHours(passenger)) __errs.push("SUGGESTED CLOCK-OUT regression: driver/passenger hours must be role-independent");
+  if (Math.abs(tcHours(driver) - (cout - cin) / 3600000) > 0.0001) __errs.push("SUGGESTED CLOCK-OUT regression: hours must be clockOut − clockIn");
+})();

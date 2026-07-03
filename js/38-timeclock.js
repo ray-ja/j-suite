@@ -18,6 +18,8 @@
 const TC_RATE = 0.725;        // $/mile — owner-confirmable mileage reimbursement / cost rate
 const TC_PING_MS = 120000;    // foreground ping cadence (~2 min) — enough to shape the path, easy on battery
 const TC_TOL = 0.25;          // GPS-vs-odometer verification tolerance (25%, ASYMMETRIC — see tcVerify)
+const TC_HOME_RADIUS_MI = 0.14;      // ~225m — "you're home" radius around a user's homeLocation (task: 150-250m)
+const TC_HOME_SUGGEST_MIN_MS = 600000;   // only SUGGEST a home clock-out if the phone got home >=10 min ago (the forgot-to-clock-out case)
 let TCSUB = "clock";          // "clock" (crew) | "report" (owner: hours + miles per job/user)
 let _tcPing = null, _tcClock = null;
 
@@ -87,6 +89,36 @@ function tcPath(e) {
 }
 function tcComputeMiles(e) { const p = tcPath(e); let m = 0; for (let i = 1; i < p.length; i++) m += tcHaversine(p[i - 1], p[i]); return m; }
 function tcHours(e) { const end = e.clockOut || now(); return Math.max(0, (end - e.clockIn) / 3600000); }
+/* ===== SUGGESTED CLOCK-OUT (home-GPS) — a best-effort "when did your phone get back home" for the forgot-to-
+   clock-out case. REUSES the location history the shift already captured for mileage (inLoc + foreground
+   pings[] + GPS-stamped stops); it adds NO new capture and NEVER changes how hours/miles are computed — it only
+   surfaces a suggested clockOut timestamp the user may choose. FOREGROUND-ONLY LIMITATION: pings are captured
+   only while the app is on-screen (OS suspends a backgrounded PWA), so if the phone was locked/backgrounded for
+   the whole drive home there is simply no home-matching sample → no suggestion (graceful; never blocks). ===== */
+function tcUserHome(userId) {
+  const u = (typeof S !== "undefined" && Array.isArray(S.users)) ? S.users.find(x => x && x.id === userId && !x.kind && !x.deleted) : null;
+  return (u && u.homeLocation && u.homeLocation.lat != null && u.homeLocation.lng != null) ? u.homeLocation : null;
+}
+/* the earliest timestamp the shift's location history shows the phone back within TC_HOME_RADIUS_MI of `home`
+   AFTER it had left (a non-home sample seen first) — "when you got home". Returns null if home was never left in
+   the captured samples (backgrounded drive, or home==job site) or `home` is unset. Crew clock in AT home when
+   they leave for the job, so we must ignore those leading at-home samples and only count a RETURN. */
+function tcHomeArrival(e, home) {
+  if (!e || !home || home.lat == null) return null;
+  const samples = [];
+  if (e.inLoc && e.inLoc.lat != null && e.inLoc.ts != null) samples.push({ lat: e.inLoc.lat, lng: e.inLoc.lng, ts: e.inLoc.ts });
+  (e.pings || []).forEach(p => { if (p && p.lat != null && p.ts != null) samples.push({ lat: p.lat, lng: p.lng, ts: p.ts }); });
+  (e.stops || []).forEach(s => { if (s && s.loc && s.loc.lat != null) samples.push({ lat: s.loc.lat, lng: s.loc.lng, ts: (s.ts != null ? s.ts : s.loc.ts) }); });
+  if (e.outLoc && e.outLoc.lat != null && e.outLoc.ts != null) samples.push({ lat: e.outLoc.lat, lng: e.outLoc.lng, ts: e.outLoc.ts });
+  samples.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  let leftHome = false;
+  for (const s of samples) {
+    const near = tcHaversine(s, home) <= TC_HOME_RADIUS_MI;
+    if (!near) { leftHome = true; continue; }
+    if (near && leftHome) return s.ts;   // first time back home after leaving = likely real clock-out
+  }
+  return null;
+}
 function tcFmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h + "h " + String(m).padStart(2, "0") + "m"; }
 function tcRound(n) { return Math.round((n || 0) * 10) / 10; }
 /* confirmed miles if set, else the rounded GPS estimate */
@@ -248,15 +280,32 @@ window.tcClockOut = function (id, contJobId) {
   const finishFn = contJobId ? `tcFinishChangeJob('${id}','${contJobId}')` : `tcFinishClockOut('${id}')`;
   const gpsFn = contJobId ? `tcChangeJobGps('${id}','${contJobId}')` : `tcClockOutGps('${id}')`;
   const title = contJobId ? "Change job" : "Clock out";
-  const doneLabel = contJobId ? "🔁 Switch job" : "⏱ Clock out";
-  const odoLabel = contJobId ? "🔁 Switch job" : "📍 Clock out";
+  const doneLabel = contJobId ? "🔁 Switch job" : "⏱ Clock out now";
+  const odoLabel = contJobId ? "🔁 Switch job" : "📍 Clock out now";
+  // SUGGESTED CLOCK-OUT (real clock-out only, never Change Job): if the shift's own GPS history shows the phone
+  // got back home a meaningful while ago, offer that time as the likely real clock-out (forgot-to-clock-out).
+  // Additive only — it doesn't alter the odometer/GPS buttons below; it just adds a "use that time" shortcut.
+  let suggestHtml = "";
+  if (!contJobId) {
+    const home = tcUserHome(e.userId);
+    const arr = home ? tcHomeArrival(e, home) : null;
+    if (arr != null && arr > e.clockIn && (now() - arr) >= TC_HOME_SUGGEST_MIN_MS) {
+      const t = (function () { try { return new Date(arr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (x) { return ""; } })();
+      suggestHtml = `<div class="card" style="border-left:5px solid var(--accent);background:var(--soft);margin-bottom:12px">
+        <div class="nm" style="font-size:16px">🏠 Recommended clock-out: ${t}</div>
+        <div class="sub" style="white-space:normal;margin-top:2px">This is when your phone got back home${home.label ? " (" + esc(home.label) + ")" : ""} — looks like you forgot to clock out. Use it so your hours are accurate.</div>
+        <button class="btn acc" style="margin-top:10px;width:100%" onclick="tcHomeClockOut('${id}',${arr})">🏠 Clock out at ${t} — when you got home</button>
+        <div class="sub" style="text-align:center;margin-top:6px">— or —</div>
+      </div>`;
+    }
+  }
   if (!tcEntryHasVehicle(e)) {   // No-vehicle shift → no odometer, no mileage; just close it out
-    modal(title, `
+    modal(title, suggestHtml + `
       <p class="muted" style="margin-bottom:8px">No vehicle on this shift — ${contJobId ? "switching jobs" : "clocking out"} logs your time only (no mileage).</p>
-      <button class="btn acc" style="margin-top:8px;width:100%" onclick="${finishFn}">${doneLabel}</button>`);
+      <button class="btn ${suggestHtml ? "ghost" : "acc"}" style="margin-top:8px;width:100%" onclick="${finishFn}">${doneLabel}</button>`);
     return;
   }
-  modal(title + " — odometer", `
+  modal(title + " — odometer", suggestHtml + `
     <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
     <label>End odometer</label>
     <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
@@ -264,13 +313,35 @@ window.tcClockOut = function (id, contJobId) {
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="${finishFn}">${odoLabel}</button>
     <button class="btn ghost" style="margin-top:8px;width:100%" onclick="${gpsFn}">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
 };
+/* home-GPS shortcut: clock out AT the detected home-arrival timestamp (the "use recommended time" button).
+   Miles/odometer/verify are computed EXACTLY as a normal clock-out — this only changes WHICH clockOut ts is
+   used (so hours = homeArrival − clockIn) and tags provenance clockOutSource:"home-gps". If the user typed an
+   ending odometer we honor it; otherwise it falls to the GPS estimate (owner still confirms), never blocking. */
+window.tcHomeClockOut = function (id, atTs) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
+  if (typeof closeModal === "function") closeModal();
+  let odoEnd = null;
+  if (tcEntryHasVehicle(e)) {
+    const o = parseFloat(val("tc_odo_end"));
+    if (o >= 0 && !(e.odoStart != null && o < e.odoStart)) odoEnd = o;   // use it only if a valid reading was typed; else GPS estimate
+  }
+  tcFinalizeSegment(e, odoEnd, atTs);
+  e.clockOutSource = "home-gps";
+  touch(e); tcPingStop();
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (home GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  save(); render();
+  // best-effort out-location, non-blocking (mirrors tcFinishClockOut) — never affects the chosen clock-out time
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+};
 /* the actual odometer/GPS mileage math for closing a segment — shared by a normal clock-out AND by Change
    Job's "close the old segment" step, computed exactly once. Mutates e; does NOT touch/save/render/log —
    callers differ in what happens next (stay clocked out vs. immediately open a new segment on another job). */
-function tcFinalizeSegment(e, odoEnd) {
+function tcFinalizeSegment(e, odoEnd, atTs) {
   const hasVeh = tcEntryHasVehicle(e);
   // clock out IMMEDIATELY — never block on GPS (it hangs at the dump / when location is off). The odometer is the truth.
-  e.clockOut = now(); e.odoEnd = odoEnd;
+  // atTs (optional): the chosen clock-out timestamp — used ONLY by the home-GPS suggestion so hours reflect when
+  // the phone actually got home. When absent (every existing caller), it's now(), byte-identical to before.
+  e.clockOut = (atTs != null && atTs >= e.clockIn) ? atTs : now(); e.odoEnd = odoEnd;
   e.computedMiles = tcComputeMiles(e);
   if (hasVeh && e.odoStart != null && odoEnd != null) {   // full odometer pair → odometer is the number of record, auto-confirmed
     e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = true;

@@ -94,14 +94,14 @@ async function main() {
     check("crew CAN change its own settings (non-sensitive)", find(st, "crew").settings && find(st, "crew").settings.theme === "dark");
     check("...but role is STILL protected on that same write", find(st, "crew").role === "crew");
 
-    // ===== TEAM CONTACT PROFILES — self-write vs others (phone/email/avatarId/title are NON-sensitive) =====
-    st = await sync(crewTok, { users: [Object.assign(clone(find(st, "crew")), { phone: "252-555-0100", title: "Crew", avatarId: "blobCrew", email: "joe@obx.test", updatedAt: now() })], obx: {}, jam: {} });
-    check("crew CAN set its OWN profile (phone/title/avatar/email)", (u => !!u && u.phone === "252-555-0100" && u.title === "Crew" && u.avatarId === "blobCrew" && u.email === "joe@obx.test")(find(st, "crew")));
-    st = await sync(crewTok, { users: [Object.assign(clone(find(st, "owner")), { phone: "911", avatarId: "HACK", title: "PWNED", updatedAt: now() })], obx: {}, jam: {} });
-    check("crew CANNOT edit another member's profile (owner's fields unchanged)", (u => !!u && u.phone !== "911" && u.avatarId !== "HACK" && u.title !== "PWNED")(find(st, "owner")));
+    // ===== TEAM CONTACT PROFILES + HOME LOCATION — self-write vs others (phone/email/avatarId/title/homeLocation NON-sensitive) =====
+    st = await sync(crewTok, { users: [Object.assign(clone(find(st, "crew")), { phone: "252-555-0100", title: "Crew", avatarId: "blobCrew", email: "joe@obx.test", homeLocation: { lat: 36.11, lng: -75.72, label: "Joe's home" }, updatedAt: now() })], obx: {}, jam: {} });
+    check("crew CAN set its OWN profile + home location (phone/title/avatar/email/homeLocation)", (u => !!u && u.phone === "252-555-0100" && u.title === "Crew" && u.avatarId === "blobCrew" && u.email === "joe@obx.test" && u.homeLocation && u.homeLocation.lat === 36.11)(find(st, "crew")));
+    st = await sync(crewTok, { users: [Object.assign(clone(find(st, "owner")), { phone: "911", avatarId: "HACK", title: "PWNED", homeLocation: { lat: 0, lng: 0, label: "HACK" }, updatedAt: now() })], obx: {}, jam: {} });
+    check("crew CANNOT edit another member's profile/home (owner's fields unchanged)", (u => !!u && u.phone !== "911" && u.avatarId !== "HACK" && u.title !== "PWNED" && !(u.homeLocation && u.homeLocation.label === "HACK"))(find(st, "owner")));
 
-    st = await sync(ownerTok, { users: [Object.assign(clone(find(st, "crew")), { phone: "252-555-0199", title: "Lead", updatedAt: now() })], obx: {}, jam: {} });
-    check("OWNER CAN edit any member's profile (phone/title)", (u => !!u && u.phone === "252-555-0199" && u.title === "Lead")(find(st, "crew")));
+    st = await sync(ownerTok, { users: [Object.assign(clone(find(st, "crew")), { phone: "252-555-0199", title: "Lead", homeLocation: { lat: 36.02, lng: -75.67, label: "Owner-set home" }, updatedAt: now() })], obx: {}, jam: {} });
+    check("OWNER CAN edit any member's profile + home location (phone/title/homeLocation)", (u => !!u && u.phone === "252-555-0199" && u.title === "Lead" && u.homeLocation && u.homeLocation.label === "Owner-set home")(find(st, "crew")));
 
     st = await sync(ownerTok, { users: [Object.assign(clone(C), { role: "admin", updatedAt: now() })], obx: {}, jam: {} });
     check("OWNER CAN change the crew's role", find(st, "crew").role === "admin");

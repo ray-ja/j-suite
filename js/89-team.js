@@ -172,7 +172,68 @@ window.teamEditProfile = function (id) {
     <label>Title (e.g. Crew, Owner-operator)</label><input id="tp_title" autocomplete="off" value="${esc(u.title || "")}" placeholder="Crew">
     <label>Phone</label><input id="tp_phone" type="tel" autocomplete="off" inputmode="tel" value="${esc(u.phone || "")}" placeholder="(252) 555-0100">
     <label>Email</label><input id="tp_email" type="email" autocomplete="off" inputmode="email" value="${esc(u.email || "")}" placeholder="name@example.com">
+    <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+      <label style="margin-top:0">🏠 Home location <span class="sub">· for suggested clock-out times</span></label>
+      <div id="tp_home_status" class="sub" style="white-space:normal;margin:2px 0 8px">${teamHomeStatusHtml(u)}</div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <button class="btn ghost sm" onclick="teamHomeUseGps('${esc(u.id)}')">📍 Use my current location</button>
+        <button class="btn ghost sm" onclick="teamHomeClear('${esc(u.id)}')">Clear</button>
+      </div>
+      <div class="row" style="gap:6px;margin-top:8px">
+        <input id="tp_home_addr" autocomplete="off" placeholder="or enter an address (street, town, ST zip)" style="flex:1;min-width:0">
+        <button class="btn ghost sm" style="flex:0 0 auto" onclick="teamHomeByAddress('${esc(u.id)}')">Locate</button>
+      </div>
+      <div class="sub" style="white-space:normal;margin-top:6px">Only you (and an owner/admin) can set your home location. It's saved immediately when found. Used only to suggest your likely clock-out time if you forget to clock out.</div>
+    </div>
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="teamSaveProfile('${esc(u.id)}')">Save profile</button>`);
+};
+
+/* ----- per-user HOME LOCATION (account.homeLocation = {lat,lng,label}) — additive; drives the timeclock's
+   suggested clock-out (js/38 tcUserHome/tcHomeArrival). Self-or-admin editable (teamCanEdit, same authz as the
+   rest of the profile + the server's self-write rule). Saved immediately on capture (like the profile photo). */
+function teamHomeStatusHtml(u) {
+  if (u && u.homeLocation && u.homeLocation.lat != null && u.homeLocation.lng != null) {
+    return `<span style="color:var(--accent)">📍 Home set${u.homeLocation.label ? ": " + esc(u.homeLocation.label) : ""}</span> — used to suggest your real clock-out time (when your phone gets back home).`;
+  }
+  return `No home set yet. Set it so the app can suggest your clock-out time — the moment your phone got back home — if you forget to clock out.`;
+}
+window.teamHomeUseGps = function (id) {
+  if (!teamCanEdit(id)) { alert("You can only set your own home location."); return; }
+  const st = document.getElementById("tp_home_status"); if (st) st.textContent = "Getting your location…";
+  Promise.resolve(typeof tcGetPos === "function" ? tcGetPos() : Promise.resolve(null)).then(function (loc) {
+    if (!loc || loc.lat == null) { if (st) st.textContent = "Couldn't get GPS — allow location access, or enter an address below."; return; }
+    const u = teamMemberById(id); if (!u) return;
+    u.homeLocation = { lat: loc.lat, lng: loc.lng, label: "My home (current location)" };
+    if (typeof touch === "function") touch(u); save();
+    if (typeof logChange === "function") logChange("update", "account", u.id, "Set home location (GPS) for " + (u.username || u.name || u.id));
+    if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+    if (st) st.innerHTML = teamHomeStatusHtml(u);
+  }).catch(function () { if (st) st.textContent = "Couldn't get GPS — enter an address instead."; });
+};
+window.teamHomeByAddress = function (id) {
+  if (!teamCanEdit(id)) { alert("You can only set your own home location."); return; }
+  const addr = (val("tp_home_addr") || "").trim(); if (!addr) { alert("Enter an address, or use your current location."); return; }
+  const st = document.getElementById("tp_home_status"); if (st) st.textContent = "Locating…";
+  const g1 = q => fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" + encodeURIComponent(q)).then(r => r.json());
+  const coarse = addr.split(",").slice(1).join(",").trim();   // drop the street line when an exact street isn't in OSM
+  g1(addr).then(g => (g && g[0]) ? g : (coarse && coarse !== addr ? g1(coarse) : null)).then(function (g) {
+    const u = teamMemberById(id); if (!u) return;
+    if (g && g[0]) {
+      u.homeLocation = { lat: +g[0].lat, lng: +g[0].lon, label: String(g[0].display_name || addr).split(",").slice(0, 2).join(",").trim() };
+      if (typeof touch === "function") touch(u); save();
+      if (typeof logChange === "function") logChange("update", "account", u.id, "Set home location (address) for " + (u.username || u.name || u.id));
+      if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+      if (st) st.innerHTML = teamHomeStatusHtml(u);
+    } else if (st) { st.innerHTML = `<span style="color:var(--danger)">Couldn't locate that — add the town + ZIP (e.g. "Kill Devil Hills, NC 27948").</span>`; }
+  }).catch(function () { if (st) st.innerHTML = `<span style="color:var(--danger)">Couldn't reach the map service — try again.</span>`; });
+};
+window.teamHomeClear = function (id) {
+  if (!teamCanEdit(id)) { alert("You can only set your own home location."); return; }
+  const u = teamMemberById(id); if (!u || !u.homeLocation) return;
+  u.homeLocation = null; if (typeof touch === "function") touch(u); save();
+  if (typeof logChange === "function") logChange("update", "account", u.id, "Cleared home location for " + (u.username || u.name || u.id));
+  if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+  const st = document.getElementById("tp_home_status"); if (st) st.innerHTML = teamHomeStatusHtml(u);
 };
 
 // upload happens immediately (its own action); phone/email/title save on "Save profile".
