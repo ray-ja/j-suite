@@ -581,28 +581,63 @@ window.adminToggleAcct = function (id) {
 };
 
 /* ----- account actions ----- */
+/* INVITE A MEMBER — name + email → the SERVER creates the account (authoritative, sidesteps the sync-drop bug)
+   and emails a set-password link. No owner-typed password. Username auto-derives from the email local-part and
+   is editable. Any org owner (or a manage-members role) may invite; the server (POST /invite, writerOwnsOrg) is
+   the real backstop. new members default to role=crew; only a super-admin may grant owner. */
+function canInviteMembers() { return (typeof isOwner === "function" && isOwner()) || (typeof canManageMembers === "function" && canManageMembers()); }
 window.adminOpenCreate = function () {
-  if (typeof isSuperAdmin === "function" && !isSuperAdmin()) { alert("New accounts are created by the platform owner. You can set roles and remove members here — ask the platform owner to add a new person, then assign them."); return; }
-  const roles = allRoles();
-  modal("New account", `
-    <p class="muted" style="margin-bottom:8px">Username + password + role. Add the person's email to enable one-tap Cloudflare Access sign-in.</p>
-    <label>Username</label><input id="ac_name" autocomplete="off">
-    <label>Full name (for crew initials, e.g. Ray Jamieson)</label><input id="ac_full" autocomplete="off" placeholder="First Last">
-    <label>Email (for Access SSO)</label><input id="ac_email" autocomplete="off" placeholder="name@obxlotsolutions.com">
-    <label>Password</label><input id="ac_pw" type="password" autocomplete="new-password">
+  if (!canInviteMembers()) { alert("You don't have permission to add members."); return; }
+  const superA = (typeof isSuperAdmin === "function") && isSuperAdmin();
+  const roles = allRoles().filter(r => r.key !== "owner" || superA);   // only a super-admin can invite an owner
+  modal("Invite a member", `
+    <p class="muted" style="margin-bottom:8px">Enter their name and email — J-Suite emails them a link to set their own password. Nothing to hand over.</p>
+    <label>Full name</label><input id="ac_full" autocomplete="off" placeholder="First Last" oninput="adminInviteSyncUsername()">
+    <label>Email <span class="muted">(required)</span></label><input id="ac_email" type="email" autocomplete="off" placeholder="name@example.com" oninput="adminInviteSyncUsername()">
+    <label>Username <span class="muted">(auto — editable)</span></label><input id="ac_name" autocomplete="off" placeholder="username" oninput="this.dataset.touched='1'">
     <label>Role</label><select id="ac_role">${roles.map(r => `<option value="${esc(r.key)}" ${r.key === "crew" ? "selected" : ""}>${esc(r.label)}</option>`).join("")}</select>
-    <button class="btn acc" style="margin-top:14px" onclick="adminCreateAccount()">Create account</button>`);
+    <button class="btn acc" style="margin-top:14px" onclick="adminInviteMember()">Send invite</button>
+    <p class="muted" id="ac_msg" style="margin-top:8px;min-height:16px"></p>`);
 };
-window.adminCreateAccount = async function () {
-  const un = val("ac_name"), pw = val("ac_pw"), role = val("ac_role") || "crew";
-  if (!un || !pw) { alert("Username and password required."); return; }
-  if (users().some(u => u.username.toLowerCase() === un.toLowerCase())) { alert("That username is taken."); return; }
-  if (!S.users) S.users = [];
-  const _nid = uid();
-  S.users.push({ id: _nid, username: un, name: (val("ac_full") || "").trim(), email: (val("ac_email") || "").trim().toLowerCase(), passhash: await hashPw(pw), role: role, active: true, settings: { theme: (typeof themePref === "function" ? themePref() : "light") }, updatedAt: now() });
-  if (S.biz) orgSetRole(_nid, S.biz, role);   // MULTI-ORG: member of the ACTIVE org (so they're scoped here, not auto-migrated to obx/jam)
-  if (typeof logChange === "function") logChange("create", "account", _nid, "Added " + un + " to " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " (" + role + ")");
-  save(); closeModal(); render();
+/* auto-derive the username from the email local-part — until the owner hand-edits the username field */
+window.adminInviteSyncUsername = function () {
+  const uf = document.getElementById("ac_name"); if (!uf || uf.dataset.touched === "1") return;
+  const local = ((val("ac_email") || "").trim().toLowerCase().split("@")[0] || "").replace(/[^a-z0-9._-]/g, "");
+  if (local) uf.value = local;
+};
+window.adminInviteMember = async function () {
+  const msg = document.getElementById("ac_msg"), setMsg = t => { if (msg) msg.textContent = t || ""; };
+  const name = (val("ac_full") || "").trim(), email = (val("ac_email") || "").trim().toLowerCase();
+  const role = val("ac_role") || "crew", username = (val("ac_name") || "").trim();
+  if (!name) { setMsg("Enter their name."); return; }
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setMsg("Enter a valid email."); return; }
+  if (!canInviteMembers()) { setMsg("You don't have permission to add members."); return; }
+  const base = ((S.sync && S.sync.url) || (typeof defaultServerUrl === "function" ? defaultServerUrl() : "") || "").replace(/\/+$/, "");
+  const tok = (S.sync && S.sync.token) || "";
+  if (!base) { setMsg("No server connection — connect to sync first (Data tab)."); return; }
+  setMsg("Sending invite…");
+  try {
+    const r = await fetch(base + "/invite", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ token: tok, org: S.biz, name: name, email: email, role: role, username: username }) });
+    let d = {}; try { d = await r.json(); } catch (e) {}
+    if (r.status === 401 && d && d.relogin) { closeModal(); alert("This device uses legacy sign-in — sign in again to add members."); if (typeof renderLogin === "function") renderLogin(); return; }
+    if (r.status === 403) { setMsg("You don't have permission to add members to this organization."); return; }
+    if (r.status === 409) { setMsg("An account with that email already exists."); return; }
+    if (!r.ok || !d || !d.ok) { setMsg((d && d.error) || "Couldn't send the invite — try again."); return; }
+    if (typeof logChange === "function") logChange("create", "account", (d.user && d.user.id) || email, "Invited " + email + " to " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " (" + ((d.user && d.user.role) || role) + ")");
+    if (d.emailed) {
+      closeModal();
+      if (typeof syncRun === "function") await syncRun("pull");   // pull the new invited account into this device
+      alert("Invite sent to " + email + ".");
+      render();
+    } else {
+      // email isn't configured on the server → show a copyable link for the owner to hand over
+      modal("Invite created", `
+        <p class="muted">Email isn't set up on the server, so copy this set-password link and send it to <b>${esc(email)}</b> yourself. It expires in 7 days.</p>
+        <input id="inv_link" readonly value="${esc(d.link || "")}" onclick="this.select()" style="width:100%">
+        <button class="btn acc" style="margin-top:12px;width:100%" onclick="(function(){try{navigator.clipboard.writeText(document.getElementById('inv_link').value);}catch(e){}})();this.textContent='Copied ✓'">Copy link</button>
+        <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal();(typeof syncRun==='function'&&syncRun('pull'));render()">Done</button>`);
+    }
+  } catch (e) { setMsg("Network error — try again."); }
 };
 window.adminSetName = function (id) {
   const u = (S.users || []).find(x => x.id === id); if (!u) return;

@@ -763,10 +763,33 @@ function makeResetToken(userId) {
 }
 function consumeResetToken(tok) {
   const r = resetTokens.get(String(tok || ""));
-  if (!r) return null;
-  resetTokens.delete(String(tok || ""));            // one-time use (deleted even if expired)
-  return Date.now() > r.exp ? null : r.userId;      // expired → reject
+  if (r) { resetTokens.delete(String(tok || "")); return Date.now() > r.exp ? null : r.userId; }   // in-memory reset token (30-min)
+  return consumeInviteToken(tok);                    // else try a persisted invite token (7-day) — invite links set a password via the same /reset flow
 }
+/* ----- invite set-password tokens: like reset tokens, but 7-DAY and PERSISTED to a gitignored file so a
+   server restart / deploy does NOT kill pending invites (owner-confirmed). One-time use; expired/used tokens
+   are GC'd opportunistically so the file can't grow unbounded. Consumed via the SAME /reset endpoint. */
+const INVITE_TOKENS_FILE = path.join(__dirname, "invite-tokens.json");
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function loadInviteTokens() { try { return JSON.parse(fs.readFileSync(INVITE_TOKENS_FILE, "utf8")); } catch (e) { return {}; } }
+function saveInviteTokens(m) { try { const tmp = INVITE_TOKENS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, INVITE_TOKENS_FILE); } catch (e) {} }
+function makeInviteToken(userId) {
+  const tok = crypto.randomBytes(32).toString("hex");   // 64 hex → matches the client reset-link regex [a-f0-9]{16,}
+  const m = loadInviteTokens(), nowMs = Date.now();
+  Object.keys(m).forEach(k => { if (!m[k] || (m[k].exp || 0) < nowMs) delete m[k]; });   // GC expired
+  m[tok] = { userId: userId, exp: nowMs + INVITE_TTL_MS };
+  saveInviteTokens(m);
+  return tok;
+}
+function consumeInviteToken(tok) {
+  const key = String(tok || ""); if (!key) return null;
+  const m = loadInviteTokens(), r = m[key];
+  if (!r) return null;
+  delete m[key]; saveInviteTokens(m);                 // one-time use (deleted even if expired)
+  return Date.now() > (r.exp || 0) ? null : r.userId; // expired → reject
+}
+// minimal HTML escape for values interpolated into an outgoing email body (name/username are user-supplied)
+function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function emailCfg() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) { return {}; } }
 function sendEmail(to, subject, html) {
   return new Promise((resolve) => {
@@ -1694,10 +1717,77 @@ const server = http.createServer((req, res) => {
       const u = ((store && store.users) || []).find(x => x && x.id === userId && !x.deleted);
       if (!u) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"account not found"}'); }
       u.passhash = scryptHash(String(p.password)); u.updatedAt = Date.now();
+      if (u.status === "invited") delete u.status;   // an invited member setting their password is now onboarded (LWW: this newer record drops the field everywhere)
       try { saveStore(store); } catch (e) {}
       clearFailedLogin(u.username);   // a successful reset clears any lockout
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end('{"ok":true}');
+    });
+    return;
+  }
+
+  // INVITE A MEMBER — POST /invite {name,email,role,org,username?}. SERVER-AUTHORITATIVE account creation:
+  // creates the account + its org membership directly in the store (sidesteps the sync write-authz drop that
+  // silently loses accounts created on a legacy shared-token device), makes a 7-day set-password token, and
+  // emails a link. Auth is a PER-USER bearer token (a shared token → 401 relogin); the caller must super-admin
+  // or OWN the target org (writerOwnsOrg). New members default to role=crew; only a super-admin may grant owner.
+  if (req.method === "POST" && req.url === "/invite") {
+    const ip = req.socket && req.socket.remoteAddress || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
+    readBodyUtf8(req, 1e5, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      if (!p || typeof p !== "object") p = {};
+      // AUTH — per-user bearer token only. The legacy SHARED token can't identify the writer, so it can't invite.
+      const bearer = (String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i) || [])[1] || (typeof p.token === "string" ? p.token : "") || "";
+      const tokRec = userTokenRec(bearer);
+      const puid = tokRec && tokRec.userId;
+      if (!puid) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"sign in again to add members","relogin":true}'); }
+      const store = loadStore();
+      const meRaw = (store.users || []).find(u => u && u.id === puid);
+      if (meRaw && meRaw.logoutAt && (+tokRec.issued || 0) < meRaw.logoutAt) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"session ended — sign in again","relogin":true}'); }   // "log out everywhere"
+      const me = accountById(store, puid);
+      const org = String(p.org || p.orgId || "").trim();
+      const superA = !!(me && me.superAdmin);
+      if (!org || !(superA || writerOwnsOrg(store, puid, org))) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"you must own this organization to add members"}'); }
+      // VALIDATE
+      const name = String(p.name || "").trim();
+      const email = String(p.email || "").trim().toLowerCase();
+      let role = String(p.role || "crew").trim() || "crew";
+      if (!name) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"a name is required"}'); }
+      if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"a valid email is required"}'); }
+      if (role === "owner" && !superA) role = "crew";   // only a super-admin may invite an owner — otherwise COERCE down (no privilege escalation)
+      // DUPLICATE handling: an already-onboarded email → 409; a still-pending invite → idempotent RESEND.
+      const raw = (store.users || []).find(u => u && !u.deleted && !u.kind && String(u.email || "").trim().toLowerCase() === email);
+      if (raw && raw.status !== "invited") { res.writeHead(409, { "Content-Type": "application/json" }); return res.end('{"error":"an account with that email already exists"}'); }
+      const emailConfigured = !!(emailCfg().resendKey);
+      const sendInvite = (acct) => {
+        const tok = makeInviteToken(acct.id);
+        const link = resetBaseUrl(req) + "/?reset=" + tok;
+        const html = '<p>Hi ' + htmlEsc(acct.name || acct.username) + ',</p>' +
+          '<p>You\'ve been added to J-Suite. Your username is <b>' + htmlEsc(acct.username) + '</b>.</p>' +
+          '<p>Tap below to set your password and sign in. This link expires in 7 days.</p>' +
+          '<p><a href="' + link + '">Set my password</a></p>';
+        if (emailConfigured) sendEmail(email, "Welcome to J-Suite — set your password", html).catch(() => {});
+        const user = { id: acct.id, username: acct.username, name: acct.name, email: acct.email, role: acct.role, status: "invited" };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(emailConfigured ? { ok: true, user: user, emailed: true } : { ok: true, user: user, emailed: false, link: link }));
+      };
+      if (raw && raw.status === "invited") {   // RESEND — don't create a second account, just mint a fresh link
+        try { const a = loadAudit(); a.push({ t: Date.now(), u: puid, b: org, c: "account", id: raw.id, act: "invite-resent", label: (raw.name || raw.username || email).slice(0, 60) }); saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a); } catch (e) {}
+        return sendInvite(raw);
+      }
+      // USERNAME — auto-derive from the email local-part (client may override); dedupe with a numeric suffix.
+      let uname = (String(p.username || "").trim() || email.split("@")[0]).replace(/[^a-zA-Z0-9._-]/g, "") || "user";
+      const taken = new Set((store.users || []).filter(u => u && !u.deleted && !u.kind).map(u => String(u.username || "").toLowerCase()));
+      if (taken.has(uname.toLowerCase())) { const base = uname; let n = 2; while (taken.has((base + n).toLowerCase())) n++; uname = base + n; }
+      const id = "u_" + crypto.randomBytes(9).toString("hex");
+      const acct = { id: id, username: uname, name: name, email: email, role: role, active: true, status: "invited", passhash: scryptHash(crypto.randomBytes(24).toString("hex")), invitedBy: puid, updatedAt: Date.now() };
+      const mem = { id: "mem_" + org + "_" + id, kind: "membership", orgId: org, accountId: id, role: role, active: true, updatedAt: Date.now() };
+      store.users.push(acct); store.users.push(mem);
+      try { saveStore(store); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not save"}'); }
+      try { const a = loadAudit(); a.push({ t: Date.now(), u: puid, b: org, c: "account", id: id, act: "invited", label: (name || uname).slice(0, 60) }); saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a); } catch (e) {}
+      return sendInvite(acct);
     });
     return;
   }
@@ -1746,7 +1836,7 @@ const server = http.createServer((req, res) => {
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, state: projectForUser(merged, myOrgs, me) }));   // READ isolation: only the caller's orgs go back
+      res.end(JSON.stringify({ ok: true, shared: !puid, state: projectForUser(merged, myOrgs, me) }));   // READ isolation: only the caller's orgs go back. `shared` = this device is on the legacy shared token (no per-user id) → the client shows a non-locking "sign in again to add members" nudge
       // best-effort push: tickle recipients of genuinely-new human messages (DMs + broadcasts) synced in
       try {
         const nowMs = Date.now(), incoming = payload.state || {};
@@ -1841,4 +1931,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropicTask, rcptParseSuggestion, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropicTask, rcptParseSuggestion, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

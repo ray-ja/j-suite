@@ -26,6 +26,13 @@ function setup() {
     obx: { customers: [] }, jam: {}, users: [
       { id: "owner", username: "ray", passhash: SS.scryptHash("ownerpw"), role: "owner", updatedAt: 1 },
       { id: "crew", username: "joe", passhash: SS.scryptHash("crewpw"), role: "crew", updatedAt: 1 },
+      // EXPLICIT memberships → the owner is an org-OWNER of obx/jam but NOT super-admin (migrateStore only
+      // super-admins an owner that had no membership). This lets us test writerOwnsOrg-gated /invite AND that a
+      // NON-super owner inviting role=owner is coerced down (no privilege escalation).
+      { id: "mem_obx_owner", kind: "membership", orgId: "obx", accountId: "owner", role: "owner", active: true, updatedAt: 1 },
+      { id: "mem_jam_owner", kind: "membership", orgId: "jam", accountId: "owner", role: "owner", active: true, updatedAt: 1 },
+      { id: "mem_obx_crew", kind: "membership", orgId: "obx", accountId: "crew", role: "crew", active: true, updatedAt: 1 },
+      { id: "mem_jam_crew", kind: "membership", orgId: "jam", accountId: "crew", role: "crew", active: true, updatedAt: 1 },
     ],
   }));
 }
@@ -119,6 +126,49 @@ async function main() {
 
     st = await sync(SHARED, { users: [Object.assign(clone(C), { role: "owner", updatedAt: now() })], obx: {}, jam: {} });
     check("leaked SHARED (legacy) token ALSO cannot escalate", find(st, "crew").role === "admin");   // unchanged from the owner's change above
+
+    // ===== INVITE-BY-EMAIL (server-authoritative account creation; sidesteps the sanitizeUserWrites drop) =====
+    const invite = (tok, body) => api("POST", "/invite", body, tok);
+    const linkTok = j => (String((j && j.link) || "").match(/reset=([a-f0-9]+)/) || [])[1] || "";
+    // 1) a NON-super org-owner CAN invite → account + membership created server-side, emailed:false + a link (no email configured in the temp dir)
+    const inv1 = await invite(ownerTok, { org: "obx", name: "Mike Green", email: "mike@obx.test", role: "crew" });
+    check("owner CAN invite (200, ok, emailed:false, set-password link)", inv1.status === 200 && inv1.json && inv1.json.ok === true && inv1.json.emailed === false && /\/\?reset=[a-f0-9]{16,}/.test(inv1.json.link || ""));
+    const mikeId = inv1.json && inv1.json.user && inv1.json.user.id;
+    st = await sync(ownerTok, { obx: {}, jam: {} });
+    check("invited account persists (status:invited + a random passhash)", (u => !!u && u.status === "invited" && !!u.passhash)(find(st, mikeId)));
+    check("invited MEMBERSHIP created for obx", usersOf(st).some(m => m && m.kind === "membership" && m.accountId === mikeId && m.orgId === "obx"));
+    // 2) the invited account survives a SHARED-token push AND a CREW push (NOT dropped by sanitizeUserWrites)
+    st = await sync(SHARED, { users: [clone(O), clone(C)], obx: {}, jam: {} });
+    check("invited account survives a shared-token push (not dropped)", !!find(st, mikeId));
+    st = await sync(crewTok, { obx: { customers: [{ id: "c2", name: "After invite", updatedAt: now() }] }, jam: {} });
+    check("invited account survives a crew push (not dropped)", !!find(st, mikeId));
+    // 3) the SHARED (legacy) token CANNOT invite — no per-user id → 401 relogin
+    const invShared = await invite(SHARED, { org: "obx", name: "X", email: "x@obx.test", role: "crew" });
+    check("shared token CANNOT invite (401 + relogin)", invShared.status === 401 && invShared.json && invShared.json.relogin === true);
+    // 4) a CREW per-user token CANNOT invite → 403
+    const invCrew = await invite(crewTok, { org: "obx", name: "Y", email: "y@obx.test", role: "crew" });
+    check("crew per-user token CANNOT invite (403)", invCrew.status === 403);
+    // 5) re-inviting a STILL-pending email is an idempotent RESEND (200, same account id + fresh link)
+    const resend = await invite(ownerTok, { org: "obx", name: "Mike Green", email: "mike@obx.test", role: "crew" });
+    check("re-inviting a pending email → idempotent RESEND (200, same id)", resend.status === 200 && resend.json && resend.json.user && resend.json.user.id === mikeId);
+    // 6) the invited account can't log in until /reset; after /reset it can + gets a DISTINCT per-user token
+    const preLogin = await api("POST", "/login", { username: "mike", password: "mikepassword1" });
+    check("invited account CANNOT log in before /reset", preLogin.status === 401 || !(preLogin.json && preLogin.json.token));
+    const rst = await api("POST", "/reset", { token: linkTok(resend.json), password: "mikepassword1" });
+    check("invited account sets a password via /reset (200)", rst.status === 200);
+    st = await sync(ownerTok, { obx: {}, jam: {} });
+    check("the invited status is CLEARED after /reset", !(find(st, mikeId) || {}).status);
+    const mikeLogin = await api("POST", "/login", { username: "mike", password: "mikepassword1" });
+    check("onboarded member logs in → distinct per-user token", mikeLogin.json && mikeLogin.json.token && [ownerTok, crewTok, SHARED].indexOf(mikeLogin.json.token) < 0);
+    // 5b) now that mike is ONBOARDED (status cleared), re-inviting that email → 409 duplicate
+    const dup = await invite(ownerTok, { org: "obx", name: "Mike", email: "mike@obx.test", role: "crew" });
+    check("duplicate email of an onboarded account → 409", dup.status === 409);
+    // 7) a NON-super owner inviting role=owner is COERCED down (never an owner) — no privilege escalation
+    const inv7 = await invite(ownerTok, { org: "obx", name: "Sneaky", email: "sneaky@obx.test", role: "owner" });
+    check("non-super owner inviting role=owner → account coerced to non-owner", inv7.status === 200 && inv7.json && inv7.json.user && inv7.json.user.role !== "owner");
+    st = await sync(ownerTok, { obx: {}, jam: {} });
+    check("...and the coerced member's membership role is not owner", (m => !!m && m.role !== "owner")(usersOf(st).find(x => x && x.kind === "membership" && x.accountId === (inv7.json.user && inv7.json.user.id) && x.orgId === "obx")));
+    check("no original account was ever dropped by the invite flow", !!find(st, "owner") && !!find(st, "crew"));
 
     // ===== LOG OUT EVERYWHERE =====
     const t0 = now();

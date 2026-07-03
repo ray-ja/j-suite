@@ -21,6 +21,9 @@ sync.env
 user-tokens.json
 org-ai-config.json
 
+# --- Pending invite set-password tokens (token -> {userId,exp}; server-only, persisted across restart so a deploy can't kill live invites; never synced/committed) ---
+invite-tokens.json
+
 # --- Presence (userId -> last-seen ms; server-only, ephemeral) ---
 presence.json
 
