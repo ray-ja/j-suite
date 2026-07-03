@@ -9,33 +9,11 @@ function curUser(){const id=localStorage.getItem("jra_session");return users().f
    Works for shared-token devices too (it's a synced field), and the server also 401s a per-user token issued before it. */
 function checkForcedLogout(){try{const me=curUser();if(!me)return false;const myLogin=+localStorage.getItem("jra_login_at")||0;if(me.logoutAt&&me.logoutAt>myLogin){window.AUTH_401=true;if(S.sync)S.sync.token="";localStorage.removeItem("jra_session");save();if(typeof syMsg==="function")syMsg("Signed out by an owner — sign in again.");if(typeof render==="function")render();return true;}}catch(e){}return false;}
 function userName(id){const u=(S.users||[]).find(x=>x.id===id);return u?u.username:"";}
-window.openCreateAccount=function(){modal("New account",`
-  <p class="muted" style="margin-bottom:8px">Username + password. Add the person's email to enable one-tap sign-in through Cloudflare Access (optional).</p>
-  <label>Username</label><input id="u_name" autocomplete="off">
-  <label>Email (optional — for Access SSO)</label><input id="u_email" autocomplete="off" placeholder="name@obxlotsolutions.com">
-  <label>Password</label><input id="u_pw" type="password" autocomplete="new-password">
-  <button class="btn acc" style="margin-top:14px" onclick="createAccount()">Create account</button>`);};
-window.createAccount=async function(){
-  const un=val("u_name"),pw=val("u_pw");
-  if(!un||!pw){alert("Username and password required.");return;}
-  if(users().some(u=>u.username.toLowerCase()===un.toLowerCase())){alert("That username is taken.");return;}
-  if(!S.users)S.users=[];
-  const isFirst=users().length===0;   // first account on a fresh setup is the owner; others default to crew
-  S.users.push({id:uid(),username:un,email:(val("u_email")||"").trim().toLowerCase(),passhash:await hashPw(pw),role:isFirst?"owner":"crew",active:true,settings:{theme:(typeof themePref==="function"?themePref():"light")},updatedAt:now()});
-  const u=S.users[S.users.length-1];localStorage.setItem("jra_session",u.id);
-  save();closeModal();render();
-};
-window.openLogin=function(){modal("Sign in",`
-  <label>Username</label><input id="l_name" autocomplete="off">
-  <label>Password</label><input id="l_pw" type="password" autocomplete="off">
-  <button class="btn acc" style="margin-top:14px" onclick="loginUser()">Sign in</button>`);};
-window.loginUser=async function(){
-  const un=val("l_name"),pw=val("l_pw");
-  const u=users().find(x=>x.username.toLowerCase()===un.toLowerCase());
-  if(!u||u.passhash!==await hashPw(pw)){alert("Wrong username or password.");return;}
-  if(u.active===false){alert("This account is deactivated. Ask an owner to reactivate it.");return;}
-  localStorage.setItem("jra_session",u.id);closeModal();render();
-};
+/* NOTE: the legacy local-only account-create + login helpers (openCreateAccount/createAccount/openLogin/
+   loginUser) were REMOVED — dead code (no callers) and a foot-gun: a local-only "create account" silently
+   drops server-side (verifiedOwner=false → sanitizeUserWrites), and a local-only "login" never fetches a
+   per-user token. The LIVE paths are appLogin/renderLogin (below, server-authoritative) and the invite-by-
+   email flow (js/32 adminInviteMember → server POST /invite). */
 /* ===== ROLE-VIEW TESTER (admin/owner-only) — see the app AS another role, for testing =====
    This is a CLIENT-SIDE VIEW OVERRIDE for an ALREADY-AUTHENTICATED admin, NOT a login. It writes
    window.VIEW_AS, which curRoleKey() (js/32) reads to DOWNGRADE the role used by canSee()/nav gating —
@@ -87,6 +65,30 @@ function renderViewAsBanner(){
   document.body.classList.add("has-viewas-banner");
 }
 window.renderViewAsBanner=renderViewAsBanner;
+
+/* SHARED-TOKEN UPGRADE NUDGE — the server tags a /sync response `shared:true` when this device authenticated
+   with the LEGACY shared token (no per-user id). Such a device can't add members and can't be attributed
+   server-side (that's the account-creation-drop bug). This shows a DISMISSIBLE, NON-LOCKING banner inviting a
+   fresh per-user sign-in. It NEVER logs anyone out and NEVER clears the shared token — the shared token stays a
+   valid sync authenticator; this is a gentle upgrade prompt only. Dismiss is remembered for the session. */
+window.SHARED_TOKEN_MODE=window.SHARED_TOKEN_MODE||false;
+function dismissSharedNudge(e){ if(e&&e.stopPropagation)e.stopPropagation(); try{sessionStorage.setItem("jra_shared_nudge_off","1");}catch(x){} var b=document.getElementById("sharednudge"); if(b)b.remove(); document.body.classList.remove("has-shared-nudge"); }
+window.dismissSharedNudge=dismissSharedNudge;
+function renderSharedTokenNudge(){
+  var on=!!window.SHARED_TOKEN_MODE;
+  try{ if(sessionStorage.getItem("jra_shared_nudge_off")==="1") on=false; }catch(x){}
+  var b=document.getElementById("sharednudge");
+  if(!on){ if(b)b.remove(); document.body.classList.remove("has-shared-nudge"); return; }
+  if(!b){
+    b=document.createElement("div"); b.id="sharednudge";
+    b.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:9998;background:var(--accent,#2563eb);color:#fff;padding:9px 12px;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 -2px 8px rgba(0,0,0,.15)";
+    document.body.appendChild(b);
+  }
+  b.innerHTML='<span style="flex:1;cursor:pointer" onclick="renderLogin()">This device uses legacy sign-in — <b>tap to sign in again</b> to add members &amp; enable per-user security.</span>'+
+    '<button type="button" onclick="dismissSharedNudge(event)" style="background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:6px;padding:4px 10px;font-size:13px;cursor:pointer">Dismiss</button>';
+  document.body.classList.add("has-shared-nudge");
+}
+window.renderSharedTokenNudge=renderSharedTokenNudge;
 
 /* PROFILE — stripped to almost nothing (per owner). Tap the 👤 → a small confirm: Sign out (default) or,
    for an admin/owner, Switch user (the role-view tester). Org switcher → header; dark mode/home base → Settings. */
@@ -140,8 +142,8 @@ function renderLogin(){
 }
 window.appLogin=async function(){
   const base=(val("lg_url")||defaultServerUrl()).replace(/\/+$/,""),un=val("lg_user"),pw=val("lg_pw");
-  if(!base){loginMsg("Enter the server URL under Advanced.");return;}
   if(!un||!pw){loginMsg("Username and password required.");return;}
+  if(!base){return appLoginOffline(un,pw);}   // no server reachable (file:// / unconfigured) → verify locally only
   loginMsg("Signing in…");
   try{
     const r=await fetch(base+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:un,password:pw})});
@@ -156,8 +158,34 @@ window.appLogin=async function(){
     if(typeof syncRun==="function")await syncRun("pull");   // pull their data silently (no empty-store confirm)
     if(typeof applyUserSettings==="function")applyUserSettings();
     render();
-  }catch(e){loginMsg("Couldn't reach the server — check the URL / Tailscale connection.");}
+  }catch(e){ if(!(await appLoginOffline(un,pw,true))) loginMsg("Couldn't reach the server — check the URL / Tailscale connection."); }
 };
+/* OFFLINE / file:// login fallback — used ONLY when no server is reachable (empty base, or a fetch that threw
+   because the network is down). Verifies the password against the LOCALLY-synced account records and grants
+   LOCAL-ONLY access. It DELIBERATELY does NOT touch S.sync.token: whatever token is present (shared / prior /
+   empty) is left exactly as-is, so this path can never mint sync authority — any account write still drops
+   server-side (safe), and this does NOT reopen the "browse while signed out" hole because it sets jra_session
+   to a REAL account and needLogin() only honors jra_offline_ok when curUser() resolves to one.
+   LIMITATION: on a non-secure context (file:// / plain-http) crypto.subtle is unavailable, so hashPw() uses
+   the djb2 "f…" fallback. An account whose stored passhash is SHA-256/scrypt (set while ONLINE) therefore may
+   NOT verify offline here. That's accepted: offline login is a convenience for a previously-online device, not
+   a security boundary — it grants local access only, never server writes. Returns true on success. */
+async function appLoginOffline(un,pw,fromNetworkFail){
+  const list=(typeof users==="function")?users():[];
+  const lc=String(un||"").toLowerCase();
+  const u=list.find(x=>x&&((String(x.username||"").toLowerCase()===lc)||(String(x.email||"").toLowerCase()===lc)));
+  if(!u||u.active===false||u.passhash!==await hashPw(pw)){ loginMsg("Wrong username or password (offline)."); return false; }
+  localStorage.setItem("jra_session",u.id);
+  localStorage.setItem("jra_offline_ok","1");
+  localStorage.setItem("jra_login_at",String(now()));
+  window.AUTH_401=false;   // let this device browse its LOCAL data offline (any sync attempt would re-verify the token)
+  save();                  // NOTE: S.sync.token is intentionally left untouched
+  if(typeof applyUserSettings==="function")applyUserSettings();
+  loginMsg(fromNetworkFail?"Signed in offline — local access only until you reconnect.":"");
+  render();
+  return true;
+}
+window.appLoginOffline=appLoginOffline;
 window.appBootstrapToken=async function(){
   const base=(val("lg_url")||defaultServerUrl()).replace(/\/+$/,""),tok=val("lg_token");
   if(!tok){loginMsg("Paste a token first.");return;}

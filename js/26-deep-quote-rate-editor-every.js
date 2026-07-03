@@ -156,6 +156,8 @@ async function syncRun(mode){
     const data=await res.json();
     if(!data||!data.state||typeof data.state!=="object")throw new Error("bad response");
     window.AUTH_401=false;_retryN=0;
+    window.SHARED_TOKEN_MODE=!!data.shared;   // legacy shared-token device → non-locking "sign in again to add members" nudge (never logs out / clears the token)
+    if(typeof renderSharedTokenNudge==="function")renderSharedTokenNudge();
     const changed=JSON.stringify(data.state)!==sentSig;
     window.__syncApplying=true;
     Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;   // apply every org slab the server returned
