@@ -36,16 +36,21 @@ function invStatusChip(s){
   if(s==="retired")return '<span class="badge" style="background:var(--soft);color:var(--muted)">retired</span>';
   return "";
 }
-/* asset-register detail line for a card/row: plate · 📍 location · 🧑 who-has-it, + a status chip.
+/* PHASE 4 (cleaning/maintenance) — a "needs cleaning" chip, shown wherever an item is surfaced so a dirty
+   tool (chainsaw/mower) is obvious. needsCleaning is set on job-wrap (dirtiesWithUse gear) or by hand. */
+function invCleanChip(i){
+  return (i&&i.needsCleaning)?'<span class="badge" style="background:#b8860b;color:#fff">🧽 needs cleaning</span>':"";
+}
+/* asset-register detail line for a card/row: plate · 📍 location · 🧑 who-has-it, + status + needs-cleaning chips.
    Returns "" when nothing is set, so untouched items look exactly as before. */
 function invDetailLine(i){
   var bits=[];
   if(i.plate)bits.push('🔖 '+esc(i.plate));
   if(i.location)bits.push('📍 '+esc(i.location));
   var hn=invHolderName(i.heldBy); if(hn)bits.push('🧑 '+esc(hn));
-  var line=bits.join(" · "), chip=invStatusChip(i.status);
-  if(!line&&!chip)return "";
-  return '<div class="sub" style="white-space:normal;margin-top:2px">'+line+(chip?(line?" ":"")+chip:"")+'</div>';
+  var line=bits.join(" · "), chips=[invStatusChip(i.status),invCleanChip(i)].filter(Boolean).join(" ");
+  if(!line&&!chips)return "";
+  return '<div class="sub" style="white-space:normal;margin-top:2px">'+line+(chips?(line?" ":"")+chips:"")+'</div>';
 }
 function invJobTitle(tag){var j=INV_JOBS.find(function(x){return x[0]===tag;});return j?j[1]:tag;}
 function invIsMaterial(i){return !!INV_MATERIAL_CATS[(i.cat||"").toLowerCase()];}
@@ -217,6 +222,41 @@ function seedClockInVehicles(){
 
 /* active (non-deleted) inventory for the current biz */
 function actInv(){return (D().inventory||[]).filter(function(i){return !i.deleted;});}
+/* PHASE 4 (cleaning) — items currently flagged as needing cleaning (drives the view + subnav/Today badges). */
+function invNeedsCleaning(){return actInv().filter(function(i){return i.needsCleaning;});}
+/* AUTO-FLAG ON JOB WRAP — when a job is completed (js/09 toggleJob), any of its required gear that
+   "dirties with use" (chainsaw, mower…) gets flagged needs-cleaning + stamped with when/who. IDEMPOTENT:
+   an already-flagged item is left untouched (never re-stamped), so re-completing / a later status pipeline
+   can't churn the audit trail; reopening a job does NOT clear it (cleaning is a physical act). Additive —
+   mutates inventory items in place; the caller saves. Returns the number of items newly flagged. */
+function invAutoFlagCleaningForJob(job){
+  if(!job)return 0;
+  var lines=(typeof jobEquip==="function")?jobEquip(job):[];
+  if(!lines.length)return 0;
+  var byWho=(typeof curUser==="function"&&curUser())?curUser().id:null;
+  var flagged=0;
+  lines.forEach(function(e){
+    var i=(typeof eqItemById==="function")?eqItemById(e.itemId):null;
+    if(!i||!i.dirtiesWithUse||i.needsCleaning)return;   // only dirties-with-use gear, and never re-stamp
+    i.needsCleaning=true; i.cleanFlaggedAt=now(); i.cleanFlaggedBy=byWho;
+    if(typeof touch==="function")touch(i); flagged++;
+  });
+  return flagged;
+}
+/* MANUAL flag / clear — operational, so anyone (crew included) can flag a dirty tool or mark it cleaned.
+   Both stamp when + who; clearing keeps the flag/cleared audit stamps so history survives. */
+window.invFlagCleaning=function(id){var i=actInv().find(function(x){return x.id===id;});if(!i)return;
+  i.needsCleaning=true; i.cleanFlaggedAt=now(); i.cleanFlaggedBy=(typeof curUser==="function"&&curUser())?curUser().id:null;
+  touch(i);save();
+  if(typeof logEvent==="function")logEvent("Flagged needs cleaning: "+i.name,"inventory");
+  if(typeof closeModal==="function")closeModal(); render();};
+window.invClearCleaning=function(id){var i=actInv().find(function(x){return x.id===id;});if(!i)return;
+  i.needsCleaning=false; i.cleanClearedAt=now(); i.cleanClearedBy=(typeof curUser==="function"&&curUser())?curUser().id:null;
+  touch(i);save();
+  if(typeof logEvent==="function")logEvent("Marked cleaned: "+i.name,"inventory");
+  if(typeof closeModal==="function")closeModal(); render();};
+/* jump straight to the needs-cleaning list (used by the Today nudge) */
+window.invGotoCleaning=function(){INVVIEW="cleaning";if(typeof navSub==="function")navSub("inventory");else{TAB="inventory";render();}};
 /* items tagged for a job (its tag or the catch-all "all") */
 function invLensItems(tag){return actInv().filter(function(i){var t=i.tags||[];return t.indexOf(tag)>=0||t.indexOf("all")>=0;});}
 
@@ -250,15 +290,17 @@ function invMetaLine(i){
 
 function rInventory(){
   var inv=actInv();
+  var ncount=invNeedsCleaning().length;
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(INVVIEW==="master"?"on":"")+'" onclick="invSetView(\'master\')">Master list</button>'
     +'<button class="subbtn '+(INVVIEW==="vehicles"?"on":"")+'" onclick="invSetView(\'vehicles\')">🚚 Vehicles</button>'
+    +'<button class="subbtn '+(INVVIEW==="cleaning"?"on":"")+'" onclick="invSetView(\'cleaning\')">🧽 Needs cleaning'+(ncount?' <span class="badge" style="background:#b8860b;color:#fff;margin-left:4px">'+ncount+'</span>':"")+'</button>'
     +'<button class="subbtn '+(INVVIEW==="job"?"on":"")+'" onclick="invSetView(\'job\')">By job type</button>'
     +'<button class="subbtn '+(INVVIEW==="avail"?"on":"")+'" onclick="invSetView(\'avail\')">Availability by date</button>'
     +'</div>';
 
-  // Vehicles view surfaces registry company trucks too, so it stays useful even when this biz has no inventory yet.
-  if(!inv.length&&INVVIEW!=="vehicles"){
+  // Vehicles + cleaning views render their own content/empty-states, so keep the subnav reachable even when this biz has no inventory yet.
+  if(!inv.length&&INVVIEW!=="vehicles"&&INVVIEW!=="cleaning"){
     var why=S.biz==="jam"
       ? "No Jamieson inventory master yet. The OBX master (110 items) is already seeded — switch to OBX to use it. A Jamieson master can be added the same way later; for now, tap + to add items by hand."
       : "No inventory yet. Tap + to add an item.";
@@ -266,7 +308,7 @@ function rInventory(){
     return;
   }
   view.innerHTML=sub+'<div id="inv_body"></div>';
-  if(INVVIEW==="vehicles")invRenderVehicles();else if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
+  if(INVVIEW==="vehicles")invRenderVehicles();else if(INVVIEW==="cleaning")invRenderCleaning();else if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
 }
 
 /* ---------- MASTER (edit Have?/Qty here, once) ---------- */
@@ -372,6 +414,29 @@ function invRegTruckRow(v){
       +(v.active===false?'<span class="badge" style="background:var(--soft);color:var(--muted);margin-left:4px">retired</span>':"")+'</div>'
     +'<div class="sub" style="white-space:normal">'+meta.join(" · ")+'</div></div>'
     +'<div class="sub" style="flex:0 0 auto;color:var(--muted)">read-only</div></div>';
+}
+
+/* ---------- NEEDS CLEANING (Phase 4) — everything flagged dirty, with one-tap "✓ Mark cleaned" ----------
+   Auto-flagged when a job using a "dirties-with-use" item (chainsaw, mower) wraps (js/09 toggleJob →
+   invAutoFlagCleaningForJob), or flagged by hand. Operational: any crew can clear an item once it's clean. */
+function invRenderCleaning(){
+  var body=document.getElementById("inv_body"); if(!body)return;
+  var list=invNeedsCleaning();
+  var h='<div class="secthd"><h2>🧽 Needs cleaning</h2><span class="ct">'+list.length+'</span></div>';
+  h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">Gear flagged dirty — auto-flagged when a job using a <b>dirties-with-use</b> item wraps, or flagged by hand. Clean it, then tap <b>✓ Mark cleaned</b>. Mark a tool "needs cleaning after use" on its item page.</p>';
+  if(!list.length){body.innerHTML=h+'<div class="empty"><div class="big">✨</div>Nothing needs cleaning right now.</div>';return;}
+  h+='<div class="card" style="padding:6px 10px">'+list.map(invCleaningRow).join("")+'</div>';
+  body.innerHTML=h;
+}
+function invCleaningRow(i){
+  var when=(i.cleanFlaggedAt&&typeof relTime==="function")?relTime(i.cleanFlaggedAt):"";
+  var who=invHolderName(i.cleanFlaggedBy);
+  var meta=[]; if(who)meta.push("flagged by "+esc(who)); if(when)meta.push(esc(when));
+  return '<div class="li" style="align-items:flex-start">'
+    +'<div class="grow" style="cursor:pointer" onclick="openInvItem(\''+i.id+'\')"><div class="nm">'+esc(i.name)+invCatBadge(i.cat)+'</div>'
+    +'<div class="sub" style="white-space:normal">'+(meta.length?meta.join(" · "):"flagged for cleaning")+'</div></div>'
+    +'<button class="btn acc sm" style="flex:0 0 auto" onclick="event.stopPropagation();invClearCleaning(\''+i.id+'\')">✓ Mark cleaned</button>'
+  +'</div>';
 }
 
 /* ---------- BY JOB TYPE — gap report + read-only lens ---------- */
@@ -494,6 +559,13 @@ window.openInvItem=function(id){
       +INV_CATS.map(function(c){return '<option '+((i.cat||"tool")===c?"selected":"")+'>'+c+'</option>';}).join("")
     +'</select></div><div class="grow"><label>Qty</label><input id="iv_qty" value="'+esc(i.qty||"")+'" placeholder="e.g. 2"></div></div>'
     +'<div class="toggle"><input type="checkbox" id="iv_have" '+(i.have?"checked":"")+'><label style="margin:0">Have it (owned)</label></div>'
+    // CLEANING (Phase 4) — mark gear that needs cleaning after each use (auto-flags on job wrap).
+    +'<div class="toggle"><input type="checkbox" id="iv_dirties" '+(i.dirtiesWithUse?"checked":"")+'><label style="margin:0">Needs cleaning after use — e.g. chainsaw, mower</label></div>'
+    +(isNew?"":'<div class="row" style="gap:8px;margin:4px 0 2px">'
+       +(i.needsCleaning
+         ?'<button class="btn acc grow" onclick="invClearCleaning(\''+i.id+'\')">✓ Mark cleaned</button>'
+         :'<button class="btn ghost grow" onclick="invFlagCleaning(\''+i.id+'\')">🧽 Flag needs cleaning</button>')
+       +'</div>'+(i.needsCleaning?'<div class="note" style="font-size:12.5px;margin-top:2px">🧽 Currently flagged as needing cleaning.</div>':""))
     // VEHICLE UNIFICATION — flag a vehicle item as pickable at clock-in (only takes effect for cat "vehicle").
     +'<div class="toggle"><input type="checkbox" id="iv_clockin" '+(i.clockIn?"checked":"")+'><label style="margin:0">Usable at clock-in (a real vehicle crew can pick)</label></div>'
     +(i.personal&&i.ownerId?'<div class="note" style="margin-top:6px;font-size:12.5px">Personal vehicle — mileage is reimbursed to its owner.</div>':"")
@@ -522,6 +594,7 @@ window.saveInvItem=function(id,isNew){
   // ASSET REGISTER (Phase 3) — additive detail fields; empty strings are fine (default absent).
   i.plate=val("iv_plate"); i.location=val("iv_location"); i.heldBy=val("iv_heldby"); i.status=val("iv_status");
   i.have=(document.getElementById("iv_have")||{}).checked===true;
+  i.dirtiesWithUse=(document.getElementById("iv_dirties")||{}).checked===true;   // CLEANING (Phase 4): auto-flags needsCleaning when a job using it wraps; additive
   i.clockIn=(document.getElementById("iv_clockin")||{}).checked===true;   // pickable at clock-in (used only for cat "vehicle"); additive, preserves personal/ownerId
   if(i.clockIn&&i.active===undefined)i.active=true;
   i.tags=Array.prototype.slice.call(document.querySelectorAll(".inv_tag:checked")).map(function(c){return c.value;});

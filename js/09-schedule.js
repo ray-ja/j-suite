@@ -209,13 +209,20 @@ window.openDay=function(ds){
     ${team?`<div class="secthd"><h2>Team availability</h2><span class="ct" style="font-weight:700">${hdr?hdr.replace(/^ · /,""):""}</span></div><div class="card">${team}</div>`:""}
     <button class="btn acc" style="margin-top:6px" onclick="closeModal();openJob(null,'','${ds}')">Add job on this day</button>`);
 };
-/* compact required-equipment line for a job row — count + a clear flag if any item is over-committed on its date */
+/* compact required-equipment line for a job row — count + load progress (N/M loaded) + a needs-cleaning
+   count + a clear flag if any item is over-committed on its date. Makes the load checklist reachable/obvious
+   from Today + the schedule without opening the job. */
 function jobEquipLine(j){
   const eq=(typeof jobEquip==="function")?jobEquip(j):[];if(!eq.length)return"";
   const n=eq.reduce((s,e)=>s+e.qty,0);
+  const rawLines=(j.equipment||[]).filter(e=>e&&e.itemId);
+  const loaded=rawLines.filter(e=>e.loaded).length;
+  const prog=(!j.done&&rawLines.length)?` · <span style="font-weight:700${loaded===rawLines.length?";color:var(--accent)":""}">${loaded}/${rawLines.length} loaded</span>`:"";
+  const dirty=eq.filter(e=>{const i=(typeof eqItemById==="function")?eqItemById(e.itemId):null;return i&&i.needsCleaning;}).length;
+  const dc=dirty?` <span style="color:#b8860b;font-weight:700">🧽 ${dirty} to clean</span>`:"";
   const conf=j.done?0:eq.filter(e=>eqConflict(e.itemId,j.date,e.qty,j.id).conflict).length;
   const c=conf?` <span style="color:var(--danger);font-weight:700">⚠ ${conf} over-committed</span>`:"";
-  return `<div class="sub" style="margin-top:2px">🧰 ${n} item${n>1?"s":""}${c}</div>`;
+  return `<div class="sub" style="margin-top:2px">🧰 ${n} item${n>1?"s":""}${prog}${dc}${c}</div>`;
 }
 function liJob(j){
   const crew=(j.crew&&j.crew.length)?`<div style="margin-top:4px">${crewChips(j)}</div>`:"";
@@ -487,7 +494,9 @@ window.saveJob=function(id,isNew){
   save();closeModal();render();
 };
 window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done;
-  if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);}else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
+  if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);
+    if(typeof invAutoFlagCleaningForJob==="function")invAutoFlagCleaningForJob(j);  /* CLEANING (Phase 4): flag dirties-with-use gear for cleaning on wrap (idempotent; reopen doesn't clear) */
+  }else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
   if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();
   if(j.done&&typeof reviewPrompt==="function")reviewPrompt(id);};   /* Cap #2: ask for a Google review at the done-moment */
 window.delJob=function(id){if(!confirm("Delete this job? It (and its quote) go to the Archive for 60 days — restore it there if needed."))return;

@@ -108,9 +108,14 @@ function rJobPage(j) {
   }).join("");
   h += `</div>`;
 
-  // 2) Load checklist — load the truck before you drive
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Load checklist <span class="sub" style="font-weight:400">· check off as you load</span></div>`;
-  h += (j.equipment && j.equipment.length) ? j.equipment.map(e => { const it = (typeof eqItemById === "function") ? eqItemById(e.itemId) : null; const nm = it ? (it.name || e.itemId) : e.itemId; return `<label class="li" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal;${e.loaded ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(nm)}</div></div><div class="row" style="gap:10px;align-items:center"><span class="sub">×${e.qty || 1}</span><input type="checkbox" style="width:22px;height:22px" ${e.loaded ? "checked" : ""} onchange="jobToggleLoaded('${j.id}','${esc(e.itemId)}')"></div></label>`; }).join("") : `<div class="muted">No equipment assigned to this job.</div>`;
+  // 2) Load checklist — load the truck before you drive. Prominent progress count (N/M loaded) + a
+  // needs-cleaning badge on any flagged item (ties Part A + B: "grab the chainsaw — it needs cleaning first").
+  const _eq = (j.equipment || []).filter(e => e && e.itemId);
+  const _loadedN = _eq.filter(e => e.loaded).length;
+  const _allLoaded = _eq.length && _loadedN === _eq.length;
+  const _prog = _eq.length ? ` <span class="badge" style="background:${_allLoaded ? "var(--accent)" : "var(--soft)"};color:${_allLoaded ? "#fff" : "var(--muted)"};margin-left:2px">${_loadedN}/${_eq.length} loaded</span>` : "";
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Load checklist${_prog} <span class="sub" style="font-weight:400">· check off as you load</span></div>`;
+  h += _eq.length ? _eq.map(e => { const it = (typeof eqItemById === "function") ? eqItemById(e.itemId) : null; const nm = it ? (it.name || e.itemId) : e.itemId; const dirty = (it && it.needsCleaning) ? ` <span class="badge" style="background:#b8860b;color:#fff">🧽 needs cleaning</span>` : ""; return `<label class="li" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal;${e.loaded ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(nm)}${dirty}</div></div><div class="row" style="gap:10px;align-items:center"><span class="sub">×${e.qty || 1}</span><input type="checkbox" style="width:22px;height:22px" ${e.loaded ? "checked" : ""} onchange="jobToggleLoaded('${j.id}','${esc(e.itemId)}')"></div></label>`; }).join("") : `<div class="muted">No equipment assigned to this job.</div>`;
   h += `</div>`;
 
   // 3) Time clock — each person clocks in with their own vehicle + odometer
