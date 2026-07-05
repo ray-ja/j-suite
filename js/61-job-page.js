@@ -4,9 +4,10 @@
    job) → photos (inline, visible to all) → expenses (amount + receipt as proof) → notes → change orders.
    Reached by tapping a job (openJobPage); renders inside the Schedule tab via window.JOB_OPEN. */
 window.JOB_OPEN = window.JOB_OPEN || null;
-window.openJobPage = function (id) { window.JOB_OPEN = id; TAB = "schedule"; if (typeof render === "function") render(); };
-window.jobPageBack = function () { window.JOB_OPEN = null; if (typeof render === "function") render(); };
-window.jobResetOpen = function () { window.JOB_OPEN = null; };
+window.JOB_RETURN_TAB = window.JOB_RETURN_TAB || null;   // where the user was when they opened a job (e.g. "receipts") so Back returns there, not always Schedule
+window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null; window.JOB_OPEN = id; TAB = "schedule"; if (typeof render === "function") render(); };
+window.jobPageBack = function () { window.JOB_OPEN = null; if (window.JOB_RETURN_TAB) { TAB = window.JOB_RETURN_TAB; window.JOB_RETURN_TAB = null; } if (typeof render === "function") render(); };
+window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; };
 
 function jobAddr(j) {
   const _p = (j.propertyId && typeof actProps === "function") ? actProps().find(p => p.id === j.propertyId) : null;
