@@ -31,6 +31,14 @@ function rToday(){
     }
   }
 
+  // 2.5) Needs-cleaning nudge — operational (everyone sees it); taps through to the Inventory cleaning list.
+  if(typeof invNeedsCleaning==="function"){
+    const _nc=invNeedsCleaning();
+    if(_nc.length){
+      h+=`<div class="card" style="border-left:4px solid #b8860b;cursor:pointer" onclick="invGotoCleaning()"><div class="row"><div class="grow"><div class="nm">🧽 ${_nc.length} item${_nc.length>1?"s":""} need${_nc.length>1?"":"s"} cleaning</div><div class="sub" style="white-space:normal">${_nc.slice(0,3).map(i=>esc(i.name)).join(", ")}${_nc.length>3?" +"+(_nc.length-3):""}</div></div><span class="sub">Clean →</span></div></div>`;
+    }
+  }
+
   // 3) Who's working today (+ when) — with a link to the full Schedule
   if(mem.length){
     h+=`<div class="secthd"><h2>👥 Who's working today</h2>${(typeof navSub==="function")?`<button class="btn ghost sm" style="margin-left:auto" onclick="navSub('schedule')">Schedule →</button>`:""}</div><div class="card">`;
