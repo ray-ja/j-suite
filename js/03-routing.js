@@ -104,13 +104,16 @@ window.renderRecovery=renderRecovery;
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
-  { key:"team",      label:"Team",      icon:"🧑‍🤝‍🧑", tabs:["team"] },
+  // People & Places — the crew directory ("team") + the accounts screen (Customers / Properties / 📍 Places /
+  // 📞 Call Lead). The GROUP KEY stays "team" so NAV_LAST state + CREW_PAGES ("team"/"accounts") keep working;
+  // only the label + tab set changed. renderSubnav() special-cases this group into ONE merged sub-tab row.
+  { key:"team",      label:"People & Places", icon:"🧑‍🤝‍🧑", tabs:["team","accounts"] },
   { key:"booking",   label:"Booking",   icon:"🎟️", tabs:["booking"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
   { key:"receipts",  label:"Receipts",  icon:"📸", tabs:["receipts"] },   // OWN top-level tab (crew-visible entry point to snap/upload receipts; page self-gates finance to owner/admin)
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
-  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes","accounts"] },
+  { key:"jobs",      label:"Jobs",      icon:"🧾", tabs:["pipeline","quotes"] },
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
@@ -171,6 +174,11 @@ function renderNav(){
 function renderSubnav(){
   const el=document.getElementById("subnav"); if(!el) return;
   const g=tabGroup(TAB); NAV_LAST[g.key]=TAB; const tabs=groupTabs(g);
+  // People & Places: ONE merged sub-tab row — 👥 People (the crew directory / "team" tab) + the accounts screen's
+  // four sub-views (Customers · Properties · 📍 Places · 📞 Call Lead), so Places is a top-level sub-tab here
+  // instead of a second, buried subnav. ppSubnav (js/06) emits it and the accounts tab's own acctSubnav() yields
+  // to it (returns "" inside this group), so there's exactly one row. Respects role gating via `tabs`.
+  if(g.key==="team" && typeof ppSubnav==="function"){ el.innerHTML=ppSubnav(tabs); return; }
   el.innerHTML = (tabs.length>1)
     ? `<div class="subnav">`+tabs.map(t=>`<button class="subbtn ${t===TAB?"on":""}" onclick="navSub('${t}')">${(TAB_META[t]||{}).i||""} ${(TAB_META[t]||{}).l||t}</button>`).join("")+`</div>`
     : "";

@@ -26,12 +26,19 @@ window.teamProfileMigrate = teamProfileMigrate;
 
 /* ----- helpers ----- */
 window.TEAM_OPEN = window.TEAM_OPEN || null;   // an account id when a profile page is open; null = the directory
+window.TEAM_SORT = window.TEAM_SORT || "name";   // directory sort (survives re-render; not persisted): name (A–Z, default) | namez (Z–A) | role
 function teamMembers() {
-  // active members of the ACTIVE org (same source as the Admin panel), name-sorted
+  // active members of the ACTIVE org (same source as the Admin panel), sorted per TEAM_SORT (default name A–Z)
   const list = (typeof orgMembers === "function") ? orgMembers(S.biz) : (typeof realAccounts === "function" ? realAccounts() : []);
-  return list.filter(u => u && u.active !== false)
-    .sort((a, b) => String(a.name || a.username || "").toLowerCase().localeCompare(String(b.name || b.username || "").toLowerCase()));
+  const active = list.filter(u => u && u.active !== false);
+  const nm = u => String((u && (u.name || u.username)) || "").toLowerCase();
+  const byName = (a, b) => nm(a).localeCompare(nm(b));
+  if (window.TEAM_SORT === "namez") active.sort((a, b) => byName(b, a));
+  else if (window.TEAM_SORT === "role") active.sort((a, b) => String(teamRoleKey(a)).localeCompare(String(teamRoleKey(b))) || byName(a, b));
+  else active.sort(byName);   // default: name A–Z (unchanged from before)
+  return active;
 }
+window.teamSetSort = function (v) { window.TEAM_SORT = v; render(); };
 function teamMemberById(id) { return (S.users || []).find(u => u && u.id === id && !u.kind && !u.deleted) || null; }
 function teamDisplayName(u) { return (u && (u.name || u.username)) || "—"; }
 function teamRoleKey(u) { return (u && ((typeof roleInOrg === "function" && roleInOrg(u.id, S.biz)) || u.role)) || "crew"; }
@@ -102,6 +109,9 @@ function teamRenderDirectory() {
   let h = `<div class="secthd"><h2>Team</h2></div>
     <p class="muted" style="margin:0 4px 10px">Everyone on the ${esc(typeof orgName === "function" ? orgName(S.biz) : S.biz)} team. Tap a person for their profile, or use the quick call / text / email.</p>`;
   if (!members.length) { view.innerHTML = h + `<div class="card"><div class="muted">No team members yet.</div></div>`; return; }
+  const so = (v, l) => `<option value="${v}"${window.TEAM_SORT === v ? " selected" : ""}>${l}</option>`;
+  h += `<div class="row" style="justify-content:flex-end;margin:0 4px 8px"><select aria-label="Sort team" onchange="teamSetSort(this.value)" style="font-size:13px">`
+    + so("name", "Name A–Z") + so("namez", "Name Z–A") + so("role", "Role") + `</select></div>`;
   h += `<div style="display:flex;flex-direction:column;gap:8px">`;
   members.forEach(u => {
     const mine = me_is(u);

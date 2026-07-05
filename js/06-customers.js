@@ -1,12 +1,53 @@
 /* ---------- CUSTOMERS ---------- */
 let CSEARCH="",PSEARCH="",ACCTSUB="customers";
-function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="places"?"on":""}" onclick="switchAcct('places')">📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}</button></div>`;}
+/* In-view accounts subnav. The accounts screen now lives in the "People & Places" nav group (js/03), whose
+   renderSubnav emits ONE merged row (ppSubnav below: 👥 People · Customers · Properties · 📍 Places · 📞 Call
+   Lead). So this in-view row would be a DUPLICATE — suppress it whenever we're inside that group (which is the
+   only place accounts renders). The old markup is kept for any other context / defensiveness. */
+function acctSubnav(){
+  if(typeof tabGroup==="function" && tabGroup(TAB).key==="team") return "";   // merged group row (ppSubnav) covers it — no double subnav
+  return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="places"?"on":""}" onclick="switchAcct('places')">📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}</button></div>`;
+}
+/* The MERGED People & Places sub-tab row (rendered into #subnav by renderSubnav for the "team" group). One clean
+   row: People → the crew directory (team tab); the other four → the accounts tab with the matching ACCTSUB.
+   `tabs` = the role-visible tabs of the group (groupTabs), so a role that can't see "team" or "accounts" loses
+   the corresponding buttons — role gating is preserved, not reinvented. Highlights the active sub-view. */
+function ppSubnav(tabs){
+  const canPeople=tabs.indexOf("team")>=0, canAcct=tabs.indexOf("accounts")>=0;
+  const btns=[];
+  if(canPeople) btns.push(`<button class="subbtn ${TAB==="team"?"on":""}" onclick="ppGo('team')">👥 People</button>`);
+  if(canAcct){
+    const sub=(s,label)=>`<button class="subbtn ${(TAB==="accounts"&&ACCTSUB===s)?"on":""}" onclick="ppGo('accounts','${s}')">${label}</button>`;
+    btns.push(sub("customers",`Customers (${actC().length})`));
+    btns.push(sub("properties",`Properties (${actProps().length})`));
+    btns.push(sub("places",`📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}`));
+    btns.push(sub("calllead",`📞 Call Lead`));
+  }
+  return btns.length?`<div class="subnav">`+btns.join("")+`</div>`:"";
+}
+window.ppSubnav=ppSubnav;
+// merged-row click: People → team tab; an account sub-view → set ACCTSUB then route to the accounts tab.
+window.ppGo=function(tab,sub){ if(tab==="accounts"&&sub)ACCTSUB=sub; if(typeof navSub==="function")navSub(tab); };
 window.switchAcct=function(s){ACCTSUB=s;render();};
 function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="places"&&typeof rPlaces==="function")return rPlaces();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
 /* PURE results-list HTML (empty / "No matches" / card grid) — kept pure so the SEARCH keystroke path can
    rebuild ONLY #clist without re-rendering the #csearch input (focus & caret survive, no setSelectionRange). */
+/* Customer list sort (survives re-render; NOT persisted). Default "name" = the exact pre-change comparator, so
+   the default output stays byte-identical. cSetSort repaints ONLY #clist (like search) — the <select> lives
+   OUTSIDE #clist so it's never destroyed. Sort runs on the FULL list, ABOVE the search filter + Load-more slice. */
+let CSORT="name";   // name (A–Z, default) | namez (Z–A) | recent (newest updatedAt first)
+function custSortHTML(){
+  const o=(v,l)=>`<option value="${v}"${CSORT===v?" selected":""}>${l}</option>`;
+  return `<select aria-label="Sort customers" onchange="cSetSort(this.value)" style="font-size:13px;margin-bottom:10px">`
+    +o("name","Name A–Z")+o("namez","Name Z–A")+o("recent","Recently added")+`</select>`;
+}
+window.cSetSort=function(v){ CSORT=v; CSHOWN=150; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
 function customersListHTML(){
-  let list=actC().slice().sort((a,b)=>(a.name||a.company||"").localeCompare(b.name||b.company||""));
+  const cn=c=>(c.name||c.company||"");
+  let list=actC().slice();
+  if(CSORT==="namez") list.sort((a,b)=>cn(b).localeCompare(cn(a)));
+  else if(CSORT==="recent") list.sort((a,b)=>((b.updatedAt||0)-(a.updatedAt||0))||cn(a).localeCompare(cn(b)));
+  else list.sort((a,b)=>cn(a).localeCompare(cn(b)));   // default: identical to the pre-sort behavior
   if(CSEARCH){const q=CSEARCH.toLowerCase();
     list=list.filter(c=>((c.name||"")+(c.company||"")+(c.phone||"")).toLowerCase().includes(q));}
   if(!actC().length)return `<div class="empty"><div class="big">👥</div>No customers yet.<br>Tap + to add your first one.</div>`;
@@ -24,6 +65,7 @@ window.cLoadMore=function(){ CSHOWN+=150; const c=document.getElementById("clist
 window.cSearchOn=function(v){ CSHOWN=150; CSEARCH=v; const c=document.getElementById("clist"); if(c)c.innerHTML=customersListHTML(); };
 function rCustomers(){
   let h=acctSubnav()+`<input class="search" id="csearch" placeholder="Search customers…" value="${esc(CSEARCH)}" oninput="cSearchOn(this.value)">`;
+  h+=custSortHTML();
   h+=`<div id="clist">${customersListHTML()}</div>`;
   view.innerHTML=h;
 }
