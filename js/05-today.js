@@ -161,7 +161,7 @@ window.newJobTemplate=function(id){
   modal(t?"Edit common job":"New common job",`
     <label style="margin-top:0">Name (the button)</label><input id="jt_label" value="${t?esc(t.label||t.title||""):""}" placeholder="e.g. Dump run" autocomplete="off">
     <label>Job title</label><input id="jt_title" value="${t?esc(t.title||""):""}" placeholder="e.g. Transfer station dump run" autocomplete="off">
-    <label>Address</label><input id="jt_addr" value="${t?esc(t.address||""):""}" placeholder="transfer station address" autocomplete="off">
+    <label>Address</label><div class="acwrap"><input id="jt_addr" value="${t?esc(t.address||""):""}" placeholder="transfer station address" oninput="addrSuggest('jt_addr','jt_addr_ac')" autocomplete="off"><div class="acbox" id="jt_addr_ac"></div></div>
     <div class="row" style="gap:8px"><div class="grow"><label>Crew</label><input id="jt_crewN" type="number" inputmode="numeric" min="1" value="${t?(t.crewN||1):1}"></div><div class="grow"><label>On-site hrs</label><input id="jt_onsite" type="number" inputmode="decimal" step="0.25" value="${t&&t.onSiteHrs?t.onSiteHrs:""}" placeholder="0"></div></div>
     <div class="row" style="gap:8px"><div class="grow"><label>Drive min (round trip)</label><input id="jt_dmin" type="number" inputmode="numeric" value="${t&&t.driveMin?t.driveMin:""}" placeholder="0"></div><div class="grow"><label>Drive miles (round trip)</label><input id="jt_dmiles" type="number" inputmode="decimal" value="${t&&t.driveMiles?t.driveMiles:""}" placeholder="0"></div></div>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveJobTemplate('${t?t.id:""}')">Save common job</button>
@@ -172,6 +172,11 @@ window.saveJobTemplate=function(id){
   const tdoc=jobTemplates(); let item=id?tdoc.list.find(x=>x&&x.id===id):null;
   if(!item){item={id:uid()};tdoc.list.push(item);}
   item.label=label; item.title=val("jt_title")||label; item.address=val("jt_addr"); item.crewN=Math.max(1,parseInt(val("jt_crewN"))||1); item.onSiteHrs=parseFloat(val("jt_onsite"))||0; item.driveMin=parseFloat(val("jt_dmin"))||0; item.driveMiles=parseFloat(val("jt_dmiles"))||0; item.deleted=false;
+  // saved-location pre-read (js/69 pattern): if the address was PICKED from a saved place/property, stamp its coords
+  // + placeId additively so a job later spun from this template can reuse them without re-geocoding.
+  {const _ti=(typeof document!=="undefined")?document.getElementById("jt_addr"):null;
+   if(_ti&&_ti.dataset&&_ti.dataset.pickLat){item.lat=+_ti.dataset.pickLat;item.lng=+_ti.dataset.pickLng;if(_ti.dataset.pickPlaceId)item.placeId=_ti.dataset.pickPlaceId;
+     delete _ti.dataset.pickLat;delete _ti.dataset.pickLng;delete _ti.dataset.pickPlaceId;delete _ti.dataset.pickPropId;delete _ti.dataset.pickManualMiles;}}
   tdoc.updatedAt=now(); if(typeof touch==="function")touch(tdoc); save(); if(typeof closeModal==="function")closeModal(); openQuickTask();
 };
 window.delJobTemplate=function(id){ const tdoc=jobTemplates(); const item=tdoc.list.find(x=>x&&x.id===id); if(item)item.deleted=true; tdoc.updatedAt=now(); if(typeof touch==="function")touch(tdoc); save(); if(typeof closeModal==="function")closeModal(); openQuickTask(); };
