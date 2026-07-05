@@ -522,3 +522,134 @@ await (async function () {
   if (tcHours(driver) !== tcHours(passenger)) __errs.push("SUGGESTED CLOCK-OUT regression: driver/passenger hours must be role-independent");
   if (Math.abs(tcHours(driver) - (cout - cin) / 3600000) > 0.0001) __errs.push("SUGGESTED CLOCK-OUT regression: hours must be clockOut − clockIn");
 })();
+
+/* =====================================================================================================
+   CLUSTER A — CLOCK-IN & JOB-TIME REDESIGN (2026-07-05). New coverage for the shared clock-in picker on the
+   job page, clock-in → work-day auto-add, manual time-only punches (zero mileage), the work-days⇄punches
+   coherence rules, and jobHourly deriving from clocked time. All additive — the billed mileage never moves.
+   ===================================================================================================== */
+
+// make GPS resolve fast + deterministically (no real geolocation in headless — mirrors open-shift-invariant-tests)
+if (!navigator.geolocation) navigator.geolocation = {};
+navigator.geolocation.getCurrentPosition = function (ok) { try { ok({ coords: { latitude: 36.1, longitude: -75.7, accuracy: 10 } }); } catch (e) {} };
+// native alert()/confirm() BLOCK a headless dump — stub them (we exercise the guard PATHS, not the dialogs)
+window.alert = function () {}; window.confirm = function () { return true; };
+
+// (A1) job-page SHARED clock-in picker attaches the vehicle (driver → vehicleId/owner set, NOT blocked). This is
+// the fix for the OLD free-text vehicle input that resolved empty and blocked the driver clock-in.
+await (async function () {
+  var u = { id: "u_ca_driver", username: "CaDriver", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var j = { id: "j_ca1", title: "Paver install — CA1", customerId: null, date: today(), crew: [u.id], done: false, estRouteMiles: 12.4, updatedAt: now() };
+  D().jobs.push(j);
+  var form = tcClockInFormHTML(j.id);
+  if (!/id="tc_job"[^>]*value="j_ca1"/.test(form)) __errs.push("CA1: shared clock-in form did not pin the job (hidden tc_job) when pre-scoped");
+  if (/id="tc_vehicle"[^>]*\blist=/.test(form) || /pick a truck — or type your own car/.test(form)) __errs.push("CA1: job page still renders the OLD free-text vehicle input");
+  view.innerHTML = form;   // put the job-scoped form in the DOM, like the real job page does
+  if (!document.getElementById("tc_job")) __errs.push("CA1: shared form missing hidden tc_job in the DOM");
+  tcRoleChanged("driver");   // force the driver role → the grouped vehicle <select> appears
+  var vehSel = document.getElementById("tc_vehicle");
+  if (!vehSel) { __errs.push("CA1: driver role did not render the grouped vehicle <select>"); return; }
+  if (!vehSel.value) __errs.push("CA1: the vehicle <select> force-selected nothing (would block the driver clock-in)");
+  if (!/Est\. route/.test(view.innerHTML)) __errs.push("CA1: the informational route estimate is not shown in the driver vehicle box");
+  await tcClockIn();
+  var e = (D().timeclock || []).find(function (x) { return x.jobId === "j_ca1" && !x.deleted; });
+  if (!e) __errs.push("CA1: driver clock-in created NO entry (blocked?) — the shared-picker regression is back");
+  else {
+    if (e.riderRole !== "driver") __errs.push("CA1: entry riderRole should be driver");
+    if (!(e.vehicleId || e.vehicleOwnerId || e.vehicle)) __errs.push("CA1: driver entry saved with NO vehicle attached (the old broken-input bug)");
+  }
+  diag("CA1 clock-in: entry=" + (!!e) + " veh=" + (e && (e.vehicle || e.vehicleId || e.vehicleOwnerId)));
+  // (A2) clocking in AUTO-ADDS today to the job's work days (Set-union, additive)
+  var wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.workDays || []);
+  if (wd.indexOf(today()) < 0) __errs.push("CA2: clock-in did not auto-add today to the job's work days");
+})();
+
+// (A3) a MANUAL time-only punch adds hours but ZERO miles, and does NOT move the mileage total (fingerprint).
+(function () {
+  var u = { id: "u_ca_man", username: "CaMan", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var j = { id: "j_ca2", title: "Cleanup — CA2", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(j);
+  function miTotal() { return (typeof finMileage === "function") ? finMileage(D().timeclock || [], {}).total : null; }
+  var before = miTotal();
+  tcAddPunch(j.id, today());   // opens the manual-punch modal
+  var din = document.getElementById("tc_ap_in"), dout = document.getElementById("tc_ap_out");
+  if (!din || !dout) { __errs.push("CA3: Add-punch modal did not render time inputs"); }
+  else {
+    din.value = "08:00"; dout.value = "11:30";
+    tcSaveManualPunch(j.id);
+    var e = (D().timeclock || []).find(function (x) { return x.jobId === "j_ca2" && x.manual && !x.deleted; });
+    if (!e) __errs.push("CA3: manual punch was not created");
+    else {
+      if (!(e.clockOut > e.clockIn)) __errs.push("CA3: manual punch has no valid duration");
+      if (e.miles !== 0) __errs.push("CA3: manual punch must carry 0 miles (never invents mileage)");
+      if (e.riderRole !== "none" || e.vehicle) __errs.push("CA3: manual punch must be time-only (no vehicle)");
+      var hrs = (typeof jobClockedHrs === "function") ? jobClockedHrs(j) : 0;
+      if (!(hrs > 0)) __errs.push("CA3: manual punch did not add clocked hours to the job");
+    }
+  }
+  var after = miTotal();
+  if (before !== after) __errs.push("CA3: a manual time-only punch MOVED the mileage total (" + before + " → " + after + ") — it must add 0 miles");
+  diag("CA3 manual punch: mileage total before=" + before + " after=" + after);
+})();
+
+// (A4/A5) work-days ⇄ punches coherence: a day WITH punches can't be chip-removed; removing a PUNCH keeps the day;
+// an EMPTY planned day is removable.
+(function () {
+  var _confirm = window.confirm; window.confirm = function () { return true; };
+  try {
+    var u = { id: "u_ca_day", username: "CaDay", active: true };
+    S.users.push(u);
+    if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+    S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+    var startDay = "2026-07-01", punchDay = "2026-07-03";
+    var j = { id: "j_ca3", title: "Multi — CA3", customerId: null, date: startDay, crew: [u.id], workDays: [startDay, punchDay], done: false, updatedAt: now() };
+    D().jobs.push(j);
+    var pin = new Date(punchDay + "T08:00").getTime(), pout = new Date(punchDay + "T12:00").getTime();
+    D().timeclock.push({ id: "tc_ca3_p", jobId: "j_ca3", userId: u.id, userName: "CaDay", clockIn: pin, clockOut: pout, inLoc: null, outLoc: null, pings: [], stops: [], computedMiles: 0, miles: 0, milesConfirmed: false, milesSource: null, odoStart: null, odoEnd: null, riderRole: "none", trailerId: null, rodeWith: null, vehicleId: null, vehicle: "", vehicleOwnerId: null, rate: 0.725, updatedAt: now() });
+    // (A5) a day WITH punches must be protected from chip-removal
+    jobPageRemoveDay("j_ca3", punchDay);
+    var wdAfter = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.workDays || []);
+    if (wdAfter.indexOf(punchDay) < 0) __errs.push("CA5: a day WITH punches was removed — it must be protected until the punches are gone");
+    // an EMPTY planned day must be chip-removable; a day with punches must NOT render a chip-remove
+    jobPageCommitDays(j, wdAfter.concat(["2026-07-05"]));
+    var card = jobPageWorkDaysCard(j);
+    if (!/jobPageRemoveDay\('j_ca3','2026-07-05'\)/.test(card)) __errs.push("CA5: an EMPTY planned day should be chip-removable");
+    if (/jobPageRemoveDay\('j_ca3','2026-07-03'\)/.test(card)) __errs.push("CA5: the card offered to remove a day that HAS punches");
+    // (A4) removing the PUNCH soft-deletes only the entry; the day stays
+    tcDelPunch("tc_ca3_p");
+    var ent = D().timeclock.find(function (x) { return x.id === "tc_ca3_p"; });
+    if (!ent || !ent.deleted) __errs.push("CA4: tcDelPunch did not soft-delete the entry");
+    var wd2 = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.workDays || []);
+    if (wd2.indexOf(punchDay) < 0) __errs.push("CA4: removing a punch dropped its work day — the day must stay");
+    diag("CA4/CA5 coherence: punchDay still present=" + (wd2.indexOf(punchDay) >= 0));
+  } finally { window.confirm = _confirm; }
+})();
+
+// (A6) jobHourly derives person-hours + crew from the TIMECLOCK (not typed-in fields); perHr is null until someone
+// clocks in (no stale number).
+(function () {
+  var u = { id: "u_ca_hh", username: "CaHh", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx";
+  var j = { id: "j_ca4", title: "Hourly — CA4", customerId: null, date: today(), crew: [u.id, "u_ca_hh2"], done: false, updatedAt: now() };
+  D().jobs.push(j);
+  D().quotes = D().quotes || [];
+  D().quotes.push({ id: "q_ca4", jobId: "j_ca4", total: 1000, finalPrice: 1000, deleted: false, updatedAt: now() });
+  var hhBefore = jobHourly(j);
+  if (hhBefore.perHr !== null) __errs.push("CA6: jobHourly.perHr must be null before anyone clocks in (no stale number)");
+  var ci = new Date(today() + "T08:00").getTime(), co = new Date(today() + "T10:00").getTime();
+  D().timeclock.push({ id: "tc_ca4", jobId: "j_ca4", userId: u.id, userName: "CaHh", clockIn: ci, clockOut: co, inLoc: null, outLoc: null, pings: [], stops: [], computedMiles: 0, miles: 0, milesConfirmed: false, milesSource: null, odoStart: null, odoEnd: null, riderRole: "none", trailerId: null, rodeWith: null, vehicleId: null, vehicle: "", vehicleOwnerId: null, rate: 0.725, updatedAt: now() });
+  var hhAfter = jobHourly(j);
+  if (hhAfter.perHr == null) __errs.push("CA6: jobHourly.perHr should be set once time is clocked");
+  if (Math.abs(hhAfter.personHrs - 2) > 0.05) __errs.push("CA6: jobHourly.personHrs must equal the clocked hours (expected 2, got " + hhAfter.personHrs + ")");
+  if (hhAfter.crew !== 1) __errs.push("CA6: crew must be the DISTINCT punchers (1), got " + hhAfter.crew);
+  if (Math.abs(hhAfter.perHr - 240) > 0.5) __errs.push("CA6: perHr must derive from clocked hours (fieldPool 480 / 2h = 240, got " + hhAfter.perHr + ")");
+  diag("CA6 jobHourly: personHrs=" + hhAfter.personHrs + " crew=" + hhAfter.crew + " perHr=" + hhAfter.perHr);
+})();

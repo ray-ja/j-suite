@@ -120,6 +120,11 @@ function tcHomeArrival(e, home) {
   return null;
 }
 function tcFmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return h + "h " + String(m).padStart(2, "0") + "m"; }
+/* local calendar day ("YYYY-MM-DD") of a timestamp — used to attribute a punch to a work day + a punch's hh:mm */
+function tcLocalDay(ms) { const d = new Date(ms); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function tcHHMM(ms) { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+/* a ms timestamp → a datetime-local input value ("YYYY-MM-DDTHH:mm") in LOCAL time (round-trips via new Date(v)) */
+function tcDatetimeLocal(ms) { const d = new Date(ms), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes()); }
 function tcRound(n) { return Math.round((n || 0) * 10) / 10; }
 /* confirmed miles if set, else the rounded GPS estimate */
 function tcMiles(e) { return (e.miles != null) ? e.miles : tcRound(e.computedMiles); }
@@ -265,6 +270,19 @@ window.tcClockIn = async function () {
   };
   tcoll().push(e);
   if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
+  // (Item 4A) clocking in AUTO-ADDS this clock-in's local day to the job's work days (Set-union, additive — it
+  // GROWS j.workDays, never shrinks it). Reuses jobPageCommitDays (js/61) so the day-list + full editor stay in
+  // sync. Idempotent: a no-op when the day is already a work day.
+  try {
+    const _jb = tcJob(jobId), _day = tcLocalDay(e.clockIn);
+    if (_jb) {
+      const _cur = (typeof jobWorkDays === "function") ? jobWorkDays(_jb) : ((Array.isArray(_jb.workDays) ? _jb.workDays : (_jb.date ? [_jb.date] : [])));
+      if (_cur.indexOf(_day) < 0) {
+        if (typeof jobPageCommitDays === "function") jobPageCommitDays(_jb, _cur.concat([_day]));
+        else { const wd = new Set(_cur); wd.add(_day); if (_jb.date) wd.add(_jb.date); _jb.workDays = [...wd].sort(); if (typeof touch === "function") touch(_jb); }
+      }
+    }
+  } catch (ex) {}
   clearTimeout(_tcInWatchdog); _tcInBusy = false;
   save(); tcPingStart(); render();
 };
@@ -308,10 +326,28 @@ window.tcClockOut = function (id, contJobId) {
   modal(title + " — odometer", suggestHtml + `
     <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
     <label>End odometer</label>
-    <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
+    <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}" oninput="tcOdoCheck('${e.id}')">
     <div class="sub" style="margin-top:6px">${e.odoStart != null ? "Start was " + e.odoStart + "." : "No start reading — the GPS estimate is " + gpsEst + " mi."} </div>
+    ${tcClockOutEstLine(e)}
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="${finishFn}">${odoLabel}</button>
     <button class="btn ghost" style="margin-top:8px;width:100%" onclick="${gpsFn}">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
+};
+/* Item 8 — the INFORMATIONAL route-estimate line inside the clock-out odometer modal. Shows the job's offline
+   route estimate and, once an end reading is typed, a live odometer-delta vs estimate soft-flag (>20% off). This
+   NEVER overrides the odometer of record (tcFinalizeSegment) — it's a sanity check the crew sees while entering. */
+function tcClockOutEstLine(e) {
+  const j = tcJob(e.jobId), est = (j && j.estRouteMiles > 0) ? j.estRouteMiles : null;
+  if (est == null) return "";
+  return `<div class="sub" id="tc_odo_est" style="margin-top:6px;white-space:normal;color:var(--brand-text)">🧭 Route estimate ~<b>${est} mi</b> <span class="muted">· informational — the odometer you enter is the billed number</span></div>`;
+}
+window.tcOdoCheck = function (id) {
+  const box = document.getElementById("tc_odo_est"); if (!box) return;
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  const j = tcJob(e.jobId), est = (j && j.estRouteMiles > 0) ? j.estRouteMiles : null; if (est == null) return;
+  const end = parseFloat(val("tc_odo_end"));
+  if (!(end >= 0) || e.odoStart == null) { box.innerHTML = `🧭 Route estimate ~<b>${est} mi</b> <span class="muted">· informational — the odometer you enter is the billed number</span>`; return; }
+  const delta = Math.max(0, end - e.odoStart), off = Math.round(Math.abs(delta - est) / est * 100), flag = off > 20;
+  box.innerHTML = `🧭 Route estimate ~<b>${est} mi</b> · odometer <b>${Math.round(delta * 10) / 10} mi</b> ${flag ? `<span style="color:var(--danger);font-weight:700">· ⚠ ${off}% off the estimate — double-check the reading (the odometer still wins)</span>` : `<span class="muted">· within ${off}% (looks right)</span>`}`;
 };
 /* home-GPS shortcut: clock out AT the detected home-arrival timestamp (the "use recommended time" button).
    Miles/odometer/verify are computed EXACTLY as a normal clock-out — this only changes WHICH clockOut ts is
@@ -605,8 +641,24 @@ function tcRolePicker(sel) {
       ${opt("driver", "🚗", "Driver")}${opt("passenger", "🧍", "Passenger")}${opt("none", "🚶", "No vehicle")}
     </div>`;
 }
-/* the role-specific detail block (re-rendered into #tc_role_detail when the role changes) */
-function tcRoleDetail(role, defVehVal, driverId) {
+/* INFORMATIONAL route-estimate box (Item 8) — once a job is known, show its offline route estimate inside the
+   driver's vehicle box. This is NEVER the billed number: the odometer/GPS timeclock miles stay the record; this
+   is a cross-check so a driver sees roughly how far the run is. Always renders the #tc_est_box wrapper so
+   tcJobPicked() can swap it in place when the job <select> changes. */
+function tcJobEstBox(jobId) {
+  const j = jobId ? tcJob(jobId) : null;
+  if (!j || !(j.estRouteMiles > 0)) return `<div id="tc_est_box"></div>`;
+  return `<div id="tc_est_box"><div class="sub" style="margin-top:6px;white-space:normal;color:var(--brand-text)">🧭 Est. route ~<b>${j.estRouteMiles} mi</b> <span class="muted">· informational — the odometer is the billed number</span></div></div>`;
+}
+/* job <select> changed on the clock-in form → refresh the route-estimate box for the newly-picked job (no full
+   re-render, so the role/vehicle/odometer the user already set survive). */
+window.tcJobPicked = function () {
+  const box = document.getElementById("tc_est_box"); if (!box) return;
+  box.outerHTML = tcJobEstBox((typeof val === "function") ? val("tc_job") : "");
+};
+/* the role-specific detail block (re-rendered into #tc_role_detail when the role changes). jobId (optional) drives
+   the informational route-estimate box in the driver branch. */
+function tcRoleDetail(role, defVehVal, driverId, jobId) {
   let h = `<div id="tc_role_detail">`;
   if (role === "driver") {
     const trailers = tcActiveTrailers(), defTrailer = tcDefaultTrailerVal(driverId);
@@ -628,7 +680,8 @@ function tcRoleDetail(role, defVehVal, driverId) {
         <div id="tc_odo_wrap">
           <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>
           <input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now">
-        </div>`;
+        </div>
+        ${tcJobEstBox(jobId)}`;
     }
     if (trailers.length) h += `<label style="margin-top:10px">🚛 Trailer <span class="sub">· optional · towed in addition (no odometer)</span></label>
       <select id="tc_trailer">${tcTrailerOptions(defTrailer)}</select>`;
@@ -688,7 +741,7 @@ window.tcRoleChanged = function (role) {
   const who = tcWho();
   ["driver", "passenger", "none"].forEach(r => { const b = document.getElementById("tc_roleb_" + r); if (b) { b.classList.toggle("acc", r === role); b.classList.toggle("ghost", r !== role); } });
   const wrap = document.getElementById("tc_role_detail");
-  if (wrap) wrap.outerHTML = tcRoleDetail(role, role === "driver" ? tcDefaultVehVal(who.userId) : "", who.userId);
+  if (wrap) wrap.outerHTML = tcRoleDetail(role, role === "driver" ? tcDefaultVehVal(who.userId) : "", who.userId, (typeof val === "function") ? val("tc_job") : "");
 };
 
 /* ===== per-user DEFAULT vehicle (account.defaultVehicleId) — set from the clock tab ===== */
@@ -901,10 +954,113 @@ window.tcSaveEntry = function (id) {
 };
 window.tcDelEntry = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e) return;
+  if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can delete it." : "You can only remove your own punches."); return; }
   if (!confirm("Delete this time entry?")) return;
   e.deleted = true; touch(e);
   if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Deleted time entry — " + tcJobTitle(e.jobId));
   save(); closeModal(); render();
+};
+
+/* ===== PUNCH EDITOR (Item 4B) — the job page's Work-days card is now a day-grouped list of the timeclock PUNCHES
+   on this job (js/61 jobPageWorkDaysCard). Each punch is editable + soft-deletable, and each day can gain a manual
+   time-only punch. PERMISSIONS (tcCanEditEntry): the owner can edit/delete anything; a crew member can edit/delete
+   only their OWN punch, and never one whose MILEAGE IS CONFIRMED (that's the billed number — owner-only). ===== */
+function tcCanEditEntry(e) {
+  if (!e) return false;
+  if ((typeof isOwner === "function") && isOwner()) return true;
+  const who = tcWho();
+  if (e.userId !== who.userId) return false;   // only your own punch
+  if (e.milesConfirmed) return false;           // confirmed mileage is owner-only to touch
+  return true;
+}
+/* edit a punch's clock-in / clock-out TIMES (owner: any; crew: their own, unconfirmed). Owners get a jump to the
+   full mileage/vehicle editor (tcOpenEntry). Never invents or changes mileage — times only. */
+window.tcEditPunch = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  const owner = (typeof isOwner === "function") && isOwner();
+  if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can change it." : "You can only edit your own punches."); return; }
+  const nm = (typeof userName === "function" ? userName(e.userId) : "") || e.userName || "Crew";
+  modal("Edit punch — " + esc(tcJobTitle(e.jobId)), `
+    <p class="muted" style="margin-bottom:8px">${esc(nm)} · adjust the clock-in / clock-out times.</p>
+    <label>Clock in</label>
+    <input id="tc_p_in" type="datetime-local" value="${tcDatetimeLocal(e.clockIn)}">
+    <label style="margin-top:8px">Clock out${e.clockOut == null ? ` <span class="sub">· still open — leave blank to keep it open</span>` : ""}</label>
+    <input id="tc_p_out" type="datetime-local" value="${e.clockOut != null ? tcDatetimeLocal(e.clockOut) : ""}">
+    ${owner ? `<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="closeModal();tcOpenEntry('${e.id}')">⚙ Mileage &amp; vehicle →</button>` : ""}
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="tcSavePunch('${e.id}')">Save</button>
+    <button class="btn danger" style="margin-top:8px;width:100%" onclick="tcDelPunch('${e.id}')">Delete punch</button>`);
+};
+window.tcSavePunch = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  if (!tcCanEditEntry(e)) { alert("Not allowed."); return; }
+  const inV = val("tc_p_in"); if (!inV) { alert("Enter a clock-in time."); return; }
+  const inMs = new Date(inV).getTime(); if (!(inMs > 0)) { alert("Invalid clock-in time."); return; }
+  const outV = val("tc_p_out"); let outMs = null;
+  if (outV) { outMs = new Date(outV).getTime(); if (!(outMs > inMs)) { alert("Clock-out must be after clock-in."); return; } }
+  e.clockIn = inMs; e.clockOut = outMs; touch(e);
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Edited punch times — " + tcJobTitle(e.jobId));
+  // grow the job's work days to include the (possibly moved) clock-in day — union only, never shrink
+  try {
+    const _jb = tcJob(e.jobId), _day = tcLocalDay(e.clockIn);
+    if (_jb) { const _cur = (typeof jobWorkDays === "function") ? jobWorkDays(_jb) : ((Array.isArray(_jb.workDays) ? _jb.workDays : (_jb.date ? [_jb.date] : []))); if (_cur.indexOf(_day) < 0 && typeof jobPageCommitDays === "function") jobPageCommitDays(_jb, _cur.concat([_day])); }
+  } catch (ex) {}
+  save(); if (typeof closeModal === "function") closeModal(); render();
+};
+window.tcDelPunch = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can remove it." : "You can only remove your own punches."); return; }
+  if (!confirm("Remove this punch? The work day stays — only this time entry is deleted.")) return;
+  e.deleted = true; touch(e);
+  if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Removed punch — " + tcJobTitle(e.jobId));
+  save(); if (typeof closeModal === "function") closeModal(); render();
+};
+/* "＋ Add punch" — a MANUAL, time-only entry for a given job + day. No vehicle, no mileage (riderRole:none,
+   miles:0, milesConfirmed so it never nags as an unconfirmed estimate) — it never invents mileage. Owner may pick
+   any crew member; a crew member may only add their own punch. */
+window.tcAddPunch = function (jobId, day) {
+  const j = tcJob(jobId); if (!j) return;
+  const owner = (typeof isOwner === "function") && isOwner();
+  const me = (typeof curUser === "function") ? curUser() : null, who = tcWho();
+  const members = (typeof schedMembers === "function") ? schedMembers() : [];
+  const dflt = day || ((typeof today === "function") ? today() : tcLocalDay(now()));
+  const memberSel = owner
+    ? `<label>Crew member</label><select id="tc_ap_user">${members.map(u => `<option value="${esc(u.id)}" ${me && me.id === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>`
+    : `<input type="hidden" id="tc_ap_user" value="${esc(who.userId)}">`;
+  modal("Add a punch — " + esc(tcJobTitle(jobId)), `
+    <p class="muted" style="margin-bottom:8px">Log time by hand for <b>${esc((typeof fmtDate === "function") ? fmtDate(dflt) : dflt)}</b>. Time only — no vehicle, no mileage (mileage comes from a real clock-in).</p>
+    ${memberSel}
+    <input type="hidden" id="tc_ap_day" value="${esc(dflt)}">
+    <div class="row" style="gap:8px;margin-top:8px"><div class="grow"><label style="margin-top:0">Clock in</label><input id="tc_ap_in" type="time" value="08:00"></div><div class="grow"><label style="margin-top:0">Clock out</label><input id="tc_ap_out" type="time" value="12:00"></div></div>
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="tcSaveManualPunch('${jobId}')">Add punch</button>`);
+};
+window.tcSaveManualPunch = function (jobId) {
+  const j = tcJob(jobId); if (!j) return;
+  const owner = (typeof isOwner === "function") && isOwner(), who = tcWho();
+  let userId = val("tc_ap_user") || who.userId;
+  if (!owner && userId !== who.userId) userId = who.userId;   // a non-owner can only add their own punch
+  const day = val("tc_ap_day") || ((typeof today === "function") ? today() : tcLocalDay(now()));
+  const inT = val("tc_ap_in"), outT = val("tc_ap_out");
+  if (!inT || !outT) { alert("Enter both a clock-in and a clock-out time."); return; }
+  const inMs = new Date(day + "T" + inT).getTime(), outMs = new Date(day + "T" + outT).getTime();
+  if (!(inMs > 0) || !(outMs > inMs)) { alert("Clock-out must be after clock-in."); return; }
+  const uname = (typeof userName === "function" ? userName(userId) : "") || who.name || "Crew";
+  const e = {
+    id: uid(), jobId: jobId, userId: userId, userName: uname,
+    clockIn: inMs, clockOut: outMs,
+    inLoc: null, outLoc: null, pings: [], stops: [],
+    computedMiles: 0, miles: 0, milesConfirmed: true, milesSource: null,
+    odoStart: null, odoEnd: null,
+    riderRole: "none", trailerId: null, rodeWith: null,
+    vehicleId: null, vehicle: "", vehicleOwnerId: null, invVehicleId: null,
+    rate: TC_RATE, manual: true, updatedAt: now()
+  };
+  tcoll().push(e);
+  if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Added manual punch — " + tcJobTitle(jobId) + " · " + uname);
+  try {
+    const _cur = (typeof jobWorkDays === "function") ? jobWorkDays(j) : ((Array.isArray(j.workDays) ? j.workDays : (j.date ? [j.date] : [])));
+    if (_cur.indexOf(day) < 0 && typeof jobPageCommitDays === "function") jobPageCommitDays(j, _cur.concat([day]));
+  } catch (ex) {}
+  save(); if (typeof closeModal === "function") closeModal(); render();
 };
 
 /* ===== views ===== */
@@ -925,6 +1081,44 @@ function rTime() {
     }, 1000);
   }
 }
+/* ===== SHARED clock-in form (Items 5/6) — factored out of tcClockHTML so every entry point (the Time tab, the
+   job page, and the Today screen) uses the SAME grouped vehicle dropdown + separate trailer dropdown + rider-role
+   + start-odometer + route-estimate flow and the SAME tcClockIn(). Only ONE clock-in form is ever on-screen at a
+   time (the Time tab OR a job page OR Today — never two at once), so the shared #tc_job / #tc_role / #tc_vehicle /
+   #tc_odo_start ids don't collide.
+     preJobId set  → the job is already known (a hidden #tc_job, no picker; used from the job page + a Today
+                     add-a-job flow) — this REPLACES the old broken free-text vehicle input on the job page.
+     preJobId null → render a pick-a-job <select> (today's work days first, your jobs first).
+   Returns "" when there's genuinely nothing to clock into (no open jobs) so the caller can show its own message. */
+function tcClockInFormHTML(preJobId) {
+  const who = tcWho();
+  const _defVal = tcDefaultVehVal(who.userId);
+  const _role = tcDefaultRole(who.userId);   // driver / passenger / none — only the driver logs the truck's miles
+  let jobControl = "", jobId = preJobId || "";
+  if (preJobId) {
+    jobControl = `<input type="hidden" id="tc_job" value="${esc(preJobId)}">`;
+  } else {
+    // MULTI-DAY: a job is clock-in-able on ANY of its work days. Surface jobs worked TODAY first, then by date.
+    const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+    const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
+    const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => {
+      const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;   // today's work days first
+      return (b.date || "") < (a.date || "") ? -1 : 1;
+    });
+    if (!jobs.length) return "";
+    const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
+    jobId = (mine[0] || jobs[0]).id;   // the option the <select> starts on → the route estimate matches it
+    const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
+    jobControl = `<label>Job</label>
+      <select id="tc_job" onchange="tcJobPicked()">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>`;
+  }
+  return `${jobControl}
+    <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
+    ${tcRolePicker(_role)}
+    ${tcRoleDetail(_role, _defVal, who.userId, jobId)}
+    <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>`;
+}
+
 function tcClockHTML() {
   const who = tcWho(), open = tcOpenShift(who.userId);
   let h = "";
@@ -949,30 +1143,13 @@ function tcClockHTML() {
       </div>
     </div>`;
   } else {
-    // MULTI-DAY: a job is clock-in-able on ANY of its work days. Surface jobs being worked TODAY first,
-    // then the rest by date — so the crew picks the right one even if its START date was earlier in the week.
-    const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
-    const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
-    const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => {
-      const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;   // today's work days first
-      return (b.date || "") < (a.date || "") ? -1 : 1;
-    });
-    const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
-    const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
-    const veh = (typeof schedMembers === "function") ? schedMembers().map(u => u.username) : [];
-    if (!jobs.length) {
+    const form = tcClockInFormHTML(null);
+    if (!form) {
       h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
     } else {
-      const _defVal = tcDefaultVehVal(who.userId), _hasVeh = !!_defVal;
-      const _role = tcDefaultRole(who.userId);   // driver / passenger / none — only the driver logs the truck's miles
       h += `<div class="card" style="border-top:4px solid var(--accent)">
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
-        <label>Job</label>
-        <select id="tc_job">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
-        <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
-        ${tcRolePicker(_role)}
-        ${tcRoleDetail(_role, _defVal, who.userId)}
-        <button class="btn acc" id="tc_inbtn" style="margin-top:14px" onclick="tcClockIn()">📍 Clock in</button>
+        ${form}
         <div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — that keeps the time estimate honest. Only the <b>driver</b> logs the truck's miles so a shared truck is never counted twice; passengers still log their time. Odometer never blocks clocking in. Time tracks even if you decline GPS.</div>
       </div>`;
     }
