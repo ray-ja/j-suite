@@ -137,16 +137,18 @@ runDupe("record-disbursement", {
   fill: function () { return setVal("db_amt", "200"); }
 });
 
-// --- add change order (job page, js/61) — if present ---
-if (typeof jobAddChangeOrder === "function") {
-  runDupe("add-change-order", {
-    file: "js/61-job-page.js", saveFn: "jobAddChangeOrder",
-    count: function () { var j = actJ().find(function (x) { return x.id === duJob.id; }); return (j && j.changeOrders) || []; },
+// --- add job expense (job page, js/61) — the guarded create that REPLACED the removed change-order add-a-line
+//     (change orders are now quote versions; a job "change order" edits the full quote). jobAddExpense carries
+//     the same submit-in-flight guard (_jobExpAddBusy), so N rapid taps must still create at most ONE record. ---
+if (typeof jobAddExpense === "function") {
+  runDupe("add-job-expense", {
+    file: "js/61-job-page.js", saveFn: "jobAddExpense",
+    count: function () { var j = actJ().find(function (x) { return x.id === duJob.id; }); return (j && j.expenses) || []; },
     open: function () { window.JOB_OPEN = duJob.id; TAB = "schedule"; render(); },
-    fill: function () { var a = setVal("co_desc", "Extra haul"); setVal("co_amt", "150"); return a; },
-    tap: function () { jobAddChangeOrder(duJob.id); }
+    fill: function () { var a = setVal("exp_amt", "150"); setVal("exp_desc", "Extra haul"); return a; },
+    tap: function () { jobAddExpense(duJob.id); }
   });
-} else { diag("add-change-order: no jobAddChangeOrder() — skipped"); }
+} else { diag("add-job-expense: no jobAddExpense() — skipped"); }
 
 // ================= KNOWN-GUARDED (must PASS) =================
 // jobAddExpense / jobAddMaterial already carry _jobExpAddBusy/_jobMatAddBusy guards. Prove they still hold so a

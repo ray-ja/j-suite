@@ -332,6 +332,11 @@ window.wizPersist=function(){
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const rec=WZ.recurring&&BIZ[S.biz].recurring;const recDisc=rec?sub*0.2:0;const manual=(WZ.disc||0);const disc=recDisc+manual;const total=Math.max(0,sub-disc);
   const base=WZ.id?(d.quotes.find(x=>x.id===WZ.id)||{}):{};
+  // QUOTE VERSIONING — capture the pre-edit state BEFORE Object.assign overwrites base. A version is recorded
+  // only when the quote is ALREADY committed (accepted/invoiced/paid); pre-commit drafts overwrite silently.
+  const _verWasCommitted=!!(base&&(base.accepted||base.invoiced||base.paid));
+  const _verPrevTotal=base?(+(base.finalPrice||base.total)||0):0;
+  const _verPrevItems=(base&&Array.isArray(base.items))?JSON.parse(JSON.stringify(base.items)):[];
   const q=Object.assign(base,{
     id:WZ.id||base.id||uid(),
     customerId:cust?cust.id:(base.customerId||null),
@@ -351,12 +356,19 @@ window.wizPersist=function(){
     if(typeof logChange==="function")logChange("update","quote",q.id,"Updated quote "+money(total)+(q.cust?" · "+q.cust:""));}
   else{d.quotes.push(q);WZ.id=q.id;if(typeof logChange==="function")logChange("create","quote",q.id,"Quoted "+money(total)+(q.cust?" · "+q.cust:""));}
   if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c&&(c.status==="Lead"||c.status==="Contacted")){c.status="Quoted";touch(c);}}
+  // QUOTE VERSIONING — on a COMMITTED quote, snapshot the change into q.versions[] (no-op if the effective total
+  // AND line items are unchanged, or if it wasn't committed). Post-invoice edits ADJUST THE LIVE TOTAL IN PLACE
+  // (AR/invoicing read finalPrice||total — one invoice per job, no new #); the version just records the change.
+  if(WZ.id&&_verWasCommitted&&typeof snapshotQuoteVersion==="function"){
+    snapshotQuoteVersion(q,WZ.adjNote||"",WZ._verSource||"edit",_verPrevTotal,_verPrevItems);
+  }
+  WZ._verSource=null;
   save();return q;
 };
 window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
 window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();};
 window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
-window.wizSetFinal=function(){if(wizLockedAlert())return;const v=val("wz_final");WZ.finalPrice=(v===""||v==null)?0:Math.max(0,parseFloat(v)||0);WZ.adjNote=val("wz_adjnote")||"";const q=wizPersist();if(q.paid&&typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,"Final price "+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
+window.wizSetFinal=function(){if(wizLockedAlert())return;const v=val("wz_final");WZ.finalPrice=(v===""||v==null)?0:Math.max(0,parseFloat(v)||0);WZ.adjNote=val("wz_adjnote")||"";WZ._verSource="final-price";const q=wizPersist();if(q.paid&&typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,"Final price "+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetPayLink=function(){if(wizLockedAlert())return;const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};
 window.wizDelete=function(){if(!WZ.id){exitWizard();return;}if(wizLockedAlert())return;if(!confirm("Delete this quote? It (and its job) go to the Archive for 60 days — restore it there if needed."))return;const q=D().quotes.find(x=>x.id===WZ.id);const cn=q?q.cust:"";if(typeof archiveDeleteQuote==="function")archiveDeleteQuote(WZ.id);else if(q){q.deleted=true;q.deletedAt=now();touch(q);}if(typeof logChange==="function")logChange("delete","quote",WZ.id,"Deleted quote"+(cn?" · "+cn:""));save();wizClearDraft();exitWizard();};
 /* feed the shared print/copy helpers (js/08) from the wizard's state */
