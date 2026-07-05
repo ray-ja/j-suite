@@ -27,6 +27,29 @@ function gmapsDirUrl(destination, waypoints) {
    "Stoneworks — pick up base" before the job site itself. Distinct from js/38's crew-added ad hoc timeclock
    stops[] (logged as-driven, after the fact) — this is the route planned in ADVANCE by the owner/admin. */
 function jobPlannedStops(j) { return (Array.isArray(j && j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address); }
+/* Who may EDIT a job's location + planned route from the job page: owner OR an admin-tier role (manage-members
+   is this app's admin proxy — same gate the Admin panel uses). Crew see the location + route READ-ONLY. */
+function jobCanEditPlan() { return (typeof isOwner === "function" && isOwner()) || (typeof canDo === "function" && canDo("manage-members")); }
+/* DEFERRED "destination-based backup mileage estimate" (Phase 6). Round-trip road miles across the ORDERED
+   route: home base → each geocoded planned stop (in order) → job site → back to base, using the SAME haversine
+   ×1.3 road factor as driveFromBase (js/62) — offline-safe, no API. Stored on j.estRouteMiles as an INFORMATIONAL
+   cross-check only: it NEVER touches the odometer/GPS/timeclock miles-of-record (those stay the billed number).
+   null when there's no home base or nothing geocoded yet. Idempotent — safe to recompute on every edit. */
+function jobRecalcRouteMiles(j) {
+  if (!j) return;
+  if (typeof homeBase !== "function" || typeof haversineMi !== "function") return;
+  const hb = homeBase();
+  const stops = (Array.isArray(j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address);
+  const mid = [];   // ordered intermediate waypoints that actually have coords
+  stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push([s.lat, s.lng]); });
+  const site = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
+  if (site && site.lat != null) mid.push([site.lat, site.lng]);
+  if (!hb || hb.lat == null || !mid.length) { j.estRouteMiles = null; return; }
+  const seq = [[hb.lat, hb.lng]].concat(mid, [[hb.lat, hb.lng]]);   // base → stops/site (in order) → base
+  let mi = 0;
+  for (let i = 1; i < seq.length; i++) { const d = haversineMi(seq[i - 1][0], seq[i - 1][1], seq[i][0], seq[i][1]); if (d != null) mi += d * 1.3; }
+  j.estRouteMiles = Math.round(mi * 10) / 10;
+}
 
 function rJobPage(j) {
   const cust = (typeof custName === "function") ? custName(j.customerId) : "";
@@ -56,6 +79,10 @@ function rJobPage(j) {
   h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
   h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px">${esc(addr)}</div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
   if (_drive) h += `<div class="sub" style="margin-top:3px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;
+  // EDIT LOCATION (owner/admin) — set a real location on a job with none (e.g. an airport pickup with no
+  // customer address): pick a saved property (its map pin) OR type a free-text address saved to j.address,
+  // which jobAddr() already reads as a fallback. Crew see the location read-only.
+  if (jobCanEditPlan()) h += `<button class="btn ghost sm" style="margin-top:6px" onclick="jobEditLoc('${j.id}')">✏️ Edit location</button>`;
   h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
   if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
   // DERIVED lifecycle badge — where this job sits in the pipeline (lead→quote→job→expense collecting→invoice→paid).
@@ -89,7 +116,21 @@ function rJobPage(j) {
     if (phone) h += `<a class="btn ghost grow" href="tel:${tel(phone)}">📞 Call</a>`;
     h += `</div>`;
   }
+  // ESTIMATE (informational cross-check) — offline round-trip miles across the ordered stops. NEVER the billed
+  // number: the odometer/GPS timeclock miles stay the record. If the job has confirmed odometer miles, show them
+  // side by side so the estimate reads as a sanity check (Ray: within ~15–20%).
+  if (j.estRouteMiles > 0) {
+    const _n = _stops.length;
+    const _confMiles = tc.filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
+    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""} <span class="muted">· offline estimate, a cross-check — not the billed miles</span></div>`;
+    if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
+  }
   h += `</div>`;
+
+  // 1z) Route / stops editor (owner/admin) — surfaced ON the job page (not just the editor modal). Writes the
+  // SAME j.plannedStops[] the modal editor writes, via job-page handlers that persist immediately + recompute
+  // the mileage estimate. Crew see the labeled links above but not this editor.
+  h += jobPageRouteCard(j);
 
   // 1a) Work days — fast, low-friction multi-day editing from the field, without opening the full job editor.
   // Compact chip list of the job's work days (jobWorkDays), today's chip marked, start-day un-removable;
@@ -219,6 +260,80 @@ function rJobPage(j) {
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:0 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
   return h;
 }
+
+/* ON-JOB-PAGE ordered-stops editor (owner/admin). Same data + shape as the js/09 editor-modal stop editor
+   (j.plannedStops[] = ordered {id,label,address,lat,lng}) so the two can't drift; the job-page handlers just
+   persist immediately (no modal "save" step) and recompute the mileage estimate. Renders from the RAW array so
+   the ▲▼✕ indices line up 1:1 with j.plannedStops. */
+function jobPageRouteCard(j) {
+  if (!jobCanEditPlan()) return "";
+  const ps = Array.isArray(j.plannedStops) ? j.plannedStops : [];
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
+  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">Add each place you drive to, in order (e.g. office → airport → dinner). The crew get labeled directions + one "Full route" link; you get an offline round-trip mileage estimate as a cross-check to the odometer.</div>`;
+  h += ps.length ? ps.map((s, i) => `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${i + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto"><button class="btn ghost sm" ${i === 0 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},-1)" title="Move up">▲</button><button class="btn ghost sm" ${i === ps.length - 1 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},1)" title="Move down">▼</button><button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${i})" title="Remove">✕</button></div></div>`).join("") : `<div class="muted">No stops yet — the crew gets a direct link to the job site only.</div>`;
+  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" style="flex:1 1 140px"></div>`;
+  h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
+  h += `<div class="sub" style="margin-top:4px;white-space:normal">Then the job site itself, automatically, last. Order matters — the "Full route" link follows this list top to bottom.</div>`;
+  if (j.estRouteMiles > 0) h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. round-trip: ~<b>${j.estRouteMiles} mi</b> <span class="muted">(base → stops → job site → base — informational, the odometer stays the billed number)</span></div>`;
+  else if (ps.length) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Locating addresses… the mileage estimate appears once they geocode (needs a home base set in Settings).</div>`;
+  return h + `</div>`;
+}
+/* EDIT LOCATION modal (owner/admin) — pick a saved property OR type a free-text address → j.address (jobAddr's
+   fallback). Lets a customer-less job (airport pickup) get a real location. */
+window.jobEditLoc = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const props = (typeof actProps === "function") ? actProps() : [];
+  modal("📍 Job location", `
+    <p class="muted" style="margin-bottom:8px">Set where this job is. Pick a saved property (uses its address + map pin), or type any address — handy for a job with no customer address (an airport pickup, a dump site).</p>
+    <label style="margin-top:0">Property <span class="sub">(optional — uses its saved location)</span></label>
+    <select id="jloc_prop"><option value="">— none —</option>${props.map(p => `<option value="${esc(p.id)}" ${j.propertyId === p.id ? "selected" : ""}>${esc(p.label || p.address || "Property")}${p.lat == null ? " (no location)" : ""}</option>`).join("")}</select>
+    <label>Or type an address</label>
+    <input id="jloc_addr" value="${esc(j.address || "")}" placeholder="street, town, ST zip — or e.g. 'Norfolk Airport (ORF)'" autocomplete="off">
+    <div class="sub" style="margin-top:6px;white-space:normal">A property's address wins if both are set. Leave the property on "none" to use the typed address.</div>
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="jobSaveLoc('${j.id}')">Save location</button>`);
+};
+window.jobSaveLoc = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  j.propertyId = val("jloc_prop") || "";
+  j.address = (val("jloc_addr") || "").trim();
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);   // job-site coords may have changed
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+  if (typeof closeModal === "function") closeModal();
+  if (typeof render === "function") render();
+};
+/* ordered-stop handlers for the job page — write j.plannedStops directly (SAME field as the modal), persist
+   immediately, recompute the estimate. Geocode is best-effort via the SHARED js/09 jobStopGeocode (with a
+   persist-on-resolve callback so coords + estimate save once OSM answers). */
+window.jobPageStopAdd = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const label = (val("jps_label") || "").trim(), address = (val("jps_addr") || "").trim();
+  if (!address) { alert("Enter the stop's address."); return; }
+  if (!Array.isArray(j.plannedStops)) j.plannedStops = [];
+  const s = { id: (typeof uid === "function" ? uid() : String(Math.random())), label: label || address, address: address, lat: null, lng: null };
+  j.plannedStops.push(s);
+  if (typeof jobStopGeocode === "function") jobStopGeocode(s, function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobPageStopMove = function (jobId, i, dir) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const a = Array.isArray(j.plannedStops) ? j.plannedStops : []; const k = i + dir; if (k < 0 || k >= a.length) return;
+  const t = a[i]; a[i] = a[k]; a[k] = t;
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobPageStopDel = function (jobId, i) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const a = Array.isArray(j.plannedStops) ? j.plannedStops : []; if (i < 0 || i >= a.length) return;
+  a.splice(i, 1);
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
 
 window.jobSetParent = function (jobId, parentId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;

@@ -315,11 +315,12 @@ window.jobStopDel=function(i){
 /* best-effort geocode (same free OSM Nominatim path as js/62 hbGeocode) — fills lat/lng in the background so a
    future drive-estimate can use them; the Google Maps links themselves work off the address text regardless,
    so a slow/failed lookup never blocks anything. */
-function jobStopGeocode(s){
+function jobStopGeocode(s,cb){   // cb (optional): called after coords land, so a persist-on-resolve caller (js/61's on-job-page editor) can save + recompute the mileage estimate; the modal passes no cb (saveJob persists JOBSTOPS later)
   if(!s||!s.address||typeof fetch!=="function")return;
   fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q="+encodeURIComponent(s.address))
-    .then(r=>r.json()).then(g=>{if(g&&g[0]){s.lat=+g[0].lat;s.lng=+g[0].lon;}}).catch(function(){});
+    .then(r=>r.json()).then(g=>{if(g&&g[0]){s.lat=+g[0].lat;s.lng=+g[0].lon;if(typeof cb==="function")cb();}}).catch(function(){});
 }
+window.jobStopGeocode=jobStopGeocode;   // shared with js/61's on-job-page stop editor — ONE OSM Nominatim path, so the two stop editors can't drift
 /* ---- multi-day work-day picker — a tap-on/off mini month grid, mobile-first. Tapping a day toggles it in
    JOBWORKDAYS (non-contiguous OK). The START date (j_date) is always included and can't be turned off here
    (change it in the Start date field). ‹ › step the shown month. Selected days show below as removable chips. */
