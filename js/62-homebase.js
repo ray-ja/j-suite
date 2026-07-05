@@ -30,7 +30,7 @@ window.setHomeBase=function(){
       ? `<span style="color:var(--accent)">📍 Found: ${esc(hb.resolved||hb.address||"")}</span><br><span class="sub">If that's the wrong place, fix the address and re-save.</span>`
       : `<span style="color:var(--danger)">Not located yet — check the address (add town + ZIP).</span>`) : "";
   modal("Home base — "+bn,`<p class="muted" style="margin-bottom:8px"><b>${bn}</b> jobs start &amp; end here — drive-time + pickup mileage use it. Each business keeps its <b>own</b> home base; switch the Business in Settings to set the other one.</p>
-    <label>Address</label><input id="hb_addr" value="${esc(hb?hb.address:"")}" placeholder="street, town, ST zip" autocomplete="off">
+    <label>Address</label><div class="acwrap"><input id="hb_addr" value="${esc(hb?hb.address:"")}" placeholder="street, town, ST zip" oninput="addrSuggest('hb_addr','hb_addr_ac')" autocomplete="off"><div class="acbox" id="hb_addr_ac"></div></div>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveHomeBase()">Save &amp; locate</button>
     <div id="hb_status" style="margin-top:8px">${stat}</div>`);
 };
@@ -39,6 +39,16 @@ window.saveHomeBase=function(){
   const d=D(); if(!Array.isArray(d.docs))d.docs=[];
   let hb=d.docs.find(x=>x&&x.id==="homeBase");
   if(!hb){ hb={id:"homeBase",address:addr,lat:null,lng:null,resolved:"",updatedAt:now()}; d.docs.push(hb); } else { hb.address=addr; hb.lat=null; hb.lng=null; hb.resolved=""; }
+  // saved-location pre-read (js/69 pattern): if the address was PICKED from a saved place/property, reuse its exact
+  // coords + SKIP the OSM geocode (re-geocoding the typed text is what landed Lowe's 400mi off).
+  const _hi=(typeof document!=="undefined")?document.getElementById("hb_addr"):null;
+  if(_hi&&_hi.dataset&&_hi.dataset.pickLat){
+    hb.lat=+_hi.dataset.pickLat; hb.lng=+_hi.dataset.pickLng; hb.resolved=addr;
+    delete _hi.dataset.pickLat;delete _hi.dataset.pickLng;delete _hi.dataset.pickPlaceId;delete _hi.dataset.pickPropId;delete _hi.dataset.pickManualMiles;
+    if(typeof touch==="function")touch(hb); save();
+    const st2=document.getElementById("hb_status"); if(st2)st2.innerHTML=`<span style="color:var(--accent)">📍 Using the saved location's coordinates.</span>`;
+    return;
+  }
   if(typeof touch==="function")touch(hb); save();
   const st=document.getElementById("hb_status"); if(st)st.innerHTML='<span class="sub">Locating…</span>';   // keep the modal open so you SEE where it landed
   hbGeocode(hb);

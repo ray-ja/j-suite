@@ -1,8 +1,8 @@
 /* ---------- CUSTOMERS ---------- */
 let CSEARCH="",PSEARCH="",ACCTSUB="customers";
-function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button></div>`;}
+function acctSubnav(){return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="places"?"on":""}" onclick="switchAcct('places')">📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}</button></div>`;}
 window.switchAcct=function(s){ACCTSUB=s;render();};
-function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
+function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="places"&&typeof rPlaces==="function")return rPlaces();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
 /* PURE results-list HTML (empty / "No matches" / card grid) — kept pure so the SEARCH keystroke path can
    rebuild ONLY #clist without re-rendering the #csearch input (focus & caret survive, no setSelectionRange). */
 function customersListHTML(){

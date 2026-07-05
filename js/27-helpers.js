@@ -4,8 +4,56 @@ function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;"
 /* Per-record audit line — "✎ edited by Ray · 2h ago" from the editedBy/editedAt stamp touch() writes. */
 function editedByLine(r){try{if(!r||!r.editedBy)return "";const u=((typeof S!=="undefined"&&S.users)||[]).find(x=>x&&x.id===r.editedBy);const nm=u?(u.name||u.username):"someone";const ago=(typeof agoTxt==="function"&&r.editedAt)?(" · "+agoTxt(r.editedAt)):"";return `<div class="sub" style="opacity:.6;margin-top:4px">✎ edited by ${esc(nm)}${ago}</div>`;}catch(e){return "";}}
 let _acT=null;
-window.addrSuggest=function(inpId,boxId){clearTimeout(_acT);const inp=document.getElementById(inpId),box=document.getElementById(boxId);if(!inp||!box)return;const q=inp.value.trim();if(q.length<4){box.innerHTML="";return;}_acT=setTimeout(function(){fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q="+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){box.innerHTML=(d||[]).map(function(x){return '<div class="acitem" data-a="'+esc(x.display_name)+'" data-lat="'+esc(x.lat)+'" data-lng="'+esc(x.lon)+'" onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+esc(x.display_name)+'</div>';}).join("");}).catch(function(){});},350);};
-window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId);inp.value=el.getAttribute("data-a");const la=el.getAttribute("data-lat"),lo=el.getAttribute("data-lng");if(la&&lo&&la!=="undefined"&&lo!=="undefined"){inp.dataset.pickLat=la;inp.dataset.pickLng=lo;}document.getElementById(boxId).innerHTML="";try{inp.dispatchEvent(new Event("change"));}catch(e){}};
+/* SAVED-LOCATIONS autocomplete source — up to ~5 case-insensitive substring matches over the user's SAVED
+   records, fully offline (no fetch): saved PROPERTIES (actProps, on label/address, only where lat!=null so we
+   have real coords to reuse) + active PLACES (D().places, on name/address, non-deleted + lat!=null). Each match
+   is {kind:"property"|"place", ref:id, label, address, lat, lng, manualMiles?} — the caller threads ref via a
+   data-place/data-prop attr so a picked suggestion reuses the stored coords instead of re-geocoding the text
+   (the js/69 "Lowe's geocoded 400mi off" fix, generalized). Never throws; empty query → []. */
+function savedLocMatches(q){
+  q=(q==null?"":String(q)).trim().toLowerCase();
+  if(!q)return [];
+  const out=[];
+  try{
+    const props=(typeof actProps==="function")?actProps():[];
+    for(let i=0;i<props.length&&out.length<5;i++){const p=props[i];
+      if(!p||p.lat==null)continue;
+      const label=p.label||"",addr=p.address||"";
+      if((label+" "+addr).toLowerCase().indexOf(q)<0)continue;
+      out.push({kind:"property",ref:p.id,label:label||addr||"Property",address:addr,lat:p.lat,lng:p.lng});
+    }
+    const places=((typeof D==="function"&&D()&&D().places)||[]).filter(function(p){return p&&!p.deleted&&p.lat!=null;});
+    for(let i=0;i<places.length&&out.length<5;i++){const p=places[i];
+      const name=p.name||"",addr=p.address||"";
+      if((name+" "+addr).toLowerCase().indexOf(q)<0)continue;
+      const m={kind:"place",ref:p.id,label:name||addr||"Place",address:addr,lat:p.lat,lng:p.lng};
+      if(typeof p.manualMiles==="number"&&isFinite(p.manualMiles)&&p.manualMiles>0)m.manualMiles=p.manualMiles;
+      out.push(m);
+    }
+  }catch(e){}
+  return out.slice(0,5);
+}
+if(typeof window!=="undefined")window.savedLocMatches=savedLocMatches;
+/* address autocomplete — SAVED matches first (synchronous, offline, 2-char threshold), then OSM Nominatim
+   APPENDED below (4-char threshold). OSM never clobbers the saved rows. */
+window.addrSuggest=function(inpId,boxId){clearTimeout(_acT);const inp=document.getElementById(inpId),box=document.getElementById(boxId);if(!inp||!box)return;const q=inp.value.trim();
+  const saved=(q.length>=2&&typeof savedLocMatches==="function")?savedLocMatches(q):[];
+  const savedHTML=saved.map(function(s){const icon=s.kind==="place"?"📍":"🏠";
+    const ref=s.kind==="place"?(' data-place="'+esc(s.ref)+'"'):(' data-prop="'+esc(s.ref)+'"');
+    const mm=(s.manualMiles!=null)?(' data-manmi="'+esc(s.manualMiles)+'"'):"";
+    const sub=(s.address&&s.address!==s.label)?(' <span class="acsub">'+esc(s.address)+'</span>'):"";
+    return '<div class="acitem saved" data-a="'+esc(s.address||s.label)+'" data-lat="'+esc(s.lat)+'" data-lng="'+esc(s.lng)+'"'+ref+mm+' onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+icon+' '+esc(s.label)+sub+' <span class="acsrc">📍 · saved</span></div>';}).join("");
+  box.innerHTML=savedHTML;
+  if(q.length<4){return;}
+  _acT=setTimeout(function(){fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q="+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){const osmHTML=(d||[]).map(function(x){return '<div class="acitem" data-a="'+esc(x.display_name)+'" data-lat="'+esc(x.lat)+'" data-lng="'+esc(x.lon)+'" onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+esc(x.display_name)+'</div>';}).join("");box.innerHTML=savedHTML+osmHTML;}).catch(function(){});},350);};
+window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId);inp.value=el.getAttribute("data-a");
+  /* clear any stale saved-ref from a PRIOR pick first, so re-picking a plain OSM result after a saved one can't leak a placeId/propId */
+  delete inp.dataset.pickPlaceId;delete inp.dataset.pickPropId;delete inp.dataset.pickManualMiles;
+  const la=el.getAttribute("data-lat"),lo=el.getAttribute("data-lng");if(la&&lo&&la!=="undefined"&&lo!=="undefined"){inp.dataset.pickLat=la;inp.dataset.pickLng=lo;}
+  const pid=el.getAttribute("data-place");if(pid)inp.dataset.pickPlaceId=pid;
+  const prp=el.getAttribute("data-prop");if(prp)inp.dataset.pickPropId=prp;
+  const mm=el.getAttribute("data-manmi");if(mm)inp.dataset.pickManualMiles=mm;
+  document.getElementById(boxId).innerHTML="";try{inp.dispatchEvent(new Event("change"));}catch(e){}};
 /* Settings are per-user: stored on the signed-in account (u.settings, synced via S.users).
    When signed out we fall back to this device's localStorage so the toggle still works. */
 function curUserSettings(){try{const u=(typeof curUser==="function")?curUser():null;return (u&&u.settings)||null;}catch(e){return null;}}

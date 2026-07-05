@@ -239,7 +239,7 @@ window.openJob=function(id,customerId,presetDate){
   JOBWORKDAYS=jobWorkDays(j);     // live multi-day work-day set (start day always included)
   JOBWDAY_ANCHOR=(JOBWORKDAYS[0]||j.date||today());   // which month the mini-picker shows
   JOBEQUIP=(typeof jobEquip==="function")?jobEquip(j):[];JOBEQUIP_JID=j.id;   // live required-equipment list for this modal
-  JOBSTOPS=(Array.isArray(j.plannedStops)?j.plannedStops:[]).map(s=>({id:s.id||uid(),label:s.label||"",address:s.address||"",lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null}));   // live planned-route list for this modal
+  JOBSTOPS=(Array.isArray(j.plannedStops)?j.plannedStops:[]).map(s=>({id:s.id||uid(),label:s.label||"",address:s.address||"",lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null,placeId:s.placeId||null}));   // live planned-route list for this modal (placeId carries a saved-place ref for the mileage-estimate override)
   const opts=`<option value="">— none —</option>`+actC().map(c=>`<option value="${c.id}" ${j.customerId===c.id?"selected":""}>${esc(c.name||c.company)}</option>`).join("");
   const svcopts=`<option value="">— optional —</option>`+cat().map(s=>`<option ${j.title===s.name?"selected":""}>${s.name}</option>`).join("");
   /* crew-on-phone: tap-to-call/text the customer + one-tap Directions to the job (best address: property → job → customer) */
@@ -289,7 +289,7 @@ function renderJobStops(){
       <button type="button" class="btn ghost sm" onclick="jobStopDel(${i})" title="Remove">✕</button>
     </div></div>`).join("");
   box.innerHTML=(rows||`<div class="muted" style="margin-bottom:6px">No planned stops — the crew gets a direct link to the job site only.</div>`)
-    +`<div class="row" style="gap:8px;margin-top:8px"><input id="jstop_label" placeholder="Label — e.g. Stoneworks: pick up base" style="flex:1 1 160px"><input id="jstop_addr" placeholder="Address" style="flex:1 1 160px"></div>
+    +`<div class="row" style="gap:8px;margin-top:8px"><input id="jstop_label" placeholder="Label — e.g. Stoneworks: pick up base" style="flex:1 1 160px"><div class="acwrap" style="flex:1 1 160px"><input id="jstop_addr" placeholder="Address" oninput="addrSuggest('jstop_addr','jstop_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jstop_addr_ac"></div></div></div>
       <button type="button" class="btn ghost sm" style="margin-top:6px;width:100%" onclick="jobStopAdd()">+ Add stop</button>
       <div class="sub" style="margin-top:4px;white-space:normal">Then the job site itself, automatically, last. Order matters — the crew's "Full route" link follows this list top to bottom.</div>`;
 }
@@ -298,8 +298,13 @@ window.jobStopAdd=function(){
   const address=(val("jstop_addr")||"").trim();
   if(!address){alert("Enter the stop's address.");return;}
   const s={id:uid(),label:label||address,address:address,lat:null,lng:null};
+  // saved-location pre-read (js/69 pattern): a PICKED suggestion carries exact coords + optional placeId → reuse
+  // them + SKIP the OSM geocode (re-geocoding typed text is what landed Lowe's 400mi off).
+  const _si=(typeof document!=="undefined")?document.getElementById("jstop_addr"):null; let _picked=false;
+  if(_si&&_si.dataset&&_si.dataset.pickLat){ s.lat=+_si.dataset.pickLat; s.lng=+_si.dataset.pickLng; if(_si.dataset.pickPlaceId)s.placeId=_si.dataset.pickPlaceId; _picked=true;
+    delete _si.dataset.pickLat;delete _si.dataset.pickLng;delete _si.dataset.pickPlaceId;delete _si.dataset.pickPropId;delete _si.dataset.pickManualMiles; }
   JOBSTOPS.push(s);
-  if(typeof jobStopGeocode==="function")jobStopGeocode(s);   // best-effort, non-blocking — the map link uses the address text either way
+  if(!_picked&&typeof jobStopGeocode==="function")jobStopGeocode(s);   // best-effort, non-blocking — the map link uses the address text either way
   renderJobStops();
 };
 window.jobStopMove=function(i,dir){
@@ -487,7 +492,7 @@ window.saveJob=function(id,isNew){
   // MULTI-DAY: persist the picked work days (deduped, start day always in, sorted). Single-day jobs store [date].
   {const wd=new Set(JOBWORKDAYS);if(j.date)wd.add(j.date);j.workDays=[...wd].filter(Boolean).sort();}
   j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
-  j.plannedStops=JOBSTOPS.map(s=>({id:s.id,label:s.label,address:s.address,lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null}));   // admin-planned route (js/61 renders these as labeled links); untouched (echoed back) when the editor is hidden for non-owners
+  j.plannedStops=JOBSTOPS.map(s=>{const o={id:s.id,label:s.label,address:s.address,lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null};if(s.placeId)o.placeId=s.placeId;return o;});   // admin-planned route (js/61 renders these as labeled links); untouched (echoed back) when the editor is hidden for non-owners. placeId (optional) carries a saved-place ref for the mileage-estimate override
   if(!j.title){alert("Give the job a name.");return;}
   if(typeof submitGuard==="function"&&!submitGuard("saveJob:"+id))return;   // rapid-tap dupe guard
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);

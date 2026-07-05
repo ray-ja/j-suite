@@ -39,6 +39,22 @@ function jobRouteEndpointPt(ep, hb) {
   if (ep && ep.address) return null;                                     // custom endpoint set, still geocoding
   return (hb && hb.lat != null) ? [hb.lat, hb.lng] : null;               // null/unset → home base (default)
 }
+/* one-way road miles a saved PLACE declares from home base (manualMiles), used to override the haversine on a
+   base-adjacent leg. Only a positive number counts; anything else (unset/0/NaN/non-place) → null = "no override". */
+function placeManualMi(placeId) {
+  if (!placeId || typeof D !== "function") return null;
+  const d = D(); const places = (d && Array.isArray(d.places)) ? d.places : [];
+  const p = places.find(x => x && x.id === placeId && !x.deleted);
+  return (p && typeof p.manualMiles === "number" && isFinite(p.manualMiles) && p.manualMiles > 0) ? p.manualMiles : null;
+}
+/* a route endpoint (j.routeStart / j.routeEnd) → a TAGGED point {pt:[lat,lng], base:bool, manMi:(number|null)}:
+   base=true only when it resolves to the home base (null/unset endpoint); a custom endpoint carrying a placeId
+   picks up that place's manualMiles override. null = unresolvable (still geocoding / no base). */
+function jobRouteEndpointTagged(ep, hb) {
+  if (ep && ep.lat != null && ep.lng != null) return { pt: [ep.lat, ep.lng], base: false, manMi: placeManualMi(ep.placeId) };
+  if (ep && ep.address) return null;                                                       // custom endpoint set, still geocoding
+  return (hb && hb.lat != null) ? { pt: [hb.lat, hb.lng], base: true, manMi: null } : null;   // null/unset → home base
+}
 /* the address a route endpoint currently resolves to for DISPLAY — the custom address if set, else "" (= base). */
 function jobRouteEndpointLabel(ep) { return (ep && ep.address) ? String(ep.address) : ""; }
 /* DEFERRED "destination-based backup mileage estimate" (Phase 6). Sequential road miles along the ORDERED
@@ -52,17 +68,25 @@ function jobRecalcRouteMiles(j) {
   if (!j) return;
   if (typeof homeBase !== "function" || typeof haversineMi !== "function") return;
   const hb = homeBase();
-  const startPt = jobRouteEndpointPt(j.routeStart, hb);   // custom start (fallback: home base)
-  const endPt = jobRouteEndpointPt(j.routeEnd, hb);       // custom end   (fallback: home base)
+  const startPt = jobRouteEndpointTagged(j.routeStart, hb);   // tagged {pt,base,manMi} — custom start (fallback: home base)
+  const endPt = jobRouteEndpointTagged(j.routeEnd, hb);       // tagged {pt,base,manMi} — custom end   (fallback: home base)
   const stops = (Array.isArray(j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address);
-  const mid = [];   // ordered intermediate waypoints that actually have coords
-  stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push([s.lat, s.lng]); });
+  const mid = [];   // ordered intermediate waypoints that actually have coords, each tagged {pt,base,manMi}
+  stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push({ pt: [s.lat, s.lng], base: false, manMi: placeManualMi(s.placeId) }); });
   const site = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
-  if (site && site.lat != null) mid.push([site.lat, site.lng]);
+  if (site && site.lat != null) mid.push({ pt: [site.lat, site.lng], base: false, manMi: null });   // job site: always haversine (places-only manualMiles)
   if (!startPt || !endPt || !mid.length) { j.estRouteMiles = null; return; }
   const seq = [startPt].concat(mid, [endPt]);   // start → stops/site (in order) → end
   let mi = 0;
-  for (let i = 1; i < seq.length; i++) { const d = haversineMi(seq[i - 1][0], seq[i - 1][1], seq[i][0], seq[i][1]); if (d != null) mi += d * 1.3; }
+  // per-leg: a base↔place leg uses the place's manualMiles (already road miles — NO ×1.3), fixing the wrong-geocode
+  // case (Lowe's); every other leg (place↔place, place↔site, base↔site) stays haversine ×1.3. A place-less route is
+  // byte-identical to the old formula (manMi is null everywhere → always the haversine branch).
+  for (let i = 1; i < seq.length; i++) {
+    const A = seq[i - 1], B = seq[i];
+    if (A.base && B.manMi != null) { mi += B.manMi; }
+    else if (B.base && A.manMi != null) { mi += A.manMi; }
+    else { const d = haversineMi(A.pt[0], A.pt[1], B.pt[0], B.pt[1]); if (d != null) mi += d * 1.3; }
+  }
   j.estRouteMiles = Math.round(mi * 10) / 10;
 }
 
@@ -297,14 +321,14 @@ function jobPageRouteCard(j) {
   const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
   const endpointRow = (emoji, title, id, value, custom, setFn, resetFn) => `<div style="padding:6px 0">
     <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
-    <input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onchange="${setFn}('${j.id}', this.value)" style="margin-top:4px"></div>`;
+    <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
   h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows: <b>Start → stops → job site → End</b>. Start &amp; End default to your home base but you can change either (a job may start or end somewhere else). The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
   // 🏁 START (first point) — editable, pre-filled with home base
   h += endpointRow("🏁", "Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
   // the ordered plannedStops (add/reorder/delete) — unchanged
   h += ps.length ? ps.map((s, i) => `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${i + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto"><button class="btn ghost sm" ${i === 0 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},-1)" title="Move up">▲</button><button class="btn ghost sm" ${i === ps.length - 1 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},1)" title="Move down">▼</button><button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${i})" title="Remove">✕</button></div></div>`).join("") : `<div class="muted" style="padding:2px 0">No stops yet — Start goes straight to the job site.</div>`;
-  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" style="flex:1 1 140px"></div>`;
+  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
   // 🏁 JOB SITE (automatic, last real destination before End)
   h += `<div class="li" style="padding:6px 0;margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🏁 Job site <span class="sub" style="font-weight:400">· automatic</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div></div>`;
@@ -328,7 +352,7 @@ window.jobEditLoc = function (jobId) {
     <label style="margin-top:0">Property <span class="sub">(optional — uses its saved location)</span></label>
     <select id="jloc_prop"><option value="">— none —</option>${props.map(p => `<option value="${esc(p.id)}" ${j.propertyId === p.id ? "selected" : ""}>${esc(p.label || p.address || "Property")}${p.lat == null ? " (no location)" : ""}</option>`).join("")}</select>
     <label>Or type an address</label>
-    <input id="jloc_addr" value="${esc(j.address || "")}" placeholder="street, town, ST zip — or e.g. 'Norfolk Airport (ORF)'" autocomplete="off">
+    <div class="acwrap"><input id="jloc_addr" value="${esc(j.address || "")}" placeholder="street, town, ST zip — or e.g. 'Norfolk Airport (ORF)'" oninput="addrSuggest('jloc_addr','jloc_addr_ac')" autocomplete="off"><div class="acbox" id="jloc_addr_ac"></div></div>
     <div class="sub" style="margin-top:6px;white-space:normal">A property's address wins if both are set. Leave the property on "none" to use the typed address.</div>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="jobSaveLoc('${j.id}')">Save location</button>`);
 };
@@ -337,6 +361,14 @@ window.jobSaveLoc = function (jobId) {
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
   j.propertyId = val("jloc_prop") || "";
   j.address = (val("jloc_addr") || "").trim();
+  // saved-location pre-read (js/69 pattern): if the address was PICKED from a saved PROPERTY and no property was
+  // explicitly chosen, adopt it so the job site reuses that property's saved coords — no re-geocode. Job sites stay
+  // places-only for manualMiles: we never stamp a placeId onto the job, so the site leg always stays haversine.
+  const _li = (typeof document !== "undefined") ? document.getElementById("jloc_addr") : null;
+  if (_li && _li.dataset) {
+    if (!j.propertyId && _li.dataset.pickPropId) j.propertyId = _li.dataset.pickPropId;
+    delete _li.dataset.pickLat; delete _li.dataset.pickLng; delete _li.dataset.pickPlaceId; delete _li.dataset.pickPropId; delete _li.dataset.pickManualMiles;
+  }
   if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);   // job-site coords may have changed
   if (typeof touch === "function") touch(j); if (typeof save === "function") save();
   if (typeof closeModal === "function") closeModal();
@@ -352,8 +384,19 @@ window.jobPageStopAdd = function (jobId) {
   if (!address) { alert("Enter the stop's address."); return; }
   if (!Array.isArray(j.plannedStops)) j.plannedStops = [];
   const s = { id: (typeof uid === "function" ? uid() : String(Math.random())), label: label || address, address: address, lat: null, lng: null };
+  // saved-location pre-read (js/69 pattern): a PICKED suggestion carries its exact coords + optional placeId — reuse
+  // them + SKIP the OSM geocode (re-geocoding the typed text is what landed Lowe's 400mi off). placeId lets the
+  // estimate apply the place's manualMiles override on a base-adjacent leg (js/61 jobRecalcRouteMiles, Phase 3).
+  const _si = (typeof document !== "undefined") ? document.getElementById("jps_addr") : null;
+  let _picked = false;
+  if (_si && _si.dataset && _si.dataset.pickLat) {
+    s.lat = +_si.dataset.pickLat; s.lng = +_si.dataset.pickLng;
+    if (_si.dataset.pickPlaceId) s.placeId = _si.dataset.pickPlaceId;
+    _picked = true;
+    delete _si.dataset.pickLat; delete _si.dataset.pickLng; delete _si.dataset.pickPlaceId; delete _si.dataset.pickPropId; delete _si.dataset.pickManualMiles;
+  }
   j.plannedStops.push(s);
-  if (typeof jobStopGeocode === "function") jobStopGeocode(s, function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
+  if (!_picked && typeof jobStopGeocode === "function") jobStopGeocode(s, function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
   if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
@@ -387,8 +430,19 @@ function jobPageSetEndpoint(jobId, key, v) {
   if (!addr || (baseAddr && addr.toLowerCase() === baseAddr.toLowerCase())) {
     j[key] = null;   // empty or same-as-base → default to the business home base
   } else {
-    j[key] = { address: addr, lat: null, lng: null };
-    if (typeof jobStopGeocode === "function") jobStopGeocode(j[key], function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
+    const ep = { address: addr, lat: null, lng: null };
+    // saved-location pre-read (js/69 pattern): a PICKED suggestion carries exact coords + optional placeId → reuse
+    // them + SKIP geocoding. A place's placeId lets the estimate apply its manualMiles override on the base↔place leg.
+    const _ei = (typeof document !== "undefined") ? document.getElementById(key === "routeStart" ? "jrs_start" : "jrs_end") : null;
+    if (_ei && _ei.dataset && _ei.dataset.pickLat) {
+      ep.lat = +_ei.dataset.pickLat; ep.lng = +_ei.dataset.pickLng;
+      if (_ei.dataset.pickPlaceId) ep.placeId = _ei.dataset.pickPlaceId;
+      delete _ei.dataset.pickLat; delete _ei.dataset.pickLng; delete _ei.dataset.pickPlaceId; delete _ei.dataset.pickPropId; delete _ei.dataset.pickManualMiles;
+      j[key] = ep;   // coords already resolved → no OSM call
+    } else {
+      j[key] = ep;
+      if (typeof jobStopGeocode === "function") jobStopGeocode(j[key], function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
+    }
   }
   if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
