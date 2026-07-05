@@ -51,16 +51,24 @@ function jobProfit(j) {
   return { j: j, q: q, price: price, expCost: expCost, matCost: matCost, milCost: milCost, cost: cost, profit: profit, margin: margin, type: type, cust: cust };
 }
 /* effective field-work pay $/hr each — the number that says if a job was worth it.
-   person-hours = crew × (on-site hrs + round-trip drive hrs). Uses the job's manual time/travel fields
-   (j.crewN/onSiteHrs/driveMin/driveMiles) for reconstruction; mileage cost prefers confirmed time-clock. */
+   person-hours now come from the TIMECLOCK: jobClockedHrs(j) already sums every clocked segment across the whole
+   crew (= real crew-hours), plus each linked stop-job's clocked hours split by how many jobs it's shared across.
+   crew = the DISTINCT people who actually punched on the job (fallback: the assigned crew size). The legacy manual
+   j.crewN/onSiteHrs/driveMin/driveMiles fields are no longer read; mileage cost still prefers confirmed time-clock
+   miles (jobMilesCost, which keeps its legacy driveMiles fallback for old jobs). perHr is null when nobody has
+   clocked in yet, so callers prompt "clock in to see the real $/hr" instead of showing a stale number. */
 function jobHourly(j) {
   const p = jobProfit(j), subs = subJobsOf(j.id);
   let milCost = jobMilesCost(j); subs.forEach(sj => { milCost += jobMilesCost(sj) / stopSplitN(sj); });
   const cost = p.expCost + milCost, profit = p.price - cost, fieldPool = p.price * 0.48;
-  const crew = (+j.crewN || (j.crew || []).length || 1);
-  const onsite = +j.onSiteHrs || 0, driveH = (+j.driveMin || 0) / 60;
-  let personHrs = crew * (onsite + driveH);
-  subs.forEach(sj => { const sc = (+sj.crewN || (sj.crew || []).length || 1); personHrs += (sc * ((+sj.onSiteHrs || 0) + (+sj.driveMin || 0) / 60)) / stopSplitN(sj); });
+  // crew-hours straight from the clock (jobClockedHrs, js/38) + each stop-job's clocked hours, evenly split
+  let personHrs = (typeof jobClockedHrs === "function") ? jobClockedHrs(j) : 0;
+  subs.forEach(sj => { personHrs += ((typeof jobClockedHrs === "function") ? jobClockedHrs(sj) : 0) / stopSplitN(sj); });
+  // crew = distinct users who actually punched on this job, else the assigned crew size, else 1
+  const punchers = {};
+  (D().timeclock || []).forEach(e => { if (e && !e.deleted && e.jobId === j.id && e.userId) punchers[e.userId] = 1; });
+  const crew = Object.keys(punchers).length || (j.crew || []).length || 1;
+  const onsite = crew > 0 ? personHrs / crew : personHrs, driveH = 0;   // per-person hours (drive folds into clocked time)
   return { price: p.price, cost: cost, milCost: milCost, expCost: p.expCost, profit: profit, fieldPool: fieldPool, crew: crew, onsite: onsite, driveH: driveH, personHrs: personHrs, perHr: personHrs > 0 ? fieldPool / personHrs : null, margin: p.price > 0 ? profit / p.price : 0 };
 }
 function plJobRow(j) {

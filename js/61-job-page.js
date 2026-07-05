@@ -102,7 +102,6 @@ function rJobPage(j) {
   const openThis = me ? tc.find(e => e.userId === me.userId && e.jobId === j.id && !e.clockOut) : null;
   const openOther = me ? tc.find(e => e.userId === me.userId && e.jobId !== j.id && !e.clockOut) : null;
   const onJob = tc.filter(e => e.jobId === j.id && !e.clockOut);
-  const vehs = (typeof actInv === "function") ? actInv().filter(x => x && x.cat === "vehicle" && !x.deleted) : [];
   const cos = (j.changeOrders || []).filter(x => x && !x.deleted);
   const coTotal = cos.reduce((s, c) => s + (+c.amount || 0), 0);
   const exps = (j.expenses || []).filter(x => x && !x.deleted);
@@ -222,10 +221,18 @@ function rJobPage(j) {
     else if (_actCH > 0) _cmp = ` · logged <b>${_actCH}</b> crew-hrs so far`;
     h += `<div class="sub" style="margin-bottom:8px;white-space:normal">📐 Estimated <b>${_estCH || "—"} crew-hrs</b>${_estEach ? ` (~${_estEach} hr each · ${_estCrew} ${_estCrew === 1 ? "person" : "people"})` : ""}${_cmp}. <span style="color:var(--muted)">Breaks don't count — clock out for lunch, back in after.</span></div>`;
   }
+  // Effective field pay $/hr — now derived from CLOCKED time (jobHourly reads the timeclock, not typed-in hours).
+  // No clocked time yet → prompt to clock in rather than show a stale number.
+  const _hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
+  if (_hh && _hh.perHr != null) h += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 Effective field pay: <b style="${_hh.perHr < 35 ? "color:var(--danger)" : _hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(_hh.perHr)}/hr each</b> · ${_hh.crew}p × ${_hh.personHrs.toFixed(1)} crew-hrs clocked · cost ${money(_hh.cost)} · profit ${money(_hh.profit)}</div>`;
+  else if (_hh && _hh.price > 0) h += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 <span style="color:var(--muted)">Clock in to see the real $/hr — pay is derived from clocked time now.</span></div>`;
   if (onJob.length) h += `<div class="sub" style="margin-bottom:8px">On this job now: ${onJob.map(e => `<b>${esc((typeof userName === "function" ? userName(e.userId) : "") || "crew")}</b>${e.vehicle ? " · " + esc(e.vehicle) : ""}`).join(" · ")}</div>`;
   if (openThis) h += `<div class="sub">You're clocked in since <b>${hhmm(openThis.clockIn)}</b>${openThis.vehicle ? " · " + esc(openThis.vehicle) : ""}</div>${_estEach ? `<div class="sub" style="margin-top:2px;color:var(--brand-text);font-weight:600">⏱ Likely finish ~${hhmm(openThis.clockIn + _estEach * 3600000)} (your ~${_estEach} hr share, excl. breaks)</div>` : ""}<button class="btn danger" style="margin-top:8px;width:100%;padding:13px" onclick="tcClockOut('${openThis.id}')">Clock out</button>`;
   else if (openOther) { const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null; h += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`; }
-  else h += `<input type="hidden" id="tc_job" value="${esc(j.id)}"><label style="margin-top:0">Your vehicle</label><input id="tc_vehicle" list="veh_list" placeholder="pick a truck — or type your own car" autocomplete="off"><datalist id="veh_list">${vehs.map(v => `<option value="${esc(v.name)}">`).join("")}</datalist><label>Odometer — start</label><input id="tc_odo_start" type="number" inputmode="decimal" placeholder="miles showing now"><div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div><button class="btn acc" style="margin-top:10px;width:100%;padding:13px" onclick="tcClockIn()">⏱️ Clock in</button>`;
+  // SHARED clock-in flow (js/38 tcClockInFormHTML) PRE-SCOPED to this job — the grouped vehicle dropdown +
+  // separate trailer dropdown + rider-role + start-odometer + route estimate. Replaces the OLD free-text vehicle
+  // input that resolved empty and blocked the driver clock-in. riderRole + vehicle-owner reimbursement preserved.
+  else h += (typeof tcClockInFormHTML === "function" ? tcClockInFormHTML(j.id) : "") + `<div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div>`;
   h += `</div>`;
 
   // 4) Job photos — documentation gallery, inline so anyone who opens the job sees them
@@ -257,19 +264,6 @@ function rJobPage(j) {
   h += `<input id="mat_desc" placeholder="What — pavers, base rock, edging… (required)" style="margin-top:6px">`;
   h += `<input type="file" id="mat_receipt" accept="image/*" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="mat_add_btn" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','material')">🔀 Split across other jobs / mark as generic</button></div>`;
 
-  // 5b) Time & travel — reconstruct/log for the real effective $/hr (drive time is the silent cost)
-  const hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
-  const _hb = (typeof homeBase === "function") ? homeBase() : null;
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">⏱ Time &amp; travel <span class="sub" style="font-weight:400">· drives the real $/hr</span></div>
-    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Crew</label><input id="jt_crew" type="number" inputmode="numeric" min="1" value="${(+j.crewN || (j.crew || []).length || 1)}"></div>
-      <div class="grow"><label style="margin-top:0">On-site hrs each</label><input id="jt_onsite" type="number" inputmode="decimal" step="0.25" value="${j.onSiteHrs || ""}" placeholder="0"></div></div>
-    <div class="row" style="gap:8px"><div class="grow"><label style="margin-top:0">Drive min (round trip)</label><input id="jt_drivemin" type="number" inputmode="numeric" value="${j.driveMin || ""}" placeholder="0"></div>
-      <div class="grow"><label style="margin-top:0">Drive miles (round trip)</label><input id="jt_drivemiles" type="number" inputmode="decimal" value="${j.driveMiles || ""}" placeholder="0"></div></div>
-    <div class="row" style="gap:8px;margin-top:8px">${_ll ? `<button class="btn ghost grow" onclick="jobEstimateDrive('${j.id}')">📍 Estimate from base</button>` : ""}${(addr && _hb && _hb.address) ? `<a class="btn ghost grow" href="https://www.google.com/maps/dir/${encodeURIComponent(_hb.address)}/${encodeURIComponent(addr)}/${encodeURIComponent(_hb.address)}" target="_blank" rel="noopener">🔄 Round trip: base → job → base</a>` : ""}</div>
-    <button class="btn acc sm" style="margin-top:8px;width:100%" onclick="jobSaveTravel('${j.id}')">Save time &amp; travel</button>`;
-  if (hh && hh.perHr != null) h += `<div class="card" style="background:var(--soft);margin-top:8px;padding:10px"><div class="row" style="align-items:center"><div class="grow"><div class="sub" style="white-space:normal">${hh.crew}p × ${(hh.onsite + hh.driveH).toFixed(1)}h = ${hh.personHrs.toFixed(1)} crew-hrs · cost ${money(hh.cost)} · profit ${money(hh.profit)}</div></div><b style="font-size:17px;${hh.perHr < 35 ? "color:var(--danger)" : hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(hh.perHr)}/hr ea</b></div></div>`;
-  h += `</div>`;
-
   // 6) Notes
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
     <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
@@ -297,7 +291,8 @@ function rJobPage(j) {
   // 8) Done + actions
   h += `<button class="btn ${j.done ? "ghost" : "acc"}" style="width:100%;margin-top:4px" onclick="toggleJob('${j.id}')">${j.done ? "↩ Reopen job" : "✓ Mark job done"}</button>`;
   if (typeof jobTemplates === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobSaveAsTemplate('${j.id}')">⭐ Save as a common job (reuse this)</button>`;
-  if (typeof reviewAsk === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="reviewAsk()">⭐ Ask for a Google review</button>`;
+  // (Google-review BUTTON removed per Ray — the job-done auto-prompt (js/51 reviewPrompt, fired from js/09 toggleJob)
+  //  still asks at the right moment; reviewAsk() itself stays (used to SET the review link from js/18 + js/51).)
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 6px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:0 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
   return h;
@@ -585,22 +580,10 @@ window.jobAskCap = function (jobId) {
   if (pfile && typeof jsUpload === "function") jsUpload(pfile).then(function (id) { post([{ id: id }]); }).catch(function (e) { alert("Photo upload failed: " + (e.message || e)); post([]); });
   else post([]);
 };
-window.jobSaveTravel = function (jobId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  j.crewN = Math.max(1, parseInt(val("jt_crew")) || 1);
-  j.onSiteHrs = parseFloat(val("jt_onsite")) || 0;
-  j.driveMin = parseFloat(val("jt_drivemin")) || 0;
-  j.driveMiles = parseFloat(val("jt_drivemiles")) || 0;
-  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
-};
-window.jobEstimateDrive = function (jobId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  const ll = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
-  const d = (ll && typeof driveFromBase === "function") ? driveFromBase(ll.lat, ll.lng) : null;
-  if (!d) { alert("Need the job's location + a home base set to estimate."); return; }
-  const dm = document.getElementById("jt_drivemin"); if (dm) dm.value = Math.round(d.min * 2);   // round trip
-  const mi = document.getElementById("jt_drivemiles"); if (mi) mi.value = d.roundMiles;
-};
+/* (Item 7) The "⏱ Time & travel" manual inputs (jt_crew/jt_onsite/jt_drivemin/jt_drivemiles) + jobSaveTravel /
+   jobEstimateDrive were removed: job time now comes from the TIMECLOCK punches (jobHourly derives crew-hrs from
+   jobClockedHrs). Legacy crewN/onSiteHrs/driveMin/driveMiles stay on old records but are no longer read here
+   (jobMilesCost keeps its driveMiles fallback for old jobs). */
 window.jobSaveAsTemplate = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || typeof jobTemplates !== "function") return;
   const addr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
@@ -713,23 +696,45 @@ window.jobSplitSubmit = function (kind) {
    chip HTML the full editor draws — via the shared wdpkGridHtml/wdpkChipsHtml helpers in js/09 — so the two
    can't visually drift). The start day (j.date) is always a work day and can't be removed here. */
 function jobPageWorkDays(j) { return (typeof jobWorkDays === "function") ? jobWorkDays(j) : ((Array.isArray(j && j.workDays) ? j.workDays : (j && j.date ? [j.date] : [])).slice().sort()); }
-/* the compact card that sits near the top of the crew job page */
+/* (Item 4B) the crew job page's work-days card is a DAY-GROUPED PUNCH EDITOR: each work day lists the timeclock
+   punches on this job that day (crew · in–out · hrs · vehicle), each editable (tcEditPunch) + soft-deletable
+   (tcDelPunch), with a "＋ Add punch" (manual, time-only) per day. The displayed days = planned work days ∪
+   days-with-punches ∪ the start day; clocking in GROWS this set (js/38 tcClockIn), never shrinks it. A day that
+   has punches can't be chip-removed ("remove the punches first"); an empty planned day can; the start day never.
+   "+ Add work day" still adds a PLANNED (punch-less) day via the calendar picker. */
 function jobPageWorkDaysCard(j) {
-  const days = jobPageWorkDays(j);
-  const start = j.date || (days[0] || "");
   const t = (typeof today === "function") ? today() : "";
+  const start = j.date || ((jobPageWorkDays(j))[0] || "");
+  const _day = ms => (typeof tcLocalDay === "function") ? tcLocalDay(ms) : String(new Date(ms).toISOString().slice(0, 10));
+  const punches = (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockIn != null);
+  const byDay = {}; punches.forEach(e => { (byDay[_day(e.clockIn)] = byDay[_day(e.clockIn)] || []).push(e); });
+  const daySet = new Set(jobPageWorkDays(j)); Object.keys(byDay).forEach(d => daySet.add(d)); if (start) daySet.add(start);
+  const days = [...daySet].sort();
+  const uname = id => (typeof userName === "function" ? userName(id) : "") || "";
+  const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
   const hasToday = days.indexOf(t) >= 0;
-  const chips = days.map(ds => {
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📅 Work days &amp; time${days.length > 1 ? ` · <span class="sub" style="font-weight:400">${days.length} days</span>` : ""}</div>`;
+  h += `<div class="sub" style="margin-bottom:4px;white-space:normal">Each day shows the crew's punches (clock in → out). Clocking in adds the day automatically. Edit or remove a punch, or add one by hand (time only — no mileage).</div>`;
+  days.forEach(ds => {
+    const es = (byDay[ds] || []).slice().sort((a, b) => a.clockIn - b.clockIn);
     const isStart = ds === start, isToday = ds === t;
-    return `<span class="wdpk-chip${isStart ? " start" : ""}"${isToday ? ' style="outline:2px solid var(--accent);outline-offset:1px"' : ""}>${isToday ? "📍 " : ""}${esc((typeof fmtDate === "function") ? fmtDate(ds) : ds)}${isStart ? "" : ` <span onclick="jobPageRemoveDay('${j.id}','${ds}')" style="cursor:pointer;font-weight:800">✕</span>`}</span>`;
-  }).join("");
-  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📅 Work days${days.length > 1 ? ` · <span class="sub" style="font-weight:400">${days.length} days</span>` : ""}</div>`;
-  h += `<div class="wdpk-chips">${chips}</div>`;
+    const dayHrs = es.reduce((s, e) => s + (e.clockOut ? Math.max(0, e.clockOut - e.clockIn) / 3600000 : 0), 0);
+    const canRemove = !isStart && es.length === 0;   // a day WITH punches (or the start day) can't be chip-removed
+    h += `<div style="border-top:1px solid var(--line);padding-top:8px;margin-top:6px">
+      <div class="row" style="align-items:center"><div class="grow"><b style="font-size:14px">${isToday ? "📍 " : ""}${esc((typeof fmtDate === "function") ? fmtDate(ds) : ds)}</b>${isStart ? ` <span class="sub">· start</span>` : ""}${dayHrs > 0 ? ` <span class="sub">· ${Math.round(dayHrs * 10) / 10}h</span>` : ""}</div>${canRemove ? `<button class="btn ghost sm" onclick="jobPageRemoveDay('${j.id}','${ds}')" title="Remove this empty day">✕ day</button>` : ""}</div>`;
+    if (es.length) h += es.map(e => {
+      const hrs = e.clockOut ? Math.round(Math.max(0, e.clockOut - e.clockIn) / 3600000 * 10) / 10 : null;
+      const veh = (e.riderRole === "driver" && e.vehicle) ? " · 🚚 " + esc(e.vehicle) : (e.riderRole === "passenger" ? " · 🧍" : "");
+      const conf = (e.milesConfirmed && e.miles) ? " · " + e.miles + " mi" : "";
+      return `<div class="li"><div class="grow" style="cursor:pointer" onclick="tcEditPunch('${e.id}')"><div class="nm" style="font-size:14px">${esc(uname(e.userId) || e.userName || "Crew")}${e.manual ? ` <span class="badge" style="background:var(--soft);color:var(--muted)">manual</span>` : ""}</div><div class="sub" style="white-space:normal">${hhmm(e.clockIn)}–${e.clockOut ? hhmm(e.clockOut) : "open"}${hrs != null ? " · " + hrs + "h" : ""}${veh}${conf}</div></div><button class="btn ghost sm" onclick="tcDelPunch('${e.id}')" title="Remove this punch">✕</button></div>`;
+    }).join("");
+    else h += `<div class="sub muted" style="padding:2px 0">No punches logged this day.</div>`;
+    h += `<button class="btn ghost sm" style="margin-top:6px;width:100%" onclick="tcAddPunch('${j.id}','${ds}')">＋ Add punch</button>`;
+    h += `</div>`;
+  });
   h += `<div class="row" style="gap:8px;margin-top:10px">`;
-  h += hasToday
-    ? `<button class="btn ghost grow" disabled style="opacity:.7">✓ Today's already a work day</button>`
-    : `<button class="btn acc grow" onclick="jobPageAddToday('${j.id}')">+ Add today</button>`;
-  h += `<button class="btn ghost grow" onclick="jobPageAddDay('${j.id}')">+ Add another day</button>`;
+  h += hasToday ? `<button class="btn ghost grow" disabled style="opacity:.7">✓ Today's a work day</button>` : `<button class="btn acc grow" onclick="jobPageAddToday('${j.id}')">+ Add today</button>`;
+  h += `<button class="btn ghost grow" onclick="jobPageAddDay('${j.id}')">+ Add work day</button>`;
   h += `</div></div>`;
   return h;
 }
@@ -751,10 +756,14 @@ window.jobPageAddToday = function (jobId) {
   jobPageCommitDays(j, days.concat([t]));
   if (typeof render === "function") render();
 };
-/* remove a day from both the compact card and the picker — never the start day */
+/* remove a day — never the start day, and never a day that has time punches (remove the punches first). Removing a
+   PUNCH (tcDelPunch) deletes only that entry; the day stays. Only an empty planned day is chip-removable. */
 window.jobPageRemoveDay = function (jobId, ds) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   if (ds === (j.date || "")) return;   // can't remove the start day
+  const _day = ms => (typeof tcLocalDay === "function") ? tcLocalDay(ms) : String(new Date(ms).toISOString().slice(0, 10));
+  const hasPunch = (D().timeclock || []).some(e => e && !e.deleted && e.jobId === jobId && e.clockIn != null && _day(e.clockIn) === ds);
+  if (hasPunch) { alert("That day has time punches — remove the punches first."); return; }
   jobPageCommitDays(j, jobPageWorkDays(j).filter(d => d !== ds));
   if (typeof render === "function") render();
   if (JP_WD_JOB === jobId && document.getElementById("jpwd_box")) jobPageWdRender();   // keep an open picker in step

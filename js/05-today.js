@@ -23,11 +23,21 @@ function rToday(){
   h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>
     <div class="card" style="border-left:4px solid var(--accent)"><div style="white-space:pre-wrap;font-size:14px;line-height:1.5">${dir?esc(dir):'<span class="muted">Nothing posted — tap Edit.</span>'}</div></div>`;
 
-  // 2) Clock — only the active "clocked in" banner; the clock-in control lives in the header
+  // 2) Clock — clocked-in banner OR the prominent clock-in card (Item 3): clock in right here on Today, picking or
+  // adding the job to attach the shift to. Uses the SAME shared form (js/38 tcClockInFormHTML) as the Time tab +
+  // job page, so vehicle/trailer/rider-role/start-odo/route-estimate all come along.
   if(me){
     const open=(typeof tcMyOpen==="function")?tcMyOpen():null;
     if(open){ const oj=actJ().find(x=>x.id===open.jobId); const since=new Date(open.clockIn).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
       h+=`<div class="card" style="border-left:5px solid var(--accent)"><div class="row"><div class="grow"><div class="nm">⏱️ Clocked in${oj?` · ${esc(oj.title||"job")}`:""}</div><div class="sub">since ${since}</div></div><button class="btn danger sm" onclick="tcClockOut('${open.id}')">Clock out</button></div></div>`;
+    } else {
+      const _form=(typeof tcClockInFormHTML==="function")?tcClockInFormHTML(null):"";
+      h+=`<div class="card" style="border-top:4px solid var(--accent)"><div class="nm" style="font-size:16px">⏱️ Clock in</div>`;
+      h+=_form?_form:`<div class="muted" style="margin-top:6px">No open jobs yet — add one to clock into.</div>`;
+      // "＋ Add a job" → create it, then land on its page (which has the pre-scoped clock-in form) so a new job
+      // flows straight into clocking in.
+      h+=`<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="openQuickTask(function(id){ if(typeof openJobPage==='function') openJobPage(id); })">＋ Add a job to clock into</button>`;
+      h+=`</div>`;
     }
   }
 
@@ -113,8 +123,12 @@ function payoutDate(ym){
   return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
 }
 
-/* quick-add a task/job right from Today (e.g. "clean the chainsaw"), assign crew, notify them */
-window.openQuickTask=function(){
+/* quick-add a task/job right from Today (e.g. "clean the chainsaw"), assign crew, notify them.
+   afterCreate(jobId) (optional) — a callback run with the new job's id once it's created + saved (used by the
+   Today "＋ Add a job to clock into" flow so a brand-new job flows straight into the clock-in form). */
+let QT_AFTER=null;
+window.openQuickTask=function(afterCreate){
+  QT_AFTER=(typeof afterCreate==="function")?afterCreate:null;
   const crew=(typeof schedMembers==="function")?schedMembers():[];
   const me=(typeof curUser==="function")?curUser():null;
   const tpls=jobTemplates().list.filter(x=>x&&!x.deleted);
@@ -133,7 +147,9 @@ window.saveQuickTask=function(){
   const j={id:uid(),title:title,date:date,crew:crew,customerId:null,equipment:[],done:false,updatedAt:now()};
   if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof touch==="function")touch(j);
   crew.forEach(id=>notifyAssignee(id,"📋 New task: "+title+" · "+fmtDate(date)));
-  if(typeof save==="function")save(); if(typeof closeModal==="function")closeModal(); if(typeof render==="function")render();
+  if(typeof save==="function")save(); if(typeof closeModal==="function")closeModal();
+  const _cb=QT_AFTER; QT_AFTER=null;
+  if(_cb){ _cb(j.id); } else if(typeof render==="function")render();
 };
 /* DM the assignee so they get a push (a 2-member human DM → Cap ignores it, the recipient is tickled) */
 function notifyAssignee(assigneeId,text){
@@ -151,10 +167,13 @@ function jobTemplates(){ const d=D(); d.docs=d.docs||[]; let t=d.docs.find(x=>x&
 window.applyJobTemplate=function(id){
   const t=jobTemplates().list.find(x=>x&&x.id===id); if(!t)return;
   const me=(typeof curUser==="function")?curUser():null;
-  const j={id:uid(),title:t.title||t.label||"Job",date:today(),address:t.address||"",crew:me?[me.id]:[],crewN:t.crewN||1,onSiteHrs:t.onSiteHrs||0,driveMin:t.driveMin||0,driveMiles:t.driveMiles||0,equipment:[],fromTemplate:t.id,done:false,updatedAt:now()};
+  // vestigial time/travel pre-fill (onSiteHrs/driveMin/driveMiles) dropped — job time now comes from the timeclock
+  // and a template-copied driveMiles would fabricate a phantom mileage cost (jobMilesCost) with no miles driven.
+  const j={id:uid(),title:t.title||t.label||"Job",date:today(),address:t.address||"",crew:me?[me.id]:[],crewN:t.crewN||1,equipment:[],fromTemplate:t.id,done:false,updatedAt:now()};
   if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof touch==="function")touch(j); save();
   if(typeof closeModal==="function")closeModal();
-  if(typeof openJobPage==="function")openJobPage(j.id); else render();
+  const _cb=QT_AFTER; QT_AFTER=null;
+  if(_cb){ _cb(j.id); } else if(typeof openJobPage==="function")openJobPage(j.id); else render();
 };
 window.newJobTemplate=function(id){
   const t=id?jobTemplates().list.find(x=>x&&x.id===id):null;
