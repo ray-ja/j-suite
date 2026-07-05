@@ -370,6 +370,13 @@ function rcptTableHTML(rows, dups) {
    crew member has closed. Filter: needs close-out (the queue) / ready to invoice / all. */
 window.rcptSetJobFilter = function (f) { RCPT_JOBFILTER = f; render(); };
 function rcptCloseoutJobs() { return rcptJobs().filter(j => jobCrewActiveIds(j).length > 0); }   // only jobs with active assigned crew to gate on
+/* current expense total logged against a job = pass-through materials + job expenses (non-deleted).
+   Shown in the close-out roll-up so the owner sees "how much is on this job" at a glance before invoicing. */
+function jobExpenseTotal(j) {
+  if (!j) return 0;
+  const sum = arr => (Array.isArray(arr) ? arr : []).filter(x => x && !x.deleted).reduce((s, x) => s + (+x.amount || 0), 0);
+  return sum(j.materials) + sum(j.expenses);
+}
 function rcptJobCloseoutHTML() {
   const jobs = rcptCloseoutJobs();
   const ready = jobs.filter(jobReceiptsFullyClosed);
@@ -391,8 +398,10 @@ function rcptJobCloseoutHTML() {
       ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Receipts closed — ready to invoice</span>`
       : `<span class="badge" style="background:#e0a800;color:#fff">${closedN}/${crew.length} crew closed</span>`;
     const waiting = open.map(id => (typeof userName === "function" ? userName(id) : "") || "?").filter(Boolean).join(", ");
-    h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
-      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")}</div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"}${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
+    const expTot = jobExpenseTotal(j);   // pass-through materials + job expenses logged so far
+    // whole row taps through to the job's expense page (js/61 openJobPage → the materials/expenses section)
+    h += `<div class="li" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')" style="cursor:pointer;align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
+      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money(expTot)}</b> expenses${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
       <div style="flex:0 0 auto">${badge}</div></div>`;
   });
   h += `</div>`;
