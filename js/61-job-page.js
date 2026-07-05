@@ -30,22 +30,37 @@ function jobPlannedStops(j) { return (Array.isArray(j && j.plannedStops) ? j.pla
 /* Who may EDIT a job's location + planned route from the job page: owner OR an admin-tier role (manage-members
    is this app's admin proxy — same gate the Admin panel uses). Crew see the location + route READ-ONLY. */
 function jobCanEditPlan() { return (typeof isOwner === "function" && isOwner()) || (typeof canDo === "function" && canDo("manage-members")); }
-/* DEFERRED "destination-based backup mileage estimate" (Phase 6). Round-trip road miles across the ORDERED
-   route: home base → each geocoded planned stop (in order) → job site → back to base, using the SAME haversine
-   ×1.3 road factor as driveFromBase (js/62) — offline-safe, no API. Stored on j.estRouteMiles as an INFORMATIONAL
-   cross-check only: it NEVER touches the odometer/GPS/timeclock miles-of-record (those stay the billed number).
-   null when there's no home base or nothing geocoded yet. Idempotent — safe to recompute on every edit. */
+/* Resolve a route ENDPOINT (j.routeStart / j.routeEnd) to [lat,lng]. An endpoint is {address,lat,lng} or null.
+   null/absent = "use the business home base" (legacy + default behavior — base at both ends). A custom endpoint
+   with coords wins; a custom endpoint still awaiting geocode (address set, lat null) is UNRESOLVED → returns null
+   so the estimate waits (reappears once OSM answers) rather than silently snapping back to base. */
+function jobRouteEndpointPt(ep, hb) {
+  if (ep && ep.lat != null && ep.lng != null) return [ep.lat, ep.lng];   // custom endpoint, geocoded
+  if (ep && ep.address) return null;                                     // custom endpoint set, still geocoding
+  return (hb && hb.lat != null) ? [hb.lat, hb.lng] : null;               // null/unset → home base (default)
+}
+/* the address a route endpoint currently resolves to for DISPLAY — the custom address if set, else "" (= base). */
+function jobRouteEndpointLabel(ep) { return (ep && ep.address) ? String(ep.address) : ""; }
+/* DEFERRED "destination-based backup mileage estimate" (Phase 6). Sequential road miles along the ORDERED
+   route: START → each geocoded planned stop (in order) → job site → END, using the SAME haversine ×1.3 road
+   factor as driveFromBase (js/62) — offline-safe, no API. START/END default to the home base (j.routeStart /
+   j.routeEnd null = base), but each is EDITABLE per job (a job may start/end somewhere other than base). Stored
+   on j.estRouteMiles as an INFORMATIONAL cross-check only: it NEVER touches the odometer/GPS/timeclock miles-of-
+   record (those stay the billed number). null when start/end coords aren't resolvable or nothing's geocoded yet.
+   Idempotent — safe to recompute on every edit. Legacy jobs (no routeStart/routeEnd) = base→…→base, unchanged. */
 function jobRecalcRouteMiles(j) {
   if (!j) return;
   if (typeof homeBase !== "function" || typeof haversineMi !== "function") return;
   const hb = homeBase();
+  const startPt = jobRouteEndpointPt(j.routeStart, hb);   // custom start (fallback: home base)
+  const endPt = jobRouteEndpointPt(j.routeEnd, hb);       // custom end   (fallback: home base)
   const stops = (Array.isArray(j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address);
   const mid = [];   // ordered intermediate waypoints that actually have coords
   stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push([s.lat, s.lng]); });
   const site = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
   if (site && site.lat != null) mid.push([site.lat, site.lng]);
-  if (!hb || hb.lat == null || !mid.length) { j.estRouteMiles = null; return; }
-  const seq = [[hb.lat, hb.lng]].concat(mid, [[hb.lat, hb.lng]]);   // base → stops/site (in order) → base
+  if (!startPt || !endPt || !mid.length) { j.estRouteMiles = null; return; }
+  const seq = [startPt].concat(mid, [endPt]);   // start → stops/site (in order) → end
   let mi = 0;
   for (let i = 1; i < seq.length; i++) { const d = haversineMi(seq[i - 1][0], seq[i - 1][1], seq[i][0], seq[i][1]); if (d != null) mi += d * 1.3; }
   j.estRouteMiles = Math.round(mi * 10) / 10;
@@ -122,7 +137,10 @@ function rJobPage(j) {
   if (j.estRouteMiles > 0) {
     const _n = _stops.length;
     const _confMiles = tc.filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
-    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""} <span class="muted">· offline estimate, a cross-check — not the billed miles</span></div>`;
+    // subtle endpoint note — only when a custom start/end is set; default (base at both ends) reads as before.
+    const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
+    const _ends = (_rs || _re) ? ` <span class="muted">· ${_rs ? "from " + esc(_rs) : "from base"} → ${_re ? "to " + esc(_re) : "to base"}</span>` : "";
+    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· ordered start→stops→site→end path, an offline cross-check — not the billed miles</span></div>`;
     if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
   }
   h += `</div>`;
@@ -268,14 +286,35 @@ function rJobPage(j) {
 function jobPageRouteCard(j) {
   if (!jobCanEditPlan()) return "";
   const ps = Array.isArray(j.plannedStops) ? j.plannedStops : [];
+  const hb = (typeof homeBase === "function") ? homeBase() : null;
+  const baseAddr = (hb && hb.address) ? hb.address : "";
+  // Start/End inputs pre-fill with the business home base (default), but are editable per job → j.routeStart /
+  // j.routeEnd. When custom, we show the custom address + a "↺ base" reset (clears back to null = use base).
+  const startCustom = !!(j.routeStart && j.routeStart.address);
+  const endCustom = !!(j.routeEnd && j.routeEnd.address);
+  const startVal = startCustom ? j.routeStart.address : baseAddr;
+  const endVal = endCustom ? j.routeEnd.address : baseAddr;
+  const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
+  const endpointRow = (emoji, title, id, value, custom, setFn, resetFn) => `<div style="padding:6px 0">
+    <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
+    <input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onchange="${setFn}('${j.id}', this.value)" style="margin-top:4px"></div>`;
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
-  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">Add each place you drive to, in order (e.g. office → airport → dinner). The crew get labeled directions + one "Full route" link; you get an offline round-trip mileage estimate as a cross-check to the odometer.</div>`;
-  h += ps.length ? ps.map((s, i) => `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${i + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto"><button class="btn ghost sm" ${i === 0 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},-1)" title="Move up">▲</button><button class="btn ghost sm" ${i === ps.length - 1 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},1)" title="Move down">▼</button><button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${i})" title="Remove">✕</button></div></div>`).join("") : `<div class="muted">No stops yet — the crew gets a direct link to the job site only.</div>`;
+  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows: <b>Start → stops → job site → End</b>. Start &amp; End default to your home base but you can change either (a job may start or end somewhere else). The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
+  // 🏁 START (first point) — editable, pre-filled with home base
+  h += endpointRow("🏁", "Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
+  // the ordered plannedStops (add/reorder/delete) — unchanged
+  h += ps.length ? ps.map((s, i) => `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${i + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto"><button class="btn ghost sm" ${i === 0 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},-1)" title="Move up">▲</button><button class="btn ghost sm" ${i === ps.length - 1 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},1)" title="Move down">▼</button><button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${i})" title="Remove">✕</button></div></div>`).join("") : `<div class="muted" style="padding:2px 0">No stops yet — Start goes straight to the job site.</div>`;
   h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" style="flex:1 1 140px"></div>`;
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
-  h += `<div class="sub" style="margin-top:4px;white-space:normal">Then the job site itself, automatically, last. Order matters — the "Full route" link follows this list top to bottom.</div>`;
-  if (j.estRouteMiles > 0) h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. round-trip: ~<b>${j.estRouteMiles} mi</b> <span class="muted">(base → stops → job site → base — informational, the odometer stays the billed number)</span></div>`;
-  else if (ps.length) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Locating addresses… the mileage estimate appears once they geocode (needs a home base set in Settings).</div>`;
+  // 🏁 JOB SITE (automatic, last real destination before End)
+  h += `<div class="li" style="padding:6px 0;margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🏁 Job site <span class="sub" style="font-weight:400">· automatic</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div></div>`;
+  // 🏁 END (last point) — editable, pre-filled with home base
+  h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
+  if (j.estRouteMiles > 0) {
+    const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
+    const _ends = (_rs || _re) ? `${_rs ? esc(_rs) : "base"} → stops → job site → ${_re ? esc(_re) : "base"}` : "base → stops → job site → base";
+    h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b> <span class="muted">(${_ends} — informational, the odometer stays the billed number)</span></div>`;
+  } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Locating addresses… the mileage estimate appears once they geocode (needs a home base set in Settings).</div>`;
   return h + `</div>`;
 }
 /* EDIT LOCATION modal (owner/admin) — pick a saved property OR type a free-text address → j.address (jobAddr's
@@ -334,6 +373,30 @@ window.jobPageStopDel = function (jobId, i) {
   if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
+/* ROUTE START / END endpoints (owner/admin) — additive j.routeStart / j.routeEnd = {address,lat,lng} or null.
+   null = "use the business home base" (the default + legacy behavior). The editor pre-fills each with the base
+   address; if the user leaves it as the base (or clears it) we store null (stay on base), otherwise we store the
+   custom address and best-effort geocode it via the SHARED js/09 jobStopGeocode (persist-on-resolve callback →
+   coords + estimate save once OSM answers). Recompute the estimate on every edit. */
+function jobPageSetEndpoint(jobId, key, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const addr = (v || "").trim();
+  const hb = (typeof homeBase === "function") ? homeBase() : null;
+  const baseAddr = (hb && hb.address) ? hb.address.trim() : "";
+  if (!addr || (baseAddr && addr.toLowerCase() === baseAddr.toLowerCase())) {
+    j[key] = null;   // empty or same-as-base → default to the business home base
+  } else {
+    j[key] = { address: addr, lat: null, lng: null };
+    if (typeof jobStopGeocode === "function") jobStopGeocode(j[key], function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
+  }
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+}
+window.jobPageSetStart = function (jobId, v) { jobPageSetEndpoint(jobId, "routeStart", v); };
+window.jobPageSetEnd = function (jobId, v) { jobPageSetEndpoint(jobId, "routeEnd", v); };
+window.jobPageResetStart = function (jobId) { jobPageSetEndpoint(jobId, "routeStart", ""); };
+window.jobPageResetEnd = function (jobId) { jobPageSetEndpoint(jobId, "routeEnd", ""); };
 
 window.jobSetParent = function (jobId, parentId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;

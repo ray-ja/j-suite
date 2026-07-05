@@ -47,6 +47,10 @@ function freshPre() {
             { id: "s3", label: "Company dinner", address: "Restaurant, VA Beach", lat: 36.85, lng: -75.98 }
           ],
           estRouteMiles: 142.7,
+          // NEW additive endpoints: this job starts at Chase's house + ends at the shop, NOT the base — both
+          // must survive load()+round-trip. null/absent on every other job = "use the home base" (default).
+          routeStart: { address: "Chase's house, KDH NC", lat: 36.05, lng: -75.68 },
+          routeEnd: { address: "Shop, KDH NC", lat: 36.01, lng: -75.71 },
           expenses: [], materials: [], updatedAt: 1
         },
         // (c) a job with real materials/expenses history (billing must stay untouched)
@@ -78,6 +82,10 @@ ok(!!sAir && sAir.address === "Norfolk Airport (ORF)", "server: j.address surviv
 ok(!!sAir && Array.isArray(sAir.plannedStops) && sAir.plannedStops.length === 3, "server: j.plannedStops[] (3 ordered stops) survives");
 ok(!!sAir && sAir.plannedStops[0].label === "Office" && sAir.plannedStops[2].label === "Company dinner", "server: plannedStops ORDER + labels + coords preserved");
 ok(!!sAir && sAir.estRouteMiles === 142.7, "server: j.estRouteMiles (new additive field) survives");
+ok(!!sAir && sAir.routeStart && sAir.routeStart.address === "Chase's house, KDH NC" && sAir.routeStart.lat === 36.05, "server: j.routeStart {address,lat,lng} survives the round-trip");
+ok(!!sAir && sAir.routeEnd && sAir.routeEnd.address === "Shop, KDH NC" && sAir.routeEnd.lng === -75.71, "server: j.routeEnd {address,lat,lng} survives the round-trip");
+const sN0 = round.obx.jobs.find(j => j.id === "jN");
+ok(!!sN0 && sN0.routeStart === undefined && sN0.routeEnd === undefined, "server: a legacy job has NO routeStart/routeEnd backfilled (stays absent = use base)");
 const sH = round.obx.jobs.find(j => j.id === "jH");
 ok(!!sH && sH.expenses.filter(e => !e.deleted).length === 1 && sH.materials.length === 1, "server: unrelated job's materials/expenses history untouched");
 
@@ -100,6 +108,10 @@ const cAir = S_after.obx.jobs.find(j => j.id === "jAir");
 ok(!!cAir && cAir.address === "Norfolk Airport (ORF)", "client load(): j.address preserved (load() never strips it)");
 ok(!!cAir && Array.isArray(cAir.plannedStops) && cAir.plannedStops.length === 3, "client load(): plannedStops[] preserved");
 ok(!!cAir && cAir.estRouteMiles === 142.7, "client load(): estRouteMiles preserved");
+ok(!!cAir && cAir.routeStart && cAir.routeStart.address === "Chase's house, KDH NC", "client load(): j.routeStart preserved (load() never strips it)");
+ok(!!cAir && cAir.routeEnd && cAir.routeEnd.address === "Shop, KDH NC", "client load(): j.routeEnd preserved");
+const _cN0 = S_after.obx.jobs.find(j => j.id === "jN");
+ok(_cN0 && _cN0.routeStart === undefined && _cN0.routeEnd === undefined, "client load(): a legacy job stays routeStart/routeEnd-absent (default = home base at both ends)");
 
 /* ---- unit: jobAddr() free-text fallback (the airport-pickup case) ---- */
 const jobAddr = vm.runInContext("jobAddr", ctx);
@@ -122,5 +134,23 @@ const noGeo = { id: "jNoGeo", plannedStops: [{ id: "c", label: "Somewhere", addr
 jobRecalc(noGeo);
 ok(noGeo.estRouteMiles === null, "jobRecalcRouteMiles = null when nothing is geocoded yet (no bogus 0-mile estimate)");
 
-console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ ZERO LOSS — j.address + j.plannedStops[] + j.estRouteMiles survive migrateStore + a sync round-trip + client load(); jobAddr/jobRecalcRouteMiles behave.");
+/* ---- unit: EDITABLE START/END endpoints (this feature) — default (routeStart/routeEnd absent) is byte-identical
+   to the old base→…→base behavior; setting a custom start changes the FIRST leg; reset (null) restores the base. */
+const baseEst = routeJob.estRouteMiles;   // captured with NO routeStart/routeEnd = base at both ends (the OLD behavior)
+routeJob.routeStart = null; routeJob.routeEnd = null; jobRecalc(routeJob);
+ok(routeJob.estRouteMiles === baseEst, "DEFAULT: routeStart=null/routeEnd=null gives the IDENTICAL estimate as base→…→base (legacy behavior byte-for-byte, " + routeJob.estRouteMiles + " mi)");
+// custom START far from the base → the first leg (start→first stop) grows, so the total must differ from the base estimate
+routeJob.routeStart = { address: "Far away", lat: 37.50, lng: -77.40 };
+jobRecalc(routeJob);
+ok(typeof routeJob.estRouteMiles === "number" && routeJob.estRouteMiles !== baseEst, "CUSTOM START: a start far from base changes the first-leg distance → different estimate (" + routeJob.estRouteMiles + " mi vs base " + baseEst + " mi)");
+ok(routeJob.estRouteMiles > baseEst, "  …and starting farther out makes the route LONGER, as expected");
+// reset both endpoints back to null → exactly the base estimate again (proves reset-to-base is lossless)
+routeJob.routeStart = null; routeJob.routeEnd = null; jobRecalc(routeJob);
+ok(routeJob.estRouteMiles === baseEst, "RESET: clearing routeStart/routeEnd back to null returns the exact base estimate (" + routeJob.estRouteMiles + " mi)");
+// custom endpoint set but NOT yet geocoded (address only) → estimate waits (null), not a silent base fallback
+const pendingEnd = { id: "jPend", plannedStops: [{ id: "d", label: "Stop", address: "s", lat: 36.5, lng: -75.9 }], routeStart: { address: "typed but not geocoded", lat: null, lng: null }, propertyId: null };
+jobRecalc(pendingEnd);
+ok(pendingEnd.estRouteMiles === null, "PENDING GEOCODE: a custom start with no coords yet → estimate is null (waits for OSM), never snaps to base");
+
+console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ ZERO LOSS — j.address + j.plannedStops[] + j.estRouteMiles + j.routeStart/j.routeEnd survive migrateStore + a sync round-trip + client load(); default (no endpoints)=base→…→base byte-identical; jobAddr/jobRecalcRouteMiles behave.");
 process.exit(fail ? 1 : 0);
