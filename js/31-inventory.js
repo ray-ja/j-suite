@@ -26,6 +26,27 @@ var INV_JOBS = [
 ];
 var INV_CATS = ["tool","equipment","consumable","PPE","vehicle","chemical"];
 var INV_MATERIAL_CATS = {consumable:1, chemical:1};   // these feed per-job material cost
+/* PHASE 3 (asset register) — optional condition of an item. "" = unset (treated as normal/in-service). */
+var INV_STATUSES = [["","—"],["in-service","In service"],["needs-repair","Needs repair"],["retired","Retired"]];
+function invStatusLabel(s){var f=INV_STATUSES.find(function(x){return x[0]===s;});return f?f[1]:s;}
+function invHolderName(id){return (id&&typeof userName==="function")?(userName(id)||""):"";}
+/* a condition chip — needs-repair loud (warning), retired muted; in-service/unset render nothing (no clutter) */
+function invStatusChip(s){
+  if(s==="needs-repair")return '<span class="badge" style="background:var(--danger);color:#fff">🔧 needs repair</span>';
+  if(s==="retired")return '<span class="badge" style="background:var(--soft);color:var(--muted)">retired</span>';
+  return "";
+}
+/* asset-register detail line for a card/row: plate · 📍 location · 🧑 who-has-it, + a status chip.
+   Returns "" when nothing is set, so untouched items look exactly as before. */
+function invDetailLine(i){
+  var bits=[];
+  if(i.plate)bits.push('🔖 '+esc(i.plate));
+  if(i.location)bits.push('📍 '+esc(i.location));
+  var hn=invHolderName(i.heldBy); if(hn)bits.push('🧑 '+esc(hn));
+  var line=bits.join(" · "), chip=invStatusChip(i.status);
+  if(!line&&!chip)return "";
+  return '<div class="sub" style="white-space:normal;margin-top:2px">'+line+(chip?(line?" ":"")+chip:"")+'</div>';
+}
 function invJobTitle(tag){var j=INV_JOBS.find(function(x){return x[0]===tag;});return j?j[1]:tag;}
 function invIsMaterial(i){return !!INV_MATERIAL_CATS[(i.cat||"").toLowerCase()];}
 function invPriceKnown(p){p=(p||"").trim();return p&&p!=="owned"&&p!=="$0"&&p!=="—";}
@@ -231,11 +252,13 @@ function rInventory(){
   var inv=actInv();
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(INVVIEW==="master"?"on":"")+'" onclick="invSetView(\'master\')">Master list</button>'
+    +'<button class="subbtn '+(INVVIEW==="vehicles"?"on":"")+'" onclick="invSetView(\'vehicles\')">🚚 Vehicles</button>'
     +'<button class="subbtn '+(INVVIEW==="job"?"on":"")+'" onclick="invSetView(\'job\')">By job type</button>'
     +'<button class="subbtn '+(INVVIEW==="avail"?"on":"")+'" onclick="invSetView(\'avail\')">Availability by date</button>'
     +'</div>';
 
-  if(!inv.length){
+  // Vehicles view surfaces registry company trucks too, so it stays useful even when this biz has no inventory yet.
+  if(!inv.length&&INVVIEW!=="vehicles"){
     var why=S.biz==="jam"
       ? "No Jamieson inventory master yet. The OBX master (110 items) is already seeded — switch to OBX to use it. A Jamieson master can be added the same way later; for now, tap + to add items by hand."
       : "No inventory yet. Tap + to add an item.";
@@ -243,7 +266,7 @@ function rInventory(){
     return;
   }
   view.innerHTML=sub+'<div id="inv_body"></div>';
-  if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
+  if(INVVIEW==="vehicles")invRenderVehicles();else if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
 }
 
 /* ---------- MASTER (edit Have?/Qty here, once) ---------- */
@@ -284,6 +307,7 @@ function invMasterRow(i){
     +'<div class="grow" onclick="openInvItem(\''+i.id+'\')">'
       +'<div class="nm">'+esc(i.name)+invCatBadge(i.cat)+'</div>'
       +'<div class="sub" style="white-space:normal">'+invMetaLine(i)+'</div>'
+      +invDetailLine(i)
     +'</div>'
     +'<div style="text-align:right;flex:0 0 auto">'
       +'<input type="text" inputmode="numeric" value="'+esc(i.qty||"")+'" placeholder="qty" style="width:54px;text-align:center;padding:6px" onchange="invSetQty(\''+i.id+'\',this.value)" onclick="event.stopPropagation()">'
@@ -294,6 +318,61 @@ window.invToggleHave=function(id){var i=actInv().find(function(x){return x.id===
   if(typeof logEvent==="function")logEvent((i.have?"Marked owned: ":"Marked not owned: ")+i.name,"inventory");
   if(INVVIEW==="master")invRenderMaster();else invRenderJob();};
 window.invSetQty=function(id,v){var i=actInv().find(function(x){return x.id===id;});if(!i)return;i.qty=(v||"").trim();touch(i);save();};
+
+/* ---------- VEHICLES (Phase 3 asset register) — one place for every driveable asset ----------
+   Surfaces BOTH homes of the clock-in fleet so "where's my truck's info" is never ambiguous:
+     • inventory cat:"vehicle" items — editable here (tap → openInvItem), with plate / owner / personal
+     • registry company trucks (js/32 registry[org].vehicles) — READ-ONLY (their authz stays admin-only,
+       enforced server-side); owner/admin gets a "Manage in Admin ›" deep-link, nothing editable here. */
+function invRenderVehicles(){
+  var body=document.getElementById("inv_body"); if(!body)return;
+  var invVeh=actInv().filter(function(i){return (i.cat||"")==="vehicle";});
+  var reg=(typeof orgVehicles==="function")?orgVehicles().filter(function(v){return v&&!v.deleted;}):[];
+  var canAdmin=(typeof canManageVehicles==="function")&&canManageVehicles();
+
+  var h='<div class="secthd"><h2>🚚 Vehicles</h2><span class="ct">'+(invVeh.length+reg.length)+'</span></div>';
+  h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">Every driveable asset in one place — <b>inventory vehicles</b> (add/edit here) and the <b>company trucks</b> managed in Admin. The <b>driver</b> picks one of these at clock-in.</p>';
+  h+='<button class="btn ghost" style="width:calc(100% - 8px);margin:0 4px 10px" onclick="tcAddMyVehicle(false)">🚗 ＋ Add my vehicle (for clock-in)</button>';
+
+  h+='<div class="secthd"><h2>Inventory vehicles</h2><span class="ct">'+invVeh.length+'</span></div>';
+  if(!invVeh.length)h+='<div class="empty" style="margin:0 4px">No inventory vehicles yet. Tap ＋ above to add yours (plate, personal/company, clock-in).</div>';
+  else h+='<div class="card" style="padding:6px 10px">'+invVeh.map(invVehicleRow).join("")+'</div>';
+
+  h+='<div class="secthd"><h2>Company trucks &amp; trailers</h2><span class="ct">'+reg.length+'</span>'
+    +(canAdmin?'<button class="btn ghost sm" style="margin-left:8px" onclick="navSub(\'admin\')">Manage in Admin ›</button>':'')+'</div>';
+  if(!reg.length)h+='<div class="empty" style="margin:0 4px">No company trucks yet.'+(canAdmin?' Add them in Admin.':'')+'</div>';
+  else h+='<div class="card" style="padding:6px 10px">'+reg.map(invRegTruckRow).join("")+'</div>';
+  h+='<p class="muted" style="margin:8px 4px;font-size:12.5px">Company trucks are managed by the owner/admin in <b>Admin</b> — shown here read-only so every vehicle + its plate is visible in one place.</p>';
+  body.innerHTML=h;
+}
+/* an editable inventory vehicle row — personal vs company marked clearly, plate/owner/location surfaced */
+function invVehicleRow(i){
+  var tags='<span class="badge" style="background:'+(i.personal?"#5d4037":"#1b7f4d")+';color:#fff;margin-left:6px">'+(i.personal?"Personal":"Company")+'</span>';
+  if(i.clockIn)tags+='<span class="badge" style="background:var(--soft);color:var(--muted);margin-left:4px">clock-in</span>';
+  var owner=(i.personal&&i.ownerId)?invHolderName(i.ownerId):"";
+  var meta=[];
+  if(i.plate)meta.push('🔖 '+esc(i.plate));
+  if(owner)meta.push('reimburses '+esc(owner));
+  if(i.location)meta.push('📍 '+esc(i.location));
+  var hn=invHolderName(i.heldBy); if(hn&&i.heldBy!==i.ownerId)meta.push('🧑 '+esc(hn));
+  return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openInvItem(\''+i.id+'\')">'
+    +'<div class="grow"><div class="nm">🚗 '+esc(i.name||"Vehicle")+tags+(invStatusChip(i.status)?" "+invStatusChip(i.status):"")+'</div>'
+    +'<div class="sub" style="white-space:normal">'+(meta.length?meta.join(" · "):'<span class="muted">no plate set — tap to add</span>')+'</div></div>'
+    +'<div class="sub" style="flex:0 0 auto;color:var(--muted)">Edit ›</div></div>';
+}
+/* a READ-ONLY registry company truck/trailer row — name + plate + kind; never editable from Inventory */
+function invRegTruckRow(v){
+  var isTrailer=(typeof vehIsTrailer==="function")?vehIsTrailer(v):(v&&v.kind==="trailer");
+  var meta=[];
+  if(v.plate)meta.push('🔖 '+esc(v.plate));
+  meta.push(isTrailer?"trailer · no odometer":"truck");
+  return '<div class="li" style="align-items:flex-start">'
+    +'<div class="grow"><div class="nm">'+(isTrailer?"🚛 ":"🚚 ")+esc(v.name||(isTrailer?"Trailer":"Truck"))
+      +'<span class="badge" style="background:#1b7f4d;color:#fff;margin-left:6px">Company</span>'
+      +(v.active===false?'<span class="badge" style="background:var(--soft);color:var(--muted);margin-left:4px">retired</span>':"")+'</div>'
+    +'<div class="sub" style="white-space:normal">'+meta.join(" · ")+'</div></div>'
+    +'<div class="sub" style="flex:0 0 auto;color:var(--muted)">read-only</div></div>';
+}
 
 /* ---------- BY JOB TYPE — gap report + read-only lens ---------- */
 function invRenderJob(){
@@ -345,7 +424,8 @@ function invLensRow(i){
   return '<div class="li" style="align-items:flex-start;opacity:'+(i.have?"1":".7")+'" onclick="openInvItem(\''+i.id+'\')">'
     +'<div style="width:22px;font-size:18px;text-align:center">'+(i.have?"✅":"⬜")+'</div>'
     +'<div class="grow"><div class="nm" style="'+(i.have?"":"color:var(--muted)")+'">'+esc(i.name)+invCatBadge(i.cat)+'</div>'
-    +'<div class="sub" style="white-space:normal">'+invMetaLine(i)+(i.qty?' · qty '+esc(i.qty):"")+'</div></div>'
+    +'<div class="sub" style="white-space:normal">'+invMetaLine(i)+(i.qty?' · qty '+esc(i.qty):"")+'</div>'
+    +invDetailLine(i)+'</div>'
   +'</div>';
 }
 
@@ -402,6 +482,12 @@ window.openInvItem=function(id){
     return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:5px 8px;margin:0">'
       +'<input type="checkbox" class="inv_tag" value="'+j[0]+'" '+(on?"checked":"")+' style="width:auto">'+esc(j[1])+'</label>';
   }).join(" ");
+  var isVeh=(i.cat||"")==="vehicle";
+  var members=(typeof schedMembers==="function")?schedMembers():[];
+  var heldByOpts='<option value="">— nobody / shared</option>'+members.map(function(u){
+    return '<option value="'+esc(u.id)+'"'+((i.heldBy||"")===u.id?" selected":"")+'>'+esc(u.username||"Crew")+'</option>';}).join("");
+  var statusOpts=INV_STATUSES.map(function(s){
+    return '<option value="'+esc(s[0])+'"'+((i.status||"")===s[0]?" selected":"")+'>'+esc(s[1])+'</option>';}).join("");
   modal(isNew?"Add inventory item":"Inventory item",''
     +'<label>Item</label><input id="iv_name" value="'+esc(i.name||"")+'" placeholder="e.g. Surface cleaner attachment">'
     +'<div class="row" style="gap:8px"><div class="grow"><label>Category</label><select id="iv_cat">'
@@ -411,6 +497,11 @@ window.openInvItem=function(id){
     // VEHICLE UNIFICATION — flag a vehicle item as pickable at clock-in (only takes effect for cat "vehicle").
     +'<div class="toggle"><input type="checkbox" id="iv_clockin" '+(i.clockIn?"checked":"")+'><label style="margin:0">Usable at clock-in (a real vehicle crew can pick)</label></div>'
     +(i.personal&&i.ownerId?'<div class="note" style="margin-top:6px;font-size:12.5px">Personal vehicle — mileage is reimbursed to its owner.</div>':"")
+    // ASSET REGISTER (Phase 3) — plate (esp. vehicles) + where it is + who has it + condition.
+    +'<label>License plate'+(isVeh?"":' <span class="sub">· for vehicles</span>')+'</label><input id="iv_plate" value="'+esc(i.plate||"")+'" placeholder="e.g. LCW-4430"'+(isVeh?' autocapitalize="characters"':"")+'>'
+    +'<label>Location <span class="sub">· where is it</span></label><input id="iv_location" value="'+esc(i.location||"")+'" placeholder="e.g. garage / on the trailer / in the truck">'
+    +'<div class="row" style="gap:8px"><div class="grow"><label>Who has it</label><select id="iv_heldby">'+heldByOpts+'</select></div>'
+      +'<div class="grow"><label>Status</label><select id="iv_status">'+statusOpts+'</select></div></div>'
     +'<label>Est. price</label><input id="iv_price" value="'+esc(i.price||"")+'" placeholder="e.g. $80–300">'
     +'<label>Brand / model (e.g.)</label><input id="iv_brand" value="'+esc(i.brand||"")+'" placeholder="e.g. BE Whirlaway 24\"">'
     +'<label>Section</label><input id="iv_section" value="'+esc(i.section||"")+'" placeholder="e.g. Wash equipment">'
@@ -428,6 +519,8 @@ window.saveInvItem=function(id,isNew){
   i.name=val("iv_name"); if(!i.name){alert("Give the item a name.");return;}
   i.cat=val("iv_cat"); i.qty=val("iv_qty"); i.price=val("iv_price"); i.brand=val("iv_brand");
   i.section=val("iv_section"); i.notes=val("iv_notes");
+  // ASSET REGISTER (Phase 3) — additive detail fields; empty strings are fine (default absent).
+  i.plate=val("iv_plate"); i.location=val("iv_location"); i.heldBy=val("iv_heldby"); i.status=val("iv_status");
   i.have=(document.getElementById("iv_have")||{}).checked===true;
   i.clockIn=(document.getElementById("iv_clockin")||{}).checked===true;   // pickable at clock-in (used only for cat "vehicle"); additive, preserves personal/ownerId
   if(i.clockIn&&i.active===undefined)i.active=true;
