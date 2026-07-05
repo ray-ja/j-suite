@@ -11,10 +11,10 @@ const ROLES_ID = "__roles__";
 
 /* canonical page registry — mirrors the nav tabs (the admin tab itself is owner-only and excluded) */
 const ADMIN_PAGES = [
-  { tab: "today", label: "CEO desk" }, { tab: "pipeline", label: "Pipeline" }, { tab: "accounts", label: "Customers" },
-  { tab: "quotes", label: "All jobs" }, { tab: "booking", label: "Booking" }, { tab: "schedule", label: "Schedule" },
+  { tab: "today", label: "CEO desk" }, { tab: "leads", label: "Leads" }, { tab: "accounts", label: "Customers" },
+  { tab: "quotes", label: "Jobs" }, { tab: "booking", label: "Booking" }, { tab: "schedule", label: "Schedule" },
   { tab: "messages", label: "Messages" },
-  { tab: "map", label: "Map" }, { tab: "sales", label: "Sales" },
+  { tab: "map", label: "Map" }, { tab: "route", label: "Route" },
   { tab: "todo", label: "To-Do" }, { tab: "plan", label: "Plan" },
   { tab: "training", label: "Train" }, { tab: "market", label: "Market" },
   { tab: "opps", label: "Opps" }, { tab: "sites", label: "Sites" },
@@ -28,7 +28,7 @@ const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // NOT "finance" (the business books / margins / everyone's pay), which stays owner/admin via finCanView().
 // Crew see "pay" (their OWN earnings) and "receipts" (upload + their own / attributed-to-them review queue —
 // rReceipts() self-gates the full financial table/editing to owner+admin), but NOT "finance".
-const CREW_PAGES = ["today", "accounts", "quotes", "booking", "schedule", "messages", "map", "sales", "todo", "inventory", "resale", "time", "pay", "receipts", "team"];
+const CREW_PAGES = ["today", "leads", "accounts", "quotes", "booking", "schedule", "messages", "map", "route", "todo", "inventory", "resale", "time", "pay", "receipts", "team"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 
 /* ----- ACTIONS (Phase 3e — role hierarchy) -----

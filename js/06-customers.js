@@ -6,7 +6,7 @@ let CSEARCH="",PSEARCH="",ACCTSUB="customers";
    only place accounts renders). The old markup is kept for any other context / defensiveness. */
 function acctSubnav(){
   if(typeof tabGroup==="function" && tabGroup(TAB).key==="team") return "";   // merged group row (ppSubnav) covers it — no double subnav
-  return `<div class="subnav"><button class="subbtn ${ACCTSUB==="calllead"?"on":""}" onclick="switchAcct('calllead')">📞 Call Lead</button><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="places"?"on":""}" onclick="switchAcct('places')">📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}</button></div>`;
+  return `<div class="subnav"><button class="subbtn ${ACCTSUB==="customers"?"on":""}" onclick="switchAcct('customers')">Customers (${actC().length})</button><button class="subbtn ${ACCTSUB==="properties"?"on":""}" onclick="switchAcct('properties')">Properties (${actProps().length})</button><button class="subbtn ${ACCTSUB==="places"?"on":""}" onclick="switchAcct('places')">📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}</button></div>`;
 }
 /* The MERGED People & Places sub-tab row (rendered into #subnav by renderSubnav for the "team" group). One clean
    row: People → the crew directory (team tab); the other four → the accounts tab with the matching ACCTSUB.
@@ -21,7 +21,6 @@ function ppSubnav(tabs){
     btns.push(sub("customers",`Customers (${actC().length})`));
     btns.push(sub("properties",`Properties (${actProps().length})`));
     btns.push(sub("places",`📍 Places${typeof actPlaces==="function"?` (${actPlaces().length})`:""}`));
-    btns.push(sub("calllead",`📞 Call Lead`));
   }
   return btns.length?`<div class="subnav">`+btns.join("")+`</div>`:"";
 }
@@ -29,7 +28,7 @@ window.ppSubnav=ppSubnav;
 // merged-row click: People → team tab; an account sub-view → set ACCTSUB then route to the accounts tab.
 window.ppGo=function(tab,sub){ if(tab==="accounts"&&sub)ACCTSUB=sub; if(typeof navSub==="function")navSub(tab); };
 window.switchAcct=function(s){ACCTSUB=s;render();};
-function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="places"&&typeof rPlaces==="function")return rPlaces();if(ACCTSUB==="calllead"&&typeof rCallLead==="function")return rCallLead();return rCustomers();}
+function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="places"&&typeof rPlaces==="function")return rPlaces();return rCustomers();}
 /* PURE results-list HTML (empty / "No matches" / card grid) — kept pure so the SEARCH keystroke path can
    rebuild ONLY #clist without re-rendering the #csearch input (focus & caret survive, no setSelectionRange). */
 /* Customer list sort (survives re-render; NOT persisted). Default "name" = the exact pre-change comparator, so

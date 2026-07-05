@@ -6,7 +6,7 @@
    customer + property, then quotes / books a visit / saves a lead. GC holds the in-progress call. */
 let GC = {};
 function gcInit(){ if (!GC._init) { const me = (typeof curUser === "function") ? curUser() : null; GC = { soldBy: me ? me.id : "", _init: true }; } }
-window.openGuidedCall = function () { if (typeof ACCTSUB !== "undefined") ACCTSUB = "calllead"; TAB = "accounts"; render(); };   // legacy entry → the Call Lead tab
+window.openGuidedCall = function () { TAB = "leads"; render(); };   // → the Leads tab (Sales group), where the call script lives
 window.gcReset = function () { if (typeof gcClearDraft === "function") gcClearDraft(); const me = (typeof curUser === "function") ? curUser() : null; GC = { soldBy: me ? me.id : "", _init: true }; if (typeof render === "function") render(); };
 
 /* ---- draft autosave + recover — survive an accidental close mid-call (name/need/address aren't lost) ---- */
@@ -53,13 +53,27 @@ function gcBody() {
     <button class="btn ghost" style="width:100%" onclick="gcFinish('lead')">📇 Save as a lead to follow up</button></div>`;
   return h;
 }
-function rCallLead() {
+/* The LEADS tab (Sales group). Top: a "New call / lead" CTA + the open leads to follow up (name / phone /
+   follow-up date, each with a "Quote →" via the preserved plQuoteLead). Below: the guided-call script inline
+   (gcBody) so you can run a call right here. No acctSubnav — leads left People & Places. */
+function rLeads() {
   gcInit();
   const _a = document.activeElement, _aid = _a && _a.id, _s = _a ? _a.selectionStart : 0, _e = _a ? _a.selectionEnd : 0;
-  view.innerHTML = ((typeof acctSubnav === "function") ? acctSubnav() : "") + gcBody();
+  const leads = (typeof actC === "function") ? actC().filter(c => c.status === "Lead") : [];
+  let h = `<h2>📞 Leads</h2>`;
+  h += `<button class="btn acc" style="width:100%;margin-bottom:10px;padding:13px;font-size:16px" onclick="openGuidedCall()">📞 New call / lead</button>`;
+  if (leads.length) {
+    h += `<div class="card">` + leads.map(c => `<div class="li" onclick="openCustomer('${c.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${esc(c.name || c.company || "Lead")}</div><div class="sub">${c.phone ? esc(c.phone) + " · " : ""}${c.next ? "follow up " + fmtDate(c.next) : "new lead"}</div></div><button class="btn acc sm" onclick="event.stopPropagation();plQuoteLead('${c.id}')">Quote →</button></div>`).join("") + `</div>`;
+  } else {
+    h += `<div class="empty" style="padding:14px;font-size:14px">No leads to follow up right now.</div>`;
+  }
+  h += `<div style="font-weight:800;margin:14px 2px 6px">On a call? Say this — and capture what you learn:</div>`;
+  h += gcBody();
+  view.innerHTML = h;
   if (_aid) { const el = document.getElementById(_aid); if (el) { el.focus(); try { el.setSelectionRange(_s, _e); } catch (ex) {} } }
   if (typeof gcAutosave === "function") gcAutosave();
 }
+window.rLeads = rLeads;
 
 /* save the customer (+ property) captured on the call; returns {c, prop} */
 function gcSaveCustomer(status) {
@@ -93,5 +107,5 @@ window.gcFinish = function (outcome) {
   if (outcome === "quote" && typeof WZON !== "undefined") { WZ = gcWizFor(r.c, r.prop); GC = { soldBy: me ? me.id : "", _init: true }; WZON = true; TAB = "quotes"; render(); return; }
   GC = { soldBy: me ? me.id : "", _init: true };
   if (outcome === "visit") { TAB = "schedule"; if (typeof render === "function") render(); alert("Saved " + name + ". Now book the on-site quote visit on the calendar."); }
-  else { if (typeof ACCTSUB !== "undefined") ACCTSUB = "customers"; TAB = "accounts"; if (typeof render === "function") render(); alert("Saved " + name + " as a lead — follow-up set for 2 days out."); }
+  else { TAB = "leads"; if (typeof render === "function") render(); alert("Saved " + name + " as a lead — follow-up set for 2 days out."); }
 };
