@@ -57,6 +57,17 @@ function rJobPage(j) {
   if (_drive) h += `<div class="sub" style="margin-top:3px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;
   h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
   if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
+  // DERIVED lifecycle badge — where this job sits in the pipeline (lead→quote→job→expense collecting→invoice→paid).
+  // Reads through the linked quote; the expense-collecting badge shows live "N/M crew closed" + who we're waiting on.
+  if (typeof workStage === "function" && typeof actQ === "function") {
+    const _wq = (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : null) || actQ().find(x => x && x.jobId === j.id);
+    if (_wq) {
+      const _st = workStage(_wq), _m = (typeof workStageMeta !== "undefined" && workStageMeta[_st]) || { label: _st, color: "var(--muted)" };
+      const _lbl = (typeof workStageLabel === "function") ? workStageLabel(_wq) : _m.label;
+      const _wait = (_st === "expense" && typeof workStageWaiting === "function") ? workStageWaiting(_wq) : [];
+      h += `<div style="margin-top:8px"><span class="badge" style="background:${_m.color};color:#fff">${esc(_lbl)}</span>${_wait.length ? `<span class="sub" style="margin-left:6px">waiting on ${esc(_wait.join(", "))}</span>` : ""}</div>`;
+    }
+  }
   const _stops = jobPlannedStops(j);
   if (_stops.length) {
     // ADMIN-PLANNED ROUTE: each stop gets its OWN correctly-labeled link (e.g. "Stoneworks — pick up base"),

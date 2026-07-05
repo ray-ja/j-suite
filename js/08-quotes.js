@@ -18,7 +18,7 @@ window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); }; 
 function quotesListHTML(){
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
-  if(QSTAGE_FILTER!=="all")list=list.filter(q=>quoteStage(q)===QSTAGE_FILTER);
+  if(QSTAGE_FILTER!=="all")list=list.filter(q=>((typeof workStage==="function")?workStage(q):quoteStage(q))===QSTAGE_FILTER);
   if(QCREW_FILTER){   // index active jobs by id ONCE (was actJ().find() per quote via quoteCrew → O(quotes×jobs))
     const _jm=new Map();(typeof actJ==="function"?actJ():[]).forEach(j=>{if(j&&j.id!=null&&!_jm.has(j.id))_jm.set(j.id,j);});
     list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
@@ -32,10 +32,11 @@ function quotesListHTML(){
   const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
   const shown=list.slice(0,QSHOWN);
   return `<div class="card grid2">`+shown.map(q=>{
-    const st=quoteStage(q),m=QSTAGE_META[st],cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
+    const st=(typeof workStage==="function")?workStage(q):quoteStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
+    const stLabel=(typeof workStageLabel==="function")?workStageLabel(q):m.label;
     return `<div class="li" onclick="openQuote('${q.id}')" style="border-left:4px solid ${m.color};padding-left:10px">
       <div class="grow"><div class="nm" style="white-space:normal">${cust}${type?` <span style="font-weight:600;color:var(--muted)">· ${esc(type)}</span>`:""}</div>
-      <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${m.label}</span>${q.recurring?" · recurring":""}</div></div>
+      <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${q.recurring?" · recurring":""}</div></div>
       <div style="font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"};text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`;
   }).join("")+`</div>`+more;
 }
@@ -55,7 +56,7 @@ function rQuotes(){
   const all=actQ();
   if(all.length){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}" oninput="qSearchOn(this.value)">`;
-    const stages=[["all","All"],["quoted","Quoted"],["scheduled","Scheduled"],["invoiced","Invoiced"],["paid","Paid"]];
+    const stages=[["all","All"],["quote","Quote"],["job","Job"],["expense","Expense"],["invoice","Invoice"],["paid","Paid"]];
     h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
     const crewM=(typeof realAccounts==="function"?realAccounts():[]);
     if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
