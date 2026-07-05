@@ -55,6 +55,10 @@ function load(){
     // j.date stays the START/primary day. Legacy jobs (no workDays) default to [j.date] so they're unchanged.
     // Additive, rides the job record's LWW — no new collection. Loss-free + idempotent.
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.workDays)||!j.workDays.length){j.workDays=j.date?[j.date]:[];}});
+    // RECEIPT CLOSE-OUT: job.receiptsClosedBy = [{userId,ts}] — the crew who've marked "I've submitted all my
+    // receipts/expenses for this job — done". Additive per-job array (rides the job record's LWW; no new
+    // collection). Legacy jobs default to [] (nobody closed yet). Reversible (crew can reopen). Loss-free + idempotent.
+    (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.receiptsClosedBy))j.receiptsClosedBy=[];});
     // MILEAGE / ODOMETER / GPS — ADDITIVE timeclock fields (no new collection). Legacy entries get sane defaults:
     //   stops[] = multi-stop pickups (GPS-stamped); odoStart now nullable (odometer no longer blocks clock-in);
     //   milesSource derived from how the entry's miles were set ("odometer"|"gps"|"manual"); vehicleId for the

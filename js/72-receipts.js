@@ -18,6 +18,7 @@
 const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "office/admin", "other"];
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed
+let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
 function rcptReview() { return rcptColl().filter(r => r && !r.deleted && r.status === "review"); }
@@ -25,6 +26,82 @@ function rcptMembers() { return (typeof schedMembers === "function") ? schedMemb
 function rcptJobs() { return ((typeof actJ === "function") ? actJ() : []).filter(j => j && !j.deleted && !Array.isArray(j.sharedJobIds)).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))); }
 function rcptFinFull() { return (typeof finCanView === "function") ? finCanView() : (typeof isOwner === "function" ? isOwner() : true); }   // owner/admin: full financial table + editing
 function rcptMe() { return (typeof curUser === "function") ? curUser() : null; }
+
+/* ============================== PER-JOB RECEIPT CLOSE-OUT ==============================
+   Each crew member marks a job "closed out" for receipts — "I've submitted all my expenses/receipts for this
+   job, I have no more to report." Lives on job.receiptsClosedBy = [{userId,ts}] (additive, rides the job's LWW;
+   see js/02 blank()/load()). A job is FULLY closed — safe for the owner to invoice accurately — when every
+   assigned, active crew member has closed out. Reversible (a crew member can reopen their own entry). */
+function jobReceiptsClosedBy(job) { return (job && Array.isArray(job.receiptsClosedBy)) ? job.receiptsClosedBy.filter(x => x && x.userId) : []; }
+function jobReceiptsClosedByMe(job, meId) { return !!meId && jobReceiptsClosedBy(job).some(x => x.userId === meId); }
+/* the set of currently-active account ids (real team members) — used to ignore stale/removed crew ids */
+function rcptActiveIdSet() { const s = {}; ((typeof schedMembers === "function") ? schedMembers() : []).forEach(u => { if (u && u.id) s[u.id] = 1; }); return s; }
+/* a job's ASSIGNED crew, narrowed to still-active accounts (a deactivated member can't block "fully closed") */
+function jobCrewActiveIds(job) { const act = rcptActiveIdSet(); return (job && Array.isArray(job.crew) ? job.crew : []).filter(id => id && act[id]); }
+/* every active assigned crew member has closed out. Requires ≥1 active crew — a job with nobody assigned is
+   NOT "fully closed" (there's no crew whose sign-off we're gating the invoice on), so it never shows a false
+   "ready to invoice" signal. */
+function jobReceiptsFullyClosed(job) {
+  const crew = jobCrewActiveIds(job);
+  if (!crew.length) return false;
+  const closed = jobReceiptsClosedBy(job).map(x => x.userId);
+  return crew.every(id => closed.indexOf(id) >= 0);
+}
+/* active crew who have NOT yet closed out (the "waiting on…" list) */
+function jobReceiptsOpenCrew(job) { const closed = jobReceiptsClosedBy(job).map(x => x.userId); return jobCrewActiveIds(job).filter(id => closed.indexOf(id) < 0); }
+/* count of THIS person's receipts on a job (on-job billing arrays + any review upload tagged to the job) */
+function rcptMyCountOnJob(job, meId) {
+  if (!job || !meId) return 0;
+  let n = (job.materials || []).concat(job.expenses || []).filter(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId)).length;
+  n += rcptReview().filter(r => r.jobId === job.id && rcptIsMine(r, meId)).length;
+  return n;
+}
+/* jobId → 1 for every real (non-deleted, non-stop) job this person WORKED: on the crew, has a receipt/expense
+   attributed to them, or has a timeclock entry on it. Drives the crew close-out queue. */
+function rcptMyJobIds(meId) {
+  const set = {};
+  if (!meId) return set;
+  (D().jobs || []).forEach(j => {
+    if (!j || j.deleted || Array.isArray(j.sharedJobIds)) return;   // skip stop/overhead sub-jobs (match rcptJobs())
+    if ((j.crew || []).indexOf(meId) >= 0) { set[j.id] = 1; return; }
+    if ((j.materials || []).concat(j.expenses || []).some(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId))) { set[j.id] = 1; return; }
+    if (rcptReview().some(r => r.jobId === j.id && rcptIsMine(r, meId))) set[j.id] = 1;
+  });
+  (D().timeclock || []).forEach(e => { if (e && !e.deleted && e.userId === meId && e.jobId) set[e.jobId] = 1; });
+  return set;
+}
+function rcptWorkedJobsForMe(meId) {
+  const ids = rcptMyJobIds(meId);
+  return Object.keys(ids)
+    .map(id => (D().jobs || []).find(j => j && j.id === id && !j.deleted && !Array.isArray(j.sharedJobIds)))
+    .filter(Boolean)
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+}
+/* CLOSE / REOPEN — scoped to ME only: the handlers never touch anyone else's entry, so a crew member can
+   only close/reopen their OWN status (can't sign off for a teammate). Idempotent (dup entries impossible). */
+window.jobCloseReceipts = function (jobId) {
+  const me = rcptMe(), meId = me ? me.id : ""; if (!meId) return;
+  const j = (D().jobs || []).find(x => x && x.id === jobId && !x.deleted); if (!j) return;
+  if (!Array.isArray(j.receiptsClosedBy)) j.receiptsClosedBy = [];
+  if (j.receiptsClosedBy.some(x => x && x.userId === meId)) return;   // already closed — idempotent no-op
+  j.receiptsClosedBy.push({ userId: meId, ts: now() });
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Closed out receipts — " + ((typeof userName === "function" ? userName(meId) : "") || "crew") + " has no more expenses for “" + (j.title || "job") + "”");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
+window.jobReopenReceipts = function (jobId) {
+  const me = rcptMe(), meId = me ? me.id : ""; if (!meId) return;
+  const j = (D().jobs || []).find(x => x && x.id === jobId && !x.deleted); if (!j) return;
+  if (!Array.isArray(j.receiptsClosedBy)) return;
+  const before = j.receiptsClosedBy.length;
+  j.receiptsClosedBy = j.receiptsClosedBy.filter(x => !(x && x.userId === meId));   // remove ONLY my entry
+  if (j.receiptsClosedBy.length === before) return;
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Reopened receipts — " + ((typeof userName === "function" ? userName(meId) : "") || "crew") + " has more to add on “" + (j.title || "job") + "”");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
 
 /* per-member personal-card spend (paidBy set) across job expenses, pass-through materials, and business expenses */
 function rcptReimbOwed() {
@@ -229,7 +306,11 @@ function rReceipts() {
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + description filed more than once. Flagged in the table; open &amp; delete the extras.</div>`;
 
+  // PER-JOB CLOSE-OUT ROLL-UP — when is a job safe to invoice? (all its crew have closed out their receipts)
+  h += rcptJobCloseoutHTML();
+
   // FILTER + EXPORT bar
+  h += `<div class="secthd" style="margin-top:14px"><h2>All receipts</h2></div>`;
   h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0 6px">
     <button class="btn ${RCPT_FILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('all')">All ${rcptAllRows().length}</button>
     <button class="btn ${RCPT_FILTER === "review" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('review')">Needs review ${reviewCount}</button>
@@ -283,6 +364,41 @@ function rcptTableHTML(rows, dups) {
   return h;
 }
 
+/* ============================== OWNER: PER-JOB CLOSE-OUT ROLL-UP ==============================
+   Ray scans this to know when a job is safe to invoice accurately. Each active job with assigned crew shows
+   N/M crew closed + who's still out ("waiting on Pierce"), or a clear ✓ ready-to-invoice badge when every
+   crew member has closed. Filter: needs close-out (the queue) / ready to invoice / all. */
+window.rcptSetJobFilter = function (f) { RCPT_JOBFILTER = f; render(); };
+function rcptCloseoutJobs() { return rcptJobs().filter(j => jobCrewActiveIds(j).length > 0); }   // only jobs with active assigned crew to gate on
+function rcptJobCloseoutHTML() {
+  const jobs = rcptCloseoutJobs();
+  const ready = jobs.filter(jobReceiptsFullyClosed);
+  const needs = jobs.filter(j => !jobReceiptsFullyClosed(j));
+  let shown = RCPT_JOBFILTER === "ready" ? ready : RCPT_JOBFILTER === "all" ? jobs : needs;
+  let h = `<div class="secthd" style="margin-top:14px"><h2>📋 Job close-out</h2><span class="ct">${ready.length} ready</span></div>`;
+  h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 6px">
+    <button class="btn ${RCPT_JOBFILTER === "needs" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('needs')">⏳ Needs close-out ${needs.length}</button>
+    <button class="btn ${RCPT_JOBFILTER === "ready" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('ready')">✓ Ready to invoice ${ready.length}</button>
+    <button class="btn ${RCPT_JOBFILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('all')">All ${jobs.length}</button></div>`;
+  if (!jobs.length) return h + `<div class="card"><div class="muted">No active jobs with assigned crew yet. Once a job has crew, its receipt close-out status shows here.</div></div>`;
+  if (!shown.length) return h + `<div class="card"><div class="muted">${RCPT_JOBFILTER === "ready" ? "No jobs are fully closed out yet — waiting on crew." : RCPT_JOBFILTER === "needs" ? "✓ Every job with crew is closed out — all clear to invoice." : "Nothing here."}</div></div>`;
+  h += `<div class="card">`;
+  shown.forEach(j => {
+    const crew = jobCrewActiveIds(j), open = jobReceiptsOpenCrew(j), closedN = crew.length - open.length;
+    const cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+    const full = jobReceiptsFullyClosed(j);
+    const badge = full
+      ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Receipts closed — ready to invoice</span>`
+      : `<span class="badge" style="background:#e0a800;color:#fff">${closedN}/${crew.length} crew closed</span>`;
+    const waiting = open.map(id => (typeof userName === "function" ? userName(id) : "") || "?").filter(Boolean).join(", ");
+    h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
+      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")}</div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"}${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
+      <div style="flex:0 0 auto">${badge}</div></div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
 /* is this receipt row THIS person's? — uploaded by them, attributed to them, or reimbursed to them (legacy). */
 function rcptIsMine(r, meId) { return !!meId && (r.uploadedBy === meId || r.attributedTo === meId || r.paidBy === meId); }
 /* CREW view — upload + a scannable list of receipts on file FOR THEM (their uploads + owner-attributed to them),
@@ -298,6 +414,35 @@ function rcptCrewView() {
     <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div></div>`;
+
+  // JOBS TO CLOSE OUT — the crew's clear "am I done?" list. Every job they worked (on the crew / have a
+  // receipt on / clocked in) that they haven't yet marked done. Closing tells the owner no more expenses are
+  // coming from them, so he can invoice accurately. Reversible.
+  const worked = rcptWorkedJobsForMe(meId);
+  const toClose = worked.filter(j => !jobReceiptsClosedByMe(j, meId));
+  const doneJobs = worked.filter(j => jobReceiptsClosedByMe(j, meId));
+  h += `<div class="secthd" style="margin-top:14px"><h2>📋 Jobs to close out</h2><span class="ct">${toClose.length}</span></div>`;
+  if (!worked.length) {
+    h += `<div class="card"><div class="muted">No jobs to close out yet — once you're on a job (or upload a receipt for one), it'll show here so you can mark when you're done adding expenses.</div></div>`;
+  } else {
+    h += `<div class="card"><div class="sub" style="white-space:normal;margin-bottom:8px">Once you've uploaded <b>all</b> your receipts &amp; expenses for a job and organized them, tap <b>Done</b>. That tells the owner no more expenses are coming from you, so he can invoice it accurately. Remembered one? Reopen it.</div>`;
+    if (!toClose.length) h += `<div class="sub" style="color:var(--accent);margin-bottom:6px">✓ You're all caught up — every job you worked is closed out.</div>`;
+    toClose.forEach(j => {
+      const cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+      const cnt = rcptMyCountOnJob(j, meId);
+      h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div class="grow" style="min-width:150px"><div class="nm">${esc(j.title || "Job")}</div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · ${cnt} of your receipt${cnt === 1 ? "" : "s"}</div></div>
+        <button class="btn acc" style="flex:0 0 auto" onclick="jobCloseReceipts('${j.id}')">✓ Done — no more receipts for this job</button></div>`;
+    });
+    doneJobs.forEach(j => {
+      const cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+      h += `<div class="li" style="align-items:center;flex-wrap:wrap;gap:8px;opacity:.75">
+        <div class="grow" style="min-width:150px"><div class="nm">${esc(j.title || "Job")} <span class="badge" style="background:var(--accent);color:#fff">✓ Closed</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"}</div></div>
+        <button class="btn ghost sm" style="flex:0 0 auto" onclick="jobReopenReceipts('${j.id}')">Reopen</button></div>`;
+    });
+    h += `</div>`;
+  }
+
   h += `<div class="secthd" style="margin-top:14px"><h2>Your receipts on file</h2><span class="ct">${mine.length}${pending ? " · " + pending + " pending" : ""}</span></div>`;
   if (!mine.length) { h += `<div class="card"><div class="muted">None yet. Upload a receipt above — it'll show here once it's on file.</div></div>`; return h; }
   h += `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
