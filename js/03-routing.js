@@ -4,7 +4,7 @@ const view=document.getElementById("view");
 // Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
 // notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
 // to the dispatch so the two can't drift.
-const ROUTE_TABS=["today","accounts","quotes","leads","schedule","messages","map","route","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
+const ROUTE_TABS=["today","accounts","quotes","jobs","leads","schedule","messages","map","route","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
 /* Is `t` a real, currently-accessible screen? Used to sanitize tabs that arrive from OUTSIDE the app (a ?tab=
    deep link, or the SW's {type:"navigate"} postMessage on a notification click). A notification sent on an OLD
    build can carry a tab that no longer exists — routing to it must never blank the app. Returns true only when
@@ -60,7 +60,7 @@ function render(){
   // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
-  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday)}[TAB])||rToday;
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday)}[TAB])||rToday;
   try{ _screen(); }
   catch(_e1){
     try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
@@ -114,6 +114,7 @@ const NAV_GROUPS = [
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
   { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","quotes"] },
+  { key:"jobsview",  label:"Jobs",      icon:"🧾", tabs:["jobs"] },   // Jobs = its own top-level menu = the sortable table (Ray: jobs is its own menu, not folded under Sales). Renders rQuotes (quote==job, one collection).
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
@@ -124,7 +125,7 @@ const NAV_GROUPS = [
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {
-  today:{l:"Today",i:"🧭"}, leads:{l:"Leads",i:"📞"}, quotes:{l:"Jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
+  today:{l:"Today",i:"🧭"}, leads:{l:"Leads",i:"📞"}, quotes:{l:"Quotes",i:"🧾"}, jobs:{l:"Jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
   accounts:{l:"Customers",i:"👥"}, route:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   pay:{l:"My Pay",i:"💵"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
@@ -186,6 +187,6 @@ function renderSubnav(){
 window.navGroup=function(key){ const g=NAV_GROUPS.find(x=>x.key===key); if(!g) return; const tabs=groupTabs(g); if(!tabs.length) return; TAB=(NAV_LAST[key]&&tabs.indexOf(NAV_LAST[key])>=0)?NAV_LAST[key]:tabs[0]; window.JOB_OPEN=null; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 window.navSub=function(t){ NAV_LAST[tabGroup(t).key]=t; TAB=t; window.JOB_OPEN=null; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="receipts"){if(typeof rcptPickFiles==="function")rcptPickFiles();}else if(TAB==="team"){if(typeof teamEditMine==="function")teamEditMine();}else if(TAB==="map"||TAB==="data"||TAB==="route"||TAB==="leads"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
+  if(TAB==="quotes"||TAB==="jobs")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="receipts"){if(typeof rcptPickFiles==="function")rcptPickFiles();}else if(TAB==="team"){if(typeof teamEditMine==="function")teamEditMine();}else if(TAB==="map"||TAB==="data"||TAB==="route"||TAB==="leads"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
 };
 
