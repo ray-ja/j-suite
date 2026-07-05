@@ -19,6 +19,23 @@ function invRowsHTML(q) {
   ).join("") || `<tr><td colspan="3" style="color:#888">No line items on this quote.</td></tr>`;
 }
 
+/* Receipt close-out signal for the owner — informational only, never blocks invoicing. If the job linked to
+   this quote has crew who haven't closed out their receipts, more expenses may still land, so the invoice
+   total could be off. Reads the per-job close-out helpers from js/72 (guarded). */
+function invReceiptsNote(q) {
+  try {
+    if (typeof jobReceiptsFullyClosed !== "function") return "";
+    const j = (D().jobs || []).find(x => x && !x.deleted && (x.quoteId === q.id || x.id === q.jobId));
+    if (!j) return "";
+    const crew = (typeof jobCrewActiveIds === "function") ? jobCrewActiveIds(j) : [];
+    if (!crew.length) return "";
+    if (jobReceiptsFullyClosed(j)) return `<div class="note" style="border-left:4px solid var(--accent);background:var(--soft);padding:8px;border-radius:6px;margin-top:8px;white-space:normal">✓ <b>Receipts closed</b> — all crew reported their expenses for this job. Safe to invoice.</div>`;
+    const open = (typeof jobReceiptsOpenCrew === "function") ? jobReceiptsOpenCrew(j) : [];
+    const names = open.map(id => (typeof userName === "function" ? userName(id) : "") || "?").filter(Boolean).join(", ");
+    return `<div class="note" style="border-left:4px solid #e0a800;background:var(--soft);padding:8px;border-radius:6px;margin-top:8px;white-space:normal">⏳ <b>Waiting on ${open.length} crew</b> to close out receipts${names ? " (" + esc(names) + ")" : ""} — more expenses may still come in. You can still invoice now if you want.</div>`;
+  } catch (e) { return ""; }
+}
+
 window.openInvoice = function (quoteId) {
   const d = D();
   const q = (d.quotes || []).find(x => x.id === quoteId);
@@ -41,7 +58,7 @@ window.openInvoice = function (quoteId) {
         <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(q.total || 0)}</td></tr></tfoot>
       </table>
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>
-    </div>
+    </div>${invReceiptsNote(q)}
     <div class="row" style="gap:8px;margin-top:12px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
       <button class="btn ghost grow" onclick="invPrint('${q.id}')">🖨️ Print / PDF</button>

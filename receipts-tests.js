@@ -226,6 +226,62 @@ async function main() {
   await capRcptRun();
   ok("skip reply → no suggested written, no throw", !rcptReview().find(r => r.id === badRec.id).suggested);
 
+  // ========================= PER-JOB RECEIPT CLOSE-OUT =========================
+  console.log("— close-out: helpers tolerate a legacy job with no receiptsClosedBy —");
+  resetStore();
+  ok("jobReceiptsClosedBy([]) on a legacy job → empty, no throw", jobReceiptsClosedBy(STORE.jobs[0]).length === 0);
+  ok("jobReceiptsClosedByMe → false on legacy job", jobReceiptsClosedByMe(STORE.jobs[0], "u_chase") === false);
+  ok("jobReceiptsFullyClosed → false when no crew assigned (no false ready signal)", jobReceiptsFullyClosed(STORE.jobs[0]) === false);
+
+  console.log("— close-out: a crew member closes their OWN status, idempotently —");
+  resetStore();
+  STORE.jobs[0].crew = ["u_chase", "u_pierce"];
+  CURUSER = { id: "u_chase", username: "Chase" };
+  jobCloseReceipts("j1");
+  ok("Chase is now in receiptsClosedBy", jobReceiptsClosedByMe(STORE.jobs[0], "u_chase"), STORE.jobs[0].receiptsClosedBy);
+  ok("entry carries {userId, ts}", STORE.jobs[0].receiptsClosedBy[0].userId === "u_chase" && typeof STORE.jobs[0].receiptsClosedBy[0].ts === "number");
+  jobCloseReceipts("j1");   // close again
+  ok("closing again is idempotent (no duplicate entry)", STORE.jobs[0].receiptsClosedBy.filter(x => x.userId === "u_chase").length === 1, STORE.jobs[0].receiptsClosedBy);
+
+  console.log("— close-out: a crew member can NOT close/reopen for someone else —");
+  ok("Chase closing did NOT add Pierce", !jobReceiptsClosedByMe(STORE.jobs[0], "u_pierce"));
+  // reopen is scoped to self: Chase reopening leaves any other member's close-out untouched
+  STORE.jobs[0].receiptsClosedBy.push({ userId: "u_pierce", ts: 111 });   // simulate Pierce having closed
+  CURUSER = { id: "u_chase", username: "Chase" };
+  jobReopenReceipts("j1");
+  ok("Chase's reopen removed ONLY Chase", !jobReceiptsClosedByMe(STORE.jobs[0], "u_chase") && jobReceiptsClosedByMe(STORE.jobs[0], "u_pierce"), STORE.jobs[0].receiptsClosedBy);
+
+  console.log("— close-out: fullyClosed true ONLY when every active crew member has closed —");
+  resetStore();
+  STORE.jobs[0].crew = ["u_chase", "u_pierce"];
+  STORE.jobs[0].receiptsClosedBy = [];
+  CURUSER = { id: "u_chase", username: "Chase" };
+  jobCloseReceipts("j1");
+  ok("1 of 2 closed → NOT fully closed", jobReceiptsFullyClosed(STORE.jobs[0]) === false);
+  ok("open crew list = [Pierce]", jobReceiptsOpenCrew(STORE.jobs[0]).join(",") === "u_pierce", jobReceiptsOpenCrew(STORE.jobs[0]));
+  CURUSER = { id: "u_pierce", username: "Pierce" };
+  jobCloseReceipts("j1");
+  ok("both closed → fully closed (ready to invoice)", jobReceiptsFullyClosed(STORE.jobs[0]) === true);
+  ok("open crew list now empty", jobReceiptsOpenCrew(STORE.jobs[0]).length === 0);
+  // reopening drops it back below the bar
+  jobReopenReceipts("j1");
+  ok("Pierce reopens → no longer fully closed", jobReceiptsFullyClosed(STORE.jobs[0]) === false);
+
+  console.log("— close-out: an inactive/removed crew id can't block 'fully closed' —");
+  resetStore();
+  STORE.jobs[0].crew = ["u_chase", "u_ghost"];   // u_ghost is not in schedMembers() (inactive/removed)
+  STORE.jobs[0].receiptsClosedBy = [{ userId: "u_chase", ts: 1 }];
+  ok("only active crew (Chase) counts → fully closed", jobReceiptsFullyClosed(STORE.jobs[0]) === true, jobCrewActiveIds(STORE.jobs[0]));
+
+  console.log("— close-out queue: jobs the crew WORKED (crew / receipt / timeclock) —");
+  resetStore();
+  STORE.jobs[0].crew = ["u_chase"];                                   // on the crew
+  STORE.jobs[1].materials.push({ id: "m1", amount: 5, attributedTo: "u_chase" });   // has a receipt attributed to them
+  STORE.timeclock = [{ id: "t1", userId: "u_chase", jobId: "j1", clockIn: 1 }];
+  const worked = rcptWorkedJobsForMe("u_chase").map(j => j.id).sort();
+  ok("worked union includes both j1 (crew+clock) and j2 (receipt)", worked.join(",") === "j1,j2", worked);
+  ok("Pierce (no crew/receipt/clock) has an empty queue", rcptWorkedJobsForMe("u_pierce").length === 0);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
