@@ -1,5 +1,9 @@
 /* ---------- QUOTES ---------- */
 let QSEARCH="",QSTAGE_FILTER="all";
+// Jobs-table sort (survives re-render; header taps toggle). DEFAULT date-desc is byte-identical to the old
+// list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Type + Date-range filters.
+let QSORT="date",QSORTDIR="desc",QTYPE_FILTER="",QDATE_FROM="",QDATE_TO="";
+const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
 function quoteType(q){ const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
@@ -12,9 +16,27 @@ window.quoteFilter=function(k){ QSHOWN=150; QSTAGE_FILTER=k; rQuotes(); };   // 
 let QCREW_FILTER="";
 function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }
 window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); };   // reset cap on filter change
-/* PURE results-list HTML — the empty / "No matches" / card branch ONLY. Everything OUTSIDE this
-   (draft card, guided button, search input, subnav, crew select) is built by rQuotes(). Kept pure so the
-   SEARCH keystroke path can rebuild just #qlist without re-rendering — and destroying — the #qsearch input. */
+/* sort value + comparator for the Jobs table. DEFAULT (date/desc) reproduces the old
+   `(b.date).localeCompare(a.date)` ordering exactly (V8-stable, no tiebreak) → byte-identical below the cap. */
+function qStageRank(q){ const st=(typeof workStage==="function")?workStage(q):quoteStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
+function qSortVal(q){
+  switch(QSORT){
+    case "customer": return (q.cust||custName(q.customerId)||"").toLowerCase();
+    case "type": return quoteType(q).toLowerCase();
+    case "status": return qStageRank(q);
+    case "price": return (q.finalPrice||q.total||0);
+    case "date": default: return q.date||"";
+  }
+}
+function qSortCmp(a,b){ const dir=QSORTDIR==="asc"?1:-1,va=qSortVal(a),vb=qSortVal(b); if(va<vb)return -1*dir; if(va>vb)return 1*dir; return 0; }
+function qSortArrow(col){ return QSORT===col?(QSORTDIR==="asc"?" ▲":" ▼"):""; }
+/* header tap: same column toggles asc/desc; a new column takes its natural default (date/price desc, else asc).
+   Repaints ONLY #qlist (the <table> lives inside it; the headers repaint with it) — mirrors rcptSortBy/cSetSort. */
+window.qSetSort=function(col){ if(QSORT===col)QSORTDIR=QSORTDIR==="asc"?"desc":"asc"; else{ QSORT=col; QSORTDIR=(col==="date"||col==="price")?"desc":"asc"; } QSHOWN=150; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+/* PURE results-list HTML — the empty / "No matches" / <table> branch ONLY. Everything OUTSIDE this
+   (draft card, guided button, search input, status chips, crew select, Filters panel) is built by rQuotes().
+   Kept pure so the SEARCH/sort/filter keystroke path can rebuild just #qlist without re-rendering — and
+   destroying — the #qsearch input. All filters + the sort run on the FULL list ABOVE the Load-more slice. */
 function quotesListHTML(){
   const all=actQ();let list=all.slice();
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
@@ -23,22 +45,33 @@ function quotesListHTML(){
     const _jm=new Map();(typeof actJ==="function"?actJ():[]).forEach(j=>{if(j&&j.id!=null&&!_jm.has(j.id))_jm.set(j.id,j);});
     list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
   }
-  list.sort((a,b)=>(b.date||"").localeCompare(a.date||""));   // most recent first
+  if(QTYPE_FILTER)list=list.filter(q=>quoteType(q)===QTYPE_FILTER);
+  if(QDATE_FROM)list=list.filter(q=>(q.date||"")>=QDATE_FROM);
+  if(QDATE_TO)list=list.filter(q=>(q.date||"")<=QDATE_TO);
+  list.sort(qSortCmp);
   if(!all.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   if(!list.length)return `<div class="empty">No matches.</div>`;
   /* Load-more cap: filter/sort ABOVE run on the FULL list; we slice ONLY the final display array so search/sort
-     always cover everything (a match beyond #150 is found, then shown when you load more). When list.length<=QSHOWN
-     the slice is a no-op and NO button renders → output is byte-identical to pre-cap. Never cap a funnel (js/67). */
+     always cover everything (a match beyond #150 is found, then shown when you load more). */
   const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
   const shown=list.slice(0,QSHOWN);
-  return `<div class="card grid2">`+shown.map(q=>{
+  const th=(col,label,align)=>`<th onclick="qSetSort('${col}')" style="text-align:${align||"left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${qSortArrow(col)}</th>`;
+  let h=`<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th("date","Date")}${th("customer","Customer")}${th("type","Type")}${th("status","Status")}${th("price","Price","right")}</tr></thead><tbody>`;
+  shown.forEach(q=>{
     const st=(typeof workStage==="function")?workStage(q):quoteStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
     const stLabel=(typeof workStageLabel==="function")?workStageLabel(q):m.label;
-    return `<div class="li" onclick="openQuote('${q.id}')" style="border-left:4px solid ${m.color};padding-left:10px">
-      <div class="grow"><div class="nm" style="white-space:normal">${cust}${type?` <span style="font-weight:600;color:var(--muted)">· ${esc(type)}</span>`:""}</div>
-      <div class="sub">${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${q.recurring?" · recurring":""}</div></div>
-      <div style="font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"};text-align:right">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</div></div>`;
-  }).join("")+`</div>`+more;
+    // Review after-action stays surfaced on PAID rows (uses the preserved plReview/plReviewed, js/67).
+    const rev=(st==="paid")?((typeof plReviewed==="function"&&plReviewed(q))?` <span class="badge s-Won">✓ reviewed</span>`:` <button class="btn acc sm" onclick="event.stopPropagation();plReview('${q.id}')">Review →</button>`):"";
+    h+=`<tr onclick="openQuote('${q.id}')" style="cursor:pointer;border-bottom:1px solid var(--line)">`
+      +`<td style="padding:8px 6px;white-space:nowrap;border-left:4px solid ${m.color}">${fmtDate(q.date)}</td>`
+      +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
+      +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}</td>`
+      +`<td style="padding:8px 6px;white-space:normal"><span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</td>`
+      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</td>`
+      +`</tr>`;
+  });
+  h+=`</tbody></table></div>`+more;
+  return h;
 }
 /* Per-list shown cap (initial 150). qLoadMore bumps by 150 and repaints ONLY #qlist via the scoped path. */
 let QSHOWN=150;
@@ -47,6 +80,13 @@ window.qLoadMore=function(){ QSHOWN+=150; const c=document.getElementById("qlist
    survive with NO setSelectionRange refocus hack (mirrors adminFilterAccounts in js/32).
    RESET the cap first so a new filtered result set re-caps from the top. */
 window.qSearchOn=function(v){ QSHOWN=150; QSEARCH=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+// Type + Date-range filters (collapsed behind the Filters panel). Each runs on the full list above the slice
+// and repaints ONLY #qlist (their inputs live in the panel OUTSIDE #qlist, so they're never destroyed).
+window.qTypeFilter=function(v){ QSHOWN=150; QTYPE_FILTER=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+window.qDateFrom=function(v){ QSHOWN=150; QDATE_FROM=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+window.qDateTo=function(v){ QSHOWN=150; QDATE_TO=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+// Clear all extra filters (type/date + status chip) → full re-render so the panel inputs reset to empty too.
+window.qClearFilters=function(){ QSHOWN=150; QTYPE_FILTER=""; QDATE_FROM=""; QDATE_TO=""; QSTAGE_FILTER="all"; rQuotes(); };
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
@@ -60,6 +100,15 @@ function rQuotes(){
     h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
     const crewM=(typeof realAccounts==="function"?realAccounts():[]);
     if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
+    // Collapsible Type + Date-range filters — kept behind a "Filters" toggle to stay mobile-clean. The panel
+    // lives OUTSIDE #qlist so its inputs survive the scoped repaint. Open by default only when a filter is set.
+    const types=Array.from(new Set(all.map(quoteType).filter(Boolean))).sort();
+    const anyFilt=!!(QTYPE_FILTER||QDATE_FROM||QDATE_TO);
+    h+=`<details class="card" style="margin-bottom:10px"${anyFilt?" open":""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyFilt?" · on":""}</summary>`
+      +`<label style="margin-top:8px">Type</label><select onchange="qTypeFilter(this.value)" style="font-size:13px"><option value="">All types</option>${types.map(t=>`<option value="${esc(t)}"${QTYPE_FILTER===t?" selected":""}>${esc(t)}</option>`).join("")}</select>`
+      +`<div class="row" style="gap:8px"><div class="grow"><label>From</label><input type="date" value="${esc(QDATE_FROM)}" onchange="qDateFrom(this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(QDATE_TO)}" onchange="qDateTo(this.value)" style="width:100%"></div></div>`
+      +(anyFilt?`<button class="btn ghost sm" style="margin-top:8px" onclick="qClearFilters()">Clear filters</button>`:"")
+      +`</details>`;
   }
   h+=`<div id="qlist">${quotesListHTML()}</div>`;
   view.innerHTML=h;
