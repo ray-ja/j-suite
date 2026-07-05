@@ -92,7 +92,7 @@ function rQuotes(){
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
   let h=`<h2>Jobs</h2>`;
   if(dm)h+=`<div class="card" style="border-left:4px solid var(--accent);margin-bottom:10px"><div class="nm">📝 Unsaved draft${dm.editing?" (editing a quote)":""}</div><div class="sub">${dm.name?esc(dm.name)+" · ":""}${dm.items} item(s) · ${money(dm.total)}</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="wizResumeDraft()">Resume draft</button><button class="btn ghost grow" onclick="wizDiscardDraft()">Discard</button></div></div>`;
-  h+=`<button class="btn acc" style="margin-bottom:10px" onclick="startWizard()">✨ Guided Quote (step-by-step)</button>`;
+  h+=`<div class="row" style="gap:8px;margin-bottom:10px"><button class="btn acc grow" onclick="startWizard()">✨ Guided Quote</button><button class="btn ghost grow" onclick="if(typeof navSub==='function')navSub('leads')">📞 Guided Lead</button></div>`;
   const all=actQ();
   if(all.length){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}" oninput="qSearchOn(this.value)">`;
