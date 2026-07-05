@@ -82,6 +82,11 @@ function load(){
       if(e.trailerId===undefined)e.trailerId=null;
       if(e.rodeWith===undefined)e.rodeWith=null;
     });
+    // QUOTE VERSIONING (change orders) — additive append-only change-event log per quote (rides quote LWW; no
+    // new collection). q.versions[] = [{v,ts,by,note,prevTotal,newTotal,delta,prevItems,source}] is REVIEW-ONLY;
+    // no finance/AR/invoicing/payout code reads it (they read q.finalPrice||q.total + q.payments), so totals stay
+    // byte-identical. Empty-array backfill, idempotent. (Legacy job.changeOrders[] are folded in below, one-shot.)
+    (S[b].quotes||[]).forEach(q=>{if(!Array.isArray(q.versions))q.versions=[];});
     ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
@@ -141,6 +146,31 @@ function load(){
   if(typeof teamProfileMigrate==="function")teamProfileMigrate();   // TEAM PROFILES: backfill additive contact fields (phone/email/avatarId/title) on every account (loss-free, no updatedAt bump)
   if(typeof membershipMigrate==="function")membershipMigrate();   // MULTI-ORG: existing crew → obx/jam memberships, owner → super-admin (one-time)
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
+  // QUOTE VERSIONING one-shot fold: legacy job.changeOrders[] were DISPLAY-ONLY (coTotal was read by NO finance
+  // code — grep-confirmed), so fold each into the LINKED quote's versions[] as a HISTORY-ONLY entry
+  // (source:"legacy-change-order") and DO NOT touch q.total/finalPrice/payments — adding coTotal would
+  // double-count money that was never billed. Idempotent per-CO (legacyId); the original j.changeOrders[] are
+  // left in place (audit trail, zero-loss). Runs once per device.
+  if(!S.quoteVersionsV1){
+    (typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(b=>{
+      if(!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
+      (S[b].jobs||[]).forEach(j=>{
+        const cos=(j.changeOrders||[]).filter(c=>c&&!c.deleted);
+        if(!cos.length)return;
+        const q=(S[b].quotes||[]).find(x=>x&&!x.deleted&&(x.id===j.quoteId||x.jobId===j.id));
+        if(!q)return;
+        if(!Array.isArray(q.versions))q.versions=[];
+        const t=(+(q.finalPrice||q.total)||0);   // the live quote total is UNCHANGED — legacy COs were never billed
+        cos.forEach(c=>{
+          const cid="legco_"+(c.id||uid());
+          if(q.versions.some(v=>v&&v.legacyId===cid))return;   // idempotent — don't re-fold the same CO
+          q.versions.push({v:q.versions.length+1,ts:c.ts||now(),by:c.by||"",note:c.desc||"",prevTotal:t,newTotal:t,delta:+c.amount||0,prevItems:[],source:"legacy-change-order",legacyId:cid});
+          if(typeof touch==="function")touch(q);   // bump LWW so the folded history syncs to other devices
+        });
+      });
+    });
+    S.quoteVersionsV1=true;save();
+  }
 }
 // WORKSHOP — seed the Sentinel EXAMPLE custom-job into obx exactly once (idempotent on a deterministic id).
 // active:false + example:true so the future ~/sentinel runner SKIPS it (no double-run with the real Sentinel

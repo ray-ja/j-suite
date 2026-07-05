@@ -102,8 +102,6 @@ function rJobPage(j) {
   const openThis = me ? tc.find(e => e.userId === me.userId && e.jobId === j.id && !e.clockOut) : null;
   const openOther = me ? tc.find(e => e.userId === me.userId && e.jobId !== j.id && !e.clockOut) : null;
   const onJob = tc.filter(e => e.jobId === j.id && !e.clockOut);
-  const cos = (j.changeOrders || []).filter(x => x && !x.deleted);
-  const coTotal = cos.reduce((s, c) => s + (+c.amount || 0), 0);
   const exps = (j.expenses || []).filter(x => x && !x.deleted);
   const expTotal = exps.reduce((s, e) => s + (+e.amount || 0), 0);
   const tel = ph => String(ph || "").replace(/[^0-9+]/g, "");
@@ -280,12 +278,22 @@ function rJobPage(j) {
     : `<div class="muted">Ask Cap anything about this job — he knows the customer, address, notes &amp; equipment. e.g. "Are we providing the pavers, or is it client-provided?"</div>`;
   h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap… (e.g. send a photo of the spot and ask what base it needs)"></textarea><input type="file" id="jobcap_photo" accept="image/*" style="display:none" onchange="var l=document.getElementById('jobcap_photo_lbl');if(l)l.textContent='✓ Photo ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('jobcap_photo').click()"><span id="jobcap_photo_lbl">📷 Attach photo</span></button><button class="btn acc grow" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div></div>`;
 
-  // 7) Change orders
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change orders${coTotal ? ` · <span style="color:var(--accent)">${money(coTotal)}</span>` : ""}</div>`;
-  h += cos.length ? cos.map(c => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(c.desc || "")}</div><div class="sub">${c.by ? esc(c.by) + " · " : ""}${c.ts && typeof relTime === "function" ? relTime(c.ts) : ""}</div></div><div class="row" style="gap:8px">${c.amount ? `<div class="nm" style="font-size:15px">${money(c.amount)}</div>` : ""}<button class="btn ghost sm" onclick="jobDelChangeOrder('${j.id}','${c.id}')">✕</button></div></div>`).join("") : `<div class="muted">Nothing changed yet.</div>`;
-  h += `<div class="row" style="gap:8px;margin-top:10px"><input id="co_desc" placeholder="What changed on-site…" style="flex:2"><input id="co_amt" type="number" inputmode="decimal" placeholder="$ +/-" style="flex:0 0 92px"></div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobAddChangeOrder('${j.id}')">+ Add change order</button>`;
-  if (j.quoteId) h += `<button class="btn ghost sm" style="margin-top:8px;width:100%;text-align:left" onclick="openQuote('${j.quoteId}')">✎ Edit the full quote — size · materials · price (change order)</button>`;
-  if (j.quoteId && coTotal) h += `<div class="note" style="margin-top:8px">Update the <b>Final price</b> on the quote to bill these.</div>`;
+  // 7) Change order — a change order is an EDIT to the SAME quote, saved as a version (not a second record).
+  //    Editing the full quote updates the customer's price IN PLACE (one invoice per job — no new invoice #);
+  //    once the quote is committed (accepted/invoiced/paid) each change is logged to q.versions[] for review.
+  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change order</div>`;
+  if (j.quoteId) {
+    const _cq = (typeof actQ === "function") ? actQ().find(x => x && x.id === j.quoteId) : null;
+    h += `<div class="sub" style="margin-bottom:8px;white-space:normal">Something changed on-site? Edit the full quote — size · materials · price. The customer's price updates in place; if the quote's already accepted or invoiced, each change is saved to its version history (no new invoice number).</div>`;
+    h += `<button class="btn acc" style="width:100%;text-align:left" onclick="openQuote('${j.quoteId}')">🧾 Make a change order — edit the full quote</button>`;
+    const _vn = (_cq && Array.isArray(_cq.versions)) ? _cq.versions.length : 0;
+    const _canReview = (typeof isOwner === "function" && isOwner()) || (typeof canDo === "function" && canDo("manage-members"));
+    if (_vn && _canReview) h += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="quoteVersionHistory('${j.quoteId}')">📜 Version history (${_vn})</button>`;
+    // Manual "send updated quote" — reuses the existing print/share path; it never auto-emails the customer.
+    h += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="jobSendUpdatedQuote('${j.quoteId}')">📤 Send updated quote</button>`;
+  } else {
+    h += `<div class="muted">No quote is linked to this job yet.</div>`;
+  }
   h += `</div>`;
 
   // 8) Done + actions
@@ -524,20 +532,19 @@ window.jobDelMaterial = function (jobId, mId) {
   e.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 
-window.jobAddChangeOrder = function (jobId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  const desc = val("co_desc"); if (!desc) { alert("Describe what changed first."); return; }
-  if (typeof submitGuard === "function" && !submitGuard("jobAddChangeOrder:" + jobId)) return;   // rapid-tap dupe guard
-  const amt = parseFloat(val("co_amt")) || 0;
-  const who = (typeof tcWho === "function" && tcWho()) ? tcWho().name : ((typeof curUser === "function" && curUser()) ? curUser().username : "");
-  if (!Array.isArray(j.changeOrders)) j.changeOrders = [];
-  j.changeOrders.push({ id: uid(), desc: desc, amount: amt, ts: now(), by: who });
-  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
-};
-window.jobDelChangeOrder = function (jobId, coId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.changeOrders)) return;
-  const c = j.changeOrders.find(x => x && x.id === coId); if (!c) return;
-  c.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+/* CHANGE ORDERS are now quote VERSIONS (see js/23 wizPersist + js/90-quote-versions.js) — the old
+   job.changeOrders[] add-a-line handlers (jobAddChangeOrder/jobDelChangeOrder) were removed. Legacy
+   changeOrders are folded into the linked quote's versions[] as history-only entries by the js/02 load()
+   migration (never added to the total — they were display-only, read by no finance code). */
+/* "📤 Send updated quote" — the MANUAL affordance (Ray's call: no auto-send). Reuses the shared print/share
+   helper (js/08 printQuote) by feeding it the stored quote via the same QITEMS/CURQ globals the wizard uses. */
+window.jobSendUpdatedQuote = function (quoteId) {
+  const q = (typeof actQ === "function") ? actQ().find(x => x && x.id === quoteId) : null;
+  if (!q) { alert("No quote is linked to this job."); return; }
+  if (typeof QITEMS !== "undefined") QITEMS = (q.items || []).map(it => ({ serviceId: it.serviceId || "", name: it.name || "", unit: it.unit || "quote", price: +it.price || 0, qty: it.qty || 1, cost: +it.cost || 0 }));
+  if (typeof CURQ !== "undefined") CURQ = { cust: q.cust || ((q.customerId && typeof custName === "function") ? custName(q.customerId) : ""), address: q.address || "", invoiced: !!q.invoiced, paymentLink: q.paymentLink || "", subtotal: q.subtotal || 0, discount: q.discount || 0, total: (q.finalPrice || q.total || 0) };
+  if (typeof printQuote === "function") printQuote();
+  else alert("Open the quote to print or share it.");
 };
 window.jobSaveNotes = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
