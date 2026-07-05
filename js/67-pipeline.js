@@ -14,13 +14,19 @@ function rPipeline() {
   const _jobAll = new Map();
   (D().jobs || []).forEach(j => { if (j && j.id != null) _jobAll.set(j.id, j); });
   const jobById = id => { if (!id) return null; const j = _jobAll.get(id); return (j && !j.deleted) ? j : null; };
-  const G = { quote: [], job: [], bill: [], pay: [], review: [] };
+  // DERIVED grouping via workStage (js/60) — Ray's six-stage lifecycle. The old single "billing" bucket is
+  // now SPLIT into expense-collecting (job done, receipts not fully closed) vs invoice (fully closed OR
+  // invoiced). Review stays a trailing after-action (paid & not-yet-reviewed), not a lifecycle stage.
+  const G = { quote: [], job: [], expense: [], invoice: [], paid: [], review: [] };
   quotes.forEach(q => {
     const j = jobById(q.jobId);
     if (q.jobId && !j && !q.paid && !q.invoiced) return;   // its job was deleted → the funnel entry is dead; drop it (handles pre-cascade orphans too)
-    if (q.paid) { if (!plReviewed(q, _jobAll)) G.review.push(q); }
-    else if (q.invoiced) G.pay.push(q);
-    else if (q.accepted || q.jobId) { if (j && j.done) G.bill.push(q); else G.job.push(q); }
+    const st = (typeof workStage === "function") ? workStage(q)
+      : (q.paid ? "paid" : q.invoiced ? "invoice" : (q.accepted || q.jobId) ? (j && j.done ? "invoice" : "job") : "quote");
+    if (st === "paid") { G.paid.push(q); if (!plReviewed(q, _jobAll)) G.review.push(q); }
+    else if (st === "invoice") G.invoice.push(q);
+    else if (st === "expense") G.expense.push(q);
+    else if (st === "job") G.job.push(q);
     else G.quote.push(q);
   });
   const who = q => esc(q.cust || (q.customerId && typeof custName === "function" ? custName(q.customerId) : "") || "—");
@@ -32,22 +38,51 @@ function rPipeline() {
 
   const sect = (icon, title, n, body, lead) => { h += `<div class="secthd"><h2>${icon} ${title}</h2><span class="ct">${n}</span></div>`; if (lead) h += lead; h += n ? `<div class="card">${body}</div>` : `<div class="empty" style="padding:14px;font-size:14px">Nothing here right now.</div>`; };
 
-  sect("🎯", "Sales — leads", leads.length,
+  // resolve the job behind a quote for the close-out helpers (workStageJob mirrors this; jobById here is the
+  // already-built O(1) index, so reuse it and fall back to the quote→job scan only when q.jobId is unset).
+  const jobOf = q => jobById(q.jobId) || ((typeof workStageJob === "function") ? workStageJob(q) : null);
+
+  sect("🎯", "Lead", leads.length,
     leads.map(c => `<div class="li" onclick="openCustomer('${c.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${esc(c.name || c.company || "Lead")}</div><div class="sub">${c.phone ? esc(c.phone) + " · " : ""}${c.next ? "follow up " + fmtDate(c.next) : "new lead"}</div></div><button class="btn acc sm" onclick="event.stopPropagation();plQuoteLead('${c.id}')">Quote →</button></div>`).join(""),
     `<button class="btn acc" style="width:100%;margin-bottom:8px;padding:13px;font-size:16px" onclick="openGuidedCall()">📞 New call / lead</button>`);
 
-  sect("📝", "Quote — sent, awaiting yes", G.quote.length,
-    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""),
+  sect("📝", "Quote", G.quote.length,
+    G.quote.map(q => `<div class="li" onclick="openQuote('${q.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))} · sent, awaiting yes</div></div><button class="btn acc sm" onclick="event.stopPropagation();openQuote('${q.id}')">Open →</button></div>`).join(""),
     `<button class="btn acc" style="width:100%;margin-bottom:8px;padding:13px;font-size:16px" onclick="startWizard()">➕ New quote / job</button>`);
 
-  sect("🔧", "Job — accepted, to do", G.job.length,
-    G.job.map(q => { const j = jobById(q.jobId); const go = j ? `openJobPage('${j.id}')` : `openQuote('${q.id}')`; return `<div class="li" onclick="${go}" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))}${j && !j.date ? " · not scheduled" : ""}${!j ? " · no job linked" : ""}</div></div><button class="btn acc sm" onclick="event.stopPropagation();${go}">Open →</button></div>`; }).join(""));
+  sect("🔧", "Job", G.job.length,
+    G.job.map(q => { const j = jobOf(q); const go = j ? `openJobPage('${j.id}')` : `openQuote('${q.id}')`; return `<div class="li" onclick="${go}" style="cursor:pointer"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">accepted, to do${j && !j.date ? " · not scheduled" : ""}${!j ? " · no job linked" : ""} · ${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="event.stopPropagation();${go}">Open →</button></div>`; }).join(""));
 
-  sect("📤", "Invoice — work done, bill it", G.bill.length,
-    G.bill.map(q => `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))} · job done</div></div><button class="btn acc sm" onclick="openInvoice('${q.id}')">Bill →</button></div>`).join(""));
+  // Expense collecting — job done, receipts NOT fully closed. Shows live N/M crew closed + who we're waiting
+  // on, a "Receipts →" jump to the job's close-out, and a "Bill anyway →" escape hatch (invoicing never blocks).
+  sect("🧾", "Expense collecting", G.expense.length,
+    G.expense.map(q => {
+      const j = jobOf(q);
+      const crew = (j && typeof jobCrewActiveIds === "function") ? jobCrewActiveIds(j).length : 0;
+      const open = (j && typeof jobReceiptsOpenCrew === "function") ? jobReceiptsOpenCrew(j) : [];
+      const closedN = crew - open.length;
+      const waiting = open.map(id => (typeof userName === "function" ? userName(id) : "") || "").filter(Boolean).join(", ");
+      const recBtn = j ? `<button class="btn ghost sm" onclick="event.stopPropagation();openJobPage('${j.id}')">Receipts →</button>` : "";
+      return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub" style="white-space:normal">${crew ? closedN + "/" + crew + " crew closed" : "no crew to close out"}${waiting ? ` · waiting on ${esc(waiting)}` : ""} · ${esc(tyAgo(q))}</div></div><div class="row" style="gap:6px;flex:0 0 auto">${recBtn}<button class="btn acc sm" onclick="openInvoice('${q.id}')">Bill anyway →</button></div></div>`;
+    }).join(""));
 
-  sect("💸", "Paid — collect it", G.pay.length,
-    G.pay.map(q => { const bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(q) : (q.finalPrice || q.total || 0); return `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${money(bal)} owed</div><div class="sub">${esc(tyAgo(q))} · invoiced${q.invoicedDate ? " " + fmtDate(q.invoicedDate) : ""}</div></div><button class="btn acc sm" onclick="recordPayment('${q.id}')">Payment →</button></div>`; }).join(""));
+  // Invoice — ready to bill (job done + receipts closed, or crewless) AND already-invoiced-awaiting-payment.
+  // Per-row action: not yet invoiced → "Bill →"; invoiced → "Payment →" with the outstanding balance.
+  sect("📤", "Invoice", G.invoice.length,
+    G.invoice.map(q => {
+      const bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(q) : (q.finalPrice || q.total || 0);
+      if (q.invoiced) return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${money(bal)} owed</div><div class="sub">invoiced${q.invoicedDate ? " " + fmtDate(q.invoicedDate) : ""} · ${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="recordPayment('${q.id}')">Payment →</button></div>`;
+      return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">work done, receipts closed — ready to bill · ${esc(tyAgo(q))}</div></div><button class="btn acc sm" onclick="openInvoice('${q.id}')">Bill →</button></div>`;
+    }).join(""));
+
+  // Paid — money collected. Display-capped to the most recent (terminal stage; older paid deals live in
+  // Money → A/R), so the active funnel stays scannable. Unreviewed ones still get a Review nudge here.
+  const PAID_CAP = 15;
+  const paidSorted = G.paid.slice().sort((a, b) => String(b.paidDate || b.date || "").localeCompare(String(a.paidDate || a.date || "")));
+  const paidShown = paidSorted.slice(0, PAID_CAP);
+  sect("💸", "Paid", G.paid.length,
+    paidShown.map(q => `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">paid${q.paidDate ? " " + fmtDate(q.paidDate) : ""} · ${esc(tyAgo(q))}</div></div>${plReviewed(q, _jobAll) ? `<span class="badge s-Won">✓ reviewed</span>` : `<button class="btn acc sm" onclick="plReview('${q.id}')">Review →</button>`}</div>`).join("")
+      + (paidSorted.length > PAID_CAP ? `<div class="sub" style="text-align:center;margin-top:6px">+${paidSorted.length - PAID_CAP} more paid — see Money → A/R</div>` : ""));
 
   sect("⭐", "Review — the after-action (required)", G.review.length,
     G.review.map(q => `<div class="li"><div class="grow"><div class="nm">${numP(q)}${who(q)} · ${amt(q)}</div><div class="sub">${esc(tyAgo(q))} · paid — review so Cap learns</div></div><button class="btn acc sm" onclick="plReview('${q.id}')">Review →</button></div>`).join(""));

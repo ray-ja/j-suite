@@ -40,12 +40,21 @@ function recContactBtns(q) {
          `<a class="btn ghost sm" href="sms:${tel}" title="Text" onclick="event.stopPropagation()">💬</a>`;
 }
 
+/* DERIVED lifecycle badge for an A/R row — surfaces expense-collecting ("N/M crew closed") vs
+   invoice-ready straight from workStage. Pure display; changes no A/R math. */
+function recStageBadge(q) {
+  if (typeof workStage !== "function") return "";
+  const st = workStage(q), m = (typeof workStageMeta !== "undefined" && workStageMeta[st]) || null;
+  if (!m || st === "invoice") return "";   // "Invoice — ready to bill" is already the section context; skip the redundant badge
+  const lbl = (typeof workStageLabel === "function") ? workStageLabel(q) : m.label;
+  return ` <span class="badge" style="background:${m.color};color:#fff">${esc(lbl)}</span>`;
+}
 function recRow(q, kind) {
   const who = esc(recWho(q));
   if (kind === "unbilled") {
     const done = recJobDone(q);
     const sub = (done ? "✅ job done · " : "") + (q.acceptedDate ? "accepted " + fmtDate(q.acceptedDate) : (q.date ? fmtDate(q.date) : "")) || "&nbsp;";
-    return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${who} · ${money(quoteTotalAmt(q))}</div><div class="sub" style="white-space:normal">${sub}</div></div>
+    return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${who} · ${money(quoteTotalAmt(q))}${recStageBadge(q)}</div><div class="sub" style="white-space:normal">${sub}</div></div>
       <div class="row" style="gap:6px;flex:0 0 auto">${recContactBtns(q)}<button class="btn acc sm" onclick="openInvoice('${q.id}')">🧾 Bill</button></div></div>`;
   }
   const age = recDaysOld(q.invoicedDate || q.date), over = age > REC_OVERDUE_DAYS;
