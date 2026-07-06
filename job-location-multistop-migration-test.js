@@ -91,7 +91,7 @@ ok(!!sH && sH.expenses.filter(e => !e.deleted).length === 1 && sH.materials.leng
 
 /* ============ 2) CLIENT — the REAL js/02 load(), then js/62 + js/61 on top ============ */
 const localStorageStub = { _data: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; }, setItem(k, v) { this._data[k] = String(v); }, removeItem(k) { delete this._data[k]; } };
-const sandbox = { console, localStorage: localStorageStub, window: { __syncApplying: false }, migrateBudgetBooks: () => {} };
+const sandbox = { console, localStorage: localStorageStub, window: { __syncApplying: false }, migrateBudgetBooks: () => {}, setTimeout, clearTimeout };
 const ctx = vm.createContext(sandbox);
 const clientPre = JSON.parse(JSON.stringify(pre));
 Object.assign(clientPre, { biz: "obx", propsV2: true, seeded: true, researchV2: true, researchV3: true, marketingV2: true, ceoV1: true, ceoV3: true, msgIAv1: true, todoGbp: true });
@@ -123,34 +123,65 @@ ok(jobAddr(emptyJob) === "", "jobAddr(job with nothing) is empty — then settin
 emptyJob.address = "123 Test Ave";
 ok(jobAddr(emptyJob) === "123 Test Ave", "  …after j.address is set, jobAddr returns it");
 
-/* ---- unit: jobRecalcRouteMiles() — haversine ×1.3 round-trip, informational, never null when geocoded ---- */
+/* ---- unit: jobRecalcRouteMiles() — REAL road miles via OSRM → MANUAL fallback → existing, NEVER a 1.3× guess ---- */
 const jobRecalc = vm.runInContext("jobRecalcRouteMiles", ctx);
+const jobSrc = vm.runInContext("jobRouteMilesSource", ctx);
+/* (A) OFFLINE (this sandbox has no `fetch` → the map can't route). The OLD build returned a haversine ×1.3 GUESS
+   here; that guess is GONE. Geocoded stops but no manual miles → the estimate is null + prompts for manual. */
 const routeJob = { id: "jR", plannedStops: [ { id: "a", label: "Office", address: "x", lat: 36.00, lng: -75.70 }, { id: "b", label: "Airport", address: "y", lat: 36.90, lng: -76.20 } ], propertyId: null };
 jobRecalc(routeJob);
-ok(typeof routeJob.estRouteMiles === "number" && routeJob.estRouteMiles > 0, "jobRecalcRouteMiles computes a positive round-trip estimate (" + routeJob.estRouteMiles + " mi)");
-// sanity: base(36.00,-75.70)→(36.90,-76.20)→base is ~2×64mi ≈ 120–140mi with the 1.3 road factor — a plausible range
-ok(routeJob.estRouteMiles > 100 && routeJob.estRouteMiles < 200, "estimate is in a plausible range (" + routeJob.estRouteMiles + " mi) for a ~64mi one-way leg");
+ok(routeJob.estRouteMiles === null, "OFFLINE + no manual: estimate is null — the map couldn't route + NO 1.3× guess (got " + routeJob.estRouteMiles + ")");
+ok(jobSrc(routeJob) === "none", "OFFLINE source = 'none' (map tried + failed) → the UI prompts for manual miles");
+routeJob.manualRouteMiles = 90; jobRecalc(routeJob);
+ok(routeJob.estRouteMiles === 90, "MANUAL fallback: with the map down, j.manualRouteMiles (round-trip) becomes the estimate (" + routeJob.estRouteMiles + " mi)");
+ok(jobSrc(routeJob) === "manual", "source = 'manual' when the manual round-trip is in use");
 const noGeo = { id: "jNoGeo", plannedStops: [{ id: "c", label: "Somewhere", address: "z", lat: null, lng: null }], propertyId: null };
 jobRecalc(noGeo);
-ok(noGeo.estRouteMiles === null, "jobRecalcRouteMiles = null when nothing is geocoded yet (no bogus 0-mile estimate)");
+ok(noGeo.estRouteMiles === null, "nothing geocoded → null (no bogus 0-mile estimate)");
+/* (B) SAVED-PLACE manualMiles override — preserved WITHOUT any map call: base→place→base = 2×12mi = 24mi. */
+const placesArr = vm.runInContext("D().places", ctx); placesArr.push({ id: "pl1", name: "Quarry", manualMiles: 12, updatedAt: 1 });
+const placeJob = { id: "jPlace", plannedStops: [{ id: "d", label: "Quarry", address: "q", lat: 36.20, lng: -75.80, placeId: "pl1" }], propertyId: null };
+jobRecalc(placeJob);
+ok(placeJob.estRouteMiles === 24, "PLACE-MANUAL override preserved (offline): base→place→base = 2×12mi = 24mi (no map, no 1.3×)");
+/* (C) NO-CLOBBER — the map down + no manual leaves a previously-good estimate untouched (never null-clobbered). */
+const priorJob = { id: "jPrior", estRouteMiles: 55.5, plannedStops: [{ id: "e", label: "S", address: "s", lat: 36.5, lng: -75.9 }], propertyId: null };
+jobRecalc(priorJob);
+ok(priorJob.estRouteMiles === 55.5, "NO-CLOBBER: map down + no manual leaves a previously-good estimate untouched (never null-clobbered, never 1.3×)");
 
-/* ---- unit: EDITABLE START/END endpoints (this feature) — default (routeStart/routeEnd absent) is byte-identical
-   to the old base→…→base behavior; setting a custom start changes the FIRST leg; reset (null) restores the base. */
-const baseEst = routeJob.estRouteMiles;   // captured with NO routeStart/routeEnd = base at both ends (the OLD behavior)
-routeJob.routeStart = null; routeJob.routeEnd = null; jobRecalc(routeJob);
-ok(routeJob.estRouteMiles === baseEst, "DEFAULT: routeStart=null/routeEnd=null gives the IDENTICAL estimate as base→…→base (legacy behavior byte-for-byte, " + routeJob.estRouteMiles + " mi)");
-// custom START far from the base → the first leg (start→first stop) grows, so the total must differ from the base estimate
-routeJob.routeStart = { address: "Far away", lat: 37.50, lng: -77.40 };
-jobRecalc(routeJob);
-ok(typeof routeJob.estRouteMiles === "number" && routeJob.estRouteMiles !== baseEst, "CUSTOM START: a start far from base changes the first-leg distance → different estimate (" + routeJob.estRouteMiles + " mi vs base " + baseEst + " mi)");
-ok(routeJob.estRouteMiles > baseEst, "  …and starting farther out makes the route LONGER, as expected");
-// reset both endpoints back to null → exactly the base estimate again (proves reset-to-base is lossless)
-routeJob.routeStart = null; routeJob.routeEnd = null; jobRecalc(routeJob);
-ok(routeJob.estRouteMiles === baseEst, "RESET: clearing routeStart/routeEnd back to null returns the exact base estimate (" + routeJob.estRouteMiles + " mi)");
-// custom endpoint set but NOT yet geocoded (address only) → estimate waits (null), not a silent base fallback
-const pendingEnd = { id: "jPend", plannedStops: [{ id: "d", label: "Stop", address: "s", lat: 36.5, lng: -75.9 }], routeStart: { address: "typed but not geocoded", lat: null, lng: null }, propertyId: null };
-jobRecalc(pendingEnd);
-ok(pendingEnd.estRouteMiles === null, "PENDING GEOCODE: a custom start with no coords yet → estimate is null (waits for OSM), never snaps to base");
+/* (D) STUBBED OSRM — inject a deterministic fake router so the ROAD path can be exercised. Fake distance = the
+   sum of the leg great-circle miles (a road factor is irrelevant here — the APP never computes one; this is the
+   TEST simulating the OSRM server, which returns metres in routes[0].distance). */
+function havMi(a1, o1, a2, o2) { const R = 3958.8, toR = x => x * Math.PI / 180, dLat = toR(a2 - a1), dLng = toR(o2 - o1); const x = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a1)) * Math.cos(toR(a2)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
+sandbox.fetch = function (url) {
+  const m = String(url).match(/driving\/([^?]+)/); const pts = m[1].split(";").map(s => s.split(",").map(Number)); // [lng,lat]
+  let mi = 0; for (let i = 1; i < pts.length; i++) mi += havMi(pts[i - 1][1], pts[i - 1][0], pts[i][1], pts[i][0]);
+  return Promise.resolve({ json: () => Promise.resolve({ code: "Ok", routes: [{ distance: mi * 1609.34 }] }) });
+};
+const flush = () => new Promise(r => setTimeout(r, 0));
+async function settle(j) { jobRecalc(j); for (let k = 0; k < 6; k++) await flush(); jobRecalc(j); }
+(async function () {
+  // via roads — FRESH coords (not the offline "none"-cached keys)
+  const roadsJob = { id: "jRoads", plannedStops: [ { id: "ra", label: "Office", address: "x", lat: 35.95, lng: -75.62 }, { id: "rb", label: "Airport", address: "y", lat: 36.88, lng: -76.15 } ], propertyId: null };
+  await settle(roadsJob);
+  ok(typeof roadsJob.estRouteMiles === "number" && roadsJob.estRouteMiles > 0, "VIA ROADS: with the map reachable, jobRecalc uses OSRM road miles (" + roadsJob.estRouteMiles + " mi)");
+  ok(jobSrc(roadsJob) === "roads", "source = 'roads' when OSRM answered");
+  const baseEst = roadsJob.estRouteMiles;
+  jobRecalc(roadsJob);   // 2nd recompute is SYNC from ROAD_CACHE — no re-fetch
+  ok(roadsJob.estRouteMiles === baseEst, "cached: a 2nd recompute is synchronous from ROAD_CACHE — same value, no re-hit");
+  roadsJob.manualRouteMiles = 3; jobRecalc(roadsJob);
+  ok(roadsJob.estRouteMiles === baseEst && roadsJob.estRouteMiles > 3, "OSRM WINS over manual: road miles override the manual fallback when the map can route");
+  // default (null endpoints) vs a far custom start → the road route is longer; reset → the exact default
+  const dJob = { id: "jD", plannedStops: [{ id: "da", label: "S", address: "x", lat: 35.90, lng: -75.55 }], propertyId: null };
+  await settle(dJob); const dDefault = dJob.estRouteMiles;
+  dJob.routeStart = { address: "Far", lat: 34.50, lng: -78.40 }; await settle(dJob);
+  ok(dJob.estRouteMiles > dDefault, "CUSTOM START farther out → the road route is LONGER than the base default (" + dJob.estRouteMiles + " > " + dDefault + ")");
+  dJob.routeStart = null; await settle(dJob);
+  ok(dJob.estRouteMiles === dDefault, "RESET to base → the exact base road estimate again (lossless)");
+  // mixed: a saved-place manual leg (12mi) + OSRM road legs coexist
+  const mixJob = { id: "jMix", plannedStops: [ { id: "mp", label: "Quarry", address: "q", lat: 36.20, lng: -75.80, placeId: "pl1" }, { id: "ms", label: "Site", address: "s", lat: 36.30, lng: -75.60 } ], propertyId: null };
+  await settle(mixJob);
+  ok(typeof mixJob.estRouteMiles === "number" && mixJob.estRouteMiles > 12, "MIXED route: a place-manual base↔place leg (12mi) + OSRM road legs sum together (" + mixJob.estRouteMiles + " mi)");
 
-console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ ZERO LOSS — j.address + j.plannedStops[] + j.estRouteMiles + j.routeStart/j.routeEnd survive migrateStore + a sync round-trip + client load(); default (no endpoints)=base→…→base byte-identical; jobAddr/jobRecalcRouteMiles behave.");
-process.exit(fail ? 1 : 0);
+  console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ ZERO LOSS — additive fields survive migrate + round-trip + load(); jobRecalcRouteMiles now uses OSRM road miles → manual → existing (NEVER a 1.3× guess); place-manual overrides + no-clobber preserved.");
+  process.exit(fail ? 1 : 0);
+})();

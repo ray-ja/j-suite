@@ -4,8 +4,59 @@
    Stored as a sentinel doc {id:"homeBase", address, lat, lng} on the synced docs collection. */
 function homeBase(){ const d=D(); if(!Array.isArray(d.docs))d.docs=[]; return d.docs.find(x=>x&&x.id==="homeBase"&&!x.deleted)||null; }
 function haversineMi(a1,o1,a2,o2){ if([a1,o1,a2,o2].some(v=>v==null))return null; const R=3958.8,toR=x=>x*Math.PI/180,dLat=toR(a2-a1),dLng=toR(o2-o1); const x=Math.sin(dLat/2)**2+Math.cos(toR(a1))*Math.cos(toR(a2))*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
-/* one-way road estimate from base to a point (straight-line × 1.3 road factor, ~35 mph). */
-function driveFromBase(lat,lng){ const hb=homeBase(); if(!hb||hb.lat==null||lat==null)return null; const straight=haversineMi(hb.lat,hb.lng,lat,lng); if(straight==null)return null; const roadMi=straight*1.3; return { miles:Math.round(roadMi*10)/10, min:Math.max(1,Math.round(roadMi/35*60)), roundMiles:Math.round(roadMi*2*10)/10 }; }
+/* ===== REAL ROAD DISTANCE (OSRM) — the shared road-mileage helper for drive/route ESTIMATES =====
+   roadRouteMiles(waypoints, cb): ordered [[lat,lng],…] (≥2) → the OSRM driving distance in MILES via cb(miles),
+   or cb(null) on ANY failure (offline, non-Ok, HTTP/parse error, ~6s timeout, <2 points, no fetch layer). It
+   NEVER throws or blocks. Results are memoised in ROAD_CACHE keyed by the rounded (4-dp) waypoint string (a
+   number on success, "none" on failure) and an in-flight Set dedupes so each distinct route hits OSRM AT MOST
+   ONCE per session. This REPLACES the old haversine ×1.3 straight-line guess: when the map can't route, callers
+   fall back to their OWN default / a MANUAL entry — never a ×1.3 guess (Ray: "never use the 1.3x guess"). */
+const ROAD_CACHE = {};            // 4-dp waypoint key -> miles(number) | "none"
+const ROAD_INFLIGHT = new Set();  // keys currently being fetched — fetch each distinct route at most once/session
+function roadKey(wp){ return wp.map(p=>(+p[0]).toFixed(4)+","+(+p[1]).toFixed(4)).join(";"); }
+/* SYNC cache lookup — number(miles) | "none"(tried+failed) | undefined(not tried). Lets callers check before firing. */
+function roadRouteCached(waypoints){ if(!Array.isArray(waypoints)||waypoints.length<2)return undefined; return ROAD_CACHE[roadKey(waypoints)]; }
+function roadRouteMiles(waypoints, cb){
+  let key=null;
+  try{
+    if(typeof cb!=="function") cb=function(){};
+    if(!Array.isArray(waypoints)||waypoints.length<2) return cb(null);   // bad input — don't cache
+    key=roadKey(waypoints);
+    const hit=ROAD_CACHE[key];
+    if(hit!==undefined) return cb(hit==="none"?null:hit);                 // already known this session
+    if(typeof fetch!=="function"){ ROAD_CACHE[key]="none"; return cb(null); }  // no network layer → terminal fail, memoise it
+    if(ROAD_INFLIGHT.has(key)) return;   // already fetching this exact route — DON'T call cb (avoids sync-cb recursion) or double-hit
+    ROAD_INFLIGHT.add(key);
+    const coords=waypoints.map(p=>(+p[1])+","+(+p[0])).join(";");   // OSRM wants lng,lat
+    const url="https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=false&annotations=distance";
+    let settled=false;
+    const finish=function(mi){
+      if(settled)return; settled=true; ROAD_INFLIGHT.delete(key);
+      ROAD_CACHE[key]=(mi!=null&&isFinite(mi)&&mi>=0)?mi:"none";
+      try{ cb(ROAD_CACHE[key]==="none"?null:ROAD_CACHE[key]); }catch(e){}
+    };
+    const timer=setTimeout(function(){ finish(null); },6000);
+    fetch(url).then(function(r){return r.json();}).then(function(j){
+      clearTimeout(timer);
+      if(!j||j.code!=="Ok"||!j.routes||!j.routes[0]||j.routes[0].distance==null) return finish(null);
+      finish((+j.routes[0].distance||0)/1609.34);
+    }).catch(function(){ clearTimeout(timer); finish(null); });
+  }catch(e){ if(key){ ROAD_CACHE[key]="none"; ROAD_INFLIGHT.delete(key); } try{cb(null);}catch(_){} }   // memoise the failure so a synchronous-cb caller can't re-fetch/recurse
+}
+if(typeof window!=="undefined"){ window.roadRouteMiles=roadRouteMiles; window.roadRouteCached=roadRouteCached; }
+/* one-way ROAD miles from base to a point — OSRM real roads, NEVER the ×1.3 guess. Returns the estimate ONLY
+   when the road route is already cached this session; otherwise it fires the OSRM lookup (gentle re-render on
+   success) and returns null NOW, so the caller uses ITS OWN fallback (e.g. wizSiteDriveRT's 20 mi) — not a guess.
+   A cached "none" (offline / can't route) also returns null → caller default. Shape unchanged {miles,min,roundMiles}. */
+function driveFromBase(lat,lng){
+  const hb=homeBase(); if(!hb||hb.lat==null||lat==null)return null;
+  const wp=[[hb.lat,hb.lng],[lat,lng]];
+  const cached=roadRouteCached(wp);
+  if(typeof cached==="number"){ const road=cached; return { miles:Math.round(road*10)/10, min:Math.max(1,Math.round(road/35*60)), roundMiles:Math.round(road*2*10)/10 }; }
+  if(cached==="none") return null;   // the map couldn't route — caller falls back to its own default (NO ×1.3)
+  roadRouteMiles(wp,function(mi){ if(mi!=null&&typeof render==="function"){ try{render();}catch(e){} } });   // not tried yet → kick it off, surface on land
+  return null;
+}
 function driveBadge(lat,lng){ const d=driveFromBase(lat,lng); return d?`🚗 ~${d.min} min · ${d.miles} mi from base`:""; }
 /* coords for a job via its linked property */
 function jobLatLng(j){ if(!j)return null; const p=(j.propertyId&&typeof actProps==="function")?actProps().find(x=>x.id===j.propertyId):null; return (p&&p.lat!=null)?{lat:p.lat,lng:p.lng}:null; }

@@ -58,16 +58,21 @@ function jobRouteEndpointTagged(ep, hb) {
 }
 /* the address a route endpoint currently resolves to for DISPLAY — the custom address if set, else "" (= base). */
 function jobRouteEndpointLabel(ep) { return (ep && ep.address) ? String(ep.address) : ""; }
-/* DEFERRED "destination-based backup mileage estimate" (Phase 6). Sequential road miles along the ORDERED
-   route: START → each geocoded planned stop (in order) → job site → END, using the SAME haversine ×1.3 road
-   factor as driveFromBase (js/62) — offline-safe, no API. START/END default to the home base (j.routeStart /
-   j.routeEnd null = base), but each is EDITABLE per job (a job may start/end somewhere other than base). Stored
-   on j.estRouteMiles as an INFORMATIONAL cross-check only: it NEVER touches the odometer/GPS/timeclock miles-of-
-   record (those stay the billed number). null when start/end coords aren't resolvable or nothing's geocoded yet.
-   Idempotent — safe to recompute on every edit. Legacy jobs (no routeStart/routeEnd) = base→…→base, unchanged. */
-function jobRecalcRouteMiles(j) {
-  if (!j) return;
-  if (typeof homeBase !== "function" || typeof haversineMi !== "function") return;
+/* "destination-based backup mileage estimate" — REAL ROAD MILES along the ORDERED route (START → each geocoded
+   planned stop, in order → job site → END) via OSRM (js/62 roadRouteMiles), NOT the old haversine ×1.3 guess
+   (Ray: "never use the 1.3x guess; if the map route tools isn't working just go by the manual entry"). START/END
+   default to the home base (j.routeStart / j.routeEnd null = base) but are EDITABLE per job. Stored on
+   j.estRouteMiles as an INFORMATIONAL cross-check only — it NEVER touches the odometer/GPS/timeclock miles-of-
+   record (the billed number). Sourcing, in order:
+     1) OSRM road miles (road is truth) — the whole ordered path in one query, or, when a saved-place manualMiles
+        override sits on a base↔place leg, that leg keeps its manual override + the OTHER legs come from OSRM;
+     2) when OSRM can't answer this session, the owner's j.manualRouteMiles (round-trip) if set;
+     3) else leave the existing value UNTOUCHED (never clobber a good estimate with null, never a ×1.3 guess) —
+        or null when the map has FAILED and there was no prior value (so the UI can prompt for manual miles).
+   Idempotent, self-persisting: an OSRM leg that isn't cached yet is fetched once, then recomputed + saved on land
+   (change-guarded so it never render-loops). null when nothing's geocoded / routable yet. */
+function jobRouteTaggedSeq(j) {
+  if (!j || typeof homeBase !== "function") return null;
   const hb = homeBase();
   const startPt = jobRouteEndpointTagged(j.routeStart, hb);   // tagged {pt,base,manMi} — custom start (fallback: home base)
   const endPt = jobRouteEndpointTagged(j.routeEnd, hb);       // tagged {pt,base,manMi} — custom end   (fallback: home base)
@@ -75,20 +80,63 @@ function jobRecalcRouteMiles(j) {
   const mid = [];   // ordered intermediate waypoints that actually have coords, each tagged {pt,base,manMi}
   stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push({ pt: [s.lat, s.lng], base: false, manMi: placeManualMi(s.placeId) }); });
   const site = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
-  if (site && site.lat != null) mid.push({ pt: [site.lat, site.lng], base: false, manMi: null });   // job site: always haversine (places-only manualMiles)
-  if (!startPt || !endPt || !mid.length) { j.estRouteMiles = null; return; }
-  const seq = [startPt].concat(mid, [endPt]);   // start → stops/site (in order) → end
-  let mi = 0;
-  // per-leg: a base↔place leg uses the place's manualMiles (already road miles — NO ×1.3), fixing the wrong-geocode
-  // case (Lowe's); every other leg (place↔place, place↔site, base↔site) stays haversine ×1.3. A place-less route is
-  // byte-identical to the old formula (manMi is null everywhere → always the haversine branch).
+  if (site && site.lat != null) mid.push({ pt: [site.lat, site.lng], base: false, manMi: null });   // job site: no manualMiles (places-only)
+  if (!startPt || !endPt || !mid.length) return null;
+  return [startPt].concat(mid, [endPt]);   // start → stops/site (in order) → end
+}
+/* Split the ordered seq into (a) base↔place legs carrying a saved-place manualMiles override (already road miles)
+   and (b) the remaining road legs, pulling their miles from the OSRM cache WITHOUT firing a fetch. Returns
+   {manualSum, roadTotal, resolved, anyNone, needsFetch:[waypoint-lists], hasManualLeg}. resolved = every road
+   leg is a cached number. needsFetch = only NEVER-TRIED legs (cached "none" = a terminal fail, not re-fetched). */
+function jobRouteMilesCompute(seq) {
+  const manual = [], roadLegs = [];
   for (let i = 1; i < seq.length; i++) {
     const A = seq[i - 1], B = seq[i];
-    if (A.base && B.manMi != null) { mi += B.manMi; }
-    else if (B.base && A.manMi != null) { mi += A.manMi; }
-    else { const d = haversineMi(A.pt[0], A.pt[1], B.pt[0], B.pt[1]); if (d != null) mi += d * 1.3; }
+    if (A.base && B.manMi != null) manual.push(B.manMi);          // base → saved place: use its manual one-way miles
+    else if (B.base && A.manMi != null) manual.push(A.manMi);     // saved place → base: same
+    else roadLegs.push([A.pt, B.pt]);                            // everything else: real road miles (OSRM)
   }
-  j.estRouteMiles = Math.round(mi * 10) / 10;
+  const cachedGet = (typeof roadRouteCached === "function") ? roadRouteCached : function () { return undefined; };
+  let roadTotal = 0, resolved = true, anyNone = false; const needsFetch = [];
+  const take = (v, wp) => { if (typeof v === "number") { roadTotal += v; } else { resolved = false; if (v === "none") anyNone = true; else needsFetch.push(wp); } };
+  if (roadLegs.length) {
+    if (!manual.length) { const pts = seq.map(s => s.pt); take(cachedGet(pts), pts); }   // no manual override → one OSRM query over the whole ordered path (== sum of its legs)
+    else roadLegs.forEach(leg => take(cachedGet(leg), leg));                              // mixed → per-leg (so the manual legs can be added in)
+  }
+  return { manualSum: manual.reduce((s, m) => s + m, 0), roadTotal: roadTotal, resolved: resolved, anyNone: anyNone, needsFetch: needsFetch, hasManualLeg: manual.length > 0 };
+}
+function jobRecalcRouteMiles(j) {
+  if (!j) return;
+  const seq = jobRouteTaggedSeq(j);
+  if (!seq) {
+    if (j.manualRouteMiles > 0) j.estRouteMiles = Math.round(j.manualRouteMiles * 10) / 10;   // owner's manual round-trip
+    else if (!(j.estRouteMiles > 0)) j.estRouteMiles = null;                                  // nothing routable + no prior value
+    return;
+  }
+  const c = jobRouteMilesCompute(seq);
+  if (c.resolved) { j.estRouteMiles = Math.round((c.manualSum + c.roadTotal) * 10) / 10; return; }   // full ROAD-based value (road wins over manual)
+  // some road legs aren't cached yet → fetch each NEVER-TRIED leg once, then recompute + persist on land (change-guarded).
+  c.needsFetch.forEach(function (wp) {
+    if (typeof roadRouteMiles === "function") roadRouteMiles(wp, function () {
+      const before = j.estRouteMiles; jobRecalcRouteMiles(j);
+      if (j.estRouteMiles !== before) { if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); }
+    });
+  });
+  // meanwhile: manual round-trip if the owner set one; else leave the existing estimate untouched (NEVER ×1.3, NEVER
+  // clobber a good value with null) — only fall to null when the map FAILED (anyNone) and there was no prior value.
+  if (j.manualRouteMiles > 0) j.estRouteMiles = Math.round(j.manualRouteMiles * 10) / 10;
+  else if (c.anyNone && !(j.estRouteMiles > 0)) j.estRouteMiles = null;
+}
+/* Which source the CURRENT estimate is drawn from, for the display label — "roads" (OSRM resolved), "manual"
+   (owner's j.manualRouteMiles round-trip fallback), "none" (map tried + failed, no manual → prompt for manual),
+   or "pending" (still resolving / nothing geocoded yet). Pure read — never fires a fetch. */
+function jobRouteMilesSource(j) {
+  const seq = jobRouteTaggedSeq(j);
+  if (!seq) return (j && j.manualRouteMiles > 0) ? "manual" : (j && j.estRouteMiles > 0 ? "manual" : "pending");
+  const c = jobRouteMilesCompute(seq);
+  if (c.resolved) return "roads";
+  if (j.manualRouteMiles > 0) return "manual";
+  return c.anyNone ? "none" : "pending";
 }
 
 function rJobPage(j) {
@@ -165,14 +213,19 @@ function rJobPage(j) {
   // ESTIMATE (informational cross-check) — offline round-trip miles across the ordered stops. NEVER the billed
   // number: the odometer/GPS timeclock miles stay the record. If the job has confirmed odometer miles, show them
   // side by side so the estimate reads as a sanity check (Ray: within ~15–20%).
+  const _routeSrc = (typeof jobRouteMilesSource === "function") ? jobRouteMilesSource(j) : "";
   if (j.estRouteMiles > 0) {
     const _n = _stops.length;
     const _confMiles = tc.filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
     // subtle endpoint note — only when a custom start/end is set; default (base at both ends) reads as before.
     const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
     const _ends = (_rs || _re) ? ` <span class="muted">· ${_rs ? "from " + esc(_rs) : "from base"} → ${_re ? "to " + esc(_re) : "to base"}</span>` : "";
-    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· ordered start→stops→site→end path, an offline cross-check — not the billed miles</span></div>`;
+    const _srcTag = _routeSrc === "roads" ? ` <span class="muted">(via roads)</span>` : _routeSrc === "manual" ? ` <span class="muted">(manual)</span>` : "";
+    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_srcTag}${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· ordered start→stops→site→end path, a cross-check — not the billed miles</span></div>`;
     if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
+  } else if (_routeSrc === "none") {
+    // the map tried and couldn't route (offline / unroutable address) + no manual miles set — never a 1.3× guess.
+    h += `<div class="sub muted" style="margin-top:10px;white-space:normal">🧭 The map couldn't route this${jobCanEditPlan() ? " — add manual route miles below to get an estimate" : "; ask an owner to add manual route miles"}.</div>`;
   }
   // 🗺 View route (owner/admin) — deep-link to the read-only GPS route-review page for THIS job (js/91).
   if ((typeof jobCanEditPlan === "function") && jobCanEditPlan() && typeof openRouteReview === "function") {
@@ -417,11 +470,18 @@ function jobPageRouteCard(j) {
   h += `<div class="li" style="padding:6px 0;margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🏁 Job site <span class="sub" style="font-weight:400">· automatic</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div></div>`;
   // 🏁 END (last point) — editable, pre-filled with home base
   h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
+  const _src = (typeof jobRouteMilesSource === "function") ? jobRouteMilesSource(j) : "";
   if (j.estRouteMiles > 0) {
     const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
     const _ends = (_rs || _re) ? `${_rs ? esc(_rs) : "base"} → stops → job site → ${_re ? esc(_re) : "base"}` : "base → stops → job site → base";
-    h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b> <span class="muted">(${_ends} — informational, the odometer stays the billed number)</span></div>`;
-  } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Locating addresses… the mileage estimate appears once they geocode (needs a home base set in Settings).</div>`;
+    const _how = _src === "roads" ? "via roads" : _src === "manual" ? "manual" : "";
+    h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_how ? ` <span class="muted">(${_how})</span>` : ""} <span class="muted">(${_ends} — informational, the odometer stays the billed number)</span></div>`;
+  } else if (_src === "none") {
+    h += `<div class="sub muted" style="margin-top:8px;white-space:normal">🧭 The map couldn't route this — enter manual route miles below.</div>`;
+  } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Computing the road route… the mileage estimate appears once the map answers (needs a home base set in Settings).</div>`;
+  // 🚗 MANUAL route miles (round-trip) — the fallback for when the map can't route (offline / a bad-geocode address).
+  // OSRM road miles win when available; this manual value takes over when they aren't. Owner/admin only.
+  h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><label style="margin-top:0">🚗 Route miles <span class="sub" style="font-weight:400">(manual, if the map can't route — round-trip)</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${(j.manualRouteMiles > 0) ? j.manualRouteMiles : ""}" placeholder="round-trip miles" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${(j.manualRouteMiles > 0) ? (_src === "roads" ? "The map is routing — road miles are being used; your manual miles stay as the offline fallback." : "Using your manual miles.") : "Only used when the map can't route — the map's road miles win when available."}</div></div>`;
   return h + `</div>`;
 }
 /* EDIT LOCATION modal (owner/admin) — pick a saved property OR type a free-text address → j.address (jobAddr's
@@ -534,6 +594,17 @@ window.jobPageSetStart = function (jobId, v) { jobPageSetEndpoint(jobId, "routeS
 window.jobPageSetEnd = function (jobId, v) { jobPageSetEndpoint(jobId, "routeEnd", v); };
 window.jobPageResetStart = function (jobId) { jobPageSetEndpoint(jobId, "routeStart", ""); };
 window.jobPageResetEnd = function (jobId) { jobPageSetEndpoint(jobId, "routeEnd", ""); };
+/* MANUAL route miles (round-trip) fallback for the estimate when the map can't route (owner/admin). Additive
+   j.manualRouteMiles: a positive number, else null. OSRM road miles win when available (jobRecalcRouteMiles);
+   this is the fallback. Recompute so the estimate + label update immediately; feeds js/52 jobMilesCostEst. */
+window.jobSetManualRouteMiles = function (jobId, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const n = parseFloat(v);
+  j.manualRouteMiles = (n > 0) ? n : null;
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
 
 window.jobSetParent = function (jobId, parentId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
