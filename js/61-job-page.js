@@ -28,6 +28,21 @@ function gmapsDirUrl(destination, waypoints) {
    "Stoneworks — pick up base" before the job site itself. Distinct from js/38's crew-added ad hoc timeclock
    stops[] (logged as-driven, after the fact) — this is the route planned in ADVANCE by the owner/admin. */
 function jobPlannedStops(j) { return (Array.isArray(j && j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address); }
+/* SHARED ordered route between Start and End — the combined [planned stops + job site] list, in route order,
+   that EVERY surface consumes (route card, crew directions, mileage recalc jobRouteTaggedSeq, js/91 overlay)
+   so they can't drift. Each token is {kind:"stop",stop:<plannedStops entry>,raw:<its index in j.plannedStops>}
+   or {kind:"site",address:<jobAddr>,ll:<jobLatLng>}. The site is spliced in at combined index `sp`:
+     sp = (typeof j.sitePos==="number" && j.sitePos>=0) ? min(j.sitePos, ps.length) : ps.length
+   i.e. the site sits immediately BEFORE plannedStops[sp]; sp===ps.length (sitePos null/absent) = site LAST =
+   today's fixed behavior (byte-identical, NO migration). Clamp-on-read self-heals any stale sitePos left by a
+   modal stop-edit. Length is always ps.length+1 (the site is always present, even with no stops). */
+function jobRouteOrdered(j) {
+  const ps = Array.isArray(j && j.plannedStops) ? j.plannedStops : [];
+  const sp = (j && typeof j.sitePos === "number" && j.sitePos >= 0) ? Math.min(j.sitePos, ps.length) : ps.length;
+  const tokens = ps.map((s, i) => ({ kind: "stop", stop: s, raw: i }));
+  tokens.splice(sp, 0, { kind: "site", address: (typeof jobAddr === "function") ? jobAddr(j) : ((j && j.address) || ""), ll: (typeof jobLatLng === "function") ? jobLatLng(j) : null });
+  return tokens;
+}
 /* Who may EDIT a job's location + planned route from the job page: owner OR an admin-tier role (manage-members
    is this app's admin proxy — same gate the Admin panel uses). Crew see the location + route READ-ONLY. */
 function jobCanEditPlan() { return (typeof isOwner === "function" && isOwner()) || (typeof canDo === "function" && canDo("manage-members")); }
@@ -76,13 +91,16 @@ function jobRouteTaggedSeq(j) {
   const hb = homeBase();
   const startPt = jobRouteEndpointTagged(j.routeStart, hb);   // tagged {pt,base,manMi} — custom start (fallback: home base)
   const endPt = jobRouteEndpointTagged(j.routeEnd, hb);       // tagged {pt,base,manMi} — custom end   (fallback: home base)
-  const stops = (Array.isArray(j.plannedStops) ? j.plannedStops : []).filter(s => s && s.address);
+  // walk the ONE ordered list (stops + job site in j.sitePos order) — ONLY the waypoint ORDER differs from the
+  // old "stops then site appended"; every leg-costing rule below is unchanged. With sitePos null the site still
+  // lands after every coord'd stop → byte-identical to the old append (proven by mileage-fingerprint-test).
   const mid = [];   // ordered intermediate waypoints that actually have coords, each tagged {pt,base,manMi}
-  stops.forEach(s => { if (s.lat != null && s.lng != null) mid.push({ pt: [s.lat, s.lng], base: false, manMi: placeManualMi(s.placeId) }); });
-  const site = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
-  if (site && site.lat != null) mid.push({ pt: [site.lat, site.lng], base: false, manMi: null });   // job site: no manualMiles (places-only)
+  (typeof jobRouteOrdered === "function" ? jobRouteOrdered(j) : []).forEach(t => {
+    if (t.kind === "stop") { const s = t.stop; if (s && s.address && s.lat != null && s.lng != null) mid.push({ pt: [s.lat, s.lng], base: false, manMi: placeManualMi(s.placeId) }); }
+    else if (t.kind === "site") { const ll = t.ll; if (ll && ll.lat != null) mid.push({ pt: [ll.lat, ll.lng], base: false, manMi: null }); }   // job site: no manualMiles (places-only)
+  });
   if (!startPt || !endPt || !mid.length) return null;
-  return [startPt].concat(mid, [endPt]);   // start → stops/site (in order) → end
+  return [startPt].concat(mid, [endPt]);   // start → stops/site (in sitePos order) → end
 }
 /* Split the ordered seq into (a) base↔place legs carrying a saved-place manualMiles override (already road miles)
    and (b) the remaining road legs, pulling their miles from the OSRM cache WITHOUT firing a fetch. Returns
@@ -197,12 +215,15 @@ function rJobPage(j) {
   const _stops = jobPlannedStops(j);
   if (_stops.length) {
     // ADMIN-PLANNED ROUTE: each stop gets its OWN correctly-labeled link (e.g. "Stoneworks — pick up base"),
-    // the job site is always the final stop, and ≥2 total stops also get ONE combined multi-stop link
-    // (waypoints chained in order) so the crew can tap once and get turn-by-turn through the whole run.
+    // the job site sits inline WHEREVER j.sitePos places it (not force-appended), and ≥2 total stops also get
+    // ONE combined multi-stop link (waypoints chained in the SAME order) for one-tap turn-by-turn. Built from
+    // the shared jobRouteOrdered(j) so this list can't drift from the estimate / overlay.
     h += `<div class="sub" style="margin-top:10px;font-weight:700">🧭 Planned route <span class="sub" style="font-weight:400">· ${_stops.length} stop${_stops.length > 1 ? "s" : ""}${addr ? " + job site" : ""}</span></div>`;
-    h += _stops.map((s, i) => `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${i + 1}. ${esc(s.label || "Stop")}</div><div class="sub" style="white-space:normal">${esc(s.address)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(s.address)}" target="_blank" rel="noopener">🧭 Directions</a></div>`).join("");
-    if (addr) h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_stops.length + 1}. 🏁 Job site</div><div class="sub" style="white-space:normal">${esc(addr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">🧭 Directions</a></div>`;
-    const _allDest = _stops.map(s => s.address).concat(addr ? [addr] : []);
+    const _allDest = [];
+    (typeof jobRouteOrdered === "function" ? jobRouteOrdered(j) : []).forEach(t => {
+      if (t.kind === "site") { if (!addr) return; _allDest.push(addr); h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_allDest.length}. 🏁 Job site</div><div class="sub" style="white-space:normal">${esc(addr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">🧭 Directions</a></div>`; }
+      else { const s = t.stop; if (!(s && s.address)) return; _allDest.push(s.address); h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_allDest.length}. ${esc(s.label || "Stop")}</div><div class="sub" style="white-space:normal">${esc(s.address)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(s.address)}" target="_blank" rel="noopener">🧭 Directions</a></div>`; }
+    });
     if (_allDest.length >= 2) {
       const _dest = _allDest[_allDest.length - 1], _wps = _allDest.slice(0, -1);
       h += `<a class="btn acc" style="width:100%;margin-top:8px;text-align:center" href="${gmapsDirUrl(_dest, _wps)}" target="_blank" rel="noopener">🗺 Full route — ${_allDest.length} stops</a>`;
@@ -463,21 +484,31 @@ function jobPageRouteCard(j) {
     <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
     <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
-  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows: <b>Start → stops → job site → End</b>. Start &amp; End default to your home base but you can change either (a job may start or end somewhere else). The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
+  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
   // 🏁 START (first point) — editable, pre-filled with home base
   h += endpointRow("🏁", "Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
-  // the ordered plannedStops (add/reorder/delete) — unchanged
-  h += ps.length ? ps.map((s, i) => `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${i + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto"><button class="btn ghost sm" ${i === 0 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},-1)" title="Move up">▲</button><button class="btn ghost sm" ${i === ps.length - 1 ? "disabled" : ""} onclick="jobPageStopMove('${j.id}',${i},1)" title="Move down">▼</button><button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${i})" title="Remove">✕</button></div></div>`).join("") : `<div class="muted" style="padding:2px 0">No stops yet — Start goes straight to the job site.</div>`;
+  // the COMBINED ordered route (planned stops + the movable job site) from the shared jobRouteOrdered(j).
+  // Every row gets ▲▼ (jobPageRouteMove on the COMBINED index); ▲ is disabled on the first row, ▼ on the last.
+  // Stop rows keep the ✕ delete (mapped to the stop's RAW plannedStops index, t.raw); the 🏁 job-site row is
+  // NON-deletable (no ✕) — it's the job itself, you only move it. "+ Add stop" pushes to the end, then reorder.
+  const combo = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(j) : [];
+  h += combo.map((t, ci) => {
+    const upDis = ci === 0 ? "disabled" : "", dnDis = ci === combo.length - 1 ? "disabled" : "";
+    const moveBtns = `<button class="btn ghost sm" ${upDis} onclick="jobPageRouteMove('${j.id}',${ci},-1)" title="Move up">▲</button><button class="btn ghost sm" ${dnDis} onclick="jobPageRouteMove('${j.id}',${ci},1)" title="Move down">▼</button>`;
+    if (t.kind === "site") {
+      return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${ci + 1}. 🏁 Job site <span class="sub" style="font-weight:400">· the job</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}</div></div>`;
+    }
+    const s = t.stop;
+    return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${ci + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}<button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${t.raw})" title="Remove">✕</button></div></div>`;
+  }).join("");
   h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
-  // 🏁 JOB SITE (automatic, last real destination before End)
-  h += `<div class="li" style="padding:6px 0;margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🏁 Job site <span class="sub" style="font-weight:400">· automatic</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div></div>`;
   // 🏁 END (last point) — editable, pre-filled with home base
   h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
   const _src = (typeof jobRouteMilesSource === "function") ? jobRouteMilesSource(j) : "";
   if (j.estRouteMiles > 0) {
     const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
-    const _ends = (_rs || _re) ? `${_rs ? esc(_rs) : "base"} → stops → job site → ${_re ? esc(_re) : "base"}` : "base → stops → job site → base";
+    const _ends = (_rs || _re) ? `${_rs ? esc(_rs) : "base"} → route → ${_re ? esc(_re) : "base"}` : "base → route → base";
     const _how = _src === "roads" ? "via roads" : _src === "manual" ? "manual" : "";
     h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_how ? ` <span class="muted">(${_how})</span>` : ""} <span class="muted">(${_ends} — informational, the odometer stays the billed number)</span></div>`;
   } else if (_src === "none") {
@@ -558,8 +589,34 @@ window.jobPageStopMove = function (jobId, i, dir) {
 window.jobPageStopDel = function (jobId, i) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
-  const a = Array.isArray(j.plannedStops) ? j.plannedStops : []; if (i < 0 || i >= a.length) return;
+  const a = Array.isArray(j.plannedStops) ? j.plannedStops : []; if (i < 0 || i >= a.length) return;   // i is the stop's RAW plannedStops index (t.raw)
   a.splice(i, 1);
+  // keep the movable job site anchored: a stop deleted BEFORE the site shifts the site one slot left; then clamp
+  // — if the site now sits at (or past) the end, store null (sticky-last = today's default). jobRouteOrdered
+  // also clamp-reads, so a stale value can't over/under-shoot; this just keeps the stored value tidy.
+  if (typeof j.sitePos === "number" && j.sitePos >= 0) {
+    if (i < j.sitePos) j.sitePos--;
+    if (j.sitePos >= a.length) j.sitePos = null;
+  }
+  if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* REORDER the COMBINED route (planned stops + the movable job site) by one slot — the ▲▼ handler on the job-page
+   route card. comboIndex indexes jobRouteOrdered(j); dir is -1 (up) / +1 (down). We swap the two adjacent tokens,
+   then write back: plannedStops = the stop tokens in their new order, and j.sitePos = the site's new combined
+   index — EXCEPT when the site lands at the very end (=== newStops.length) we store null (sticky-last, so the
+   default byte-identical path is used). Same persist tail as jobPageStopMove. */
+window.jobPageRouteMove = function (jobId, comboIndex, dir) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const tokens = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(j) : [];
+  const j2 = comboIndex + dir;
+  if (comboIndex < 0 || comboIndex >= tokens.length || j2 < 0 || j2 >= tokens.length) return;
+  const t = tokens[comboIndex]; tokens[comboIndex] = tokens[j2]; tokens[j2] = t;   // swap adjacent
+  const newStops = tokens.filter(x => x.kind === "stop").map(x => x.stop);
+  const siteAt = tokens.findIndex(x => x.kind === "site");
+  j.plannedStops = newStops;
+  j.sitePos = (siteAt === newStops.length) ? null : siteAt;   // sticky-last: site at the very end → null
   if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };

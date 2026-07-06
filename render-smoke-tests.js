@@ -69,6 +69,22 @@ SCREENS.forEach(function (tab) {
   if (!coerced && empty && !threw) __errs.push("BLANK SCREEN [" + tab + "]: render() produced (near-)empty #view content (" + html.length + " chars) — screen may be dead");
 });
 
+// ---- JOB PAGE + movable-route card (js/61): open a job with a planned stop + a site-first sitePos, render, and
+//      assert the reorderable route card renders with the ▲▼ handler (jobPageRouteMove) + the movable 🏁 site row. ----
+(function () {
+  var jr = D().jobs.find(function (x) { return x.id === "j_rs"; });
+  if (jr) { jr.address = "1 Job Site Rd"; jr.plannedStops = [{ id: "s_rs", label: "Supplier", address: "2 Supply Ave", lat: null, lng: null }]; jr.sitePos = 0; }
+  TAB = "schedule"; window.JOB_OPEN = "j_rs";
+  var threw = null;
+  try { render(); } catch (e) { threw = (e && (e.stack || e.message)) || String(e); }
+  var html = (document.getElementById("view") || {}).innerHTML || "";
+  if (threw) __errs.push("JOB PAGE RENDER THREW: " + threw);
+  if (html.indexOf("jobPageRouteMove") < 0) __errs.push("JOB PAGE: route card missing the ▲▼ reorder handler (jobPageRouteMove)");
+  if (html.indexOf("🏁 Job site") < 0) __errs.push("JOB PAGE: movable job-site row (🏁 Job site) not rendered");
+  diag("job page: threw=" + (threw ? "YES" : "no") + " | hasRouteMove=" + (html.indexOf("jobPageRouteMove") >= 0) + " | hasSiteRow=" + (html.indexOf("🏁 Job site") >= 0) + " | len=" + html.length);
+  window.JOB_OPEN = null;
+})();
+
 results.forEach(function (r) {
   diag("screen " + r.tab + (r.coerced ? " (coerced->" + r.routedTo + ", org-hidden)" : "") + " | empty=" + r.empty + " | threw=" + (r.threw ? "YES" : "no") + " | newErrs=" + r.newErrs);
 });

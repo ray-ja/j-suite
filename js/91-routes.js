@@ -338,16 +338,19 @@ function rvBadgeMarker(latlng, color, text, title) {
 
 function rvDrawJob(bounds) {
   const job = ROUTES_JOB ? rvJobById(ROUTES_JOB) : null; if (!job) return;
-  // --- planned overlay (thin SOLID blue): start -> planned stops -> site -> end ---
+  // --- planned overlay (thin SOLID blue): start -> combined route (stops + the movable job site, in j.sitePos
+  //     order) -> end. Built from the shared jobRouteOrdered(job) so the map can't drift from the job-page card. ---
   const hb = (typeof homeBase === "function") ? homeBase() : null;
   const planLine = [];
   const startPt = (typeof jobRouteEndpointPt === "function") ? jobRouteEndpointPt(job.routeStart, hb) : null;
   const endPt = (typeof jobRouteEndpointPt === "function") ? jobRouteEndpointPt(job.routeEnd, hb) : null;
   if (startPt) { planLine.push(startPt); rvBadgeMarker(startPt, RV_PLAN_COLOR, "S", "Planned start").addTo(RV_LAYERS); bounds.push(startPt); }
-  const planned = (typeof jobPlannedStops === "function") ? jobPlannedStops(job) : [];
-  planned.forEach((s, i) => { if (s.lat != null && s.lng != null) { const pt = [s.lat, s.lng]; planLine.push(pt); rvBadgeMarker(pt, RV_PLAN_COLOR, String(i + 1), "Planned: " + (s.label || s.address || "stop")).addTo(RV_LAYERS); bounds.push(pt); } });
-  const site = (typeof jobLatLng === "function") ? jobLatLng(job) : null;   // job site (via linked property); may be unresolved → gracefully omit
-  if (rvValidLL(site)) { const pt = [site.lat, site.lng]; planLine.push(pt); rvBadgeMarker(pt, "#1B2A4E", "🏁", "Job site").addTo(RV_LAYERS); bounds.push(pt); }
+  const _combo = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(job) : [];
+  let _sn = 0;
+  _combo.forEach(t => {
+    if (t.kind === "site") { const site = t.ll; if (rvValidLL(site)) { const pt = [site.lat, site.lng]; planLine.push(pt); rvBadgeMarker(pt, "#1B2A4E", "🏁", "Job site").addTo(RV_LAYERS); bounds.push(pt); } }   // job site (via linked property); may be unresolved → gracefully omit
+    else { const s = t.stop; if (s && s.lat != null && s.lng != null) { _sn++; const pt = [s.lat, s.lng]; planLine.push(pt); rvBadgeMarker(pt, RV_PLAN_COLOR, String(_sn), "Planned: " + (s.label || s.address || "stop")).addTo(RV_LAYERS); bounds.push(pt); } }
+  });
   if (endPt) { planLine.push(endPt); if (!startPt || endPt[0] !== startPt[0] || endPt[1] !== startPt[1]) rvBadgeMarker(endPt, RV_PLAN_COLOR, "E", "Planned end").addTo(RV_LAYERS); bounds.push(endPt); }
   if (planLine.length >= 2) {
     // draw the straight (as-the-crow-flies) planned line NOW as the fallback, then try to upgrade it to real roads.
