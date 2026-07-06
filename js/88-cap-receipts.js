@@ -44,12 +44,15 @@ async function capRcptRead(receiptId) {
   } catch (e) { return { error: (e && e.message) || "request failed" }; }
 }
 
-/* TRIGGER — read the needs-review pile (up to CAP_RCPT_MAX). Writes ONLY `suggested`; never a real field. */
-window.capRcptRun = async function () {
-  if (!capRcptCanRun()) { alert("Only an owner or admin can run Cap."); return; }
+/* TRIGGER — read the needs-review pile (up to CAP_RCPT_MAX). Writes ONLY `suggested`; never a real field.
+   opts.auto (Phase B auto-read on a small upload) runs SILENTLY: no owner/no-targets/success alerts — the
+   fresh 🤖 badge + "✓ file it" button in the table are the feedback. Manual "🤖 Read N" stays chatty. */
+window.capRcptRun = async function (opts) {
+  opts = opts || {};
+  if (!capRcptCanRun()) { if (!opts.auto) alert("Only an owner or admin can run Cap."); return; }
   if (_capRcptBusy) return;
   const targets = capRcptTargets().slice(0, CAP_RCPT_MAX);
-  if (!targets.length) { alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
+  if (!targets.length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
   _capRcptBusy = true;
   capRcptSetStatus("🤖 Cap is reading 0/" + targets.length + "…");
   let done = 0, ok = 0, skipped = 0, keyMissing = false;
@@ -68,8 +71,8 @@ window.capRcptRun = async function () {
   if (ok && typeof save === "function") save();
   _capRcptBusy = false;
   capRcptSetStatus("");
-  if (keyMissing) { alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
-  else { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + ". Open a 🤖 row to review and approve its guess."); }
+  if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
+  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + ". Open a 🤖 row to review and approve its guess."); }
   if (typeof render === "function") render();
 };
 
