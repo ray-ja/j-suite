@@ -253,8 +253,9 @@ window.openJob=function(id,customerId,presetDate){
     <label>Or pick from services</label><select id="j_svc" onchange="if(this.value)document.getElementById('j_title').value=this.value">${svcopts}</select>
     <label>Customer</label><select id="j_cust">${opts}</select>
     <label>Property (for the job route map)</label><select id="j_prop"><option value="">— none —</option>${actProps().map(p=>`<option value="${p.id}" ${j.propertyId===p.id?"selected":""}>${esc(p.label||p.address||"Property")}${p.lat==null?" (no location)":""}</option>`).join("")}</select>
-    ${(typeof isOwner==="function"&&isOwner())?`<label style="margin-top:12px">🧭 Planned route <span class="sub" style="font-weight:400">· stops BEFORE the job site — e.g. a materials supplier — in order</span></label>
-    <div id="j_stops"></div>`:""}
+    ${(typeof isOwner==="function"&&isOwner())?`<label style="margin-top:12px">🧭 Planned route <span class="sub" style="font-weight:400">· the ordered stops — e.g. a materials supplier</span></label>
+    <div id="j_stops"></div>
+    <div class="sub muted" style="margin-top:4px;white-space:normal">The job-site position in the route is set on the job page.</div>`:""}
     <div class="row" style="gap:8px"><div class="grow"><label>Start date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="jobStartDateChanged()"></div>
     <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
     <label style="margin-top:6px">Work days <span class="sub" style="font-weight:400">· tap every day you'll work this job (can skip days)</span></label>
@@ -492,7 +493,12 @@ window.saveJob=function(id,isNew){
   // MULTI-DAY: persist the picked work days (deduped, start day always in, sorted). Single-day jobs store [date].
   {const wd=new Set(JOBWORKDAYS);if(j.date)wd.add(j.date);j.workDays=[...wd].filter(Boolean).sort();}
   j.equipment=JOBEQUIP.map(e=>({itemId:e.itemId,qty:e.qty}));
+  const _prevStopCount=Array.isArray(j.plannedStops)?j.plannedStops.length:0;   // for the movable-job-site drift guard below
   j.plannedStops=JOBSTOPS.map(s=>{const o={id:s.id,label:s.label,address:s.address,lat:s.lat!=null?s.lat:null,lng:s.lng!=null?s.lng:null};if(s.placeId)o.placeId=s.placeId;return o;});   // admin-planned route (js/61 renders these as labeled links); untouched (echoed back) when the editor is hidden for non-owners. placeId (optional) carries a saved-place ref for the mileage-estimate override
+  // MOVABLE-JOB-SITE drift guard: this modal edits stops ONLY (the job-site position lives on the job page, js/61
+  // jobPageRouteMove → j.sitePos). If the stop COUNT changed here, a stored non-null j.sitePos may now point at the
+  // wrong slot → reset to null (site back to LAST = today's default). jobRouteOrdered also clamp-reads as a backstop.
+  if(typeof j.sitePos==="number"&&j.plannedStops.length!==_prevStopCount)j.sitePos=null;
   if(!j.title){alert("Give the job a name.");return;}
   if(typeof submitGuard==="function"&&!submitGuard("saveJob:"+id))return;   // rapid-tap dupe guard
   if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
