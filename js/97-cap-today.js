@@ -158,7 +158,7 @@ window.capSend = function (voice) {
   }
   CAP_THREAD.push({ role: "user", content: text }); capSaveThread(); inp.value = ""; CAP_BUSY = true; capRenderThread();
   const hist = CAP_THREAD.filter(m => m && (m.role === "user" || m.role === "assistant")).slice(-8);   // only the conversation, never action cards
-  fetch(capBase() + "/api/org-ai/assistant", { method: "POST", headers: capHeaders(), body: JSON.stringify({ org: (typeof S !== "undefined" ? S.biz : ""), messages: hist }) })
+  fetch(capBase() + "/api/org-ai/assistant", { method: "POST", headers: capHeaders(), body: JSON.stringify({ org: (typeof S !== "undefined" ? S.biz : ""), messages: hist, cats: (typeof RCPT_CATS !== "undefined" ? RCPT_CATS : []) }) })
     .then(r => r.json().then(j => ({ ok: r.ok, j: j })).catch(() => ({ ok: false, j: {} })))
     .then(res => {
       CAP_BUSY = false; const j = res.j || {};
@@ -210,6 +210,25 @@ function capClockInPlan(a) {
   }
   return { job: capJob(a.jobId), role: role, vehicleEnc: vehicleEnc, vehicleLabel: vehicleLabel, odoStart: odoStart, odo: a.odometer };
 }
+/* the plan for a logExpense proposal — computed ONCE from local data so the confirm-card narration and the actual
+   file agree (what you confirm is what you get). Merges Cap's clamped action with rcptSmartDefaults (js/98): a blank
+   job/category inherits the smart default (clocked-in job, per-vendor memory); paidBy resolves to ME only when Cap
+   said "self" (their own card → reimburse), else "" (no reimburse); cardLast4 comes from the smart default. Crew
+   self-scoped: paidBy can NEVER be another person (server clamps to self/"" and the card is always the caller's). */
+function capLogExpensePlan(a) {
+  const me = (typeof curUser === "function") ? curUser() : null, meId = (me && me.id) || "";
+  const d = (typeof rcptSmartDefaults === "function") ? (rcptSmartDefaults({ vendor: a.vendor, meId: meId }) || {}) : {};
+  const jobId = a.jobId || d.jobId || "";
+  return {
+    amount: a.amount, vendor: a.vendor || "",
+    type: a.type || (jobId ? "pass-through" : "business"),
+    jobId: jobId,
+    paidBy: (a.paidBy === "self") ? meId : "",
+    cardLast4: d.cardLast4 || "",
+    category: a.category || d.category || "",
+    note: a.note || "", refund: !!a.refund, deposit: !!a.deposit
+  };
+}
 function capNarrate(a) {
   if (a.action === "clockIn") {
     const plan = capClockInPlan(a), cust = capJobCust(plan.job);
@@ -223,6 +242,17 @@ function capNarrate(a) {
   if (a.action === "setOdometer") { const open = capMyOpen(); return "📍 Set your starting odometer to " + capNum(a.miles) + (open && open.vehicle ? " on " + esc(open.vehicle) : "") + " — Confirm?"; }
   if (a.action === "assignSelfToJob") { const cust = capJobCust(capJob(a.jobId)); return "➕ Put you on " + esc(capJobTitle(a.jobId)) + (cust ? " — " + esc(cust) : "") + " — Confirm?"; }
   if (a.action === "markWorkDay") { return "📅 Mark " + esc(capFmtDay(a.date)) + " as a work day on " + esc(capJobTitle(a.jobId)) + " — Confirm?"; }
+  if (a.action === "logExpense") {
+    const p = a._plan || (a._plan = capLogExpensePlan(a));
+    const amt = (typeof money === "function") ? money(Math.abs(p.amount)) : ("$" + Math.abs(p.amount));
+    const typeLabel = p.type === "pass-through" ? "🧱 pass-through" : p.type === "job-expense" ? "🔧 job expense" : "🏢 business";
+    let dest = "";
+    if (p.jobId) { const cust = capJobCust(capJob(p.jobId)); dest = " to " + esc(capJobTitle(p.jobId)) + (cust ? " — " + esc(cust) : ""); }
+    const card = p.paidBy ? (" · your card" + (p.cardLast4 ? " ••••" + esc(p.cardLast4) : "")) : (p.cardLast4 ? " · card ••••" + esc(p.cardLast4) : "");
+    const flags = (p.refund ? " · ↩ refund" : "") + (p.deposit ? " · ⚠ deposit" : "");
+    return "💵 Log " + amt + (p.vendor ? " at " + esc(p.vendor) : "") + (p.note ? " — " + esc(p.note) : "")
+      + " · " + typeLabel + dest + card + flags + " — Confirm?";
+  }
   return "Confirm this action?";
 }
 function capActionCard(item) {
@@ -279,6 +309,16 @@ function capExecAction(a) {
   }
   if (a.action === "assignSelfToJob") return capAssignSelf(a.jobId);
   if (a.action === "markWorkDay") return capMarkWorkDay(a.jobId, a.date);
+  if (a.action === "logExpense") {
+    if (typeof rcptFileFromFields !== "function") return { ok: false, error: "unavailable" };
+    const me = (typeof curUser === "function") ? curUser() : null, meId = (me && me.id) || "";
+    const p = a._plan || (a._plan = capLogExpensePlan(a));
+    return rcptFileFromFields({
+      amount: p.refund ? -Math.abs(p.amount) : p.amount, vendor: p.vendor, type: p.type, jobId: p.jobId,
+      category: p.category, paidBy: p.paidBy, attributedTo: meId, desc: p.note,
+      kind: p.refund ? "refund" : "", isDeposit: !!p.deposit
+    }, { meId: meId });
+  }
   return { ok: false, error: "unknown" };
 }
 function capAckLine(a) {
@@ -287,10 +327,18 @@ function capAckLine(a) {
   if (a.action === "setOdometer") return "Got it — starting odometer saved.";
   if (a.action === "assignSelfToJob") return "Done — you're on " + capJobTitle(a.jobId) + ".";
   if (a.action === "markWorkDay") return "Done — marked as a work day.";
+  if (a.action === "logExpense") {
+    const p = a._plan || capLogExpensePlan(a);
+    const amt = (typeof money === "function") ? money(Math.abs(p.amount)) : ("$" + Math.abs(p.amount));
+    return "Done — logged " + amt + (p.vendor ? " at " + p.vendor : "") + ". 👍";
+  }
   return "Done.";
 }
 function capErrForAction(res, a) {
   const err = res && res.error;
+  // logExpense surfaces the receipt-engine's own plain-English validation message (rcptFileValidate) so Cap can
+  // re-ask ("Pick a job for this receipt…"); only the "unavailable" code falls through to the generic line.
+  if (a && a.action === "logExpense" && typeof err === "string" && err && err !== "unavailable") return err;
   if (err === "already-open") return "you're already clocked in — clock out first.";
   if (err === "not-open") return "you're not clocked in right now.";
   if (err === "odo-required") return "I need your ending odometer to close a driving shift — what does it read?";

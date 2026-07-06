@@ -1620,8 +1620,33 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     && t.capParseAction("assignSelfToJob", { jobId: "jobA", userId: "sam" }, capActCtx) === null);
   ok("an unknown tool name → DROPPED (null)",
     t.capParseAction("deleteEverything", { all: true }, capActCtx) === null);
-  ok("CAP_TOOLS exports 5 self-scoped tools, none taking a target/userId field",
-    Array.isArray(t.CAP_TOOLS) && t.CAP_TOOLS.length === 5 && t.CAP_TOOLS.every(tl => tl && tl.strict === true && tl.input_schema && tl.input_schema.additionalProperties === false && !Object.keys(tl.input_schema.properties || {}).some(k => /user|person|target|assignee|member/i.test(k))));
+  ok("CAP_TOOLS exports 6 self-scoped tools, none taking a target/userId field",
+    Array.isArray(t.CAP_TOOLS) && t.CAP_TOOLS.length === 6 && t.CAP_TOOLS.every(tl => tl && tl.strict === true && tl.input_schema && tl.input_schema.additionalProperties === false && !Object.keys(tl.input_schema.properties || {}).some(k => /user|person|target|assignee|member/i.test(k))));
+
+  // ===== Cap Today PHASE C — logExpense clamp (receipt filing via Cap; AI output untrusted, crew self-scoped) =====
+  console.log("\n— Cap Today Phase C (logExpense clamp) —");
+  const capExpCtx = { jobIds: ["jobA", "jobB"], todayIso: "2026-07-06", cats: ["materials", "fuel", "disposal"] };
+  ok("logExpense fully valid → KEPT (amount/vendor/type/jobId/category/paidBy/refund/deposit all clamped through)",
+    (function () { const a = t.capParseAction("logExpense", { amount: 65, vendor: "Lowe's", type: "pass-through", jobId: "jobA", category: "materials", paidBy: "self", note: "pavers", refund: false, deposit: false }, capExpCtx);
+      return a && a.action === "logExpense" && a.amount === 65 && a.vendor === "Lowe's" && a.type === "pass-through" && a.jobId === "jobA" && a.category === "materials" && a.paidBy === "self" && a.note === "pavers" && a.refund === false && a.deposit === false; })());
+  ok("logExpense category NOT in ctx.cats → cleared to \"\" (action still kept)",
+    (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "business", jobId: null, category: "gold-bars", paidBy: null, note: null, refund: false, deposit: false }, capExpCtx); return a && a.action === "logExpense" && a.category === ""; })());
+  ok("logExpense type NOT a real type → null (action still kept, app fills default)",
+    (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "groceries", jobId: null, category: "fuel", paidBy: null, note: null, refund: false, deposit: false }, capExpCtx); return a && a.type === null; })());
+  ok("logExpense jobId NOT in ctx.jobIds → cleared to null",
+    (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "job-expense", jobId: "jobZZZ", category: "fuel", paidBy: "self", note: null, refund: false, deposit: false }, capExpCtx); return a && a.jobId === null; })());
+  ok("logExpense paidBy 'chase' (a card/other value, not 'self') → collapsed to \"\" (never another person)",
+    (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: "chase", note: null, refund: false, deposit: false }, capExpCtx); return a && a.paidBy === ""; })());
+  ok("logExpense with a targetPerson-ish field (cross-user) → DROPPED (null) by the TARGET_KEYS guard",
+    t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: "self", note: null, refund: false, deposit: false, teammate: "sam" }, capExpCtx) === null);
+  ok("logExpense negative amount WITHOUT refund → DROPPED (null); WITH refund=true → KEPT",
+    t.capParseAction("logExpense", { amount: -30, vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: null, note: null, refund: false, deposit: false }, capExpCtx) === null
+    && (function () { const a = t.capParseAction("logExpense", { amount: -30, vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: null, note: null, refund: true, deposit: false }, capExpCtx); return a && a.amount === -30 && a.refund === true; })());
+  ok("logExpense zero / non-numeric amount → DROPPED (null)",
+    t.capParseAction("logExpense", { amount: 0, vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: null, note: null, refund: false, deposit: false }, capExpCtx) === null
+    && t.capParseAction("logExpense", { amount: "lots", vendor: "X", type: "business", jobId: null, category: "fuel", paidBy: null, note: null, refund: false, deposit: false }, capExpCtx) === null);
+  ok("logExpense no cats in ctx → any category clears to \"\" (safe default)",
+    (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "business", jobId: null, category: "materials", paidBy: null, note: null, refund: false, deposit: false }, { jobIds: [], todayIso: "2026-07-06" }); return a && a.category === ""; })());
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
