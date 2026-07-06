@@ -53,7 +53,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -527,6 +527,27 @@ async function main() {
   CURUSER = { id: "u_ray", username: "Ray" };
   rcptCsvHandle({ name: "mystery.csv", __text: LOWES_CSV });
   ok("unknown file → no vendorId, generic auto-map still parses its 3 line items", RCSV && !RCSV.vendorId && RCSV.parsed.length === 3, RCSV && [RCSV && RCSV.vendorId, RCSV && RCSV.parsed.length]);
+
+  // ================= PER-JOB PO CODE — CSV EXACT-match (js/95 ↔ js/93) =================
+  console.log("\n— VENDOR CSV: a register-typed P#### PO EXACT-matches its job → hard jobId (supersedes the fuzzy hint) —");
+  resetStore();
+  CURUSER = { id: "u_ray", username: "Ray" };
+  STORE.jobs.push({ id: "jPO", title: "Mike Green patio", customerId: "cMG2", poNum: 1042, materials: [], expenses: [] });
+  STORE.customers.push({ id: "cMG2", name: "Mike Green" });
+  // one row with the app's own PO "P1042" (exact) + one row with a fuzzy name PO "mike green" (fallback)
+  const PO_CSV = LOWES_V2_HDR + "\r\n" +
+    "2-Jul-2026,Lowe's,In-Store,1521,Kill Devil Hills Lowe's,Fulfilled,P1042,,Ray,ray@obx.com,2525550000,147424999,,$4.29,$65.07,VISA,************2469,$0.65,REFX\r\n" +
+    "2-Jul-2026,Lowe's,In-Store,1521,Kill Devil Hills Lowe's,Fulfilled,mike green,,Ray,ray@obx.com,2525550000,147424998,,$4.29,$30.00,VISA,************2469,$0.65,REFY\r\n";
+  RCSV = null;
+  rcptCsvHandle({ name: "po.csv", __text: PO_CSV });
+  const poRecs = RCSV.parsed.map(p => p.rec);
+  const poExact = poRecs.find(r => /147424999/.test(r.desc));
+  const poFuzzy = poRecs.find(r => /147424998/.test(r.desc));
+  ok("PO 'P1042' EXACT-matches job jPO → rec.jobId hard-set", poExact && poExact.jobId === "jPO", poExact && poExact.jobId);
+  ok("exact match also sets customerId + _poMatch badge (P1042)", poExact && poExact.customerId === "cMG2" && poExact._poMatch && poExact._poMatch.po === "P1042", poExact && poExact._poMatch);
+  ok("exact match SUPERSEDES the fuzzy hint (no custHint on the matched row)", poExact && !poExact.custHint, poExact && poExact.custHint);
+  ok("a NON-numeric PO ('mike green') → NO exact match → falls back to custHint, jobId stays null", poFuzzy && poFuzzy.jobId === null && !poFuzzy._poMatch && poFuzzy.custHint && poFuzzy.custHint.customerId === "cMG2", { jobId: poFuzzy && poFuzzy.jobId, hint: poFuzzy && poFuzzy.custHint });
+  ok("still review-only (exact match does NOT file it into billing)", poExact && poExact.status === "review" && poExact.type === null, poExact && [poExact.status, poExact.type]);
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);

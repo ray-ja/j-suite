@@ -230,6 +230,11 @@ function rJobPage(j) {
   // which jobAddr() already reads as a fallback. Crew see the location read-only.
   if (jobCanEditPlan()) h += `<button class="btn ghost sm" style="margin-top:6px" onclick="jobEditLoc('${j.id}')">✏️ Edit location</button>`;
   h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
+  // PER-JOB PO CODE (js/95) — tap-to-copy chip Ray types into a vendor's register PO field; the CSV import then
+  // EXACT-matches the receipt back to this job. Skip pure stop/sub jobs (they ride their parent's paperwork).
+  if (typeof jobPO === "function" && jobPO(j) && !j.stopKind && !Array.isArray(j.sharedJobIds)) {
+    h += `<div style="margin-top:8px"><button class="btn ghost sm" onclick="jobCopyPO('${j.id}')" title="Type this into the store's PO field so the receipt auto-files to this job">🧾 PO ${jobPO(j)} · tap to copy</button></div>`;
+  }
   if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
   // DERIVED lifecycle badge — where this job sits in the pipeline (lead→quote→job→expense collecting→invoice→paid).
   // Reads through the linked quote; the expense-collecting badge shows live "N/M crew closed" + who we're waiting on.
@@ -1017,7 +1022,7 @@ function jobFindOrCreateStop(selectedIds, stopKind, assigneeId) {
   if (existing) return existing;
   const titles = { dump: "Dump run", pickup: "Materials pickup", other: "Stop" };
   const sj = { id: uid(), title: titles[stopKind] || "Stop", date: d, done: false, sharedJobIds: (selectedIds || []).slice(), stopKind: stopKind, parentJobId: selectedIds.length === 1 ? selectedIds[0] : "", crew: assigneeId ? [assigneeId] : [], expenses: [], materials: [] };
-  D().jobs.push(sj); if (typeof touch === "function") touch(sj);
+  D().jobs.push(sj); if (typeof jobEnsurePO === "function") jobEnsurePO(sj); if (typeof touch === "function") touch(sj);
   return sj;
 }
 let _splitAddBusy = false, _splitAddWatchdog = null;

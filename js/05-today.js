@@ -145,7 +145,7 @@ window.saveQuickTask=function(){
   const date=val("qt_date")||today();
   const crew=[].slice.call(document.querySelectorAll(".qt_c:checked")).map(c=>c.value);
   const j={id:uid(),title:title,date:date,crew:crew,customerId:null,equipment:[],done:false,updatedAt:now()};
-  if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof touch==="function")touch(j);
+  if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof jobEnsurePO==="function")jobEnsurePO(j); if(typeof touch==="function")touch(j);
   crew.forEach(id=>notifyAssignee(id,"📋 New task: "+title+" · "+fmtDate(date)));
   if(typeof save==="function")save(); if(typeof closeModal==="function")closeModal();
   const _cb=QT_AFTER; QT_AFTER=null;
@@ -170,7 +170,7 @@ window.applyJobTemplate=function(id){
   // vestigial time/travel pre-fill (onSiteHrs/driveMin/driveMiles) dropped — job time now comes from the timeclock
   // and a template-copied driveMiles would fabricate a phantom mileage cost (jobMilesCost) with no miles driven.
   const j={id:uid(),title:t.title||t.label||"Job",date:today(),address:t.address||"",crew:me?[me.id]:[],crewN:t.crewN||1,equipment:[],fromTemplate:t.id,done:false,updatedAt:now()};
-  if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof touch==="function")touch(j); save();
+  if(!D().jobs)D().jobs=[]; D().jobs.push(j); if(typeof jobEnsurePO==="function")jobEnsurePO(j); if(typeof touch==="function")touch(j); save();
   if(typeof closeModal==="function")closeModal();
   const _cb=QT_AFTER; QT_AFTER=null;
   if(_cb){ _cb(j.id); } else if(typeof openJobPage==="function")openJobPage(j.id); else render();
