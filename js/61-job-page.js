@@ -240,6 +240,13 @@ function rJobPage(j) {
       const _lbl = (typeof workStageLabel === "function") ? workStageLabel(_wq) : _m.label;
       const _wait = (_st === "expense" && typeof workStageWaiting === "function") ? workStageWaiting(_wq) : [];
       h += `<div style="margin-top:8px"><span class="badge" style="background:${_m.color};color:#fff">${esc(_lbl)}</span>${_wait.length ? `<span class="sub" style="margin-left:6px">waiting on ${esc(_wait.join(", "))}</span>` : ""}</div>`;
+      // Payment-decoupled FOLLOW-UP: even once a job is invoiced/PAID, if the expenses aren't signed-off collected
+      // AND crew are still open, surface a muted reminder so the slow crew member's missing receipts aren't
+      // forgotten. Visible to everyone (crew see it too so they know to submit); the owner sign-off card is below.
+      if ((_st === "invoice" || _st === "paid") && !j.expensesCollected && typeof workStageWaiting === "function") {
+        const _openNames = workStageWaiting(_wq);
+        if (_openNames.length) h += `<div class="sub" style="margin-top:6px;white-space:normal;color:var(--muted)">⚠ Expenses not yet collected — ${_openNames.length} crew still open: <b>${esc(_openNames.join(", "))}</b></div>`;
+      }
     }
   }
   // WHERE YOU'RE GOING — ONE clean per-stop navigate list, ALWAYS driven by the shared jobRouteOrdered(j) (it
@@ -417,6 +424,24 @@ function rJobPage(j) {
     h += `<div class="muted">No quote is linked to this job yet.</div>`;
   }
   h += `</div>`;
+
+  // 6d) Close-out sign-offs (owner/admin) — TWO independent checks, DECOUPLED from payment: neither gates nor is
+  //     gated by paid/invoiced, and both are visible + settable at any stage. (a) "Reviewed" reuses the existing
+  //     j.reviewed / plReview mechanism (js/67); (b) "All expenses collected" flips the additive j.expensesCollected
+  //     (+ stamps At/By). The expenses sign-off ALSO lets workStage (js/60) move a done job past a SLOW crew member
+  //     without waiting for the auto close-out — so payment is never held up, but the follow-up isn't forgotten
+  //     (the ⚠ reminder above surfaces open crew on a paid/invoiced job). Crew don't see this card.
+  if (jobCanEditPlan()) {
+    const _revd = (typeof plReviewed === "function" && _mq) ? plReviewed(_mq) : !!j.reviewed;
+    const _coll = !!j.expensesCollected;
+    const _openC = (typeof jobReceiptsOpenCrew === "function") ? jobReceiptsOpenCrew(j).map(id => (typeof userName === "function" ? userName(id) : "") || "").filter(Boolean) : [];
+    h += `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:4px">✅ Close-out sign-offs <span class="sub" style="font-weight:400">· independent of payment</span></div>`;
+    h += `<div class="sub" style="margin-bottom:6px;white-space:normal">Two separate checks so a slow crew member can't hold up payment: mark the job <b>reviewed</b> and confirm <b>all expenses are collected</b>. A paid job with expenses still open stays flagged for follow-up.</div>`;
+    h += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_revd ? "checked" : ""} onchange="jobToggleReviewed('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">⭐ Reviewed</div><div class="sub" style="white-space:normal">${_revd ? "Signed off — the after-action is done." : "The after-action review — what went well / do differently."}</div></div>${_revd && _mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Edit</button>` : (_mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Write ›</button>` : "")}</label>`;
+    h += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_coll ? "checked" : ""} onchange="jobToggleExpensesCollected('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">🧾 All expenses collected</div><div class="sub" style="white-space:normal">${_coll ? `Signed off${j.expensesCollectedBy ? " by " + esc(j.expensesCollectedBy) : ""}${j.expensesCollectedAt && typeof relTime === "function" ? " · " + relTime(j.expensesCollectedAt) : ""} — every crew member's receipts are in.` : "Confirm every crew member submitted their expenses for this job."}</div></div></label>`;
+    if (!_coll && _openC.length) h += `<div class="note" style="margin-top:8px;white-space:normal;border-left:3px solid #d9822b">⚠ ${_openC.length} crew still to close out: <b>${esc(_openC.join(", "))}</b>. You can sign off anyway once you've confirmed their expenses are in — payment isn't blocked either way.</div>`;
+    h += `</div>`;
+  }
 
   // 7) Change order — a change order is an EDIT to the SAME quote, saved as a version (not a second record).
   //    Editing the full quote updates the customer's price IN PLACE (one invoice per job — no new invoice #);
@@ -697,6 +722,34 @@ window.jobSetParent = function (jobId, parentId) {
   j.parentJobId = parentId || "";   // kept for back-compat/audit trail — unread by new code
   j.sharedJobIds = parentId ? [parentId] : null;   // the model going forward: membership match, not equality
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* CLOSE-OUT SIGN-OFFS (owner/admin) — two independent toggles, DECOUPLED from payment (js/60 workStage). */
+/* (a) Reviewed — reuses the existing j.reviewed / q.reviewed pair that plReviewed(q) reads (js/67), so the
+   lightweight toggle here and the full plReview modal stay in sync. Sets/clears BOTH so plReviewed flips too. */
+window.jobToggleReviewed = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const v = !j.reviewed;
+  j.reviewed = v;
+  const q = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
+  if (q) { q.reviewed = v; if (typeof touch === "function") touch(q); }   // keep plReviewed(q)=q.reviewed||j.reviewed consistent
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Reviewed " + (v ? "✓" : "cleared"));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* (b) All expenses collected — the additive j.expensesCollected flag (+ At/By stamp). Absent = false = today's
+   behavior. Billing/finance never read it; workStage (js/60) uses it only to satisfy the expense→invoice gate
+   past a slow crew member. Never gates or is gated by paid/invoiced. */
+window.jobToggleExpensesCollected = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const v = !j.expensesCollected;
+  j.expensesCollected = v;
+  if (v) { j.expensesCollectedAt = (typeof now === "function") ? now() : Date.now(); j.expensesCollectedBy = ((typeof curUser === "function" && curUser()) ? curUser().username : "") || ""; }
+  else { j.expensesCollectedAt = null; j.expensesCollectedBy = ""; }
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "All expenses collected " + (v ? "✓" : "cleared"));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 window.jobToggleLoaded = function (jobId, itemId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
