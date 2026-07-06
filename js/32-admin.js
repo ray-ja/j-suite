@@ -21,7 +21,7 @@ const ADMIN_PAGES = [
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
   { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
   { tab: "playbook", label: "Playbook" }, { tab: "research", label: "Research" },
-  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
+  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "routes", label: "Routes" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew see "pay" (their OWN earnings only — js/86 rPay hard-gates a non-owner/admin to their own userId) but
@@ -127,6 +127,10 @@ function roleAllows(key, tab) {
   // It only shows contact info (no finance), and every member's edit-authz is enforced separately (self, or an
   // owner/manager) client- and server-side. Signed-out (NO_SESSION) is excluded, like receipts.
   if (tab === "team") return key !== NO_SESSION_ROLE;
+  // ROUTES (GPS route review) — visible at nav level to any SIGNED-IN role so a custom role's pages[] never
+  // hides the new tab (the new-tab gotcha). The PAGE itself (rRoutes, js/91) gates its owner/admin content for
+  // Phase 1; crew self-view is Phase 3. Signed-out (NO_SESSION) is excluded like receipts/team.
+  if (tab === "routes") return key !== NO_SESSION_ROLE;
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user
