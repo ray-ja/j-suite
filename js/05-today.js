@@ -113,7 +113,7 @@ function rToday(){
     if(top.length){ h+=`<div class="secthd"><h2>✅ Top to-dos</h2>${td0.length>top.length?`<span class="ct">+${td0.length-top.length}</span>`:""}</div><div class="card">`+top.map(td=>liTodo(td,t)).join("")+`</div>`; }
   }
 
-  view.innerHTML=h;
+  view.innerHTML='<div class="pgcols">'+h+'</div>';
 }
 
 /* first workday (Mon–Fri) of the month AFTER ym ("YYYY-MM") — when that month's payouts go out */

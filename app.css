@@ -295,6 +295,22 @@
     .empty{padding:60px 16px}
   }
   @media(min-width:1400px){ .wrap,#pushbanner{max-width:1320px;margin-left:max(224px,calc(50vw - 548px))} .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)} }
+  /* DESKTOP 2-COLUMN page layout (A) — card-stack pages (Today, Finance overview) opt in via .pgcols.
+     Multicol keeps each card intact + in order and never splits one; single column on mobile/tablet.
+     A section header (.secthd) is glued to the card that follows it so they never break across columns. */
+  @media(min-width:1180px){
+    .pgcols{column-count:2;column-gap:22px}
+    .pgcols>.secthd{-webkit-column-break-after:avoid;break-after:avoid;page-break-after:avoid;margin-top:2px}
+    .pgcols>.card,.pgcols>.secthd{-webkit-column-break-inside:avoid;break-inside:avoid}
+  }
+  /* (C) subtle interactive lift on clickable cards — desktop pointer only, so touch is unaffected */
+  @media(hover:hover) and (pointer:fine){
+    .card[onclick]{cursor:pointer;transition:transform .1s ease,box-shadow .15s ease}
+    .card[onclick]:hover{box-shadow:var(--sh-md);transform:translateY(-1px)}
+    .btn{transition:filter .15s,transform .06s,box-shadow .15s}
+    .btn:hover{filter:brightness(1.06)}
+    .btn.acc:hover,.btn:not(.ghost):not(.danger):hover{box-shadow:var(--sh-sm)}
+  }
   /* DEV env banner (js/55) — fixed 24px top bar; shift the sticky header + fixed desktop sidebar + body
      down by its height so they stay aligned. Rules apply ONLY when body.has-dev-banner is set (dev-only;
      prod never gets the class, so zero prod impact). */
