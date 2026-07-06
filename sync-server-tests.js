@@ -1590,11 +1590,38 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("assistant member-gate: a member passes for their org (joe ∈ obx)", t.orgsForUser(capStore, t.accountById(capStore, "joe")).indexOf("obx") >= 0);
   ok("assistant member-gate: a member of obx is a NON-member of jam → 403", t.orgsForUser(capStore, t.accountById(capStore, "joe")).indexOf("jam") < 0);
   ok("assistant member-gate: a stranger with no membership → 403 everywhere", t.orgsForUser(capStore, t.accountById(capStore, "stranger")).length === 0);
-  // callAnthropicAssistant: trims to a valid leading user turn; returns a friendly opener WITHOUT a network call
-  let capR1 = null, capR2 = null;
-  t.callAnthropicAssistant("k", "m", "sys", [{ role: "assistant", content: "hi" }], (e, r) => { capR1 = r; });
-  t.callAnthropicAssistant("k", "m", "sys", [], (e, r) => { capR2 = r; });
-  ok("callAnthropicAssistant early-returns (no network) when there's no leading user turn", typeof capR1 === "string" && /help/i.test(capR1) && typeof capR2 === "string", [capR1, capR2]);
+  // callAnthropicAssistant: trims to a valid leading user turn; returns a friendly opener + empty actions WITHOUT a network call
+  let capR1 = null, capR1a = null, capR2 = null;
+  t.callAnthropicAssistant("k", "m", "sys", [{ role: "assistant", content: "hi" }], null, null, (e, r, a) => { capR1 = r; capR1a = a; });
+  t.callAnthropicAssistant("k", "m", "sys", [], t.CAP_TOOLS, { jobIds: [] }, (e, r) => { capR2 = r; });
+  ok("callAnthropicAssistant early-returns (no network) when there's no leading user turn, actions []", typeof capR1 === "string" && /help/i.test(capR1) && Array.isArray(capR1a) && capR1a.length === 0 && typeof capR2 === "string", [capR1, capR1a, capR2]);
+
+  // ===== Cap Today PHASE 2 — capParseAction server-side CLAMP (AI output is untrusted; server never executes) =====
+  console.log("\n— Cap Today Phase 2 (action clamp) —");
+  const capActCtx = { jobIds: ["jobA", "jobB"], todayIso: "2026-07-06" };
+  ok("clockIn with a valid today jobId → KEPT (jobId + odometer clamped)",
+    (function () { const a = t.capParseAction("clockIn", { jobId: "jobA", placeHint: "the shop", odometer: 45210, vehicleHint: "Ram" }, capActCtx); return a && a.action === "clockIn" && a.jobId === "jobA" && a.odometer === 45210 && a.placeHint === "the shop"; })());
+  ok("clockIn with a jobId NOT in today's/active jobs → DROPPED (null)",
+    t.capParseAction("clockIn", { jobId: "jobZZZ", placeHint: null, odometer: null, vehicleHint: null }, capActCtx) === null);
+  ok("clockIn odometer non-numeric → DROPPED (null)",
+    t.capParseAction("clockIn", { jobId: "jobA", placeHint: null, odometer: "banana", vehicleHint: null }, capActCtx) === null);
+  ok("setOdometer non-numeric miles → DROPPED (null)",
+    t.capParseAction("setOdometer", { miles: "lots" }, capActCtx) === null);
+  ok("setOdometer valid miles → KEPT",
+    (function () { const a = t.capParseAction("setOdometer", { miles: 58366 }, capActCtx); return a && a.action === "setOdometer" && a.miles === 58366; })());
+  ok("clockOut without odometer → KEPT with odometer null",
+    (function () { const a = t.capParseAction("clockOut", { odometer: null }, capActCtx); return a && a.action === "clockOut" && a.odometer === null; })());
+  ok("assignSelfToJob to a valid job → KEPT; to an unknown job → DROPPED",
+    (function () { const ok1 = t.capParseAction("assignSelfToJob", { jobId: "jobB" }, capActCtx); const ok2 = t.capParseAction("assignSelfToJob", { jobId: "nope" }, capActCtx); return ok1 && ok1.jobId === "jobB" && ok2 === null; })());
+  ok("markWorkDay date clamp: valid YYYY-MM-DD kept; absent → defaults to today; bad format → DROPPED",
+    (function () { const good = t.capParseAction("markWorkDay", { jobId: "jobA", date: "2026-07-05" }, capActCtx); const dflt = t.capParseAction("markWorkDay", { jobId: "jobA", date: null }, capActCtx); const bad = t.capParseAction("markWorkDay", { jobId: "jobA", date: "July 5" }, capActCtx); return good && good.date === "2026-07-05" && dflt && dflt.date === "2026-07-06" && bad === null; })());
+  ok("a tool with a targetPerson-ish field (cross-user) → DROPPED (crew act on self only)",
+    t.capParseAction("clockIn", { jobId: "jobA", targetPerson: "sam", placeHint: null, odometer: null, vehicleHint: null }, capActCtx) === null
+    && t.capParseAction("assignSelfToJob", { jobId: "jobA", userId: "sam" }, capActCtx) === null);
+  ok("an unknown tool name → DROPPED (null)",
+    t.capParseAction("deleteEverything", { all: true }, capActCtx) === null);
+  ok("CAP_TOOLS exports 5 self-scoped tools, none taking a target/userId field",
+    Array.isArray(t.CAP_TOOLS) && t.CAP_TOOLS.length === 5 && t.CAP_TOOLS.every(tl => tl && tl.strict === true && tl.input_schema && tl.input_schema.additionalProperties === false && !Object.keys(tl.input_schema.properties || {}).some(k => /user|person|target|assignee|member/i.test(k))));
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
