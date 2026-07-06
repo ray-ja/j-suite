@@ -197,10 +197,13 @@ function rJobPage(j) {
   const exps = (j.expenses || []).filter(x => x && !x.deleted);
   const expTotal = exps.reduce((s, e) => s + (+e.amount || 0), 0);
   const tel = ph => String(ph || "").replace(/[^0-9+]/g, "");
-  // up-to-3 labeled numbers for the customer (falls back to the single number). Each renders as a full-width
-  // Call button showing the actual number + its note, tap = tel:. Shared by the planned-route + compact branches.
+  // up-to-3 labeled numbers for the customer (falls back to the single number). PRIMARY (first number) is hoisted to
+  // the TOP of the contact header as a big tap-to-call link; any SECONDARY numbers render right below as smaller
+  // ghost Call buttons (number + note). tap = tel:.
   const _phones = (typeof custPhones === "function" && _cust) ? custPhones(_cust) : (phone ? [{ num: phone, label: "" }] : []);
-  const _phoneBtns = _phones.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">` + _phones.map(p => `<a class="btn ghost" href="tel:${tel(p.num)}" style="text-align:center">📞 ${esc((typeof fmtPhone === "function") ? fmtPhone(p.num) : p.num)}${p.label ? ` · ${esc(p.label)}` : ""}</a>`).join("") + `</div>` : "";
+  const _primary = _phones[0] || null, _secondary = _phones.slice(1);
+  const _primaryCall = _primary ? `<div style="margin-top:8px"><a href="tel:${tel(_primary.num)}" style="font-size:18px;font-weight:800;color:var(--brand-text);text-decoration:none">📞 ${esc((typeof fmtPhone === "function") ? fmtPhone(_primary.num) : _primary.num)}</a>${_primary.label ? ` <span class="sub" style="font-weight:400">· ${esc(_primary.label)}</span>` : ""}</div>` : "";
+  const _secondaryCalls = _secondary.length ? `<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px">` + _secondary.map(p => `<a class="btn ghost sm" href="tel:${tel(p.num)}" style="text-align:center">📞 ${esc((typeof fmtPhone === "function") ? fmtPhone(p.num) : p.num)}${p.label ? ` · ${esc(p.label)}` : ""}</a>`).join("") + `</div>` : "";
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 
@@ -216,10 +219,12 @@ function rJobPage(j) {
   h += `<button class="btn ghost sm" style="margin-left:auto" onclick="jobPageBack()">← Back</button></div>`;
   h += editedByLine(j);
 
-  // 1) Where & when — directions + call
+  // 1) Where & when — CONTACT header (name · address · tap-to-call) then where you're going
   h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
   h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px">${esc(addr)}</div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
-  if (_drive) h += `<div class="sub" style="margin-top:3px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;
+  h += _primaryCall;      // PRIMARY phone — big tap-to-call, hoisted to the top (was at the bottom)
+  h += _secondaryCalls;   // any secondary numbers — smaller ghost Call buttons
+  if (_drive) h += `<div class="sub" style="margin-top:8px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;   // driveBadge ETA — kept for everyone, crew included
   // EDIT LOCATION (owner/admin) — set a real location on a job with none (e.g. an airport pickup with no
   // customer address): pick a saved property (its map pin) OR type a free-text address saved to j.address,
   // which jobAddr() already reads as a fallback. Crew see the location read-only.
@@ -237,50 +242,20 @@ function rJobPage(j) {
       h += `<div style="margin-top:8px"><span class="badge" style="background:${_m.color};color:#fff">${esc(_lbl)}</span>${_wait.length ? `<span class="sub" style="margin-left:6px">waiting on ${esc(_wait.join(", "))}</span>` : ""}</div>`;
     }
   }
-  const _stops = jobPlannedStops(j);
-  if (_stops.length) {
-    // ADMIN-PLANNED ROUTE: each stop gets its OWN correctly-labeled link (e.g. "Stoneworks — pick up base"),
-    // the job site sits inline WHEREVER j.sitePos places it (not force-appended), and ≥2 total stops also get
-    // ONE combined multi-stop link (waypoints chained in the SAME order) for one-tap turn-by-turn. Built from
-    // the shared jobRouteOrdered(j) so this list can't drift from the estimate / overlay.
-    h += `<div class="sub" style="margin-top:10px;font-weight:700">🧭 Planned route <span class="sub" style="font-weight:400">· ${_stops.length} stop${_stops.length > 1 ? "s" : ""}${addr ? " + job site" : ""}</span></div>`;
-    const _allDest = [];
-    (typeof jobRouteOrdered === "function" ? jobRouteOrdered(j) : []).forEach(t => {
-      if (t.kind === "site") { if (!addr) return; _allDest.push(addr); h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_allDest.length}. 🏁 Job site</div><div class="sub" style="white-space:normal">${esc(addr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">🧭 Directions</a></div>`; }
-      else { const s = t.stop; if (!(s && s.address)) return; _allDest.push(s.address); h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_allDest.length}. ${esc(s.label || "Stop")}</div><div class="sub" style="white-space:normal">${esc(s.address)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(s.address)}" target="_blank" rel="noopener">🧭 Directions</a></div>`; }
-    });
-    if (_allDest.length >= 2) {
-      const _dest = _allDest[_allDest.length - 1], _wps = _allDest.slice(0, -1);
-      h += `<a class="btn acc" style="width:100%;margin-top:8px;text-align:center" href="${gmapsDirUrl(_dest, _wps)}" target="_blank" rel="noopener">🗺 Full route — ${_allDest.length} stops</a>`;
-    }
-    h += _phoneBtns;   // up to 3 labeled Call buttons (number + note), tap = tel:
-  } else if (addr || _phones.length) {
-    // Compact contact area: the job-site button now SHOWS the address (tap still opens directions), truncated to
-    // one line; each Call button SHOWS the actual number + its note (tap still dials).
-    if (addr) h += `<div class="row" style="gap:8px;margin-top:10px"><a class="btn ghost grow" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener" title="${esc(addr)}" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(addr)} ›</a></div>`;
-    h += _phoneBtns;
-  }
-  // ESTIMATE (informational cross-check) — offline round-trip miles across the ordered stops. NEVER the billed
-  // number: the odometer/GPS timeclock miles stay the record. If the job has confirmed odometer miles, show them
-  // side by side so the estimate reads as a sanity check (Ray: within ~15–20%).
-  const _routeSrc = (typeof jobRouteMilesSource === "function") ? jobRouteMilesSource(j) : "";
-  if (j.estRouteMiles > 0) {
-    const _n = _stops.length;
-    const _confMiles = tc.filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
-    // subtle endpoint note — only when a custom start/end is set; default (base at both ends) reads as before.
-    const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
-    const _ends = (_rs || _re) ? ` <span class="muted">· ${_rs ? "from " + esc(_rs) : "from base"} → ${_re ? "to " + esc(_re) : "to base"}</span>` : "";
-    const _srcTag = _routeSrc === "roads" ? ` <span class="muted">(via roads)</span>` : _routeSrc === "manual" ? ` <span class="muted">(manual)</span>` : "";
-    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b> <b>round trip</b>${_srcTag}${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· full loop base→stops→site→base, a cross-check — not the billed miles</span></div>`;
-    if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
-  } else if (_routeSrc === "none") {
-    // the map tried and couldn't route (offline / unroutable address) + no manual miles set — never a 1.3× guess.
-    h += `<div class="sub muted" style="margin-top:10px;white-space:normal">🧭 The map couldn't route this${jobCanEditPlan() ? " — add manual route miles below to get an estimate" : "; ask an owner to add manual route miles"}.</div>`;
-  }
-  // 🗺 View route (owner/admin) — deep-link to the read-only GPS route-review page for THIS job (js/91).
-  if ((typeof jobCanEditPlan === "function") && jobCanEditPlan() && typeof openRouteReview === "function") {
-    h += `<button class="btn ghost sm" style="margin-top:10px" onclick="openRouteReview('${j.id}')">🗺 View route</button>`;
-  }
+  // WHERE YOU'RE GOING — ONE clean per-stop navigate list, ALWAYS driven by the shared jobRouteOrdered(j) (it
+  // always includes the job site, even with 0 planned stops). Each row = its label · address · a "🧭 Directions ›"
+  // deep-link that opens turn-by-turn from the phone's current GPS (gmapsDirUrl, no API key). A single-site job
+  // shows exactly one 🏁 Job site row — no special-casing, and no combined "Full route" button (it clipped + read
+  // as an unlabeled link). Shown to everyone (crew included); the mileage math lives in the admin route card below.
+  let _navRows = "", _navN = 0;
+  (typeof jobRouteOrdered === "function" ? jobRouteOrdered(j) : []).forEach(t => {
+    let _lbl, _stopAddr;
+    if (t.kind === "site") { _stopAddr = addr; if (!_stopAddr) return; _lbl = "🏁 Job site"; }
+    else { const s = t.stop; if (!(s && s.address)) return; _stopAddr = s.address; _lbl = esc(s.label || "Stop"); }
+    _navN++;
+    _navRows += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_navN}. ${_lbl}</div><div class="sub" style="white-space:normal">${esc(_stopAddr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(_stopAddr)}" target="_blank" rel="noopener" style="flex:0 0 auto">🧭 Directions ›</a></div>`;
+  });
+  if (_navRows) h += `<div class="sub" style="margin-top:12px;font-weight:700">🧭 Where you're going <span class="sub" style="font-weight:400">· tap to navigate</span></div>` + _navRows;
   h += `</div>`;
 
   // 1z) Route / stops editor (owner/admin) — surfaced ON the job page (not just the editor modal). Writes the
@@ -517,8 +492,8 @@ function jobPageRouteCard(j) {
   const endpointRow = (emoji, title, id, value, custom, setFn, resetFn) => `<div style="padding:6px 0">
     <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
     <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}','${id}_ac')" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
-  let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
-  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route &amp; mileage <span class="sub" style="font-weight:400">· ordered — feeds the mileage estimate</span></div>`;
+  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get per-stop labeled directions up top; here you get the offline mileage cross-check to the odometer. Owner/admin only.</div>`;
   // 🏁 START (first point) — editable, pre-filled with home base
   h += endpointRow("🏁", "Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
   // the COMBINED ordered route (planned stops + the movable job site) from the shared jobRouteOrdered(j).
@@ -542,18 +517,27 @@ function jobPageRouteCard(j) {
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
   // 🏁 END (last point) — editable, pre-filled with home base
   h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
+  // ESTIMATE (informational cross-check) — the offline round-trip miles across the ordered route. NEVER the billed
+  // number: the odometer/GPS timeclock miles stay the record. Moved here (was in the crew "Where & when" card) so
+  // crew get NO mileage math — it now lives in this single owner/admin card. Confirmed odometer shown side by side.
   const _src = (typeof jobRouteMilesSource === "function") ? jobRouteMilesSource(j) : "";
   if (j.estRouteMiles > 0) {
+    const _nstops = (typeof jobPlannedStops === "function") ? jobPlannedStops(j).length : ps.length;
+    const _confMiles = ((typeof actTC === "function") ? actTC() : []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
     const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
-    const _ends = (_rs || _re) ? `${_rs ? esc(_rs) : "base"} → route → ${_re ? esc(_re) : "base"}` : "base → route → base";
-    const _how = _src === "roads" ? "via roads" : _src === "manual" ? "manual" : "";
-    h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_how ? ` <span class="muted">(${_how})</span>` : ""} <span class="muted">(${_ends} — informational, the odometer stays the billed number)</span></div>`;
+    const _ends = (_rs || _re) ? ` <span class="muted">· ${_rs ? "from " + esc(_rs) : "from base"} → ${_re ? "to " + esc(_re) : "to base"}</span>` : "";
+    const _srcTag = _src === "roads" ? ` <span class="muted">(via roads)</span>` : _src === "manual" ? ` <span class="muted">(manual)</span>` : "";
+    h += `<div class="sub" style="margin-top:8px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b> <b>round trip</b>${_srcTag}${_nstops ? ` across ${_nstops} stop${_nstops > 1 ? "s" : ""}${siteAddr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· full loop base→stops→site→base, a cross-check — not the billed miles</span></div>`;
+    if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
   } else if (_src === "none") {
-    h += `<div class="sub muted" style="margin-top:8px;white-space:normal">🧭 The map couldn't route this — enter manual route miles below.</div>`;
+    h += `<div class="sub muted" style="margin-top:8px;white-space:normal">🧭 The map couldn't route this — add manual route miles below to get an estimate.</div>`;
   } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Computing the road route… the mileage estimate appears once the map answers (needs a home base set in Settings).</div>`;
   // 🚗 MANUAL route miles (round-trip) — the fallback for when the map can't route (offline / a bad-geocode address).
   // OSRM road miles win when available; this manual value takes over when they aren't. Owner/admin only.
   h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><label style="margin-top:0">🚗 Route miles <span class="sub" style="font-weight:400">(manual, if the map can't route — round-trip)</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${(j.manualRouteMiles > 0) ? j.manualRouteMiles : ""}" placeholder="round-trip miles" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${(j.manualRouteMiles > 0) ? "✓ Using your manual miles — this overrides the map + the odometer estimate." : "Enter the round-trip miles to override the map/odometer estimate for this job."}</div></div>`;
+  // 🗺 View route (owner/admin) — deep-link to the read-only GPS route-review page for THIS job (js/91). Lives here
+  // in the admin route card (was in the crew "Where & when" card); it was already jobCanEditPlan-gated.
+  if (typeof openRouteReview === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:10px" onclick="openRouteReview('${j.id}')">🗺 View route (GPS)</button>`;
   return h + `</div>`;
 }
 /* EDIT LOCATION modal (owner/admin) — pick a saved property OR type a free-text address → j.address (jobAddr's
