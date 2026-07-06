@@ -192,6 +192,11 @@ window.rcptApplySuggestion = function () {
   set("rcpt_vendor", s.vendor); set("rcpt_amt", s.amount); set("rcpt_cat", s.category); set("rcpt_desc", s.desc);
   if (s.type) { const el = document.getElementById("rcpt_type"); if (el) { el.value = s.type; rcptEditTypeChange(); } }
   if (s.jobId) set("rcpt_job", s.jobId);
+  // Cap Phase 4 — card last-4 (js/94: auto-matches "Who paid?"), refund + rental-deposit toggles (js/96).
+  // Only APPLY when present: a null last4 / false toggle leaves the owner's existing entry untouched.
+  if (s.last4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card
+  if (s.refund) { const el = document.getElementById("rcpt_refund"); if (el) el.checked = true; }
+  if (s.deposit) { const el = document.getElementById("rcpt_deposit"); if (el) el.checked = true; if (!val("rcpt_cat")) set("rcpt_cat", "rentals"); }   // rental deposit → nudge category (save also nudges)
   const b = document.getElementById("rcpt_suggbanner"); if (b) b.innerHTML = `<span class="sub" style="color:#fff">✓ Cap's guess applied — review the fields and tap Save to confirm.</span>`;
 };
 window.rcptReplacePhoto = function (input) {

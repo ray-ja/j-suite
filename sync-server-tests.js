@@ -1443,6 +1443,28 @@ ok("new (not-yet-stored) tombstone passes through (nothing to protect)", (((newT
 // 8) msgAdminInOrg: owner/super-admin = admin; crew = not. (the server permission predicate)
 ok("msgAdminInOrg: owner is admin in their org; crew is not", t.msgAdminInOrg(msgPre, "ray", "obx") === true && t.msgAdminInOrg(msgPre, "joe", "obx") === false, null);
 
+console.log("\n— Cap receipt vision (rcptParseSuggestion): Phase 4 last4 / refund / deposit —");
+const rpsCats = ["materials", "rentals", "fuel"];
+const rpsJobs = ["job_a", "job_b"];
+// baseline reply the model would return before Phase 4 (no last4/refund/deposit keys)
+const rpsBase = t.rcptParseSuggestion('{"vendor":"Home Depot","amount":38.94,"date":"2026-07-06","desc":"pavers","type":"pass-through","category":"materials","jobId":"job_a","confidence":0.8}', rpsCats, rpsJobs);
+ok("existing suggestion fields unchanged (vendor/amount/type/category/jobId/confidence)", rpsBase && rpsBase.vendor === "Home Depot" && rpsBase.amount === 38.94 && rpsBase.type === "pass-through" && rpsBase.category === "materials" && rpsBase.jobId === "job_a" && rpsBase.confidence === 0.8, rpsBase);
+ok("defaults when the 3 new keys are absent → last4 null, refund false, deposit false (today's behavior)", rpsBase && rpsBase.last4 === null && rpsBase.refund === false && rpsBase.deposit === false, rpsBase);
+// last4 extraction + clamp
+const rpsL4 = t.rcptParseSuggestion('{"vendor":"Sunbelt","amount":300,"last4":"2469","type":"job-expense","category":"rentals"}', rpsCats, rpsJobs);
+ok("extracts a valid 4-digit last4", rpsL4 && rpsL4.last4 === "2469", rpsL4);
+ok("clamps a non-4-digit last4 (\"123\") to null", t.rcptParseSuggestion('{"vendor":"x","last4":"123"}', rpsCats, rpsJobs).last4 === null, null);
+ok("clamps a numeric (non-string) last4 to null", t.rcptParseSuggestion('{"vendor":"x","last4":2469}', rpsCats, rpsJobs).last4 === null, null);
+ok("clamps a masked last4 (\"**1234\") to null (not 4 bare digits)", t.rcptParseSuggestion('{"vendor":"x","last4":"**1234"}', rpsCats, rpsJobs).last4 === null, null);
+// refund + deposit booleans (strict === true)
+ok("refund:true → refund true", t.rcptParseSuggestion('{"vendor":"x","refund":true}', rpsCats, rpsJobs).refund === true, null);
+ok("refund non-boolean (\"yes\") → refund false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","refund":"yes"}', rpsCats, rpsJobs).refund === false, null);
+ok("deposit:true → deposit true", t.rcptParseSuggestion('{"vendor":"x","deposit":true}', rpsCats, rpsJobs).deposit === true, null);
+ok("deposit:1 (truthy non-bool) → deposit false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","deposit":1}', rpsCats, rpsJobs).deposit === false, null);
+// a malformed reply still returns null (unchanged — a bad reply is never applied)
+ok("malformed reply (no JSON object) still returns null", t.rcptParseSuggestion("sorry, I can't read that", rpsCats, rpsJobs) === null, null);
+ok("broken JSON still returns null", t.rcptParseSuggestion('{"vendor":"x", "last4":', rpsCats, rpsJobs) === null, null);
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");
