@@ -1490,6 +1490,37 @@ ok("split within $0.05 tolerance (199.97 vs 200) → kept", t.rcptParseSuggestio
 // existing fields still intact when a split is present
 ok("existing fields unchanged when splits present (vendor/amount/type)", rpsSplit.vendor === "Home Depot" && rpsSplit.amount === 200 && rpsSplit.type === "pass-through", rpsSplit);
 
+console.log("\n— Cap LINE-ITEM extraction (rcptParseSuggestion.lineItems): per-PRODUCT rows, KEPT even on sum-mismatch —");
+// absent lineItems key on prior fixtures → lineItems:[] (additive; every earlier field byte-identical)
+ok("no lineItems key → lineItems:[] (additive default)", Array.isArray(rpsBase.lineItems) && rpsBase.lineItems.length === 0, rpsBase.lineItems);
+ok("base reply: splits + all prior fields unchanged alongside lineItems", rpsBase.splits.length === 0 && rpsBase.vendor === "Home Depot" && rpsBase.amount === 38.94 && rpsBase.type === "pass-through" && rpsBase.category === "materials" && rpsBase.jobId === "job_a" && rpsBase.last4 === null && rpsBase.refund === false && rpsBase.deposit === false, rpsBase);
+ok("explicit empty lineItems array → lineItems:[]", t.rcptParseSuggestion('{"vendor":"x","amount":50,"lineItems":[]}', rpsCats, rpsJobs).lineItems.length === 0, null);
+ok("non-array lineItems (\"foo\") → lineItems:[]", t.rcptParseSuggestion('{"vendor":"x","amount":50,"lineItems":"foo"}', rpsCats, rpsJobs).lineItems.length === 0, null);
+// a valid 4-line receipt (fabric/sand/rock = pass-through/job-expense + impact driver = business), summing to 170
+const rpsLi = t.rcptParseSuggestion('{"vendor":"Home Depot","amount":170,"type":"pass-through","category":"materials","lineItems":[{"desc":"landscape fabric","amount":20,"bucket":"pass-through"},{"desc":"sand","amount":30,"bucket":"pass-through"},{"desc":"disposal","amount":40,"bucket":"job-expense"},{"desc":"impact driver","amount":80,"bucket":"business"}]}', rpsCats, rpsJobs);
+ok("valid 4-line lineItems → 4 entries kept", rpsLi && rpsLi.lineItems.length === 4, rpsLi && rpsLi.lineItems);
+ok("line desc + amount survive", rpsLi.lineItems[0].desc === "landscape fabric" && rpsLi.lineItems[0].amount === 20 && rpsLi.lineItems[3].amount === 80, rpsLi.lineItems);
+ok("line buckets survive (pass-through / job-expense / business)", rpsLi.lineItems[0].bucket === "pass-through" && rpsLi.lineItems[2].bucket === "job-expense" && rpsLi.lineItems[3].bucket === "business", rpsLi.lineItems);
+ok("prior fields untouched when lineItems present (vendor/amount/type)", rpsLi.vendor === "Home Depot" && rpsLi.amount === 170 && rpsLi.type === "pass-through", rpsLi);
+// bad / missing bucket → defaulted to pass-through (NOT dropped)
+const rpsLiBad = t.rcptParseSuggestion('{"vendor":"x","amount":50,"lineItems":[{"desc":"mystery","amount":50,"bucket":"NOPE"}]}', rpsCats, rpsJobs);
+ok("bad bucket → defaulted to pass-through (entry kept)", rpsLiBad.lineItems.length === 1 && rpsLiBad.lineItems[0].bucket === "pass-through", rpsLiBad.lineItems);
+ok("missing bucket → defaulted to pass-through", t.rcptParseSuggestion('{"vendor":"x","amount":10,"lineItems":[{"desc":"nails","amount":10}]}', rpsCats, rpsJobs).lineItems[0].bucket === "pass-through", null);
+// amount ≤0 / non-numeric entries dropped; valid ones retained
+const rpsLiDrop = t.rcptParseSuggestion('{"vendor":"x","amount":25,"lineItems":[{"desc":"good","amount":25,"bucket":"pass-through"},{"desc":"zero","amount":0,"bucket":"business"},{"desc":"neg","amount":-5,"bucket":"business"},{"desc":"nan","amount":"abc","bucket":"business"}]}', rpsCats, rpsJobs);
+ok("amount ≤0 / non-numeric line entries dropped, valid kept", rpsLiDrop.lineItems.length === 1 && rpsLiDrop.lineItems[0].desc === "good", rpsLiDrop.lineItems);
+// sum-mismatch: UNLIKE splits, lineItems are KEPT (client reconciles per line)
+const rpsLiMismatch = t.rcptParseSuggestion('{"vendor":"x","amount":200,"lineItems":[{"desc":"partial a","amount":50,"bucket":"pass-through"},{"desc":"partial b","amount":30,"bucket":"business"}]}', rpsCats, rpsJobs);
+ok("sum-mismatch lineItems (50+30 ≠ 200) → STILL KEPT (unlike splits)", rpsLiMismatch.lineItems.length === 2, rpsLiMismatch.lineItems);
+ok("single-line fallback (one line = whole total) kept", t.rcptParseSuggestion('{"vendor":"x","amount":90,"lineItems":[{"desc":"whole receipt","amount":90,"bucket":"pass-through"}]}', rpsCats, rpsJobs).lineItems.length === 1, null);
+// desc coerced to string + truncated to 120
+const rpsLiDesc = t.rcptParseSuggestion('{"vendor":"x","amount":5,"lineItems":[{"desc":' + JSON.stringify("D".repeat(200)) + ',"amount":5,"bucket":"business"}]}', rpsCats, rpsJobs);
+ok("line desc truncated to 120 chars", rpsLiDesc.lineItems[0].desc.length === 120, rpsLiDesc.lineItems[0].desc.length);
+ok("non-string line desc coerced to string (\"\")", t.rcptParseSuggestion('{"vendor":"x","amount":5,"lineItems":[{"desc":null,"amount":5,"bucket":"business"}]}', rpsCats, rpsJobs).lineItems[0].desc === "", null);
+// regression: last4 / refund / deposit / splits still parse when lineItems ride along
+const rpsLiMix = t.rcptParseSuggestion('{"vendor":"Sunbelt","amount":300,"last4":"2469","refund":true,"deposit":true,"splits":[{"amount":120,"type":"pass-through","category":"materials","note":"pavers"},{"amount":180,"type":"business","category":"tools/equipment","note":"tamper"}],"lineItems":[{"desc":"pavers","amount":120,"bucket":"pass-through"},{"desc":"tamper","amount":180,"bucket":"business"}]}', rpsCats.concat(["materials", "tools/equipment"]), rpsJobs);
+ok("splits + last4 + refund + deposit UNCHANGED with lineItems present", rpsLiMix.splits.length === 2 && rpsLiMix.last4 === "2469" && rpsLiMix.refund === true && rpsLiMix.deposit === true && rpsLiMix.lineItems.length === 2, rpsLiMix);
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");
