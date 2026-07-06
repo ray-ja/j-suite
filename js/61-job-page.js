@@ -362,7 +362,12 @@ function rJobPage(j) {
 
   // 5) Expenses & receipts — amount + what for (required), receipt photo optional + collapsed, optional fault attribution
   const _members = (typeof schedMembers === "function") ? schedMembers() : [];
+  const _bd = (typeof jobCostBreakdown === "function") ? jobCostBreakdown(j) : { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Expenses &amp; receipts${expTotal ? ` · <span style="color:var(--accent)">${money(expTotal)}</span>` : ""}</div>`;
+  // WHERE this job's cost splits (mileage · job expense · pass-through materials — a reusable tool is business overhead, not here)
+  h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Job cost: mileage <b>${money(_bd.mileage)}</b> · job <b>${money(_bd.jobExp)}</b> · materials <b>${money(_bd.materials)}</b>${_bd.tool > 0 ? ` <span class="muted">· 🔧 tools ${money(_bd.tool)} (business overhead, not this job)</span>` : ""}</div>`;
+  // virtual MILEAGE line — derived, read-only (not a receipt): estimate now, confirmed odometer once clocked
+  h += `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}</span></div><div class="sub" style="white-space:normal">estimate vs confirmed odometer — auto from the route/time clock at $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi, not a receipt</div></div></div>`;
   h += exps.length ? exps.map(e => { const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : ""; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`; }).join("") : `<div class="muted">No expenses logged. Enter the amount + what it was for; a receipt photo is optional.</div>`;
   const _faults = {}; exps.forEach(e => { if (e.faultMemberId) _faults[e.faultMemberId] = (_faults[e.faultMemberId] || 0) + (+e.amount || 0); });
   const _fkeys = Object.keys(_faults);
@@ -370,6 +375,10 @@ function rJobPage(j) {
   h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
   h += `<input id="exp_desc" placeholder="What for — dump fee, materials… (required)" style="margin-top:6px">`;
   h += `<label style="margin-top:8px">Whose mistake caused this? <span class="sub">(optional — docks <i>their</i> payout, not the whole crew's)</span></label><select id="exp_fault"><option value="">— nobody's fault / shared job cost —</option>${_members.map(u => `<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("")}</select>`;
+  // REUSABLE-TOOL escape hatch — a chainsaw/pressure washer bought here is CAPITAL/overhead, not this job's cost.
+  // Checked → jobAddExpense writes it to the org business `expenses[]` (category tools/equipment), NOT job.expenses,
+  // so it never dents this job's profit. (New tools; existing tool receipts are auto-reclassified by the migration.)
+  h += `<label class="li" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exp_tool" style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">🔧 Reusable tool (business expense, not this job)</div><div class="sub" style="white-space:normal">A chainsaw, pressure washer, etc. — capital/overhead. Logged to the business, kept off this job's cost.</div></div></label>`;
   h += `<input type="file" id="exp_receipt" accept="image/*" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="exp_add_btn" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','expense')">🔀 Split across other jobs / mark as generic</button></div>`;
 
   // 5a) Pass-through materials — billed to the customer at cost (reimbursed), tracked SEPARATELY from real expenses + their own receipt pile
@@ -725,6 +734,8 @@ window.jobAddExpense = function (jobId) {
   const desc = (val("exp_desc") || "").trim(); if (!desc) { alert("Enter what the expense was for."); return; }
   const vendor = (val("exp_vendor") || "").trim();
   const fault = val("exp_fault") || "";
+  const toolBox = document.getElementById("exp_tool");
+  const isTool = !!(toolBox && toolBox.checked);   // "reusable tool" → business overhead, NOT this job's cost
   const input = document.getElementById("exp_receipt");
   const file = input && input.files && input.files[0];   // captured NOW, before the lock's async gate — nothing else can read/clear this input until we're done
   const btn = document.getElementById("exp_add_btn");
@@ -732,8 +743,23 @@ window.jobAddExpense = function (jobId) {
   clearTimeout(_jobExpAddWatchdog); _jobExpAddWatchdog = setTimeout(function () { _jobExpAddBusy = false; }, 20000); // safety: never permanently soft-lock the button if a save hangs
   const finish = function (receiptId) {
     clearTimeout(_jobExpAddWatchdog);
+    const by = ((typeof curUser === "function" && curUser()) ? curUser().username : "");
+    if (isTool) {
+      // reusable tool → the org BUSINESS expenses[] (category tools/equipment), a per-record synced collection —
+      // NOT job.expenses, so it never enters this job's cost. Shape matches Finance→Expenses (js/40 saveExpense) +
+      // the Receipts business branch (js/87), so it shows up in both.
+      const d = D(); if (!Array.isArray(d.expenses)) d.expenses = [];
+      const rec = { id: uid(), amount: amt, vendor: vendor, desc: desc, note: desc, category: "tools/equipment", date: (typeof today === "function" ? today() : ""), receiptId: receiptId || null, memberId: "", paidBy: null, by: by, ts: now(), deleted: false, updatedAt: now() };
+      d.expenses.push(rec);
+      if (typeof touch === "function") touch(rec);
+      if (typeof logChange === "function") logChange("create", "expense", rec.id, "Reusable tool → business expense " + money(amt) + (vendor ? " · " + vendor : "") + (desc ? " · " + desc : ""));
+      if (typeof save === "function") save();
+      if (btn) btn.textContent = "✓ Added (business)";
+      setTimeout(function () { _jobExpAddBusy = false; if (typeof render === "function") render(); }, 450);
+      return;
+    }
     if (!Array.isArray(j.expenses)) j.expenses = [];
-    j.expenses.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, receiptId: receiptId || null, faultMemberId: fault || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
+    j.expenses.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, category: "job", receiptId: receiptId || null, faultMemberId: fault || null, by: by, ts: now() });
     if (typeof touch === "function") touch(j); if (typeof save === "function") save();
     if (btn) btn.textContent = "✓ Added";
     setTimeout(function () { _jobExpAddBusy = false; if (typeof render === "function") render(); }, 450);

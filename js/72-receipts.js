@@ -147,7 +147,7 @@ function rcptRowMeta(r) {
   const forName = (r.attributedTo && typeof userName === "function" && userName(r.attributedTo)) || "";   // "For" = whose receipt it is / who gets paid back
   return { type: type, status: status, jobLabel: jobLabel, cust: cust, uploader: uploader, forName: forName };
 }
-const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🏢 Business", "job-expense": "💵 Job expense", "pass-through": "🧱 Pass-through" };
+const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🔧 Business / tool", "job-expense": "🚚 Job expense", "pass-through": "🧱 Pass-through" };
 
 /* a duplicate = same amount + same (normalized) description/vendor */
 function rcptDupKey(e) { const v = String(e.vendor || "").trim().toLowerCase(), dsc = String(e.desc || e.note || "").trim().toLowerCase(); return Math.round((+e.amount || 0) * 100) + "|" + (v || dsc).replace(/\s+/g, " "); }

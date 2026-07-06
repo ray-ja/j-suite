@@ -10,10 +10,15 @@ function finPeriodPL(ym){
   const inc = actIncome().filter(e => inPeriod(e.date));
   const revenue = inc.reduce((s, e) => s + finCents(e.amount), 0);
 
-  // direct job costs — per-job expenses on jobs dated in the period
-  let jobCosts = 0;
+  // direct job costs — per-job expenses on jobs dated in the period. A reusable TOOL/equipment item logged on a
+  // job is CAPITAL/overhead, not that job's cost → pulled OUT of jobCosts and rolled into opEx below, so the
+  // income-statement TOTAL (net/margin) is UNCHANGED (it only moves the tool from job costs to overhead).
+  let jobCosts = 0, jobToolOverhead = 0;
   (D().jobs || []).filter(j => j && !j.deleted && inPeriod(j.date)).forEach(j => {
-    (j.expenses || []).filter(x => x && !x.deleted).forEach(e => { jobCosts += finCents(e.amount); });
+    (j.expenses || []).filter(x => x && !x.deleted).forEach(e => {
+      if (typeof expenseIsTool === "function" && expenseIsTool(e)) jobToolOverhead += finCents(e.amount);
+      else jobCosts += finCents(e.amount);
+    });
   });
 
   const mil = finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true });
@@ -22,6 +27,8 @@ function finPeriodPL(ym){
   const exps = actExpenses().filter(e => inPeriod(e.date));
   const opExBy = {}; let opEx = 0;
   exps.forEach(e => { const c = e.category || "other", v = finCents(e.amount); opExBy[c] = (opExBy[c] || 0) + v; opEx += v; });
+  // tool/equipment logged inside a job rolls into overhead (same TOTAL — moved out of jobCosts, into opEx)
+  if (jobToolOverhead > 0) { opExBy["tools/equipment (job-logged)"] = (opExBy["tools/equipment (job-logged)"] || 0) + jobToolOverhead; opEx += jobToolOverhead; }
 
   const totalCosts = jobCosts + mil.total + opEx;
   const net = revenue - totalCosts;
@@ -48,7 +55,7 @@ function rFinOverview(){
   h += `<div class="card">`;
   h += finPLLine("Revenue", pl.revenue, { bold: true, good: pl.revenue > 0 });
   h += `<div class="sub" style="margin:10px 0 2px;font-weight:700">Costs</div>`;
-  h += finPLLine("Job costs (disposal, materials…)", -pl.jobCosts, { indent: true });
+  h += finPLLine("🚚 Job expenses (disposal, supplies…)", -pl.jobCosts, { indent: true });
   h += finPLLine("Mileage", -pl.mileage, { indent: true });
   Object.keys(pl.opExBy).sort().forEach(c => { h += finPLLine(c, -pl.opExBy[c], { indent: true }); });
   if (!pl.jobCosts && !pl.mileage && !pl.opEx) h += `<div class="muted" style="padding:4px 0">No costs logged this period.</div>`;

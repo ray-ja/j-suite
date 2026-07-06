@@ -50,7 +50,9 @@ function rcptBuildRecord(home, id, fields, carry) {
   const base = { id: id, amount: amount, vendor: fields.vendor || "", desc: fields.desc || "", receiptId: fields.receiptId || null, paidBy: fields.paidBy || null, attributedTo: attributedTo, by: by, ts: carry.ts || now() };
   if (carry.reimbursedAt) base.reimbursedAt = carry.reimbursedAt;
   if (carry.capRead) base.capRead = carry.capRead;
-  if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; return base; }
+  // job expense carries its receipt CATEGORY so the 3-way split works (a tools/equipment receipt → excluded from
+  // the job's cost as business overhead; anything else = a plain job cost). Default "job" when the receipt was uncategorized.
+  if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; base.category = fields.category || "job"; return base; }
   if (home.store === "jobmat") { return base; }
   if (home.store === "biz") { return Object.assign(base, { category: fields.category || "", note: fields.desc || "", date: fields.date || (typeof today === "function" ? today() : ""), memberId: fields.paidBy || "", deleted: false, updatedAt: now() }); }
   // review

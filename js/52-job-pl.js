@@ -47,15 +47,36 @@ function jobMilesCostEst(j) { if (!j) return 0; const rate = (typeof FIN !== "un
   const tc = jobMileageCost(j); if (tc > 0) return tc;
   /* 3) the map's road estimate × trips */
   const est = +j.estRouteMiles; if (!(est > 0)) return 0; return est * rate * days; }
-/* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line */
+/* ── 3-WAY EXPENSE CATEGORIZATION ─────────────────────────────────────────────────────────────
+   A job.expenses[] item tagged as a reusable TOOL/equipment is BUSINESS overhead (capital), NOT this
+   job's cost — it must not dent the job's profit. expenseIsTool() is the tunable predicate (a small set,
+   currently just the "tools/equipment" receipt category). Records NEVER move between collections — the
+   tool stays in job.expenses[] and is only EXCLUDED from the cost at display time (fingerprint-safe;
+   the raw Σ job.expenses the fingerprints recompute is category-agnostic, so it stays byte-identical). */
+function expenseIsTool(e) { return !!(e && e.category === "tools/equipment"); }
+/* the four display buckets for a job's costs (Phase 0 — pure, no P&L change): mileage (jobMilesCostEst,
+   estimate-or-confirmed), jobExp (Σ non-tool job.expenses), materials (Σ pass-through), tool (Σ tool-category
+   job.expenses — overhead, shown separately, never in the job's own cost). Non-deleted only. */
+function jobCostBreakdown(j) {
+  if (!j) return { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
+  const live = plExpenses(j).filter(x => x && !x.deleted);
+  const jobExp = live.filter(e => !expenseIsTool(e)).reduce((s, e) => s + (+e.amount || 0), 0);
+  const tool = live.filter(expenseIsTool).reduce((s, e) => s + (+e.amount || 0), 0);
+  const materials = plMaterials(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
+  const mileage = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
+  return { mileage: mileage, jobExp: jobExp, materials: materials, tool: tool };
+}
+/* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line.
+   TOOL/equipment job.expenses are EXCLUDED from the cost (they're capital/overhead, re-attributed to the
+   business, not this job) — display-only; the record stays put in job.expenses[]. */
 function jobProfit(j) {
   const q = plQuoteFor(j);
   const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
-  let expCost = plExpenses(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
+  let expCost = plExpenses(j).filter(x => x && !x.deleted && !expenseIsTool(x)).reduce((s, e) => s + (+e.amount || 0), 0);
   let matCost = plMaterials(j).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0);
   let milCost = jobMileageCost(j);
   // a stop-job linked to N jobs contributes 1/N of its cost to each — a 1-element split (today's sub-jobs) is a no-op divide
-  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) / n; matCost += plMaterials(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) / n; milCost += jobMileageCost(sj) / n; });
+  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += plExpenses(sj).filter(x => x && !x.deleted && !expenseIsTool(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; matCost += plMaterials(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) / n; milCost += jobMileageCost(sj) / n; });
   const cost = expCost + matCost + milCost, profit = price - cost;
   const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
   const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");

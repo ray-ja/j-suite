@@ -162,6 +162,30 @@ function load(){
   if(typeof teamProfileMigrate==="function")teamProfileMigrate();   // TEAM PROFILES: backfill additive contact fields (phone/email/avatarId/title) on every account (loss-free, no updatedAt bump)
   if(typeof membershipMigrate==="function")membershipMigrate();   // MULTI-ORG: existing crew → obx/jam memberships, owner → super-admin (one-time)
   if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
+  // 3-WAY EXPENSE CATEGORY (additive) — backfill a `category` string on every existing job.expenses[] item.
+  // AUTO-RECLASSIFY (Ray): resolve each item's category FROM its source RECEIPT — the review record it was filed
+  // from is kept (tombstoned) in receipts[] and retains its category, matched by the shared record id (a filed
+  // item keeps the review id) or the photo receiptId — so an existing tools/equipment receipt is reclassified
+  // out of its job's cost immediately (jobProfit/finPeriodPL exclude category="tools/equipment"). Everything else
+  // defaults to "job". LOSS-FREE + IN-PLACE: only ADDS a string; NEVER moves a record between job.expenses[] and
+  // org expenses[] (that would break the stage fingerprint), NEVER re-amounts. Idempotent (only items lacking a
+  // category are touched) + one-shot via S.expCatV1. No updatedAt bump (a derived backfill every device recomputes).
+  if(!S.expCatV1){
+    (typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(b=>{
+      if(!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
+      const byId={},byRcpt={};   // receipt category source-of-truth (kept even when the review record is tombstoned)
+      (S[b].receipts||[]).forEach(r=>{ if(!r||!r.category)return; if(r.id&&!byId[r.id])byId[r.id]=r.category; if(r.receiptId&&!byRcpt[r.receiptId])byRcpt[r.receiptId]=r.category; });
+      (S[b].jobs||[]).forEach(j=>{
+        if(!j||!Array.isArray(j.expenses))return;
+        j.expenses.forEach(e=>{
+          if(!e||typeof e!=="object"||e.category)return;   // already categorized → leave it (idempotent, never override/re-amount)
+          const src=(e.id&&byId[e.id])||(e.receiptId&&byRcpt[e.receiptId])||"";
+          e.category=src||"job";   // resolved receipt category (incl. tools/equipment auto-reclassify) else a plain job cost
+        });
+      });
+    });
+    S.expCatV1=true;save();
+  }
   // QUOTE VERSIONING one-shot fold: legacy job.changeOrders[] were DISPLAY-ONLY (coTotal was read by NO finance
   // code — grep-confirmed), so fold each into the LINKED quote's versions[] as a HISTORY-ONLY entry
   // (source:"legacy-change-order") and DO NOT touch q.total/finalPrice/payments — adding coTotal would
