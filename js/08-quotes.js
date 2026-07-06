@@ -19,11 +19,14 @@ window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); }; 
 /* sort value + comparator for the Jobs table. DEFAULT (date/desc) reproduces the old
    `(b.date).localeCompare(a.date)` ordering exactly (V8-stable, no tiebreak) → byte-identical below the cap. */
 function qStageRank(q){ const st=(typeof workStage==="function")?workStage(q):quoteStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
+/* the linked job's logged expenses (materials + expenses) for this quote's row — 0 when no live job */
+function qExpTotal(q){ if(typeof jobExpenseTotal!=="function")return 0; const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted); return j?jobExpenseTotal(j):0; }
 function qSortVal(q){
   switch(QSORT){
     case "customer": return (q.cust||custName(q.customerId)||"").toLowerCase();
     case "type": return quoteType(q).toLowerCase();
     case "status": return qStageRank(q);
+    case "expenses": return qExpTotal(q);
     case "price": return (q.finalPrice||q.total||0);
     case "date": default: return q.date||"";
   }
@@ -56,7 +59,7 @@ function quotesListHTML(){
   const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
   const shown=list.slice(0,QSHOWN);
   const th=(col,label,align)=>`<th onclick="qSetSort('${col}')" style="text-align:${align||"left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${qSortArrow(col)}</th>`;
-  let h=`<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th("date","Date")}${th("customer","Customer")}${th("type","Type")}${th("status","Status")}${th("price","Price","right")}</tr></thead><tbody>`;
+  let h=`<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th("date","Date")}${th("customer","Customer")}${th("type","Type")}${th("status","Status")}${th("expenses","Expenses","right")}${th("price","Price","right")}</tr></thead><tbody>`;
   shown.forEach(q=>{
     const st=(typeof workStage==="function")?workStage(q):quoteStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
     const stLabel=(typeof workStageLabel==="function")?workStageLabel(q):m.label;
@@ -69,6 +72,7 @@ function quotesListHTML(){
       +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
       +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}</td>`
       +`<td style="padding:8px 6px;white-space:normal"><span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</td>`
+      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;color:var(--muted)">${(_lj&&typeof jobExpenseTotal==="function"&&jobExpenseTotal(_lj)>0)?money(jobExpenseTotal(_lj)):`<span style="color:var(--muted)">—</span>`}</td>`
       +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</td>`
       +`</tr>`;
   });
