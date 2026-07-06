@@ -276,6 +276,135 @@ window.cardMatchSaveTo = function (whoRaw) {
   cardMatchRefresh();   // re-run the match now that the card is known → pre-selects the owner
 };
 
+/* ============================== CARD DATABASE — unknown-card roll-up (card → user assignment) ==============================
+   The REVERSE of "My cards": every card last-4 SEEN on a receipt but not yet linked to anyone collects here so the
+   owner can assign each to a person (or mark it a company card) in bulk. DERIVED — no new storage: unassignedCards()
+   scans the receipts (rcptAllRows across review + all 4 filed homes) for distinct cardLast4 whose cardOwner() is
+   "none", and assigning appends to that user's u.cards (or the org's businessCards) via the SAME dedupe + authz as
+   cardMatchSaveTo / the company-card add. After assigning, every receipt on that card auto-attributes on the next
+   render (cardOwner now resolves it) — no receipt is rewritten. Owner/settings-manager gated (canManageVehicles). */
+
+/* PURE / offline / never-throws — every distinct receipt card last-4 that no one owns yet, newest-context first.
+   Returns [{ last4, count, vendors:[up to 3 distinct], lastDate }] sorted by count desc; [] when none. */
+function unassignedCards() {
+  try {
+    if (typeof rcptAllRows !== "function") return [];
+    const rows = rcptAllRows() || [];
+    const map = {};
+    rows.forEach(function (r) {
+      if (!r) return;
+      const l = cardClean4(r.cardLast4);
+      if (!/^\d{4}$/.test(l)) return;
+      let o; try { o = cardOwner(l); } catch (e) { o = null; }
+      if (!o || o.resolution !== "none") return;   // already linked to a person/company (or ambiguous) → not "unknown"
+      const e = map[l] || (map[l] = { last4: l, count: 0, vendors: [], _vset: {}, lastDate: "" });
+      e.count++;
+      const v = String(r.vendor || "").trim();
+      if (v && !e._vset[v.toLowerCase()] && e.vendors.length < 3) { e._vset[v.toLowerCase()] = 1; e.vendors.push(v); }
+      const d = (typeof rcptDate === "function") ? rcptDate(r) : (r.date ? String(r.date).slice(0, 10) : "");
+      if (d && d > e.lastDate) e.lastDate = d;
+    });
+    const out = Object.keys(map).map(function (k) { const e = map[k]; delete e._vset; return e; });
+    out.sort(function (a, b) { return (b.count - a.count) || String(a.last4).localeCompare(String(b.last4)); });
+    return out;
+  } catch (e) { return []; }
+}
+if (typeof window !== "undefined") window.unassignedCards = unassignedCards;
+
+/* Assign an unknown last-4 to a user's personal card list. Cross-user writes are owner-only (mirrors
+   cardMatchSaveTo's authz — a non-owner's write to someone else's account is reverted server-side), self always.
+   Dedupes like cardMatchSaveTo; touch + save + render so the row drops off the list and receipts re-attribute. */
+window.cardDbAssign = function (last4, userId) {
+  const n = cardNorm4(last4);
+  if (!n.last4) { alert("Not a valid card last-4."); return; }
+  const users = (typeof S !== "undefined" && S && Array.isArray(S.users)) ? S.users : [];
+  const target = users.find(function (u) { return u && u.id === userId && !u.kind && !u.deleted; });
+  if (!target) { alert("Couldn't find that account."); return; }
+  const me = (typeof curUser === "function") ? curUser() : null;
+  if (target.id !== (me && me.id) && !(me && me.superAdmin) && !(typeof isOwner === "function" && isOwner())) {
+    alert("Only an owner can assign a card to someone else's account. Ask " + (target.username || "them") + " to add it in their own Settings → My cards.");
+    return;
+  }
+  if (!Array.isArray(target.cards)) target.cards = [];
+  if (!target.cards.some(function (c) { return c && !c.deleted && cardClean4(c.last4) === n.last4; })) {   // dedupe
+    target.cards.push({ id: "card_" + (typeof uid === "function" ? uid() : Date.now()), last4: n.last4, label: "", kind: "personal", addedAt: (typeof now === "function" ? now() : Date.now()) });
+    if (typeof touch === "function") touch(target);
+    if (typeof logChange === "function") logChange("update", "account", target.id, "Assigned card ••••" + n.last4 + " (card database)");
+    if (typeof save === "function") save();
+  }
+  if (typeof render === "function") render();
+};
+/* Small name-picker → cardDbAssign (mirrors cardMatchSaveTo's __pick__ prompt). */
+window.cardDbAssignPrompt = function (last4) {
+  const n = cardNorm4(last4);
+  if (!n.last4) { alert("Not a valid card last-4."); return; }
+  const members = (typeof rcptMembers === "function") ? rcptMembers() : ((typeof schedMembers === "function") ? schedMembers() : []);
+  const list = members.filter(function (u) { return u && u.id; });
+  if (!list.length) { alert("No teammates to assign to."); return; }
+  const who = prompt("Assign ••••" + n.last4 + " to which person? Type their name:\n" + list.map(function (u) { return "· " + (u.username || u.id); }).join("\n"));
+  if (who == null) return;
+  const q = String(who).trim().toLowerCase();
+  const target = list.find(function (u) { return String(u.username || "").toLowerCase() === q; }) || list.find(function (u) { return String(u.username || "").toLowerCase().indexOf(q) >= 0; }) || null;
+  if (!target) { alert("No user matched “" + who + "”."); return; }
+  cardDbAssign(n.last4, target.id);
+};
+/* Mark an unknown last-4 a company card (no reimburse) — same path js/32's company-card add uses (owner/admin). */
+window.cardDbAssignBusiness = function (last4) {
+  if (!cardCanManageBiz()) { alert("Owner or settings-manager only."); return; }
+  const n = cardNorm4(last4);
+  if (!n.last4) { alert("Not a valid card last-4."); return; }
+  const r = (typeof orgBizCardsReg === "function") ? orgBizCardsReg() : null;
+  if (!r) { alert("No org to attach a company card to."); return; }
+  if (!Array.isArray(r.businessCards)) r.businessCards = [];
+  if (!r.businessCards.some(function (c) { return c && !c.deleted && cardClean4(c.last4) === n.last4; })) {   // dedupe
+    r.businessCards.push({ id: "bcard_" + (typeof uid === "function" ? uid() : Date.now()), last4: n.last4, label: "", active: true, addedAt: (typeof now === "function" ? now() : Date.now()) });
+    if (typeof logChange === "function") logChange("update", "account", S.biz, "Assigned company card ••••" + n.last4 + " (card database)");
+  }
+  if (typeof bizCardSave === "function") bizCardSave(); else if (typeof render === "function") render();
+};
+
+/* Compact "who has which last-4" summary so the owner sees the full picture (optional context). */
+function cardDbRegisteredSummary() {
+  try {
+    const users = (typeof S !== "undefined" && S && Array.isArray(S.users)) ? S.users : [];
+    const lines = [];
+    users.forEach(function (u) {
+      if (!u || u.kind || u.deleted || !Array.isArray(u.cards)) return;
+      const cs = u.cards.filter(function (c) { return c && !c.deleted; });
+      if (cs.length) lines.push(esc(u.username || u.id) + ": " + cs.map(function (c) { return "••••" + esc(cardClean4(c.last4)); }).join(", "));
+    });
+    const biz = (typeof orgBusinessCards === "function") ? orgBusinessCards().filter(function (c) { return c && !c.deleted && c.active !== false; }) : [];
+    if (biz.length) lines.push("🏢 Company: " + biz.map(function (c) { return "••••" + esc(cardClean4(c.last4)); }).join(", "));
+    if (!lines.length) return "";
+    return `<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">Registered cards (${lines.length})</summary><div class="sub" style="margin-top:6px;white-space:normal;line-height:1.7">` + lines.join("<br>") + `</div></details>`;
+  } catch (e) { return ""; }
+}
+/* THE ADMIN VIEW — mounted from js/32 next to Company cards. Owner/settings-manager only. */
+function cardDbCard() {
+  if (!cardCanManageBiz()) return "";
+  const list = (typeof unassignedCards === "function") ? unassignedCards() : [];
+  let h = `<div class="card"><div class="nm" style="font-size:15px">💳 Card database</div>
+    <div class="sub" style="margin-bottom:8px;white-space:normal">Every card last-4 that has shown up on a receipt but isn't linked to anyone yet. Assign each to the person who paid (to reimburse them) or mark it a company card. Once assigned, <b>all</b> of that card's receipts attribute automatically — no need to open each one.</div>`;
+  if (!list.length) {
+    h += `<div class="muted" style="margin:0">✓ No unknown cards — every card on your receipts is linked to a person.</div>`;
+  } else {
+    h += `<div style="display:flex;flex-direction:column;gap:6px">` + list.map(function (c) {
+      const vend = (c.vendors && c.vendors.length) ? c.vendors.join(", ") : "";
+      const dt = c.lastDate ? ((typeof fmtDate === "function") ? fmtDate(c.lastDate) : c.lastDate) : "";
+      const meta = [c.count + " receipt" + (c.count === 1 ? "" : "s"), vend, dt ? "last " + dt : ""].filter(Boolean).join(" · ");
+      return `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;flex-wrap:wrap">
+        <span class="grow" style="min-width:150px">💳 <b>••••${esc(c.last4)}</b> <span class="sub">· ${esc(meta)}</span></span>
+        <button class="btn acc sm" onclick="cardDbAssignPrompt('${esc(c.last4)}')">Assign to…</button>
+        <button class="btn ghost sm" onclick="cardDbAssignBusiness('${esc(c.last4)}')">Company card</button>
+      </div>`;
+    }).join("") + `</div>`;
+  }
+  h += cardDbRegisteredSummary();
+  h += `</div>`;
+  return h;
+}
+if (typeof window !== "undefined") window.cardDbCard = cardDbCard;
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { cardOwner: cardOwner, cardNorm4: cardNorm4, cardClean4: cardClean4, cardIsValid4: cardIsValid4 };
+  module.exports = { cardOwner: cardOwner, cardNorm4: cardNorm4, cardClean4: cardClean4, cardIsValid4: cardIsValid4, unassignedCards: unassignedCards };
 }
