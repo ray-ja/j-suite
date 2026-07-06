@@ -106,6 +106,14 @@ function load(){
     if(!Array.isArray(S[b].escapeRooms))S[b].escapeRooms=[];
     if(!Array.isArray(S[b].escapeBookings))S[b].escapeBookings=[];
   });
+  // CUSTOMER PHONES (multi-number) — ADDITIVE: c.phones = [{num,label}] holds up to 3 numbers, each with a note
+  // (e.g. "wife", "site manager"). c.phone stays the PRIMARY number (== phones[0].num), so ALL existing code that
+  // reads c.phone is UNCHANGED. Legacy customers (no phones[]) backfill from their single c.phone → one entry with
+  // an empty label (or [] when there's no number). Never drops a number. Idempotent; rides the customer LWW.
+  (typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(b=>{
+    if(!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
+    (S[b].customers||[]).forEach(c=>{ if(c&&!Array.isArray(c.phones))c.phones=c.phone?[{num:c.phone,label:""}]:[]; });
+  });
   // life-tracker collections — backfill on EVERY org slab (obx/jam + any personal org like rbjvl) so the new synced arrays always exist
   (S.registry||[]).forEach(r=>{const b=r&&r.id;if(!b||!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
     if(!S[b].lifeNotes)S[b].lifeNotes=[];

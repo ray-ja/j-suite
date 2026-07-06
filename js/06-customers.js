@@ -92,12 +92,19 @@ function rProperties(){
 function liProp(p){const cs=custsForProp(p);const addr=p.address||"";const who=cs.length?" · "+esc(cs.map(c=>c.name||c.company).join(", ")):"";const _drive=(p.lat!=null&&typeof driveBadge==="function")?driveBadge(p.lat,p.lng):"";const addrHtml=addr?`<a href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">${esc(addr)}</a>`:"no address";return `<div class="li" onclick="openProperty('${p.id}')"><div class="grow"><div class="nm">${esc(p.label||p.address||"Property")}</div><div class="sub" style="white-space:normal">${addrHtml}${who}${_drive?" · "+_drive:""}</div></div></div>`;}
 /* pretty US phone: (252) 475-4152 */
 function fmtPhone(p){ const d=(p||"").replace(/\D/g,""); if(d.length===10)return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; if(d.length===11&&d[0]==="1")return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`; return p||""; }
+/* up to 3 phone numbers for a customer: [{num,label}]. Reads c.phones (the multi-number model); falls back to the
+   single c.phone for any record the migration hasn't touched yet. Drops empty nums, caps at 3. A single-phone /
+   no-label customer yields exactly one entry, so displays stay byte-identical to the old single-phone rendering. */
+function custPhones(c){
+  if(!c) return [];
+  const list=(Array.isArray(c.phones)&&c.phones.length)?c.phones:(c.phone?[{num:c.phone,label:""}]:[]);
+  return list.filter(p=>p&&String(p.num||"").trim()).slice(0,3).map(p=>({num:p.num,label:p.label||""}));
+}
 function liCustomer(c){
-  const tel=(c.phone||"").replace(/[^0-9+]/g,"");
   const np=(typeof propsForCust==="function")?propsForCust(c.id).length:0;
   const lines=[];
   if(c.company && c.name) lines.push(esc(c.company));                                                                                              // business
-  if(c.phone) lines.push(`<a href="tel:${tel}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">📞 ${esc(fmtPhone(c.phone))}</a>`);   // phone
+  custPhones(c).forEach(p=>{const t=(p.num||"").replace(/[^0-9+]/g,"");lines.push(`<a href="tel:${t}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">📞 ${esc(fmtPhone(p.num))}${p.label?` · ${esc(p.label)}`:""}</a>`);});   // phone(s), each with its note
   if(c.email) lines.push(`<a href="mailto:${esc(c.email)}" onclick="event.stopPropagation()" style="color:var(--brand-text);text-decoration:underline">✉️ ${esc(c.email)}</a>`);   // email
   lines.push(`🏠 ${np} ${np===1?"property":"properties"}`);                                                                                         // properties linked
   return `<div class="li" onclick="openCustomer('${c.id}')">
@@ -110,6 +117,9 @@ let CPROPS=[];
 window.openCustomer=function(id){
   const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};
   const isNew=!id;const f=k=>`value="${esc(c[k]||"")}"`;
+  // up-to-3 phone rows: [number] [note]. Row 0 = primary (kept in sync with c.phone on save).
+  const _cph=custPhones(c);
+  const phoneRows=[0,1,2].map(i=>{const p=_cph[i]||{num:"",label:""};return `<div class="row" style="gap:8px;margin-bottom:6px"><input id="f_phone${i}" value="${esc(p.num||"")}" placeholder="${i===0?"Phone":"Phone (optional)"}" inputmode="tel" style="flex:1 1 110px;min-width:0"><input id="f_phlabel${i}" value="${esc(p.label||"")}" placeholder="note — e.g. wife, site manager" style="flex:1 1 110px;min-width:0"></div>`;}).join("");
   const uopts=sel=>`<option value="">— none —</option>`+users().map(u=>`<option value="${u.id}" ${sel===u.id?"selected":""}>${esc(u.username)}</option>`).join("");
   let notesH=(c.notes||[]).slice().reverse().map(n=>`<div class="note"><div class="t">${esc(n.t)}</div>${esc(n.text)}</div>`).join("")||`<div class="muted">No notes yet.</div>`;
   let propsH="",histH="";
@@ -123,8 +133,9 @@ window.openCustomer=function(id){
   modal(isNew?"New customer":"Customer",`
     <label>Name</label><input id="f_name" ${f("name")} placeholder="Contact name">
     <label>Company</label><input id="f_company" ${f("company")} placeholder="Company / property">
-    <div class="row" style="gap:8px"><div class="grow"><label>Phone</label><input id="f_phone" ${f("phone")} inputmode="tel"></div>
-    <div class="grow"><label>Email</label><input id="f_email" ${f("email")} inputmode="email"></div></div>
+    <label>Phone numbers <span class="muted" style="font-weight:400">(up to 3 — add a note like "wife" or "site manager")</span></label>
+    ${phoneRows}
+    <label>Email</label><input id="f_email" ${f("email")} inputmode="email">
     <div class="row" style="gap:8px"><div class="grow"><label>Managed by</label><select id="f_manager">${uopts(c.manager)}</select></div>
     <div class="grow"><label>Sold by (credit)</label><select id="f_soldby">${uopts(c.soldBy)}</select></div></div>
     <label>How they found us</label><select id="f_source">${SOURCES.map(o=>`<option value="${o}" ${c.source===o?"selected":""}>${o||"— select —"}</option>`).join("")}</select>
@@ -133,7 +144,10 @@ window.openCustomer=function(id){
     <label>Next follow-up date</label><input id="f_next" type="date" value="${c.next||""}">
     <button class="btn acc" style="margin-top:14px" onclick="saveCustomer('${c.id}',${isNew})">Save</button>
     ${isNew?`<p class="muted" style="margin-top:8px">Save the customer, then reopen to add properties.</p>`:`${propsH}
-      ${(()=>{const tel=(c.phone||"").replace(/[^0-9+]/g,"");const ap=propsForCust(c.id)[0];const addr=c.address||(ap&&ap.address)||"";return (tel||addr)?`<div class="row" style="gap:8px;margin-top:10px">${tel?`<a class="btn ghost sm grow" href="tel:${tel}" style="text-align:center">📞 Call</a><a class="btn ghost sm grow" href="sms:${tel}" style="text-align:center">💬 Text</a>`:""}${addr?`<a class="btn ghost sm grow" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" style="text-align:center">🗺️ Directions</a>`:""}</div>`:"";})()}
+      ${(()=>{const phs=custPhones(c);const ap=propsForCust(c.id)[0];const addr=c.address||(ap&&ap.address)||"";if(!phs.length&&!addr)return"";let out="";
+        phs.forEach(p=>{const t=(p.num||"").replace(/[^0-9+]/g,"");out+=`<div class="row" style="gap:8px;margin-top:8px"><a class="btn ghost sm grow" href="tel:${t}" style="text-align:center">📞 ${esc(fmtPhone(p.num))}${p.label?` · ${esc(p.label)}`:""}</a><a class="btn ghost sm" href="sms:${t}" style="text-align:center;flex:0 0 auto">💬 Text</a></div>`;});
+        if(addr)out+=`<div class="row" style="gap:8px;margin-top:8px"><a class="btn ghost sm grow" href="https://maps.google.com/?q=${encodeURIComponent(addr)}" target="_blank" rel="noopener" style="text-align:center">🗺️ Directions</a></div>`;
+        return out;})()}
       <div class="row" style="gap:8px;margin-top:12px">
        <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
        <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button>
@@ -148,7 +162,10 @@ window.openCustomer=function(id){
 window.saveCustomer=function(id,isNew){
   if(typeof submitGuard==="function"&&!submitGuard("saveCustomer:"+id))return;   // rapid-tap dupe guard
   const d=D();let c=isNew?{id,notes:[]}:d.customers.find(x=>x.id===id);
-  ["name","company","phone","email"].forEach(k=>c[k]=val("f_"+k));
+  ["name","company","email"].forEach(k=>c[k]=val("f_"+k));
+  // multi-phone: collect up to 3 [number,note] rows, drop empties; c.phone stays the PRIMARY (phones[0].num) so all c.phone readers are unchanged.
+  const _phones=[0,1,2].map(i=>({num:(val("f_phone"+i)||"").trim(),label:(val("f_phlabel"+i)||"").trim()})).filter(p=>p.num).slice(0,3);
+  c.phones=_phones; c.phone=(_phones[0]&&_phones[0].num)||"";
   c.type=val("f_type");c.status=val("f_status");c.next=val("f_next");c.manager=val("f_manager");c.soldBy=val("f_soldby");c.source=val("f_source");
   touch(c);if(isNew)d.customers.push(c);
   if(typeof logChange==="function")logChange(isNew?"create":"update","customer",c.id,(isNew?"Logged ":"Updated ")+(c.name||c.company||"customer")+(c.status?" · "+c.status:""));
