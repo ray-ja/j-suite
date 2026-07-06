@@ -18,6 +18,8 @@ let ROUTES_MODE = "job";        // "job" | "vehicle"
 let ROUTES_VEH = null;          // selected vehicle key (vehicle mode)
 let RVMAP = null, RV_LAYERS = null;   // Leaflet map + the single overlay layer group (all drawn features)
 let RV_HIDDEN = {};             // driveId -> true when that drive's polyline/markers are toggled OFF
+const RV_ROADCACHE = {};        // OSRM road-route cache: rounded-waypoint key -> {coords,miles} | "none" (once per distinct route per session)
+let RV_PLAN_BARINFO = null;     // {max,days} from the last JOB readout, so the async road result can update the "Planned" bar width
 
 const RV_PLAN_COLOR = "#2F6FE0";                                  // planned route (solid, blue)
 const RV_COLORS = ["#E67E22", "#8E44AD", "#16A085", "#C0392B", "#2C3E50", "#D35400", "#7D3C98", "#117A65", "#B03A2E", "#6C3483"];  // per-drive / per-job actual paths (avoid the planned blue)
@@ -126,22 +128,25 @@ function rvJobReadout(job) {
   const dollarEst = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(job) : 0;
   const dol = n => (typeof money === "function") ? money(n) : ("$" + (Math.round((+n || 0) * 100) / 100).toFixed(2));
 
+  // stash bar geometry so the async road-route result (rvUpdatePlanBar) can rewrite the "Planned" row in place
+  RV_PLAN_BARINFO = { max: max, days: days };
   let h = `<div class="card" style="margin-top:12px"><div class="nm">📊 Estimated vs actual</div>`;
   h += rvBar("🚗 Odometer (billed)", odoTotal, max, "var(--accent)", true);
-  h += rvBar("🧭 Planned est." + (days > 1 ? " · " + days + " days" : ""), planTotal, max, "var(--muted)", false);
+  h += rvBar("🧭 Planned est." + (days > 1 ? " · " + days + " days" : ""), planTotal, max, "var(--muted)", false, "rvPlanBar");
   h += rvBar("🛰 GPS path est.", gpsTotal, max, "var(--muted)", false);
   h += rvVarianceLine(odoTotal, gpsTotal, flagged);
   h += `<div class="sub" style="white-space:normal;margin-top:10px">💵 Mileage cost: <b>${dol(dollarBilled > 0 ? dollarBilled : dollarEst)}</b> <span class="muted">${dollarBilled > 0 ? "· from the confirmed odometer" : "· estimate (no confirmed odometer yet)"}</span></div>`;
-  h += `<div class="sub muted" style="white-space:normal;margin-top:2px">Odometer is the billed number; the estimate and GPS path are informational only.</div>`;
+  h += `<div class="sub muted" style="white-space:normal;margin-top:2px">Odometer is the billed number; the estimate and GPS path are informational only.<span id="rvPlanNote"></span></div>`;
   h += `</div>`;
   return h;
 }
-/* one CSS bar row */
-function rvBar(label, val, max, color, bold) {
+/* one CSS bar row. `id` (optional) tags the label/value/fill so an async update (e.g. the road-route result) can rewrite this row in place. */
+function rvBar(label, val, max, color, bold, id) {
   const pct = (max > 0) ? Math.max(2, Math.round(val / max * 100)) : 0;
+  const idAttr = s => id ? ` id="${id}_${s}"` : "";
   return `<div style="margin:8px 0 4px">
-    <div style="display:flex;justify-content:space-between;font-size:13px;${bold ? "font-weight:800" : "color:var(--muted)"}"><span>${label}</span><span>${rvRound(val)} mi</span></div>
-    <div style="background:var(--soft);border-radius:6px;height:${bold ? 14 : 10}px;overflow:hidden;margin-top:3px"><div style="width:${pct}%;height:100%;background:${color};border-radius:6px"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;${bold ? "font-weight:800" : "color:var(--muted)"}"><span${idAttr("lbl")}>${label}</span><span${idAttr("val")}>${rvRound(val)} mi</span></div>
+    <div style="background:var(--soft);border-radius:6px;height:${bold ? 14 : 10}px;overflow:hidden;margin-top:3px"><div${idAttr("fill")} style="width:${pct}%;height:100%;background:${color};border-radius:6px"></div></div>
   </div>`;
 }
 /* variance % + tolerance flag (reuses the timeclock 25% asymmetric idea + its flag colors) */
@@ -250,6 +255,58 @@ function rvVehicleDriveList(key) {
   return h;
 }
 
+/* ===== road-following planned route (OSRM demo server) — DISPLAY-ONLY, best-effort, never blocks/blanks =====
+   Given ordered [lat,lng] waypoints, ask OSRM for the real-roads driving route. OSRM wants LNG,LAT pairs,
+   semicolon-separated, and returns CORS `*` so a browser fetch works. On success (json.code==="Ok") we hand back
+   { coords:[[lat,lng],…] (flipped back from OSRM's [lng,lat]), miles:distance/1609.34 }. On ANY failure — offline,
+   non-Ok, HTTP error, >~6s timeout, <2 waypoints, or Leaflet/fetch missing — we call back(null) so the caller
+   silently keeps the straight-line fallback. Results (incl. failures, cached as "none") are memoised per rounded
+   waypoint set so re-renders / drive-toggles / job↔vehicle switches never re-hit OSRM more than once per route. */
+function rvRoadKey(wp) { return wp.map(p => (+p[0]).toFixed(4) + "," + (+p[1]).toFixed(4)).join(";"); }
+window.rvRoadRoute = function (waypoints, cb) {
+  try {
+    if (typeof cb !== "function") cb = function () {};
+    if (!Array.isArray(waypoints) || waypoints.length < 2) return cb(null);
+    if (typeof L === "undefined" || typeof fetch !== "function") return cb(null);
+    const key = rvRoadKey(waypoints);
+    const hit = RV_ROADCACHE[key];
+    if (hit !== undefined) return cb(hit === "none" ? null : hit);
+    const coords = waypoints.map(p => (+p[1]) + "," + (+p[0])).join(";");   // OSRM = lng,lat
+    const url = "https://router.project-osrm.org/route/v1/driving/" + coords + "?overview=full&geometries=geojson";
+    let settled = false;
+    const finish = function (val) {
+      if (settled) return; settled = true;
+      RV_ROADCACHE[key] = val || "none";
+      try { cb(val || null); } catch (e) {}
+    };
+    const timer = setTimeout(function () { finish(null); }, 6000);
+    fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      clearTimeout(timer);
+      if (!j || j.code !== "Ok" || !j.routes || !j.routes[0] || !j.routes[0].geometry) return finish(null);
+      const g = j.routes[0].geometry.coordinates || [];
+      const ll = g.filter(c => c && c.length >= 2 && isFinite(c[0]) && isFinite(c[1])).map(c => [c[1], c[0]]);
+      if (ll.length < 2) return finish(null);
+      finish({ coords: ll, miles: (+j.routes[0].distance || 0) / 1609.34 });
+    }).catch(function () { clearTimeout(timer); finish(null); });
+  } catch (e) { try { cb(null); } catch (_) {} }
+};
+/* rewrite the JOB readout's "Planned" bar in place once the road-miles arrive (× work days, like the straight est). */
+function rvUpdatePlanBar(roadMilesOneTrip) {
+  try {
+    const info = RV_PLAN_BARINFO; if (!info) return;
+    const total = rvRound((+roadMilesOneTrip || 0) * (info.days || 1));
+    const lbl = document.getElementById("rvPlanBar_lbl");
+    const val = document.getElementById("rvPlanBar_val");
+    const fill = document.getElementById("rvPlanBar_fill");
+    const note = document.getElementById("rvPlanNote");
+    if (!lbl && !val && !fill) return;   // readout no longer on screen — nothing to do
+    if (lbl) lbl.textContent = "🧭 Planned (road)" + ((info.days > 1) ? " · " + info.days + " days" : "");
+    if (val) val.textContent = total + " mi";
+    if (fill) { const pct = (info.max > 0) ? Math.max(2, Math.min(100, Math.round(total / info.max * 100))) : 0; fill.style.width = pct + "%"; }
+    if (note) note.textContent = " Planned route shown via roads (routing estimate).";
+  } catch (e) {}
+}
+
 /* ===== the map ===== */
 function rvInitMap() {
   const el = document.getElementById("rvmap"); if (!el) return;
@@ -292,7 +349,25 @@ function rvDrawJob(bounds) {
   const site = (typeof jobLatLng === "function") ? jobLatLng(job) : null;   // job site (via linked property); may be unresolved → gracefully omit
   if (rvValidLL(site)) { const pt = [site.lat, site.lng]; planLine.push(pt); rvBadgeMarker(pt, "#1B2A4E", "🏁", "Job site").addTo(RV_LAYERS); bounds.push(pt); }
   if (endPt) { planLine.push(endPt); if (!startPt || endPt[0] !== startPt[0] || endPt[1] !== startPt[1]) rvBadgeMarker(endPt, RV_PLAN_COLOR, "E", "Planned end").addTo(RV_LAYERS); bounds.push(endPt); }
-  if (planLine.length >= 2) L.polyline(planLine, { color: RV_PLAN_COLOR, weight: 2, opacity: 0.65 }).addTo(RV_LAYERS);
+  if (planLine.length >= 2) {
+    // draw the straight (as-the-crow-flies) planned line NOW as the fallback, then try to upgrade it to real roads.
+    const straight = L.polyline(planLine, { color: RV_PLAN_COLOR, weight: 2, opacity: 0.65 }).addTo(RV_LAYERS);
+    const wp = planLine.slice();
+    rvRoadRoute(wp, function (res) {
+      // guard: apply only if we're still on the routes page in JOB mode, the map/layer are alive, and THIS straight
+      // line is still on the map (i.e. no redraw/job-switch happened while we waited). Silent no-op otherwise.
+      try {
+        if (!res || !res.coords) return;                                   // offline / failure → keep the straight line
+        if (typeof TAB !== "undefined" && TAB !== "routes") return;
+        if (ROUTES_MODE !== "job") return;
+        if (!RVMAP || !RV_LAYERS || !document.getElementById("rvmap")) return;
+        if (!RV_LAYERS.hasLayer(straight)) return;
+        RV_LAYERS.removeLayer(straight);
+        L.polyline(res.coords, { color: RV_PLAN_COLOR, weight: 4, opacity: 0.9 }).addTo(RV_LAYERS);
+        rvUpdatePlanBar(res.miles);
+      } catch (e) {}
+    });
+  }
   // --- actual drives (DASHED, per-drive color) ---
   rvJobDrives(job.id).forEach((e, i) => { if (RV_HIDDEN[e.id]) return; rvDrawDrive(e, rvColor(i), bounds); });
 }
