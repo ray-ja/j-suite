@@ -270,7 +270,9 @@ function rvDrawInto(bounds) {
   if (ROUTES_MODE === "vehicle") rvDrawVehicle(bounds); else rvDrawJob(bounds);
 }
 /* small helpers */
-function rvValidLL(p) { return p && p.lat != null && p.lng != null && isFinite(p.lat) && isFinite(p.lng); }
+/* valid + trustworthy point for the map: a real lat/lng AND (via tcGoodPt) not a low-accuracy cell/IP fallback,
+   so a garbage 50km fix can't drop a clock-out marker 285 mi away. Falls back to the basic check if tcGoodPt absent. */
+function rvValidLL(p) { return (typeof tcGoodPt === "function") ? tcGoodPt(p) : (p && p.lat != null && p.lng != null && isFinite(p.lat) && isFinite(p.lng)); }
 function rvDot(latlng, color, title) { const m = L.circleMarker(latlng, { radius: 6, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }); if (title) m.bindTooltip(title); return m; }
 function rvBadgeMarker(latlng, color, text, title) {
   const m = L.marker(latlng, { icon: L.divIcon({ className: "", iconSize: [22, 22], html: '<div style="background:' + color + ';color:#fff;border:2px solid #fff;border-radius:50%;width:22px;height:22px;font-size:11px;font-weight:700;text-align:center;line-height:20px;box-shadow:0 1px 3px rgba(0,0,0,.4)">' + text + '</div>' }) });

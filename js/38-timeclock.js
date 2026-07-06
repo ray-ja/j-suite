@@ -79,12 +79,20 @@ function tcHaversine(a, b) {
   const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(x)));   // miles
 }
-/* ordered travelled path: clock-in stamp → foreground pings (by time) → clock-out stamp */
+/* A GPS fix worse than this many METERS of accuracy is a cell-tower / wifi / IP fallback, NOT real GPS — the
+   phone couldn't get satellites and reported an approximate location that can be tens of MILES off (we saw
+   acc:50000 = a 50 km "fix" pointing at Charlotte, ~285 mi from the job, drawing a phantom leg). Reject those
+   from the path + GPS-mileage so a garbage point can never draw a line or inflate the estimate. acc==null =
+   older points with no accuracy recorded → kept (can't judge). */
+const TC_GPS_MAX_ACC = 200;
+function tcGoodPt(p) { return !!(p && p.lat != null && p.lng != null && isFinite(p.lat) && isFinite(p.lng) && !(p.lat === 0 && p.lng === 0) && (p.acc == null || p.acc <= TC_GPS_MAX_ACC)); }
+/* ordered travelled path: clock-in stamp → foreground pings (by time) → clock-out stamp — GARBAGE (low-accuracy)
+   fixes filtered out so they can't draw a phantom straight line to the middle of nowhere. */
 function tcPath(e) {
   const pts = [];
-  if (e.inLoc) pts.push(e.inLoc);
-  (e.pings || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(p => pts.push(p));
-  if (e.outLoc) pts.push(e.outLoc);
+  if (tcGoodPt(e.inLoc)) pts.push(e.inLoc);
+  (e.pings || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).forEach(p => { if (tcGoodPt(p)) pts.push(p); });
+  if (tcGoodPt(e.outLoc)) pts.push(e.outLoc);
   return pts;
 }
 function tcComputeMiles(e) { const p = tcPath(e); let m = 0; for (let i = 1; i < p.length; i++) m += tcHaversine(p[i - 1], p[i]); return m; }
