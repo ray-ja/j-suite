@@ -19,7 +19,7 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:"",finalPrice:0,adjNote:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,days:1,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:"",finalPrice:0,adjNote:""};WZON=true;TAB="quotes";render();};
 /* Open a saved quote (or a preset line / known customer) straight INTO the wizard — the
    single quote editor. Replaces the retired standalone modal that used to live in js/08. */
 window.openQuote=function(id,customerId,preset){
@@ -30,7 +30,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.cust={id:q.customerId||"",name:q.cust||(q.customerId?custName(q.customerId):""),phone:"",address:q.address||"",source:"",soldBy:"",notes:"",propertyId:q.propertyId||""};
     if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c){WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";}}
     WZ.items=JSON.parse(JSON.stringify(q.items||[]));
-    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.disposalTrip=!!q.disposalTrip;WZ.haul=q.haul||"pickup";
+    WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.days=q.estDays||1;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.disposalTrip=!!q.disposalTrip;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
@@ -189,11 +189,17 @@ function pvEnsureMkt(){
   const personHrs = Math.max(1, WZ.crewN||1) * (WZ.hours||0);
   it.mkt = pvMarketBand(area, cost, personHrs);
 }
+/* Multi-day SITE travel: the linked property round-trip is driven ONCE PER DAY. The base quote already
+   covers ~1 trip (deep/junk/paver each bake in one site round-trip in both price and cost), so the EXTRA
+   hard cost of a multi-day job = (days−1) × site round-trip miles × IRS rate. SITE travel ONLY — the
+   dump/disposal mileage (WZ.miles / DISPOSAL_TRIP_MILES) is NEVER multiplied. Reuses wizSiteDriveRT()/QE.MILEAGE. */
+function wizExtraDaysCost(){const days=Math.max(1,+((typeof WZ!=="undefined"&&WZ&&WZ.days)||1));if(days<=1)return 0;const rt=(typeof wizSiteDriveRT==="function")?(wizSiteDriveRT().rt||0):0;const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);return Math.round((days-1)*rt*MIL);}
+window.wizSetDays=function(v){if(wizLockedAlert&&wizLockedAlert())return;WZ.days=Math.max(1,parseInt(v,10)||1);wizAutosave();render();};
 function reviewSummaryHTML(){
   pvEnsureMkt();
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
-  const cost=itemsCost(WZ.items);                        // hard cost only (disposal + mileage already baked into the line)
+  const cost=itemsCost(WZ.items)+wizExtraDaysCost();     // hard cost (disposal + 1 site trip baked into line) + extra multi-day SITE round-trips
   const profit=total-cost;
   const crewN=Math.max(1,WZ.crewN||1), hrs=WZ.hours||0, personHrs=crewN*hrs;
   const fieldPool=Math.max(0,total-cost)*0.48;           // (revenue − hard costs) × 60% labor × 80% field work
@@ -213,6 +219,9 @@ function reviewSummaryHTML(){
     ${(WZ.items[0]&&WZ.items[0].mkt)?pvBandHTML(WZ.items[0].mkt,total):`<div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
     <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>`}
     <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0?tCol:"var(--muted)"}">${hrs>0?money(Math.floor(perHr))+"/hr "+tIcon:"—"}</div></div></div>`;
+  // # of days on site — multi-day jobs drive the SITE round-trip once per day (dump runs never multiplied)
+  const _dDays=Math.max(1,+((WZ&&WZ.days)||1)),_dXt=wizExtraDaysCost(),_dRt=wizSiteDriveRT().rt;
+  h+=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"><div class="grow"><div class="sub">📅 # of days on site</div>${_dXt>0?`<div class="sub" style="color:var(--muted)">🚗 Extra site trips: ${_dDays-1} × ${_dRt} mi RT = ${money(_dXt)} added to cost</div>`:`<div class="sub" style="color:var(--muted)">1 = single trip · dump runs are never multiplied</div>`}</div><input type="number" inputmode="numeric" min="1" step="1" value="${_dDays}" onchange="wizSetDays(this.value)" style="width:70px;text-align:center"></div>`;
   if(hrs>0){
     if(tier===2)h+=`<div class="sub" style="margin-top:4px;color:var(--accent)">✓ Clears your $${TGT}/hr floor — ${money(Math.floor(perHr))}/hr each.</div>`;
     else if(tier===1)h+=`<div class="note" style="margin-top:6px;white-space:normal;border-left-color:#b8860b">🟡 Below your <b>$${TGT}/hr</b>, but clears the <b>$${CF}/hr crew floor</b> — worth it for Chase/Pierce, not your own time. For you to clear $${TGT}/hr, price ~<b>${money(priceFor(TGT))}</b> (now ${money(total)}).</div>`;
@@ -353,8 +362,8 @@ window.wizPersist=function(){
     date:base.date||today(),
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     pv:(WZ.pv&&WZ.items[0]&&(WZ.items[0].bandKey==="paver"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="paver")))?JSON.parse(JSON.stringify(WZ.pv)):undefined,
-    recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),disposalTrip:!!WZ.disposalTrip,total:total,
-    cost:itemsCost(WZ.items)+mileageCost(WZ.miles),
+    recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),estDays:Math.max(1,+WZ.days||1),disposalTrip:!!WZ.disposalTrip,total:total,
+    cost:itemsCost(WZ.items)+mileageCost(WZ.miles)+wizExtraDaysCost(),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
