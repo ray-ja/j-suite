@@ -269,7 +269,8 @@ function wizReview(){
     const job=(WZ.accepted&&WZ.jobId)?D().jobs.find(j=>j.id===WZ.jobId&&!j.deleted):null;
     if(job){
       h+=`<div class="row"><div class="grow"><div class="nm" style="font-size:15px">✓ Scheduled — ${fmtDate(job.date)}${job.time?" · "+esc(job.time):""}</div><div class="sub" style="margin-top:2px">${(typeof crewChips==="function")?crewChips(job):""}</div></div><button class="btn ghost sm" onclick="closeWizToJob('${job.id}')">Open job</button></div>
-        <button class="btn ghost sm" style="margin-top:8px" onclick="openAcceptSchedule('${WZ.id}')">Reschedule / reassign crew</button>`;
+        <button class="btn ghost sm" style="margin-top:8px" onclick="openAcceptSchedule('${WZ.id}')">Reschedule / reassign crew</button>
+        <button class="btn ${job.done?"ghost":"acc"} sm" style="margin-top:8px;width:100%" onclick="toggleJob('${job.id}')">${job.done?"↩ Reopen job":"✓ Mark job done → collect expenses"}</button>${job.done?`<div class="sub" style="margin-top:4px">Job's done — now in <b>Expense collecting</b> (crew log receipts) until you Mark invoiced.</div>`:""}`;
     } else if(WZ.accepted&&WZ.jobId){
       h+=`<div class="muted" style="margin-bottom:8px">The linked job was removed.</div><button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Schedule again →</button>`;
     } else {
