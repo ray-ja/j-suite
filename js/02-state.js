@@ -22,6 +22,12 @@ function load(){
   {const obxReg=(S.registry||[]).find(r=>r&&r.id==="obx");
    if(obxReg){if(!Array.isArray(obxReg.vehicles))obxReg.vehicles=[];
      if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true,kind:"vehicle"});}}
+  // TAB VISIBILITY: an org with an explicit tools allowlist (registry.tabs) HIDES any tab not in the list, so a
+  // newly-shipped tab (leads/jobs/routes/…) stays invisible until added — the reason "View route" bounced to Today.
+  // Append the newer always-available display tabs any allowlisted org is missing (idempotent; null tabs = "all"
+  // already sees them). Bump updatedAt only on a real change so it propagates once, then no-ops (no owner intended
+  // to exclude a tab that didn't exist yet).
+  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["leads","jobs","routes"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
