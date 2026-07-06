@@ -48,7 +48,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -163,6 +163,68 @@ async function main() {
   const e7 = seedReview({ receiptId: "b1", suggested: { vendor: "Depot", amount: 99, type: "pass-through", confidence: 0.8 } });
   rcptApplyEdit({ store: "review", jobId: null, recId: e7.id }, { type: null, jobId: null, vendor: "", receiptId: "b1" });
   ok("suggested survives editing while unfiled", rcptReview()[0].suggested && rcptReview()[0].suggested.amount === 99, rcptReview()[0].suggested);
+
+  // ========================= FLAT-VALUE RECEIPT SPLITTING (js/92) =========================
+  console.log("\n— SPLIT: $200 receipt → 🧱 $120 pass-through (job) + 🔧 $80 business tool —");
+  resetStore();
+  const sp = seedReview({ receiptId: "bSplit", vendor: "Home Depot", amount: 200, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const spRes = rcptApplySplit(
+    { store: "review", jobId: null, recId: sp.id }, 200,
+    [ { amount: 120, type: "pass-through", jobId: "j1", category: "", desc: "pavers" },
+      { amount: 80, type: "business", jobId: null, category: "tools/equipment", desc: "wet saw" } ],
+    { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "", desc: "", receiptId: "bSplit" });
+  ok("split ok → 2 new locations", spRes.ok && spRes.newLocs.length === 2, spRes);
+  ok("original review record consumed (queue empty)", rcptReview().length === 0, rcptReview().length);
+  const spMat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const spBiz = STORE.expenses.filter(e => !e.deleted);
+  ok("🧱 $120 pass-through landed in j1.materials", spMat.length === 1 && spMat[0].amount === 120, spMat);
+  ok("🔧 $80 tool landed in org expenses[] w/ category tools/equipment", spBiz.length === 1 && spBiz[0].amount === 80 && spBiz[0].category === "tools/equipment", spBiz);
+  ok("Σ of the 2 slices == the receipt total (200)", (spMat.reduce((s, m) => s + m.amount, 0) + spBiz.reduce((s, e) => s + e.amount, 0)) === 200);
+  const sg = spMat[0].splitGroup;
+  ok("both slices share the SAME splitGroup", !!sg && spBiz[0].splitGroup === sg, { mat: spMat[0].splitGroup, biz: spBiz[0].splitGroup });
+  ok("both slices share the receiptId (one photo)", spMat[0].receiptId === "bSplit" && spBiz[0].receiptId === "bSplit");
+  ok("slice[0] REUSED the original record id (id preserved, not remade)", spMat[0].id === sp.id, { got: spMat[0].id, orig: sp.id });
+  // P&L (js/52): the material is a real cost on j1; the tool is overhead, off EVERY job's P&L
+  const pj1 = jobProfit(STORE.jobs[0]);
+  ok("🧱 material counted in j1 jobProfit cost ($120)", pj1.matCost === 120 && pj1.cost === 120 && pj1.expCost === 0, pj1);
+  const pj2 = jobProfit(STORE.jobs[1]);
+  ok("🔧 tool EXCLUDED from j2's P&L (off every job)", pj2.matCost === 0 && pj2.expCost === 0 && pj2.cost === 0, pj2);
+  ok("🔧 tool is in NO job.expenses/materials array (org overhead only)", STORE.jobs.every(j => (j.expenses || []).concat(j.materials || []).every(x => x.amount !== 80 || x.deleted)));
+
+  console.log("— SPLIT: N==1 is byte-identical to a single route (no splitGroup, same record) —");
+  resetStore();
+  const nSave = _n;
+  const one1 = seedReview({ receiptId: "bOne", vendor: "Depot", amount: 50, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const one1ts = one1.ts;
+  rcptApplySplit({ store: "review", jobId: null, recId: one1.id }, 50, [{ amount: 50, type: "pass-through", jobId: "j1", category: "", desc: "" }],
+    { vendor: "Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "materials", desc: "sand", receiptId: "bOne" });
+  const viaSplit = STORE.jobs[0].materials.filter(m => !m.deleted);
+  resetStore();
+  _n = nSave;   // reset the uid counter so the review record gets the SAME id → the final records are comparable
+  const one2 = seedReview({ receiptId: "bOne", vendor: "Depot", amount: 50, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  one2.ts = one1ts;   // same carried ts so the built records match on every meaningful field
+  rcptApplyEdit({ store: "review", jobId: null, recId: one2.id }, { type: "pass-through", jobId: "j1", amount: 50, vendor: "Depot", date: "2026-07-01", category: "materials", paidBy: null, attributedTo: "u_ray", desc: "sand", receiptId: "bOne" });
+  const viaRoute = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const norm = a => { const c = Object.assign({}, a); delete c.updatedAt; return c; };
+  ok("N==1 split writes ONE record with NO splitGroup field", viaSplit.length === 1 && !("splitGroup" in viaSplit[0]), viaSplit[0]);
+  ok("N==1 split record == the single-route record (byte-identical)", JSON.stringify(norm(viaSplit[0])) === JSON.stringify(norm(viaRoute[0])), { split: norm(viaSplit[0]), route: norm(viaRoute[0]) });
+
+  console.log("— SPLIT validation: over / under / $0 slice / missing job all BLOCK (no records written) —");
+  resetStore();
+  const v = seedReview({ receiptId: "bV", vendor: "X", amount: 100 });
+  const vloc = { store: "review", jobId: null, recId: v.id };
+  const vsh = { vendor: "X", date: "", paidBy: null, attributedTo: null, category: "", desc: "", receiptId: "bV" };
+  const over = rcptApplySplit(vloc, 100, [{ amount: 70, type: "business" }, { amount: 50, type: "business" }], vsh);
+  ok("OVER the total blocks (nothing written, review intact)", !over.ok && /over/i.test(over.error) && STORE.expenses.length === 0 && rcptReview().length === 1, over);
+  const under = rcptApplySplit(vloc, 100, [{ amount: 30, type: "business" }, { amount: 40, type: "business" }], vsh);
+  ok("UNDER the total blocks (with a 'put the rest' nudge)", !under.ok && /short/i.test(under.error) && STORE.expenses.length === 0, under);
+  const zero = rcptApplySplit(vloc, 100, [{ amount: 0, type: "business" }, { amount: 100, type: "business" }], vsh);
+  ok("a $0 slice blocks", !zero.ok && STORE.expenses.length === 0, zero);
+  const nojob = rcptApplySplit(vloc, 100, [{ amount: 60, type: "pass-through", jobId: null }, { amount: 40, type: "business" }], vsh);
+  ok("a 🧱/🚚 slice with no job blocks", !nojob.ok && STORE.expenses.length === 0, nojob);
+  const tol = rcptApplySplit(vloc, 100, [{ amount: 33.33, type: "business" }, { amount: 33.33, type: "business" }, { amount: 33.34, type: "business" }], vsh);
+  ok("Σ within ±$0.01 is accepted (33.33+33.33+33.34=100.00 → 3 records)", tol.ok && STORE.expenses.filter(e => !e.deleted).length === 3, tol);
+  ok("the accepted split consumed the original review record", rcptReview().length === 0);
 
   // ========================= CAP AUTO-CATEGORIZE =========================
   const SS = require("./sync-server.js");
