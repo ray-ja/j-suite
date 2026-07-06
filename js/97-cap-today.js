@@ -99,17 +99,39 @@ function capRenderThread() { const box = document.getElementById("cap-thread"); 
 /* ----- the panel (top of rToday) ----- */
 function capTodayPanel() {
   CAP_THREAD = capLoadThread();
+  capEnsureVoiceStyle();
   setTimeout(capScrollThread, 40);
+  if (CAP_LISTENING) setTimeout(function () { capSetMicState(true); }, 0);   // restore recording state across a re-render mid-listen
   const header = `<div class="secthd"><h2>🧭 Cap</h2><span class="sub" style="margin-left:auto">your day, at a glance</span></div>`;
+  // 🎤 voice input — only when the browser has SpeechRecognition AND a secure context (HTTPS Tailscale PWA); on
+  // file://, plain http, or an unsupported browser the mic is HIDDEN and the panel is a normal text chat.
+  const mic = capSpeechSupported()
+    ? `<button id="cap-mic" class="btn ghost" style="flex:0 0 auto;width:auto;min-width:46px;padding:12px 14px;font-size:18px" onclick="capMicTap()" title="Tap to talk" aria-label="Talk to Cap">🎤</button>`
+    : "";
   const panel = `<div class="card" style="border-top:4px solid var(--accent)">
     <div id="cap-thread" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;-webkit-overflow-scrolling:touch">${capThreadInner()}</div>
     <div class="row" style="gap:6px;margin-top:10px">
-      <input id="cap-input" placeholder="Ask Cap about today…" autocomplete="off" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();capSend();}">
-      <button class="btn acc" style="flex:0 0 auto" onclick="capSend()">Send</button>
+      <input id="cap-input" placeholder="Ask Cap about today…" autocomplete="off" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();capSend();}">
+      ${mic}
+      <button class="btn acc" style="flex:0 0 auto;width:auto" onclick="capSend()">Send</button>
     </div>
+    ${capVoiceControls()}
     ${capOnline() ? "" : `<div class="muted" style="font-size:12px;margin-top:6px">Cap answers when you're signed in online.</div>`}
   </div>`;
   return header + panel;
+}
+/* the read-back toggle (voice mode only) OR the graceful-degradation hint when speech input isn't available. */
+function capVoiceControls() {
+  if (capSpeechSupported()) {
+    if (!capSynthSupported()) return "";   // input works but no read-back voice → nothing to toggle
+    const on = capReadbackOn();
+    return `<div class="row" style="gap:8px;margin-top:6px;align-items:center">
+      <button id="cap-voice-toggle" class="btn ghost sm" style="flex:0 0 auto" onclick="capToggleReadback()">${on ? "🔊 Read-back on" : "🔇 Read-back off"}</button>
+      <span class="muted" style="font-size:11px">Cap speaks replies in voice mode</span></div>`;
+  }
+  // unavailable: one-line hint, then fall through to text
+  try { if (typeof window !== "undefined" && !window.isSecureContext) return `<div class="muted" style="font-size:12px;margin-top:6px">🎤 Voice needs the app opened via the secure Tailscale link.</div>`; } catch (e) {}
+  return `<div class="muted" style="font-size:12px;margin-top:6px">🎤 Voice input isn't supported on this browser — type to Cap instead.</div>`;
 }
 if (typeof window !== "undefined") window.capTodayPanel = capTodayPanel;
 
@@ -119,13 +141,20 @@ function capErrLine(err) {
   if (err && /too many/i.test(err)) return "Give me a sec — a lot of questions at once. Try again in a moment.";
   return "Something went wrong reaching me — try again in a moment.";
 }
-window.capSend = function () {
+/* voice === true → this turn was spoken (mic), so Cap READS its reply back (Ray's rule: speak in voice mode,
+   SILENT when typed). Send/Enter call capSend() with no arg → voice is falsy → silent. The POST path is shared
+   exactly — voice only decides read-back, never a different request. */
+window.capSend = function (voice) {
   const inp = document.getElementById("cap-input"); if (!inp) return;
   const text = (inp.value || "").trim(); if (!text || CAP_BUSY) return;
+  const spoken = voice === true;
   if (!capOnline()) {
     CAP_THREAD.push({ role: "user", content: text });
-    CAP_THREAD.push({ role: "assistant", content: "I'm offline right now — I work when you're signed in online. Try again once you're connected." });
-    capSaveThread(); inp.value = ""; capRenderThread(); return;
+    const off = "I'm offline right now — I work when you're signed in online. Try again once you're connected.";
+    CAP_THREAD.push({ role: "assistant", content: off });
+    capSaveThread(); inp.value = ""; capRenderThread();
+    if (spoken) capSpeakTurn(off, []);
+    return;
   }
   CAP_THREAD.push({ role: "user", content: text }); capSaveThread(); inp.value = ""; CAP_BUSY = true; capRenderThread();
   const hist = CAP_THREAD.filter(m => m && (m.role === "user" || m.role === "assistant")).slice(-8);   // only the conversation, never action cards
@@ -139,12 +168,18 @@ window.capSend = function () {
         const acts = Array.isArray(j.actions) ? j.actions : [];
         acts.forEach(a => { if (a && typeof a.action === "string") CAP_THREAD.push({ role: "action", action: a, state: "pending", cid: capCid(), err: null }); });
         if (!reply && !acts.length) CAP_THREAD.push({ role: "assistant", content: "Got it." });
-      } else {
-        CAP_THREAD.push({ role: "assistant", content: capErrLine(j.error) });
+        capSaveThread(); capRenderThread();
+        // read-back: speak the reply + each confirm-card's narration. The cards STILL render visually and still
+        // require a thumb-tap to Confirm — voice never auto-confirms a mutating action (eyes verify the odometer).
+        if (spoken) capSpeakTurn(reply || "Got it.", acts);
+        return;
       }
+      const el = capErrLine(j.error);
+      CAP_THREAD.push({ role: "assistant", content: el });
       capSaveThread(); capRenderThread();
+      if (spoken) capSpeakTurn(el, []);
     })
-    .catch(() => { CAP_BUSY = false; CAP_THREAD.push({ role: "assistant", content: "Something went wrong reaching me — try again in a moment." }); capSaveThread(); capRenderThread(); });
+    .catch(() => { CAP_BUSY = false; const e = "Something went wrong reaching me — try again in a moment."; CAP_THREAD.push({ role: "assistant", content: e }); capSaveThread(); capRenderThread(); if (spoken) capSpeakTurn(e, []); });
 };
 
 /* ============================ CONFIRM-BEFORE-ACT — the action cards + dispatch ============================
@@ -287,4 +322,149 @@ window.capCancelAction = function (cid) {
 window.capConfirmAll = function () {
   const pend = CAP_THREAD.filter(m => m && m.role === "action" && m.state === "pending");
   return pend.reduce((p, it) => p.then(() => window.capConfirmAction(it.cid)), Promise.resolve());
+};
+
+/* ============================ VOICE (Phase 3) — hands-free, secure-context gated ============================
+   INPUT  = the Web Speech API SpeechRecognition (webkit fallback), tap-to-talk: live interim transcript in the
+            input → on end, send it exactly like a typed message but flagged voice-initiated.
+   OUTPUT = speechSynthesis read-back, but ONLY for voice-initiated turns (Ray: speak in voice mode, silent when
+            typing). Cancels any in-flight utterance first.
+   GATE   = feature-detect + window.isSecureContext. Missing/insecure → mic hidden, text still works, never throws.
+            iOS Safari: recognition is flaky/gesture-gated; if it throws/never fires we degrade to text but KEEP
+            synthesis read-back (iOS supports it). A browser with no APIs shows the normal text panel. */
+let CAP_REC = null;          // the active SpeechRecognition instance (null = not listening)
+let CAP_LISTENING = false;   // module-level so a rToday re-render can restore the recording state
+
+function capSpeechSupported() {
+  try {
+    return !!(typeof window !== "undefined" && window.isSecureContext &&
+      (typeof window.SpeechRecognition === "function" || typeof window.webkitSpeechRecognition === "function"));
+  } catch (e) { return false; }
+}
+function capSynthSupported() {
+  try { return !!(typeof window !== "undefined" && window.speechSynthesis && (typeof window.SpeechSynthesisUtterance === "function")); }
+  catch (e) { return false; }
+}
+function capIsIOS() {
+  try {
+    const p = (navigator && navigator.platform) || "", ua = (navigator && navigator.userAgent) || "";
+    return /iP(hone|ad|od)/.test(p) || /iP(hone|ad|od)/.test(ua) || (/Mac/.test(p) && (navigator.maxTouchPoints || 0) > 1);
+  } catch (e) { return false; }
+}
+
+/* read-back preference — persisted per-user on the account (u.settings.capVoice, synced like theme) with a
+   device localStorage fallback when signed out. Default = ON in voice mode (Ray's decision). */
+function capReadbackOn() {
+  const s = (typeof curUserSettings === "function") ? curUserSettings() : null;
+  if (s && typeof s.capVoice === "boolean") return s.capVoice;
+  try { const v = localStorage.getItem("cap_voice_readback"); if (v === "0") return false; if (v === "1") return true; } catch (e) {}
+  return true;
+}
+window.capToggleReadback = function () {
+  const next = !capReadbackOn();
+  try { localStorage.setItem("cap_voice_readback", next ? "1" : "0"); } catch (e) {}   // device fallback
+  const u = (typeof curUser === "function") ? curUser() : null;
+  if (u) {
+    u.settings = u.settings || {}; u.settings.capVoice = next;
+    u.updatedAt = (typeof now === "function") ? now() : Date.now();
+    if (typeof save === "function") save();
+    try { if (typeof S !== "undefined" && S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow(); } catch (e) {}
+  }
+  const b = document.getElementById("cap-voice-toggle"); if (b) b.textContent = next ? "🔊 Read-back on" : "🔇 Read-back off";
+  if (!next) { try { if (capSynthSupported()) window.speechSynthesis.cancel(); } catch (e) {} }   // silence anything in flight
+};
+
+/* ----- OUTPUT: speak (voice-mode only) ----- */
+function capStripForSpeech(s) {
+  try {
+    return String(s || "").replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ")
+      .replace(/[←-⇿⌀-➿⬀-⯿️]/g, " ")   // arrows, misc-symbols, dingbats, variation-selector
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, " ")                    // any surrogate-pair emoji (🎤 ✅ 🚚 …)
+      .replace(/\s+/g, " ").trim();
+  } catch (e) { return String(s || ""); }
+}
+function capSpeak(text) {
+  if (!capSynthSupported()) return;                         // synthesis absent → skip read-back, text still shows
+  const t = capStripForSpeech(text); if (!t) return;
+  try {
+    window.speechSynthesis.cancel();                        // cancel any in-flight utterance before a new one
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = "en-US"; u.rate = 1; u.pitch = 1;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+/* speak Cap's reply, then each proposed action's plain-English narration (the same line the confirm card shows). */
+function capSpeakTurn(reply, acts) {
+  if (!capReadbackOn()) return;
+  const parts = [];
+  if (reply) parts.push(reply);
+  (acts || []).forEach(a => { if (a && typeof a.action === "string") { try { parts.push(capNarrate(a)); } catch (e) {} } });
+  const text = parts.join(". ").replace(/—/g, "-");
+  if (text) capSpeak(text);
+}
+
+/* ----- INPUT: tap-to-talk ----- */
+function capEnsureVoiceStyle() {
+  try {
+    if (typeof document === "undefined" || document.getElementById("cap-voice-style")) return;
+    const st = document.createElement("style"); st.id = "cap-voice-style";
+    st.textContent = "@keyframes capPulse{0%{box-shadow:0 0 0 0 rgba(192,57,43,.55)}70%{box-shadow:0 0 0 9px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}"
+      + ".cap-mic-live{background:var(--danger,#c0392b)!important;color:#fff!important;animation:capPulse 1.25s infinite}";
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+}
+function capSetMicState(live) {
+  const b = document.getElementById("cap-mic"); if (!b) return;
+  if (live) { b.classList.add("cap-mic-live"); b.textContent = "⏺"; b.title = "Listening… tap to stop"; }
+  else { b.classList.remove("cap-mic-live"); b.textContent = "🎤"; b.title = "Tap to talk"; }
+}
+function capMicHint(msg) {   // one-off inline note under the input (degradation / permission problems)
+  const inp = document.getElementById("cap-input"); if (!inp || !inp.parentNode || !inp.parentNode.parentNode) return;
+  let n = document.getElementById("cap-mic-hint");
+  if (!n) { n = document.createElement("div"); n.id = "cap-mic-hint"; n.className = "muted"; n.style.cssText = "font-size:12px;margin-top:6px"; inp.parentNode.parentNode.appendChild(n); }
+  n.textContent = msg;
+}
+function capStopRec(send) {
+  if (CAP_REC) { try { if (!send) CAP_REC.onend = null; CAP_REC.stop(); } catch (e) {} }
+  if (!send) { CAP_REC = null; CAP_LISTENING = false; capSetMicState(false); }
+}
+window.capMicTap = function () {
+  if (!capSpeechSupported()) return;                        // gated — button shouldn't exist, but never act if it does
+  if (CAP_LISTENING) { capStopRec(true); return; }          // tap again → stop gracefully, send whatever was captured
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec;
+  try { rec = new SR(); } catch (e) { capMicHint("Couldn't start the mic — type to Cap instead."); return; }
+  try { if (capSynthSupported()) window.speechSynthesis.cancel(); } catch (e) {}   // stop Cap talking when you start talking
+  rec.continuous = false; rec.interimResults = true; rec.lang = "en-US"; rec.maxAlternatives = 1;
+  let finalText = "", aborted = false;
+  rec.onresult = function (ev) {
+    let interim = "", fin = "";
+    try {
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i]; if (r.isFinal) fin += r[0].transcript; else interim += r[0].transcript;
+      }
+    } catch (e) {}
+    if (fin) finalText += fin;
+    const inp = document.getElementById("cap-input");
+    if (inp) inp.value = (finalText + interim).replace(/\s+/g, " ").trim();   // live interim transcript in the input
+  };
+  rec.onerror = function (ev) {
+    const err = ev && ev.error;
+    if (err === "not-allowed" || err === "service-not-allowed") { aborted = true; capMicHint("Microphone permission is off — allow it in your browser, or type to Cap."); }
+    else if (err === "no-speech") { aborted = true; }   // nothing captured → don't send
+    else if (err === "aborted") { aborted = true; }
+    // other errors (audio-capture, network): let onend send whatever transcript exists, else no-op
+  };
+  rec.onend = function () {
+    CAP_REC = null; CAP_LISTENING = false; capSetMicState(false);
+    const inp = document.getElementById("cap-input");
+    const t = inp ? (inp.value || "").trim() : "";
+    if (!aborted && t) window.capSend(true);   // VOICE-initiated send → read-back on the reply
+  };
+  CAP_REC = rec; CAP_LISTENING = true; capSetMicState(true);
+  try { rec.start(); }
+  catch (e) {   // iOS Safari can throw here (needs a fresh gesture / unsupported) → degrade to text, keep read-back
+    CAP_REC = null; CAP_LISTENING = false; capSetMicState(false);
+    capMicHint("Voice input didn't start" + (capIsIOS() ? " (Safari can be finicky)" : "") + " — type to Cap instead.");
+  }
 };
