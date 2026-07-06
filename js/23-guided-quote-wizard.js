@@ -19,7 +19,7 @@ const WZ_FIELDS={
  labor:[{k:"hours",t:"num",label:"Hours",ph:"2",warn:40}],
  custom:[{k:"name",t:"txt",label:"Describe the line item",ph:"e.g. Travel surcharge"},{k:"price",t:"num",label:"Price ($)",ph:"0"}]
 };
-window.startWizard=function(){WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,days:1,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:"",finalPrice:0,adjNote:""};WZON=true;TAB="quotes";render();};
+window.startWizard=function(){if(typeof navRecordOrigin==="function")navRecordOrigin("quotes");/* the wizard takes over the Quotes tab — remember where we came from (e.g. a quote row tapped from the Jobs table) so exit/delete return there, not always Quotes */WZ={step:"cust",cust:{name:"",phone:"",address:"",source:"",notes:"",id:"",propertyId:"",soldBy:""},items:[],recurring:false,disc:0,discPct:null,miles:0,days:1,hours:0,haul:"pickup",zone:"local",travelMiles:null,svc:null,inp:{},deep:{},deepMods:{},deepSearch:"",id:null,invoiced:false,paid:false,paymentLink:"",finalPrice:0,adjNote:""};WZON=true;TAB="quotes";render();};
 /* Open a saved quote (or a preset line / known customer) straight INTO the wizard — the
    single quote editor. Replaces the retired standalone modal that used to live in js/08. */
 window.openQuote=function(id,customerId,preset){
@@ -57,7 +57,7 @@ function wizLockReconcile(){
 function wizLockedAlert(){if(WZ&&WZ.readonly){alert("This quote is being edited by "+((WZ.lockBy&&WZ.lockBy.name)||"another user")+". Take over editing to make changes.");return true;}return false;}
 window.wizTakeOver=function(){if(!WZ||!WZ.id)return;WZ.readonly=false;WZ.lockBy=null;
   if(typeof lockAcquire==="function")lockAcquire("quote",WZ.id,{onLost:wizOnLost,alive:wizAlive});render();};
-window.exitWizard=function(){if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZON=false;render();};
+window.exitWizard=function(){if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZON=false;if(typeof navReturn==="function"){navReturn("quotes");}else{render();}};   // close/cancel/delete/done → return to the list we opened the wizard from (e.g. Jobs table), falling back to the Quotes tab
 /* ---- draft autosave + resume (survive back / close) ---- */
 const WZ_DRAFT_KEY="jsuite_wzdraft";
 window.wizAutosave=function(){try{if(WZON&&WZ&&WZ.step&&WZ.step!=="done")localStorage.setItem(WZ_DRAFT_KEY,JSON.stringify({biz:S.biz,ts:now(),wz:WZ}));}catch(e){}};

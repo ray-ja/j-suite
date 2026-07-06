@@ -514,8 +514,12 @@ window.delJob=function(id){if(!confirm("Delete this job? It (and its quote) go t
   const j=D().jobs.find(x=>x.id===id); const ttl=(j&&j.title)||"job";
   if(typeof archiveDeleteJob==="function")archiveDeleteJob(id); else if(j){j.deleted=true;j.deletedAt=now();touch(j);}   // cascade: job + sub-jobs + originating quote
   if(typeof logChange==="function")logChange("delete","job",id,"Deleted "+ttl);save();
-  if(window.JOB_OPEN===id)window.JOB_OPEN=null;   // leave the now-deleted job page → back to the schedule
-  closeModal();render();};
+  closeModal();
+  // If we deleted the job FROM its open job page, return to where the user opened it from (Receipts, Jobs, Today…),
+  // not the Schedule host tab. jobPageBack clears JOB_OPEN + restores the recorded origin (JOB_RETURN_TAB). Deleting
+  // from the schedule-list editor modal (no job page open) just re-renders the current tab.
+  if(window.JOB_OPEN===id && typeof jobPageBack==="function"){ jobPageBack(); }
+  else render();};
 
 /* ===== Quote → Job: accept a quote with a date/time, creating a scheduled job =====
    Reachable from the quote flow (wizard). Reuses the crew picker (j_date/j_crew ids + JOBCREW)
