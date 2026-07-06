@@ -301,7 +301,7 @@ function rJobPage(j) {
   if (typeof jobTemplates === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobSaveAsTemplate('${j.id}')">⭐ Save as a common job (reuse this)</button>`;
   // (Google-review BUTTON removed per Ray — the job-done auto-prompt (js/51 reviewPrompt, fired from js/09 toggleJob)
   //  still asks at the right moment; reviewAsk() itself stays (used to SET the review link from js/18 + js/51).)
-  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 6px" onclick="openJob('${j.id}')">✏️ Edit job details</button>`;
+  if (jobCanEditPlan()) h += `<button class="btn acc sm" style="width:100%;margin:8px 0 6px" onclick="openJob('${j.id}')">✏️ Edit job — title · crew · date · notes</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:0 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
   return h;
 }
