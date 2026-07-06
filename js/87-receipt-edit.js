@@ -47,9 +47,15 @@ function rcptBuildRecord(home, id, fields, carry) {
   // attributedTo = whose receipt it is (shows on their crew tab): explicit choice wins, else the reimbursement
   // payee, else the preserved value, else the uploader.
   const attributedTo = fields.attributedTo || fields.paidBy || carry.attributedTo || carry.uploadedBy || "";
+  // CARD LAST-4 (js/94 auto-attribution): the receipt's card last-4, captured optionally in the edit modal.
+  // Purely additive on ALL homes — carried through a type/job/split change (form value wins when the key is
+  // present, even ""; else preserved from the original like capRead). Only a valid 4-digit string is stored.
+  const rawCard4 = (fields.cardLast4 != null) ? String(fields.cardLast4).replace(/\D/g, "").slice(-4) : (carry.cardLast4 || "");
+  const card4 = /^\d{4}$/.test(rawCard4) ? rawCard4 : "";
   const base = { id: id, amount: amount, vendor: fields.vendor || "", desc: fields.desc || "", receiptId: fields.receiptId || null, paidBy: fields.paidBy || null, attributedTo: attributedTo, by: by, ts: carry.ts || now() };
   if (carry.reimbursedAt) base.reimbursedAt = carry.reimbursedAt;
   if (carry.capRead) base.capRead = carry.capRead;
+  if (card4) base.cardLast4 = card4;
   // SPLIT: when one receipt is split into N flat-dollar slices, every slice carries the same splitGroup id (uid,
   // set only when N>1 by js/92 rcptApplySplit) so the table can group them back under one receipt. Purely
   // additive on ALL homes — old records lack it, no migration, no fingerprint reads it. (js/92-receipt-split.js)
@@ -60,7 +66,9 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (home.store === "jobmat") { return base; }
   if (home.store === "biz") { return Object.assign(base, { category: fields.category || "", note: fields.desc || "", date: fields.date || (typeof today === "function" ? today() : ""), memberId: fields.paidBy || "", deleted: false, updatedAt: now() }); }
   // review
-  return { id: id, receiptId: fields.receiptId || null, amount: amount, vendor: fields.vendor || "", date: fields.date || "", type: fields.type || null, jobId: fields.jobId || null, category: fields.category || "", paidBy: fields.paidBy || null, attributedTo: attributedTo, desc: fields.desc || "", uploadedBy: carry.uploadedBy || "", by: by, status: "review", suggested: carry.suggested || null, ts: carry.ts || now(), deleted: false, updatedAt: now() };
+  const rev = { id: id, receiptId: fields.receiptId || null, amount: amount, vendor: fields.vendor || "", date: fields.date || "", type: fields.type || null, jobId: fields.jobId || null, category: fields.category || "", paidBy: fields.paidBy || null, attributedTo: attributedTo, desc: fields.desc || "", uploadedBy: carry.uploadedBy || "", by: by, status: "review", suggested: carry.suggested || null, ts: carry.ts || now(), deleted: false, updatedAt: now() };
+  if (card4) rev.cardLast4 = card4;
+  return rev;
 }
 /* THE PURE RE-BUCKETING OP. loc={store,jobId,recId}; fields={type,jobId,amount,vendor,date,category,paidBy,desc,receiptId}.
    Same home → mutate in place (id kept, zero churn). Different home → tombstone old + create SAME-id record in
@@ -69,13 +77,14 @@ function rcptApplyEdit(loc, fields) {
   const cur = rcptFindRecord(loc.store, loc.jobId, loc.recId || loc.id);
   if (!cur) return { ok: false, error: "record not found" };
   const home = rcptTargetHome(fields);
-  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by };
+  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4 };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
   if (sameHome) {
     const rebuilt = rcptBuildRecord(home, cur.id, fields, carry);
     Object.assign(cur, rebuilt);
     if (carry.reimbursedAt === undefined && "reimbursedAt" in cur) delete cur.reimbursedAt;
+    if ((fields.cardLast4 != null) && !("cardLast4" in rebuilt) && ("cardLast4" in cur)) delete cur.cardLast4;   // the form explicitly cleared the card last-4 → drop the stale value (Object.assign wouldn't remove it)
     rcptTouchHome(home, cur);
     return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: cur.id } };
   }
@@ -128,11 +137,14 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job">${jobOpts}</select></div>
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
     <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
+    <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(rec.cardLast4 || "")}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
+    <div id="rcpt_card_slot"></div>
     <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
     <div id="rcpt_split_slot"></div>
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
   rcptEditTypeChange();
   if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
+  if (typeof cardMatchInit === "function") cardMatchInit(rec);   // js/94: match the card last-4 → pre-select "Who paid?" (default only, never writes)
 };
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
@@ -169,11 +181,12 @@ window.rcptSaveEdit = function () {
   const paidBy = val("rcpt_paidby") || "";
   const attributedTo = val("rcpt_attr") || "";
   const desc = (val("rcpt_desc") || "").trim();
+  const cardLast4 = (val("rcpt_card4") || "").replace(/\D/g, "").slice(-4);   // js/94: 0-4 digits — "" clears it, a valid 4-digit is stored + drives auto-attribution
   if ((type === "job-expense" || type === "pass-through") && !jobId) { alert("Pick a job for this receipt — or set Type to Business, or leave it as Needs review."); return; }
   if (type && !(amount > 0)) { alert("Enter the amount to file this receipt."); return; }
   if (type && !vendor) { alert("Enter the vendor / where it was bought."); return; }
   if (typeof submitGuard === "function" && !submitGuard("rcptSaveEdit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
-  const fields = { type: type || null, jobId: jobId || null, amount: amount, vendor: vendor, date: date, category: category, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null };
+  const fields = { type: type || null, jobId: jobId || null, amount: amount, vendor: vendor, date: date, category: category, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4 };
   const res = rcptApplyEdit(RCPT_EDIT.loc, fields);
   if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
   if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (type ? "filed" : "updated") + " — " + (amount != null ? money(amount) : "") + (vendor ? " · " + vendor : "") + " · " + (fields.type || "review") + (jobId ? " → job" : ""));

@@ -53,7 +53,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -425,6 +425,47 @@ async function main() {
     return kept === 0 && skip === 2;
   })());
   ok("a $0 / unparseable amount row is skipped, not imported", rcptCsvRecord(["2026-07-01", "Freebie", "$0.00"], { date: 0, desc: 1, amount: 2, store: -1, order: -1 }, "X", "i1") === null);
+
+  console.log("\n— CARD LAST-4 (js/94): capture carries through rcptApplyEdit / split / CSV; manual paidBy always wins —");
+  resetStore();
+  // a review receipt carrying a captured card last-4, filed to a job-expense with an explicit paidBy (manual choice)
+  const cr = seedReview({ receiptId: "bCard", vendor: "Depot", amount: 90, uploadedBy: "u_ray", attributedTo: "u_ray", cardLast4: "4242" });
+  const rFile = rcptApplyEdit({ store: "review", jobId: null, recId: cr.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bCard", cardLast4: "4242" });
+  const filed = rcptFindRecord(rFile.newLoc.store, rFile.newLoc.jobId, rFile.newLoc.recId);
+  ok("cardLast4 filed onto the job-expense record", filed && filed.cardLast4 === "4242", filed && filed.cardLast4);
+  ok("manual paidBy WINS on save — record.paidBy is the chosen payer (money path unchanged)", filed && filed.paidBy === "u_chase", filed && filed.paidBy);
+  // re-bucket (type change) with fields OMITTING cardLast4 → the carry preserves it (like capRead)
+  const rMove = rcptApplyEdit({ store: rFile.newLoc.store, jobId: rFile.newLoc.jobId, recId: rFile.newLoc.recId }, { type: "business", jobId: null, amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bCard" });
+  const moved = rcptFindRecord(rMove.newLoc.store, rMove.newLoc.jobId, rMove.newLoc.recId);
+  ok("cardLast4 SURVIVES a type/job change even when fields omit it (carry preserves it)", moved && moved.cardLast4 === "4242", moved && moved.cardLast4);
+  // explicit empty cardLast4 CLEARS it (form value wins over carry)
+  const rClear = rcptApplyEdit({ store: rMove.newLoc.store, jobId: rMove.newLoc.jobId, recId: rMove.newLoc.recId }, { type: "business", jobId: null, amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bCard", cardLast4: "" });
+  const cleared = rcptFindRecord(rClear.newLoc.store, rClear.newLoc.jobId, rClear.newLoc.recId);
+  ok("an explicit empty cardLast4 CLEARS the field (form value beats carry)", cleared && !cleared.cardLast4, cleared && cleared.cardLast4);
+
+  // SPLIT: the shared card last-4 rides EVERY slice
+  resetStore();
+  const cs = seedReview({ receiptId: "bCS", vendor: "Home Depot", amount: 100, uploadedBy: "u_ray", attributedTo: "u_ray", cardLast4: "1005" });
+  const csRes = rcptApplySplit({ store: "review", jobId: null, recId: cs.id }, 100,
+    [{ amount: 60, type: "pass-through", jobId: "j1", category: "", desc: "pavers" }, { amount: 40, type: "business", category: "tools/equipment", desc: "saw" }],
+    { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "", desc: "", receiptId: "bCS", cardLast4: "1005" });
+  const csMat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const csBiz = STORE.expenses.filter(e => !e.deleted);
+  ok("split: BOTH slices carry the shared card last-4", csRes.ok && csMat[0] && csMat[0].cardLast4 === "1005" && csBiz[0] && csBiz[0].cardLast4 === "1005", { mat: csMat[0] && csMat[0].cardLast4, biz: csBiz[0] && csBiz[0].cardLast4 });
+
+  // CSV: a parsed review row carries a (blank) cardLast4 key so the field is first-class + routable later
+  const csvRec = rcptCsvRecord(["2026-07-01", "Quikrete 60lb", "$6.98"], { date: 0, desc: 1, amount: 2, store: -1, order: -1 }, "Lowe's", "i1");
+  ok("CSV import record carries a cardLast4 field (empty, routable later)", csvRec && Object.prototype.hasOwnProperty.call(csvRec, "cardLast4") && csvRec.cardLast4 === "", csvRec && csvRec.cardLast4);
+
+  // cardOwner (js/94) against a stubbed store — personal single-match / company / none / ambiguous
+  const _u = S.users, _r = S.registry;
+  S.users = [{ id: "u_ray", username: "Ray", cards: [{ id: "k1", last4: "4242", kind: "personal" }] }, { id: "u_chase", username: "Chase", cards: [{ id: "k2", last4: "1005", kind: "personal" }, { id: "k3", last4: "7777", kind: "personal" }] }, { id: "u_pierce", username: "Pierce", cards: [{ id: "k4", last4: "7777", kind: "personal" }] }];
+  S.registry = [{ id: "obx", businessCards: [{ id: "b1", last4: "3005", active: true }] }];
+  ok("cardOwner: single personal match → reimburse that owner", cardOwner("4242").resolution === "personal" && cardOwner("4242").ownerId === "u_ray");
+  ok("cardOwner: company card → business (no reimburse)", cardOwner("3005").resolution === "business" && cardOwner("3005").ownerId === null);
+  ok("cardOwner: two owners share a last-4 → ambiguous", cardOwner("7777").resolution === "ambiguous");
+  ok("cardOwner: unknown last-4 → none", cardOwner("0000").resolution === "none");
+  S.users = _u; S.registry = _r;
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);

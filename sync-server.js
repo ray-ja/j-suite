@@ -172,7 +172,7 @@ function sanitizeMessageDeletes(incoming, pre, selfId) {
 // REVERT those privileged fields to the STORED value (or drop them if the org had none) — order/visibility can
 // only be changed by an org admin. New-org creation, name, and other fields are unaffected; super-admin/verified
 // owner already bypass this (they may write anything). Mirrors sanitizeMessageDeletes (per stored memberships).
-const REG_ADMIN_FIELDS = ["navOrder", "tabs", "vehicles"];
+const REG_ADMIN_FIELDS = ["navOrder", "tabs", "vehicles", "businessCards"];
 function sanitizeRegistryWrites(incoming, pre, selfId) {
   if (!incoming || !Array.isArray(incoming.registry) || !incoming.registry.length) return incoming;
   const stored = (pre && pre.registry) || [];
