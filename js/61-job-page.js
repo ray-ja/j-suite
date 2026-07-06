@@ -154,6 +154,10 @@ function rJobPage(j) {
   const exps = (j.expenses || []).filter(x => x && !x.deleted);
   const expTotal = exps.reduce((s, e) => s + (+e.amount || 0), 0);
   const tel = ph => String(ph || "").replace(/[^0-9+]/g, "");
+  // up-to-3 labeled numbers for the customer (falls back to the single number). Each renders as a full-width
+  // Call button showing the actual number + its note, tap = tel:. Shared by the planned-route + compact branches.
+  const _phones = (typeof custPhones === "function" && _cust) ? custPhones(_cust) : (phone ? [{ num: phone, label: "" }] : []);
+  const _phoneBtns = _phones.length ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">` + _phones.map(p => `<a class="btn ghost" href="tel:${tel(p.num)}" style="text-align:center">📞 ${esc((typeof fmtPhone === "function") ? fmtPhone(p.num) : p.num)}${p.label ? ` · ${esc(p.label)}` : ""}</a>`).join("") + `</div>` : "";
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 
@@ -203,12 +207,12 @@ function rJobPage(j) {
       const _dest = _allDest[_allDest.length - 1], _wps = _allDest.slice(0, -1);
       h += `<a class="btn acc" style="width:100%;margin-top:8px;text-align:center" href="${gmapsDirUrl(_dest, _wps)}" target="_blank" rel="noopener">🗺 Full route — ${_allDest.length} stops</a>`;
     }
-    if (phone) h += `<div class="row" style="gap:8px;margin-top:8px"><a class="btn ghost grow" href="tel:${tel(phone)}">📞 Call</a></div>`;
-  } else if (addr || phone) {
-    h += `<div class="row" style="gap:8px;margin-top:10px">`;
-    if (addr) h += `<a class="btn ghost grow" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener">📍 Job site — Directions</a>`;
-    if (phone) h += `<a class="btn ghost grow" href="tel:${tel(phone)}">📞 Call</a>`;
-    h += `</div>`;
+    h += _phoneBtns;   // up to 3 labeled Call buttons (number + note), tap = tel:
+  } else if (addr || _phones.length) {
+    // Compact contact area: the job-site button now SHOWS the address (tap still opens directions), truncated to
+    // one line; each Call button SHOWS the actual number + its note (tap still dials).
+    if (addr) h += `<div class="row" style="gap:8px;margin-top:10px"><a class="btn ghost grow" href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener" title="${esc(addr)}" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📍 ${esc(addr)} ›</a></div>`;
+    h += _phoneBtns;
   }
   // ESTIMATE (informational cross-check) — offline round-trip miles across the ordered stops. NEVER the billed
   // number: the odometer/GPS timeclock miles stay the record. If the job has confirmed odometer miles, show them
