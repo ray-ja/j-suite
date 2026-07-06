@@ -4,11 +4,12 @@
    job) → photos (inline, visible to all) → expenses (amount + receipt as proof) → notes → change orders.
    Reached by tapping a job (openJobPage); renders inside the Schedule tab via window.JOB_OPEN. */
 window.JOB_OPEN = window.JOB_OPEN || null;
-window.JOB_RETURN_TAB = window.JOB_RETURN_TAB || null;   // where the user was when they opened a job (e.g. "receipts") so Back returns there, not always Schedule
+window.JOB_RETURN_TAB = window.JOB_RETURN_TAB || null;   // where the user was when they opened a job (e.g. "receipts") so Back returns there, not always Schedule. Now backed by the shared nav-return helper (NAV_ORIGIN["schedule"]); kept as a mirror for back-compat.
 window.JOB_TITLE_EDIT = window.JOB_TITLE_EDIT || null;   // job id whose title is currently in inline-rename mode (else null)
-window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null; window.JOB_OPEN = id; window.JOB_TITLE_EDIT = null; TAB = "schedule"; if (typeof render === "function") render(); };
-window.jobPageBack = function () { window.JOB_OPEN = null; window.JOB_TITLE_EDIT = null; if (window.JOB_RETURN_TAB) { TAB = window.JOB_RETURN_TAB; window.JOB_RETURN_TAB = null; } if (typeof render === "function") render(); };
-window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; window.JOB_TITLE_EDIT = null; };
+// The job page takes over the Schedule tab; record where we came from via the shared nav-return helper (host = the "schedule" tab it takes over) so Back / delete / close all return to origin, not always Schedule.
+window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof navRecordOrigin === "function") ? navRecordOrigin("schedule") : ((typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null); window.JOB_OPEN = id; window.JOB_TITLE_EDIT = null; TAB = "schedule"; if (typeof render === "function") render(); };
+window.jobPageBack = function () { window.JOB_OPEN = null; window.JOB_TITLE_EDIT = null; window.JOB_RETURN_TAB = null; if (typeof navReturn === "function") { navReturn("schedule"); } else { if (typeof render === "function") render(); } };
+window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; if (typeof navClearOrigin === "function") navClearOrigin("schedule"); window.JOB_TITLE_EDIT = null; };
 
 function jobAddr(j) {
   const _p = (j.propertyId && typeof actProps === "function") ? actProps().find(p => p.id === j.propertyId) : null;

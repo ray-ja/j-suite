@@ -1,6 +1,30 @@
 /* ---------- routing ---------- */
 let TAB="today";
 const view=document.getElementById("view");
+/* ---------- RETURN-TO-ORIGIN (nav-return) — the generalized JOB_RETURN_TAB pattern ----------
+   Most detail views FLOAT in a modal, so closeModal()+render() naturally lands you back on the tab you were on.
+   But a few TAKE OVER a whole tab: the crew job page (js/61, hosted inside the Schedule tab) and the quote
+   wizard (js/23, hosted inside the Quotes tab). When you reach one of those from a DIFFERENT list — a job
+   closeout tapped from Receipts, or a quote tapped from the Jobs table — a delete / close / save-complete used
+   to dump you on the HOST tab (Schedule / Quotes) instead of the list you came from. navRecordOrigin(host)
+   snapshots the current TAB the moment such a view opens (keyed by the host tab it takes over); navReturn(host,
+   fallback) restores that origin (falling back to a safe default, never crashing or blanking). This is the same
+   idea the job page has shipped as JOB_RETURN_TAB since aaebcd5 — generalized so every take-over subpage reuses
+   one mechanism instead of each re-hardcoding a default destination. */
+window.NAV_ORIGIN = window.NAV_ORIGIN || {};
+window.navRecordOrigin = function(host){
+  try{ var cur = (typeof TAB!=="undefined") ? TAB : null; window.NAV_ORIGIN[host] = (cur && cur!==host) ? cur : null; }
+  catch(_e){ window.NAV_ORIGIN[host] = null; }
+  return window.NAV_ORIGIN[host];   // opening from WITHIN the host tab records null → navReturn uses the fallback
+};
+window.navOriginFor = function(host){ try{ return (window.NAV_ORIGIN && window.NAV_ORIGIN[host]) || null; }catch(_e){ return null; } };
+window.navClearOrigin = function(host){ try{ if(window.NAV_ORIGIN) window.NAV_ORIGIN[host] = null; }catch(_e){} };
+window.navReturn = function(host, fallback){
+  var dest = window.navOriginFor(host);
+  window.navClearOrigin(host);
+  try{ if(typeof TAB!=="undefined") TAB = dest || fallback || TAB; }catch(_e){}
+  if(typeof render==="function") render();
+};
 // Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
 // notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
 // to the dispatch so the two can't drift.
