@@ -53,7 +53,12 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/96-rental-deposits.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/96-rental-deposits.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/98-receipt-spine.js", "utf8");
+
+/* js/98 spine leans on js/38 tcOpenShift (clocked-in job). Not loaded here — a configurable stub. */
+let OPEN_SHIFT = null;   // per-test: {userId, jobId}
+global.tcOpenShift = function (userId) { return (OPEN_SHIFT && OPEN_SHIFT.userId === userId) ? OPEN_SHIFT : null; };
+
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -646,6 +651,84 @@ async function main() {
   ok("rcptDupKey: same refNo → same key", rcptDupKey({ refNo: "147424942", vendor: "Lowe's" }) === rcptDupKey({ refNo: "147424942", vendor: "Lowe's", amount: 999 }));
   ok("rcptDupKey: no refNo → cents+vendor(+card); different cards → different keys", rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "2469" }) !== rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "1005" }));
   ok("rcptDupKey: no refNo, same cents+vendor, no card → same key (dup)", rcptDupKey({ amount: 38.94, vendor: "Lowe's" }) === rcptDupKey({ amount: 38.94, vendor: "Lowe's" }));
+
+  // ================= RECEIPT SPINE (js/98) — smart-defaults + the BYTE-IDENTICAL file funnel =================
+  console.log("\n— SPINE: rcptFileFromFields produces a BYTE-IDENTICAL record to a hand rcptApplyEdit save —");
+  OPEN_SHIFT = null; delete CURUSER.cards;   // no clocked job + no cards → smart-defaults add nothing to fully-specified fields
+
+  function stripVol(r) { if (!r) return r; const c = Object.assign({}, r); delete c.id; delete c.ts; delete c.updatedAt; return c; }
+  // hand path: the exact human save = a review stub + rcptApplyEdit(store:review) with the same fields
+  function handSave(fields) {
+    resetStore();
+    const stub = rcptNewReview(fields.receiptId || null); STORE.receipts.push(stub);
+    const res = rcptApplyEdit({ store: "review", jobId: null, recId: stub.id }, fields);
+    return { res: res, rec: res.ok ? rcptFindRecord(res.newLoc.store, res.newLoc.jobId, res.newLoc.recId) : null };
+  }
+  function funnelSave(fields) {
+    resetStore();
+    const res = rcptFileFromFields(fields, { meId: "u_nobody", batch: true });
+    return { res: res, rec: res.ok ? rcptFindRecord(res.newLoc.store, res.newLoc.jobId, res.newLoc.recId) : null };
+  }
+  function identity(name, fields, expectStore, extra) {
+    const h = handSave(fields), f = funnelSave(fields);
+    ok(name + ": funnel filed into " + expectStore, f.res.ok && f.res.newLoc.store === expectStore, f.res);
+    const eq = JSON.stringify(stripVol(f.rec)) === JSON.stringify(stripVol(h.rec));
+    ok(name + ": DEEP-EQUAL to hand-saved (minus id/ts)", eq, eq ? undefined : { funnel: stripVol(f.rec), hand: stripVol(h.rec) });
+    if (typeof extra === "function") extra(f.rec);
+  }
+
+  identity("business", { type: "business", jobId: null, amount: 120, vendor: "CostcoBiz", date: "2026-07-01", category: "office/admin", paidBy: null, desc: "paper", receiptId: "blobB", cardLast4: "", isDeposit: false, kind: "" }, "biz",
+    rec => ok("  business → org expenses[] with category", rec.category === "office/admin", rec.category));
+  identity("pass-through", { type: "pass-through", jobId: "j1", amount: 200, vendor: "PaverCo", category: "materials", paidBy: "u_chase", cardLast4: "4321", desc: "pavers", receiptId: "blobP" }, "jobmat",
+    rec => ok("  pass-through carries cardLast4 4321", rec.cardLast4 === "4321", rec.cardLast4));
+  identity("job-expense", { type: "job-expense", jobId: "j1", amount: 45, vendor: "DumpCo", category: "disposal", paidBy: "u_chase", desc: "dump", receiptId: "blobJ" }, "jobexp",
+    rec => ok("  job-expense carries its category", rec.category === "disposal", rec.category));
+  identity("refund (negative)", { type: "job-expense", jobId: "j1", amount: -30, vendor: "RefundCo", category: "disposal", paidBy: null, receiptId: "blobR", kind: "refund" }, "jobexp",
+    rec => ok("  refund → NEGATIVE amount + kind:refund", rec.amount === -30 && rec.kind === "refund", { amt: rec.amount, kind: rec.kind }));
+  identity("deposit", { type: "job-expense", jobId: "j1", amount: 150, vendor: "RentCo", category: "rentals", paidBy: "u_chase", cardLast4: "1234", receiptId: "blobD", isDeposit: true }, "jobexp",
+    rec => ok("  deposit → isDeposit:true flag carried", rec.isDeposit === true && rec.cardLast4 === "1234", { dep: rec.isDeposit, card: rec.cardLast4 }));
+
+  console.log("— SPINE: rcptFileFromFields validation guards (no alert, returns {ok:false,error}) —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  ok("rejects a job-type WITHOUT a job", rcptFileFromFields({ type: "job-expense", vendor: "X", amount: 50 }, { meId: "u_nobody", batch: true }).ok === false);
+  ok("rejects a filed type with amount 0", rcptFileFromFields({ type: "business", vendor: "X", amount: 0 }, { meId: "u_nobody", batch: true }).ok === false);
+  ok("rejects a filed type with NO vendor", rcptFileFromFields({ type: "business", vendor: "", amount: 50 }, { meId: "u_nobody", batch: true }).ok === false);
+  ok("rejects a negative amount that is NOT a refund", rcptFileFromFields({ type: "business", vendor: "X", amount: -5 }, { meId: "u_nobody", batch: true }).ok === false);
+  ok("a valid business receipt files ok", rcptFileFromFields({ type: "business", vendor: "X", amount: 50, category: "other" }, { meId: "u_nobody", batch: true }).ok === true);
+
+  console.log("— SPINE: rcptVendorMemory returns the LAST filed vendor's category + bucket —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  rcptFileFromFields({ type: "business", vendor: "Lowe's", amount: 40, category: "materials", receiptId: "blobL" }, { meId: "u_nobody", batch: true });
+  const mem = rcptVendorMemory("lowe's");
+  ok("vendor memory (case-insensitive) → last category", mem && mem.category === "materials", mem);
+  ok("vendor memory → bucket→type (business)", mem && mem.type === "business", mem);
+  ok("vendor memory → null for an unseen vendor", rcptVendorMemory("NeverBoughtHere") === null);
+
+  console.log("— SPINE: rcptSmartDefaults resolves the clocked-in job + the user's personal card —");
+  resetStore();
+  CURUSER.cards = [{ id: "c1", last4: "9999", kind: "personal" }];
+  OPEN_SHIFT = { userId: "u_ray", jobId: "j1" };
+  const sd = rcptSmartDefaults({ meId: "u_ray" });
+  ok("clocked-in job → jobId j1", sd.jobId === "j1", sd.jobId);
+  ok("personal card → paidBy = me + cardLast4", sd.paidBy === "u_ray" && sd.cardLast4 === "9999", sd);
+  OPEN_SHIFT = null; delete CURUSER.cards;
+  CURUSER.cards = [{ id: "c2", last4: "1000", kind: "business" }];
+  const sdBiz = rcptSmartDefaults({ meId: "u_ray" });
+  ok("business-only card → paidBy '' + cardLast4 set", sdBiz.paidBy === "" && sdBiz.cardLast4 === "1000", sdBiz);
+  delete CURUSER.cards;
+  const sdNone = rcptSmartDefaults({ meId: "u_ray" });
+  ok("no card → paidBy '' + cardLast4 ''", sdNone.paidBy === "" && sdNone.cardLast4 === "", sdNone);
+
+  console.log("— SPINE: rcptSuggestionOneTapOk threshold + job-resolution —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  ok("high-confidence business → ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.9, amount: 50, type: "business" } }) === true);
+  ok("below-threshold (0.7) → NOT ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.7, amount: 50, type: "business" } }) === false);
+  ok("job-type WITH suggested job → ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.85, amount: 50, type: "job-expense", jobId: "j1" } }) === true);
+  ok("job-type WITHOUT a resolvable job → NOT ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.9, amount: 50, type: "job-expense" } }) === false);
+  ok("zero amount → NOT ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.9, amount: 0, type: "business" } }) === false);
+  OPEN_SHIFT = { userId: "u_ray", jobId: "j1" };
+  ok("job-type, no suggested job but clocked-in job resolves → ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.9, amount: 50, type: "job-expense", vendor: "X" } }) === true);
+  OPEN_SHIFT = null;
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);

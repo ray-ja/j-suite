@@ -141,14 +141,16 @@ window.rcptEditOpen = function (store, jobId, recId) {
       ${(rec.receiptId && !/\.pdf$/i.test(rec.receiptId) && typeof capRcptOne === "function" && (typeof rcptFinFull !== "function" || rcptFinFull())) ? `<button class="btn ghost sm" id="cap_rcpt_one_btn" style="width:100%;margin-top:6px;color:#6b3fa0" onclick="capRcptOne()">🤖 Ask Cap to read this</button>` : ""}
       <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div></div>
     </div>
-    <div class="row" style="gap:8px;margin-top:10px"><div style="flex:0 0 96px"><label style="margin-top:0">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${rec.amount != null ? esc(rec.amount) : ""}" placeholder="0.00"></div>
-      <div class="grow"><label style="margin-top:0">Date</label><input id="rcpt_date" type="date" value="${esc(rcptDate(rec))}"></div></div>
+    <!-- ESSENTIALS (always shown): Amount · Vendor · Job. The rest lives under "More options" (js/98 collapse). -->
+    <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${rec.amount != null ? esc(rec.amount) : ""}" placeholder="0.00">
     <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(rec.vendor || "")}" placeholder="Home Depot, dump, gas…">
-    <label>What was it</label><input id="rcpt_desc" value="${esc(rec.desc || rec.note || "")}" placeholder="pavers, dump fee, fuel…">
-    <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job" onchange="rcptJobPONote()">${jobOpts}</select>
       <label>PO / job code <span class="sub">(type or paste the P#### off the receipt to auto-pick its job)</span></label><input id="rcpt_po" type="text" placeholder="P1042" value="" oninput="rcptPoBind()" onblur="rcptPoBind()">
       <div id="rcpt_po_note" class="sub" style="margin-top:4px"></div></div>
+    <details id="rcpt_more" style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
+    <label>Date</label><input id="rcpt_date" type="date" value="${esc(rcptDate(rec))}">
+    <label>What was it</label><input id="rcpt_desc" value="${esc(rec.desc || rec.note || "")}" placeholder="pavers, dump fee, fuel…">
+    <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
     <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(rec.cardLast4 || "")}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
@@ -157,11 +159,29 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
     <div id="rcpt_split_slot"></div>
+    </details>
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
   rcptEditTypeChange();
   if (typeof rcptJobPONote === "function") rcptJobPONote();   // js/95: show the pre-selected job's PO code
   if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
   if (typeof cardMatchInit === "function") cardMatchInit(rec);   // js/94: match the card last-4 → pre-select "Who paid?" (default only, never writes)
+  // SMART DEFAULTS (js/98) — prefill BLANK fields only from context (clocked-in job, your card, per-vendor
+  // memory). NEVER clobbers an existing value or an un-applied Cap suggestion (only truly-empty inputs). Then
+  // re-run type visibility (jobwrap) + the card match so the defaulted type/card take effect.
+  try {
+    if (typeof rcptSmartDefaults === "function") {
+      const _me = (typeof curUser === "function" && curUser()) ? curUser() : null;
+      const _sd = rcptSmartDefaults({ vendor: rec.vendor, meId: _me ? _me.id : "" });
+      const _setBlank = (id, v) => { const el = document.getElementById(id); if (el && v && !String(el.value || "").trim()) { el.value = v; return true; } return false; };
+      const _jobSet = _setBlank("rcpt_job", _sd.jobId);
+      _setBlank("rcpt_type", _sd.type);
+      _setBlank("rcpt_cat", _sd.category);
+      const _cardSet = _setBlank("rcpt_card4", _sd.cardLast4);
+      rcptEditTypeChange();   // jobwrap visibility tracks the defaulted type
+      if (_jobSet && typeof rcptJobPONote === "function") rcptJobPONote();
+      if (_cardSet && typeof cardMatchRefresh === "function") cardMatchRefresh();   // defaulted card → pre-select "Who paid?"
+    }
+  } catch (_e) {}
 };
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
