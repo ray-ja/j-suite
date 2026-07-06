@@ -567,5 +567,5 @@ window.acceptQuoteToJob=function(quoteId){
   save();closeModal();render();
 };
 /* leave the wizard and open the linked job */
-window.closeWizToJob=function(jobId){if(typeof exitWizard==="function")exitWizard();openJob(jobId);};
+window.closeWizToJob=function(jobId){if(typeof exitWizard==="function")exitWizard();openJobPage(jobId);};
 
