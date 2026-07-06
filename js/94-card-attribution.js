@@ -102,8 +102,9 @@ window.cardMyAdd = function () {
   const n = cardNorm4(raw);
   if (!n.last4) { alert("Enter the last 4 digits (numbers only)."); return; }
   if (n.truncated) alert("We store only the last 4 digits — saved ••••" + n.last4 + ".");
-  const label = (prompt("A label for this card (optional, e.g. “my Visa”):") || "").trim().slice(0, 40);
   if (!Array.isArray(u.cards)) u.cards = [];
+  if (u.cards.some(c => c && !c.deleted && cardClean4(c.last4) === n.last4)) { alert("You already saved ••••" + n.last4 + "."); return; }   // dedupe — don't add the same card twice
+  const label = (prompt("A label for this card (optional, e.g. “my Visa”):") || "").trim().slice(0, 40);
   u.cards.push({ id: "card_" + (typeof uid === "function" ? uid() : Date.now()), last4: n.last4, label: label, kind: "personal", addedAt: (typeof now === "function" ? now() : Date.now()) });
   if (typeof logChange === "function") logChange("update", "account", u.id, "Added a card ••••" + n.last4);
   cardSelfSave();
