@@ -39,7 +39,7 @@ function jobMilesCost(j) { const tc = jobMileageCost(j); if (tc > 0) return tc; 
    (confirmed time-clock miles) when a drive has been clocked, else the maps ROUTE ESTIMATE (j.estRouteMiles)
    as the automatic fallback — × IRS rate. Display-only: this NEVER writes and the confirmed odometer always
    wins once entered (the estimate is just so every job shows its expected mileage payout before clock-out). */
-function jobMilesCostEst(j) { if (!j) return 0; const tc = jobMileageCost(j); if (tc > 0) return tc; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); const est = +j.estRouteMiles; return est > 0 ? est * rate : 0; }
+function jobMilesCostEst(j) { if (!j) return 0; const tc = jobMileageCost(j); if (tc > 0) return tc; /* confirmed odometer already sums EVERY day's reading */ const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); const est = +j.estRouteMiles; if (!(est > 0)) return 0; const days = (typeof jobWorkDays === "function") ? Math.max(1, jobWorkDays(j).length) : 1; /* one round trip PER work day — a 3-day job drives the route 3× */ return est * rate * days; }
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line */
 function jobProfit(j) {
   const q = plQuoteFor(j);
