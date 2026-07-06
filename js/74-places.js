@@ -10,8 +10,26 @@ const PLACE_CATS = ["vendor", "disposal", "supplier", "other"];
 function placeCatLabel(c) { return ({ vendor: "Vendor", disposal: "Disposal", supplier: "Supplier", other: "Other" })[c] || "Other"; }
 /* active (non-deleted) places */
 function actPlaces() { return ((typeof D === "function" && D() && D().places) || []).filter(p => p && !p.deleted); }
-/* geocode a place's address → lat/lng (same free OSM Nominatim path as geocodeProp/hbGeocode). Best-effort. */
-function geocodePlace(p) { if (!p || !p.address || typeof fetch !== "function") return; fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" + encodeURIComponent(p.address)).then(r => r.json()).then(d => { if (d && d[0]) { p.lat = +d[0].lat; p.lng = +d[0].lon; if (typeof touch === "function") touch(p); if (typeof save === "function") save(); if (typeof render === "function") render(); } }).catch(function () { }); }
+/* COARSE-fallback geocode for a place's address → lat/lng (mirrors js/62 hbGeocode): try the FULL address first,
+   then drop the street line → "town, ST zip" so the stragglers that failed an exact match (Warehouse, "Transfer
+   Station - Currituck") still get a usable point to route via OSRM. Best-effort, offline-safe (never throws),
+   idempotent — skips when it already has coords or no address, and a per-session tried-guard stops render-loop
+   re-fetches. Writes ONLY lat/lng/resolved (additive, rides the places LWW); it NEVER touches manualMiles — the
+   owner's manual one-way override stays authoritative for the estimate (js/61 placeManualMi). */
+const _placeGeoTried = (typeof Set !== "undefined") ? new Set() : null;   // per-session guard (NOT persisted) — one geocode attempt per place per session
+function geocodePlace(p) {
+  if (!p || p.lat != null || !p.address || typeof fetch !== "function") return;
+  if (_placeGeoTried) { if (_placeGeoTried.has(p.id)) return; _placeGeoTried.add(p.id); }
+  const g1 = q => fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" + encodeURIComponent(q)).then(r => r.json());
+  const coarse = String(p.address).split(",").slice(1).join(",").trim();   // drop the street line → "town, ST zip" when the exact street isn't in OSM
+  g1(p.address).then(g => (g && g[0]) ? g : ((coarse && coarse !== p.address) ? g1(coarse) : null))
+    .then(g => { if (g && g[0]) { p.lat = +g[0].lat; p.lng = +g[0].lon; p.resolved = g[0].display_name || ""; if (typeof touch === "function") touch(p); if (typeof save === "function") save(); if (typeof render === "function") render(); } })
+    .catch(function () { });
+}
+/* best-effort background geocode of any STRAGGLER place — an address on file but no coords yet — so Warehouse /
+   Transfer-Station pick up a routable point. Idempotent (geocodePlace self-guards on lat!=null + a per-session
+   tried-set → no render-loop), offline-safe. Called when the Places list renders + after a place is saved. */
+function geocodeStragglers() { try { actPlaces().forEach(function (p) { if (p && p.lat == null && p.address) geocodePlace(p); }); } catch (e) { } }
 
 let PLSEARCH = "", PLSHOWN = 150;
 /* PURE results-list HTML (search runs on the FULL list; slice ONLY the display array — Load-more cap mirrors
@@ -44,6 +62,7 @@ function rPlaces() {
   h += `<div class="sub" style="white-space:normal;margin:0 4px 8px">Saved non-customer locations — the transfer station, vendors, suppliers. They autocomplete in every address field${canEdit ? ", and a manual one-way mileage keeps the route estimate honest when an address geocodes wrong" : ""}.</div>`;
   h += `<div id="pllist">${placesListHTML()}</div>`;
   view.innerHTML = h;
+  geocodeStragglers();   // best-effort: give any address-only straggler (Warehouse, Transfer Station) a routable point
 }
 /* EDIT PAGE (modal) — owner/admin only. Modeled on openProperty/saveProperty. */
 window.openPlace = function (id) {
@@ -97,7 +116,7 @@ window.savePlace = function (id, isNew) {
   if (typeof touch === "function") touch(p);
   if (isNew) d.places.push(p);
   if (typeof logChange === "function") logChange(isNew ? "create" : "update", "place", p.id, (isNew ? "Added place " : "Updated place ") + (p.name || p.address || ""));
-  if (!reuse && p.lat == null && addr) geocodePlace(p);   // only auto-geocode when we don't already have coords
+  if (!reuse && p.lat == null && addr) { if (_placeGeoTried) _placeGeoTried.delete(p.id); geocodePlace(p); }   // only auto-geocode when we don't already have coords (clear the session guard so an edited address re-tries, now with the coarse "town, ST zip" fallback)
   if (typeof save === "function") save();
   if (typeof closeModal === "function") closeModal();
   if (typeof render === "function") render();

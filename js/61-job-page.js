@@ -123,16 +123,37 @@ function jobRouteMilesCompute(seq) {
   }
   return { manualSum: manual.reduce((s, m) => s + m, 0), roadTotal: roadTotal, resolved: resolved, anyNone: anyNone, needsFetch: needsFetch, hasManualLeg: manual.length > 0 };
 }
+/* Sum of the manualMiles carried by any COORD-LESS planned stop — a saved place picked from the on-focus pick-list
+   BEFORE its geocode resolved (lat==null) still carries a one-way manualMiles override but has no coords, so
+   jobRouteTaggedSeq can't route it as a waypoint. We add its manualMiles as a FLAT contribution to the estimate so
+   the transfer-station leg isn't silently dropped ("keep it simple + documented"). Prefer the live place override
+   (placeManualMi) so an edit to the place flows through; fall back to the snapshot on the stop. Returns 0 when there
+   are none → EVERY existing coord'd route is byte-identical (mileage fingerprint). Coord'd stops are UNAFFECTED —
+   they route normally through the seq and never enter this sum. */
+function jobRouteExtraManual(j) {
+  try {
+    return (typeof jobRouteOrdered === "function" ? jobRouteOrdered(j) : []).reduce(function (sum, t) {
+      if (t.kind !== "stop") return sum;
+      const s = t.stop;
+      if (!s || s.lat != null) return sum;                                   // coord'd stop → routed via seq, not here
+      const live = (s.placeId && typeof placeManualMi === "function") ? placeManualMi(s.placeId) : null;
+      const v = (live != null) ? live : ((typeof s.manualMiles === "number" && isFinite(s.manualMiles) && s.manualMiles > 0) ? s.manualMiles : 0);
+      return sum + (v > 0 ? v : 0);
+    }, 0);
+  } catch (e) { return 0; }
+}
 function jobRecalcRouteMiles(j) {
   if (!j) return;
+  const extraManual = (typeof jobRouteExtraManual === "function") ? jobRouteExtraManual(j) : 0;   // lat-less place-stops' manualMiles (0 for every existing coord'd route → fingerprint-safe)
   const seq = jobRouteTaggedSeq(j);
   if (!seq) {
-    if (j.manualRouteMiles > 0) j.estRouteMiles = Math.round(j.manualRouteMiles * 10) / 10;   // owner's manual round-trip
+    if (j.manualRouteMiles > 0) j.estRouteMiles = Math.round(j.manualRouteMiles * 10) / 10;   // owner's manual round-trip is authoritative — don't stack
+    else if (extraManual > 0) j.estRouteMiles = Math.round(extraManual * 10) / 10;            // only a lat-less manualMiles stop to go on → surface it
     else if (!(j.estRouteMiles > 0)) j.estRouteMiles = null;                                  // nothing routable + no prior value
     return;
   }
   const c = jobRouteMilesCompute(seq);
-  if (c.resolved) { j.estRouteMiles = Math.round((c.manualSum + c.roadTotal) * 10) / 10; return; }   // full ROAD-based value (road wins over manual)
+  if (c.resolved) { j.estRouteMiles = Math.round((c.manualSum + c.roadTotal + extraManual) * 10) / 10; return; }   // full ROAD-based value + any lat-less place-stop miles (road wins over manual)
   // some road legs aren't cached yet → fetch each NEVER-TRIED leg once, then recompute + persist on land (change-guarded).
   c.needsFetch.forEach(function (wp) {
     if (typeof roadRouteMiles === "function") roadRouteMiles(wp, function () {
@@ -143,7 +164,7 @@ function jobRecalcRouteMiles(j) {
   // meanwhile: manual round-trip if the owner set one; else leave the existing estimate untouched (NEVER ×1.3, NEVER
   // clobber a good value with null) — only fall to null when the map FAILED (anyNone) and there was no prior value.
   if (j.manualRouteMiles > 0) j.estRouteMiles = Math.round(j.manualRouteMiles * 10) / 10;
-  else if (c.anyNone && !(j.estRouteMiles > 0)) j.estRouteMiles = null;
+  else if (c.anyNone && !(j.estRouteMiles > 0)) j.estRouteMiles = (extraManual > 0) ? Math.round(extraManual * 10) / 10 : null;
 }
 /* Which source the CURRENT estimate is drawn from, for the display label — "roads" (OSRM resolved), "manual"
    (owner's j.manualRouteMiles round-trip fallback), "none" (map tried + failed, no manual → prompt for manual),
@@ -482,7 +503,7 @@ function jobPageRouteCard(j) {
   const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
   const endpointRow = (emoji, title, id, value, custom, setFn, resetFn) => `<div style="padding:6px 0">
     <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
-    <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
+    <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}','${id}_ac')" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route / stops <span class="sub" style="font-weight:400">· ordered — feeds a mileage estimate</span></div>`;
   h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get labeled directions + one "Full route" link; you get an offline mileage cross-check to the odometer.</div>`;
   // 🏁 START (first point) — editable, pre-filled with home base
@@ -501,7 +522,7 @@ function jobPageRouteCard(j) {
     const s = t.stop;
     return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${ci + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}<button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${t.raw})" title="Remove">✕</button></div></div>`;
   }).join("");
-  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
+  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" onfocus="addrSuggest('jps_addr','jps_addr_ac')" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
   // 🏁 END (last point) — editable, pre-filled with home base
   h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
@@ -530,7 +551,7 @@ window.jobEditLoc = function (jobId) {
     <label style="margin-top:0">Property <span class="sub">(optional — uses its saved location)</span></label>
     <select id="jloc_prop"><option value="">— none —</option>${props.map(p => `<option value="${esc(p.id)}" ${j.propertyId === p.id ? "selected" : ""}>${esc(p.label || p.address || "Property")}${p.lat == null ? " (no location)" : ""}</option>`).join("")}</select>
     <label>Or type an address</label>
-    <div class="acwrap"><input id="jloc_addr" value="${esc(j.address || "")}" placeholder="street, town, ST zip — or e.g. 'Norfolk Airport (ORF)'" oninput="addrSuggest('jloc_addr','jloc_addr_ac')" autocomplete="off"><div class="acbox" id="jloc_addr_ac"></div></div>
+    <div class="acwrap"><input id="jloc_addr" value="${esc(j.address || "")}" placeholder="street, town, ST zip — or e.g. 'Norfolk Airport (ORF)'" onfocus="addrSuggest('jloc_addr','jloc_addr_ac')" oninput="addrSuggest('jloc_addr','jloc_addr_ac')" autocomplete="off"><div class="acbox" id="jloc_addr_ac"></div></div>
     <div class="sub" style="margin-top:6px;white-space:normal">A property's address wins if both are set. Leave the property on "none" to use the typed address.</div>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="jobSaveLoc('${j.id}')">Save location</button>`);
 };
@@ -567,11 +588,15 @@ window.jobPageStopAdd = function (jobId) {
   // estimate apply the place's manualMiles override on a base-adjacent leg (js/61 jobRecalcRouteMiles, Phase 3).
   const _si = (typeof document !== "undefined") ? document.getElementById("jps_addr") : null;
   let _picked = false;
-  if (_si && _si.dataset && _si.dataset.pickLat) {
-    s.lat = +_si.dataset.pickLat; s.lng = +_si.dataset.pickLng;
-    if (_si.dataset.pickPlaceId) s.placeId = _si.dataset.pickPlaceId;
-    _picked = true;
-    delete _si.dataset.pickLat; delete _si.dataset.pickLng; delete _si.dataset.pickPlaceId; delete _si.dataset.pickPropId; delete _si.dataset.pickManualMiles;
+  if (_si && _si.dataset) {
+    const ds = _si.dataset;
+    if (ds.pickLat) { s.lat = +ds.pickLat; s.lng = +ds.pickLng; _picked = true; }   // picked WITH coords → reuse them + skip OSM
+    if (ds.pickPlaceId) s.placeId = ds.pickPlaceId;                                  // place ref (coord'd OR not) → placeManualMi override on base-adjacent legs
+    // a LAT-LESS place picked from the on-focus pick-list carries its manualMiles but no coords: keep the manualMiles
+    // on the stop + DON'T geocode the (bad-geocoding) address, so it still contributes to the estimate via
+    // jobRouteExtraManual instead of being dropped as a coord-less waypoint (js/61 jobRouteTaggedSeq).
+    if (!_picked && ds.pickManualMiles) { const _mm = parseFloat(ds.pickManualMiles); if (_mm > 0) { s.manualMiles = _mm; _picked = true; } }
+    delete ds.pickLat; delete ds.pickLng; delete ds.pickPlaceId; delete ds.pickPropId; delete ds.pickManualMiles;
   }
   j.plannedStops.push(s);
   if (!_picked && typeof jobStopGeocode === "function") jobStopGeocode(s, function () { if (typeof jobRecalcRouteMiles === "function") jobRecalcRouteMiles(j); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); });
