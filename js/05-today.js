@@ -18,10 +18,9 @@ function rToday(){
   // 0.5) New-crew quick-start — first-login dismissible checklist (js/86). Shows until done/dismissed.
   if(typeof crewQuickStartHTML==="function") h+=crewQuickStartHTML();
 
-  // 1) Notice board — at the very top
-  const dir=(D().docs.find(x=>x.id==="ceo"&&!x.deleted)||{}).text||"";
-  h+=`<div class="secthd"><h2>📋 Notice board</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="editDoc('ceo','Notice board')">Edit</button>`:""}</div>
-    <div class="card" style="border-left:4px solid var(--accent)"><div style="white-space:pre-wrap;font-size:14px;line-height:1.5">${dir?esc(dir):'<span class="muted">Nothing posted — tap Edit.</span>'}</div></div>`;
+  // 1) Cap — the conversational secretary at the very top (replaces the old notice board). The notice-board
+  //    `ceo` doc is preserved + owner-editable as a compact "📌 Pinned" strip folded inside the Cap panel (js/97).
+  if(typeof capTodayPanel==="function") h+=capTodayPanel();
 
   // 2) Clock — clocked-in banner OR the prominent clock-in card (Item 3): clock in right here on Today, picking or
   // adding the job to attach the shift to. Uses the SAME shared form (js/38 tcClockInFormHTML) as the Time tab +
