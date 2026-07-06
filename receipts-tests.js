@@ -603,6 +603,50 @@ async function main() {
   // a plain expense with no deposit/refund flags behaves exactly as today (not held)
   ok("an ordinary expense is NOT held (== today)", depositHeld({ amount: 50, category: "fuel" }) === false);
 
+  // ================= CENTS DISPLAY (money2) — receipts show $38.94, not $39 =================
+  console.log("\n— CENTS: money2() formats receipt money to exact cents (display-only; money() untouched) —");
+  const realMoney2 = eval("(function(){ " + fs.readFileSync(__dirname + "/js/02-state.js", "utf8").match(/function money2\(n\)\{[^\n]*\}/)[0] + " return money2; })()");
+  ok("money2(38.94) === '$38.94' (the exact cents Ray saw rounded to $39)", realMoney2(38.94) === "$38.94", realMoney2(38.94));
+  ok("money2(-90) === '-$90.00' (sign before $, two decimals)", realMoney2(-90) === "-$90.00", realMoney2(-90));
+  ok("money2(1234.5) === '$1,234.50' (thousands separator + padded cents)", realMoney2(1234.5) === "$1,234.50", realMoney2(1234.5));
+  ok("money2(0) === '$0.00'", realMoney2(0) === "$0.00", realMoney2(0));
+  // money() itself stays whole-dollar (fingerprint-neutral) — confirm the two are distinct
+  ok("money() still rounds to whole dollars ($39 for 38.94) — shared plumbing untouched", realMoney(38.94) === "$39", realMoney(38.94));
+
+  // ================= DEDUP ON VENDOR TRANSACTION # (refNo) — the real bug =================
+  console.log("\n— DEDUP: two distinct Lowe's orders (same $/day, DIFFERENT order #) are NOT false-flagged as dupes —");
+  const DUP_HDR = "Date,Fulfillment Store Location,PO Number,Order # / Trans. #,Tax,Order Total,CC Type,CC# (last 4)";
+  const dupRows = budgetParseCSV(DUP_HDR + "\r\n" +
+    "2-Jul-2026,KDH Lowe's,NA,#147424942,$0.65,$38.94,VISA,************2469\r\n" +
+    "2-Jul-2026,KDH Lowe's,NA,#494486963,$0.65,$38.94,VISA,************2469\r\n");
+  const lp = VENDOR_PARSERS.find(p => p.id === "lowes");
+  const dupH = rcptVendorH(dupRows[0]);
+  const rA = lp.parseRow(dupRows[1], dupH), rB = lp.parseRow(dupRows[2], dupH);
+  ok("(e) refNo extracted from 'Order # / Trans. #' column as digits (strip '#')", rA.refNo === "147424942" && rB.refNo === "494486963", [rA.refNo, rB.refNo]);
+  ok("both keep exact cents (38.94, not 39) — dedup is on cents, never rounded", rA.amount === 38.94 && rB.amount === 38.94, [rA.amount, rB.amount]);
+  ok("(b) same $/day but DIFFERENT order # → rcptCsvDupKey DIFFERS (not a dup) — the fix", rcptCsvDupKey(rA) !== rcptCsvDupKey(rB), [rcptCsvDupKey(rA), rcptCsvDupKey(rB)]);
+  ok("    keys are refNo-based (exact transaction identity)", /^ref\|lowe's\|147424942$/.test(rcptCsvDupKey(rA)), rcptCsvDupKey(rA));
+  console.log("— DEDUP: an exact re-import (SAME order #) IS caught —");
+  const rAgain = lp.parseRow(dupRows[1], dupH);   // re-parse the same row
+  ok("(c) same refNo → SAME rcptCsvDupKey → flagged dup on re-import", rcptCsvDupKey(rAgain) === rcptCsvDupKey(rA), [rcptCsvDupKey(rAgain), rcptCsvDupKey(rA)]);
+
+  console.log("— DEDUP: no-refNo rows fall back to date+cents+vendor (+card disambiguator) —");
+  const fA = { date: "2026-07-02", amount: 38.94, vendor: "Lowe's", cardLast4: "2469" };
+  const fB = { date: "2026-07-02", amount: 38.94, vendor: "Lowe's", cardLast4: "1005" };   // DIFFERENT card
+  const fC = { date: "2026-07-02", amount: 38.94, vendor: "Lowe's", cardLast4: "2469" };   // same card as fA
+  const fNoCard1 = { date: "2026-07-02", amount: 38.94, vendor: "Lowe's" };
+  const fNoCard2 = { date: "2026-07-02", amount: 38.94, vendor: "Lowe's" };
+  ok("(d) fallback key = date|cents|vendor(+card)", rcptCsvDupKey(fA) === "2026-07-02|3894|lowe's|2469", rcptCsvDupKey(fA));
+  ok("(d) two same-$/day rows on DIFFERENT cards → different keys (NOT dup)", rcptCsvDupKey(fA) !== rcptCsvDupKey(fB), [rcptCsvDupKey(fA), rcptCsvDupKey(fB)]);
+  ok("(d) same card, same $/day → same key (dup)", rcptCsvDupKey(fA) === rcptCsvDupKey(fC));
+  ok("(d) card absent → key has no card suffix; two absent-card same rows → same key (dup)", rcptCsvDupKey(fNoCard1) === "2026-07-02|3894|lowe's" && rcptCsvDupKey(fNoCard1) === rcptCsvDupKey(fNoCard2), rcptCsvDupKey(fNoCard1));
+
+  console.log("— DEDUP: the receipts-table badge (rcptDupKey, js/72) agrees with the import (refNo exact else cents+vendor+card) —");
+  ok("rcptDupKey: distinct order #s → different keys (table badge won't false-flag)", rcptDupKey({ refNo: "147424942", vendor: "Lowe's" }) !== rcptDupKey({ refNo: "494486963", vendor: "Lowe's" }));
+  ok("rcptDupKey: same refNo → same key", rcptDupKey({ refNo: "147424942", vendor: "Lowe's" }) === rcptDupKey({ refNo: "147424942", vendor: "Lowe's", amount: 999 }));
+  ok("rcptDupKey: no refNo → cents+vendor(+card); different cards → different keys", rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "2469" }) !== rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "1005" }));
+  ok("rcptDupKey: no refNo, same cents+vendor, no card → same key (dup)", rcptDupKey({ amount: 38.94, vendor: "Lowe's" }) === rcptDupKey({ amount: 38.94, vendor: "Lowe's" }));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

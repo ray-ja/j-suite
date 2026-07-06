@@ -409,6 +409,11 @@ window.createOrgPrompt=function(){
   if(id){ if(typeof closeModal==="function")closeModal(); if(typeof setBiz==="function")setBiz(id); if(typeof scheduleAutoPush==="function")scheduleAutoPush(); alert("Created “"+orgName(id)+"”. You're now working in it."); }
 };
 function money(n){ n=Math.round(+n||0); return (n<0?"-$":"$")+Math.abs(n).toLocaleString(); }   /* sign-correct: "-$90" not "$-90"; byte-identical for every n>=0 (fingerprint-neutral) */
+/* CENTS formatter — for RECEIPT money only, where a rounded $39 (money()) misreads a $38.94 line item. Display-only:
+   exact stored cents, thousands-separated, sign-correct → "$38.94" / "-$90.00" / "$1,234.56". money() itself is left
+   whole-dollar (shared plumbing for compact strip displays), so every existing display + fingerprint stays byte-identical. */
+function money2(n){ n=Math.round((+n||0)*100)/100; return (n<0?"-$":"$")+Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+window.money2=money2;
 /* COGS layer — Part 3: render helpers (Cost/Price/Profit/Margin strip + floor warning). */
 function cogsStrip(price, cost){
   const profit = price - cost, margin = price>0 ? profit/price : 0;

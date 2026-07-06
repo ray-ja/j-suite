@@ -76,6 +76,9 @@ function rcptCsvRecord(row, map, vendor, importId) {
   var store = (map.store >= 0 && String(row[map.store] != null ? row[map.store] : "").trim()) || "";
   var desc = descCell;
   if (map.order >= 0) { var ord = String(row[map.order] != null ? row[map.order] : "").trim(); if (ord) desc = desc ? desc + " · order #" + ord : "order #" + ord; }
+  // NB: no refNo here. A generic line-item export shares ONE order # across many line items, so order# is NOT a
+  // per-record transaction identity — using it as refNo would false-collapse distinct line items. Generic rows
+  // dedup via the date+cents+vendor(+card) fallback in rcptCsvDupKey. The vendor parsers (one row per ORDER) set refNo.
   var me = (typeof rcptMe === "function") ? rcptMe() : null;
   var t = (typeof now === "function") ? now() : Date.now();
   var rec = {
@@ -186,7 +189,7 @@ function rcptVendorRecord(f) {
     id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
     receiptId: null, amount: Math.round((+f.amount || 0) * 100) / 100, vendor: String(f.vendor || "").trim(),
     date: f.date || (typeof today === "function" ? today() : ""), type: null, jobId: null, category: "",
-    paidBy: _at.paidBy, cardLast4: f.cardLast4 || "", desc: f.desc || "",
+    paidBy: _at.paidBy, cardLast4: f.cardLast4 || "", desc: f.desc || "", refNo: f.refNo || "",
     uploadedBy: me ? me.id : "", attributedTo: _at.attributedTo, by: me ? (me.username || "") : "",
     status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
     source: "csv", importId: "", csvFp: ""
@@ -211,6 +214,7 @@ var VENDOR_PARSERS = [
       if (amt == null || isNaN(amt) || amt === 0) return null;              // trailer / blank / note row → SKIP (0 only; keep the sign)
       var date = rcptCsvVendorDate(rcptHVal(H, cells, /^date$/));
       var order = rcptHVal(H, cells, /order\s*#\s*\/\s*trans/).replace(/^#+/, "");
+      var refNo = order.replace(/\D+/g, "");   // the Order # / Trans. # digits — the EXACT dedup identity (strip "#"/spaces)
       var store = rcptHVal(H, cells, /fulfillment store location/);
       var m4 = rcptHVal(H, cells, /cc#?\s*\(\s*last\s*4\s*\)/).match(/(\d{4})\s*$/);   // "************2469" → "2469"
       var desc = order ? ("Order #" + order) : "Lowe's order";
@@ -222,7 +226,7 @@ var VENDOR_PARSERS = [
       // hard-assign the receipt to it (jobId + customerId + a badge). This WINS + supersedes the fuzzy
       // PO→customer-name hint (custHint is only passed as the fallback when there's no exact job match).
       var poJob = (typeof jobByPO === "function") ? jobByPO(poRaw) : null;
-      var rec = rcptVendorRecord({ amount: amt, vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poJob ? null : poR.custHint });   // SIGNED — a negative Order Total imports as a refund/credit
+      var rec = rcptVendorRecord({ amount: amt, vendor: "Lowe's", date: date, desc: desc, refNo: refNo, cardLast4: m4 ? m4[1] : "", custHint: poJob ? null : poR.custHint });   // SIGNED — a negative Order Total imports as a refund/credit
       if (amt < 0) rec.kind = "refund";
       if (poJob) {
         rec.jobId = poJob.id;
@@ -354,20 +358,33 @@ function rcptCsvBuildVendorPreview(parser) {
   rcptCsvPresentPreview(items, skipped);
 }
 
+/* ---------- receipt dedup KEY — keys on the vendor TRANSACTION # (refNo), NOT a digit-stripped desc ----------
+   The old key ran the desc through budgetMemoKey, which STRIPS "#…"/numbers — so "Order #147424942" and
+   "Order #147000003" both collapsed to "order" and two DISTINCT same-$/same-day purchases FALSE-FLAGGED as dupes.
+   With a refNo the identity is exact (distinct orders never collide; an exact re-import IS caught). Without one we
+   fall back to date + exact cents + vendor (+ card last-4 when present, so two same-$/day buys on DIFFERENT cards
+   aren't false dupes). Pure — mirrors js/72 rcptDupKey so the table badge and the import agree. */
+function rcptCsvDupKey(rec) {
+  rec = rec || {};
+  var v = String(rec.vendor || "").toLowerCase().trim();
+  if (rec.refNo) return "ref|" + v + "|" + rec.refNo;
+  return String(rec.date || "") + "|" + Math.round((+rec.amount || 0) * 100) + "|" + v + (rec.cardLast4 ? "|" + rec.cardLast4 : "");
+}
+
 /* ---------- shared finish: soft dedup, fingerprint, vendor-default, already-imported warn, then PREVIEW ---------- */
 function rcptCsvPresentPreview(items, skipped) {
   var parsed = [], seen = {}, storeCounts = {};
-  // existing receipts (review + filed) for cross-import soft dedup
+  // existing receipts (review + filed) for cross-import soft dedup — keyed by refNo (exact) else date+cents+vendor+card
   var existing = {};
   ((typeof rcptAllRows === "function") ? rcptAllRows() : []).forEach(function (r) {
     if (!(+r.amount)) return;
     var rd = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
-    existing[budgetDupKey(rd, r.amount, r.desc || r.note || "")] = true;
+    existing[rcptCsvDupKey({ refNo: r.refNo, vendor: r.vendor, date: rd, amount: r.amount, cardLast4: r.cardLast4 })] = true;
   });
   items.forEach(function (it) {
     var rec = it.rec, storeCell = it.store || "";
     if (storeCell) storeCounts[storeCell] = (storeCounts[storeCell] || 0) + 1;
-    var dk = budgetDupKey(rec.date, rec.amount, rec.desc);
+    var dk = rcptCsvDupKey(rec);
     var dup = !!(existing[dk] || seen[dk]); seen[dk] = true;
     parsed.push({ rec: rec, store: storeCell, dup: dup, keep: !dup });   // dups pre-unchecked
   });
@@ -391,7 +408,7 @@ function rcptCsvPreviewStep() {
   var total = p.filter(function (x) { return x.keep; }).reduce(function (s, x) { return s + (+x.rec.amount || 0); }, 0);
   var dupN = p.filter(function (x) { return x.dup; }).length;
   var vendorDefault = RCSV.detStore || RCSV.vendor || "Lowe's";
-  var m = (typeof money === "function") ? money : function (n) { return "$" + (Math.round(n * 100) / 100).toFixed(2); };
+  var m = (typeof money2 === "function") ? money2 : function (n) { return "$" + (Math.round(n * 100) / 100).toFixed(2); };   // receipts show CENTS ($38.94, not $39)
   var h = (RCSV.vendorId ? '<div class="card" style="border-left:4px solid var(--accent);margin:0 0 8px;padding:6px 10px"><b>Detected: ' + esc(RCSV.vendorName || RCSV.vendor) + '</b> — ' + p.length + ' line item' + (p.length === 1 ? "" : "s") + ' <span class="sub">· auto-parsed, no column mapping needed</span></div>' : '');
   h += '<p class="muted" style="margin:0 0 6px;font-size:13px"><b>Found ' + p.length + ' line item' + (p.length === 1 ? "" : "s") + ' · ' + m(total) + ' total</b> — import?'
     + (RCSV.skipped ? ' <span class="sub">(skipped ' + RCSV.skipped + ' non-item row' + (RCSV.skipped === 1 ? "" : "s") + ')</span>' : '')

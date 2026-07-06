@@ -161,13 +161,16 @@ function rcptSplitSubline(r, groupMap) {
   const grp = groupMap[rcptGroupKey(r)];
   if (!grp || grp.length < 2) return "";              // sole surviving slice (rest deleted) → not really split anymore
   const total = grp.reduce((s, x) => s + (+x.amount || 0), 0);
-  const parts = grp.map(x => rcptBucketEmoji(x) + " " + money(+x.amount || 0)).join(" · ");
+  const parts = grp.map(x => rcptBucketEmoji(x) + " " + money2(+x.amount || 0)).join(" · ");
   const vend = (grp.map(x => x.vendor).find(Boolean)) || "";
-  return `<div class="sub" style="font-size:11px;white-space:normal;color:var(--muted)">🔀 part of a ${money(total)}${vend ? " " + esc(vend) : ""} receipt · ${parts}</div>`;
+  return `<div class="sub" style="font-size:11px;white-space:normal;color:var(--muted)">🔀 part of a ${money2(total)}${vend ? " " + esc(vend) : ""} receipt · ${parts}</div>`;
 }
 
-/* a duplicate = same amount + same (normalized) description/vendor */
-function rcptDupKey(e) { const v = String(e.vendor || "").trim().toLowerCase(), dsc = String(e.desc || e.note || "").trim().toLowerCase(); return Math.round((+e.amount || 0) * 100) + "|" + (v || dsc).replace(/\s+/g, " "); }
+/* a duplicate = the SAME vendor transaction. When a receipt carries a refNo (vendor order/trans #, e.g. a CSV import),
+   that IS the identity — distinct orders (even same $/day) never collide, an exact re-import is caught. Absent a refNo
+   we fall back to exact cents + vendor (+ card last-4 as a disambiguator when present, so two same-$ buys on DIFFERENT
+   cards aren't false-flagged). Kept in lock-step with rcptCsvDupKey (js/93) so the table badge agrees with the import. */
+function rcptDupKey(e) { e = e || {}; const v = String(e.vendor || "").trim().toLowerCase(); if (e.refNo) return "ref|" + v + "|" + e.refNo; return Math.round((+e.amount || 0) * 100) + "|" + v + (e.cardLast4 ? "|" + e.cardLast4 : ""); }
 function rcptDupSet(filed) { const cnt = {}, s = {}; (filed || []).forEach(function (e) { if (!(+e.amount)) return; const k = rcptDupKey(e); cnt[k] = (cnt[k] || 0) + 1; }); Object.keys(cnt).forEach(function (k) { if (cnt[k] > 1) s[k] = cnt[k]; }); return s; }
 
 /* tax records: standardized DATE-first filename + a CSV export.
@@ -355,7 +358,7 @@ function rReceipts() {
   // reimbursements owed
   const owed = rcptReimbOwed(), oids = Object.keys(owed).filter(id => owed[id] > 0.005);
   if (oids.length) {
-    h += `<div class="secthd" style="margin-top:14px"><h2>💸 Reimbursements owed</h2></div><div class="card">` + oids.map(id => `<div class="li"><div class="grow"><div class="nm">${esc((typeof userName === "function" ? userName(id) : "") || "?")}</div><div class="sub">personal-card spend on jobs + business</div></div><div class="row" style="gap:8px;align-items:center"><b>${money(owed[id])}</b><button class="btn ghost sm" onclick="rcptSettle('${id}')">✓ Mark paid back</button></div></div>`).join("") + `<div class="sub" style="margin-top:6px">"Mark paid back" clears their balance once you've reimbursed them from business funds.</div></div>`;
+    h += `<div class="secthd" style="margin-top:14px"><h2>💸 Reimbursements owed</h2></div><div class="card">` + oids.map(id => `<div class="li"><div class="grow"><div class="nm">${esc((typeof userName === "function" ? userName(id) : "") || "?")}</div><div class="sub">personal-card spend on jobs + business</div></div><div class="row" style="gap:8px;align-items:center"><b>${money2(owed[id])}</b><button class="btn ghost sm" onclick="rcptSettle('${id}')">✓ Mark paid back</button></div></div>`).join("") + `<div class="sub" style="margin-top:6px">"Mark paid back" clears their balance once you've reimbursed them from business funds.</div></div>`;
   }
   view.innerHTML = h;
 }
@@ -368,8 +371,8 @@ function rcptDepositsAwaitingHTML(deps) {
     const dep = d.deposit, j = d.job;
     const cust = (j && j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
     const where = (j ? (j.title || "Job") : "no job") + (cust ? " · " + cust : "");
-    const state = d.hasRefund ? `refund so far ${money(-d.refundSoFar)} → net ${money(d.net)}` : "no refund yet";
-    return `<div class="li" style="align-items:center;gap:8px;margin-top:6px"><div class="grow" style="min-width:0"><div class="nm" style="white-space:normal">🏗 ${money(dep.amount)} deposit${dep.vendor ? " · " + esc(dep.vendor) : ""} · ${esc(where)}</div><div class="sub" style="white-space:normal">${state} — tap Settle to enter the refund / mark it settled</div></div><button class="btn acc sm" onclick="if(typeof depositSettleOpen==='function')depositSettleOpen('${esc(dep.id)}')">Settle</button></div>`;
+    const state = d.hasRefund ? `refund so far ${money2(-d.refundSoFar)} → net ${money2(d.net)}` : "no refund yet";
+    return `<div class="li" style="align-items:center;gap:8px;margin-top:6px"><div class="grow" style="min-width:0"><div class="nm" style="white-space:normal">🏗 ${money2(dep.amount)} deposit${dep.vendor ? " · " + esc(dep.vendor) : ""} · ${esc(where)}</div><div class="sub" style="white-space:normal">${state} — tap Settle to enter the refund / mark it settled</div></div><button class="btn acc sm" onclick="if(typeof depositSettleOpen==='function')depositSettleOpen('${esc(dep.id)}')">Settle</button></div>`;
   }).join("");
   h += `</div>`;
   return h;
@@ -384,7 +387,7 @@ function rcptTableHTML(rows, dups) {
   rows.slice(0, 500).forEach(r => {
     const m = rcptRowMeta(r);
     const isDup = !!(r.amount && dups[rcptDupKey(r)]);
-    const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money(r.amount);
+    const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money2(r.amount);
     const d = rcptDate(r);
     const statusBadge = m.status === "review"
       ? `<span class="badge" style="background:var(--accent);color:#fff">review</span>`
@@ -447,7 +450,7 @@ function rcptJobCloseoutHTML() {
     const expTot = jobExpenseTotal(j);   // pass-through materials + job expenses logged so far
     // whole row taps through to the job's expense page (js/61 openJobPage → the materials/expenses section)
     h += `<div class="li" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')" style="cursor:pointer;align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
-      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money(expTot)}</b> expenses${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
+      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(expTot)}</b> expenses${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
       <div style="flex:0 0 auto">${badge}</div></div>`;
   });
   h += `</div>`;
@@ -504,7 +507,7 @@ function rcptCrewView() {
     <thead><tr><th style="text-align:left;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted)">Date</th><th style="text-align:left;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted)">Vendor</th><th style="text-align:right;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted)">Amount</th><th style="text-align:left;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted)">Job</th><th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th><th style="text-align:left;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted)">Status</th></tr></thead><tbody>`;
   h += mine.slice(0, 300).map(r => {
     const m = rcptRowMeta(r), d = rcptDate(r);
-    const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money(r.amount);
+    const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money2(r.amount);
     const statusBadge = m.status === "review" ? `<span class="badge" style="background:var(--accent);color:#fff">pending</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">on file</span>`;
     return `<tr style="border-bottom:1px solid var(--line)">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : "—"}</td>
