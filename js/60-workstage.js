@@ -76,8 +76,14 @@ function workStageLabel(q) {
   // only fires when a LINKED, DONE job has open crew and no owner sign-off (so no existing label shifts).
   if (st === "invoice" || st === "paid") {
     const job = workStageJob(q);
-    if (job && job.done && !job.expensesCollected && typeof jobReceiptsOpenCrew === "function" && jobReceiptsOpenCrew(job).length > 0) {
-      return m.label + " · expenses open";
+    if (job && job.done && !job.expensesCollected && typeof jobReceiptsOpenCrew === "function") {
+      const open = jobReceiptsOpenCrew(job).length;
+      if (open > 0) {
+        // same closed/total counter as the orange "expense collecting" rows (e.g. "· 0/3") so a paid/invoiced job
+        // still shows how many crew are outstanding — just without the "crew closed" words.
+        const crew = (typeof jobCrewActiveIds === "function") ? jobCrewActiveIds(job).length : open;
+        return m.label + " · expenses open · " + (crew - open) + "/" + crew;
+      }
     }
   }
   return m.label;
