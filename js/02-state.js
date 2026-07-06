@@ -23,11 +23,13 @@ function load(){
    if(obxReg){if(!Array.isArray(obxReg.vehicles))obxReg.vehicles=[];
      if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true,kind:"vehicle"});}}
   // TAB VISIBILITY: an org with an explicit tools allowlist (registry.tabs) HIDES any tab not in the list, so a
-  // newly-shipped tab (leads/jobs/routes/…) stays invisible until added — the reason "View route" bounced to Today.
-  // Append the newer always-available display tabs any allowlisted org is missing (idempotent; null tabs = "all"
-  // already sees them). Bump updatedAt only on a real change so it propagates once, then no-ops (no owner intended
-  // to exclude a tab that didn't exist yet).
-  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["leads","jobs","routes"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
+  // tab missing from that (stale, snapshot-era) list stays invisible — the reason People & Places showed only
+  // "People" (accounts/Customers/Properties/Places was missing), "View route" bounced to Today (routes), etc.
+  // Ensure every allowlisted org includes the STANDARD business tabs (People&Places, map, route planner, My Pay,
+  // approvals, leads, jobs, routes). Idempotent; null tabs = "all" already sees them; bump updatedAt only on a
+  // real change so it propagates once then no-ops. (OTHER-business/advanced tabs like market/opps/plan/research
+  // stay excludable — we only restore the core OBX/Jamieson toolset a stale list dropped.)
+  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["accounts","leads","jobs","routes","map","route","pay","approvals"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
