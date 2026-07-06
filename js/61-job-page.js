@@ -144,6 +144,9 @@ function jobRouteExtraManual(j) {
 }
 function jobRecalcRouteMiles(j) {
   if (!j) return;
+  // MANUAL OVERRIDE: if the owner set whole-route manual miles, that's authoritative — use it and skip the map
+  // entirely (they set it because the auto tools were wrong; it's an override, not an offline fallback).
+  if (+j.manualRouteMiles > 0) { j.estRouteMiles = Math.round(+j.manualRouteMiles * 10) / 10; return; }
   const extraManual = (typeof jobRouteExtraManual === "function") ? jobRouteExtraManual(j) : 0;   // lat-less place-stops' manualMiles (0 for every existing coord'd route → fingerprint-safe)
   const seq = jobRouteTaggedSeq(j);
   if (!seq) {
@@ -170,11 +173,11 @@ function jobRecalcRouteMiles(j) {
    (owner's j.manualRouteMiles round-trip fallback), "none" (map tried + failed, no manual → prompt for manual),
    or "pending" (still resolving / nothing geocoded yet). Pure read — never fires a fetch. */
 function jobRouteMilesSource(j) {
+  if (j && +j.manualRouteMiles > 0) return "manual";   // manual override wins over the map (checked first)
   const seq = jobRouteTaggedSeq(j);
-  if (!seq) return (j && j.manualRouteMiles > 0) ? "manual" : (j && j.estRouteMiles > 0 ? "manual" : "pending");
+  if (!seq) return (j && j.estRouteMiles > 0 ? "manual" : "pending");
   const c = jobRouteMilesCompute(seq);
   if (c.resolved) return "roads";
-  if (j.manualRouteMiles > 0) return "manual";
   return c.anyNone ? "none" : "pending";
 }
 
@@ -540,7 +543,7 @@ function jobPageRouteCard(j) {
   } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Computing the road route… the mileage estimate appears once the map answers (needs a home base set in Settings).</div>`;
   // 🚗 MANUAL route miles (round-trip) — the fallback for when the map can't route (offline / a bad-geocode address).
   // OSRM road miles win when available; this manual value takes over when they aren't. Owner/admin only.
-  h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><label style="margin-top:0">🚗 Route miles <span class="sub" style="font-weight:400">(manual, if the map can't route — round-trip)</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${(j.manualRouteMiles > 0) ? j.manualRouteMiles : ""}" placeholder="round-trip miles" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${(j.manualRouteMiles > 0) ? (_src === "roads" ? "The map is routing — road miles are being used; your manual miles stay as the offline fallback." : "Using your manual miles.") : "Only used when the map can't route — the map's road miles win when available."}</div></div>`;
+  h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><label style="margin-top:0">🚗 Route miles <span class="sub" style="font-weight:400">(manual, if the map can't route — round-trip)</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${(j.manualRouteMiles > 0) ? j.manualRouteMiles : ""}" placeholder="round-trip miles" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${(j.manualRouteMiles > 0) ? "✓ Using your manual miles — this overrides the map + the odometer estimate." : "Enter the round-trip miles to override the map/odometer estimate for this job."}</div></div>`;
   return h + `</div>`;
 }
 /* EDIT LOCATION modal (owner/admin) — pick a saved property OR type a free-text address → j.address (jobAddr's
