@@ -270,7 +270,8 @@ function wizReview(){
     if(job){
       h+=`<div class="row"><div class="grow"><div class="nm" style="font-size:15px">✓ Scheduled — ${fmtDate(job.date)}${job.time?" · "+esc(job.time):""}</div><div class="sub" style="margin-top:2px">${(typeof crewChips==="function")?crewChips(job):""}</div></div><button class="btn ghost sm" onclick="closeWizToJob('${job.id}')">Open job</button></div>
         <button class="btn ghost sm" style="margin-top:8px" onclick="openAcceptSchedule('${WZ.id}')">Reschedule / reassign crew</button>
-        <button class="btn ${job.done?"ghost":"acc"} sm" style="margin-top:8px;width:100%" onclick="toggleJob('${job.id}')">${job.done?"↩ Reopen job":"✓ Mark job done → collect expenses"}</button>${job.done?`<div class="sub" style="margin-top:4px">Job's done — now in <b>Expense collecting</b> (crew log receipts) until you Mark invoiced.</div>`:""}`;
+        <button class="btn acc" style="margin-top:8px;width:100%" onclick="closeWizToJob('${job.id}')">← Back to the job</button>
+        <div class="sub" style="margin-top:4px;white-space:normal">Marking done, invoicing &amp; payment now live on the job page.</div>`;
     } else if(WZ.accepted&&WZ.jobId){
       h+=`<div class="muted" style="margin-bottom:8px">The linked job was removed.</div><button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Schedule again →</button>`;
     } else {
@@ -278,16 +279,21 @@ function wizReview(){
         <button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Accept &amp; schedule job →</button>`;
     }
     h+=`</div>`;
-    let _qsub=0;WZ.items.forEach(it=>_qsub+=(it.price||0)*(it.qty||1));const _qtot=Math.max(0,_qsub-(WZ.disc||0));
-    h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
-      <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>
-      <label style="margin-top:10px">Final price charged <span class="sub">— if different from the ${money(_qtot)} quote (add-ons, discount)</span></label>
-      <div class="row" style="gap:8px"><input type="number" id="wz_final" inputmode="decimal" placeholder="${_qtot}" value="${WZ.finalPrice||''}" style="flex:1"><button class="btn ghost sm" onclick="wizSetFinal()">Save</button></div>
-      <input id="wz_adjnote" placeholder="Reason (e.g. added interior door, gave a discount)" value="${esc(WZ.adjNote||'')}" style="margin-top:6px">
-      ${WZ.finalPrice?`<div class="note" style="margin-top:6px">Charging <b>${money(WZ.finalPrice)}</b> (quote was ${money(_qtot)})${WZ.adjNote?" · "+esc(WZ.adjNote):""}</div>`:""}`;
-    if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
-    else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
-    h+=`</div><button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
+    // Invoice & payment card — DRAFTS only. For ACCEPTED quotes this lives on the unified job page (js/61);
+    // hidden here to avoid a duplicate surface. The wizToggleInvoiced/Paid/SetFinal mutators stay defined.
+    if(!WZ.accepted){
+      let _qsub=0;WZ.items.forEach(it=>_qsub+=(it.price||0)*(it.qty||1));const _qtot=Math.max(0,_qsub-(WZ.disc||0));
+      h+=`<div class="card" style="margin-top:10px"><div style="font-weight:800;margin-bottom:6px">Invoice &amp; payment</div>
+        <div class="row" style="gap:8px"><button class="btn ghost sm grow" onclick="wizToggleInvoiced()">${WZ.invoiced?"✓ Invoiced":"Mark invoiced"}</button><button class="btn ghost sm grow" onclick="wizTogglePaid()">${WZ.paid?"✓ Paid":"Mark paid"}</button></div>
+        <label style="margin-top:10px">Final price charged <span class="sub">— if different from the ${money(_qtot)} quote (add-ons, discount)</span></label>
+        <div class="row" style="gap:8px"><input type="number" id="wz_final" inputmode="decimal" placeholder="${_qtot}" value="${WZ.finalPrice||''}" style="flex:1"><button class="btn ghost sm" onclick="wizSetFinal()">Save</button></div>
+        <input id="wz_adjnote" placeholder="Reason (e.g. added interior door, gave a discount)" value="${esc(WZ.adjNote||'')}" style="margin-top:6px">
+        ${WZ.finalPrice?`<div class="note" style="margin-top:6px">Charging <b>${money(WZ.finalPrice)}</b> (quote was ${money(_qtot)})${WZ.adjNote?" · "+esc(WZ.adjNote):""}</div>`:""}`;
+      if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
+      else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
+      h+=`</div>`;
+    }
+    h+=`<button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
   }
   // sticky footer: back to the load + crew (−/+) + total + save
   const total=Math.max(0,sub-(WZ.disc||0)),cN=Math.max(1,WZ.crewN||1);

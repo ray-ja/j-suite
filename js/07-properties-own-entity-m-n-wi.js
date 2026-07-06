@@ -6,7 +6,7 @@ window.openProperty=function(id,linkCustId){
   const isNew=!id;PCUSTS=(p.customerIds||[]).slice();
   let histH="";
   if(!isNew){const myQ=actQ().filter(q=>q.propertyId===p.id);const myJ=actJ().filter(j=>j.propertyId===p.id);
-    histH=`<h2 style="margin-top:14px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();openQuote('${q.id}')"><div class="nm">${money(q.total)}</div><div class="sub">${fmtDate(q.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
+    histH=`<h2 style="margin-top:14px">Quotes (${myQ.length})</h2>`+(myQ.length?myQ.map(q=>`<div class="li"><div class="grow" onclick="closeModal();${q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`}"><div class="nm">${money(q.total)}</div><div class="sub">${fmtDate(q.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`)
       +`<h2 style="margin-top:14px">Jobs (${myJ.length})</h2>`+(myJ.length?myJ.map(j=>`<div class="li"><div class="grow" onclick="closeModal();openJob('${j.id}')"><div class="nm">${esc(j.title)}</div><div class="sub">${fmtDate(j.date)}</div></div></div>`).join(""):`<div class="muted">None yet.</div>`);}
   modal(isNew?"New property":"Property",`
     <label>Label</label><input id="p_label" value="${esc(p.label||"")}" placeholder="e.g. Main office, Beach house">

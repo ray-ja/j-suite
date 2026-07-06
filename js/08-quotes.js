@@ -62,7 +62,9 @@ function quotesListHTML(){
     const stLabel=(typeof workStageLabel==="function")?workStageLabel(q):m.label;
     // Review after-action stays surfaced on PAID rows (uses the preserved plReview/plReviewed, js/67).
     const rev=(st==="paid")?((typeof plReviewed==="function"&&plReviewed(q))?` <span class="badge s-Won">✓ reviewed</span>`:` <button class="btn acc sm" onclick="event.stopPropagation();plReview('${q.id}')">Review →</button>`):"";
-    h+=`<tr onclick="openQuote('${q.id}')" style="cursor:pointer;border-bottom:1px solid var(--line)">`
+    // Accepted-with-live-job → the unified job page; drafts/quote-stage (or job deleted) → the wizard.
+    const _lj=q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted);
+    h+=`<tr onclick="${_lj?`openJobPage('${_lj.id}')`:`openQuote('${q.id}')`}" style="cursor:pointer;border-bottom:1px solid var(--line)">`
       +`<td style="padding:8px 6px;white-space:nowrap;border-left:4px solid ${m.color}">${fmtDate(q.date)}</td>`
       +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
       +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}</td>`
