@@ -1465,6 +1465,31 @@ ok("deposit:1 (truthy non-bool) → deposit false (strict === true)", t.rcptPars
 ok("malformed reply (no JSON object) still returns null", t.rcptParseSuggestion("sorry, I can't read that", rpsCats, rpsJobs) === null, null);
 ok("broken JSON still returns null", t.rcptParseSuggestion('{"vendor":"x", "last4":', rpsCats, rpsJobs) === null, null);
 
+console.log("\n— Cap SPLIT suggestion (rcptParseSuggestion.splits): only a genuine ≥2-bucket MIX, balanced to total —");
+// today's behavior: a reply with NO splits key → splits:[] (an all-materials receipt stays one bucket)
+ok("no splits key → splits:[] (single categorization, today's behavior)", Array.isArray(rpsBase.splits) && rpsBase.splits.length === 0, rpsBase.splits);
+ok("explicit empty splits array → splits:[]", t.rcptParseSuggestion('{"vendor":"x","amount":50,"splits":[]}', rpsCats, rpsJobs).splits.length === 0, null);
+// a valid 2-bucket split (materials $120 + tool $80, sum 200 == amount 200) → returned intact
+const rpsSplit = t.rcptParseSuggestion('{"vendor":"Home Depot","amount":200,"type":"pass-through","category":"materials","splits":[{"amount":120,"type":"pass-through","category":"materials","note":"pavers"},{"amount":80,"type":"business","category":"tools/equipment","note":"tamper"}]}', rpsCats.concat(["materials", "tools/equipment"]), rpsJobs);
+ok("valid 2-bucket balanced split (120+80==200) → 2 entries returned", rpsSplit && rpsSplit.splits.length === 2 && rpsSplit.splits[0].amount === 120 && rpsSplit.splits[1].amount === 80, rpsSplit && rpsSplit.splits);
+ok("split entry types survive (pass-through + business)", rpsSplit.splits[0].type === "pass-through" && rpsSplit.splits[1].type === "business", rpsSplit.splits);
+ok("split entry category clamped to allowed set (materials / tools/equipment)", rpsSplit.splits[0].category === "materials" && rpsSplit.splits[1].category === "tools/equipment", rpsSplit.splits);
+ok("split entry note is a string (≤120)", typeof rpsSplit.splits[0].note === "string" && rpsSplit.splits[0].note === "pavers", rpsSplit.splits);
+// UNBALANCED (sum 150 ≠ amount 200) → dropped to []
+ok("unbalanced split (120+30=150 ≠ 200 total) → dropped to []", t.rcptParseSuggestion('{"vendor":"x","amount":200,"splits":[{"amount":120,"type":"pass-through"},{"amount":30,"type":"business"}]}', rpsCats.concat(["materials", "tools/equipment"]), rpsJobs).splits.length === 0, null);
+// a single-entry split is not a MIX → []
+ok("1-entry split (not a real mix) → dropped to []", t.rcptParseSuggestion('{"vendor":"x","amount":200,"splits":[{"amount":200,"type":"pass-through"}]}', rpsCats, rpsJobs).splits.length === 0, null);
+// garbage / non-array splits → []
+ok("non-array splits (\"foo\") → []", t.rcptParseSuggestion('{"vendor":"x","amount":50,"splits":"foo"}', rpsCats, rpsJobs).splits.length === 0, null);
+ok("splits with garbage entries (bad type / non-numeric amount) drop to <2 valid → []", t.rcptParseSuggestion('{"vendor":"x","amount":100,"splits":[{"amount":"abc","type":"pass-through"},{"amount":50,"type":"nope"},{"amount":100,"type":"business"}]}', rpsCats.concat(["tools/equipment"]), rpsJobs).splits.length === 0, null);
+// a bad category inside an otherwise-valid split entry → clamped to "" (entry kept, not dropped)
+const rpsBadCat = t.rcptParseSuggestion('{"vendor":"x","amount":100,"splits":[{"amount":60,"type":"pass-through","category":"materials"},{"amount":40,"type":"business","category":"NOT_A_CAT"}]}', rpsCats.concat(["materials"]), rpsJobs);
+ok("bad split category clamped to \"\" (entry retained, balanced 60+40==100)", rpsBadCat.splits.length === 2 && rpsBadCat.splits[1].category === "", rpsBadCat && rpsBadCat.splits);
+// within tolerance (±$0.05): 120 + 79.97 = 199.97 vs 200 → still balanced
+ok("split within $0.05 tolerance (199.97 vs 200) → kept", t.rcptParseSuggestion('{"vendor":"x","amount":200,"splits":[{"amount":120,"type":"pass-through"},{"amount":79.97,"type":"business"}]}', rpsCats, rpsJobs).splits.length === 2, null);
+// existing fields still intact when a split is present
+ok("existing fields unchanged when splits present (vendor/amount/type)", rpsSplit.vendor === "Home Depot" && rpsSplit.amount === 200 && rpsSplit.type === "pass-through", rpsSplit);
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");

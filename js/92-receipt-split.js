@@ -121,6 +121,33 @@ window.rcptSplitStart = function () {
   rcptSplitRender();
 };
 
+/* CAP SPLIT SUGGESTION (called by js/87 rcptApplySuggestion when Cap saw a MIXED receipt) — expand the allocation
+   editor PRE-FILLED from Cap's `splits` [{amount,type,category,note}, …]. Cap proposes, the owner confirms: this
+   only opens + fills the editor (balanced "$X of $Y"); nothing is committed until the owner taps "Save splits".
+   Each split → one row {bucket=Cap's type, amount, note}. Cap's split shape carries no jobId, so a 🧱/🚚 row is
+   pre-seeded with the receipt's current job (the top-level suggested jobId, already set in the form) — the owner
+   just confirms or picks the job. Guarded so a missing/short splits array never touches the DOM. */
+window.rcptSplitStartFromSuggestion = function (splits, fallbackJobId) {
+  if (typeof rcptFinFull === "function" && !rcptFinFull()) return;
+  if (!Array.isArray(splits) || splits.length < 2) return;
+  const amtRaw = (typeof val === "function") ? val("rcpt_amt") : "";
+  const total = amtRaw === "" ? 0 : (parseFloat(amtRaw) || 0);
+  const jobEl = document.getElementById("rcpt_job");
+  const curJob = (jobEl ? jobEl.value : "") || fallbackJobId || "";
+  const rows = splits.map(sp => {
+    const bucket = (sp && (sp.type === "business" || sp.type === "job-expense" || sp.type === "pass-through")) ? sp.type : "pass-through";
+    const needsJob = (bucket === "pass-through" || bucket === "job-expense");
+    const amt = (sp && sp.amount != null && !isNaN(+sp.amount)) ? Math.round(+sp.amount * 100) / 100 : "";
+    return { bucket: bucket, jobId: needsJob ? curJob : "", amount: (amt === "" ? "" : String(amt)), note: (sp && sp.note != null) ? String(sp.note) : "" };
+  });
+  RCPT_SPLIT = {
+    loc: (typeof RCPT_EDIT !== "undefined" && RCPT_EDIT) ? RCPT_EDIT.loc : null,
+    total: total,
+    rows: rows
+  };
+  rcptSplitRender();
+};
+
 function rcptSplitBucketOpts(sel) { return RCPT_SPLIT_BUCKETS.map(b => `<option value="${b[0]}"${sel === b[0] ? " selected" : ""}>${b[1]}</option>`).join(""); }
 function rcptSplitJobOpts(sel) {
   const jobs = (typeof rcptJobs === "function") ? rcptJobs() : [];
