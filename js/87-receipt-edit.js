@@ -50,6 +50,10 @@ function rcptBuildRecord(home, id, fields, carry) {
   const base = { id: id, amount: amount, vendor: fields.vendor || "", desc: fields.desc || "", receiptId: fields.receiptId || null, paidBy: fields.paidBy || null, attributedTo: attributedTo, by: by, ts: carry.ts || now() };
   if (carry.reimbursedAt) base.reimbursedAt = carry.reimbursedAt;
   if (carry.capRead) base.capRead = carry.capRead;
+  // SPLIT: when one receipt is split into N flat-dollar slices, every slice carries the same splitGroup id (uid,
+  // set only when N>1 by js/92 rcptApplySplit) so the table can group them back under one receipt. Purely
+  // additive on ALL homes — old records lack it, no migration, no fingerprint reads it. (js/92-receipt-split.js)
+  if (fields.splitGroup) base.splitGroup = fields.splitGroup;
   // job expense carries its receipt CATEGORY so the 3-way split works (a tools/equipment receipt → excluded from
   // the job's cost as business overhead; anything else = a plain job cost). Default "job" when the receipt was uncategorized.
   if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; base.category = fields.category || "job"; return base; }
@@ -125,8 +129,10 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
     <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
     <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
-    <div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
+    <div id="rcpt_split_slot"></div>
+    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
   rcptEditTypeChange();
+  if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
 };
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");

@@ -149,6 +149,23 @@ function rcptRowMeta(r) {
 }
 const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🔧 Business / tool", "job-expense": "🚚 Job expense", "pass-through": "🧱 Pass-through" };
 
+/* ---- SPLIT grouping (display only) — flat-value receipt slices share a splitGroup (js/92). Group all live rows
+   by splitGroup (falling back to receiptId, then record id, so a non-split receipt is a lone group of 1). A
+   group with >1 slice gets a muted sub-line under each row: "part of a $200 <vendor> receipt · 🧱 $120 · 🔧 $80".
+   NO math change — each slice is an ordinary record in its own bucket. */
+function rcptGroupKey(r) { return r.splitGroup || r.receiptId || ("id:" + (r.recId || r.id)); }
+function rcptBucketEmoji(r) { const t = (typeof rcptRowMeta === "function") ? rcptRowMeta(r).type : r.type; return t === "pass-through" ? "🧱" : t === "job-expense" ? "🚚" : t === "business" ? "🔧" : "🕓"; }
+function rcptSplitGroupMap() { const map = {}; rcptAllRows().forEach(r => { const k = rcptGroupKey(r); (map[k] || (map[k] = [])).push(r); }); return map; }
+function rcptSplitSubline(r, groupMap) {
+  if (!r.splitGroup) return "";                       // only genuine splits carry a splitGroup
+  const grp = groupMap[rcptGroupKey(r)];
+  if (!grp || grp.length < 2) return "";              // sole surviving slice (rest deleted) → not really split anymore
+  const total = grp.reduce((s, x) => s + (+x.amount || 0), 0);
+  const parts = grp.map(x => rcptBucketEmoji(x) + " " + money(+x.amount || 0)).join(" · ");
+  const vend = (grp.map(x => x.vendor).find(Boolean)) || "";
+  return `<div class="sub" style="font-size:11px;white-space:normal;color:var(--muted)">🔀 part of a ${money(total)}${vend ? " " + esc(vend) : ""} receipt · ${parts}</div>`;
+}
+
 /* a duplicate = same amount + same (normalized) description/vendor */
 function rcptDupKey(e) { const v = String(e.vendor || "").trim().toLowerCase(), dsc = String(e.desc || e.note || "").trim().toLowerCase(); return Math.round((+e.amount || 0) * 100) + "|" + (v || dsc).replace(/\s+/g, " "); }
 function rcptDupSet(filed) { const cnt = {}, s = {}; (filed || []).forEach(function (e) { if (!(+e.amount)) return; const k = rcptDupKey(e); cnt[k] = (cnt[k] || 0) + 1; }); Object.keys(cnt).forEach(function (k) { if (cnt[k] > 1) s[k] = cnt[k]; }); return s; }
@@ -336,6 +353,7 @@ function rcptTableHTML(rows, dups) {
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
+  const splitGroups = rcptSplitGroupMap();
   rows.slice(0, 500).forEach(r => {
     const m = rcptRowMeta(r);
     const isDup = !!(r.amount && dups[rcptDupKey(r)]);
@@ -350,7 +368,7 @@ function rcptTableHTML(rows, dups) {
         : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${isDup ? ";background:var(--danger-soft,#fdecea)" : ""}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(RCPT_TYPE_LABEL[m.type] || m.type)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`}</td>
