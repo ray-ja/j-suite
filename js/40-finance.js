@@ -215,8 +215,16 @@ function rFinExpenses() {
   const total = exps.reduce((s, e) => s + finCents(e.amount), 0);
   const ym = finMonth(), b = monthBounds(ym);
   const mil = finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true });
-  let h = `<div class="secthd"><h2>Expenses</h2><button class="btn ghost sm" onclick="openExpense()">+ Add</button></div>`;
+  let h = `<div class="secthd"><h2>🔧 Business &amp; tools (overhead / capital)</h2><button class="btn ghost sm" onclick="openExpense()">+ Add</button></div>`;
   if (mil.total > 0) h += `<div class="card" style="border-left:4px solid var(--accent)"><div class="nm" style="font-size:15px">🚐 Mileage — ${esc(finMonthLabel(ym))}</div><div class="sub" style="white-space:normal">${mil.miles} mi @ $${FIN.MILEAGE_RATE}/mi = <b>${fm(mil.total)}</b>, auto from the time clock (confirmed). Reimbursed to the vehicle owner from the Business Fund — see the Payouts tab.</div></div>`;
+  // TOOLS logged INSIDE a job — a reusable tool (category tools/equipment) is business overhead, so surface it here
+  // even though the record lives in job.expenses[] (never moved). Read-through rows, labeled with the job it's on.
+  const _jobTools = [];
+  (D().jobs || []).filter(j => j && !j.deleted).forEach(j => { (j.expenses || []).filter(x => x && !x.deleted && typeof expenseIsTool === "function" && expenseIsTool(x)).forEach(e => _jobTools.push({ e: e, j: j })); });
+  if (_jobTools.length) {
+    const _tt = _jobTools.reduce((s, x) => s + finCents(x.e.amount), 0);
+    h += `<div class="secthd" style="margin-top:14px"><h2>🔧 Tools logged on jobs</h2><span class="ct">${fm(_tt)}</span></div><div class="card">` + _jobTools.map(x => `<div class="li"><div class="grow"><div class="nm">${money(x.e.amount || 0)} <span class="badge" style="background:var(--soft);color:var(--muted)">tools/equipment</span></div><div class="sub" style="white-space:normal">${x.e.vendor ? esc(x.e.vendor) + " · " : ""}${esc(x.e.desc || "")}${(x.e.vendor || x.e.desc) ? " · " : ""}logged on ${esc(x.j.title || "job")}</div></div></div>`).join("") + `<div class="sub" style="margin-top:6px;white-space:normal">Overhead / capital — excluded from that job's cost, counted as business overhead.</div></div>`;
+  }
   if (!exps.length) h += `<div class="card"><div class="muted">No expenses logged. Track disposal, rentals, fuel, equipment, software &amp; marketing here.</div></div>`;
   else h += `<div class="secthd" style="margin-top:14px"><h2>Logged</h2><span class="ct">${fm(total)}</span></div><div class="card">` + exps.map(e => `<div class="li" onclick="openExpense('${e.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${money(e.amount || 0)} <span class="badge" style="background:var(--soft);color:var(--muted)">${esc(e.category || "other")}</span></div><div class="sub" style="white-space:normal">${fmtDate(e.date)}${e.note ? " · " + esc(e.note) : ""}${e.vendor ? " · " + esc(e.vendor) : ""}</div></div></div>`).join("") + `</div>`;
   return h;

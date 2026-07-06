@@ -22,6 +22,10 @@ function qStageRank(q){ const st=(typeof workStage==="function")?workStage(q):qu
 /* the linked job's total cost for this quote's row: logged receipts (materials + expenses) PLUS the mileage
    payout (confirmed odometer, else the maps-route estimate — jobMilesCostEst). 0 when no live job. */
 function qExpTotal(q){ const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted); if(!j)return 0; const rec=(typeof jobExpenseTotal==="function")?jobExpenseTotal(j):0; const mil=(typeof jobMilesCostEst==="function")?jobMilesCostEst(j):0; return rec+mil; }
+/* muted 11px WHERE-the-money-went sub-line under the Expenses cell total: 🛣 mileage · 🚚 job expense ·
+   🧱 pass-through materials (any zero bucket omitted; a reusable TOOL is business overhead, NOT shown on the
+   job row). Pure display — empty string when there's nothing to break down (cell stays the total only). */
+function qExpSubline(j){ if(!j||typeof jobCostBreakdown!=="function")return ""; const b=jobCostBreakdown(j); const parts=[]; if(b.mileage>0)parts.push("🛣 "+money(b.mileage)); if(b.jobExp>0)parts.push("🚚 "+money(b.jobExp)); if(b.materials>0)parts.push("🧱 "+money(b.materials)); return parts.length?`<div class="sub" style="font-size:11px;font-weight:400;white-space:nowrap">${parts.join(" · ")}</div>`:""; }
 function qSortVal(q){
   switch(QSORT){
     case "customer": return (q.cust||custName(q.customerId)||"").toLowerCase();
@@ -73,7 +77,7 @@ function quotesListHTML(){
       +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
       +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}</td>`
       +`<td style="padding:8px 6px;white-space:normal"><span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</td>`
-      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;color:var(--muted)">${(_lj&&qExpTotal(q)>0)?money(qExpTotal(q)):`<span style="color:var(--muted)">—</span>`}</td>`
+      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;color:var(--muted)">${(_lj&&qExpTotal(q)>0)?(money(qExpTotal(q))+qExpSubline(_lj)):`<span style="color:var(--muted)">—</span>`}</td>`
       +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</td>`
       +`</tr>`;
   });
