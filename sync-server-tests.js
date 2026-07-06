@@ -144,6 +144,26 @@ const mlMerged = t.mergeState(mlMig, admVeh);
 ok("mileage GATE: the owner's vehicle add survives the LWW merge without dropping any timeclock data",
   mlMerged.registry.find(r => r.id === "obx").vehicles.some(v => v.id === "veh_x") && mlMerged.obx.timeclock.length === 2);
 
+console.log("\n— CARD LAST-4 AUTO-ATTRIBUTION: businessCards is an owner/admin-only registry field (like vehicles); u.cards is a self-write-only account field —");
+// COMPANY CARDS (registry.businessCards) — protected by REG_ADMIN_FIELDS exactly like vehicles/navOrder.
+const ownBiz = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX Lot Solutions", businessCards: [{ id: "bc_amex", last4: "3005", label: "Business Amex", active: true }], updatedAt: 60 }] }, noMig, "own");
+ok("card GATE: an owner CAN set the org businessCards list (write passes through)", ownBiz.registry[0].businessCards.some(c => c.last4 === "3005"));
+const admBiz = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX", businessCards: [{ id: "bc2", last4: "1212", active: true }], updatedAt: 61 }] }, noMig, "adm");
+ok("card GATE: an ADMIN (manager-tier) CAN set businessCards (passes through)", admBiz.registry[0].businessCards.some(c => c.last4 === "1212"));
+const crwBizStrip = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX", businessCards: [{ id: "hax", last4: "0000" }], updatedAt: 62 }] }, noMig, "crw");
+ok("card GATE: a CREW businessCards write is STRIPPED when the org had none (privileged field can't leak in)", !Object.prototype.hasOwnProperty.call(crwBizStrip.registry[0], "businessCards"));
+const bizMerged = t.mergeState(noMig, ownBiz);
+const crwBizRevert = t.sanitizeRegistryWrites({ registry: [{ id: "obx", name: "OBX", businessCards: [{ id: "hax", last4: "6666" }], updatedAt: 63 }] }, bizMerged, "crw");
+ok("card GATE: a CREW businessCards write is REVERTED to the owner-set list (no crew card injected)",
+  JSON.stringify(crwBizRevert.registry[0].businessCards) === JSON.stringify(bizMerged.registry.find(r => r.id === "obx").businessCards) && !crwBizRevert.registry[0].businessCards.some(c => c.last4 === "6666"));
+// PERSONAL CARDS (u.cards) — a self-write on the caller's OWN account (non-sensitive → passes), but NEVER another user's.
+const crwCardsSelf = t.sanitizeUserWrites({ users: [{ id: "crw", username: "joe", role: "crew", cards: [{ id: "cd1", last4: "4242", kind: "personal" }], updatedAt: 50 }] }, noMig, "crw");
+const crwSelfOut = crwCardsSelf.users.find(u => u.id === "crw");
+ok("card GATE: a crew member CAN save cards to their OWN account (self-write rides S.users LWW)", !!crwSelfOut && Array.isArray(crwSelfOut.cards) && crwSelfOut.cards.some(c => c.last4 === "4242"));
+const crwCardsOther = t.sanitizeUserWrites({ users: [{ id: "own", username: "ray", role: "owner", superAdmin: true, cards: [{ id: "hax", last4: "9999", kind: "personal" }], updatedAt: 51 }] }, noMig, "crw");
+const ownOtherOut = crwCardsOther.users.find(u => u.id === "own");
+ok("card GATE: a crew member CANNOT write ANOTHER user's cards (reverted to stored — no card injected on Ray's account)", !!ownOtherOut && !Object.prototype.hasOwnProperty.call(ownOtherOut, "cards"));
+
 // CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
 // + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
 // server suite proves the client migration is loss-free + sane.

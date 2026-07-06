@@ -81,7 +81,7 @@ function rcptCsvRecord(row, map, vendor, importId) {
   return {
     id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
     receiptId: null, amount: Math.round(amt * 100) / 100, vendor: (store || vendor || "").trim(),
-    date: date, type: null, jobId: null, category: "", paidBy: null, desc: desc,
+    date: date, type: null, jobId: null, category: "", paidBy: null, cardLast4: "", desc: desc,
     uploadedBy: me ? me.id : "", attributedTo: me ? me.id : "", by: me ? (me.username || "") : "",
     status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
     source: "csv", importId: importId || "", csvFp: ""

@@ -34,7 +34,8 @@ function rcptSplitFields(shared, alloc, splitGroup) {
     paidBy: shared.paidBy || null,
     attributedTo: shared.attributedTo || null,
     desc: (alloc.desc != null && alloc.desc !== "") ? alloc.desc : (shared.desc || ""),
-    receiptId: shared.receiptId || null
+    receiptId: shared.receiptId || null,
+    cardLast4: shared.cardLast4 || ""   // js/94: every slice inherits the receipt's card last-4 (auto-attribution)
   };
   if (splitGroup) f.splitGroup = splitGroup;
   return f;
@@ -198,7 +199,8 @@ window.rcptSaveEditSplit = function () {
     attributedTo: ((typeof val === "function") ? val("rcpt_attr") : "") || null,
     category: ((typeof val === "function") ? val("rcpt_cat") : "") || "",
     desc: ((typeof val === "function") ? val("rcpt_desc") : "") || "",
-    receiptId: RCPT_EDIT.receiptId || null
+    receiptId: RCPT_EDIT.receiptId || null,
+    cardLast4: (((typeof val === "function") ? val("rcpt_card4") : "") || "").replace(/\D/g, "").slice(-4)   // js/94: carry the card last-4 onto every slice
   };
   // bucket → routing type + the category marker (🔧 tool → "tools/equipment" overhead; 🚚 → "job"; 🧱 job.materials ignores category)
   const allocations = RCPT_SPLIT.rows.map(r => ({
