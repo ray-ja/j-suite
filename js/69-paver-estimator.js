@@ -58,9 +58,18 @@ function pvPickup(area){
   let loopMi = PAVER_PICKUP_DEF_MI, exact = false, legBP = null, legPS = null, suspect = false;
   const site = pvSiteLatLng();
   if (pv.pickupLat!=null && typeof driveFromBase==="function") {
-    const bp = driveFromBase(pv.pickupLat, pv.pickupLng);                                   // home base → supplier
-    let ps = 0; if (site && typeof haversineMi==="function") { const hv = haversineMi(pv.pickupLat, pv.pickupLng, site.lat, site.lng); if (hv!=null) ps = Math.round(hv*1.3*10)/10; }  // supplier → job site
-    if (bp) {
+    const bp = driveFromBase(pv.pickupLat, pv.pickupLng);                                   // home base → supplier (OSRM road miles, never a ×1.3 guess)
+    // supplier → job site: REAL road miles (OSRM, js/62), NOT a straight-line ×1.3 guess (Ray). Fires the lookup +
+    // gentle re-render if not cached yet. The loop is treated EXACT only when BOTH legs resolve to road miles;
+    // otherwise we fall back to the default/manual estimate below — never a guess.
+    let ps = null;
+    if (site && typeof roadRouteCached==="function") {
+      const psWp = [[pv.pickupLat, pv.pickupLng], [site.lat, site.lng]];
+      const psc = roadRouteCached(psWp);
+      if (typeof psc === "number") ps = Math.round(psc*10)/10;
+      else if (psc !== "none" && typeof roadRouteMiles==="function") roadRouteMiles(psWp, function(mi){ if(mi!=null&&typeof render==="function"){try{render();}catch(e){}} });
+    }
+    if (bp && ps != null) {
       legBP = bp.miles; legPS = ps;
       const geoLoop = Math.round((bp.miles + ps)*10)/10;                                    // base → supplier → site (Ray's spec; no return-to-base leg)
       if (geoLoop > 80 || bp.miles > 60) suspect = true;                                    // absurd for a local pickup → a coord geocoded wrong; fall back to the estimate instead of billing it
