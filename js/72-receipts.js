@@ -19,6 +19,8 @@ const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals"
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
+const AUTO_READ_MAX = 4;                            // Phase B: auto Cap-read only a SMALL upload (≤N photos), when an org AI key exists
+let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
 function rcptReview() { return rcptColl().filter(r => r && !r.deleted && r.status === "review"); }
@@ -236,6 +238,19 @@ function rcptNewReview(receiptId) {
 }
 let _rcptUpBusy = false;
 function rcptSetUpStatus(txt) { const el = document.getElementById("rcpt_upstatus"); if (el) el.textContent = txt || ""; }
+/* Phase B — AUTO Cap-read on a SMALL upload: after a batch finishes, if an org AI key exists AND the batch was
+   ≤ AUTO_READ_MAX photos, kick a NON-BLOCKING capRcptRun({auto:true}). Cost-capped + idempotent (its own busy
+   flag) + owner/admin-gated inside capRcptRun (crew/auto returns silently). No key, a big batch, or offline →
+   the explicit "🤖 Read N" button path is untouched. Never throws. */
+function rcptMaybeAutoRead(n) {
+  try {
+    if (!(n > 0 && n <= AUTO_READ_MAX)) return;
+    if (typeof ORG_AI_ST === "undefined" || !ORG_AI_ST || !ORG_AI_ST.enabled || !ORG_AI_ST.hasKey) return;   // client sees a key EXISTS (never the key)
+    if (typeof capRcptRun !== "function") return;
+    if (typeof _capRcptBusy !== "undefined" && _capRcptBusy) return;   // a read is already running — don't double-fire
+    capRcptRun({ auto: true });   // fire-and-forget; stamps only rec.suggested, then re-renders itself
+  } catch (x) {}
+}
 function rcptUploadFiles(files) {
   files = (files || []);
   // Branch: a purchase-history CSV isn't a photo — parse it into review records (js/93) instead of blob-uploading
@@ -249,7 +264,7 @@ function rcptUploadFiles(files) {
   _rcptUpBusy = true;
   const total = files.length; let pending = total, ok = 0;
   rcptSetUpStatus("Uploading 0/" + total + "…");
-  const done = () => { if (--pending <= 0) { _rcptUpBusy = false; rcptSetUpStatus(""); if (typeof render === "function") render(); } };
+  const done = () => { if (--pending <= 0) { _rcptUpBusy = false; rcptSetUpStatus(""); rcptMaybeAutoRead(ok); if (typeof render === "function") render(); } };
   files.forEach(f => {
     jsUpload(f).then(id => {
       rcptColl().push(rcptNewReview(id));   // one review receipt per photo
@@ -269,6 +284,35 @@ window.rcptDrop = function (e) {
   if (e && e.preventDefault) e.preventDefault();
   const dz = e && e.currentTarget; if (dz && dz.style) dz.style.outline = "";
   rcptUploadFiles((e && e.dataTransfer && e.dataTransfer.files) ? Array.prototype.slice.call(e.dataTransfer.files) : []);
+};
+
+/* ============================== PHASE B — ONE-TAP / BULK FILE (spine funnel) ==============================
+   Both file EXISTING review rows in place through rcptFileSuggestion (js/98) → rcptApplyEdit → a BYTE-IDENTICAL
+   record to a hand save. Explicit human taps = the confirm; nothing auto-files. Owner/admin only. */
+/* one row: "✓ Looks right — file it" on a high-confidence review row */
+window.rcptFileItRow = function (store, jobId, recId) {
+  if (!rcptFinFull()) return;
+  if (typeof rcptFileSuggestion !== "function") return;
+  const res = rcptFileSuggestion(store, jobId || null, recId);   // non-batch → logs + saves itself
+  if (!res || !res.ok) alert("Couldn't file this one automatically — open it to finish by hand." + (res && res.error ? "\n\n" + res.error : ""));
+  if (typeof render === "function") render();
+};
+/* bulk: file every confident review row at once, then ONE save() + render(). Low-confidence rows stay in the
+   queue; idempotent (each filed row leaves review, so a re-run skips it). */
+window.rcptFileAllConfident = function () {
+  if (!rcptFinFull()) return;
+  if (typeof rcptFileSuggestion !== "function" || typeof rcptSuggestionOneTapOk !== "function") return;
+  if (_rcptBulkBusy) return;
+  const rows = rcptReview().filter(rcptSuggestionOneTapOk);
+  if (!rows.length) return;
+  _rcptBulkBusy = true;
+  let filed = 0;
+  try {
+    rows.forEach(r => { const res = rcptFileSuggestion(r.store || "review", r.jobId, r.id, { batch: true }); if (res && res.ok) filed++; });
+    if (filed && typeof logChange === "function") logChange("update", "expense", "bulk", "Filed " + filed + " confident Cap receipt" + (filed === 1 ? "" : "s") + " in one tap (bulk)");
+    if (typeof save === "function") save();
+  } finally { _rcptBulkBusy = false; }
+  if (typeof render === "function") render();
 };
 
 /* ============================== SORT ============================== */
@@ -331,6 +375,14 @@ function rReceipts() {
 
   if (reviewCount) h += `<div class="card" style="border-left:4px solid var(--accent)"><b>🕓 ${reviewCount} receipt${reviewCount > 1 ? "s" : ""} need${reviewCount > 1 ? "" : "s"} review</b> — untagged uploads. Tap one to set vendor, amount, type &amp; job.</div>`;
   if (typeof capRcptButtonHTML === "function") h += capRcptButtonHTML();   // 🤖 Cap: categorize needs-review (owner/admin only)
+  // ✓ FILE ALL N CONFIDENT (Phase B) — every review row Cap is confident about (rcptSuggestionOneTapOk) files in
+  // one tap through the SAME spine funnel; low-confidence ones stay in the queue. Owner/admin only.
+  if (rcptFinFull() && typeof rcptSuggestionOneTapOk === "function") {
+    const confN = rcptReview().filter(rcptSuggestionOneTapOk).length;
+    if (confN) h += `<div class="card" style="border-left:4px solid #1e9e5a"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="grow" style="white-space:normal"><b>✓ ${confN} confident receipt${confN > 1 ? "s" : ""} ready to file</b><div class="sub">Cap is confident about ${confN > 1 ? "these" : "this one"} (high confidence · real amount · job resolved or business). File ${confN > 1 ? "them all" : "it"} in one tap — anything iffy stays in the queue for you to review.</div></div>
+      <button class="btn sm" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff" onclick="rcptFileAllConfident()">✓ File all ${confN} confident</button></div></div>`;
+  }
   const suggCount = rows.filter(r => r && r.suggested).length;
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + description filed more than once. Flagged in the table; open &amp; delete the extras.</div>`;
@@ -384,9 +436,14 @@ function rcptTableHTML(rows, dups) {
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
   const splitGroups = rcptSplitGroupMap();
+  const canFileIt = rcptFinFull();   // one-tap "file it" is owner/admin only (crew never see this table)
   rows.slice(0, 500).forEach(r => {
     const m = rcptRowMeta(r);
     const isDup = !!(r.amount && dups[rcptDupKey(r)]);
+    // Phase B — a REVIEW row Cap is confident about gets a prominent green one-tap "file it" (in addition to the
+    // row opening the modal on tap). Files through rcptFileSuggestion → the spine funnel → byte-identical record.
+    const oneTap = canFileIt && r.store === "review" && typeof rcptSuggestionOneTapOk === "function" && rcptSuggestionOneTapOk(r);
+    const fileItBtn = oneTap ? `<div style="margin-top:5px"><button class="btn sm" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff;white-space:normal" onclick="event.stopPropagation();rcptFileItRow('${r.store}','${r.jobId || ""}','${r.recId}')">✓ Looks right — file it</button></div>` : "";
     const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money2(r.amount);
     const d = rcptDate(r);
     const statusBadge = m.status === "review"
@@ -398,7 +455,7 @@ function rcptTableHTML(rows, dups) {
         : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${isDup ? ";background:var(--danger-soft,#fdecea)" : ""}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${fileItBtn}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(RCPT_TYPE_LABEL[m.type] || m.type)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`}</td>

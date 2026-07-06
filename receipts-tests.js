@@ -730,6 +730,56 @@ async function main() {
   ok("job-type, no suggested job but clocked-in job resolves → ok", rcptSuggestionOneTapOk({ suggested: { confidence: 0.9, amount: 50, type: "job-expense", vendor: "X" } }) === true);
   OPEN_SHIFT = null;
 
+  // ================= PHASE B — ONE-TAP + BULK FILE (js/72 + js/88, funneled through the js/98 spine) =================
+  console.log("\n— PHASE B: one-tap file lands a confident review row in the right home, BYTE-IDENTICAL to a hand save —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  const handFieldsB = { type: "business", jobId: null, amount: 120, vendor: "CostcoBiz", date: "2026-07-01", category: "office/admin", desc: "paper", paidBy: null, receiptId: "blobBB", cardLast4: "", isDeposit: false, kind: "" };
+  const handRefB = handSave(handFieldsB).rec;   // the manual save (handSave resets the store)
+  resetStore();
+  const sugB = { confidence: 0.9, amount: 120, type: "business", vendor: "CostcoBiz", date: "2026-07-01", category: "office/admin", desc: "paper" };
+  const revB = seedReview({ receiptId: "blobBB", suggested: sugB });
+  ok("predicate gates the button: confident business row → one-tap OK", rcptSuggestionOneTapOk(revB) === true);
+  rcptFileItRow("review", null, revB.id);
+  const filedBizB = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobBB");
+  ok("one-tap → landed in org expenses[] (business home)", !!filedBizB);
+  ok("one-tap → the review row left the queue (tombstoned)", rcptReview().every(r => r.id !== revB.id));
+  const eqB = filedBizB && JSON.stringify(stripVol(filedBizB)) === JSON.stringify(stripVol(handRefB));
+  ok("one-tap filed record is BYTE-IDENTICAL to the hand save (minus id/ts)", eqB, eqB ? undefined : { oneTap: stripVol(filedBizB), hand: stripVol(handRefB) });
+
+  console.log("— PHASE B: rcptFileAllConfident files EVERY confident row in ONE save, LEAVES low-confidence in review —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  seedReview({ receiptId: "blobC1", suggested: { confidence: 0.9, amount: 60, type: "business", vendor: "Lowe's", category: "materials", desc: "screws" } });
+  seedReview({ receiptId: "blobC2", suggested: { confidence: 0.88, amount: 45, type: "job-expense", jobId: "j1", vendor: "DumpCo", category: "disposal", desc: "dump" } });
+  seedReview({ receiptId: "blobLo", suggested: { confidence: 0.5, amount: 20, type: "business", vendor: "Gas", category: "fuel" } });
+  seedReview({ receiptId: "blobNo" });   // no suggestion at all
+  let bulkSaves = 0; const _origSave = global.save; global.save = function () { bulkSaves++; };
+  rcptFileAllConfident();
+  global.save = _origSave;
+  ok("bulk → exactly ONE save() for the whole batch", bulkSaves === 1, bulkSaves);
+  ok("bulk → c1 (business) filed into org expenses[]", (STORE.expenses || []).some(e => e && !e.deleted && e.receiptId === "blobC1"));
+  ok("bulk → c2 (job-expense) filed into job j1 expenses[]", ((STORE.jobs.find(j => j.id === "j1") || {}).expenses || []).some(e => e && !e.deleted && e.receiptId === "blobC2"));
+  const stillReviewIds = rcptReview().map(r => r.receiptId);
+  ok("bulk → LOW-confidence row stays in review", stillReviewIds.indexOf("blobLo") >= 0);
+  ok("bulk → no-suggestion row stays in review", stillReviewIds.indexOf("blobNo") >= 0);
+  ok("bulk → confident rows left review", stillReviewIds.indexOf("blobC1") < 0 && stillReviewIds.indexOf("blobC2") < 0);
+  let bulkSaves2 = 0; global.save = function () { bulkSaves2++; };
+  rcptFileAllConfident();   // idempotent — nothing confident left to file
+  global.save = _origSave;
+  ok("bulk re-run → nothing to file, no save() (idempotent)", bulkSaves2 === 0, bulkSaves2);
+
+  console.log("— PHASE B: rcptTableHTML renders the one-tap 'file it' button on a confident review row (gated by the predicate) —");
+  global.money2 = function (n) { return "$" + (+n || 0).toFixed(2); };   // js/02 helper (not loaded here)
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  const smokeRow = seedReview({ receiptId: "blobSmoke", suggested: { confidence: 0.9, amount: 99, type: "business", vendor: "SmokeCo", category: "other", desc: "x" } });
+  const tblSmoke = rcptTableHTML(rcptAllRows(), {});
+  ok("table shows a 'file it' button wired to rcptFileItRow on the confident row", /file it/.test(tblSmoke) && /rcptFileItRow\(/.test(tblSmoke));
+  rcptFileItRow("review", smokeRow.jobId || "", smokeRow.id);
+  ok("tapping 'file it' filed the smoke receipt (left review + landed in a home)", rcptReview().every(r => r.id !== smokeRow.id) && (STORE.expenses || []).some(e => e && e.receiptId === "blobSmoke"));
+  resetStore();
+  seedReview({ receiptId: "blobLow2", suggested: { confidence: 0.4, amount: 10, type: "business", vendor: "L", category: "other" } });
+  const tblLow = rcptTableHTML(rcptAllRows(), {});
+  ok("table shows NO 'file it' button on a LOW-confidence row", !/rcptFileItRow\(/.test(tblLow));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
