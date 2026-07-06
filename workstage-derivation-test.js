@@ -26,7 +26,11 @@ JOBS = [
   { id: "je", done: true, crew: ["u1", "u2"], receiptsClosedBy: [{ userId: "u1" }] },      // done, only 1/2 closed → expense collecting
   { id: "jc", done: true, crew: ["u1"], receiptsClosedBy: [{ userId: "u1" }] },             // done, fully closed → invoice-ready
   { id: "jn", done: true, crew: [] },                                                        // done, NO active crew → invoice-ready (edge)
-  { id: "ja", done: false, crew: ["u1"] }                                                    // accepted, not done → job
+  { id: "ja", done: false, crew: ["u1"] },                                                   // accepted, not done → job
+  // done + 1/2 crew still open BUT the owner explicitly signed off "all expenses collected" → invoice (past the slow crew member)
+  { id: "js", done: true, crew: ["u1", "u2"], receiptsClosedBy: [{ userId: "u1" }], expensesCollected: true },
+  // done + open crew + PAID: paid wins regardless of the sign-off (payment decoupled)
+  { id: "jp", done: true, crew: ["u1", "u2"], receiptsClosedBy: [{ userId: "u1" }], expensesCollected: false }
 ];
 
 // ---- one quote per state + the expected derived stage ----
@@ -37,7 +41,10 @@ const CASES = [
   ["done, receipts fully closed",    { id: "qc", jobId: "jc" },                 "invoice"],
   ["invoiced (not paid)",            { id: "qi", invoiced: true },              "invoice"],
   ["paid",                           { id: "qp", paid: true },                  "paid"],
-  ["done job with NO crew (edge)",   { id: "qn", jobId: "jn" },                 "invoice"]
+  ["done job with NO crew (edge)",   { id: "qn", jobId: "jn" },                 "invoice"],
+  // NEW — the payment/expense DECOUPLE sign-offs (js/60):
+  ["done, crew open, owner signed off expenses → invoice", { id: "qs", jobId: "js" },              "invoice"],
+  ["paid + expenses NOT collected → still paid (decoupled)", { id: "qpx", paid: true, jobId: "jp" }, "paid"]
 ];
 
 let pass = 0, fail = 0;

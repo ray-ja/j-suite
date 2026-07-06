@@ -34,11 +34,15 @@ const workStageMeta = {
 /* DERIVED stage for a quote — first match wins:
      paid     = q.paid
      invoice  = q.invoiced, OR (job done AND its receipts fully closed), OR (job done with NO active crew to
-                gate on — the edge case, so a crewless done job can't stick in expense-collecting forever)
+                gate on — the edge case, so a crewless done job can't stick in expense-collecting forever), OR
+                (job done AND the owner EXPLICITLY signed off "all expenses collected", job.expensesCollected —
+                so a slow crew member's un-closed receipts don't hold the pipeline in expense-collecting once
+                the owner has confirmed the expenses are all in; payment was never blocked by this either way)
      expense  = job done, receipts NOT fully closed, not yet invoiced (still gathering crew receipts)
      job      = accepted or has a job, not yet done
      quote    = a quote exists and none of the above (sent, awaiting yes)
-   All helper calls are typeof-guarded so this is safe under node / partial loads. */
+   All helper calls / new field reads are typeof-guarded so this is safe under node / partial loads. workStage
+   still STORES nothing — expensesCollected is an additive job flag billing/finance never read. */
 function workStage(q) {
   if (!q) return "quote";
   if (q.paid) return "paid";
@@ -46,8 +50,9 @@ function workStage(q) {
   const jobDone = !!(job && job.done);
   const fullyClosed = jobDone && (typeof jobReceiptsFullyClosed === "function") && jobReceiptsFullyClosed(job);
   const activeCrew = (job && typeof jobCrewActiveIds === "function") ? jobCrewActiveIds(job).length : 0;
-  const noCrew = jobDone && activeCrew === 0;   // nobody to close out → skip the close-out gate (invoice-ready)
-  if (q.invoiced || (jobDone && (fullyClosed || noCrew))) return "invoice";
+  const noCrew = jobDone && activeCrew === 0;                       // nobody to close out → skip the close-out gate (invoice-ready)
+  const signedOff = !!(job && job.expensesCollected);              // owner's explicit "all expenses collected" sign-off (additive flag)
+  if (q.invoiced || (jobDone && (fullyClosed || noCrew || signedOff))) return "invoice";
   if (jobDone) return "expense";
   if (q.accepted || q.jobId) return "job";
   return "quote";
@@ -63,6 +68,16 @@ function workStageLabel(q) {
       const crew = jobCrewActiveIds(job).length;
       const open = (typeof jobReceiptsOpenCrew === "function") ? jobReceiptsOpenCrew(job).length : crew;
       if (crew) return m.label + " · " + (crew - open) + "/" + crew + " crew closed";
+    }
+  }
+  // A job that's already moved past collecting (invoiced/paid) but whose expenses AREN'T signed-off collected,
+  // with crew still open, keeps a subtle "· expenses open" flag so the Jobs table doesn't drop the follow-up on
+  // the slow crew member. The stage itself is UNCHANGED (paid stays paid) — this only annotates the label, and
+  // only fires when a LINKED, DONE job has open crew and no owner sign-off (so no existing label shifts).
+  if (st === "invoice" || st === "paid") {
+    const job = workStageJob(q);
+    if (job && job.done && !job.expensesCollected && typeof jobReceiptsOpenCrew === "function" && jobReceiptsOpenCrew(job).length > 0) {
+      return m.label + " · expenses open";
     }
   }
   return m.label;
