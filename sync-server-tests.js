@@ -1556,6 +1556,46 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   const corrupted = oldBuggyConcat(payload, emojiByte + 1);
   ok("control: the old body+=chunk pattern DID corrupt (boundary -> ���) — confirms root cause", corrupted !== payload && corrupted.includes("�"), corrupted.slice(emojiByte - 4, emojiByte + 8));
 
+  // ---- CAP TODAY (Phase 1, read-only /api/org-ai/assistant) — user/org-scoped context + gate + no-network guard ----
+  console.log("\n— Cap Today (read-only assistant) —");
+  const capToday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const capStore = {
+    obx: {
+      jobs: [
+        { id: "jobA", title: "Nags Head cleanout", date: capToday, crew: ["joe", "sam"], time: "08:00", customerId: "c1", updatedAt: 1 },
+        { id: "jobT", title: "Teammate-only paver", date: capToday, crew: ["sam"], time: "09:00", updatedAt: 1 }
+      ],
+      customers: [{ id: "c1", name: "Mike Green" }], properties: [],
+      timeclock: [{ id: "tc1", userId: "joe", clockIn: Date.now() - 3600000, clockOut: null, jobId: "jobA", vehicle: "Ram 2500", updatedAt: 1 }],
+      docs: [{ id: "homeBase", label: "The shop" }], places: [{ id: "p1", label: "Transfer station" }]
+    },
+    jam: { jobs: [{ id: "jobJam", title: "Jamieson secret job", date: capToday, crew: ["joe"], time: "07:00", updatedAt: 1 }] },
+    registry: [{ id: "obx", name: "OBX Lot Solutions" }, { id: "jam", name: "Jamieson" }],
+    users: [
+      { id: "joe", username: "Joe", role: "crew", updatedAt: 1 },
+      { id: "sam", username: "Sam", role: "crew", updatedAt: 1 },
+      { id: "stranger", username: "Stranger", role: "crew", updatedAt: 1 },
+      { id: "mem_obx_joe", kind: "membership", orgId: "obx", accountId: "joe", role: "crew", active: true, updatedAt: 1 }
+    ]
+  };
+  const capCtx = t.capTodayContext(capStore, "obx", "joe");
+  ok("capTodayContext names the user + role + org", capCtx.indexOf("Joe") >= 0 && capCtx.indexOf("role: crew") >= 0 && capCtx.indexOf("OBX Lot Solutions") >= 0, capCtx.split("\n").slice(0, 2));
+  ok("capTodayContext includes the user's OWN job today (with customer + route context)", capCtx.indexOf("Nags Head cleanout") >= 0 && capCtx.indexOf("Mike Green") >= 0, capCtx);
+  ok("capTodayContext reflects the OPEN shift (clocked in)", /CLOCKED IN/.test(capCtx) && capCtx.indexOf("Ram 2500") >= 0, capCtx.split("\n").filter(l => /Clock state/.test(l)));
+  ok("capTodayContext surfaces home base + saved places (the shop / transfer station)", capCtx.indexOf("The shop") >= 0 && capCtx.indexOf("Transfer station") >= 0, capCtx);
+  ok("capTodayContext EXCLUDES a teammate-only job (user-scoped, not on joe's crew)", capCtx.indexOf("Teammate-only paver") < 0, capCtx);
+  ok("capTodayContext EXCLUDES the OTHER org's job (org-scoped isolation)", capCtx.indexOf("Jamieson secret job") < 0, capCtx);
+  ok("capTodayContext carries no finance/pay lines (read-only, no money leak)", !/\$\d/.test(capCtx) && capCtx.indexOf("payout") < 0, capCtx);
+  // member-gate (the endpoint's 403 predicate: orgsForUser(store, acct).indexOf(org) < 0)
+  ok("assistant member-gate: a member passes for their org (joe ∈ obx)", t.orgsForUser(capStore, t.accountById(capStore, "joe")).indexOf("obx") >= 0);
+  ok("assistant member-gate: a member of obx is a NON-member of jam → 403", t.orgsForUser(capStore, t.accountById(capStore, "joe")).indexOf("jam") < 0);
+  ok("assistant member-gate: a stranger with no membership → 403 everywhere", t.orgsForUser(capStore, t.accountById(capStore, "stranger")).length === 0);
+  // callAnthropicAssistant: trims to a valid leading user turn; returns a friendly opener WITHOUT a network call
+  let capR1 = null, capR2 = null;
+  t.callAnthropicAssistant("k", "m", "sys", [{ role: "assistant", content: "hi" }], (e, r) => { capR1 = r; });
+  t.callAnthropicAssistant("k", "m", "sys", [], (e, r) => { capR2 = r; });
+  ok("callAnthropicAssistant early-returns (no network) when there's no leading user turn", typeof capR1 === "string" && /help/i.test(capR1) && typeof capR2 === "string", [capR1, capR2]);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
