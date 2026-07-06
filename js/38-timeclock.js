@@ -229,44 +229,38 @@ async function tcPingTick() {
    before the first await, a 20s watchdog so a hung GPS fix can never permanently soft-lock the button, and
    the button disables/relabels so a slow save is visibly in-flight, not stuck. */
 let _tcInBusy = false, _tcInWatchdog = null;
-window.tcClockIn = async function () {
-  if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
-  const jobId = val("tc_job");
-  if (!jobId) { alert("Pick the job you're working on."); return; }
+/* PROGRAMMATIC CLOCK-IN CORE (shared by the DOM handler AND Cap-Today's confirm-cards). Builds the entry record
+   from an args object instead of reading the DOM — {jobId, role?, veh?|vehicle?, trailerId?, rodeWith?, odoStart?,
+   loc?}. Owns the SAME submit-lock (_tcInBusy + 20s watchdog), the SAME work-day union, save + tcPingStart. Returns
+   {ok:true, entry} or {ok:false, error} (never alerts, never render()s — the caller decides). `veh` may be a
+   resolved {vehicleId,vehicleOwnerId,vehicle,invVehicleId} object; else `vehicle` is an encoded picker value we
+   resolve via tcResolveVehicle. `loc` (if provided, incl. null) skips the GPS await. The DOM wrapper below passes
+   exactly what it read from the form, so the record is BYTE-IDENTICAL to the pre-refactor path. */
+window.tcClockInWith = async function (args) {
+  args = args || {};
+  if (_tcInBusy) return { ok: false, error: "busy" };   // a clock-in save is already in flight
+  const jobId = args.jobId;
+  if (!jobId) return { ok: false, error: "no-job" };
   const who = tcWho();
-  if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
+  if (tcOpenShift(who.userId)) return { ok: false, error: "already-open" };
   // RIDER ROLE — only the DRIVER logs a vehicle's miles. A passenger / no-vehicle shift carries NO vehicle, so the
-  // truck is never double-counted. Default to driver if the form predates the picker (defensive).
-  let role = val("tc_role") || "driver";
+  // truck is never double-counted. Default to driver if the caller predates the picker (defensive).
+  let role = args.role || "driver";
   let veh = { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
   let trailerId = null, rodeWith = null, odoStart = null;
   if (role === "driver") {
-    veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
-    /* BUG FIX (vehicleId not attaching): the clock-in form's vehicle <select> is built by
-       tcDriverVehicleOptions(), which is supposed to ALWAYS force-select a real option for the driver role —
-       but if the org genuinely has zero assignable vehicles at render time (no company trucks AND no crew
-       members resolvable — e.g. a transient membership-list read, or an org that hasn't set up a truck yet),
-       that function has nothing to select and the <select> renders with ZERO <option>s. Reading its .value
-       then silently returns "", tcResolveVehicle("") resolves to {vehicleId:null, vehicleOwnerId:null,
-       vehicle:""}, and — until this fix — the code proceeded anyway: riderRole:"driver" saved with NO vehicle
-       attached at all (confirmed against the June 30 prod incident, reproduced in timeclock-regression-tests.js).
-       Never silently save that combination — block and say so, so it's fixed instead of discovered at
-       clock-out ("No vehicle on this shift"). */
-    if (!veh.vehicleId && !veh.vehicleOwnerId && !veh.vehicle) {
-      alert(tcHasVehicleOptions() ? "Pick a vehicle before clocking in as the driver (or switch to Passenger / No vehicle)." : "No vehicles are set up for this crew yet — ask the owner to add one in Admin, or pick Passenger / No vehicle instead.");
-      return;
-    }
-    trailerId = val("tc_trailer") || null;   // optional towed trailer (no odometer)
-    // Odometer NEVER blocks clock-in (you may not be in the truck yet). It's optional here; a header reminder
-    // (js/85) nags until it's entered. Only read it if a value was typed.
-    const o = parseFloat(val("tc_odo_start")); if (o >= 0) odoStart = o;
+    veh = (args.veh && typeof args.veh === "object") ? args.veh : tcResolveVehicle(args.vehicle != null ? args.vehicle : "", who.userId);
+    // never silently save a driver shift with NO vehicle attached (June 30 prod incident) — block + report.
+    if (!veh.vehicleId && !veh.vehicleOwnerId && !veh.vehicle) return { ok: false, error: "no-vehicle" };
+    trailerId = args.trailerId || null;   // optional towed trailer (no odometer)
+    // Odometer NEVER blocks clock-in (you may not be in the truck yet). Only take it if a value was passed.
+    const o = parseFloat(args.odoStart); if (o >= 0) odoStart = o;
   } else if (role === "passenger") {
-    rodeWith = val("tc_rodewith") || null;   // who drove (record-only); this person logs NO miles
+    rodeWith = args.rodeWith || null;   // who drove (record-only); this person logs NO miles
   }   // role === "none": no vehicle, no mileage
-  const btn = document.getElementById("tc_inbtn");
-  _tcInBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
-  clearTimeout(_tcInWatchdog); _tcInWatchdog = setTimeout(function () { _tcInBusy = false; }, 20000); // safety: never permanently soft-lock the button if GPS hangs
-  const loc = await tcGetPos();
+  _tcInBusy = true;
+  clearTimeout(_tcInWatchdog); _tcInWatchdog = setTimeout(function () { _tcInBusy = false; }, 20000); // safety: never permanently soft-lock if GPS hangs
+  const loc = (args.loc !== undefined) ? args.loc : await tcGetPos();
   const e = {
     id: uid(), jobId: jobId, userId: who.userId, userName: who.name,
     clockIn: now(), clockOut: null,
@@ -292,7 +286,37 @@ window.tcClockIn = async function () {
     }
   } catch (ex) {}
   clearTimeout(_tcInWatchdog); _tcInBusy = false;
-  save(); tcPingStart(); render();
+  save(); tcPingStart();
+  return { ok: true, entry: e };
+};
+window.tcClockIn = async function () {
+  if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
+  const jobId = val("tc_job");
+  if (!jobId) { alert("Pick the job you're working on."); return; }
+  const who = tcWho();
+  if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
+  // RIDER ROLE — only the DRIVER logs a vehicle's miles (default driver if the form predates the picker).
+  let role = val("tc_role") || "driver";
+  let veh = { vehicleId: null, vehicleOwnerId: null, vehicle: "" };
+  let trailerId = null, rodeWith = null, odoStart = null;
+  if (role === "driver") {
+    veh = tcResolveVehicle(val("tc_vehicle"), who.userId);   // {vehicleId, vehicleOwnerId, vehicle}
+    /* BUG FIX (vehicleId not attaching, June 30 prod incident): never silently save riderRole:"driver" with an
+       empty vehicle — block + say so (the shared core also refuses, but we alert here where we can name why). */
+    if (!veh.vehicleId && !veh.vehicleOwnerId && !veh.vehicle) {
+      alert(tcHasVehicleOptions() ? "Pick a vehicle before clocking in as the driver (or switch to Passenger / No vehicle)." : "No vehicles are set up for this crew yet — ask the owner to add one in Admin, or pick Passenger / No vehicle instead.");
+      return;
+    }
+    trailerId = val("tc_trailer") || null;   // optional towed trailer (no odometer)
+    const o = parseFloat(val("tc_odo_start")); if (o >= 0) odoStart = o;   // odometer never blocks clock-in
+  } else if (role === "passenger") {
+    rodeWith = val("tc_rodewith") || null;   // who drove (record-only); this person logs NO miles
+  }   // role === "none": no vehicle, no mileage
+  const btn = document.getElementById("tc_inbtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
+  // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping (byte-identical)
+  await tcClockInWith({ jobId: jobId, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  render();
 };
 /* clock-out (and — when contJobId is given — the "close the old segment" half of Change Job, see below) share
    this SAME modal: a driver shift asks for the ending odometer (or "use GPS estimate"), a no-vehicle shift is
@@ -412,6 +436,33 @@ window.tcClockOutGps = function (id) {
   // from the OTHER device that actually clocked in) over a desktop one; never overwrite a better fix already set.
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
+/* PROGRAMMATIC CLOCK-OUT CORE (shared by the DOM handler AND Cap-Today's confirm-cards). Closes an open entry:
+   tcFinalizeSegment(e, odoEnd) + touch + tcPingStop + logChange + save + the best-effort out-location capture.
+   Enforces the SAME odoEnd≥odoStart rule as the DOM path — returns {ok:false, error:"odo-low"} (a real error the
+   caller surfaces) rather than silently rejecting; {ok:false, error:"odo-required"} if a driving shift has no
+   ending odometer. `opts.odoEnd` may be null (a no-vehicle close, or the GPS-estimate path handled elsewhere).
+   Never render()s — the caller decides. Byte-identical result to the pre-refactor tcFinishClockOut. */
+function tcClockOutWith(entryId, opts) {
+  opts = opts || {};
+  const e = tcoll().find(x => x.id === entryId); if (!e || e.clockOut) return { ok: false, error: "not-open" };
+  const hasVeh = tcEntryHasVehicle(e);
+  let odoEnd = null;
+  if (hasVeh) {
+    const raw = opts.odoEnd;
+    if (raw == null || raw === "") return { ok: false, error: "odo-required" };
+    odoEnd = parseFloat(raw);
+    if (!(odoEnd >= 0)) return { ok: false, error: "odo-required" };
+    if (e.odoStart != null && odoEnd < e.odoStart) return { ok: false, error: "odo-low", odoStart: e.odoStart };
+  }
+  tcFinalizeSegment(e, odoEnd);
+  touch(e); tcPingStop();
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
+  save();
+  // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out.
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+  return { ok: true, entry: e };
+}
+if (typeof window !== "undefined") window.tcClockOutWith = tcClockOutWith;
 window.tcFinishClockOut = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) return;
   const hasVeh = tcEntryHasVehicle(e);
@@ -422,15 +473,9 @@ window.tcFinishClockOut = function (id) {
     if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
   }
   if (typeof closeModal === "function") closeModal();
-  tcFinalizeSegment(e, odoEnd);
-  touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
-  save(); render();
-  // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out.
-  // Cross-device: prefer a mobile-tagged fix (this capture, or the last foreground ping, which may be from the
-  // OTHER device) over a desktop one; if nothing usable exists on either device, this just stays unset — an
-  // honest estimate gap (the job-level planned drive-miles estimate still covers costing; see jobMilesCost).
-  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+  // delegate the close (finalize + log + save + out-location) to the shared core — byte-identical record
+  tcClockOutWith(id, { odoEnd: hasVeh ? odoEnd : null });
+  render();
 };
 
 /* ===== FEATURE: "Change job" — the active shift is really ONE continuous work session (same truck, same
@@ -900,14 +945,15 @@ window.tcEnterStartOdo = function () {
     <button class="btn acc" style="margin-top:14px" onclick="tcSaveLateOdo('${e.id}')">Save odometer</button>`);
   setTimeout(function () { const el = document.getElementById("tc_late_odo"); if (el) el.focus(); }, 30);
 };
-window.tcSaveLateOdo = function (id) {
-  const e = tcoll().find(x => x.id === id); if (!e) return;
-  const o = parseFloat(val("tc_late_odo"));
-  if (!(o >= 0)) {
-    const errEl = document.getElementById("tc_late_odo_err");
-    if (errEl) { errEl.textContent = "Enter a number for the odometer."; errEl.style.display = ""; }
-    return;
-  }
+/* PROGRAMMATIC LATE-START-ODOMETER CORE (shared by the DOM handler AND Cap-Today). Anchors a starting odometer
+   typed mid-shift: recompute accrued GPS miles FRESH, back-date odoStart so the odometer-delta still captures the
+   whole shift, stamp the audit fields, touch + logChange + save. Returns {ok:false, error:"nan"} on a bad number,
+   {ok:false, error:"not-found"} on a missing entry, else {ok:true, entry}. Never render()s. Byte-identical result
+   to the pre-refactor tcSaveLateOdo. */
+function tcSetStartOdo(entryId, miles) {
+  const e = tcoll().find(x => x.id === entryId); if (!e) return { ok: false, error: "not-found" };
+  const o = parseFloat(miles);
+  if (!(o >= 0)) return { ok: false, error: "nan" };
   // recompute accrued FRESH at save time (not the value shown when the modal opened) — a ping could have
   // landed while the modal was open, and the anchor needs to reflect miles driven up to THIS moment.
   const accrued = tcRound(tcComputeMiles(e));
@@ -917,7 +963,21 @@ window.tcSaveLateOdo = function (id) {
   e.odoStartEnteredAt = now(); e.odoStartReading = o; e.odoStartAccruedAtEntry = accrued;   // auditable provenance
   touch(e);
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Entered start odometer " + o + (accrued > 0.3 ? " (anchored −" + accrued + " mi already driven)" : "") + " — " + tcJobTitle(e.jobId));
-  save(); if (typeof closeModal === "function") closeModal(); render();
+  save();
+  return { ok: true, entry: e };
+}
+if (typeof window !== "undefined") window.tcSetStartOdo = tcSetStartOdo;
+window.tcSaveLateOdo = function (id) {
+  const o = parseFloat(val("tc_late_odo"));
+  const r = tcSetStartOdo(id, o);
+  if (!r.ok) {
+    if (r.error === "nan") {
+      const errEl = document.getElementById("tc_late_odo_err");
+      if (errEl) { errEl.textContent = "Enter a number for the odometer."; errEl.style.display = ""; }
+    }
+    return;
+  }
+  if (typeof closeModal === "function") closeModal(); render();
 };
 
 /* ===== owner: edit / confirm an entry's mileage + vehicle ===== */
