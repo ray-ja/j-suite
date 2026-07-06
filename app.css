@@ -280,8 +280,10 @@
     nav button{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:14px;padding:15px 24px;font-size:15px;width:100%}
     nav button.on{color:var(--brand-text);background:rgba(127,141,160,.14);box-shadow:inset 4px 0 0 var(--brand-text)}
     nav .ic{font-size:20px}
-    .wrap{margin-left:224px;max-width:1180px;padding:26px 40px}
-    #pushbanner{margin-left:224px}
+    /* center the content in the space to the RIGHT of the 224px fixed sidebar (clears the sidebar on
+       narrow desktops, centers on wide ones) — 478 = 1180/2 - 224/2, so the block centers in [224px,100vw] */
+    .wrap{max-width:1180px;margin-left:max(224px,calc(50vw - 478px));margin-right:auto;padding:26px 40px}
+    #pushbanner{max-width:1180px;margin-left:max(224px,calc(50vw - 478px));margin-right:auto}
     h2{font-size:14px}
     .nm{font-size:17px}.sub{font-size:14px}
     .card{padding:18px 22px;margin-bottom:12px}
@@ -292,7 +294,7 @@
     .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 28px}
     .empty{padding:60px 16px}
   }
-  @media(min-width:1400px){ .wrap{max-width:1320px} .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)} }
+  @media(min-width:1400px){ .wrap,#pushbanner{max-width:1320px;margin-left:max(224px,calc(50vw - 548px))} .grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)} }
   /* DEV env banner (js/55) — fixed 24px top bar; shift the sticky header + fixed desktop sidebar + body
      down by its height so they stay aligned. Rules apply ONLY when body.has-dev-banner is set (dev-only;
      prod never gets the class, so zero prod impact). */
