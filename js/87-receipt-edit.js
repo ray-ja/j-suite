@@ -197,7 +197,15 @@ window.rcptApplySuggestion = function () {
   if (s.last4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card
   if (s.refund) { const el = document.getElementById("rcpt_refund"); if (el) el.checked = true; }
   if (s.deposit) { const el = document.getElementById("rcpt_deposit"); if (el) el.checked = true; if (!val("rcpt_cat")) set("rcpt_cat", "rentals"); }   // rental deposit → nudge category (save also nudges)
-  const b = document.getElementById("rcpt_suggbanner"); if (b) b.innerHTML = `<span class="sub" style="color:#fff">✓ Cap's guess applied — review the fields and tap Save to confirm.</span>`;
+  // Cap SPLIT SUGGESTION (js/92) — a MIXED receipt (≥2 buckets, e.g. materials + a reusable tool). OPEN the
+  // split editor PRE-FILLED from Cap's balanced allocations for the owner to review + tap "Save splits".
+  // Cap proposes, the owner confirms — this never auto-commits. <2 splits → the single-categorization above stands.
+  let banner = "✓ Cap's guess applied — review the fields and tap Save to confirm.";
+  if (s.splits && Array.isArray(s.splits) && s.splits.length >= 2 && typeof rcptSplitStartFromSuggestion === "function") {
+    rcptSplitStartFromSuggestion(s.splits, s.jobId || "");
+    banner = "✓ Cap split this into " + s.splits.length + " parts — review the amounts + jobs, then tap Save splits.";
+  }
+  const b = document.getElementById("rcpt_suggbanner"); if (b) b.innerHTML = `<span class="sub" style="color:#fff">${esc(banner)}</span>`;
 };
 window.rcptReplacePhoto = function (input) {
   const file = input && input.files && input.files[0]; if (!file) return;
