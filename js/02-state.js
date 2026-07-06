@@ -408,7 +408,7 @@ window.createOrgPrompt=function(){
   const id=createOrg(name);
   if(id){ if(typeof closeModal==="function")closeModal(); if(typeof setBiz==="function")setBiz(id); if(typeof scheduleAutoPush==="function")scheduleAutoPush(); alert("Created “"+orgName(id)+"”. You're now working in it."); }
 };
-function money(n){return "$"+(Math.round(n)).toLocaleString()}
+function money(n){ n=Math.round(+n||0); return (n<0?"-$":"$")+Math.abs(n).toLocaleString(); }   /* sign-correct: "-$90" not "$-90"; byte-identical for every n>=0 (fingerprint-neutral) */
 /* COGS layer — Part 3: render helpers (Cost/Price/Profit/Margin strip + floor warning). */
 function cogsStrip(price, cost){
   const profit = price - cost, margin = price>0 ? profit/price : 0;

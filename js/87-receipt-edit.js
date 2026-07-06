@@ -60,6 +60,16 @@ function rcptBuildRecord(home, id, fields, carry) {
   // set only when N>1 by js/92 rcptApplySplit) so the table can group them back under one receipt. Purely
   // additive on ALL homes — old records lack it, no migration, no fingerprint reads it. (js/92-receipt-split.js)
   if (fields.splitGroup) base.splitGroup = fields.splitGroup;
+  // RENTAL DEPOSIT / REFUND (js/96 HOLD-OUT): additive flags — isDeposit (a refundable rental deposit), depositSettled
+  // (the owner has reconciled it), refundOfId (the deposit id a refund offsets), kind ("refund" = a negative credit).
+  // Form value wins when the key is present in `fields`; else preserved from `carry` (exactly like cardLast4). Only
+  // truthy values are stamped (absent = today's behavior); an explicit false/"" clears a stale flag (rcptApplyEdit).
+  var dep = {};
+  if (fields.isDeposit != null) { if (fields.isDeposit) dep.isDeposit = true; } else if (carry.isDeposit) dep.isDeposit = true;
+  if (fields.depositSettled != null) { if (fields.depositSettled) dep.depositSettled = true; } else if (carry.depositSettled) dep.depositSettled = true;
+  if (fields.refundOfId != null) { if (fields.refundOfId) dep.refundOfId = fields.refundOfId; } else if (carry.refundOfId) dep.refundOfId = carry.refundOfId;
+  if (fields.kind != null) { if (fields.kind) dep.kind = fields.kind; } else if (carry.kind) dep.kind = carry.kind;
+  Object.assign(base, dep);
   // job expense carries its receipt CATEGORY so the 3-way split works (a tools/equipment receipt → excluded from
   // the job's cost as business overhead; anything else = a plain job cost). Default "job" when the receipt was uncategorized.
   if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; base.category = fields.category || "job"; return base; }
@@ -68,6 +78,7 @@ function rcptBuildRecord(home, id, fields, carry) {
   // review
   const rev = { id: id, receiptId: fields.receiptId || null, amount: amount, vendor: fields.vendor || "", date: fields.date || "", type: fields.type || null, jobId: fields.jobId || null, category: fields.category || "", paidBy: fields.paidBy || null, attributedTo: attributedTo, desc: fields.desc || "", uploadedBy: carry.uploadedBy || "", by: by, status: "review", suggested: carry.suggested || null, ts: carry.ts || now(), deleted: false, updatedAt: now() };
   if (card4) rev.cardLast4 = card4;
+  Object.assign(rev, dep);
   return rev;
 }
 /* THE PURE RE-BUCKETING OP. loc={store,jobId,recId}; fields={type,jobId,amount,vendor,date,category,paidBy,desc,receiptId}.
@@ -77,7 +88,7 @@ function rcptApplyEdit(loc, fields) {
   const cur = rcptFindRecord(loc.store, loc.jobId, loc.recId || loc.id);
   if (!cur) return { ok: false, error: "record not found" };
   const home = rcptTargetHome(fields);
-  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4 };
+  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
   if (sameHome) {
@@ -85,6 +96,7 @@ function rcptApplyEdit(loc, fields) {
     Object.assign(cur, rebuilt);
     if (carry.reimbursedAt === undefined && "reimbursedAt" in cur) delete cur.reimbursedAt;
     if ((fields.cardLast4 != null) && !("cardLast4" in rebuilt) && ("cardLast4" in cur)) delete cur.cardLast4;   // the form explicitly cleared the card last-4 → drop the stale value (Object.assign wouldn't remove it)
+    ["isDeposit", "depositSettled", "refundOfId", "kind"].forEach(function (k) { if ((k in fields) && !fields[k] && !(k in rebuilt) && (k in cur)) delete cur[k]; });   // an explicit false/"" in the form clears a stale deposit/refund flag
     rcptTouchHome(home, cur);
     return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: cur.id } };
   }
@@ -142,6 +154,8 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(rec.cardLast4 || "")}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>
     <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
+    <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
+    <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
     <div id="rcpt_split_slot"></div>
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
   rcptEditTypeChange();
@@ -204,14 +218,21 @@ window.rcptSaveEdit = function () {
   const attributedTo = val("rcpt_attr") || "";
   const desc = (val("rcpt_desc") || "").trim();
   const cardLast4 = (val("rcpt_card4") || "").replace(/\D/g, "").slice(-4);   // js/94: 0-4 digits — "" clears it, a valid 4-digit is stored + drives auto-attribution
+  const isDeposit = !!(document.getElementById("rcpt_deposit") || {}).checked;   // js/96: a refundable rental deposit (HELD out of job cost until settled)
+  const isRefund = !!(document.getElementById("rcpt_refund") || {}).checked;     // js/96: a refund/credit — stored NEGATIVE so it offsets the charge
+  // a refund stores the amount as negative + kind:"refund"; a deposit nudges category to "rentals" (equipment-rental hard cost)
+  let amt = amount;
+  if (isRefund && amt != null) amt = -Math.abs(amt);
+  const cat = (isDeposit && !category) ? "rentals" : category;
   if ((type === "job-expense" || type === "pass-through") && !jobId) { alert("Pick a job for this receipt — or set Type to Business, or leave it as Needs review."); return; }
-  if (type && !(amount > 0)) { alert("Enter the amount to file this receipt."); return; }
+  if (type && (amt == null || amt === 0)) { alert("Enter the amount to file this receipt."); return; }
+  if (type && amt < 0 && !isRefund) { alert("A negative amount is only for a refund/credit — tick “↩ This is a refund” to file it."); return; }
   if (type && !vendor) { alert("Enter the vendor / where it was bought."); return; }
   if (typeof submitGuard === "function" && !submitGuard("rcptSaveEdit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
-  const fields = { type: type || null, jobId: jobId || null, amount: amount, vendor: vendor, date: date, category: category, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4 };
+  const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
   const res = rcptApplyEdit(RCPT_EDIT.loc, fields);
   if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
-  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (type ? "filed" : "updated") + " — " + (amount != null ? money(amount) : "") + (vendor ? " · " + vendor : "") + " · " + (fields.type || "review") + (jobId ? " → job" : ""));
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (type ? "filed" : "updated") + " — " + (amt != null ? money(amt) : "") + (vendor ? " · " + vendor : "") + (isDeposit ? " · ⚠ deposit" : "") + (isRefund ? " · ↩ refund" : "") + " · " + (fields.type || "review") + (jobId ? " → job" : ""));
   if (typeof save === "function") save();
   if (typeof closeModal === "function") closeModal();
   RCPT_EDIT = null;

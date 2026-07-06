@@ -16,6 +16,7 @@ function finPeriodPL(ym){
   let jobCosts = 0, jobToolOverhead = 0;
   (D().jobs || []).filter(j => j && !j.deleted && inPeriod(j.date)).forEach(j => {
     (j.expenses || []).filter(x => x && !x.deleted).forEach(e => {
+      if (typeof depositHeld === "function" && depositHeld(e)) return;   // HOLD-OUT (js/96): an unsettled rental-deposit group is $0 to the P&L until settled at net
       if (typeof expenseIsTool === "function" && expenseIsTool(e)) jobToolOverhead += finCents(e.amount);
       else jobCosts += finCents(e.amount);
     });

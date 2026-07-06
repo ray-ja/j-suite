@@ -68,8 +68,8 @@ function rcptCsvAutoMap(rows) {
 /* ---- build ONE review record from a data row (or null to SKIP a junk/blank row). Never throws. ---- */
 function rcptCsvRecord(row, map, vendor, importId) {
   if (!row) return null;
-  var amt = Math.abs(budgetParseAmount(map.amount >= 0 ? row[map.amount] : null));   // null → 0 → skipped
-  if (!amt || isNaN(amt) || amt <= 0) return null;
+  var amt = budgetParseAmount(map.amount >= 0 ? row[map.amount] : null);   // SIGNED (budgetParseAmount already returns "-$90"→-90); null → skipped
+  if (amt == null || isNaN(amt) || amt === 0) return null;   // keep the sign — a negative Order Total is a refund/credit, imported as a NEGATIVE review receipt (nets the deposit)
   var descCell = map.desc >= 0 ? String(row[map.desc] != null ? row[map.desc] : "").trim() : "";
   if (rcptCsvIsJunkDesc(descCell)) return null;
   var date = (map.date >= 0 && budgetParseDate(row[map.date])) || (typeof today === "function" ? today() : "");
@@ -78,7 +78,7 @@ function rcptCsvRecord(row, map, vendor, importId) {
   if (map.order >= 0) { var ord = String(row[map.order] != null ? row[map.order] : "").trim(); if (ord) desc = desc ? desc + " · order #" + ord : "order #" + ord; }
   var me = (typeof rcptMe === "function") ? rcptMe() : null;
   var t = (typeof now === "function") ? now() : Date.now();
-  return {
+  var rec = {
     id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
     receiptId: null, amount: Math.round(amt * 100) / 100, vendor: (store || vendor || "").trim(),
     date: date, type: null, jobId: null, category: "", paidBy: null, cardLast4: "", desc: desc,
@@ -86,6 +86,8 @@ function rcptCsvRecord(row, map, vendor, importId) {
     status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
     source: "csv", importId: importId || "", csvFp: ""
   };
+  if (amt < 0) rec.kind = "refund";   // a negative amount is a refund/credit (js/96) — flagged so review surfaces it
+  return rec;
 }
 
 /* ---- file fingerprint (rowCount|totalCents|minDate|maxDate) — for the "already imported?" soft-warn ---- */
@@ -191,8 +193,8 @@ var VENDOR_PARSERS = [
     },
     parseRow: function (cells, H) {
       if (!cells) return null;
-      var amt = budgetParseAmount(rcptHVal(H, cells, /order total/));       // total paid incl. tax
-      if (amt == null || isNaN(amt) || Math.abs(amt) <= 0) return null;     // trailer / blank / note row → SKIP
+      var amt = budgetParseAmount(rcptHVal(H, cells, /order total/));       // SIGNED total incl. tax (a negative = a return/refund row)
+      if (amt == null || isNaN(amt) || amt === 0) return null;              // trailer / blank / note row → SKIP (0 only; keep the sign)
       var date = rcptCsvVendorDate(rcptHVal(H, cells, /^date$/));
       var order = rcptHVal(H, cells, /order\s*#\s*\/\s*trans/).replace(/^#+/, "");
       var store = rcptHVal(H, cells, /fulfillment store location/);
@@ -206,7 +208,8 @@ var VENDOR_PARSERS = [
       // hard-assign the receipt to it (jobId + customerId + a badge). This WINS + supersedes the fuzzy
       // PO→customer-name hint (custHint is only passed as the fallback when there's no exact job match).
       var poJob = (typeof jobByPO === "function") ? jobByPO(poRaw) : null;
-      var rec = rcptVendorRecord({ amount: Math.abs(amt), vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poJob ? null : poR.custHint });
+      var rec = rcptVendorRecord({ amount: amt, vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poJob ? null : poR.custHint });   // SIGNED — a negative Order Total imports as a refund/credit
+      if (amt < 0) rec.kind = "refund";
       if (poJob) {
         rec.jobId = poJob.id;
         rec.customerId = poJob.customerId || null;

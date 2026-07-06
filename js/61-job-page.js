@@ -195,7 +195,7 @@ function rJobPage(j) {
   const openOther = me ? tc.find(e => e.userId === me.userId && e.jobId !== j.id && !e.clockOut) : null;
   const onJob = tc.filter(e => e.jobId === j.id && !e.clockOut);
   const exps = (j.expenses || []).filter(x => x && !x.deleted);
-  const expTotal = exps.reduce((s, e) => s + (+e.amount || 0), 0);
+  const expTotal = exps.reduce((s, e) => s + ((typeof depositHeld === "function" && depositHeld(e)) ? 0 : (+e.amount || 0)), 0);   // signed Σ, minus HELD rental deposits (js/96 HOLD-OUT)
   const tel = ph => String(ph || "").replace(/[^0-9+]/g, "");
   // up-to-3 labeled numbers for the customer (falls back to the single number). PRIMARY (first number) is hoisted to
   // the TOP of the contact header as a big tap-to-call link; any SECONDARY numbers render right below as smaller
@@ -356,7 +356,7 @@ function rJobPage(j) {
   h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Job cost: mileage <b>${money(_bd.mileage)}</b> · job <b>${money(_bd.jobExp)}</b> · materials <b>${money(_bd.materials)}</b>${_bd.tool > 0 ? ` <span class="muted">· 🔧 tools ${money(_bd.tool)} (business overhead, not this job)</span>` : ""}</div>`;
   // virtual MILEAGE line — derived, read-only (not a receipt): estimate now, confirmed odometer once clocked
   h += `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}</span></div><div class="sub" style="white-space:normal">estimate vs confirmed odometer — auto from the route/time clock at $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi, not a receipt</div></div></div>`;
-  h += exps.length ? exps.map(e => { const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : ""; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`; }).join("") : `<div class="muted">No expenses logged. Enter the amount + what it was for; a receipt photo is optional.</div>`;
+  h += exps.length ? exps.map(e => { const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : ""; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div>${jobDepositLine(e)}</div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`; }).join("") : `<div class="muted">No expenses logged. Enter the amount + what it was for; a receipt photo is optional.</div>`;
   const _faults = {}; exps.forEach(e => { if (e.faultMemberId) _faults[e.faultMemberId] = (_faults[e.faultMemberId] || 0) + (+e.amount || 0); });
   const _fkeys = Object.keys(_faults);
   if (_fkeys.length) h += `<div class="note" style="margin-top:8px;border-left:3px solid var(--danger);white-space:normal">⚠ <b>Fault docks on this job:</b> ${_fkeys.map(id => `${esc((typeof userName === "function" ? userName(id) : "") || "?")} <b>${money(_faults[id])}</b>`).join(" · ")} — comes out of their payout, not the crew's.</div>`;
@@ -770,6 +770,19 @@ window.jobToggleLoaded = function (jobId, itemId) {
    "Adding…" → "✓ Added" so a slow save is visibly NOT stuck), so at most one record — carrying the one
    photo actually selected — gets created per tap. */
 let _jobExpAddBusy = false, _jobExpAddWatchdog = null;
+/* RENTAL DEPOSIT (js/96) sub-line under a job expense: while HELD it contributes $0 to this job; once the owner
+   settles it, it shows the net (deposit − refund). A refund record shows its ↩ credit note. Empty for ordinary rows. */
+function jobDepositLine(e) {
+  if (!e) return "";
+  if (e.isDeposit) {
+    if (typeof depositHeld === "function" && depositHeld(e)) return `<div class="sub" style="white-space:normal;color:#b8860b;font-weight:600">🏗 Rental deposit ${money(e.amount)} — HELD (awaiting refund), ${money(0)} to this job</div>`;
+    const net = (typeof depositNetCost === "function") ? depositNetCost(e) : (+e.amount || 0);
+    const refund = net - (+e.amount || 0);   // negative (or 0)
+    return `<div class="sub" style="white-space:normal;color:var(--accent);font-weight:600">🏗 deposit ${money(e.amount)}${refund ? " − refund " + money(-refund) : ""} = ${money(net)} net</div>`;
+  }
+  if (e.kind === "refund" || e.refundOfId) return `<div class="sub" style="white-space:normal;color:var(--accent)">↩ refund / credit${e.refundOfId ? " — offsets a rental deposit" : ""}</div>`;
+  return "";
+}
 window.jobAddExpense = function (jobId) {
   if (_jobExpAddBusy) return;   // ignore rapid re-taps while a save is already in flight
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;

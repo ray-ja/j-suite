@@ -332,6 +332,9 @@ function rReceipts() {
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + description filed more than once. Flagged in the table; open &amp; delete the extras.</div>`;
 
+  // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
+  if (typeof depositsAwaitingRefund === "function") { const _deps = depositsAwaitingRefund(); if (_deps.length) h += rcptDepositsAwaitingHTML(_deps); }
+
   // PER-JOB CLOSE-OUT ROLL-UP — when is a job safe to invoice? (all its crew have closed out their receipts)
   h += rcptJobCloseoutHTML();
 
@@ -357,6 +360,21 @@ function rReceipts() {
   view.innerHTML = h;
 }
 
+/* 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96 depositsAwaitingRefund) — each open deposit that's HELD out of job cost
+   until its refund is confirmed. Tapping "Settle" opens the js/96 refund-entry modal. Mirrors the dup/close-out cards. */
+function rcptDepositsAwaitingHTML(deps) {
+  let h = `<div class="card" style="border-left:4px solid #e0a800"><b>🏗 ${deps.length} rental deposit${deps.length > 1 ? "s" : ""} awaiting refund</b> — held out of job cost until you confirm the refund. Settle each once the refund comes back.`;
+  h += deps.map(d => {
+    const dep = d.deposit, j = d.job;
+    const cust = (j && j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+    const where = (j ? (j.title || "Job") : "no job") + (cust ? " · " + cust : "");
+    const state = d.hasRefund ? `refund so far ${money(-d.refundSoFar)} → net ${money(d.net)}` : "no refund yet";
+    return `<div class="li" style="align-items:center;gap:8px;margin-top:6px"><div class="grow" style="min-width:0"><div class="nm" style="white-space:normal">🏗 ${money(dep.amount)} deposit${dep.vendor ? " · " + esc(dep.vendor) : ""} · ${esc(where)}</div><div class="sub" style="white-space:normal">${state} — tap Settle to enter the refund / mark it settled</div></div><button class="btn acc sm" onclick="if(typeof depositSettleOpen==='function')depositSettleOpen('${esc(dep.id)}')">Settle</button></div>`;
+  }).join("");
+  h += `</div>`;
+  return h;
+}
+
 function rcptTableHTML(rows, dups) {
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
@@ -377,7 +395,7 @@ function rcptTableHTML(rows, dups) {
         : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${isDup ? ";background:var(--danger-soft,#fdecea)" : ""}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(RCPT_TYPE_LABEL[m.type] || m.type)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`}</td>
@@ -401,7 +419,8 @@ function rcptCloseoutJobs() { return rcptJobs().filter(j => jobCrewActiveIds(j).
    Shown in the close-out roll-up so the owner sees "how much is on this job" at a glance before invoicing. */
 function jobExpenseTotal(j) {
   if (!j) return 0;
-  const sum = arr => (Array.isArray(arr) ? arr : []).filter(x => x && !x.deleted).reduce((s, x) => s + (+x.amount || 0), 0);
+  const held = x => typeof depositHeld === "function" && depositHeld(x);   // HOLD-OUT (js/96): an unsettled deposit group is $0 here until settled at net
+  const sum = arr => (Array.isArray(arr) ? arr : []).filter(x => x && !x.deleted && !held(x)).reduce((s, x) => s + (+x.amount || 0), 0);
   return sum(j.materials) + sum(j.expenses);
 }
 function rcptJobCloseoutHTML() {

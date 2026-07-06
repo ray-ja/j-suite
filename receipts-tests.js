@@ -53,7 +53,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/96-rental-deposits.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -548,6 +548,60 @@ async function main() {
   ok("exact match SUPERSEDES the fuzzy hint (no custHint on the matched row)", poExact && !poExact.custHint, poExact && poExact.custHint);
   ok("a NON-numeric PO ('mike green') → NO exact match → falls back to custHint, jobId stays null", poFuzzy && poFuzzy.jobId === null && !poFuzzy._poMatch && poFuzzy.custHint && poFuzzy.custHint.customerId === "cMG2", { jobId: poFuzzy && poFuzzy.jobId, hint: poFuzzy && poFuzzy.custHint });
   ok("still review-only (exact match does NOT file it into billing)", poExact && poExact.status === "review" && poExact.type === null, poExact && [poExact.status, poExact.type]);
+
+  // ================= RENTAL DEPOSIT / REFUND (js/96 HOLD-OUT) + the Phase-0 sign fix =================
+  console.log("\n— RENTAL DEPOSIT: money() is sign-correct; CSV keeps a negative sign; a refund toggle stores negative —");
+  // the REAL money() (js/02) — sign-correct "-$90", byte-identical for >=0. Extracted so the file's own money() stub is untouched.
+  const realMoney = eval("(function(){ " + fs.readFileSync(__dirname + "/js/02-state.js", "utf8").match(/function money\(n\)\{[^\n]*\}/)[0] + " return money; })()");
+  ok("money(-90) === '-$90' (minus BEFORE the $, not '$-90')", realMoney(-90) === "-$90", realMoney(-90));
+  ok("money(90) === '$90' (byte-identical for >= 0 → fingerprint-neutral)", realMoney(90) === "$90", realMoney(90));
+  ok("money(0) === '$0' (unchanged)", realMoney(0) === "$0", realMoney(0));
+  ok("money(1500) === '$1,500' (grouping unchanged for >= 0)", realMoney(1500) === "$1,500", realMoney(1500));
+
+  // CSV: a negative Order Total (generic parser) imports as a NEGATIVE review receipt tagged kind:"refund" — not +90, not skipped
+  const csvRefund = rcptCsvRecord(["2026-07-01", "Return / credit", "-$90.00"], { date: 0, desc: 1, amount: 2, store: -1, order: -1 }, "Lowe's", "i1");
+  ok("CSV refund row keeps the NEGATIVE sign (imports as -90, not +90 or skipped)", csvRefund && csvRefund.amount === -90, csvRefund && csvRefund.amount);
+  ok("CSV refund row is tagged kind:'refund'", csvRefund && csvRefund.kind === "refund", csvRefund && csvRefund.kind);
+  ok("CSV positive row is unchanged (no kind, positive amount)", (function () { const r = rcptCsvRecord(["2026-07-01", "Pavers", "$6.98"], { date: 0, desc: 1, amount: 2, store: -1, order: -1 }, "Lowe's", "i1"); return r && r.amount === 6.98 && !r.kind; })());
+  // the Lowe's vendor parser also keeps the sign on a negative Order Total (a return row)
+  const lowesHdr = "Date,Fulfillment Store Location,PO Number,Order # / Trans. #,Tax,Order Total,CC Type,CC# (last 4)";
+  const lowesRefundRows = budgetParseCSV(lowesHdr + "\r\n2-Jul-2026,KDH Lowe's,NA,147999001,-$1.00,-$90.00,VISA,************2469\r\n");
+  const lowesParser = rcptCsvDetectVendor ? VENDOR_PARSERS.find(p => p.id === "lowes") : null;
+  const lowesRefund = lowesParser ? lowesParser.parseRow(lowesRefundRows[1], rcptVendorH(lowesRefundRows[0])) : null;
+  ok("Lowe's parser keeps a negative Order Total (return row → -90, kind refund)", lowesRefund && lowesRefund.amount === -90 && lowesRefund.kind === "refund", lowesRefund && [lowesRefund.amount, lowesRefund.kind]);
+
+  // the refund toggle path (rcptApplyEdit fields) stores a NEGATIVE amount + kind:"refund"
+  resetStore();
+  const rrev = seedReview({ receiptId: "bRef", vendor: "Sunbelt", amount: 90, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const rRefRes = rcptApplyEdit({ store: "review", jobId: null, recId: rrev.id }, { type: "job-expense", jobId: "j1", amount: -90, vendor: "Sunbelt", date: "2026-07-01", category: "rentals", desc: "trailer refund", receiptId: "bRef", kind: "refund" });
+  const refFiled = rcptFindRecord(rRefRes.newLoc.store, rRefRes.newLoc.jobId, rRefRes.newLoc.recId);
+  ok("refund toggle: filed record stores NEGATIVE amount + kind:'refund'", refFiled && refFiled.amount === -90 && refFiled.kind === "refund", refFiled && [refFiled.amount, refFiled.kind]);
+
+  console.log("— RENTAL DEPOSIT: a deposit+refund on a job is $0 while HELD, nets to (deposit − refund) once SETTLED —");
+  resetStore();
+  // file a $300 deposit onto j1 (isDeposit, category rentals), then a −$90 refund linked to it
+  const depRev = seedReview({ receiptId: "bDep", vendor: "Sunbelt", amount: 300, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const depRes = rcptApplyEdit({ store: "review", jobId: null, recId: depRev.id }, { type: "job-expense", jobId: "j1", amount: 300, vendor: "Sunbelt", date: "2026-07-01", category: "rentals", desc: "trailer deposit", receiptId: "bDep", isDeposit: true });
+  const depRec = rcptFindRecord(depRes.newLoc.store, depRes.newLoc.jobId, depRes.newLoc.recId);
+  ok("deposit filed with isDeposit + category rentals", depRec && depRec.isDeposit === true && depRec.category === "rentals", depRec && [depRec.isDeposit, depRec.category]);
+  ok("depositHeld(deposit) is TRUE while unsettled", depositHeld(depRec) === true, depositHeld(depRec));
+  // link a refund to the deposit
+  const jobJ1 = STORE.jobs.find(j => j.id === "j1");
+  jobJ1.expenses.push({ id: "ref1", amount: -90, vendor: "Sunbelt", desc: "partial refund", category: "rentals", kind: "refund", refundOfId: depRec.id, deleted: false });
+  const refRec = jobJ1.expenses.find(e => e.id === "ref1");
+  ok("depositHeld(linked refund) is TRUE while unsettled", depositHeld(refRec) === true, depositHeld(refRec));
+  ok("jobExpenseTotal EXCLUDES the held deposit group ($0 to the job)", jobExpenseTotal(jobJ1) === 0, jobExpenseTotal(jobJ1));
+  ok("depositsAwaitingRefund() surfaces the open deposit with its net", (function () { const d = depositsAwaitingRefund(); return d.length === 1 && d[0].deposit.id === depRec.id && d[0].hasRefund === true && d[0].net === 210; })());
+  ok("depositNetCost = deposit − refund = 210", depositNetCost(depRec) === 210, depositNetCost(depRec));
+  // SETTLE → the group counts at NET
+  ok("depositSettle(id) returns true (found the deposit)", depositSettle(depRec.id) === true);
+  ok("after settle: deposit + refund both depositSettled", depRec.depositSettled === true && refRec.depositSettled === true, [depRec.depositSettled, refRec.depositSettled]);
+  ok("after settle: depositHeld is FALSE for both (group counts now)", depositHeld(depRec) === false && depositHeld(refRec) === false);
+  ok("after settle: jobExpenseTotal counts the NET (300 − 90 = 210)", jobExpenseTotal(jobJ1) === 210, jobExpenseTotal(jobJ1));
+  ok("after settle: depositsAwaitingRefund() is empty", depositsAwaitingRefund().length === 0, depositsAwaitingRefund().length);
+
+  // a plain expense with no deposit/refund flags behaves exactly as today (not held)
+  ok("an ordinary expense is NOT held (== today)", depositHeld({ amount: 50, category: "fuel" }) === false);
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
