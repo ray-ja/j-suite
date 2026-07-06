@@ -242,7 +242,7 @@ function wizReview(){
   h+=`<div class="card"><label style="margin-top:0">Customer / name</label>
     <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
     <label>Phone</label><input id="r_phone" value="${esc(WZ.cust.phone||"")}" inputmode="tel" placeholder="(252) ___-____" onchange="WZ.cust.phone=this.value;wizAutosave()">
-    <label>Property address</label><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Address" onchange="WZ.cust.address=this.value;wizAutosave()"></div>`;
+    <label>Property address</label><div class="acwrap"><input id="r_addr" value="${esc(WZ.cust.address||"")}" placeholder="Start typing the address or property name…" oninput="addrSuggest('r_addr','r_abox')" onchange="WZ.cust.address=this.value;if(this.dataset.pickPropId)WZ.cust.propertyId=this.dataset.pickPropId;wizAutosave()"><div class="acbox" id="r_abox"></div></div></div>`;
   // price dial — drag LEFT to discount (down to your good-value floor), RIGHT to mark up jobs you don't want (to +20%)
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const _bk2=[(typeof WZ!=="undefined"&&WZ.svc),(WZ.items[0]&&WZ.items[0].bandKey),(WZ.items[0]&&guessBandKey(WZ.items[0].name)),"junk"].find(k=>k&&typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS[k])||"junk";
