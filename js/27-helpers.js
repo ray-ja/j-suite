@@ -70,18 +70,29 @@ window.addrSuggest=function(inpId,boxId){clearTimeout(_acT);const inp=document.g
     const ref=s.kind==="place"?(' data-place="'+esc(s.ref)+'"'):(' data-prop="'+esc(s.ref)+'"');
     const mm=(s.manualMiles!=null)?(' data-manmi="'+esc(s.manualMiles)+'"'):"";
     const sub=(s.address&&s.address!==s.label)?(' <span class="acsub">'+esc(s.address)+'</span>'):"";
-    return '<div class="acitem saved" data-a="'+esc(s.address||s.label)+'" data-lat="'+esc(s.lat)+'" data-lng="'+esc(s.lng)+'"'+ref+mm+' onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+icon+' '+esc(s.label)+sub+' <span class="acsrc">📍 · saved</span></div>';}).join("");
+    return '<div class="acitem saved" data-a="'+esc(s.address||s.label)+'" data-name="'+esc(s.label)+'" data-lat="'+esc(s.lat)+'" data-lng="'+esc(s.lng)+'"'+ref+mm+' onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+icon+' '+esc(s.label)+sub+' <span class="acsrc">📍 · saved</span></div>';}).join("");
   box.innerHTML=savedHTML;
-  if(q.length<4){return;}
+  if((inp.dataset&&inp.dataset.savedonly)||q.length<4){return;}   // a name/label field (data-savedonly) searches only the saved index — no raw-address OSM results
   _acT=setTimeout(function(){fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q="+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){const osmHTML=(d||[]).map(function(x){return '<div class="acitem" data-a="'+esc(x.display_name)+'" data-lat="'+esc(x.lat)+'" data-lng="'+esc(x.lon)+'" onclick="addrPick(\''+inpId+'\',\''+boxId+'\',this)">'+esc(x.display_name)+'</div>';}).join("");box.innerHTML=savedHTML+osmHTML;}).catch(function(){});},350);};
-window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId);inp.value=el.getAttribute("data-a");
+window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId);if(!inp)return;
+  const addrVal=el.getAttribute("data-a")||"",nameVal=el.getAttribute("data-name");
+  /* THIS field's value: a NAME field (data-nameinto, e.g. a stop Label) shows the place NAME; every other field
+     shows the address. OSM rows have no data-name → always the address. */
+  inp.value=((inp.dataset&&inp.dataset.nameInto)&&nameVal!=null&&nameVal!=="")?nameVal:addrVal;
+  /* the field that holds the ADDRESS + the picked ref/coords (the caller reads coords off the ADDRESS field): a
+     name field routes them to data-pairaddr; everyone else keeps them on itself → fully backward-compatible. */
+  const addrInp=(inp.dataset&&inp.dataset.pairAddr)?(document.getElementById(inp.dataset.pairAddr)||inp):inp;
+  if(addrInp!==inp)addrInp.value=addrVal;
   /* clear any stale saved-ref from a PRIOR pick first, so re-picking a plain OSM result after a saved one can't leak a placeId/propId */
-  delete inp.dataset.pickPlaceId;delete inp.dataset.pickPropId;delete inp.dataset.pickManualMiles;
-  const la=el.getAttribute("data-lat"),lo=el.getAttribute("data-lng");if(la&&lo&&la!=="undefined"&&lo!=="undefined"){inp.dataset.pickLat=la;inp.dataset.pickLng=lo;}
-  const pid=el.getAttribute("data-place");if(pid)inp.dataset.pickPlaceId=pid;
-  const prp=el.getAttribute("data-prop");if(prp)inp.dataset.pickPropId=prp;
-  const mm=el.getAttribute("data-manmi");if(mm)inp.dataset.pickManualMiles=mm;
-  document.getElementById(boxId).innerHTML="";try{inp.dispatchEvent(new Event("change"));}catch(e){}};
+  delete addrInp.dataset.pickPlaceId;delete addrInp.dataset.pickPropId;delete addrInp.dataset.pickManualMiles;
+  const la=el.getAttribute("data-lat"),lo=el.getAttribute("data-lng");if(la&&lo&&la!=="undefined"&&lo!=="undefined"){addrInp.dataset.pickLat=la;addrInp.dataset.pickLng=lo;}else{delete addrInp.dataset.pickLat;delete addrInp.dataset.pickLng;}
+  const pid=el.getAttribute("data-place");if(pid)addrInp.dataset.pickPlaceId=pid;
+  const prp=el.getAttribute("data-prop");if(prp)addrInp.dataset.pickPropId=prp;
+  const mm=el.getAttribute("data-manmi");if(mm)addrInp.dataset.pickManualMiles=mm;
+  /* an ADDRESS field can auto-fill a paired empty LABEL field with the place NAME (data-pairlabel) on a saved pick */
+  if((inp.dataset&&inp.dataset.pairLabel)&&nameVal){const lf=document.getElementById(inp.dataset.pairLabel);if(lf&&!lf.value)lf.value=nameVal;}
+  if(boxId){const b=document.getElementById(boxId);if(b)b.innerHTML="";}
+  try{addrInp.dispatchEvent(new Event("change"));}catch(e){}};
 /* Settings are per-user: stored on the signed-in account (u.settings, synced via S.users).
    When signed out we fall back to this device's localStorage so the toggle still works. */
 function curUserSettings(){try{const u=(typeof curUser==="function")?curUser():null;return (u&&u.settings)||null;}catch(e){return null;}}

@@ -522,7 +522,10 @@ function jobPageRouteCard(j) {
     const s = t.stop;
     return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${ci + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}<button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${t.raw})" title="Remove">✕</button></div></div>`;
   }).join("");
-  h += `<div class="row" style="gap:8px;margin-top:8px"><input id="jps_label" placeholder="Label — e.g. Airport pickup" style="flex:1 1 140px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address" onfocus="addrSuggest('jps_addr','jps_addr_ac')" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
+  // BOTH fields search the saved index; picking either fills the other. The Label searches names only (data-savedonly,
+  // data-nameinto) and routes the picked address+ref to jps_addr (data-pairaddr); the Address searches saved+OSM and
+  // fills the empty Label with the place name (data-pairlabel). jobPageStopAdd reads the ref/coords off jps_addr.
+  h += `<div class="row" style="gap:8px;margin-top:8px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_label" placeholder="Name — search places, or type" data-savedonly="1" data-name-into="1" data-pair-addr="jps_addr" onfocus="addrSuggest('jps_label','jps_label_ac')" oninput="addrSuggest('jps_label','jps_label_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_label_ac"></div></div><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address — search or type" data-pair-label="jps_label" onfocus="addrSuggest('jps_addr','jps_addr_ac')" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
   h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
   // 🏁 END (last point) — editable, pre-filled with home base
   h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
