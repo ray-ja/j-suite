@@ -190,7 +190,7 @@ window.teamEditProfile = function (id) {
         <button class="btn ghost sm" onclick="teamHomeClear('${esc(u.id)}')">Clear</button>
       </div>
       <div class="row" style="gap:6px;margin-top:8px">
-        <input id="tp_home_addr" autocomplete="off" placeholder="or enter an address (street, town, ST zip)" style="flex:1;min-width:0">
+        <div class="acwrap" style="flex:1;min-width:0"><input id="tp_home_addr" autocomplete="off" placeholder="or enter an address (street, town, ST zip)" oninput="addrSuggest('tp_home_addr','tp_home_addr_ac')" onfocus="addrSuggest('tp_home_addr','tp_home_addr_ac')" style="width:100%"><div class="acbox" id="tp_home_addr_ac"></div></div>
         <button class="btn ghost sm" style="flex:0 0 auto" onclick="teamHomeByAddress('${esc(u.id)}')">Locate</button>
       </div>
       <div class="sub" style="white-space:normal;margin-top:6px">Only you (and an owner/admin) can set your home location. It's saved immediately when found. Used only to suggest your likely clock-out time if you forget to clock out.</div>
@@ -224,6 +224,19 @@ window.teamHomeByAddress = function (id) {
   if (!teamCanEdit(id)) { alert("You can only set your own home location."); return; }
   const addr = (val("tp_home_addr") || "").trim(); if (!addr) { alert("Enter an address, or use your current location."); return; }
   const st = document.getElementById("tp_home_status"); if (st) st.textContent = "Locating…";
+  // if the address was PICKED from the autocomplete (a saved place / OSM result), use its EXACT coords and skip
+  // re-geocoding the typed text (same as saveHomeBase — re-geocoding a picked address is what lands it miles off).
+  const _hi = (typeof document !== "undefined") ? document.getElementById("tp_home_addr") : null;
+  if (_hi && _hi.dataset && _hi.dataset.pickLat) {
+    const u0 = teamMemberById(id); if (!u0) return;
+    u0.homeLocation = { lat: +_hi.dataset.pickLat, lng: +_hi.dataset.pickLng, label: addr.split(",").slice(0, 2).join(",").trim() };
+    delete _hi.dataset.pickLat; delete _hi.dataset.pickLng; delete _hi.dataset.pickPlaceId; delete _hi.dataset.pickPropId; delete _hi.dataset.pickManualMiles;
+    if (typeof touch === "function") touch(u0); save();
+    if (typeof logChange === "function") logChange("update", "account", u0.id, "Set home location (picked) for " + (u0.username || u0.name || u0.id));
+    if (typeof scheduleAutoPush === "function") scheduleAutoPush();
+    if (st) st.innerHTML = teamHomeStatusHtml(u0);
+    return;
+  }
   const g1 = q => fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" + encodeURIComponent(q)).then(r => r.json());
   const coarse = addr.split(",").slice(1).join(",").trim();   // drop the street line when an exact street isn't in OSM
   g1(addr).then(g => (g && g[0]) ? g : (coarse && coarse !== addr ? g1(coarse) : null)).then(function (g) {
