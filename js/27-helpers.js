@@ -5,11 +5,14 @@ function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;"
 function editedByLine(r){try{if(!r||!r.editedBy)return "";const u=((typeof S!=="undefined"&&S.users)||[]).find(x=>x&&x.id===r.editedBy);const nm=u?(u.name||u.username):"someone";const ago=(typeof agoTxt==="function"&&r.editedAt)?(" · "+agoTxt(r.editedAt)):"";return `<div class="sub" style="opacity:.6;margin-top:4px">✎ edited by ${esc(nm)}${ago}</div>`;}catch(e){return "";}}
 let _acT=null;
 /* SAVED-LOCATIONS autocomplete source — up to ~5 case-insensitive substring matches over the user's SAVED
-   records, fully offline (no fetch): saved PROPERTIES (actProps, on label/address, only where lat!=null so we
-   have real coords to reuse) + active PLACES (D().places, on name/address, non-deleted + lat!=null). Each match
-   is {kind:"property"|"place", ref:id, label, address, lat, lng, manualMiles?} — the caller threads ref via a
-   data-place/data-prop attr so a picked suggestion reuses the stored coords instead of re-geocoding the text
-   (the js/69 "Lowe's geocoded 400mi off" fix, generalized). Never throws; empty query → []. */
+   records, fully offline (no fetch): saved PROPERTIES (actProps, on label/address) + active PLACES (D().places,
+   on name/address, non-deleted). We INCLUDE un-geocoded entries (lat==null) as long as they have an address — the
+   Warehouse / "Transfer Station - Currituck" geocoded null but carry a real address + a manualMiles override, so
+   the owner still needs to find + pick them (they were invisible before). Each match is {kind:"property"|"place",
+   ref:id, label, address, lat, lng, manualMiles?} where lat/lng MAY be null; the caller threads ref via a
+   data-place/data-prop attr (and manualMiles via data-manmi) so a picked suggestion reuses the stored coords when
+   present, or carries only its placeId/propId + manualMiles when not (the js/69 "Lowe's geocoded 400mi off" fix,
+   generalized to lat-less places). Never throws; empty query → [] (the on-focus pick-list is savedPlacePicks). */
 function savedLocMatches(q){
   q=(q==null?"":String(q)).trim().toLowerCase();
   if(!q)return [];
@@ -17,14 +20,16 @@ function savedLocMatches(q){
   try{
     const props=(typeof actProps==="function")?actProps():[];
     for(let i=0;i<props.length&&out.length<5;i++){const p=props[i];
-      if(!p||p.lat==null)continue;
+      if(!p)continue;
       const label=p.label||"",addr=p.address||"";
+      if(p.lat==null&&!addr)continue;                     // no coords AND no address → nothing to carry through
       if((label+" "+addr).toLowerCase().indexOf(q)<0)continue;
       out.push({kind:"property",ref:p.id,label:label||addr||"Property",address:addr,lat:p.lat,lng:p.lng});
     }
-    const places=((typeof D==="function"&&D()&&D().places)||[]).filter(function(p){return p&&!p.deleted&&p.lat!=null;});
+    const places=((typeof D==="function"&&D()&&D().places)||[]).filter(function(p){return p&&!p.deleted;});
     for(let i=0;i<places.length&&out.length<5;i++){const p=places[i];
       const name=p.name||"",addr=p.address||"";
+      if(p.lat==null&&!addr)continue;                     // no coords AND no address → not selectable
       if((name+" "+addr).toLowerCase().indexOf(q)<0)continue;
       const m={kind:"place",ref:p.id,label:name||addr||"Place",address:addr,lat:p.lat,lng:p.lng};
       if(typeof p.manualMiles==="number"&&isFinite(p.manualMiles)&&p.manualMiles>0)m.manualMiles=p.manualMiles;
@@ -34,10 +39,33 @@ function savedLocMatches(q){
   return out.slice(0,5);
 }
 if(typeof window!=="undefined")window.savedLocMatches=savedLocMatches;
+/* ON-FOCUS pick-list — up to ~6 saved PLACES (sorted by name) shown when an address field is focused with an
+   EMPTY / <2-char query, so the owner can TAP a common place (Warehouse, Shop, Transfer Station) without typing.
+   Same {kind,ref,label,address,lat,lng,manualMiles?} shape as savedLocMatches → addrSuggest renders identical
+   `.acitem saved` rows (lat/lng MAY be null). Places-only (customer job sites keep geocoding); offline, never
+   throws; empty when there are no places. */
+function savedPlacePicks(){
+  const out=[];
+  try{
+    let places=((typeof D==="function"&&D()&&D().places)||[]).filter(function(p){return p&&!p.deleted&&((p.name||"")||(p.address||""));});
+    places=places.slice().sort(function(a,b){return (a.name||a.address||"").toLowerCase().localeCompare((b.name||b.address||"").toLowerCase());});
+    for(let i=0;i<places.length&&out.length<6;i++){const p=places[i];
+      const name=p.name||"",addr=p.address||"";
+      const m={kind:"place",ref:p.id,label:name||addr||"Place",address:addr,lat:p.lat,lng:p.lng};
+      if(typeof p.manualMiles==="number"&&isFinite(p.manualMiles)&&p.manualMiles>0)m.manualMiles=p.manualMiles;
+      out.push(m);
+    }
+  }catch(e){}
+  return out;
+}
+if(typeof window!=="undefined")window.savedPlacePicks=savedPlacePicks;
 /* address autocomplete — SAVED matches first (synchronous, offline, 2-char threshold), then OSM Nominatim
-   APPENDED below (4-char threshold). OSM never clobbers the saved rows. */
+   APPENDED below (4-char threshold). OSM never clobbers the saved rows. Called on BOTH oninput and onfocus: with
+   an EMPTY / <2-char query (e.g. the field was just focused) it shows the common saved-places pick-list
+   (savedPlacePicks) so the owner can tap Warehouse / Shop / Transfer Station without typing; 2+ chars filters via
+   savedLocMatches. */
 window.addrSuggest=function(inpId,boxId){clearTimeout(_acT);const inp=document.getElementById(inpId),box=document.getElementById(boxId);if(!inp||!box)return;const q=inp.value.trim();
-  const saved=(q.length>=2&&typeof savedLocMatches==="function")?savedLocMatches(q):[];
+  const saved=(q.length>=2&&typeof savedLocMatches==="function")?savedLocMatches(q):((q.length<2&&typeof savedPlacePicks==="function")?savedPlacePicks():[]);
   const savedHTML=saved.map(function(s){const icon=s.kind==="place"?"📍":"🏠";
     const ref=s.kind==="place"?(' data-place="'+esc(s.ref)+'"'):(' data-prop="'+esc(s.ref)+'"');
     const mm=(s.manualMiles!=null)?(' data-manmi="'+esc(s.manualMiles)+'"'):"";
