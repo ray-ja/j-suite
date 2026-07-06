@@ -57,7 +57,7 @@ function driveFromBase(lat,lng){
   roadRouteMiles(wp,function(mi){ if(mi!=null&&typeof render==="function"){ try{render();}catch(e){} } });   // not tried yet → kick it off, surface on land
   return null;
 }
-function driveBadge(lat,lng){ const d=driveFromBase(lat,lng); return d?`🚗 ~${d.min} min · ${d.miles} mi from base`:""; }
+function driveBadge(lat,lng){ const d=driveFromBase(lat,lng); return d?`🚗 ~${d.min} min · ${d.miles} mi one-way from base`:""; }
 /* coords for a job via its linked property */
 function jobLatLng(j){ if(!j)return null; const p=(j.propertyId&&typeof actProps==="function")?actProps().find(x=>x.id===j.propertyId):null; return (p&&p.lat!=null)?{lat:p.lat,lng:p.lng}:null; }
 

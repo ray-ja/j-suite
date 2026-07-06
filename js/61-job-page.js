@@ -221,7 +221,7 @@ function rJobPage(j) {
     const _rs = jobRouteEndpointLabel(j.routeStart), _re = jobRouteEndpointLabel(j.routeEnd);
     const _ends = (_rs || _re) ? ` <span class="muted">· ${_rs ? "from " + esc(_rs) : "from base"} → ${_re ? "to " + esc(_re) : "to base"}</span>` : "";
     const _srcTag = _routeSrc === "roads" ? ` <span class="muted">(via roads)</span>` : _routeSrc === "manual" ? ` <span class="muted">(manual)</span>` : "";
-    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_srcTag}${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· ordered start→stops→site→end path, a cross-check — not the billed miles</span></div>`;
+    h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b> <b>round trip</b>${_srcTag}${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· full loop base→stops→site→base, a cross-check — not the billed miles</span></div>`;
     if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
   } else if (_routeSrc === "none") {
     // the map tried and couldn't route (offline / unroutable address) + no manual miles set — never a 1.3× guess.

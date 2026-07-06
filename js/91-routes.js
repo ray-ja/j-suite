@@ -132,7 +132,7 @@ function rvJobReadout(job) {
   RV_PLAN_BARINFO = { max: max, days: days };
   let h = `<div class="card" style="margin-top:12px"><div class="nm">📊 Estimated vs actual</div>`;
   h += rvBar("🚗 Odometer (billed)", odoTotal, max, "var(--accent)", true);
-  h += rvBar("🧭 Planned est." + (days > 1 ? " · " + days + " days" : ""), planTotal, max, "var(--muted)", false, "rvPlanBar");
+  h += rvBar("🧭 Planned est. (round trip)" + (days > 1 ? " · " + days + " days" : ""), planTotal, max, "var(--muted)", false, "rvPlanBar");
   h += rvBar("🛰 GPS path est.", gpsTotal, max, "var(--muted)", false);
   h += rvVarianceLine(odoTotal, gpsTotal, flagged);
   h += `<div class="sub" style="white-space:normal;margin-top:10px">💵 Mileage cost: <b>${dol(dollarBilled > 0 ? dollarBilled : dollarEst)}</b> <span class="muted">${dollarBilled > 0 ? "· from the confirmed odometer" : "· estimate (no confirmed odometer yet)"}</span></div>`;
@@ -223,7 +223,7 @@ function rvVehicleReadout(key) {
   let h = `<div class="card" style="margin-top:12px"><div class="nm">📊 ${rvSafeEsc(label)} — totals</div>`;
   h += `<div class="sub" style="white-space:normal;margin-top:2px">${drives.length} drive${drives.length === 1 ? "" : "s"} · ${nJobs} job${nJobs === 1 ? "" : "s"}${flagged ? " · " + flagged + " flagged" : ""}</div>`;
   h += rvBar("🚗 Odometer (billed)", odoTotal, max, "var(--accent)", true);
-  h += rvBar("🧭 Planned est.", estTotal, max, "var(--muted)", false);
+  h += rvBar("🧭 Planned est. (round trip)", estTotal, max, "var(--muted)", false);
   h += rvBar("🛰 GPS path est.", gpsTotal, max, "var(--muted)", false);
   h += rvVarianceLine(odoTotal, gpsTotal, flagged);
   h += `<div class="sub" style="white-space:normal;margin-top:10px">💵 Mileage cost (confirmed): <b>${dol(milesDollar)}</b></div>`;
@@ -300,7 +300,7 @@ function rvUpdatePlanBar(roadMilesOneTrip) {
     const fill = document.getElementById("rvPlanBar_fill");
     const note = document.getElementById("rvPlanNote");
     if (!lbl && !val && !fill) return;   // readout no longer on screen — nothing to do
-    if (lbl) lbl.textContent = "🧭 Planned (road)" + ((info.days > 1) ? " · " + info.days + " days" : "");
+    if (lbl) lbl.textContent = "🧭 Planned (road, round trip)" + ((info.days > 1) ? " · " + info.days + " days" : "");
     if (val) val.textContent = total + " mi";
     if (fill) { const pct = (info.max > 0) ? Math.max(2, Math.min(100, Math.round(total / info.max * 100))) : 0; fill.style.width = pct + "%"; }
     if (note) note.textContent = " Planned route shown via roads (routing estimate).";
