@@ -82,7 +82,9 @@ function rcptCsvRecord(row, map, vendor, importId) {
     id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
     receiptId: null, amount: Math.round(amt * 100) / 100, vendor: (store || vendor || "").trim(),
     date: date, type: null, jobId: null, category: "", paidBy: null, cardLast4: "", desc: desc,
-    uploadedBy: me ? me.id : "", attributedTo: me ? me.id : "", by: me ? (me.username || "") : "",
+    // attributedTo (whose receipt / who's reimbursed) is left BLANK on import — a bulk uploader is NOT the payer.
+    // The generic parser has no card column, so it can't be resolved; uploadedBy keeps the audit trail.
+    uploadedBy: me ? me.id : "", attributedTo: "", by: me ? (me.username || "") : "",
     status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
     source: "csv", importId: importId || "", csvFp: ""
   };
@@ -164,16 +166,28 @@ function rcptCsvPoResolve(poRaw) {
   return { surface: true, po: po, custHint: custHint };
 }
 
+/* Resolve import attribution from a card last-4: a matched PERSONAL card → that user (paid + reimbursed); a
+   company card → no reimburse; an UNMATCHED / absent card → BLANK (unknown — NEVER the bulk uploader, who just
+   ran the import). The unknown ones are flagged in the list so the owner registers the card to a person. */
+function rcptCardAttr(last4) {
+  if (last4 && typeof cardOwner === "function") {
+    var r = cardOwner(last4);
+    if (r && r.resolution === "personal" && r.ownerId) return { paidBy: r.ownerId, attributedTo: r.ownerId };
+    if (r && r.resolution === "business") return { paidBy: "", attributedTo: "" };
+  }
+  return { paidBy: null, attributedTo: "" };
+}
 /* ---- build a review record from parsed vendor fields (mirrors rcptCsvRecord's shape; adds optional custHint) ---- */
 function rcptVendorRecord(f) {
   var me = (typeof rcptMe === "function") ? rcptMe() : null;
   var t = (typeof now === "function") ? now() : Date.now();
+  var _at = rcptCardAttr(f.cardLast4 || "");   // matched card → that person; unmatched/company → blank (not the uploader)
   var rec = {
     id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
     receiptId: null, amount: Math.round((+f.amount || 0) * 100) / 100, vendor: String(f.vendor || "").trim(),
     date: f.date || (typeof today === "function" ? today() : ""), type: null, jobId: null, category: "",
-    paidBy: null, cardLast4: f.cardLast4 || "", desc: f.desc || "",
-    uploadedBy: me ? me.id : "", attributedTo: me ? me.id : "", by: me ? (me.username || "") : "",
+    paidBy: _at.paidBy, cardLast4: f.cardLast4 || "", desc: f.desc || "",
+    uploadedBy: me ? me.id : "", attributedTo: _at.attributedTo, by: me ? (me.username || "") : "",
     status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
     source: "csv", importId: "", csvFp: ""
   };

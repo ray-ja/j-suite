@@ -60,6 +60,19 @@ function cardOwner(last4) {
     return { resolution: "business", ownerId: null, matches: matches };   // only company card(s) matched
   } catch (e) { return none; }
 }
+/* List badge for a receipt whose card last-4 isn't linked to anyone yet — "⚠ card ••••2469?" — so the owner
+   knows to register it (Settings → My cards, or assign it from the receipt). Empty when there's no card, or the
+   card resolves to a person/company (then it's already attributed). Ambiguous also flags (needs disambiguation). */
+function cardUnknownBadge(rec) {
+  try {
+    var l4 = rec && rec.cardLast4; if (!l4) return "";
+    if (rec.attributedTo || rec.paidBy) return "";                 // already attributed → no flag
+    var o = (typeof cardOwner === "function") ? cardOwner(l4) : null;
+    if (o && (o.resolution === "personal" || o.resolution === "business")) return "";
+    return ' <span class="badge" style="background:#e0a800;color:#fff" title="This card isn\'t linked to a person yet — add it in Settings → My cards, or open the receipt to assign it.">⚠ card ••••' + esc(String(l4)) + '?</span>';
+  } catch (e) { return ""; }
+}
+if (typeof window !== "undefined") window.cardUnknownBadge = cardUnknownBadge;
 
 /* ============================== PHASE 1a — "💳 My cards" (per-user Settings, self-write) ==============================
    Rendered into js/26's Settings page. The SIGNED-IN user manages THEIR OWN cards only — it writes curUser().cards,
