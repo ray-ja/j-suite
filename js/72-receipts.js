@@ -222,6 +222,8 @@ window.rcptExportZip = async function () {
 
 /* ============================== MASS / BATCH UPLOAD ============================== */
 function rcptIsReceipt(f) { return !!(f && (/^image\//.test(f.type || "") || f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""))); }
+/* a purchase-history CSV (Lowe's / Home Depot export) — NOT a photo; parsed into review records (js/93), never blob-uploaded */
+function rcptIsCsvFile(f) { return !!(f && (/\.csv$/i.test(f.name || "") || f.type === "text/csv" || f.type === "application/csv")); }
 /* one review record per uploaded photo — blank metadata, "needs review" state, synced */
 function rcptNewReview(receiptId) {
   const me = rcptMe();
@@ -232,7 +234,12 @@ function rcptNewReview(receiptId) {
 let _rcptUpBusy = false;
 function rcptSetUpStatus(txt) { const el = document.getElementById("rcpt_upstatus"); if (el) el.textContent = txt || ""; }
 function rcptUploadFiles(files) {
-  files = (files || []).filter(rcptIsReceipt);
+  files = (files || []);
+  // Branch: a purchase-history CSV isn't a photo — parse it into review records (js/93) instead of blob-uploading
+  // it. One CSV at a time; everything else falls through to the normal photo/PDF upload path unchanged.
+  const csvs = files.filter(rcptIsCsvFile);
+  if (csvs.length && typeof rcptCsvHandle === "function") rcptCsvHandle(csvs[0]);
+  files = files.filter(rcptIsReceipt);
   if (!files.length) return;
   if (typeof jsUpload !== "function") { alert("Upload needs a connection."); return; }
   if (_rcptUpBusy) return;   // a batch is already uploading — ignore repeat taps so a slow upload can't double-create (submitGuard-style busy flag)
@@ -312,8 +319,10 @@ function rReceipts() {
   // MASS UPLOAD
   h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)">
     <div class="sub" style="white-space:normal">Dump a whole <b>stack</b> of receipts in now — snap or pick several at once, or <b>drag &amp; drop</b> them here. Each lands in <b>Needs review</b>; tap any row below to set vendor/amount/type/job and file it.</div>
-    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
+    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf,.csv,text/csv" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
+    <input type="file" id="rcpt_csv" accept=".csv,text/csv" style="display:none" onchange="rcptCsvPick(this)">
+    <button class="btn ghost" style="width:100%;margin-top:6px" onclick="rcptCsvPickOpen()">📄 Import a purchase CSV (Lowe's / Home Depot…)</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div>
     <div class="sub" style="text-align:center;opacity:.6">⬇ or drag photos onto this box (desktop)</div></div>`;
 
@@ -438,7 +447,7 @@ function rcptCrewView() {
   let h = `<div class="secthd"><h2>📸 Receipts</h2></div>`;
   h += `<div class="card" ondragover="rcptDragOver(event)" ondragleave="rcptDragLeave(event)" ondrop="rcptDrop(event)">
     <div class="sub" style="white-space:normal">Snap or pick your receipts — pile them all in at once. They go to the owner to categorize &amp; file. You don't need to sort them. Check the list below first so you don't re-upload one that's already here.</div>
-    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf" multiple style="display:none" onchange="rcptUpload(this)">
+    <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf,.csv,text/csv" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div></div>`;
 

@@ -40,6 +40,11 @@ global.money = function (n) { return "$" + Math.round(n); };
 global.fmtDate = function (d) { return d; };
 global.jsUploadUrl = function (id) { return id ? "/uploads/" + id : ""; };
 global.jsUpload = function () { return Promise.resolve("blob_" + (++_n)); };   // overridden per-test
+global.toast = function () {};
+global.pad2 = function (n) { return String(n).padStart(2, "0"); };
+/* minimal synchronous FileReader stub so rcptCsvHandle (js/93) can be exercised headless — a fake file carries
+   its text on __text; readAsText fires onload immediately. */
+global.FileReader = function () { this.readAsText = function (file) { this.result = (file && file.__text != null) ? file.__text : String(file || ""); if (this.onload) this.onload(); }; };
 
 /* stubs for the Cap auto-categorize client module (js/88) — org-AI plumbing lives in js/75 (not loaded here) */
 global.orgAiBase = function () { return "http://x"; };
@@ -48,7 +53,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 /* helper: push a fully-attributed record straight into a home (simulate an already-filed receipt) */
@@ -343,6 +348,83 @@ async function main() {
   const worked = rcptWorkedJobsForMe("u_chase").map(j => j.id).sort();
   ok("worked union includes both j1 (crew+clock) and j2 (receipt)", worked.join(",") === "j1,j2", worked);
   ok("Pierce (no crew/receipt/clock) has an empty queue", rcptWorkedJobsForMe("u_pierce").length === 0);
+
+  // ========================= CSV RECEIPT IMPORT (js/93) =========================
+  const LOWES_CSV =
+    "Order Date,Item Description,Unit Price,Quantity,Line Total,Store,Order #\r\n" +
+    "2026-06-30,Quikrete 60lb Concrete Mix,6.98,4,27.92,Lowe's Kitty Hawk,123456\r\n" +
+    "2026-06-30,\"Paver, Holland 6x9 Red\",0.98,200,196.00,Lowe's Kitty Hawk,123456\r\n" +
+    "2026-06-30,Sales Tax,,,15.34,Lowe's Kitty Hawk,123456\r\n" +
+    "2026-06-30,Order Total,,,239.26,Lowe's Kitty Hawk,123456\r\n" +
+    "2026-05-01,Landscape Fabric 3x50,18.98,2,37.96,Lowe's Nags Head,999888\r\n";
+
+  console.log("\n— CSV auto-map: header detected, amount = LINE total (not unit price) —");
+  const csvRows = budgetParseCSV(LOWES_CSV);
+  const am = rcptCsvAutoMap(csvRows);
+  ok("header row detected", am.hasHeader === true);
+  ok("amount → 'Line Total' col (index 4), NOT 'Unit Price'", am.map.amount === 4, am.map);
+  ok("date → 'Order Date' (0)", am.map.date === 0, am.map);
+  ok("desc → 'Item Description' (1)", am.map.desc === 1, am.map);
+  ok("store → 'Store' (5)", am.map.store === 5, am.map);
+  ok("order # → 'Order #' (6)", am.map.order === 6, am.map);
+
+  console.log("— CSV parse → one review record per line item, junk rows skipped + counted —");
+  resetStore();
+  CURUSER = { id: "u_ray", username: "Ray" };
+  rcptCsvHandle({ name: "lowes-history.csv", __text: LOWES_CSV });   // FileReader stub → rcptCsvStart → preview built
+  ok("RCSV session parsed 3 line items", RCSV && RCSV.parsed.length === 3, RCSV && RCSV.parsed.length);
+  ok("2 junk rows (Sales Tax + Order Total) skipped + counted", RCSV && RCSV.skipped === 2, RCSV && RCSV.skipped);
+  ok("amounts parsed from LINE total (27.92 / 196 / 37.96)", RCSV && RCSV.parsed.map(p => p.rec.amount).sort((a, b) => a - b).join(",") === "27.92,37.96,196", RCSV && RCSV.parsed.map(p => p.rec.amount));
+  ok("dates parsed (2× 2026-06-30, 1× 2026-05-01)", RCSV && RCSV.parsed.filter(p => p.rec.date === "2026-06-30").length === 2 && RCSV.parsed.some(p => p.rec.date === "2026-05-01"));
+  ok("desc carries item + order #", RCSV && RCSV.parsed.some(p => /Quikrete/.test(p.rec.desc) && /order #123456/.test(p.rec.desc)), RCSV && RCSV.parsed[0].rec.desc);
+  ok("per-row store detected as vendor", RCSV && RCSV.parsed.every(p => /Lowe's/.test(p.store) && /Lowe's/.test(p.rec.vendor)));
+  ok("Vendor-for-all default = most-common store", RCSV && RCSV.detStore === "Lowe's Kitty Hawk", RCSV && RCSV.detStore);
+
+  // ---- P&L INVARIANCE: snapshot every finance-relevant total BEFORE commit ----
+  const plSnap = () => JSON.stringify({
+    mat: STORE.jobs.reduce((s, j) => s + (j.materials || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
+    exp: STORE.jobs.reduce((s, j) => s + (j.expenses || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
+    biz: (STORE.expenses || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0),
+    prof: STORE.jobs.map(j => jobProfit(j))
+  });
+  const beforePL = plSnap();
+
+  console.log("— CSV commit → N review records land in receipts[], receiptId:null / status:review —");
+  rcptCsvCommit();   // headless: no checkboxes → keeps all parsed rows, vendor input null → per-row store
+  const imported = rcptReview().filter(r => r.source === "csv");
+  ok("3 review records committed", imported.length === 3, imported.length);
+  ok("every imported record is receiptId:null (photo-less)", imported.every(r => r.receiptId === null));
+  ok("every imported record is status:review, type:null (not billing)", imported.every(r => r.status === "review" && r.type === null));
+  ok("all share ONE importId", imported.every(r => r.importId && r.importId === imported[0].importId));
+  ok("all carry the same csvFp (rowCount|cents|min|max)", imported.every(r => r.csvFp && r.csvFp === imported[0].csvFp) && /^3\|/.test(imported[0].csvFp), imported[0].csvFp);
+  ok("vendor = each row's own store", imported.filter(r => r.vendor === "Lowe's Kitty Hawk").length === 2 && imported.some(r => r.vendor === "Lowe's Nags Head"));
+
+  console.log("— P&L INVARIANCE: importing review records moves NOTHING into any billing array —");
+  ok("job.materials / job.expenses / business expenses UNCHANGED after import", plSnap() === beforePL, { before: beforePL, after: plSnap() });
+  ok("imported rows are in NO job array (review only)", STORE.jobs.every(j => (j.materials || []).concat(j.expenses || []).every(x => (x.source !== "csv"))));
+
+  console.log("— CSV soft dedup: re-importing the SAME file pre-unchecks every row —");
+  rcptCsvHandle({ name: "lowes-history.csv", __text: LOWES_CSV });   // build a fresh preview against the now-populated queue
+  ok("second import flags all 3 as likely dups", RCSV && RCSV.parsed.length === 3 && RCSV.parsed.every(p => p.dup === true), RCSV && RCSV.parsed.map(p => p.dup));
+  ok("dups are pre-UNCHECKED (keep=false) so nothing double-imports by default", RCSV && RCSV.parsed.every(p => p.keep === false));
+  ok("re-import fingerprint matches the first import's csvFp (already-imported signal)", RCSV && RCSV.fp === imported[0].csvFp, RCSV && RCSV.fp);
+
+  console.log("— CSV round-trip: imported review records survive migrateStore + a no-op sync merge (zero loss) —");
+  const csvWrapped = SS.migrateStore({ obx: { receipts: STORE.receipts.slice() } });
+  const rt = SS.mergeState(csvWrapped, csvWrapped);
+  const survived = (rt.obx.receipts || []).filter(r => r.source === "csv");
+  ok("all 3 imported receipts survive the round-trip", survived.length === 3, survived.length);
+  ok("survivors keep receiptId:null + importId + csvFp intact", survived.every(r => r.receiptId === null && r.importId && r.csvFp), survived[0]);
+
+  console.log("— CSV robustness: a header-less / all-junk / empty file never crashes —");
+  ok("empty text → empty auto-map, no throw", (function () { try { const a = rcptCsvAutoMap(budgetParseCSV("")); return a.map.amount === -1; } catch (e) { return false; } })());
+  ok("a junk-only body parses to 0 records (all skipped)", (function () {
+    const rows = budgetParseCSV("Date,Item,Amount\n2026-07-01,Subtotal,10\n2026-07-01,Tax,1\n");
+    const mp = rcptCsvAutoMap(rows).map; let kept = 0, skip = 0;
+    rows.slice(1).forEach(r => { const rec = rcptCsvRecord(r, mp, "X", "i1"); if (rec) kept++; else skip++; });
+    return kept === 0 && skip === 2;
+  })());
+  ok("a $0 / unparseable amount row is skipped, not imported", rcptCsvRecord(["2026-07-01", "Freebie", "$0.00"], { date: 0, desc: 1, amount: 2, store: -1, order: -1 }, "X", "i1") === null);
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
