@@ -367,7 +367,7 @@ window.wizPersist=function(){
   save();return q;
 };
 window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
-window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();};
+window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();if(WZ.invoiced&&WZ.jobId&&typeof reviewPrompt==="function")reviewPrompt(WZ.jobId);};   /* ask for the review at the INVOICED moment, not at job-done (Ray) */
 window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetFinal=function(){if(wizLockedAlert())return;const v=val("wz_final");WZ.finalPrice=(v===""||v==null)?0:Math.max(0,parseFloat(v)||0);WZ.adjNote=val("wz_adjnote")||"";WZ._verSource="final-price";const q=wizPersist();if(q.paid&&typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,"Final price "+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetPayLink=function(){if(wizLockedAlert())return;const e=document.getElementById("wz_paylink");if(e)WZ.paymentLink=e.value.trim();wizPersist();render();};

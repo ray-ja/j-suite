@@ -503,8 +503,7 @@ window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done
   if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);
     if(typeof invAutoFlagCleaningForJob==="function")invAutoFlagCleaningForJob(j);  /* CLEANING (Phase 4): flag dirties-with-use gear for cleaning on wrap (idempotent; reopen doesn't clear) */
   }else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
-  if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();
-  if(j.done&&typeof reviewPrompt==="function")reviewPrompt(id);};   /* Cap #2: ask for a Google review at the done-moment */
+  if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();};   /* review prompt moved to the INVOICED moment (js/23 wizToggleInvoiced + js/46 invMark) per Ray — ask once you're billing, not at job-done */
 window.delJob=function(id){if(!confirm("Delete this job? It (and its quote) go to the Archive for 60 days — restore it there if needed."))return;
   const j=D().jobs.find(x=>x.id===id); const ttl=(j&&j.title)||"job";
   if(typeof archiveDeleteJob==="function")archiveDeleteJob(id); else if(j){j.deleted=true;j.deletedAt=now();touch(j);}   // cascade: job + sub-jobs + originating quote
