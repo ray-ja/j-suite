@@ -35,6 +35,11 @@ function stopSplitN(sj) { return Math.max(1, (sj && Array.isArray(sj.sharedJobId
 function stopEmoji(kind) { return kind === "dump" ? "🚛" : kind === "pickup" ? "📦" : "🔀"; }
 /* one job's mileage cost: confirmed time-clock miles if any, else the manual driveMiles estimate */
 function jobMilesCost(j) { const tc = jobMileageCost(j); if (tc > 0) return tc; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (+j.driveMiles || 0) * rate; }
+/* mileage cost for a job's TOTAL-COST DISPLAY (e.g. the Jobs-table Expenses column): the odometer-of-record
+   (confirmed time-clock miles) when a drive has been clocked, else the maps ROUTE ESTIMATE (j.estRouteMiles)
+   as the automatic fallback — × IRS rate. Display-only: this NEVER writes and the confirmed odometer always
+   wins once entered (the estimate is just so every job shows its expected mileage payout before clock-out). */
+function jobMilesCostEst(j) { if (!j) return 0; const tc = jobMileageCost(j); if (tc > 0) return tc; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); const est = +j.estRouteMiles; return est > 0 ? est * rate : 0; }
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line */
 function jobProfit(j) {
   const q = plQuoteFor(j);
