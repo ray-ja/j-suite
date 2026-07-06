@@ -178,8 +178,8 @@ function wizPaverUI(){
   let h = `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">Paver patio / pad</div><div class="nm" style="font-size:18px">One-page quote</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;
   if (WZ.cust && WZ.cust.name) h += `<div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(WZ.cust.name)}</div>${WZ.cust.address?`<div class="sub">${esc(WZ.cust.address)}</div>`:""}<button class="btn ghost sm" style="margin-top:6px" onclick="WZ.step='cust';render()">↩ Change customer / property</button></div>`;
   h += `<div class="card"><div class="row" style="gap:8px">
-    <div class="grow"><label style="margin-top:0">Length (ft)</label><input type="number" inputmode="decimal" value="${pv.L}" min="1" oninput="wizPvField('L',this.value)"></div>
-    <div class="grow"><label style="margin-top:0">Width (ft)</label><input type="number" inputmode="decimal" value="${pv.W}" min="1" oninput="wizPvField('W',this.value)"></div>
+    <div class="grow"><label style="margin-top:0">Length (ft)</label><input type="number" inputmode="decimal" value="${pv.L}" min="1" onchange="wizPvField('L',this.value)"></div>
+    <div class="grow"><label style="margin-top:0">Width (ft)</label><input type="number" inputmode="decimal" value="${pv.W}" min="1" onchange="wizPvField('W',this.value)"></div>
     <div style="align-self:flex-end;padding-bottom:8px;font-weight:800">= ${Math.round(c.area)} sq ft</div></div>
     <div class="sub" style="margin-top:2px">perimeter ${Math.round(perim)} ft (edging)</div></div>`;
   // shape / layout complexity — a skinny-into-wide or curvy run is more layout + cuts than a clean square
