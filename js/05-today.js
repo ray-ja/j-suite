@@ -22,6 +22,12 @@ function rToday(){
   //    `ceo` doc is preserved + owner-editable as a compact "📌 Pinned" strip folded inside the Cap panel (js/97).
   if(typeof capTodayPanel==="function") h+=capTodayPanel();
 
+  // 1.5) 📸 Snap a receipt — the obvious, discoverable capture entry right under Cap (the always-on path is the
+  //   floating FAB in js/99). Routes to the SAME rcptUploadFiles pipeline (smart-defaults + auto-read + one-tap file).
+  //   Only shown when there's a live server + signed in (else the upload can't connect); the FAB hides the same way.
+  if(typeof capCaptureReady==="function" && capCaptureReady())
+    h+=`<button class="btn ghost" style="width:100%;margin-bottom:14px;font-size:15px" onclick="if(typeof capQuickCapture==='function')capQuickCapture()">📸 Snap a receipt</button>`;
+
   // 2) Clock — clocked-in banner OR the prominent clock-in card (Item 3): clock in right here on Today, picking or
   // adding the job to attach the shift to. Uses the SAME shared form (js/38 tcClockInFormHTML) as the Time tab +
   // job page, so vehicle/trailer/rider-role/start-odo/route-estimate all come along.
