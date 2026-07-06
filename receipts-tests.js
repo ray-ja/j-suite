@@ -467,6 +467,67 @@ async function main() {
   ok("cardOwner: unknown last-4 → none", cardOwner("0000").resolution === "none");
   S.users = _u; S.registry = _r;
 
+  // ========================= VENDOR-SPECIFIC CSV IMPORTERS (js/93) =========================
+  // Synthetic Lowe's "Order History" export — mimics the REAL header + a spread of rows:
+  //   · a PO customer-hint row (PO "mike green"), a PO prefix row ("mike g"), a "no" PO row, an "NA" PO row
+  //   · VISA / DEBITVISA / DEBITMC card types in the "************2469" masked format
+  //   · the trailing "multiple*:" note row that must be SKIPPED
+  const LOWES_V2_HDR = "Date,Purchased From,Fulfillment Type,Fulfillment Store #,Fulfillment Store Location,Fulfillment Status,PO Number,Group Name,Purchaser Name,Purchaser Email,Purchaser Phone Number,Order # / Trans. #,Invoice Number,Tax,Order Total,CC Type,CC# (last 4),Loyalty Rewards Earned,Order Ref";
+  const LOWES_V2 =
+    LOWES_V2_HDR + "\r\n" +
+    "2-Jul-2026,Lowe's,In-Store,1521,Kill Devil Hills Lowe's,Fulfilled,mike green,,Ray,ray@obx.com,2525550000,147424942,,$4.29,$65.07,VISA,************2469,$0.65,REF1\r\n" +
+    "30-Jun-2026,Lowe's,Pickup,1521,Nags Head Lowe's,Fulfilled,no,,Ray,ray@obx.com,2525550000,147000001,,$0.81,$12.34,DEBITVISA,************1005,$0.12,REF2\r\n" +
+    "1-May-2026,Lowe's,In-Store,1521,Kill Devil Hills Lowe's,Fulfilled,NA,,Ray,ray@obx.com,2525550000,147000002,,$13.11,$200.00,DEBITMC,************3005,$2.00,REF3\r\n" +
+    "2-Jul-2026,Lowe's,In-Store,1521,Kill Devil Hills Lowe's,Fulfilled,mike g,,Ray,ray@obx.com,2525550000,147000003,,$2.49,$37.96,VISA,************2469,$0.38,REF4\r\n" +
+    "multiple*: indicates an order was paid across more than one card\r\n";
+
+  console.log("\n— VENDOR CSV: Lowe's detected by header signature, unknown files fall back to generic —");
+  const detected = rcptCsvDetectVendor(budgetParseCSV(LOWES_V2)[0]);
+  ok("detect(headerCells) → Lowe's parser (id 'lowes')", detected && detected.id === "lowes", detected && detected.id);
+  ok("unknown/generic header → no vendor (null → generic fallback)", rcptCsvDetectVendor(budgetParseCSV(LOWES_CSV)[0]) === null);
+
+  console.log("— VENDOR CSV: zero-map parse — Order Total / D-Mon-YYYY date / cardLast4 / PO hint —");
+  resetStore();
+  CURUSER = { id: "u_ray", username: "Ray" };
+  STORE.customers.push({ id: "cMG", name: "Mike Green" });   // the PO soft-match target
+  const beforeV = plSnap();
+  rcptCsvHandle({ name: "PurchaseHistory.csv", __text: LOWES_V2 });   // FileReader stub → detect → vendor preview
+  ok("Lowe's detected → RCSV.vendorId 'lowes' (column-map step skipped)", RCSV && RCSV.vendorId === "lowes", RCSV && RCSV.vendorId);
+  ok("4 line items parsed, 'multiple*' trailer skipped + counted", RCSV && RCSV.parsed.length === 4 && RCSV.skipped === 1, RCSV && [RCSV && RCSV.parsed.length, RCSV && RCSV.skipped]);
+  const vRecs = RCSV.parsed.map(p => p.rec);
+  ok("amount = Order Total incl tax (12.34 / 37.96 / 65.07 / 200)", vRecs.map(r => r.amount).sort((a, b) => a - b).join(",") === "12.34,37.96,65.07,200", vRecs.map(r => r.amount));
+  ok("D-Mon-YYYY → YYYY-MM-DD (2× 2026-07-02, 2026-06-30, 2026-05-01)", vRecs.filter(r => r.date === "2026-07-02").length === 2 && vRecs.some(r => r.date === "2026-06-30") && vRecs.some(r => r.date === "2026-05-01"), vRecs.map(r => r.date));
+  ok("vendor = \"Lowe's\" for every row", vRecs.every(r => r.vendor === "Lowe's"));
+  ok("cardLast4 = trailing 4 of CC# (last 4) → 2469/1005/3005/2469 (feeds card-attribution)", vRecs.map(r => r.cardLast4).join(",") === "2469,1005,3005,2469", vRecs.map(r => r.cardLast4));
+  const mgRow = vRecs.find(r => /147424942/.test(r.desc));
+  ok("desc = 'Order #<n> · <store>'", /^Order #147424942 · Kill Devil Hills Lowe's/.test(mgRow.desc), mgRow.desc);
+  ok("PO surfaced on desc (· PO: mike green)", /· PO: mike green/.test(mgRow.desc), mgRow.desc);
+  ok("PO 'mike green' soft-matches exactly one customer → custHint {customerId,name}", mgRow.custHint && mgRow.custHint.customerId === "cMG" && mgRow.custHint.name === "Mike Green", mgRow.custHint);
+  const mgPrefix = vRecs.find(r => /147000003/.test(r.desc));
+  ok("PO prefix 'mike g' also soft-matches Mike Green (contained-in-name)", mgPrefix.custHint && mgPrefix.custHint.customerId === "cMG", mgPrefix.custHint);
+  const noRow = vRecs.find(r => /147000001/.test(r.desc)), naRow = vRecs.find(r => /147000002/.test(r.desc));
+  ok("PO 'no' / 'NA' rows → NO PO note, NO custHint (sentinels skipped)", !/PO:/.test(noRow.desc) && !noRow.custHint && !/PO:/.test(naRow.desc) && !naRow.custHint, { no: noRow.desc, na: naRow.desc });
+  ok("every parsed record is status:review / receiptId:null / type:null (not billing)", vRecs.every(r => r.status === "review" && r.receiptId === null && r.type === null));
+
+  console.log("— VENDOR CSV commit → review queue; P&L invariant; survives sync round-trip —");
+  rcptCsvCommit();   // headless: no checkboxes kept → all 4; vendor input null → per-row 'Lowe's'
+  const vImported = rcptReview().filter(r => r.source === "csv");
+  ok("4 review records committed to receipts[]", vImported.length === 4, vImported.length);
+  ok("committed records keep a 4-digit cardLast4 (card-attribution auto-matches paidBy later)", vImported.every(r => /^\d{4}$/.test(r.cardLast4)));
+  ok("committed records keep the PO custHint suggestion (2 rows matched)", vImported.filter(r => r.custHint && r.custHint.customerId === "cMG").length === 2, vImported.filter(r => r.custHint).length);
+  ok("P&L INVARIANCE: Σ job.materials/job.expenses/biz UNCHANGED after import (review-only)", plSnap() === beforeV, { before: beforeV, after: plSnap() });
+  ok("imported rows are in NO job/biz array (review only)", STORE.jobs.every(j => (j.materials || []).concat(j.expenses || []).every(x => x.source !== "csv")) && (STORE.expenses || []).every(x => x.source !== "csv"));
+  const vWrapped = SS.migrateStore({ obx: { receipts: STORE.receipts.slice() } });
+  const vRt = SS.mergeState(vWrapped, vWrapped);
+  const vSurv = (vRt.obx.receipts || []).filter(r => r.source === "csv");
+  ok("all 4 vendor records survive migrate + no-op merge with cardLast4 + custHint intact", vSurv.length === 4 && vSurv.every(r => r.receiptId === null) && vSurv.filter(r => r.custHint).length === 2, vSurv.length);
+
+  console.log("— VENDOR CSV: an UNKNOWN header still routes through the generic auto-map path —");
+  resetStore();
+  CURUSER = { id: "u_ray", username: "Ray" };
+  rcptCsvHandle({ name: "mystery.csv", __text: LOWES_CSV });
+  ok("unknown file → no vendorId, generic auto-map still parses its 3 line items", RCSV && !RCSV.vendorId && RCSV.parsed.length === 3, RCSV && [RCSV && RCSV.vendorId, RCSV && RCSV.parsed.length]);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

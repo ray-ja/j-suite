@@ -104,6 +104,117 @@ function rcptCsvGuessVendor(fileName) {
   return "";
 }
 
+/* ============================== VENDOR-SPECIFIC IMPORTERS ==============================
+   Ray doesn't want to hand-map columns. A HANDFUL of stores offer a downloadable CSV of purchase history
+   (Lowe's, Home Depot, Walmart, Amazon). Each has a fixed header layout, so a DEDICATED parser can convert it
+   with ZERO mapping. We detect the vendor by its header signature; if one matches we skip the column-map step
+   entirely and go straight to the preview. Unknown files fall back to the generic fuzzy auto-map / manual map
+   (unchanged). Adding a new vendor later = ONE entry in VENDOR_PARSERS below — no other change.
+
+   A parser is: { id, name, detect(headerCells)->bool, parseRow(cells, H)->record|null } where
+     · headerCells = the raw first CSV row (array of strings)
+     · H           = a normalized header→index map (built by rcptVendorH; keys are trim+lowercase header text)
+     · parseRow returns a review record (rcptVendorRecord shape) or null to SKIP the row (trailer / no total). */
+
+/* ---- normalized header→index map (trim + lowercase; first wins on a dup header) ---- */
+function rcptVendorH(headerCells) {
+  var H = {};
+  (headerCells || []).forEach(function (h, i) { var k = String(h == null ? "" : h).trim().toLowerCase(); if (!(k in H)) H[k] = i; });
+  return H;
+}
+/* ---- index of the first header key matching `re` (−1 if none) ---- */
+function rcptHIdx(H, re) { for (var k in H) { if (Object.prototype.hasOwnProperty.call(H, k) && re.test(k)) return H[k]; } return -1; }
+/* ---- trimmed value of the first column whose header matches `re` ("" if missing) ---- */
+function rcptHVal(H, cells, re) { var i = rcptHIdx(H, re); return i >= 0 ? String(cells && cells[i] != null ? cells[i] : "").trim() : ""; }
+
+/* ---- tolerant date parse for vendor files. Handles Lowe's "2-Jul-2026" (D-Mon-YYYY) DETERMINISTICALLY
+        (iOS Safari won't reliably parse that string), then falls back to budgetParseDate for ISO/US.
+        Local to the vendor path — budgetParseDate itself is untouched (other callers unaffected). ---- */
+function rcptCsvVendorDate(s) {
+  s = String(s || "").trim(); if (!s) return "";
+  var m = s.match(/^(\d{1,2})[-\s]([A-Za-z]{3,9})[-\s](\d{4})$/);   // D-Mon-YYYY, e.g. 2-Jul-2026
+  if (m) {
+    var mon = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 }[m[2].slice(0, 3).toLowerCase()];
+    var p2 = (typeof pad2 === "function") ? pad2 : function (n) { return String(n).padStart(2, "0"); };
+    if (mon) return m[3] + "-" + p2(mon) + "-" + p2(m[1]);
+  }
+  return (typeof budgetParseDate === "function") ? budgetParseDate(s) : "";
+}
+
+/* ---- a customer HINT from a register-typed PO string (Ray types "mike green" / "mike g" at the register).
+        Skips the not-a-customer sentinels (NA / N/A / no / blank / "multiple*"). Otherwise surfaces the PO on
+        the desc AND, if it case-insensitively equals / is contained in EXACTLY ONE active customer's name, offers
+        a soft {customerId,name} hint (a SUGGESTION the review UI can accept — never a hard jobId set). ---- */
+function rcptCsvPoResolve(poRaw) {
+  var po = String(poRaw == null ? "" : poRaw).trim(), low = po.toLowerCase();
+  if (po === "" || low === "na" || low === "n/a" || low === "no" || low.indexOf("multiple") === 0) return { surface: false, po: "", custHint: null };
+  var custHint = null;
+  try {
+    var custs = (typeof actC === "function") ? actC()
+      : ((typeof D === "function" && D() && Array.isArray(D().customers)) ? D().customers.filter(function (c) { return c && !c.deleted; }) : []);
+    var matches = [];
+    custs.forEach(function (c) {
+      var nm = String((c && (c.name || c.company)) || "").trim().toLowerCase(); if (!nm) return;
+      if (nm === low || nm.indexOf(low) >= 0) { if (matches.indexOf(c) < 0) matches.push(c); }   // typed PO equals or is contained in the name
+    });
+    if (matches.length === 1) custHint = { customerId: matches[0].id, name: matches[0].name || matches[0].company || "" };   // exactly one → offer it
+  } catch (e) { /* never let a hint lookup break an import */ }
+  return { surface: true, po: po, custHint: custHint };
+}
+
+/* ---- build a review record from parsed vendor fields (mirrors rcptCsvRecord's shape; adds optional custHint) ---- */
+function rcptVendorRecord(f) {
+  var me = (typeof rcptMe === "function") ? rcptMe() : null;
+  var t = (typeof now === "function") ? now() : Date.now();
+  var rec = {
+    id: (typeof uid === "function") ? uid() : ("rcsv_" + t + "_" + Math.random().toString(36).slice(2)),
+    receiptId: null, amount: Math.round((+f.amount || 0) * 100) / 100, vendor: String(f.vendor || "").trim(),
+    date: f.date || (typeof today === "function" ? today() : ""), type: null, jobId: null, category: "",
+    paidBy: null, cardLast4: f.cardLast4 || "", desc: f.desc || "",
+    uploadedBy: me ? me.id : "", attributedTo: me ? me.id : "", by: me ? (me.username || "") : "",
+    status: "review", suggested: null, ts: t, deleted: false, updatedAt: t,
+    source: "csv", importId: "", csvFp: ""
+  };
+  if (f.custHint) rec.custHint = f.custHint;   // additive optional hint (review UI may offer it); no migration
+  return rec;
+}
+
+/* ---- THE REGISTRY. Each parser owns one vendor's CSV export. Add Home Depot / Walmart / Amazon here when a
+        real sample arrives — same {id,name,detect,parseRow} shape, no other file changes. ---- */
+var VENDOR_PARSERS = [
+  {
+    id: "lowes", name: "Lowe's",
+    /* signature of Lowe's "Order History" export — three columns no other file combines */
+    detect: function (headerCells) {
+      var H = rcptVendorH(headerCells);
+      return rcptHIdx(H, /order\s*#\s*\/\s*trans/) >= 0 && rcptHIdx(H, /cc#?\s*\(\s*last\s*4\s*\)/) >= 0 && rcptHIdx(H, /order total/) >= 0;
+    },
+    parseRow: function (cells, H) {
+      if (!cells) return null;
+      var amt = budgetParseAmount(rcptHVal(H, cells, /order total/));       // total paid incl. tax
+      if (amt == null || isNaN(amt) || Math.abs(amt) <= 0) return null;     // trailer / blank / note row → SKIP
+      var date = rcptCsvVendorDate(rcptHVal(H, cells, /^date$/));
+      var order = rcptHVal(H, cells, /order\s*#\s*\/\s*trans/).replace(/^#+/, "");
+      var store = rcptHVal(H, cells, /fulfillment store location/);
+      var m4 = rcptHVal(H, cells, /cc#?\s*\(\s*last\s*4\s*\)/).match(/(\d{4})\s*$/);   // "************2469" → "2469"
+      var desc = order ? ("Order #" + order) : "Lowe's order";
+      if (store) desc += " · " + store;
+      var poR = rcptCsvPoResolve(rcptHVal(H, cells, /^po number$/));
+      if (poR.surface) desc += " · PO: " + poR.po;                          // surface the register-typed customer note
+      return rcptVendorRecord({ amount: Math.abs(amt), vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poR.custHint });
+    }
+  }
+  /* ,{ id:"homedepot", name:"Home Depot", detect(headerCells){…}, parseRow(cells,H){…} }   // add when a sample arrives
+     ,{ id:"walmart",   name:"Walmart",    detect(headerCells){…}, parseRow(cells,H){…} }
+     ,{ id:"amazon",    name:"Amazon",     detect(headerCells){…}, parseRow(cells,H){…} } */
+];
+
+/* ---- pick the first vendor parser whose signature matches this file's header row (null = unknown → generic) ---- */
+function rcptCsvDetectVendor(headerCells) {
+  for (var i = 0; i < VENDOR_PARSERS.length; i++) { try { if (VENDOR_PARSERS[i].detect(headerCells)) return VENDOR_PARSERS[i]; } catch (e) {} }
+  return null;
+}
+
 /* ============================== ENTRY POINTS ============================== */
 /* the dedicated "📄 Import a purchase CSV" button (owner) + its hidden input */
 window.rcptCsvPickOpen = function () { var el = document.getElementById("rcpt_csv"); if (el) el.click(); };
@@ -125,12 +236,21 @@ window.rcptCsvHandle = function (file) {
 function rcptCsvStart(text, fileName) {
   var vendor = rcptCsvGuessVendor(fileName) || "Lowe's";
   RCSV = { text: text || "", fileName: fileName || "", rows: null, headers: [], hasHeader: true,
-           map: { date: -1, desc: -1, amount: -1, store: -1, order: -1 }, vendor: vendor, detStore: "", parsed: [], skipped: 0, fp: "" };
+           map: { date: -1, desc: -1, amount: -1, store: -1, order: -1 }, vendor: vendor, vendorId: "", vendorName: "", detStore: "", parsed: [], skipped: 0, fp: "" };
   var rows = budgetParseCSV(text);
   if (!rows.length) { rcptCsvSourceStep(); return; }   // nothing parsed → offer a paste fallback
   RCSV.rows = rows;
+  // auto-map first — populates headers/map so the manual-map escape hatch stays valid even on a vendor file
   var am = rcptCsvAutoMap(rows);
   RCSV.hasHeader = am.hasHeader; RCSV.headers = am.headers; RCSV.map = am.map;
+  // ── VENDOR DETECTION ── a dedicated parser matching this file's header signature → ZERO-map straight to preview
+  var parser = rcptCsvDetectVendor(rows[0]);
+  if (parser) {
+    RCSV.vendorId = parser.id; RCSV.vendorName = parser.name; RCSV.vendor = parser.name; RCSV.hasHeader = true;
+    rcptCsvBuildVendorPreview(parser);
+    return;
+  }
+  // ── GENERIC FALLBACK ── unknown file → fuzzy auto-map (or manual map if a required column is missing)
   if (am.map.date < 0 || am.map.desc < 0 || am.map.amount < 0) { rcptCsvMapStep(); return; }   // weird layout → manual map
   rcptCsvBuildPreview();
 }
@@ -180,10 +300,35 @@ window.rcptCsvMapApply = function () {
   rcptCsvBuildPreview();
 };
 
-/* ---------- build parsed rows from the mapping, dedup, then preview ---------- */
+/* ---------- GENERIC path: build parsed rows from the fuzzy column map, then present ---------- */
 function rcptCsvBuildPreview() {
   var rows = RCSV.rows.slice(RCSV.hasHeader ? 1 : 0);
-  var parsed = [], skipped = 0, seen = {}, storeCounts = {};
+  var items = [], skipped = 0;
+  rows.forEach(function (row) {
+    var storeCell = RCSV.map.store >= 0 ? String(row[RCSV.map.store] != null ? row[RCSV.map.store] : "").trim() : "";
+    var rec = rcptCsvRecord(row, RCSV.map, RCSV.vendor, "");   // importId assigned at commit
+    if (!rec) { skipped++; return; }
+    items.push({ rec: rec, store: storeCell });
+  });
+  rcptCsvPresentPreview(items, skipped);
+}
+
+/* ---------- VENDOR path: run a dedicated parser over every data row (no column map), then present ---------- */
+function rcptCsvBuildVendorPreview(parser) {
+  var H = rcptVendorH(RCSV.rows[0]);            // vendor files always carry a header row
+  var rows = RCSV.rows.slice(1);
+  var items = [], skipped = 0;
+  rows.forEach(function (row) {
+    var rec = null; try { rec = parser.parseRow(row, H); } catch (e) { rec = null; }
+    if (!rec) { skipped++; return; }            // trailer / blank / no-total → skipped + counted
+    items.push({ rec: rec, store: rec.vendor || "" });
+  });
+  rcptCsvPresentPreview(items, skipped);
+}
+
+/* ---------- shared finish: soft dedup, fingerprint, vendor-default, already-imported warn, then PREVIEW ---------- */
+function rcptCsvPresentPreview(items, skipped) {
+  var parsed = [], seen = {}, storeCounts = {};
   // existing receipts (review + filed) for cross-import soft dedup
   var existing = {};
   ((typeof rcptAllRows === "function") ? rcptAllRows() : []).forEach(function (r) {
@@ -191,10 +336,8 @@ function rcptCsvBuildPreview() {
     var rd = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
     existing[budgetDupKey(rd, r.amount, r.desc || r.note || "")] = true;
   });
-  rows.forEach(function (row) {
-    var storeCell = RCSV.map.store >= 0 ? String(row[RCSV.map.store] != null ? row[RCSV.map.store] : "").trim() : "";
-    var rec = rcptCsvRecord(row, RCSV.map, RCSV.vendor, "");   // importId assigned at commit
-    if (!rec) { skipped++; return; }
+  items.forEach(function (it) {
+    var rec = it.rec, storeCell = it.store || "";
     if (storeCell) storeCounts[storeCell] = (storeCounts[storeCell] || 0) + 1;
     var dk = budgetDupKey(rec.date, rec.amount, rec.desc);
     var dup = !!(existing[dk] || seen[dk]); seen[dk] = true;
@@ -205,7 +348,7 @@ function rcptCsvBuildPreview() {
   // "Vendor for all" default = the most common detected store, else the file-name guess
   var det = "", detN = -1; Object.keys(storeCounts).forEach(function (k) { if (storeCounts[k] > detN) { detN = storeCounts[k]; det = k; } });
   RCSV.detStore = det;
-  if (!parsed.length) { rcptCsvMapStep("No line items parsed with these columns — check the amount/item choice."); return; }
+  if (!parsed.length) { rcptCsvMapStep("No line items parsed — check the amount/item choice."); return; }
   // soft-warn (never block) if this same file looks already-imported
   var already = ((typeof rcptColl === "function") ? rcptColl() : []).some(function (r) { return r && !r.deleted && r.csvFp && r.csvFp === RCSV.fp; });
   if (already && typeof confirm === "function" && !confirm("Looks like you already imported this file (same rows/total/dates). Import it again anyway?")) { if (typeof closeModal === "function") closeModal(); RCSV = null; return; }
@@ -221,7 +364,8 @@ function rcptCsvPreviewStep() {
   var dupN = p.filter(function (x) { return x.dup; }).length;
   var vendorDefault = RCSV.detStore || RCSV.vendor || "Lowe's";
   var m = (typeof money === "function") ? money : function (n) { return "$" + (Math.round(n * 100) / 100).toFixed(2); };
-  var h = '<p class="muted" style="margin:0 0 6px;font-size:13px"><b>Found ' + p.length + ' line item' + (p.length === 1 ? "" : "s") + ' · ' + m(total) + ' total</b> — import?'
+  var h = (RCSV.vendorId ? '<div class="card" style="border-left:4px solid var(--accent);margin:0 0 8px;padding:6px 10px"><b>Detected: ' + esc(RCSV.vendorName || RCSV.vendor) + '</b> — ' + p.length + ' line item' + (p.length === 1 ? "" : "s") + ' <span class="sub">· auto-parsed, no column mapping needed</span></div>' : '');
+  h += '<p class="muted" style="margin:0 0 6px;font-size:13px"><b>Found ' + p.length + ' line item' + (p.length === 1 ? "" : "s") + ' · ' + m(total) + ' total</b> — import?'
     + (RCSV.skipped ? ' <span class="sub">(skipped ' + RCSV.skipped + ' non-item row' + (RCSV.skipped === 1 ? "" : "s") + ')</span>' : '')
     + (dupN ? ' · <span style="color:var(--danger)">' + dupN + ' likely duplicate' + (dupN === 1 ? "" : "s") + ' unchecked</span>' : '') + '</p>';
   h += '<label>Vendor for all</label><input id="rcsv_vendor" value="' + esc(vendorDefault) + '" placeholder="Lowe\'s" style="width:100%;margin-bottom:8px"><div class="sub" style="margin:-4px 0 8px">Rows with their own store keep it; the rest use this. Each lands in <b>Needs review</b>.</div>';
