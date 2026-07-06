@@ -174,6 +174,10 @@ function rJobPage(j) {
     h += `<div class="sub" style="margin-top:10px;white-space:normal">🧭 Est. route: ~<b>${j.estRouteMiles} mi</b>${_n ? ` across ${_n} stop${_n > 1 ? "s" : ""}${addr ? " + job site" : ""}` : ""}${_ends} <span class="muted">· ordered start→stops→site→end path, an offline cross-check — not the billed miles</span></div>`;
     if (_confMiles > 0) { const _pct = Math.round(_confMiles / j.estRouteMiles * 100); h += `<div class="sub" style="margin-top:2px;white-space:normal">🚗 Odometer of record: <b>${Math.round(_confMiles * 10) / 10} mi</b> <span class="muted">(${_pct}% of the estimate — odometer wins)</span></div>`; }
   }
+  // 🗺 View route (owner/admin) — deep-link to the read-only GPS route-review page for THIS job (js/91).
+  if ((typeof jobCanEditPlan === "function") && jobCanEditPlan() && typeof openRouteReview === "function") {
+    h += `<button class="btn ghost sm" style="margin-top:10px" onclick="openRouteReview('${j.id}')">🗺 View route</button>`;
+  }
   h += `</div>`;
 
   // 1z) Route / stops editor (owner/admin) — surfaced ON the job page (not just the editor modal). Writes the

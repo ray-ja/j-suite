@@ -44,7 +44,7 @@ d.todos = d.todos || []; if (!d.todos.length) d.todos.push({ id: "t_rs", title: 
 var SCREENS = ["today", "messages", "schedule", "leads", "quotes", "accounts",
   "finance", "receipts", "pay", "inventory", "resale", "admin", "data", "playbook",
   "research", "todo", "map", "route", "plan", "market", "opps", "sites", "buildplan",
-  "training", "time", "approvals", "escape", "booking", "life", "budget", "team"];
+  "training", "time", "approvals", "escape", "booking", "life", "budget", "team", "routes"];
 
 var view = document.getElementById("view");
 var totalErrsBefore, results = [];
