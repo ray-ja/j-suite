@@ -229,7 +229,7 @@ function liJob(j){
   const _ll=(typeof jobLatLng==="function")?jobLatLng(j):null,_drive=(_ll&&typeof driveBadge==="function")?driveBadge(_ll.lat,_ll.lng):"";
   return `<div class="li"><div class="grow" onclick="openJobPage('${j.id}')">
     <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
-    <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}${_drive?" · "+_drive:""}</div>${crew}${jobEquipLine(j)}</div>
+    <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}${_drive?" · "+_drive:""}${(typeof jobPO==="function"&&jobPO(j))?" · 🧾 "+jobPO(j):""}</div>${crew}${jobEquipLine(j)}</div>
     <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
 }
 window.openJob=function(id,customerId,presetDate){
@@ -501,7 +501,7 @@ window.saveJob=function(id,isNew){
   if(typeof j.sitePos==="number"&&j.plannedStops.length!==_prevStopCount)j.sitePos=null;
   if(!j.title){alert("Give the job a name.");return;}
   if(typeof submitGuard==="function"&&!submitGuard("saveJob:"+id))return;   // rapid-tap dupe guard
-  if(isNew)j.done=false;touch(j);if(isNew)d.jobs.push(j);
+  if(isNew)j.done=false;if(typeof jobEnsurePO==="function")jobEnsurePO(j);touch(j);if(isNew)d.jobs.push(j);
   if(typeof logChange==="function")logChange(isNew?"create":"update","job",j.id,(isNew?"Scheduled ":"Updated ")+(j.title||"job")+(j.date?" · "+fmtDate(j.date):""));
   save();closeModal();render();
 };
@@ -552,6 +552,7 @@ window.acceptQuoteToJob=function(quoteId){
   job.customerId=q.customerId||job.customerId||"";job.propertyId=q.propertyId||job.propertyId||"";
   job.address=q.address||job.address||"";job.crew=[...JOBCREW];job.date=date;job.time=time;job.quoteId=q.id;
   job.estHours=+q.hours||0;job.estCrew=Math.max(1,+q.crewN||1);   // carry the quote's time estimate so we can compare est-vs-actual at the job
+  if(typeof jobEnsurePO==="function")jobEnsurePO(job);
   touch(job);
   q.accepted=true;q.jobId=job.id;q.acceptedDate=date;touch(q);
   if(typeof WZ!=="undefined"&&WZ&&WZ.id===q.id){WZ.accepted=true;WZ.jobId=job.id;WZ.acceptedDate=date;}
@@ -565,6 +566,7 @@ window.acceptQuoteToJob=function(quoteId){
     sub.customerId=q.customerId||sub.customerId||"";sub.propertyId=q.propertyId||sub.propertyId||"";
     sub.address=q.address||sub.address||"";sub.date=date;sub.time=time;sub.quoteId=q.id;sub.pickupRun=true;
     sub.estHours=+pickLine.estHours||0;sub.estCrew=Math.max(1,+pickLine.estCrew||2);
+    if(typeof jobEnsurePO==="function")jobEnsurePO(sub);
     touch(sub);q.pickupJobId=sub.id;
     if(typeof logChange==="function")logChange(isNewSub?"create":"update","job",sub.id,(isNewSub?"Pickup sub-job created — ":"Pickup sub-job updated — ")+(sub.title||"pickup")+" · assign who's hauling");
   }

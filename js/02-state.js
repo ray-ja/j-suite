@@ -100,6 +100,11 @@ function load(){
     });
     // stable per-biz job numbers: number any quote lacking one, deterministically (by date+id) so every device agrees without syncing
     (function(){ const ql=(S[b].quotes||[]).filter(q=>!q.num); if(ql.length){ let mx=(S[b].quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0); ql.sort((x,y)=>(((x.date||"")+(x.id||""))<((y.date||"")+(y.id||""))?-1:1)).forEach(q=>{q.num=++mx;}); } })();
+    // PER-JOB PO CODE (js/95) — structural clone of the quote-num backfill: number any job lacking poNum
+    // deterministically (by date+id) so every device agrees WITHOUT syncing, continuing the org's monotonic
+    // counter from its max poNum (floor 1000 → first 1001). Additive derived-local backfill: assign-once,
+    // idempotent (only !poNum jobs), NO one-shot flag + NO touch()/updatedAt bump (so finance stays byte-identical).
+    (function(){ const jl=(S[b].jobs||[]).filter(j=>!j.poNum); if(jl.length){ let mx=Math.max(1000,(S[b].jobs||[]).reduce((m,j)=>Math.max(m,+j.poNum||0),0)); jl.sort((x,y)=>(((x.date||"")+(x.id||""))<((y.date||"")+(y.id||""))?-1:1)).forEach(j=>{j.poNum=++mx;}); } })();
   });
   // ESCAPE SCHEDULER (org-specific tool): backfill its two collections on EVERY org slab (obx/jam + any created org),
   // so an org that predates this feature still has the arrays the sync layer / module expect.

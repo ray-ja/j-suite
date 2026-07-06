@@ -109,7 +109,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
 
   const typeOpts = [["", "🕓 Needs review (unassigned)"], ["business", "🏢 Business expense"], ["job-expense", "💵 Job expense — reimbursed to uploader"], ["pass-through", "🧱 Pass-through material — billed to customer"]]
     .map(([v, l]) => `<option value="${v}" ${curType === (v || "review") ? "selected" : ""}>${l}</option>`).join("");
-  const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${jobSel === j.id ? "selected" : ""}>${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
+  const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${jobSel === j.id ? "selected" : ""}>${(typeof jobPO === "function" && jobPO(j)) ? esc(jobPO(j)) + " · " : ""}${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
   const catOpts = `<option value="">— category —</option>` + RCPT_CATS.map(c => `<option ${rec.category === c ? "selected" : ""}>${c}</option>`).join("");
   const paidOpts = `<option value="">💳 Business card (no reimburse)</option>` + members.map(u => `<option value="${esc(u.id)}" ${rec.paidBy === u.id ? "selected" : ""}>${esc(u.username)} — personal card (reimburse)</option>`).join("");
   const attrCur = rec.attributedTo || rec.paidBy || rec.uploadedBy || "";
@@ -134,7 +134,9 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(rec.vendor || "")}" placeholder="Home Depot, dump, gas…">
     <label>What was it</label><input id="rcpt_desc" value="${esc(rec.desc || rec.note || "")}" placeholder="pavers, dump fee, fuel…">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
-    <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job">${jobOpts}</select></div>
+    <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job" onchange="rcptJobPONote()">${jobOpts}</select>
+      <label>PO / job code <span class="sub">(type or paste the P#### off the receipt to auto-pick its job)</span></label><input id="rcpt_po" type="text" placeholder="P1042" value="" oninput="rcptPoBind()" onblur="rcptPoBind()">
+      <div id="rcpt_po_note" class="sub" style="margin-top:4px"></div></div>
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
     <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(rec.cardLast4 || "")}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
@@ -143,12 +145,32 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_split_slot"></div>
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
   rcptEditTypeChange();
+  if (typeof rcptJobPONote === "function") rcptJobPONote();   // js/95: show the pre-selected job's PO code
   if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
   if (typeof cardMatchInit === "function") cardMatchInit(rec);   // js/94: match the card last-4 → pre-select "Who paid?" (default only, never writes)
 };
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
   if (wrap) wrap.style.display = (t === "job-expense" || t === "pass-through") ? "block" : "none";
+};
+/* PER-JOB PO CODE (js/95) — show the currently-selected job's PO under the picker ("PO for this job: P1042"). */
+window.rcptJobPONote = function () {
+  const note = document.getElementById("rcpt_po_note"); if (!note) return;
+  const sel = val("rcpt_job");
+  const j = (sel && typeof actJ === "function") ? actJ().find(x => x && x.id === sel) : null;
+  const po = (j && typeof jobPO === "function") ? jobPO(j) : "";
+  note.innerHTML = po ? ("PO for this job: <b>" + esc(po) + "</b>") : "";
+};
+/* Manual bind — Ray types/pastes a P#### code → jobByPO uniquely resolves it → pre-select the job picker. */
+window.rcptPoBind = function () {
+  const note = document.getElementById("rcpt_po_note"), raw = val("rcpt_po");
+  const j = (typeof jobByPO === "function") ? jobByPO(raw) : null;
+  if (j) {
+    const sel = document.getElementById("rcpt_job"); if (sel) sel.value = j.id;
+    if (note) note.innerHTML = "→ <b>" + esc((j.customerId && typeof custName === "function") ? custName(j.customerId) : (j.title || "Job")) + "</b> (" + esc(typeof jobPO === "function" ? jobPO(j) : "") + ")";
+  } else if (String(raw || "").trim()) {
+    if (note) note.innerHTML = `<span style="color:var(--muted)">No job matches that PO yet.</span>`;
+  } else if (typeof rcptJobPONote === "function") { rcptJobPONote(); }
 };
 window.rcptApplySuggestion = function () {
   const s = RCPT_EDIT && RCPT_EDIT.suggested; if (!s) return;

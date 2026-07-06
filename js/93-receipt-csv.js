@@ -199,9 +199,20 @@ var VENDOR_PARSERS = [
       var m4 = rcptHVal(H, cells, /cc#?\s*\(\s*last\s*4\s*\)/).match(/(\d{4})\s*$/);   // "************2469" → "2469"
       var desc = order ? ("Order #" + order) : "Lowe's order";
       if (store) desc += " · " + store;
-      var poR = rcptCsvPoResolve(rcptHVal(H, cells, /^po number$/));
-      if (poR.surface) desc += " · PO: " + poR.po;                          // surface the register-typed customer note
-      return rcptVendorRecord({ amount: Math.abs(amt), vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poR.custHint });
+      var poRaw = rcptHVal(H, cells, /^po number$/);
+      var poR = rcptCsvPoResolve(poRaw);
+      if (poR.surface) desc += " · PO: " + poR.po;                          // surface the register-typed note
+      // PER-JOB PO CODE (js/95) EXACT-match: if the typed PO is our own P#### and resolves to exactly one job,
+      // hard-assign the receipt to it (jobId + customerId + a badge). This WINS + supersedes the fuzzy
+      // PO→customer-name hint (custHint is only passed as the fallback when there's no exact job match).
+      var poJob = (typeof jobByPO === "function") ? jobByPO(poRaw) : null;
+      var rec = rcptVendorRecord({ amount: Math.abs(amt), vendor: "Lowe's", date: date, desc: desc, cardLast4: m4 ? m4[1] : "", custHint: poJob ? null : poR.custHint });
+      if (poJob) {
+        rec.jobId = poJob.id;
+        rec.customerId = poJob.customerId || null;
+        rec._poMatch = { po: (typeof jobPO === "function") ? jobPO(poJob) : "", label: poJob.title || "Job" };
+      }
+      return rec;
     }
   }
   /* ,{ id:"homedepot", name:"Home Depot", detect(headerCells){…}, parseRow(cells,H){…} }   // add when a sample arrives
@@ -376,6 +387,7 @@ function rcptCsvPreviewStep() {
       + '<input type="checkbox" id="rcsv_keep_' + i + '" ' + (row.keep ? "checked" : "") + ' onchange="rcptCsvToggle(' + i + ')" style="width:auto;margin-top:4px">'
       + '<div class="grow" style="min-width:0">'
       + '<div class="nm" style="white-space:normal">' + esc(r.desc || "(no description)") + (row.dup ? ' <span class="sub" style="color:var(--danger)">dup</span>' : '') + '</div>'
+      + (r._poMatch ? '<div class="sub" style="color:var(--accent);font-weight:700">→ ' + esc(r._poMatch.po) + (r.customerId && typeof custName === "function" ? ' · ' + esc(custName(r.customerId)) : (' · ' + esc(r._poMatch.label))) + ' (auto)</div>' : '')
       + '<div class="sub">' + esc((typeof fmtDate === "function" ? fmtDate(r.date) : r.date) || "—") + ' · <b>' + m(r.amount) + '</b>' + (row.store ? ' · ' + esc(row.store) : '') + '</div>'
       + '</div></div>';
   }).join("");
