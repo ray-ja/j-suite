@@ -52,10 +52,11 @@ fs.mkdirSync("shots", { recursive: true });
 const outPath = "shots/" + outName + ".png";
 try { fs.unlinkSync(outPath); } catch (e) {}
 const prof = os.tmpdir() + "/jsuite-shot-" + process.pid;
+const chromeClean = require("./test-chrome-cleanup"); chromeClean.sweepOrphans(); chromeClean.register(prof);  // teardown on every exit path + self-heal stragglers
 try {
   cp.execSync(
     `"${chrome}" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --hide-scrollbars --force-device-scale-factor=1 --window-size=390,${height} --virtual-time-budget=4000 --no-first-run --no-default-browser-check --user-data-dir="${prof}" --screenshot="${outPath}" "file://${process.cwd()}/__shot_tmp.html"`,
-    { stdio: ["ignore", "ignore", "ignore"], timeout: 60000 });
+    { stdio: ["ignore", "ignore", "ignore"], timeout: 60000, killSignal: "SIGKILL" });
   if (fs.existsSync(outPath) && fs.statSync(outPath).size > 0) console.log("SHOT: " + outPath + " (" + fs.statSync(outPath).size + " bytes, " + height + "px tall)");
   else console.log("FAIL: no screenshot produced (check the setup JS / chrome binary)");
 } catch (e) { console.log("FAIL: " + (e.message || e)); }

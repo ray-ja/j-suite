@@ -26,12 +26,13 @@ const chrome=process.env.CHROME || (process.platform!=="win32" && findChromeLinu
 const isShell=/headless[_-]shell/i.test(chrome);   // headless-shell is inherently headless + needs server-safe flags
 try{
   const prof=require("os").tmpdir()+"/jsuite-verify-"+process.pid;  // isolated profile → no default-profile lock contention
+  const chromeClean=require("./test-chrome-cleanup"); chromeClean.sweepOrphans(); chromeClean.register(prof);  // teardown on every exit path + self-heal stragglers (no more leaked chromes/dirs)
   // mobile-first: default the headless viewport to a narrow phone width (390x844, ~iPhone 12/13) — the app is
   // "Mobile-first always" (crew works from phones) and the shell's <meta viewport width=device-width> maps this
   // straight to CSS px, so @media(min-width:...) desktop-enhancement rules correctly stay OFF by default and any
   // mobile-only layout bug (cut-off/cramped cards, etc.) is exercised on every run instead of only on a wide default.
   const renderFlags=(isShell?"--no-sandbox --disable-gpu --disable-dev-shm-usage":"--headless --disable-gpu")+" --window-size=390,844";
-  const out=cp.execSync(`"${chrome}" ${renderFlags} --no-first-run --no-default-browser-check --user-data-dir="${prof}" --dump-dom --virtual-time-budget=2500 "file:///${process.cwd().replace(/\\/g,"/")}/__verify_tmp.html"`,{encoding:"utf8",stdio:["ignore","pipe","ignore"],timeout:60000});
+  const out=cp.execSync(`"${chrome}" ${renderFlags} --no-first-run --no-default-browser-check --user-data-dir="${prof}" --dump-dom --virtual-time-budget=2500 "file:///${process.cwd().replace(/\\/g,"/")}/__verify_tmp.html"`,{encoding:"utf8",stdio:["ignore","pipe","ignore"],timeout:60000,killSignal:"SIGKILL"});
   const m=out.match(/data-errs="([^"]*)"/);
   const errs=m?JSON.parse(m[1].replace(/&quot;/g,'"').replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")):null;
   const md=out.match(/data-diag="([^"]*)"/);
