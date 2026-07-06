@@ -5,9 +5,10 @@
    Reached by tapping a job (openJobPage); renders inside the Schedule tab via window.JOB_OPEN. */
 window.JOB_OPEN = window.JOB_OPEN || null;
 window.JOB_RETURN_TAB = window.JOB_RETURN_TAB || null;   // where the user was when they opened a job (e.g. "receipts") so Back returns there, not always Schedule
-window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null; window.JOB_OPEN = id; TAB = "schedule"; if (typeof render === "function") render(); };
-window.jobPageBack = function () { window.JOB_OPEN = null; if (window.JOB_RETURN_TAB) { TAB = window.JOB_RETURN_TAB; window.JOB_RETURN_TAB = null; } if (typeof render === "function") render(); };
-window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; };
+window.JOB_TITLE_EDIT = window.JOB_TITLE_EDIT || null;   // job id whose title is currently in inline-rename mode (else null)
+window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null; window.JOB_OPEN = id; window.JOB_TITLE_EDIT = null; TAB = "schedule"; if (typeof render === "function") render(); };
+window.jobPageBack = function () { window.JOB_OPEN = null; window.JOB_TITLE_EDIT = null; if (window.JOB_RETURN_TAB) { TAB = window.JOB_RETURN_TAB; window.JOB_RETURN_TAB = null; } if (typeof render === "function") render(); };
+window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; window.JOB_TITLE_EDIT = null; };
 
 function jobAddr(j) {
   const _p = (j.propertyId && typeof actProps === "function") ? actProps().find(p => p.id === j.propertyId) : null;
@@ -108,7 +109,16 @@ function rJobPage(j) {
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   const hhmm = ms => { try { return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } };
 
-  let h = `<div class="secthd"><h2 style="margin:0">${esc(j.title || "Job")}</h2><button class="btn ghost sm" onclick="jobPageBack()">← Back</button></div>`;
+  // Title — tap-to-rename (owner/admin). Reveals an inline free-text input writing j.title (NOT the service
+  // dropdown); job_title is registered in the js/09 focus-preservation _ids so typing survives the frequent
+  // re-renders. Crew see the plain title.
+  let h = `<div class="secthd">`;
+  if (jobCanEditPlan() && window.JOB_TITLE_EDIT === j.id) {
+    h += `<input id="job_title" value="${esc(j.title || "")}" placeholder="Job title" style="flex:1;font-size:18px;font-weight:800;margin:0" onkeydown="if(event.key==='Enter')jobPageRename('${j.id}')"><button class="btn acc sm" style="margin-left:8px" onclick="jobPageRename('${j.id}')">Save</button>`;
+  } else {
+    h += `<h2 style="margin:0${jobCanEditPlan() ? ";cursor:pointer" : ""}"${jobCanEditPlan() ? ` title="Tap to rename" onclick="window.JOB_TITLE_EDIT='${j.id}';if(typeof render==='function')render()"` : ""}>${esc(j.title || "Job")}${jobCanEditPlan() ? ' <span class="sub" style="font-weight:400;font-size:13px">✏️</span>' : ""}</h2>`;
+  }
+  h += `<button class="btn ghost sm" style="margin-left:auto" onclick="jobPageBack()">← Back</button></div>`;
   h += editedByLine(j);
 
   // 1) Where & when — directions + call
@@ -175,6 +185,10 @@ function rJobPage(j) {
   // Compact chip list of the job's work days (jobWorkDays), today's chip marked, start-day un-removable;
   // "+ Add today" is a one-tap no-modal add; "+ Add another day" opens a small mini-calendar-only picker.
   h += jobPageWorkDaysCard(j);
+
+  // 1a2) Crew — availability-aware editor (owner/admin) writing j.crew directly (like the on-page route editor,
+  // not the modal). Crew see read-only chips. Mirrors js/09 renderJobCrew's availability badges + conflict flags.
+  h += jobPageCrewCard(j);
 
   // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up.
   // sharedJobIds[] generalizes the old scalar parentJobId (0/1/N jobs); this single-select stays the UNCHANGED
@@ -278,6 +292,41 @@ function rJobPage(j) {
     : `<div class="muted">Ask Cap anything about this job — he knows the customer, address, notes &amp; equipment. e.g. "Are we providing the pavers, or is it client-provided?"</div>`;
   h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap… (e.g. send a photo of the spot and ask what base it needs)"></textarea><input type="file" id="jobcap_photo" accept="image/*" style="display:none" onchange="var l=document.getElementById('jobcap_photo_lbl');if(l)l.textContent='✓ Photo ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('jobcap_photo').click()"><span id="jobcap_photo_lbl">📷 Attach photo</span></button><button class="btn acc grow" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div></div>`;
 
+  // 6c) 💵 Invoice & payment — the one place to bill + take payment on an accepted job. REUSES the exact finance
+  //     mutators (invMark js/46, recordPayment js/50, snapshotQuoteVersion js/90 like wizSetFinal, syncQuoteIncome)
+  //     so the money side can't drift from the wizard. Touches ONLY finalPrice/invoiced/payments/paymentLink —
+  //     never items/q.total (those stay in the wizard for versioning). Crew see read-only amounts; edit controls
+  //     are gated to owner/admin (jobCanEditPlan). Resolves the linked quote the same way the workStage badge does.
+  h += `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">💵 Invoice &amp; payment</div>`;
+  const _mq = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
+  if (_mq) {
+    const _tot = (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(_mq) : (+(_mq.finalPrice || _mq.total) || 0);
+    const _paid = (typeof quotePaidAmt === "function") ? quotePaidAmt(_mq) : 0;
+    const _bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(_mq) : Math.max(0, _tot - _paid);
+    const _canEdit = jobCanEditPlan();
+    h += `<div class="sub" style="white-space:normal">Invoice <b>${money(_tot)}</b>${_paid > 0 ? ` · ${money(_paid)} paid · <b>${money(_bal)} owed</b>` : ""}${_mq.finalPrice ? ` <span class="muted">(quote was ${money(_mq.total || 0)})</span>` : ""}</div>`;
+    if (_mq.invoiced) h += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:700">✓ Invoiced${_mq.invoiceNo ? ` #${esc(_mq.invoiceNo)}` : ""}${_mq.invoicedDate ? " · " + fmtDate(_mq.invoicedDate) : ""}</div>`;
+    if (_mq.paid) h += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:800">✓ Paid in full${_mq.paidDate ? " · " + fmtDate(_mq.paidDate) : ""}</div>`;
+    if (_mq.paymentLink) h += `<div style="margin-top:8px"><a class="btn acc sm" href="${esc(_mq.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a></div>`;
+    if (_canEdit) {
+      h += `<div class="row" style="gap:8px;margin-top:10px">`;
+      if (!_mq.invoiced) h += `<button class="btn acc grow" onclick="invMark('${_mq.id}')">🧾 Mark invoiced</button>`;
+      h += `<button class="btn ${_mq.paid ? "ghost" : "acc"} grow" onclick="recordPayment('${_mq.id}')">💵 ${_mq.paid ? "Payments" : "Record payment"}</button>`;
+      h += `</div>`;
+      // Final price charged — mirrors wizSetFinal (finalPrice + version snapshot). NEVER touches items/q.total.
+      h += `<label style="margin-top:10px">Final price charged <span class="sub">(if different from the ${money(_mq.total || 0)} quote)</span></label>`;
+      h += `<div class="row" style="gap:8px"><input id="job_final" type="number" inputmode="decimal" placeholder="${_mq.total || 0}" value="${_mq.finalPrice || ""}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSaveFinal('${j.id}')">Save</button></div>`;
+      h += `<input id="job_adjnote" placeholder="Reason (e.g. added a step, gave a discount)" value="${esc(_mq.adjNote || "")}" style="margin-top:6px">`;
+      // Stripe / pay-now link — display-only field (no finance code reads paymentLink).
+      h += `<label style="margin-top:10px">Payment link <span class="sub">(Stripe / pay-now URL — shown to the customer)</span></label>`;
+      h += `<div class="row" style="gap:8px"><input id="job_paylink" placeholder="https://…" value="${esc(_mq.paymentLink || "")}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSetPayLink('${j.id}')">Save</button></div>`;
+      h += `<div class="sub" style="margin-top:8px;white-space:normal">Item &amp; line-price change orders stay in the full quote (📜 version history) — this card only sets the final charge, invoice &amp; payment.</div>`;
+    }
+  } else {
+    h += `<div class="muted">No quote is linked to this job yet.</div>`;
+  }
+  h += `</div>`;
+
   // 7) Change order — a change order is an EDIT to the SAME quote, saved as a version (not a second record).
   //    Editing the full quote updates the customer's price IN PLACE (one invoice per job — no new invoice #);
   //    once the quote is committed (accepted/invoiced/paid) each change is logged to q.versions[] for review.
@@ -304,6 +353,33 @@ function rJobPage(j) {
   if (jobCanEditPlan()) h += `<button class="btn acc sm" style="width:100%;margin:8px 0 6px" onclick="openJob('${j.id}')">✏️ Edit job — title · crew · date · notes</button>`;
   if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:0 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
   return h;
+}
+
+/* ON-JOB-PAGE crew editor (owner/admin) — availability-aware, writing j.crew DIRECTLY (like jobPageRouteCard
+   writes j.plannedStops, vs the modal's JOBCREW staging). Mirrors js/09 renderJobCrew: per active member a
+   checkbox + availability badge on the job's date, with the off/timeoff conflict warning preserved verbatim.
+   Crew (non-owner/admin) see read-only chips (crewChips). Toggling is jobPageToggleCrew → touch/save/render. */
+function jobPageCrewCard(j) {
+  const ds = j.date || ((typeof today === "function") ? today() : "");
+  const n = (j.crew || []).length;
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">👥 Crew${n ? ` · <span class="sub" style="font-weight:400">${n}</span>` : ""}</div>`;
+  if (!jobCanEditPlan()) {
+    h += (typeof crewChips === "function") ? crewChips(j) : (((j.crew || []).map(id => esc((typeof userName === "function" ? userName(id) : "") || "")).filter(Boolean).join(", ")) || `<span class="muted">Unassigned</span>`);
+    return h + `</div>`;
+  }
+  const mem = (typeof schedMembers === "function") ? schedMembers() : [];
+  if (!mem.length) { h += `<div class="muted">No team accounts to assign — add them in Admin.</div>`; return h + `</div>`; }
+  h += mem.map(u => {
+    const on = (j.crew || []).indexOf(u.id) >= 0;
+    const a = (typeof availOn === "function") ? availOn(u, ds) : { status: "unset", label: "" };
+    const conflict = on && (a.status === "off" || a.status === "timeoff");
+    return `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:20px;height:20px;flex:0 0 auto" ${on ? "checked" : ""} onchange="jobPageToggleCrew('${j.id}','${u.id}')">
+      <div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)}</div><div class="sub">${esc(a.label || "")}${conflict ? ` <span style="color:var(--danger)">⚠ not available</span>` : ""}</div></div>
+      ${(typeof availBadge === "function") ? availBadge(u, ds) : ""}</label>`;
+  }).join("");
+  const free = mem.filter(u => (typeof isFree === "function") ? isFree(u, ds) : true).map(u => u.username);
+  h += `<div class="sub" style="margin-top:6px;white-space:normal">${free.length ? `Free on ${fmtDate(ds)}: <b>${free.map(esc).join(", ")}</b>` : `No one is marked available on ${fmtDate(ds)}.`}</div>`;
+  return h + `</div>`;
 }
 
 /* ON-JOB-PAGE ordered-stops editor (owner/admin). Same data + shape as the js/09 editor-modal stop editor
@@ -550,6 +626,60 @@ window.jobSaveNotes = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   j.notes = val("job_notes") || "";
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* Inline rename (owner/admin) — writes j.title (free text, NOT the service dropdown). Clears the edit flag. */
+window.jobPageRename = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const t = (val("job_title") || "").trim();
+  if (!t) { alert("Give the job a name."); return; }
+  j.title = t;
+  window.JOB_TITLE_EDIT = null;
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Renamed → " + t);
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* Toggle a member on/off j.crew directly (owner/admin) — mirrors js/09 toggleJobCrew but persists to the record
+   rather than the modal's JOBCREW staging set. */
+window.jobPageToggleCrew = function (jobId, userId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  if (!Array.isArray(j.crew)) j.crew = [];
+  const i = j.crew.indexOf(userId);
+  if (i >= 0) j.crew.splice(i, 1); else j.crew.push(userId);
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Crew → " + j.crew.length + " · " + (j.title || "job"));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* FINAL PRICE CHARGED (owner/admin) — MIRRORS js/23 wizSetFinal exactly: capture prevTotal (quoteEffectiveTotal)
+   + prevItems BEFORE the edit, set q.finalPrice (Math.max(0)) + q.adjNote, touch, then snapshotQuoteVersion so a
+   committed quote logs a "final-price" version identical to the wizard's. Re-syncs cash-basis income only when the
+   quote is already paid. NEVER touches q.items or q.total — item/line change orders stay in the wizard. */
+window.jobPageSaveFinal = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const q = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
+  if (!q) { alert("No quote is linked to this job."); return; }
+  const prevTotal = (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0);
+  const prevItems = JSON.parse(JSON.stringify(q.items || []));
+  const v = val("job_final");
+  q.finalPrice = (v === "" || v == null) ? 0 : Math.max(0, parseFloat(v) || 0);
+  q.adjNote = val("job_adjnote") || "";
+  if (typeof touch === "function") touch(q);
+  if (typeof snapshotQuoteVersion === "function") snapshotQuoteVersion(q, q.adjNote, "final-price", prevTotal, prevItems);
+  if (q.paid && typeof syncQuoteIncome === "function") syncQuoteIncome(q);
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Final price " + money(q.finalPrice || q.total) + (q.cust ? " · " + q.cust : ""));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* Stripe / pay-now link (owner/admin) — display-only (no finance code reads q.paymentLink). */
+window.jobPageSetPayLink = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const q = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
+  if (!q) { alert("No quote is linked to this job."); return; }
+  const e = (typeof document !== "undefined") ? document.getElementById("job_paylink") : null;
+  q.paymentLink = e ? e.value.trim() : "";
+  if (typeof touch === "function") touch(q); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 window.jobAddPhoto = function (jobId, input) {
   const file = input && input.files && input.files[0]; if (!file) return;
