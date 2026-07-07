@@ -370,6 +370,69 @@ async function main() {
   await capRcptRun();
   ok("skip reply → no suggested written, no throw", !rcptReview().find(r => r.id === badRec.id).suggested);
 
+  // ===================== UNCAPPED / RESUMABLE ONE-AT-A-TIME QUEUE =====================
+  console.log("— QUEUE: a large batch drains FULLY, strictly one vision call in flight at a time —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; global.finCanView = function () { return true; };
+  window.CAP_RCPT_THROTTLE_MS = 0;                 // no inter-read pause in the test
+  const BIG = 30; for (let i = 0; i < BIG; i++) seedReview({ receiptId: "big" + i + ".jpg" });
+  let inFlight = 0, maxInFlight = 0, reads = 0;
+  CAP_FETCH = function () {
+    inFlight++; reads++; if (inFlight > maxInFlight) maxInFlight = inFlight;
+    return new Promise(res => setTimeout(() => { inFlight--; res({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 5, date: "2026-06-01", desc: "d", type: "business", category: "other", jobId: null, confidence: 0.8 } }) }); }, 0));
+  };
+  await capRcptRun({ auto: true });
+  ok("all " + BIG + " receipts were read (past the old cap of 15) — none silently skipped", reads === BIG, reads);
+  ok("every receipt got a Cap suggestion", rcptReview().filter(r => r.suggested).length === BIG, rcptReview().filter(r => r.suggested).length);
+  ok("STRICTLY sequential — never more than 1 vision call in flight", maxInFlight === 1, maxInFlight);
+  ok("queue fully drained — 0 unread pending remain", capRcptPending().length === 0, capRcptPending().length);
+
+  console.log("— QUEUE: an unreadable receipt is skipped ONCE and never loops the drain —");
+  resetStore(); _capRcptSkip = {}; global.finCanView = function () { return true; };
+  seedReview({ receiptId: "good.jpg" }); const stuck = seedReview({ receiptId: "stuck.jpg" });
+  let stuckReads = 0;
+  CAP_FETCH = function (url, opts) {
+    const body = JSON.parse(opts.body);
+    if (body.receiptId === "stuck.jpg") { stuckReads++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true, reason: "blurry" }) }); }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.9 } }) });
+  };
+  await capRcptRun({ auto: true });
+  ok("drain terminated (did not loop on the unreadable one)", stuckReads === 1, stuckReads);
+  ok("the readable one still got read past the stuck one", rcptReview().find(r => r.id !== stuck.id && r.receiptId === "good.jpg").suggested, true);
+
+  console.log("— QUEUE: the busy flag blocks a SECOND drain launched while the first is in flight —");
+  resetStore(); global.finCanView = function () { return true; };
+  seedReview({ receiptId: "b0.jpg" }); seedReview({ receiptId: "b1.jpg" });
+  let busyReads = 0;
+  CAP_FETCH = function () { busyReads++; return new Promise(res => setTimeout(() => res({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.9 } }) }), 0)); };
+  const p1 = capRcptRun({ auto: true });          // drain #1: sets _capRcptBusy, fires read #1, yields at the await
+  const p2 = capRcptRun({ auto: true });          // drain #2: launched while #1 is in flight → must no-op on the busy flag
+  await Promise.all([p1, p2]);
+  ok("busy flag blocks the concurrent drain (2 receipts read once total, not 4)", busyReads === 2, busyReads);
+
+  console.log("— RESUMABLE SWEEP: leftover unread receipts get read on a simulated re-open —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; global.finCanView = function () { return true; };
+  for (let i = 0; i < 5; i++) seedReview({ receiptId: "left" + i + ".jpg" });
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 2, type: "business", category: "other", jobId: null, confidence: 0.9 } }) }); };
+  capRcptSweep();                                  // fire-and-forget (as js/26 does on the boot pull / after sync)
+  await new Promise(r => setTimeout(r, 60));       // let the drain complete
+  ok("sweep drained all 5 leftover receipts", capRcptPending().length === 0 && rcptReview().filter(r => r.suggested).length === 5, rcptReview().filter(r => r.suggested).length);
+
+  console.log("— RESUMABLE SWEEP: crew (non owner/admin) sweep is a silent no-op —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0;
+  seedReview({ receiptId: "crewsweep.jpg" });
+  let crewSweepReads = 0; CAP_FETCH = function () { crewSweepReads++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: {} }) }); };
+  global.finCanView = function () { return false; };   // crew
+  capRcptSweep(); await new Promise(r => setTimeout(r, 30));
+  ok("crew sweep fires no vision call", crewSweepReads === 0, crewSweepReads);
+  global.finCanView = function () { return true; };
+
+  console.log("— RESUMABLE SWEEP: no-op when there are 0 unread —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0;
+  let emptyReads = 0; CAP_FETCH = function () { emptyReads++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: {} }) }); };
+  capRcptSweep(); await new Promise(r => setTimeout(r, 20));
+  ok("empty pile → no vision call", emptyReads === 0, emptyReads);
+  delete window.CAP_RCPT_THROTTLE_MS;
+
   // ========================= PER-JOB RECEIPT CLOSE-OUT =========================
   console.log("— close-out: helpers tolerate a legacy job with no receiptsClosedBy —");
   resetStore();

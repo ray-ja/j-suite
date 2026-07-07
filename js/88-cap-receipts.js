@@ -7,8 +7,20 @@
 
    Gating: owner/admin only (enforced here AND on the server). Degrades gracefully with no org AI key. */
 
-const CAP_RCPT_MAX = 15;   // per-run cap — vision tokens cost money, so read a batch, not the whole pile
+const CAP_RCPT_CEILING = 250;   // SAFETY per-drain ceiling — a runaway can't bill infinitely; the rest resume on the next sweep
 let _capRcptBusy = false;
+let _capRcptSkip = {};          // in-session {receiptId's row id -> 1} of ones Cap couldn't read this session, so a re-derived
+                                // drain never retries (and never loops on) an un-stampable receipt; cleared on app reload (new session)
+let _capSweepLast = 0;          // last resumable-sweep time — bounds how often stuck (unreadable) receipts get re-tried
+/* pause between reads: respect the server per-IP rate-limit + the Anthropic API. Overridable (tests set 0) via
+   window.CAP_RCPT_THROTTLE_MS; defaults to 700ms. NO wait after the final read. */
+function capRcptThrottleMs() {
+  var w = (typeof window !== "undefined") ? window : null;
+  return (w && typeof w.CAP_RCPT_THROTTLE_MS === "number") ? w.CAP_RCPT_THROTTLE_MS : 700;
+}
+function capRcptSleep(ms) { return (ms > 0) ? new Promise(function (r) { setTimeout(r, ms); }) : Promise.resolve(); }
+/* the still-unread targets minus ones this session already failed on (so the drain terminates + doesn't churn) */
+function capRcptPending() { return capRcptTargets().filter(function (r) { return r && !_capRcptSkip[r.id]; }); }
 
 /* review receipts that still have a photo but no Cap suggestion yet (skip PDFs — vision reads images) */
 function capRcptTargets() {
@@ -44,36 +56,75 @@ async function capRcptRead(receiptId) {
   } catch (e) { return { error: (e && e.message) || "request failed" }; }
 }
 
-/* TRIGGER — read the needs-review pile (up to CAP_RCPT_MAX). Writes ONLY `suggested`; never a real field.
-   opts.auto (Phase B auto-read on a small upload) runs SILENTLY: no owner/no-targets/success alerts — the
-   fresh 🤖 badge + "✓ file it" button in the table are the feedback. Manual "🤖 Read N" stays chatty. */
+/* TRIGGER — DRAIN the whole needs-review pile, strictly ONE AT A TIME. Writes ONLY `suggested`; never a real
+   field. The store changes as it stamps, so each pass RE-DERIVES the pending set (capRcptPending) and keeps
+   reading until NONE remain — any batch size (7, 100, …) reads fully; nothing is silently skipped. Reads are
+   sequential `await` (never Promise.all): Cap keeps full context per receipt AND we respect the rate-limit,
+   with a small throttle BETWEEN reads. save()s after each stamp so an app-close mid-drain keeps its progress
+   (resumable). A SAFETY ceiling bounds one drain (the rest resume via capRcptSweep). One drain at a time
+   (_capRcptBusy). opts.auto (upload auto-read + the resumable sweep) runs SILENTLY — the fresh 🤖 badge +
+   "✓ file it" rows are the feedback. Manual "🤖 Read N" stays chatty. Never throws. */
 window.capRcptRun = async function (opts) {
   opts = opts || {};
   if (!capRcptCanRun()) { if (!opts.auto) alert("Only an owner or admin can run Cap."); return; }
   if (_capRcptBusy) return;
-  const targets = capRcptTargets().slice(0, CAP_RCPT_MAX);
-  if (!targets.length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
+  if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
   _capRcptBusy = true;
-  capRcptSetStatus("🤖 Cap is reading 0/" + targets.length + "…");
-  let done = 0, ok = 0, skipped = 0, keyMissing = false;
-  for (const rec of targets) {
-    const res = await capRcptRead(rec.receiptId);
+  const throttle = capRcptThrottleMs();
+  let done = 0, ok = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
+  while (true) {
+    const pending = capRcptPending();
+    if (!pending.length) break;                       // drained — nothing unread remains
+    if (done >= CAP_RCPT_CEILING) { capped = true; break; }   // safety ceiling — resumable sweep reads the rest
+    const rec = pending[0];
+    const totalNow = done + pending.length;            // live denominator (grows if sync injects more mid-drain)
+    capRcptSetStatus("🤖 Cap is reading " + (done + 1) + " of " + totalNow + (totalNow > 25 ? " receipts" : "") + "…");
+    const res = await capRcptRead(rec.receiptId);      // ONE dedicated vision call — sequential, never parallel
     if (res && res.suggested) {
       // re-find the live record (the store may have changed) and stamp ONLY `suggested`
       const live = (typeof rcptFindRecord === "function") ? rcptFindRecord("review", null, rec.id) : rec;
-      if (live) { live.suggested = res.suggested; if (typeof touch === "function") touch(live); ok++; }
-    } else if (res && res.skip) { skipped++; }
-    else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { keyMissing = true; break; }
-    else { skipped++; }   // parse/network error on one → skip it, keep the batch going
+      const tgt = live || rec;
+      tgt.suggested = res.suggested; if (typeof touch === "function") touch(tgt); ok++;
+      if (typeof save === "function") save();          // persist as we go → resumable across an app-close
+    } else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { keyMissing = true; break; }
+    else if (res && res.error === "offline") { offline = true; break; }   // connectivity gone — stop churning; the sweep resumes on reconnect
+    else { skipped++; _capRcptSkip[rec.id] = 1; }      // parse/unreadable error → skip THIS session, keep draining the rest (no retry-loop)
     done++;
-    capRcptSetStatus("🤖 Cap is reading " + done + "/" + targets.length + "…");
+    if (capRcptPending().length && done < CAP_RCPT_CEILING && throttle > 0) await capRcptSleep(throttle);
   }
   if (ok && typeof save === "function") save();
   _capRcptBusy = false;
-  capRcptSetStatus("");
+  capRcptSetStatus(capped ? "🤖 Cap read " + done + " — more will read shortly…" : "");
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
-  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + ". Open a 🤖 row to review and approve its guess."); }
+  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". Open a 🤖 row to review and approve its guess."); }
   if (typeof render === "function") render();
+};
+
+/* RESUMABLE SWEEP — reads any unread receipts left by an interrupted batch / an app-close, OR ones that arrived
+   via sync from another device / the server. Fires on app open (the boot pull) + after every sync (js/26),
+   owner/admin + key gated, once-per-window (bounds re-tries of stuck receipts), never-throws, no-op at 0 unread.
+   Fire-and-forget: capRcptRun drains + re-renders itself. */
+window.capRcptSweep = function () {
+  try {
+    if (!capRcptCanRun()) return;                       // owner/admin only (auto path is silent)
+    if (_capRcptBusy) return;                            // a drain is already running
+    if (!capRcptPending().length) return;               // nothing unread → no-op
+    if (typeof orgAiBase === "function" && !orgAiBase()) return;   // offline / file:// → no server, no-op
+    var t = (typeof now === "function") ? now() : Date.now();
+    if (t - _capSweepLast < 60000) return;              // debounce: don't re-sweep the same pile more than ~1×/min
+    _capSweepLast = t;
+    // client may not know yet whether a key exists (loaded lazily in Admin) — best-effort populate, then gate
+    var proceed = function () {
+      try {
+        if (typeof ORG_AI_ST !== "undefined" && ORG_AI_ST && (!ORG_AI_ST.enabled || !ORG_AI_ST.hasKey)) return;  // known no-key → skip
+        if (!capRcptPending().length) return;
+        capRcptRun({ auto: true });
+      } catch (e) {}
+    };
+    if ((typeof ORG_AI_ST === "undefined" || !ORG_AI_ST) && typeof orgAiLoadStatus === "function") {
+      Promise.resolve(orgAiLoadStatus()).then(proceed, proceed);
+    } else { proceed(); }
+  } catch (e) {}
 };
 
 /* single-receipt re-run from the edit modal ("Ask Cap to read this") — uses the currently-open RCPT_EDIT */
@@ -108,7 +159,7 @@ function capRcptButtonHTML() {
   const n = capRcptTargets().length;
   if (!n) return "";
   return `<div class="card" style="border-left:4px solid #6b3fa0"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
-    <div class="grow" style="white-space:normal"><b>🤖 Cap: categorize needs-review</b><div class="sub">Cap reads up to ${CAP_RCPT_MAX} receipt photos and proposes vendor / amount / type / category / job for each. You approve every one — nothing is applied automatically.</div></div>
-    <button class="btn acc sm" onclick="capRcptRun()">🤖 Read ${n > CAP_RCPT_MAX ? CAP_RCPT_MAX + " of " + n : n}</button></div>
+    <div class="grow" style="white-space:normal"><b>🤖 Cap: categorize needs-review</b><div class="sub">Cap reads your needs-review photos <b>one at a time</b> and proposes vendor / amount / type / category / job for each. You approve every one — nothing is applied automatically.</div></div>
+    <button class="btn acc sm" onclick="capRcptRun()">🤖 Read ${n}</button></div>
     <div id="cap_rcpt_status" class="sub" style="text-align:center;color:#6b3fa0;min-height:16px;margin-top:4px"></div></div>`;
 }
