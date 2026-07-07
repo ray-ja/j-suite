@@ -58,7 +58,7 @@ function noteActive(userId) { if (!userId || typeof userId !== "string") return;
 // (computed AFTER the merge+save and wrapped in try/catch by the caller, so it can never break a sync).
 const AUDIT_FILE = path.join(__dirname, "audit.log");
 const AUDIT_CAP = 3000;
-const AUDIT_COLLECTIONS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "disbursements", "places"];
+const AUDIT_COLLECTIONS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "disbursements", "places", "recurringPlans"];
 function loadAudit() { try { return JSON.parse(fs.readFileSync(AUDIT_FILE, "utf8")); } catch (e) { return []; } }
 function saveAudit(a) { try { const tmp = AUDIT_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(a)); fs.renameSync(tmp, AUDIT_FILE); } catch (e) {} }
 function auditLabel(r) { return String((r && (r.name || r.title || r.cust || r.label || r.customer || r.vendor || r.what || r.desc || r.address)) || (r && r.id) || "").slice(0, 60); }
@@ -284,10 +284,10 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans"];
 const BIZES = ["obx", "jam"];
 
-function blankBiz() { return { customers: [], quotes: [], jobs: [] }; }
+function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
 // MULTI-ORG: an organization is a top-level store key holding its collections. The ONLY non-org top-level
 // keys are these reserved ones. orgIdsOf() lists the org keys dynamically (obx, jam, + any future org).
 const RESERVED = new Set(["users", "registry"]);
@@ -334,6 +334,10 @@ function migrateStore(s) {
   // WORKSHOP custom jobs (user-defined scheduled AI tasks): every org slab gets a customJobs array; obx gets
   // the seeded Sentinel EXAMPLE (idempotent, inactive — the runner skips example/inactive). Loss-free + additive.
   for (const oid of orgIdsOf(s)) migrateCustomJobs(s[oid], oid);
+  // RECURRING SERVICE (Phase 1): every org slab gets a recurringPlans array (mirror migrateCustomJobs). The plans
+  // drive JOB generation (client-side engine js/102) but hold no money themselves → billing byte-identical.
+  // Additive + idempotent; the array rides the standard per-record LWW via COLLECTIONS/mergeColl.
+  for (const oid of orgIdsOf(s)) if (!Array.isArray(s[oid].recurringPlans)) s[oid].recurringPlans = [];
   return s;
 }
 // WORKSHOP: ensure the per-org customJobs array exists, and seed the Sentinel EXAMPLE job into obx exactly once.

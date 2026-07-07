@@ -171,7 +171,11 @@ async function syncRun(mode){
     _syncInflight=false;syMsg("Synced ✓");
     if(_editSeq!==seq){scheduleAutoPush();}            // edits arrived mid-flight → push again
     else{SYNC_DIRTY=false;setSyncState("synced");}
-    if(changed)safeRender();
+    // RECURRING SERVICE (Phase 1): after a fresh pull/merge, roll due recurring plans into jobs. Guarded once/day
+    // (S.recurLastRun) + never-throws inside; NO-OP while recurringPlans is empty (Phase 1 has no create UI yet),
+    // so this is zero app-visible effect until a plan exists. If it did generate, re-render to show new jobs.
+    var _recurCh=false; if(typeof recurMaterialize==="function"){try{_recurCh=recurMaterialize();}catch(e){}}
+    if(changed||_recurCh)safeRender();
   }catch(e){_syncInflight=false;setSyncState("offline");syMsg("Offline — changes saved, will sync.");scheduleRetry();}
 }
 window.syncRun=syncRun;
