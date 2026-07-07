@@ -229,7 +229,21 @@ function rJobPage(j) {
   // customer address): pick a saved property (its map pin) OR type a free-text address saved to j.address,
   // which jobAddr() already reads as a fallback. Crew see the location read-only.
   if (jobCanEditPlan()) h += `<button class="btn ghost sm" style="margin-top:6px" onclick="jobEditLoc('${j.id}')">✏️ Edit location</button>`;
-  h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
+  // WHO / WHEN — inline editable for owner/admin (customer · date · time), replacing the old read-only line so a
+  // job no longer needs the separate openJob modal to change these. Each control commits on `change` to a small
+  // job-page handler (jobSetCustomer/jobSetDate/jobSetTime → write + touch + save + render), matching the inline
+  // title/crew/route editors. Crew keep the compact read-only line. Crew ASSIGNMENT itself is edited in
+  // jobPageCrewCard below — here we only SHOW the 👥 crew summary.
+  if (jobCanEditPlan()) {
+    const _cs = (typeof actC === "function") ? actC() : [];
+    h += `<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">`;
+    h += `<div><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Customer</label><select id="jcust_${j.id}" onchange="jobSetCustomer('${j.id}',this.value)" style="width:100%"><option value="">— none —</option>${_cs.map(c => `<option value="${c.id}"${c.id === j.customerId ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select></div>`;
+    h += `<div class="row" style="gap:8px"><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Date</label><input id="jdate_${j.id}" type="date" value="${esc(j.date || "")}" onchange="jobSetDate('${j.id}',this.value)" style="width:100%"></div><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Time</label><input id="jtime_${j.id}" type="time" value="${esc(j.time || "")}" onchange="jobSetTime('${j.id}',this.value)" style="width:100%"></div></div>`;
+    if (crewNames) h += `<div class="sub" style="white-space:normal">👥 ${esc(crewNames)}</div>`;
+    h += `</div>`;
+  } else {
+    h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
+  }
   // PER-JOB PO CODE (js/95) — tap-to-copy chip Ray types into a vendor's register PO field; the CSV import then
   // EXACT-matches the receipt back to this job. Skip pure stop/sub jobs (they ride their parent's paperwork).
   if (typeof jobPO === "function" && jobPO(j) && !j.stopKind && !Array.isArray(j.sharedJobIds)) {
@@ -449,8 +463,10 @@ function rJobPage(j) {
   if (typeof jobTemplates === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobSaveAsTemplate('${j.id}')">⭐ Save as a common job (reuse this)</button>`;
   // (Google-review BUTTON removed per Ray — the job-done auto-prompt (js/51 reviewPrompt, fired from js/09 toggleJob)
   //  still asks at the right moment; reviewAsk() itself stays (used to SET the review link from js/18 + js/51).)
-  if (jobCanEditPlan()) h += `<button class="btn acc sm" style="width:100%;margin:8px 0 6px" onclick="openJob('${j.id}')">✏️ Edit job — title · crew · date · notes</button>`;
-  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:0 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
+  // ("✏️ Edit job" button removed — customer/date/time are now inline in the "where & when" card above, and
+  //  title/crew/notes/location/route/work-days/equipment were already inline. The openJob modal remains the
+  //  CREATE form only, reached from Schedule / customer / property "Add job".)
+  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
   return h;
 }
 
@@ -705,6 +721,49 @@ window.jobSetParent = function (jobId, parentId) {
   j.parentJobId = parentId || "";   // kept for back-compat/audit trail — unread by new code
   j.sharedJobIds = parentId ? [parentId] : null;   // the model going forward: membership match, not equality
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* ===== INLINE WHO/WHEN EDITORS (owner/admin) — customer · date · time, written straight to the record (like the
+   inline title/crew/route editors, NOT the openJob modal). Each: guard jobCanEditPlan, resolve the job, set the
+   one field, touch + logChange + save + render. Idempotent, never throws. These are display/field edits only — no
+   money math — so the finance fingerprints stay byte-identical (customer/date/time were already writable via the
+   modal). The openJob modal stays the CREATE form. */
+window.jobSetCustomer = function (jobId, custId) {
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  j.customerId = custId || "";
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Set customer" + (custId && typeof custName === "function" ? " → " + custName(custId) : " → none"));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+window.jobSetDate = function (jobId, ds) {
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const old = j.date || "";
+  j.date = ds || "";
+  // Keep the multi-day work set coherent: the (new) start day is always a work day, and an empty OLD start day
+  // (no time punches) is dropped so it doesn't linger — mirrors the modal's jobStartDateChanged intent. Reuses the
+  // on-page jobPageCommitDays helper (dedupe + keep start + sort + touch + save) so the two can't drift.
+  if (typeof jobPageCommitDays === "function") {
+    let wd = (typeof jobPageWorkDays === "function") ? jobPageWorkDays(j) : ((Array.isArray(j.workDays) ? j.workDays.slice() : (old ? [old] : [])));
+    if (old && old !== j.date) {
+      const _day = ms => (typeof tcLocalDay === "function") ? tcLocalDay(ms) : String(new Date(ms).toISOString().slice(0, 10));
+      const oldHasPunch = ((typeof D === "function" ? (D().timeclock || []) : [])).some(e => e && !e.deleted && e.jobId === jobId && e.clockIn != null && _day(e.clockIn) === old);
+      if (!oldHasPunch) wd = wd.filter(d => d !== old);
+    }
+    jobPageCommitDays(j, wd);   // touches + saves (and re-adds j.date)
+  } else {
+    if (typeof touch === "function") touch(j); if (typeof save === "function") save();
+  }
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Set date " + (j.date || "—"));
+  if (typeof render === "function") render();
+};
+window.jobSetTime = function (jobId, t) {
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  j.time = t || "";
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Set time " + (j.time || "—"));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 /* CLOSE-OUT SIGN-OFFS (owner/admin) — two independent toggles, DECOUPLED from payment (js/60 workStage). */
 /* (a) Reviewed — reuses the existing j.reviewed / q.reviewed pair that plReviewed(q) reads (js/67), so the
