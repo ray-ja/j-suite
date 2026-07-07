@@ -594,6 +594,16 @@ window.adminToggleAcct = function (id) {
 function canInviteMembers() { return (typeof isOwner === "function" && isOwner()) || (typeof canManageMembers === "function" && canManageMembers()); }
 window.adminOpenCreate = function () {
   if (!canInviteMembers()) { alert("You don't have permission to add members."); return; }
+  // Proactively catch the shared/legacy-token device BEFORE the form: creating an account needs a real per-user
+  // sign-in (server security guard), so on the shared code the submit would 401. Guide to sign in first instead
+  // of letting them fill it out and hit a confusing "it vanished". Never logs anyone out; the shared token stays valid.
+  if (window.SHARED_TOKEN_MODE) {
+    modal("Sign in to add members", `
+      <p class="muted" style="white-space:normal">This device is signed in on the <b>shared team code</b>, not your personal login — so it can't create accounts (a security guard, so only a real owner can add people). Sign in with your <b>own password</b> first, then add the new crew. Nothing gets logged out, and the shared code keeps working.</p>
+      <button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal();if(typeof renderLogin==='function')renderLogin()">Sign in with my password</button>
+      <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal()">Not now</button>`);
+    return;
+  }
   const superA = (typeof isSuperAdmin === "function") && isSuperAdmin();
   const roles = allRoles().filter(r => r.key !== "owner" || superA);   // only a super-admin can invite an owner
   modal("Invite a member", `
