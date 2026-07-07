@@ -138,5 +138,92 @@ console.log("— recurMaterialize —");
   ok(j && Array.isArray(j.workDays) && j.workDays.length === 3 && j.workDays[0] === j.occurrenceDate, "estDays:3 → 3 consecutive workDays starting at the occurrence date");
 })();
 
-console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ all recurring-engine tests pass — frequency math, MRR equiv, horizon, idempotency/dedup, deleted-stays-deleted, guards, and end conditions.");
+/* ================= 5) PHASE 3 — quote-per-occurrence, recurMRR, finance-invariance ================= */
+console.log("— phase 3: quote-per-occurrence + MRR + finance invariance —");
+
+/* env that also provides custName + nextQuoteNum (the quote path reads them via typeof guards) */
+function withEnv3(store, todayStr, fn) {
+  global.custName = id => { const c = (store.customers || []).find(x => x && x.id === id); return c ? (c.name || c.company || "—") : "—"; };
+  global.nextQuoteNum = () => (store.quotes || []).reduce((m, q) => Math.max(m, +q.num || 0), 0) + 1;
+  try { return withEnv(store, todayStr, fn); } finally { delete global.custName; delete global.nextQuoteNum; }
+}
+const liveRecQ = store => (store.quotes || []).filter(q => q && !q.deleted && /^recq_/.test(q.id));
+/* the finance surfaces a recurring quote MUST NOT move (it's unpaid/uninvoiced): A/R, income count, billing fp */
+function arCents(store) { return (store.quotes || []).filter(q => q && !q.deleted && q.invoiced && !q.paid).reduce((s, q) => s + Math.round((+(q.finalPrice || q.total) || 0) * 100), 0); }
+function incCount(store) { return (store.income || []).filter(e => e && !e.deleted).length; }
+function billFP(store) {
+  let mat = 0, exp = 0, biz = 0;
+  (store.jobs || []).forEach(j => { if (!j || j.deleted) return;
+    (j.materials || []).forEach(m => { if (m && !m.deleted) mat += Math.round((+m.amount || 0) * 100); });
+    (j.expenses || []).forEach(e => { if (e && !e.deleted) exp += Math.round((+e.amount || 0) * 100); });
+  });
+  (store.expenses || []).forEach(e => { if (e && !e.deleted) biz += Math.round((+e.amount || 0) * 100); });
+  return mat + "|" + exp + "|" + biz;
+}
+
+// 5a) autoQuote ON → each occurrence makes BOTH a recjob_ job AND a recq_ quote (deterministic, 20% off, unbilled)
+(function () {
+  const store = {
+    customers: [{ id: "c1", name: "Alpha Cust" }],
+    quotes: [{ id: "q_ar", customerId: "c1", total: 800, finalPrice: 800, invoiced: true, paid: false }],   // an existing A/R invoice
+    income: [{ id: "in_old", quoteId: "q_paid", amount: 300, deleted: false }],                              // an existing income record
+    jobs: [],
+    expenses: [{ id: "be1", amount: 99.5 }],
+    recurringPlans: [{ id: "rp1", customerId: "c1", propertyId: "pr1", title: "Weekly house-watch", serviceId: "hw1",
+      price: 40, discountPct: 20, frequency: "weekly", status: "active", startDate: "2026-07-01", crew: ["u1"], estDays: 1,
+      autoQuote: true, generatedJobIds: [] }]
+  };
+  const arBefore = arCents(store), incBefore = incCount(store), fpBefore = billFP(store);
+
+  const ch = withEnv3(store, "2026-07-01", () => R.recurMaterialize());
+  const jobs = liveRec(store), quotes = liveRecQ(store);
+  ok(ch === true, "phase3: materialize reports a change");
+  eq(jobs.length, 5, "phase3: 5 weekly occurrence JOBS in horizon");
+  eq(quotes.length, 5, "phase3: 5 matching occurrence QUOTES (one per visit)");
+  // deterministic ids pair job↔quote and link job.quoteId
+  ok(jobs.every(j => j.id === "recjob_rp1_" + j.occurrenceDate), "phase3: jobs keep deterministic recjob_ ids");
+  ok(quotes.every(q => q.id === "recq_rp1_" + q.date), "phase3: quotes have deterministic recq_<plan>_<date> ids");
+  ok(jobs.every(j => j.quoteId === "recq_rp1_" + j.occurrenceDate), "phase3: each job.quoteId links its recq_ quote");
+  // the recurring 20%-off math + finance-neutral flags
+  ok(quotes.every(q => q.discount === 8 && q.total === 32 && q.subtotal === 40), "phase3: 20% recurring discount applied ($40 → −$8 → $32)");
+  ok(quotes.every(q => q.invoiced === false && q.paid === false), "phase3: every generated quote is invoiced:false + paid:false ($0 to finance)");
+  ok(quotes.every(q => q.recurring === true && q.planId === "rp1" && q.customerId === "c1" && q.cust === "Alpha Cust"), "phase3: quote carries recurring flag + planId + customer");
+  ok(quotes.every(q => q.num >= 1) && new Set(quotes.map(q => q.num)).size === quotes.length, "phase3: each quote gets a unique nextQuoteNum()");
+
+  // 5b) FINANCE INVARIANCE — generating recurring quotes leaves A/R + income + billing fingerprint BYTE-IDENTICAL
+  eq(arCents(store), arBefore, "phase3 INVARIANCE: A/R (Σ invoiced&&!paid) is byte-identical after generating quotes");
+  eq(incCount(store), incBefore, "phase3 INVARIANCE: income record count unchanged (no income until a human marks paid)");
+  eq(billFP(store), fpBefore, "phase3 INVARIANCE: billingFingerprint (job materials/expenses + business expenses) byte-identical");
+
+  // 5c) IDEMPOTENT — re-run makes NO new jobs and NO new quotes (deterministic ids dedupe)
+  const jN = liveRec(store).length, qN = liveRecQ(store).length;
+  withEnv3(store, "2026-07-01", () => R.recurMaterialize());
+  eq(liveRec(store).length, jN, "phase3: re-run generates 0 new jobs");
+  eq(liveRecQ(store).length, qN, "phase3: re-run generates 0 new quotes (recq_ dedupe)");
+  ok(new Set(store.quotes.map(q => q.id)).size === store.quotes.length, "phase3: no duplicate quote ids after two runs");
+})();
+
+// 5d) autoQuote:false (a Phase-2 plan) → jobs only, NO quotes (forward-only respected)
+(function () {
+  const store = { customers: [{ id: "c1", name: "Alpha" }], quotes: [], jobs: [], recurringPlans: [
+    { id: "rp2", customerId: "c1", title: "Jobs-only", price: 40, discountPct: 20, frequency: "weekly", status: "active", startDate: "2026-07-01", crew: [], estDays: 1, autoQuote: false, generatedJobIds: [] }] };
+  withEnv3(store, "2026-07-01", () => R.recurMaterialize());
+  ok(liveRec(store).length === 5 && liveRecQ(store).length === 0, "phase3: autoQuote:false plan makes JOBS but NO quotes (jobs-only preserved)");
+})();
+
+// 5e) recurMRR sums active, non-deleted plans' monthly-equivalent (paused/ended/deleted excluded)
+(function () {
+  const store = { recurringPlans: [
+    { id: "a", frequency: "weekly", price: 100, discountPct: 0, status: "active" },      // 433.33
+    { id: "b", frequency: "monthly", price: 200, discountPct: 0, status: "active" },     // 200
+    { id: "c", frequency: "weekly", price: 100, discountPct: 0, status: "paused" },      // excluded
+    { id: "d", frequency: "weekly", price: 100, discountPct: 0, status: "active", deleted: true } // excluded
+  ] };
+  const mrr = withEnv3(store, "2026-07-01", () => R.recurMRR());
+  eq(mrr, 633.33, "recurMRR = Σ active non-deleted monthly-equiv (433.33 + 200), excludes paused/deleted");
+  const empty = withEnv3({ recurringPlans: [] }, "2026-07-01", () => R.recurMRR());
+  eq(empty, 0, "recurMRR = 0 with no plans");
+})();
+
+console.log(fail ? ("\n  ✗ " + fail + " FAILED") : "\n  ✓ all recurring-engine tests pass — frequency math, MRR equiv, horizon, idempotency/dedup, deleted-stays-deleted, guards, end conditions, quote-per-occurrence (deterministic recq_ ids, 20% discount, unbilled), recurMRR, and finance invariance (A/R + income + billing fingerprint byte-identical).");
 process.exit(fail ? 1 : 0);

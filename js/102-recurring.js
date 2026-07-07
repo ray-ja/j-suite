@@ -170,10 +170,28 @@ function recurMonthlyEquiv(plan) {
   } catch (e) { return 0; }
 }
 
+/* the company's Monthly Recurring Revenue: Σ recurMonthlyEquiv over ACTIVE, non-deleted plans (rounded to cents).
+   Derived — reads no stored money, writes nothing → finance/fingerprints unaffected. NEVER throws. */
+function recurMRR() {
+  try {
+    if (typeof D !== "function") return 0;
+    var d = D();
+    if (!d || !Array.isArray(d.recurringPlans)) return 0;
+    var sum = 0;
+    d.recurringPlans.forEach(function (p) { if (p && !p.deleted && p.status === "active") sum += recurMonthlyEquiv(p); });
+    return Math.round(sum * 100) / 100;
+  } catch (e) { return 0; }
+}
+
 /* ================= materializer ================= */
 /* Build ONE job for (plan, occDate) with a DETERMINISTIC id. Idempotent: if the job id already exists (incl. a
    tombstoned/deleted one) OR the id is already in plan.generatedJobIds → return false (no dupe, deleted stays
-   deleted). Returns true iff a new job was pushed. Phase 1: JOB ONLY (autoQuote is a Phase-3 addition). */
+   deleted). Returns true iff a new job was pushed.
+   PHASE 3: when plan.autoQuote !== false, ALSO create a billable quote for the visit with a DETERMINISTIC id
+   (recq_<plan>_<occDate>) at the recurring (20%-off) price, invoiced:false + paid:false → $0 to A/R, income and
+   the P&L until a human bills+pays it via the EXISTING invoice→pay→syncQuoteIncome path (js/23). Finance stays
+   byte-identical. The quote links to its job (job.quoteId). FORWARD-ONLY: only occurrences generated while
+   autoQuote is on get a quote — flipping the flag later never retro-quotes an already-materialized job. */
 function recurMakeOccurrence(plan, occDate) {
   try {
     var d = (typeof D === "function") ? D() : null;
@@ -198,6 +216,33 @@ function recurMakeOccurrence(plan, occDate) {
     if (typeof touch === "function") touch(job);
     d.jobs.push(job);
     plan.generatedJobIds = (plan.generatedJobIds || []).concat([jobId]);
+    // ---- Phase 3: quote-per-occurrence (autoQuote on by default; Phase-2 plans carry autoQuote:false) ----
+    if (plan.autoQuote !== false && Array.isArray(d.quotes)) {
+      try {
+        var quoteId = "recq_" + plan.id + "_" + occDate;
+        if (!d.quotes.find(function (q) { return q && q.id === quoteId; })) {           // exists (incl. tombstone/deleted) → dedupe, deleted stays deleted
+          var price = +plan.price || 0;
+          var pct = (+plan.discountPct || 0);                                            // same discount source as recurMonthlyEquiv / recurPlanRow (plans default 20)
+          var discount = Math.round(price * pct / 100 * 100) / 100;                      // the SAME 20%-off recurring math the wizard uses (sub*0.2), to cents
+          var total = Math.round((price - discount) * 100) / 100;
+          var q = {
+            id: quoteId, planId: plan.id,
+            customerId: plan.customerId || "",
+            cust: (typeof custName === "function") ? custName(plan.customerId) : "",
+            propertyId: plan.propertyId || "",
+            date: occDate,
+            items: [{ serviceId: plan.serviceId || "", name: plan.title || "Recurring service", unit: "flat", price: price, qty: 1, cost: 0 }],
+            recurring: true, subtotal: price, discount: discount, total: total,
+            jobId: jobId, num: (typeof nextQuoteNum === "function") ? nextQuoteNum() : 0,
+            invoiced: false, paid: false,                                                // $0 to A/R + income + P&L until a human bills+pays it
+            updatedAt: (typeof now === "function") ? now() : Date.now()
+          };
+          if (typeof touch === "function") touch(q);
+          d.quotes.push(q);
+          job.quoteId = quoteId;                                                         // link the job to its billable quote
+        }
+      } catch (e) { /* a quote failure never blocks the job or blanks the app */ }
+    }
     return true;
   } catch (e) { return false; }
 }
@@ -250,6 +295,7 @@ if (typeof window !== "undefined") {
   window.recurInSeason = recurInSeason; window.recurNextSeasonStart = recurNextSeasonStart;
   window.recurAdvance = recurAdvance; window.recurSeed = recurSeed; window.recurFirstOccurrence = recurFirstOccurrence;
   window.recurEndReached = recurEndReached; window.recurMonthlyEquiv = recurMonthlyEquiv;
+  window.recurMRR = recurMRR;
   window.recurMakeOccurrence = recurMakeOccurrence; window.recurMaterialize = recurMaterialize;
 }
 if (typeof module !== "undefined" && module.exports) {
@@ -257,7 +303,7 @@ if (typeof module !== "undefined" && module.exports) {
     recurAddDays: recurAddDays, recurOnDay: recurOnDay, recurNthWeekday: recurNthWeekday,
     recurInSeason: recurInSeason, recurNextSeasonStart: recurNextSeasonStart,
     recurAdvance: recurAdvance, recurSeed: recurSeed, recurFirstOccurrence: recurFirstOccurrence,
-    recurEndReached: recurEndReached, recurMonthlyEquiv: recurMonthlyEquiv,
+    recurEndReached: recurEndReached, recurMonthlyEquiv: recurMonthlyEquiv, recurMRR: recurMRR,
     recurMakeOccurrence: recurMakeOccurrence, recurMaterialize: recurMaterialize
   };
 }

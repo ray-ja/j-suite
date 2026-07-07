@@ -32,10 +32,11 @@ d.jobs = d.jobs || [];
 // ---- 1) BUILD A PLAN via the pure builder (same path recurSavePlan uses) + generate ----
 var plan = recurPlanFromFields({
   customerId: "c_recur", title: "House-watch — weekly", price: 40, discountPct: 20,
-  frequency: "weekly", weekday: new Date(t + "T12:00:00").getDay(), estDays: 1, startDate: t, endMode: "endless"
+  frequency: "weekly", weekday: new Date(t + "T12:00:00").getDay(), estDays: 1, startDate: t, endMode: "endless",
+  autoQuote: false   // explicit jobs-only: this test asserts the pure JOB path (Phase 3 defaults autoQuote ON — covered by the engine test)
 }, {});
 assert(/^rp_/.test(plan.id), "plan id should be rp_* (got " + plan.id + ")");
-assert(plan.autoQuote === false, "Phase 2 plan.autoQuote must be OFF (jobs-only)");
+assert(plan.autoQuote === false, "explicit autoQuote:false stays OFF (jobs-only)");
 assert(plan.status === "active", "new plan should be active");
 plan.nextDue = recurFirstOccurrence(plan, t);
 d.recurringPlans.push(plan);
