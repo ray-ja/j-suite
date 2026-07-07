@@ -68,6 +68,16 @@ function rFinOverview(){
   if (pl.revenue > 0 && pl.margin < 35) h += `<div class="note" style="margin-top:6px">⚠ Below the 35% margin floor — check pricing &amp; costs.</div>`;
   h += `</div>`;
 
+  // recurring revenue (MRR) — read-only, DERIVED from active plans (touches no stored money → fingerprints
+  // unaffected). Each auto-generated visit quote is $0 to the P&L above until a human bills + pays it.
+  if (typeof recurMRR === "function") {
+    const mrr = recurMRR();
+    const nPlans = (D().recurringPlans || []).filter(p => p && !p.deleted && p.status === "active").length;
+    if (nPlans > 0) {
+      h += `<div class="card" style="border-left:4px solid var(--accent)"><div class="li"><div class="grow"><div class="nm">🔁 Recurring revenue (MRR)</div><div class="sub" style="white-space:normal">${money(mrr)}/mo across ${nPlans} active plan${nPlans === 1 ? "" : "s"} · annualized ${money(mrr * 12)} · <span onclick="TAB='recurring';render()" style="cursor:pointer;text-decoration:underline">from Recurring →</span></div></div><b>${money(mrr)}</b></div></div>`;
+    }
+  }
+
   // cash position
   h += `<div class="secthd"><h2>Cash position</h2></div><div class="card">
     <div class="li"><div class="grow"><div class="nm">📥 A/R outstanding</div><div class="sub">invoiced, not yet paid · ${arQuotes.length} invoice(s)</div></div><b>${money(arOwed)}</b></div>

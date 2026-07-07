@@ -149,6 +149,7 @@ window.recurPlanOpen = function (id, prefill) {
     + '<option value="count"' + (p.endMode === "count" ? " selected" : "") + '>After N visits</option></select>'
     + '<div id="rp_endwrap"></div>'
     + '<label>Notes</label><textarea id="rp_notes" placeholder="Access notes, gate code, what to check…">' + esc(p.notes || "") + '</textarea>'
+    + '<label class="toggle" style="margin-top:10px"><input type="checkbox" id="rp_autoquote"' + ((p.autoQuote !== false) ? " checked" : "") + '> 🧾 Auto-create a billable quote for each visit (recurring price)</label>'
     + '<button class="btn acc" style="margin-top:12px" onclick="recurSavePlan(\'' + esc(p.id || "") + '\',' + isNew + ')">' + (isNew ? "Create plan" : "Save plan") + '</button>'
     + (isNew ? "" : recurLifecycleButtons(p))
   );
@@ -294,7 +295,10 @@ function recurPlanFromFields(f, base) {
   if (f.frequency === "custom" && f.intervalUnit === "days") { p.intervalDays = Math.max(1, +f.interval || 1); p.interval = 1; }
   else { p.interval = Math.max(1, +f.interval || 1); p.intervalDays = undefined; }
   p.status = base.status || "active";
-  p.autoQuote = false;   // Phase 2: jobs-only. Phase 3 flips this on.
+  // Phase 3: auto-create a billable quote per visit — DEFAULT ON for new plans. The form passes an explicit
+  // boolean (the toggle), so it wins; when absent, preserve an existing plan's value, else default ON. Existing
+  // Phase-2 plans keep their stored autoQuote:false unless the owner edits + enables the toggle (forward-only).
+  p.autoQuote = (f.autoQuote == null) ? (base.autoQuote != null ? !!base.autoQuote : true) : !!f.autoQuote;
   p.notes = f.notes || "";
   p.generatedJobIds = Array.isArray(base.generatedJobIds) ? base.generatedJobIds : [];
   p.generatedCount = base.generatedCount || 0;
@@ -341,6 +345,7 @@ window.recurSavePlan = function (id, isNew) {
     endMode: (document.getElementById("rp_endmode") || {}).value || "endless",
     endDate: (document.getElementById("rp_enddate") || {}).value || "",
     count: (document.getElementById("rp_count") || {}).value || "",
+    autoQuote: document.getElementById("rp_autoquote") ? !!document.getElementById("rp_autoquote").checked : undefined,
     notes: val("rp_notes")
   };
   var p = recurPlanFromFields(f, base);

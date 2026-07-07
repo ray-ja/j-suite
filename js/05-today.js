@@ -64,6 +64,18 @@ function rToday(){
     }).join("")+`</div>`;
   }
 
+  // 3.5) Recurring visits this week — a light nudge so standing contracts aren't forgotten (owner/admin).
+  // Reads generated jobs (planId set) dated within the next 7 days; taps through to the Recurring tab.
+  if(owner){
+    try{
+      const _wkEnd=(typeof recurAddDays==="function")?recurAddDays(t,7):t;
+      const _rv=(D().jobs||[]).filter(j=>j&&j.planId&&!j.done&&!j.deleted&&j.date&&j.date>=t&&j.date<=_wkEnd);
+      if(_rv.length){
+        h+=`<div class="card" style="border-left:4px solid var(--accent);cursor:pointer" onclick="TAB='recurring';render()"><div class="row"><div class="grow"><div class="nm">🔁 ${_rv.length} recurring visit${_rv.length>1?"s":""} this week</div><div class="sub">standing contracts on the schedule</div></div><span class="sub">Recurring →</span></div></div>`;
+      }
+    }catch(e){}
+  }
+
   // 4) Today's jobs (+ quick-add task) — if none today, show the next upcoming job
   // MULTI-DAY: a job shows on Today if ANY of its work days is today (not just its start date).
   const _onDay=(typeof jobOnDay==="function")?jobOnDay:((j,d)=>j.date===d);
