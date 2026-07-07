@@ -1,7 +1,7 @@
 /* ---------- QUOTES ---------- */
 let QSEARCH="",QSTAGE_FILTER="all";
-// Jobs-table sort (survives re-render; header taps toggle). DEFAULT date-desc is byte-identical to the old
-// list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Type + Date-range filters.
+// Jobs-list sort (survives re-render; the ⇅ Sort control toggles). DEFAULT date-desc is byte-identical to the
+// old list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Type + Date-range filters.
 let QSORT="date",QSORTDIR="desc",QTYPE_FILTER="",QDATE_FROM="",QDATE_TO="";
 const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
@@ -42,9 +42,10 @@ function qSortVal(q){
   }
 }
 function qSortCmp(a,b){ const dir=QSORTDIR==="asc"?1:-1,va=qSortVal(a),vb=qSortVal(b); if(va<vb)return -1*dir; if(va>vb)return 1*dir; return 0; }
-function qSortArrow(col){ return QSORT===col?(QSORTDIR==="asc"?" ▲":" ▼"):""; }
-/* header tap: same column toggles asc/desc; a new column takes its natural default (date/price desc, else asc).
-   Repaints ONLY #qlist (the <table> lives inside it; the headers repaint with it) — mirrors rcptSortBy/cSetSort. */
+/* sort trigger: picking a NEW column (from the ⇅ Sort <select>) takes its natural default (date/price desc,
+   else asc); re-selecting the SAME column (the ▲/▼ direction button passes the current QSORT) toggles asc/desc.
+   Repaints ONLY #qlist (the sort control lives inside it, so its selected option + arrow repaint with the list)
+   — mirrors rcptSortBy/cSetSort. Sort LOGIC unchanged — only the trigger UI moved from <th> taps to a select. */
 window.qSetSort=function(col){ if(QSORT===col)QSORTDIR=QSORTDIR==="asc"?"desc":"asc"; else{ QSORT=col; QSORTDIR=(col==="date"||col==="price")?"desc":"asc"; } QSHOWN=150; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
 /* PURE results-list HTML — the empty / "No matches" / <table> branch ONLY. Everything OUTSIDE this
    (draft card, guided button, search input, status chips, crew select, Filters panel) is built by rQuotes().
@@ -75,8 +76,22 @@ function quotesListHTML(){
      always cover everything (a match beyond #150 is found, then shown when you load more). */
   const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
   const shown=list.slice(0,QSHOWN);
-  const th=(col,label,align)=>`<th onclick="qSetSort('${col}')" style="text-align:${align||"left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${qSortArrow(col)}</th>`;
-  let h=`<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th("date","Date")}${th("customer","Customer")}${th("type","Type")}${th("status","Status")}${th("expenses","Expenses","right")}${th("price","Price","right")}</tr></thead><tbody>`;
+  // Compact SORT control (replaces the old tappable <th> headers): a <select> of the SAME columns drives the
+  // UNCHANGED qSetSort(col) — picking a new column re-sorts; the ▲/▼ button re-selects the current column to
+  // toggle direction. It lives INSIDE #qlist so its selected option + arrow repaint with the list on every sort.
+  const sortOpts=[["date","Date"],["customer","Customer"],["type","Type"],["status","Status"],["expenses","Expenses"],["price","Price"]];
+  const sortRow=`<div class="row" style="gap:8px;align-items:center;margin-bottom:8px">`
+    +`<span class="sub" style="white-space:nowrap">⇅ Sort</span>`
+    // emit selected="" (not the bare boolean) so this pure string is byte-identical to the DOM-serialized #qlist
+    // it's rebuilt into — the scoped-search "scoped==inner" invariant string-compares the two (Chrome normalizes
+    // a bare `selected` to `selected=""`, so a bare attr here would spuriously diverge from the live DOM).
+    +`<select aria-label="Sort jobs" onchange="qSetSort(this.value)" style="font-size:13px;flex:1">${sortOpts.map(o=>`<option value="${o[0]}"${QSORT===o[0]?` selected=""`:""}>${o[1]}</option>`).join("")}</select>`
+    +`<button class="btn ghost sm" aria-label="Toggle sort direction" onclick="qSetSort('${QSORT}')" style="white-space:nowrap">${QSORTDIR==="asc"?"▲":"▼"}</button>`
+    +`<span class="sub" style="white-space:nowrap">${list.length}</span></div>`;
+  // Full-width STACKED card list (was a 6-column <table> that cut off the Price column on a phone). Each job is
+  // one tappable card: LEFT color bar = status; line 1 = Type/title (left) + Price (right); line 2 = customer ·
+  // date · status label; an optional muted line 3 = expense total + breakdown. No horizontal scroll, big tap target.
+  let h=sortRow+`<div class="card" style="padding:0;overflow:hidden">`;
   shown.forEach(q=>{
     const jo=!!q._jobOnly;
     const st=qWorkStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
@@ -88,16 +103,24 @@ function quotesListHTML(){
     const _lj=q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted);
     // A jobless row has no quote/price → em-dash Price + a subtle "no quote" nudge so the owner knows to quote it.
     const noQuoteHint=jo?` <span class="sub" style="font-size:11px;color:var(--muted)">· no quote</span>`:"";
-    h+=`<tr onclick="${_lj?`openJobPage('${_lj.id}')`:`openQuote('${q.id}')`}" style="cursor:pointer;border-bottom:1px solid var(--line)">`
-      +`<td style="padding:8px 6px;white-space:nowrap;border-left:4px solid ${m.color}">${fmtDate(q.date)}</td>`
-      +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
-      +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}${noQuoteHint}</td>`
-      +`<td style="padding:8px 6px;white-space:normal"><span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</td>`
-      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;color:var(--muted)">${(_lj&&qExpTotal(q)>0)?(money(qExpTotal(q))+qExpSubline(_lj)):`<span style="color:var(--muted)">—</span>`}</td>`
-      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${jo?`<span style="color:var(--muted)">—</span>`:`${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}`}</td>`
-      +`</tr>`;
+    const recur=q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:"";
+    // Line 1 headline: Type/title (left, readable 15px bold) + Price (right, bold, green when paid). Jobless row = "—".
+    const titleHTML=type?esc(type):`<span style="color:var(--muted)">—</span>`;
+    const priceHTML=jo?`<span style="color:var(--muted)">—</span>`:`${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}`;
+    // Line 3 (tertiary, muted): the expense total + the 🛣/🚚/🧱 breakdown — only when a live job has logged costs.
+    const expHTML=(_lj&&qExpTotal(q)>0)?`<div class="sub" style="font-size:12px;color:var(--muted);margin-top:3px">💵 ${money(qExpTotal(q))}${qExpSubline(_lj)}</div>`:"";
+    h+=`<div onclick="${_lj?`openJobPage('${_lj.id}')`:`openQuote('${q.id}')`}" style="display:flex;gap:10px;padding:11px 12px;border-left:4px solid ${m.color};border-bottom:1px solid var(--line);cursor:pointer">`
+      +`<div style="flex:1;min-width:0">`
+        +`<div style="display:flex;gap:8px;justify-content:space-between;align-items:baseline">`
+          +`<div style="flex:1;min-width:0;font-size:15px;font-weight:700;line-height:1.25">${titleHTML}${recur}${noQuoteHint}</div>`
+          +`<div style="text-align:right;white-space:nowrap;font-size:15px;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${priceHTML}</div>`
+        +`</div>`
+        +`<div style="font-size:12.5px;color:var(--muted);margin-top:3px">${cust} · ${fmtDate(q.date)} · <span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</div>`
+        +expHTML
+      +`</div>`
+      +`</div>`;
   });
-  h+=`</tbody></table></div>`+more;
+  h+=`</div>`+more;
   return h;
 }
 /* Per-list shown cap (initial 150). qLoadMore bumps by 150 and repaints ONLY #qlist via the scoped path. */

@@ -59,11 +59,14 @@ ok("stop/sub-job excluded (no French-drain dump-run orphan row)", out.indexOf("o
 ok("deleted job excluded", out.indexOf("Deleted job") < 0);
 
 // 5. REAL QUOTES UNAFFECTED — the real-quote (q1) row is byte-identical to the baseline render.
-//    Pull each row's <tr>…</tr> and compare the q1 row across the two renders.
+//    Each Jobs row is now a stacked CARD: <div onclick="openQuote|openJobPage(...)">…</div>. Slice from a card's
+//    opening tag to the NEXT card's opening tag (or end of list) — only the outer card carries `<div onclick=`
+//    (the Review button is a <button onclick>), so this bounds exactly one card and compares it across renders.
 function rowFor(html, marker) {
   var i = html.indexOf(marker); if (i < 0) return null;
-  var s = html.lastIndexOf("<tr ", i); var e = html.indexOf("</tr>", i);
-  return (s >= 0 && e >= 0) ? html.slice(s, e + 5) : null;
+  var s = html.lastIndexOf('<div onclick="', i); if (s < 0) return null;
+  var n = html.indexOf('<div onclick="', s + 1);
+  return html.slice(s, n >= 0 ? n : html.length);
 }
 ok("real-quote q1 row byte-identical with orphans present",
   rowFor(baseline, "openQuote('q1')") !== null &&
