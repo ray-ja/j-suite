@@ -6,7 +6,7 @@ let QSORT="date",QSORTDIR="desc",QTYPE_FILTER="",QDATE_FROM="",QDATE_TO="";
 const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
-function quoteType(q){ const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
+function quoteType(q){ if(q&&q._jobOnly)return q.title||""; const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
 /* stable human job number (#0001) + the next one to hand out */
 function nextQuoteNum(){ return (D().quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0)+1; }
 function quoteNum(q){ return (q&&q.num)?("#"+String(q.num).padStart(4,"0")):""; }
@@ -18,7 +18,12 @@ function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="functi
 window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); };   // reset cap on filter change
 /* sort value + comparator for the Jobs table. DEFAULT (date/desc) reproduces the old
    `(b.date).localeCompare(a.date)` ordering exactly (V8-stable, no tiebreak) → byte-identical below the cap. */
-function qStageRank(q){ const st=(typeof workStage==="function")?workStage(q):quoteStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
+/* jobless (virtual-quote) rows read the linked JOB directly — no quote lifecycle fields exist. Kept simple:
+   paid/invoiced off the job if ever set, else done→invoice-ready / in-progress→job. NEVER touches real quotes. */
+function jobOnlyStage(q){ const j=(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted); if(!j)return "job"; if(j.paid)return "paid"; if(j.invoiced||j.done)return "invoice"; return "job"; }
+/* stage for ANY Jobs-list row: a _jobOnly pseudo-quote uses jobOnlyStage; a REAL quote is byte-identical (workStage/quoteStage). */
+function qWorkStage(q){ return (q&&q._jobOnly)?jobOnlyStage(q):((typeof workStage==="function")?workStage(q):quoteStage(q)); }
+function qStageRank(q){ const st=qWorkStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
 /* the linked job's total cost for this quote's row: logged receipts (materials + expenses) PLUS the mileage
    payout (confirmed odometer, else the maps-route estimate — jobMilesCostEst). 0 when no live job. */
 function qExpTotal(q){ const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted); if(!j)return 0; const rec=(typeof jobExpenseTotal==="function")?jobExpenseTotal(j):0; const mil=(typeof jobMilesCostEst==="function")?jobMilesCostEst(j):0; return rec+mil; }
@@ -46,9 +51,16 @@ window.qSetSort=function(col){ if(QSORT===col)QSORTDIR=QSORTDIR==="asc"?"desc":"
    Kept pure so the SEARCH/sort/filter keystroke path can rebuild just #qlist without re-rendering — and
    destroying — the #qsearch input. All filters + the sort run on the FULL list ABOVE the Load-more slice. */
 function quotesListHTML(){
-  const all=actQ();let list=all.slice();
+  const all=actQ();
+  // Quote-LESS jobs (Today → "＋ Add a job to clock into" / saveQuickTask) have NO quote to hang a Jobs-list row on,
+  // so they were INVISIBLE here. Wrap each as a virtual-quote so it searches/filters/sorts/pages exactly like a quote.
+  // Skip jobs already linked by a quote (q.jobId===j.id) and stops/sub-jobs (Array.isArray(sharedJobIds), like rcptJobs).
+  const _covered=new Set(all.filter(q=>q&&q.jobId).map(q=>q.jobId));
+  const _orphans=(typeof actJ==="function"?actJ():[]).filter(j=>j&&!j.deleted&&!Array.isArray(j.sharedJobIds)&&!_covered.has(j.id))
+    .map(j=>({id:"vq_"+j.id,jobId:j.id,_jobOnly:true,cust:(custName(j.customerId)||""),customerId:j.customerId,date:j.date||"",title:j.title,total:0,accepted:true}));
+  let list=all.concat(_orphans);
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
-  if(QSTAGE_FILTER!=="all")list=list.filter(q=>((typeof workStage==="function")?workStage(q):quoteStage(q))===QSTAGE_FILTER);
+  if(QSTAGE_FILTER!=="all")list=list.filter(q=>qWorkStage(q)===QSTAGE_FILTER);
   if(QCREW_FILTER){   // index active jobs by id ONCE (was actJ().find() per quote via quoteCrew → O(quotes×jobs))
     const _jm=new Map();(typeof actJ==="function"?actJ():[]).forEach(j=>{if(j&&j.id!=null&&!_jm.has(j.id))_jm.set(j.id,j);});
     list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
@@ -57,7 +69,7 @@ function quotesListHTML(){
   if(QDATE_FROM)list=list.filter(q=>(q.date||"")>=QDATE_FROM);
   if(QDATE_TO)list=list.filter(q=>(q.date||"")<=QDATE_TO);
   list.sort(qSortCmp);
-  if(!all.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
+  if(!all.length&&!_orphans.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
   if(!list.length)return `<div class="empty">No matches.</div>`;
   /* Load-more cap: filter/sort ABOVE run on the FULL list; we slice ONLY the final display array so search/sort
      always cover everything (a match beyond #150 is found, then shown when you load more). */
@@ -66,19 +78,23 @@ function quotesListHTML(){
   const th=(col,label,align)=>`<th onclick="qSetSort('${col}')" style="text-align:${align||"left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${qSortArrow(col)}</th>`;
   let h=`<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>${th("date","Date")}${th("customer","Customer")}${th("type","Type")}${th("status","Status")}${th("expenses","Expenses","right")}${th("price","Price","right")}</tr></thead><tbody>`;
   shown.forEach(q=>{
-    const st=(typeof workStage==="function")?workStage(q):quoteStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
-    const stLabel=(typeof workStageLabel==="function")?workStageLabel(q):m.label;
-    // Review after-action stays surfaced on PAID rows (uses the preserved plReview/plReviewed, js/67).
-    const rev=(st==="paid")?((typeof plReviewed==="function"&&plReviewed(q))?` <span class="badge s-Won">✓ reviewed</span>`:` <button class="btn acc sm" onclick="event.stopPropagation();plReview('${q.id}')">Review →</button>`):"";
-    // Accepted-with-live-job → the unified job page; drafts/quote-stage (or job deleted) → the wizard.
+    const jo=!!q._jobOnly;
+    const st=qWorkStage(q),m=((typeof workStageMeta!=="undefined")?workStageMeta[st]:null)||QSTAGE_META[st]||QSTAGE_META.quoted,cust=esc(q.cust||custName(q.customerId)||"—"),type=quoteType(q);
+    const stLabel=jo?m.label:((typeof workStageLabel==="function")?workStageLabel(q):m.label);
+    // Review after-action stays surfaced on PAID rows (uses the preserved plReview/plReviewed, js/67). A jobless
+    // row has no quote to review, so it's skipped there.
+    const rev=(!jo&&st==="paid")?((typeof plReviewed==="function"&&plReviewed(q))?` <span class="badge s-Won">✓ reviewed</span>`:` <button class="btn acc sm" onclick="event.stopPropagation();plReview('${q.id}')">Review →</button>`):"";
+    // Accepted-with-live-job (and EVERY jobless row) → the unified job page; drafts/quote-stage (or job deleted) → wizard.
     const _lj=q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted);
+    // A jobless row has no quote/price → em-dash Price + a subtle "no quote" nudge so the owner knows to quote it.
+    const noQuoteHint=jo?` <span class="sub" style="font-size:11px;color:var(--muted)">· no quote</span>`:"";
     h+=`<tr onclick="${_lj?`openJobPage('${_lj.id}')`:`openQuote('${q.id}')`}" style="cursor:pointer;border-bottom:1px solid var(--line)">`
       +`<td style="padding:8px 6px;white-space:nowrap;border-left:4px solid ${m.color}">${fmtDate(q.date)}</td>`
       +`<td style="padding:8px 6px;white-space:normal">${cust}${q.recurring?` <span class="sub" style="font-size:11px">· recurring</span>`:""}</td>`
-      +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}</td>`
+      +`<td style="padding:8px 6px;white-space:normal">${type?esc(type):`<span style="color:var(--muted)">—</span>`}${noQuoteHint}</td>`
       +`<td style="padding:8px 6px;white-space:normal"><span style="color:${m.color};font-weight:700">${esc(stLabel)}</span>${rev}</td>`
       +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;color:var(--muted)">${(_lj&&qExpTotal(q)>0)?(money(qExpTotal(q))+qExpSubline(_lj)):`<span style="color:var(--muted)">—</span>`}</td>`
-      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}</td>`
+      +`<td style="padding:8px 6px;text-align:right;white-space:nowrap;font-weight:800;color:${st==="paid"?"#1a7f37":"var(--brand-text)"}">${jo?`<span style="color:var(--muted)">—</span>`:`${money(q.finalPrice||q.total)}${(q.finalPrice&&q.finalPrice!==q.total)?`<div class="sub" style="font-weight:400">quote ${money(q.total)}</div>`:""}`}</td>`
       +`</tr>`;
   });
   h+=`</tbody></table></div>`+more;
