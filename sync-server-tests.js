@@ -1521,6 +1521,35 @@ ok("non-string line desc coerced to string (\"\")", t.rcptParseSuggestion('{"ven
 const rpsLiMix = t.rcptParseSuggestion('{"vendor":"Sunbelt","amount":300,"last4":"2469","refund":true,"deposit":true,"splits":[{"amount":120,"type":"pass-through","category":"materials","note":"pavers"},{"amount":180,"type":"business","category":"tools/equipment","note":"tamper"}],"lineItems":[{"desc":"pavers","amount":120,"bucket":"pass-through"},{"desc":"tamper","amount":180,"bucket":"business"}]}', rpsCats.concat(["materials", "tools/equipment"]), rpsJobs);
 ok("splits + last4 + refund + deposit UNCHANGED with lineItems present", rpsLiMix.splits.length === 2 && rpsLiMix.last4 === "2469" && rpsLiMix.refund === true && rpsLiMix.deposit === true && rpsLiMix.lineItems.length === 2, rpsLiMix);
 
+console.log("\n— Cap receipt-vision MODEL (server-authoritative: Sonnet 4.6 default, Opus 4.8 escalate; no client model) —");
+// rcptVisionModel maps the strictly-boolean escalate flag → a model. cfg.model is IGNORED (Ray: never Haiku for reads).
+ok("default read → Sonnet 4.6 even when cfg.model = Haiku", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false) === "claude-sonnet-4-6", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false));
+ok("escalate:true → Opus 4.8 (smartest model), cfg.model still ignored", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, true) === "claude-opus-4-8", null);
+ok("per-org cfg.receiptModel override honored for the DEFAULT read only", t.rcptVisionModel({ receiptModel: "claude-opus-4-6" }, false) === "claude-opus-4-6", null);
+ok("escalate ALWAYS wins with Opus 4.8, overriding cfg.receiptModel", t.rcptVisionModel({ receiptModel: "claude-opus-4-6" }, true) === "claude-opus-4-8", null);
+ok("non-boolean escalate (\"true\" string) is NOT an escalation → Sonnet 4.6 (strict === true)", t.rcptVisionModel({}, "true") === "claude-sonnet-4-6", null);
+ok("no cfg at all → Sonnet 4.6 default", t.rcptVisionModel(null, false) === "claude-sonnet-4-6", null);
+// The client can NEVER pick the model: rcptVisionModel takes (cfg, escalate) only — a free-form `model` in the
+// request body has no path in. Even a hostile-looking cfg.model resolves to the server default, not the string.
+ok("a client-supplied model string can never reach the call (helper reads only cfg + boolean escalate)", t.rcptVisionModel({ model: "attacker/model" }, false) === "claude-sonnet-4-6", null);
+// Assert the model + max_tokens ACTUALLY SENT to the Anthropic call, by spying on the shared https module.
+(function () {
+  const https = require("https");
+  const orig = https.request, captured = [];
+  https.request = function () { const req = { on() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };
+  try {
+    t.callAnthropicVision("key", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false), "image/jpeg", "AAAA", "task", function () {}, 1500);
+    const dflt = JSON.parse(captured[0] || "{}");
+    ok("wire: default read SENDS model=claude-sonnet-4-6 + max_tokens=1500", dflt.model === "claude-sonnet-4-6" && dflt.max_tokens === 1500, { model: dflt.model, max_tokens: dflt.max_tokens });
+    t.callAnthropicVision("key", t.rcptVisionModel({}, true), "image/jpeg", "AAAA", "task", function () {}, 1500);
+    const esc = JSON.parse(captured[1] || "{}");
+    ok("wire: escalate read SENDS model=claude-opus-4-8 + max_tokens=1500", esc.model === "claude-opus-4-8" && esc.max_tokens === 1500, { model: esc.model, max_tokens: esc.max_tokens });
+    t.callAnthropicVision("key", "claude-sonnet-4-6", "image/jpeg", "AAAA", "task", function () {});
+    const leg = JSON.parse(captured[2] || "{}");
+    ok("wire: omitted maxTokens keeps the legacy 512 default (backward-compatible)", leg.max_tokens === 512, leg.max_tokens);
+  } finally { https.request = orig; }
+})();
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");
