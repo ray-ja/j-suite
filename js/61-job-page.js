@@ -513,13 +513,26 @@ function jobPageRouteCard(j) {
   const startVal = startCustom ? j.routeStart.address : baseAddr;
   const endVal = endCustom ? j.routeEnd.address : baseAddr;
   const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
-  const endpointRow = (emoji, title, id, value, custom, setFn, resetFn) => `<div style="padding:6px 0">
-    <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:14px">${emoji} ${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
-    <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}','${id}_ac')" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div></div>`;
+  // Shared badge styles for the ordered-route SEQUENCE: a numbered navy circle for stops, a green 🏁 flag for the
+  // Start/End bookends. The box-shadow ring is the CARD colour so each badge visually "cuts" the vertical connector
+  // rail behind it → the rail reads as one line linking the points in order (a stops-in-sequence look).
+  const badgeBase = "flex:0 0 30px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;line-height:1;z-index:1;position:relative;box-shadow:0 0 0 3px var(--card)";
+  const numBadge = n => `<div style="${badgeBase};background:var(--brand);color:#fff">${n}</div>`;
+  const flagBadge = () => `<div style="${badgeBase};background:var(--accent);color:#fff">🏁</div>`;
+  // Start/End bookends — a 🏁 flag point that is STILL editable (the address input sits under the label). They are
+  // points 0 and last of the SAME sequence, styled like the numbered stops so the whole thing reads as one path.
+  const endpointRow = (title, id, value, custom, setFn, resetFn) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative;z-index:1">${flagBadge()}
+    <div class="grow" style="min-width:0">
+      <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:16px;font-weight:700">${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto;opacity:.7" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
+      <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}','${id}_ac')" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div>
+    </div></div>`;
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧭 Route &amp; mileage <span class="sub" style="font-weight:400">· ordered — feeds the mileage estimate</span></div>`;
-  h += `<div class="sub" style="margin-bottom:8px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get per-stop labeled directions up top; here you get the offline mileage cross-check to the odometer. Owner/admin only.</div>`;
-  // 🏁 START (first point) — editable, pre-filled with home base
-  h += endpointRow("🏁", "Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
+  h += `<div class="sub" style="margin-bottom:6px;white-space:normal">The ordered path the estimate follows, <b>Start → … → End</b>. Use ▲▼ to reorder — the 🏁 <b>job site</b> can sit anywhere in between (e.g. Start → job site → transfer station → End). Start &amp; End default to your home base but you can change either. The crew get per-stop labeled directions up top; here you get the offline mileage cross-check to the odometer. Owner/admin only.</div>`;
+  // ===== THE ORDERED ROUTE — the visual centrepiece. ONE relative container draws a vertical connector rail behind
+  // the badge column (left:15px = badge centre) so 🏁 Start → numbered stops/site → 🏁 End read as a single path. =====
+  h += `<div style="position:relative;margin:2px 0 4px"><div aria-hidden="true" style="position:absolute;left:15px;top:22px;bottom:22px;width:2px;background:var(--line);z-index:0"></div>`;
+  // 🏁 START (first point) — editable bookend, pre-filled with home base
+  h += endpointRow("Start", "jrs_start", startVal, startCustom, "jobPageSetStart", "jobPageResetStart");
   // the COMBINED ordered route (planned stops + the movable job site) from the shared jobRouteOrdered(j).
   // Every row gets ▲▼ (jobPageRouteMove on the COMBINED index); ▲ is disabled on the first row, ▼ on the last.
   // Stop rows keep the ✕ delete (mapped to the stop's RAW plannedStops index, t.raw); the 🏁 job-site row is
@@ -527,20 +540,24 @@ function jobPageRouteCard(j) {
   const combo = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(j) : [];
   h += combo.map((t, ci) => {
     const upDis = ci === 0 ? "disabled" : "", dnDis = ci === combo.length - 1 ? "disabled" : "";
+    // DEMOTED edit controls — small, subdued (opacity .6), right-aligned; ▲ off on the first row, ▼ off on the last.
     const moveBtns = `<button class="btn ghost sm" ${upDis} onclick="jobPageRouteMove('${j.id}',${ci},-1)" title="Move up">▲</button><button class="btn ghost sm" ${dnDis} onclick="jobPageRouteMove('${j.id}',${ci},1)" title="Move down">▼</button>`;
     if (t.kind === "site") {
-      return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${ci + 1}. 🏁 Job site <span class="sub" style="font-weight:400">· the job</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}</div></div>`;
+      return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative;z-index:1">${numBadge(ci + 1)}<div class="grow" style="min-width:0"><div class="nm" style="font-size:16px;font-weight:700;white-space:normal">🏁 Job site <span class="sub" style="font-weight:400">· the job</span></div>${siteAddr ? `<div class="sub" style="white-space:normal">${esc(siteAddr)}</div>` : `<div class="sub muted">Set the job location above (✏️ Edit location).</div>`}</div><div class="row" style="gap:2px;flex:0 0 auto;opacity:.6">${moveBtns}</div></div>`;
     }
     const s = t.stop;
-    return `<div class="li" style="align-items:center;padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${ci + 1}. ${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:4px;flex:0 0 auto">${moveBtns}<button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${t.raw})" title="Remove">✕</button></div></div>`;
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative;z-index:1">${numBadge(ci + 1)}<div class="grow" style="min-width:0"><div class="nm" style="font-size:16px;font-weight:700;white-space:normal">${esc(s.label || s.address || "Stop")}</div>${s.label && s.address ? `<div class="sub" style="white-space:normal">${esc(s.address)}</div>` : ""}</div><div class="row" style="gap:2px;flex:0 0 auto;opacity:.6">${moveBtns}<button class="btn ghost sm" onclick="jobPageStopDel('${j.id}',${t.raw})" title="Remove">✕</button></div></div>`;
   }).join("");
-  // BOTH fields search the saved index; picking either fills the other. The Label searches names only (data-savedonly,
-  // data-nameinto) and routes the picked address+ref to jps_addr (data-pairaddr); the Address searches saved+OSM and
-  // fills the empty Label with the place name (data-pairlabel). jobPageStopAdd reads the ref/coords off jps_addr.
-  h += `<div class="row" style="gap:8px;margin-top:8px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_label" placeholder="Name — search places, or type" data-savedonly="1" data-name-into="1" data-pair-addr="jps_addr" onfocus="addrSuggest('jps_label','jps_label_ac')" oninput="addrSuggest('jps_label','jps_label_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_label_ac"></div></div><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address — search or type" data-pair-label="jps_label" onfocus="addrSuggest('jps_addr','jps_addr_ac')" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
-  h += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button>`;
-  // 🏁 END (last point) — editable, pre-filled with home base
-  h += endpointRow("🏁", "End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
+  // 🏁 END (last point) — editable bookend, pre-filled with home base
+  h += endpointRow("End", "jrs_end", endVal, endCustom, "jobPageSetEnd", "jobPageResetEnd");
+  h += `</div>`;   // close the ordered-route sequence container (rail)
+  // ===== SECONDARY: add a stop — DEMOTED below the route under a subtle divider, lighter than the sequence so it
+  // doesn't overpower the stops. BOTH fields search the saved index; picking either fills the other. The Label
+  // searches names only (data-savedonly, data-name-into) and routes the picked address+ref to jps_addr
+  // (data-pair-addr); the Address searches saved+OSM and fills the empty Label (data-pair-label). Attrs UNCHANGED. =====
+  h += `<div style="margin-top:6px;padding-top:10px;border-top:1px dashed var(--line)"><div class="sub muted" style="margin-bottom:4px">Add a stop to the route</div>`;
+  h += `<div class="row" style="gap:8px"><div class="acwrap" style="flex:1 1 140px"><input id="jps_label" placeholder="Name — search places, or type" data-savedonly="1" data-name-into="1" data-pair-addr="jps_addr" onfocus="addrSuggest('jps_label','jps_label_ac')" oninput="addrSuggest('jps_label','jps_label_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_label_ac"></div></div><div class="acwrap" style="flex:1 1 140px"><input id="jps_addr" placeholder="Address — search or type" data-pair-label="jps_label" onfocus="addrSuggest('jps_addr','jps_addr_ac')" oninput="addrSuggest('jps_addr','jps_addr_ac')" autocomplete="off" style="width:100%"><div class="acbox" id="jps_addr_ac"></div></div></div>`;
+  h += `<button class="btn ghost sm" style="margin-top:6px;width:100%" onclick="jobPageStopAdd('${j.id}')">+ Add stop</button></div>`;
   // ESTIMATE (informational cross-check) — the offline round-trip miles across the ordered route. NEVER the billed
   // number: the odometer/GPS timeclock miles stay the record. Moved here (was in the crew "Where & when" card) so
   // crew get NO mileage math — it now lives in this single owner/admin card. Confirmed odometer shown side by side.

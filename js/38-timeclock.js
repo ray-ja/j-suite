@@ -1048,6 +1048,9 @@ window.tcEditPunch = function (id) {
   const owner = (typeof isOwner === "function") && isOwner();
   if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can change it." : "You can only edit your own punches."); return; }
   const nm = (typeof userName === "function" ? userName(e.userId) : "") || e.userName || "Crew";
+  // owner/admin (manage-members tier) may add ANOTHER person who was on site for the same times — a passenger
+  // entry (their TIME for pay, no duplicate mileage). Crew editing their own punch don't get this.
+  const canAddPerson = owner || ((typeof canManageMembers === "function") && canManageMembers());
   modal("Edit punch — " + esc(tcJobTitle(e.jobId)), `
     <p class="muted" style="margin-bottom:8px">${esc(nm)} · adjust the clock-in / clock-out times.</p>
     <label>Clock in</label>
@@ -1055,6 +1058,7 @@ window.tcEditPunch = function (id) {
     <label style="margin-top:8px">Clock out${e.clockOut == null ? ` <span class="sub">· still open — leave blank to keep it open</span>` : ""}</label>
     <input id="tc_p_out" type="datetime-local" value="${e.clockOut != null ? tcDatetimeLocal(e.clockOut) : ""}">
     ${owner ? `<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="closeModal();tcOpenEntry('${e.id}')">⚙ Mileage &amp; vehicle →</button>` : ""}
+    ${canAddPerson ? `<button class="btn ghost sm" style="margin-top:${owner ? "8" : "10"}px;width:100%" onclick="tcAddToPunchPrompt('${e.id}')">➕ Add someone who was here (same times)</button>` : ""}
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="tcSavePunch('${e.id}')">Save</button>
     <button class="btn danger" style="margin-top:8px;width:100%" onclick="tcDelPunch('${e.id}')">Delete punch</button>`);
 };
@@ -1081,6 +1085,84 @@ window.tcDelPunch = function (id) {
   e.deleted = true; touch(e);
   if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Removed punch — " + tcJobTitle(e.jobId));
   save(); if (typeof closeModal === "function") closeModal(); render();
+};
+/* Does `userId` already have a (non-deleted) punch on the SAME job whose interval overlaps the source punch's?
+   Open punches (clockOut null) collapse to a point at clockIn. Used to skip a duplicate when adding a passenger. */
+function tcHasOverlap(userId, src) {
+  if (!src) return false;
+  const sIn = +src.clockIn, sOut = (src.clockOut != null) ? +src.clockOut : sIn;
+  return actTC().some(function (e) {
+    if (e.id === src.id || e.userId !== userId || e.jobId !== src.jobId) return false;
+    const eIn = +e.clockIn, eOut = (e.clockOut != null) ? +e.clockOut : eIn;
+    return sIn <= eOut && eIn <= sOut;   // interval overlap (inclusive)
+  });
+}
+/* "➕ Add someone who was here" — owner/admin picks a crew member who rode along, to log the SAME hours on a punch
+   without a duplicate mileage/vehicle. Opens a picker of the job's crew ∪ active members, minus the source's own
+   user and anyone who ALREADY has a punch overlapping this one on this job/day. PWA-safe DOM modal (no native prompt). */
+window.tcAddToPunchPrompt = function (sourceId) {
+  const src = tcoll().find(x => x.id === sourceId); if (!src) return;
+  const owner = (typeof isOwner === "function") && isOwner();
+  const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
+  if (!canAdd) { alert("Owner/admin only — adding time for another person."); return; }
+  const j = tcJob(src.jobId);
+  const members = (typeof schedMembers === "function") ? schedMembers() : [];
+  const crewIds = (j && Array.isArray(j.crew)) ? j.crew : [];
+  const seen = {}, cand = [];
+  const pushC = id => { if (!id || seen[id] || id === src.userId) return; seen[id] = 1; cand.push(id); };
+  crewIds.forEach(pushC); members.forEach(u => pushC(u.id));
+  const elig = cand.filter(id => !tcHasOverlap(id, src));   // EXCLUDE anyone already overlapping on this job/day
+  const nameOf = id => (typeof userName === "function" ? userName(id) : "") || "Crew";
+  if (!elig.length) { alert("No one to add — everyone on this job already has an overlapping punch (or there's no other crew)."); return; }
+  modal("Add someone to this punch", `
+    <p class="muted" style="margin-bottom:8px">Log the SAME hours for someone who rode along on <b>${esc(tcJobTitle(src.jobId))}</b> — same clock-in/out, no separate mileage (they rode with the driver, so their time counts for pay, not a duplicate trip).</p>
+    <label>Who was here</label>
+    <select id="tc_addp_user">${elig.map(id => `<option value="${esc(id)}">${esc(nameOf(id))}</option>`).join("")}</select>
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="tcAddPersonToPunch('${src.id}', document.getElementById('tc_addp_user').value)">➕ Add — same hours, no mileage</button>`);
+};
+/* tcAddPersonToPunch(sourceId, userId): clone the source punch's TIME onto a NEW entry for userId — same
+   clockIn/clockOut/jobId, manual:true, by:<me>, addedFrom:sourceId — but as a PASSENGER: NO vehicle, NO
+   odometer/miles, milesConfirmed:false (their entry logs TIME for pay, never a duplicate trip). Adds them to the
+   job's crew if missing + grows the work days. Owner/admin gated; idempotent-ish (skips a duplicate overlap); never throws. */
+window.tcAddPersonToPunch = function (sourceId, userId) {
+  try {
+    const owner = (typeof isOwner === "function") && isOwner();
+    const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
+    if (!canAdd) { alert("Owner/admin only — adding time for another person."); return; }
+    const src = tcoll().find(x => x.id === sourceId); if (!src) { alert("That punch is gone."); return; }
+    if (!userId) { alert("Pick a person to add."); return; }
+    if (userId === src.userId) { alert("That person already owns this punch."); return; }
+    const uname = (typeof userName === "function" ? userName(userId) : "") || "Crew";
+    if (tcHasOverlap(userId, src)) { alert(uname + " already has an overlapping punch on this job — skipped."); return; }
+    const me = tcWho();
+    const e = {
+      id: uid(), jobId: src.jobId, userId: userId, userName: uname,
+      clockIn: src.clockIn, clockOut: (src.clockOut != null ? src.clockOut : null),
+      inLoc: null, outLoc: null, pings: [], stops: [],
+      computedMiles: 0, miles: 0, milesConfirmed: false, milesSource: null,
+      odoStart: null, odoEnd: null,
+      riderRole: "none", trailerId: null, rodeWith: null,
+      vehicleId: null, vehicle: "", vehicleOwnerId: null, invVehicleId: null,
+      rate: TC_RATE, manual: true, by: me.userId, addedFrom: sourceId, updatedAt: now()
+    };
+    tcoll().push(e);
+    const j = tcJob(src.jobId);
+    if (j) {
+      if (!Array.isArray(j.crew)) j.crew = [];
+      if (j.crew.indexOf(userId) < 0) { j.crew.push(userId); if (typeof touch === "function") touch(j); }
+      try {
+        const _day = tcLocalDay(e.clockIn);
+        const _cur = (typeof jobWorkDays === "function") ? jobWorkDays(j) : ((Array.isArray(j.workDays) ? j.workDays : (j.date ? [j.date] : [])));
+        if (_cur.indexOf(_day) < 0 && typeof jobPageCommitDays === "function") jobPageCommitDays(j, _cur.concat([_day]));
+      } catch (ex) {}
+    }
+    if (typeof touch === "function") touch(e);
+    if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Added " + uname + " to a punch (same times, no mileage) — " + tcJobTitle(src.jobId));
+    if (typeof save === "function") save();
+    if (typeof closeModal === "function") closeModal();
+    if (typeof render === "function") render();
+    alert("Added " + uname + " to this punch — same hours, no separate mileage.");
+  } catch (ex) { try { alert("Couldn't add that person."); } catch (e2) {} }
 };
 /* "＋ Add punch" — a MANUAL, time-only entry for a given job + day. No vehicle, no mileage (riderRole:none,
    miles:0, milesConfirmed so it never nags as an unconfirmed estimate) — it never invents mileage. Owner may pick

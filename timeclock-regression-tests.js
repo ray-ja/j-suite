@@ -653,3 +653,57 @@ await (async function () {
   if (Math.abs(hhAfter.perHr - 240) > 0.5) __errs.push("CA6: perHr must derive from clocked hours (fieldPool 480 / 2h = 240, got " + hhAfter.perHr + ")");
   diag("CA6 jobHourly: personHrs=" + hhAfter.personHrs + " crew=" + hhAfter.crew + " perHr=" + hhAfter.perHr);
 })();
+
+// (A7) "Add someone who was here" — tcAddPersonToPunch clones the source punch's TIMES onto a NEW passenger entry
+// for the picked user (same clockIn/clockOut/jobId, manual, NO vehicle/miles), adds them to job.crew, is owner/admin
+// gated, and skips a duplicate overlap. It must NOT move the mileage total (passenger has no miles).
+(function () {
+  var owner = { id: "u_ca7_own", username: "Ca7Owner", active: true };
+  var chase = { id: "u_ca7_chase", username: "Chase", active: true };
+  var joe = { id: "u_ca7_joe", username: "Joe", active: true };
+  S.users.push(owner, chase, joe);
+  if (typeof orgSetRole === "function") { orgSetRole(owner.id, "obx", "owner"); orgSetRole(chase.id, "obx", "crew"); orgSetRole(joe.id, "obx", "crew"); }
+  S.biz = "obx"; localStorage.setItem("jra_session", owner.id); localStorage.setItem("jra_offline_ok", "1");
+  var day = "2026-07-06";
+  var ci = new Date(day + "T08:00").getTime(), co = new Date(day + "T14:00").getTime();
+  var j = { id: "j_ca7", title: "Paver — CA7", customerId: null, date: day, crew: [owner.id, chase.id], workDays: [day], done: false, updatedAt: now() };
+  D().jobs.push(j);
+  // the owner's REAL driver punch (has a vehicle + miles) — the source we add Chase to
+  var src = { id: "tc_ca7_src", jobId: "j_ca7", userId: owner.id, userName: "Ca7Owner", clockIn: ci, clockOut: co, inLoc: null, outLoc: null, pings: [], stops: [], computedMiles: 12, miles: 12, milesConfirmed: true, milesSource: "odo", odoStart: 1000, odoEnd: 1012, riderRole: "driver", trailerId: null, rodeWith: null, vehicleId: "v1", vehicle: "F-250", vehicleOwnerId: owner.id, rate: 0.725, updatedAt: now() };
+  D().timeclock.push(src);
+  function miTotal() { return (typeof finMileage === "function") ? finMileage(D().timeclock || [], {}).total : null; }
+  var before = miTotal();
+  // add Chase (a passenger who rode along)
+  tcAddPersonToPunch("tc_ca7_src", chase.id);
+  var pass = (D().timeclock || []).find(function (x) { return x.userId === chase.id && x.jobId === "j_ca7" && !x.deleted; });
+  if (!pass) __errs.push("CA7: tcAddPersonToPunch did not create a passenger entry for the picked user");
+  else {
+    if (pass.clockIn !== src.clockIn || pass.clockOut !== src.clockOut) __errs.push("CA7: passenger entry must copy the SAME clockIn/clockOut");
+    if (pass.jobId !== src.jobId) __errs.push("CA7: passenger entry must be on the same job");
+    if (pass.manual !== true) __errs.push("CA7: passenger entry must be manual:true");
+    if (pass.by !== owner.id) __errs.push("CA7: passenger entry must record by:<me>");
+    if (pass.addedFrom !== "tc_ca7_src") __errs.push("CA7: passenger entry must record addedFrom:<source>");
+    if (pass.vehicleId || pass.vehicle || pass.vehicleOwnerId) __errs.push("CA7: passenger entry must carry NO vehicle (rode along)");
+    if (pass.miles !== 0 || pass.computedMiles !== 0) __errs.push("CA7: passenger entry must carry NO miles (no duplicate trip)");
+    if (pass.milesConfirmed) __errs.push("CA7: passenger entry must NOT be milesConfirmed");
+    if (pass.riderRole !== "none") __errs.push("CA7: passenger entry must be riderRole:none");
+  }
+  if (j.crew.indexOf(chase.id) < 0) __errs.push("CA7: the added person must be in the job's crew");
+  var after = miTotal();
+  if (before !== after) __errs.push("CA7: adding a passenger MOVED the mileage total (" + before + " → " + after + ") — it must add 0 miles");
+  // dup-skip: adding Chase AGAIN (already overlapping) must not create a second entry
+  var _alert = window.alert; window.alert = function () {}; var cntBefore = (D().timeclock || []).filter(function (x) { return x.userId === chase.id && x.jobId === "j_ca7" && !x.deleted; }).length;
+  tcAddPersonToPunch("tc_ca7_src", chase.id);
+  var cntAfter = (D().timeclock || []).filter(function (x) { return x.userId === chase.id && x.jobId === "j_ca7" && !x.deleted; }).length;
+  window.alert = _alert;
+  if (cntAfter !== cntBefore) __errs.push("CA7: a duplicate overlapping add was NOT skipped (created " + (cntAfter - cntBefore) + " extra)");
+  // owner/admin gate: a crew member (no manage-members) must NOT be able to add for someone else
+  localStorage.setItem("jra_session", joe.id);
+  var _alert2 = window.alert; window.alert = function () {};
+  tcAddPersonToPunch("tc_ca7_src", joe.id);
+  window.alert = _alert2;
+  var joeEntry = (D().timeclock || []).find(function (x) { return x.userId === joe.id && x.jobId === "j_ca7" && !x.deleted; });
+  if (joeEntry) __errs.push("CA7: a non-owner/non-admin was able to add a person to a punch (gate failed)");
+  localStorage.setItem("jra_session", owner.id);
+  diag("CA7 add-person: passenger=" + (!!pass) + " inCrew=" + (j.crew.indexOf(chase.id) >= 0) + " miTotal " + before + "→" + after + " dupSkipped=" + (cntAfter === cntBefore) + " gated=" + (!joeEntry));
+})();
