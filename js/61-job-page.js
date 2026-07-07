@@ -348,36 +348,14 @@ function rJobPage(j) {
   else h += `<div class="muted" style="margin-bottom:8px">No photos yet.</div>`;
   h += `<input type="file" id="job_photo" accept="image/*" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo</button></div>`;
 
-  // 5) Expenses & receipts — amount + what for (required), receipt photo optional + collapsed, optional fault attribution
-  const _members = (typeof schedMembers === "function") ? schedMembers() : [];
-  const _bd = (typeof jobCostBreakdown === "function") ? jobCostBreakdown(j) : { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Expenses &amp; receipts${expTotal ? ` · <span style="color:var(--accent)">${money(expTotal)}</span>` : ""}</div>`;
-  // WHERE this job's cost splits (mileage · job expense · pass-through materials — a reusable tool is business overhead, not here)
-  h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Job cost: mileage <b>${money(_bd.mileage)}</b> · job <b>${money(_bd.jobExp)}</b> · materials <b>${money(_bd.materials)}</b>${_bd.tool > 0 ? ` <span class="muted">· 🔧 tools ${money(_bd.tool)} (business overhead, not this job)</span>` : ""}</div>`;
-  // virtual MILEAGE line — derived, read-only (not a receipt): estimate now, confirmed odometer once clocked
-  h += `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}</span></div><div class="sub" style="white-space:normal">estimate vs confirmed odometer — auto from the route/time clock at $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi, not a receipt</div></div></div>`;
-  h += exps.length ? exps.map(e => { const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : ""; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div>${jobDepositLine(e)}</div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelExpense('${j.id}','${e.id}')">✕</button></div></div>`; }).join("") : `<div class="muted">No expenses logged. Enter the amount + what it was for; a receipt photo is optional.</div>`;
-  const _faults = {}; exps.forEach(e => { if (e.faultMemberId) _faults[e.faultMemberId] = (_faults[e.faultMemberId] || 0) + (+e.amount || 0); });
-  const _fkeys = Object.keys(_faults);
-  if (_fkeys.length) h += `<div class="note" style="margin-top:8px;border-left:3px solid var(--danger);white-space:normal">⚠ <b>Fault docks on this job:</b> ${_fkeys.map(id => `${esc((typeof userName === "function" ? userName(id) : "") || "?")} <b>${money(_faults[id])}</b>`).join(" · ")} — comes out of their payout, not the crew's.</div>`;
-  h += `<div class="row" style="gap:8px;margin-top:10px"><input id="exp_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="exp_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
-  h += `<input id="exp_desc" placeholder="What for — dump fee, materials… (required)" style="margin-top:6px">`;
-  h += `<label style="margin-top:8px">Whose mistake caused this? <span class="sub">(optional — docks <i>their</i> payout, not the whole crew's)</span></label><select id="exp_fault"><option value="">— nobody's fault / shared job cost —</option>${_members.map(u => `<option value="${esc(u.id)}">${esc(u.username)}</option>`).join("")}</select>`;
-  // REUSABLE-TOOL escape hatch — a chainsaw/pressure washer bought here is CAPITAL/overhead, not this job's cost.
-  // Checked → jobAddExpense writes it to the org business `expenses[]` (category tools/equipment), NOT job.expenses,
-  // so it never dents this job's profit. (New tools; existing tool receipts are auto-reclassified by the migration.)
-  h += `<label class="li" style="cursor:pointer;margin-top:8px"><input type="checkbox" id="exp_tool" style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">🔧 Reusable tool (business expense, not this job)</div><div class="sub" style="white-space:normal">A chainsaw, pressure washer, etc. — capital/overhead. Logged to the business, kept off this job's cost.</div></div></label>`;
-  h += `<input type="file" id="exp_receipt" accept="image/*" style="display:none" onchange="var l=document.getElementById('exp_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('exp_receipt').click()"><span id="exp_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="exp_add_btn" onclick="jobAddExpense('${j.id}')">+ Add expense</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','expense')">🔀 Split across other jobs / mark as generic</button></div>`;
-
-  // 5a) Pass-through materials — billed to the customer at cost (reimbursed), tracked SEPARATELY from real expenses + their own receipt pile
-  const mats = (j.materials || []).filter(x => x && !x.deleted);
-  const matTotal = mats.reduce((s, e) => s + (+e.amount || 0), 0);
-  h += `<div class="card" style="border-left:5px solid #b8860b"><div style="font-weight:800;margin-bottom:4px">🧱 Pass-through materials${matTotal ? ` · <span style="color:#b8860b">${money(matTotal)}</span>` : ""}</div>`;
-  h += `<div class="sub" style="margin-bottom:6px;white-space:normal">Materials billed to the customer at cost (pavers, rock, sand, edging…). Reimbursed — not your expense; kept off the real-expense pile but counted as job cost so margin stays honest.</div>`;
-  h += mats.length ? mats.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${money(e.amount)}${e.vendor ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}</div></div><div class="row" style="gap:8px;align-items:center">${e.receiptId ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : `<span class="sub" style="color:var(--muted)">no receipt</span>`}<button class="btn ghost sm" onclick="jobDelMaterial('${j.id}','${e.id}')">✕</button></div></div>`).join("") : `<div class="muted">No materials logged. Enter the amount + what it was; the receipt photo is optional.</div>`;
-  h += `<div class="row" style="gap:8px;margin-top:10px"><input id="mat_amt" type="number" inputmode="decimal" placeholder="$" style="flex:0 0 80px"><input id="mat_vendor" placeholder="Vendor / store" style="flex:2"></div>`;
-  h += `<input id="mat_desc" placeholder="What — pavers, base rock, edging… (required)" style="margin-top:6px">`;
-  h += `<input type="file" id="mat_receipt" accept="image/*" style="display:none" onchange="var l=document.getElementById('mat_receipt_lbl');if(l)l.textContent='✓ Receipt ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('mat_receipt').click()"><span id="mat_receipt_lbl">📎 Receipt (optional)</span></button><button class="btn acc grow" id="mat_add_btn" onclick="jobAddMaterial('${j.id}')">+ Add material</button></div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobOpenSplitPicker('${j.id}','material')">🔀 Split across other jobs / mark as generic</button></div>`;
+  // 5) Job costs & receipts — the UNIFIED receipt card (js/100 jobRcptCardHTML) REPLACES the two old separate
+  //    add-forms (💵 job expense + 🧱 pass-through material): one photo → Cap line items → per-line 🧱/🚚/🔧
+  //    bucket → the SHIPPED split engine (js/92 rcptApplySplit). Just above it, the FILED list renders — grouped
+  //    by receipt (splitGroup||receiptId||id), each line tagged 🧱/🚚, with the virtual 🛣 mileage line + the
+  //    fault-dock summary + per-line delete (jobDelExpense/jobDelMaterial, kept). jobOpenSplitPicker (cross-job
+  //    even split — a DIFFERENT axis) stays reachable on the card. Old jobAddExpense/jobAddMaterial retired (P3).
+  h += jobFiledCostsHTML(j);
+  h += (typeof jobRcptCardHTML === "function") ? jobRcptCardHTML(j) : "";
 
   // 6) Notes
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
@@ -769,7 +747,6 @@ window.jobToggleLoaded = function (jobId, itemId) {
    makes every repeat tap while a save is in flight a silent no-op (button also disables + shows
    "Adding…" → "✓ Added" so a slow save is visibly NOT stuck), so at most one record — carrying the one
    photo actually selected — gets created per tap. */
-let _jobExpAddBusy = false, _jobExpAddWatchdog = null;
 /* RENTAL DEPOSIT (js/96) sub-line under a job expense: while HELD it contributes $0 to this job; once the owner
    settles it, it shows the net (deposit − refund). A refund record shows its ↩ credit note. Empty for ordinary rows. */
 function jobDepositLine(e) {
@@ -783,74 +760,57 @@ function jobDepositLine(e) {
   if (e.kind === "refund" || e.refundOfId) return `<div class="sub" style="white-space:normal;color:var(--accent)">↩ refund / credit${e.refundOfId ? " — offsets a rental deposit" : ""}</div>`;
   return "";
 }
-window.jobAddExpense = function (jobId) {
-  if (_jobExpAddBusy) return;   // ignore rapid re-taps while a save is already in flight
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  const amt = parseFloat(val("exp_amt")); if (!(amt > 0)) { alert("Enter the expense amount."); return; }
-  const desc = (val("exp_desc") || "").trim(); if (!desc) { alert("Enter what the expense was for."); return; }
-  const vendor = (val("exp_vendor") || "").trim();
-  const fault = val("exp_fault") || "";
-  const toolBox = document.getElementById("exp_tool");
-  const isTool = !!(toolBox && toolBox.checked);   // "reusable tool" → business overhead, NOT this job's cost
-  const input = document.getElementById("exp_receipt");
-  const file = input && input.files && input.files[0];   // captured NOW, before the lock's async gate — nothing else can read/clear this input until we're done
-  const btn = document.getElementById("exp_add_btn");
-  _jobExpAddBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
-  clearTimeout(_jobExpAddWatchdog); _jobExpAddWatchdog = setTimeout(function () { _jobExpAddBusy = false; }, 20000); // safety: never permanently soft-lock the button if a save hangs
-  const finish = function (receiptId) {
-    clearTimeout(_jobExpAddWatchdog);
-    const by = ((typeof curUser === "function" && curUser()) ? curUser().username : "");
-    if (isTool) {
-      // reusable tool → the org BUSINESS expenses[] (category tools/equipment), a per-record synced collection —
-      // NOT job.expenses, so it never enters this job's cost. Shape matches Finance→Expenses (js/40 saveExpense) +
-      // the Receipts business branch (js/87), so it shows up in both.
-      const d = D(); if (!Array.isArray(d.expenses)) d.expenses = [];
-      const rec = { id: uid(), amount: amt, vendor: vendor, desc: desc, note: desc, category: "tools/equipment", date: (typeof today === "function" ? today() : ""), receiptId: receiptId || null, memberId: "", paidBy: null, by: by, ts: now(), deleted: false, updatedAt: now() };
-      d.expenses.push(rec);
-      if (typeof touch === "function") touch(rec);
-      if (typeof logChange === "function") logChange("create", "expense", rec.id, "Reusable tool → business expense " + money(amt) + (vendor ? " · " + vendor : "") + (desc ? " · " + desc : ""));
-      if (typeof save === "function") save();
-      if (btn) btn.textContent = "✓ Added (business)";
-      setTimeout(function () { _jobExpAddBusy = false; if (typeof render === "function") render(); }, 450);
-      return;
-    }
-    if (!Array.isArray(j.expenses)) j.expenses = [];
-    j.expenses.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, category: "job", receiptId: receiptId || null, faultMemberId: fault || null, by: by, ts: now() });
-    if (typeof touch === "function") touch(j); if (typeof save === "function") save();
-    if (btn) btn.textContent = "✓ Added";
-    setTimeout(function () { _jobExpAddBusy = false; if (typeof render === "function") render(); }, 450);
-  };
-  if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
-  else finish(null);
-};
+/* ===== FILED COSTS LIST (the unified receipt card's companion) — the job's already-filed job.expenses (🚚) +
+   job.materials (🧱), GROUPED by receipt (splitGroup||receiptId||id) so a split receipt reads as one header +
+   its tagged sub-lines; plus the derived cost-split summary, the virtual 🛣 mileage line, and the fault-dock
+   summary. Per-line delete stays (jobDelExpense/jobDelMaterial). 🔧 tools live on the org expenses[] (business
+   overhead, off every job) so they don't appear here. The ADD flow is now js/100's unified receipt card. */
+function jobFiledLineHTML(j, it, indented) {
+  const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
+  const e = it.e, tag = it.tag, delFn = (it.store === "jobmat") ? "jobDelMaterial" : "jobDelExpense";
+  const _fm = e.faultMemberId ? ((typeof userName === "function" ? userName(e.faultMemberId) : "") || "someone") : "";
+  return `<div class="li"${indented ? ` style="padding-left:16px"` : ""}><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${tag} ${money(e.amount)}${(e.vendor && !indented) ? " <b>" + esc(e.vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">${esc(e.desc || "")}</span></div><div class="sub">${e.by ? esc(e.by) + " · " : ""}${e.ts && typeof relTime === "function" ? relTime(e.ts) : ""}${_fm ? ` · <span style="color:var(--danger);font-weight:700">⚠ ${esc(_fm)}'s mistake — docks their payout</span>` : ""}</div>${(typeof jobDepositLine === "function") ? jobDepositLine(e) : ""}</div><div class="row" style="gap:8px;align-items:center">${(e.receiptId && !indented) ? `<a class="btn ghost sm" href="${upUrl(e.receiptId)}" target="_blank" rel="noopener">📎 receipt</a>` : ""}<button class="btn ghost sm" onclick="${delFn}('${j.id}','${e.id}')">✕</button></div></div>`;
+}
+function jobFiledCostsHTML(j) {
+  const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
+  const exps = (j.expenses || []).filter(x => x && !x.deleted);
+  const mats = (j.materials || []).filter(x => x && !x.deleted);
+  const expTotal = exps.reduce((s, e) => s + ((typeof depositHeld === "function" && depositHeld(e)) ? 0 : (+e.amount || 0)), 0);
+  const matTotal = mats.reduce((s, e) => s + (+e.amount || 0), 0);
+  const _bd = (typeof jobCostBreakdown === "function") ? jobCostBreakdown(j) : { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
+  let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Job costs &amp; receipts${(expTotal + matTotal) ? ` · <span style="color:var(--accent)">${money(expTotal + matTotal)}</span>` : ""}</div>`;
+  h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Job cost: mileage <b>${money(_bd.mileage)}</b> · job <b>${money(_bd.jobExp)}</b> · materials <b>${money(_bd.materials)}</b>${_bd.tool > 0 ? ` <span class="muted">· 🔧 tools ${money(_bd.tool)} (business overhead, not this job)</span>` : ""}</div>`;
+  // virtual MILEAGE line — derived, read-only (not a receipt)
+  h += `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}</span></div><div class="sub" style="white-space:normal">estimate vs confirmed odometer — auto from the route/time clock at $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi, not a receipt</div></div></div>`;
+  const items = mats.map(e => ({ e, tag: "🧱", store: "jobmat" })).concat(exps.map(e => ({ e, tag: "🚚", store: "jobexp" })));
+  if (!items.length) { h += `<div class="muted">No receipts filed yet. Snap a receipt below — Cap turns it into tagged line items.</div>`; }
+  else {
+    const groups = {}, order = [];
+    items.forEach(it => { const key = it.e.splitGroup || it.e.receiptId || it.e.id; if (!groups[key]) { groups[key] = []; order.push(key); } groups[key].push(it); });
+    order.forEach(key => {
+      const g = groups[key], multi = g.length > 1;
+      if (multi) {
+        const gtot = g.reduce((s, it) => s + (+it.e.amount || 0), 0);
+        let vendor = "", rcpt = ""; g.forEach(it => { if (!vendor && it.e.vendor) vendor = it.e.vendor; if (!rcpt && it.e.receiptId) rcpt = it.e.receiptId; });
+        h += `<div class="li" style="background:var(--soft)"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🧾 ${money(gtot)}${vendor ? " <b>" + esc(vendor) + "</b>" : ""} <span class="sub" style="font-weight:400">· ${g.length} lines</span></div></div>${rcpt ? `<a class="btn ghost sm" href="${upUrl(rcpt)}" target="_blank" rel="noopener">📎 receipt</a>` : ""}</div>`;
+      }
+      g.forEach(it => { h += jobFiledLineHTML(j, it, multi); });
+    });
+    const _faults = {}; exps.forEach(e => { if (e.faultMemberId) _faults[e.faultMemberId] = (_faults[e.faultMemberId] || 0) + (+e.amount || 0); });
+    const _fkeys = Object.keys(_faults);
+    if (_fkeys.length) h += `<div class="note" style="margin-top:8px;border-left:3px solid var(--danger);white-space:normal">⚠ <b>Fault docks on this job:</b> ${_fkeys.map(id => `${esc((typeof userName === "function" ? userName(id) : "") || "?")} <b>${money(_faults[id])}</b>`).join(" · ")} — comes out of their payout, not the crew's.</div>`;
+  }
+  h += `</div>`;
+  return h;
+}
 window.jobDelExpense = function (jobId, expId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.expenses)) return;
   const e = j.expenses.find(x => x && x.id === expId); if (!e) return;
   e.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
-let _jobMatAddBusy = false, _jobMatAddWatchdog = null;
-window.jobAddMaterial = function (jobId) {
-  if (_jobMatAddBusy) return;   // ignore rapid re-taps while a save is already in flight — this is the June 2026 dupe-material bug
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
-  const amt = parseFloat(val("mat_amt")); if (!(amt > 0)) { alert("Enter the material amount."); return; }
-  const desc = (val("mat_desc") || "").trim(); if (!desc) { alert("Enter what the material was."); return; }
-  const vendor = (val("mat_vendor") || "").trim();
-  const input = document.getElementById("mat_receipt");
-  const file = input && input.files && input.files[0];   // captured NOW, before the lock's async gate — nothing else can read/clear this input until we're done
-  const btn = document.getElementById("mat_add_btn");
-  _jobMatAddBusy = true; if (btn) { btn.disabled = true; btn.textContent = "Adding…"; }
-  clearTimeout(_jobMatAddWatchdog); _jobMatAddWatchdog = setTimeout(function () { _jobMatAddBusy = false; }, 20000); // safety: never permanently soft-lock the button if a save hangs
-  const finish = function (receiptId) {
-    clearTimeout(_jobMatAddWatchdog);
-    if (!Array.isArray(j.materials)) j.materials = [];
-    j.materials.push({ id: uid(), amount: amt, vendor: vendor, desc: desc, receiptId: receiptId || null, by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: now() });
-    if (typeof touch === "function") touch(j); if (typeof save === "function") save();
-    if (btn) btn.textContent = "✓ Added";
-    setTimeout(function () { _jobMatAddBusy = false; if (typeof render === "function") render(); }, 450);
-  };
-  if (file && typeof jsUpload === "function") jsUpload(file).then(finish).catch(function (e) { alert("Receipt upload failed: " + (e.message || e)); finish(null); });
-  else finish(null);
-};
+/* jobAddExpense / jobAddMaterial were RETIRED (Phase 3) — the two separate add-forms are replaced by the
+   unified receipt card (js/100 jobRcptCardHTML → rcptApplySplit). jobDelExpense/jobDelMaterial stay: the filed
+   list (jobFiledCostsHTML) still deletes per line. Their old dupe-guard coverage moved to js/100's busy flags. */
 window.jobDelMaterial = function (jobId, mId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.materials)) return;
   const e = j.materials.find(x => x && x.id === mId); if (!e) return;

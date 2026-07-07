@@ -53,7 +53,7 @@ global.S = { biz: "obx" };
 let CAP_FETCH = null;   // per-test mock; capRcptRead uses global.fetch
 global.fetch = function (url, opts) { return CAP_FETCH ? CAP_FETCH(url, opts) : Promise.reject(new Error("no mock")); };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/96-rental-deposits.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/98-receipt-spine.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/88-cap-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/92-receipt-split.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/80-budget-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/93-receipt-csv.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/94-card-attribution.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/95-job-po.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/96-rental-deposits.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/98-receipt-spine.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/100-job-receipt.js", "utf8");
 
 /* js/98 spine leans on js/38 tcOpenShift (clocked-in job). Not loaded here — a configurable stub. */
 let OPEN_SHIFT = null;   // per-test: {userId, jobId}
@@ -234,6 +234,78 @@ async function main() {
   ok("a 🧱/🚚 slice with no job blocks", !nojob.ok && STORE.expenses.length === 0, nojob);
   const tol = rcptApplySplit(vloc, 100, [{ amount: 33.33, type: "business" }, { amount: 33.33, type: "business" }, { amount: 33.34, type: "business" }], vsh);
   ok("Σ within ±$0.01 is accepted (33.33+33.33+33.34=100.00 → 3 records)", tol.ok && STORE.expenses.filter(e => !e.deleted).length === 3, tol);
+
+  // ========================= UNIFIED JOB RECEIPT (js/100) → rcptApplySplit =========================
+  console.log("\n— JOB RECEIPT: jobRcptSeed builds rows from Cap lineItems (+ whole-receipt client fallback) —");
+  const seedFull = jobRcptSeed({ amount: 200, lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] });
+  ok("seed: 2 rows from 2 lineItems, total from suggested.amount", seedFull.rows.length === 2 && seedFull.total === 200 && seedFull.rows[0].bucket === "pass-through" && seedFull.rows[1].bucket === "business", seedFull);
+  const seedFallback = jobRcptSeed({ amount: 60, type: "pass-through" });   // NO lineItems → one whole-receipt line
+  ok("seed: no lineItems → ONE '(whole receipt)' line at the total", seedFallback.rows.length === 1 && seedFallback.rows[0].desc === "(whole receipt)" && seedFallback.rows[0].amount === "60" && seedFallback.rows[0].bucket === "pass-through", seedFallback);
+  const seedNone = jobRcptSeed(null);   // no suggestion at all → one blank line
+  ok("seed: no suggestion → one blank line (bucket pass-through)", seedNone.rows.length === 1 && seedNone.rows[0].amount === "" && seedNone.rows[0].bucket === "pass-through", seedNone);
+  ok("clampBucket: unknown → pass-through, known preserved", jobRcptClampBucket("junk") === "pass-through" && jobRcptClampBucket("business") === "business" && jobRcptClampBucket("job-expense") === "job-expense");
+
+  console.log("— JOB RECEIPT: a 4-line receipt files as 4 records (🧱×2, 🚚×1, 🔧×1) sharing receiptId + splitGroup —");
+  resetStore();
+  const jr4 = seedReview({ receiptId: "bJR4", vendor: "Home Depot", amount: 300, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const jr4rows = [
+    { desc: "pavers", amount: "120", bucket: "pass-through" },
+    { desc: "base rock", amount: "60", bucket: "pass-through" },
+    { desc: "dump fee", amount: "40", bucket: "job-expense" },
+    { desc: "impact driver", amount: "80", bucket: "business" }
+  ];
+  const jr4alloc = jobRcptBuildAllocations(jr4rows, "j1");
+  ok("buildAllocations: 🔧 business → jobId null + cat tools/equipment; 🚚 → cat job; 🧱 → no cat", jr4alloc[3].jobId === null && jr4alloc[3].category === "tools/equipment" && jr4alloc[2].category === "job" && jr4alloc[0].category === "" && jr4alloc[0].jobId === "j1", jr4alloc);
+  const jr4res = rcptApplySplit({ store: "review", jobId: null, recId: jr4.id }, 300, jr4alloc, { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bJR4", cardLast4: "" });
+  ok("job receipt split ok → 4 new locations", jr4res.ok && jr4res.newLocs.length === 4, jr4res);
+  const jrMat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const jrExp = STORE.jobs[0].expenses.filter(e => !e.deleted);
+  const jrBiz = STORE.expenses.filter(e => !e.deleted);
+  ok("🧱 ×2 → j1.materials ($120 + $60)", jrMat.length === 2 && jrMat.reduce((s, m) => s + m.amount, 0) === 180, jrMat);
+  ok("🚚 ×1 → j1.expenses cat 'job' ($40)", jrExp.length === 1 && jrExp[0].amount === 40 && jrExp[0].category === "job", jrExp);
+  ok("🔧 ×1 → org expenses cat 'tools/equipment' ($80), off every job", jrBiz.length === 1 && jrBiz[0].amount === 80 && jrBiz[0].category === "tools/equipment", jrBiz);
+  const jrGroup = jrMat[0].splitGroup;
+  ok("all 4 share ONE splitGroup + the receiptId (one photo)", !!jrGroup && jrMat.every(m => m.splitGroup === jrGroup) && jrExp[0].splitGroup === jrGroup && jrBiz[0].splitGroup === jrGroup && jrMat.concat(jrExp, jrBiz).every(r => r.receiptId === "bJR4"), { jrGroup });
+
+  console.log("— JOB RECEIPT: byte-identical to a hand Receipts split (same allocations) —");
+  resetStore();
+  const nSaveJR = _n;
+  const jrA = seedReview({ receiptId: "bJRid", vendor: "HD", amount: 100, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const jrAts = jrA.ts;
+  const jrShared = { vendor: "HD", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bJRid", cardLast4: "" };
+  const jrAllocs = jobRcptBuildAllocations([{ desc: "rock", amount: "70", bucket: "pass-through" }, { desc: "saw", amount: "30", bucket: "business" }], "j1");
+  rcptApplySplit({ store: "review", jobId: null, recId: jrA.id }, 100, jrAllocs, jrShared);
+  const viaJob = STORE.jobs[0].materials.filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
+  resetStore(); _n = nSaveJR;
+  const jrB = seedReview({ receiptId: "bJRid", vendor: "HD", amount: 100, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  jrB.ts = jrAts;
+  rcptApplySplit({ store: "review", jobId: null, recId: jrB.id }, 100, [{ amount: 70, type: "pass-through", jobId: "j1", category: "", desc: "rock" }, { amount: 30, type: "business", jobId: null, category: "tools/equipment", desc: "saw" }], jrShared);
+  const viaHand = STORE.jobs[0].materials.filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
+  ok("job-receipt records == a hand Receipts split (byte-identical)", JSON.stringify(viaJob) === JSON.stringify(viaHand), { viaJob, viaHand });
+
+  console.log("— JOB RECEIPT: N==1 (one bucket, no split) = a single record —");
+  resetStore();
+  const jr1 = seedReview({ receiptId: "bJR1", vendor: "Lowes", amount: 45, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const jr1res = rcptApplySplit({ store: "review", jobId: null, recId: jr1.id }, 45, jobRcptBuildAllocations([{ desc: "base rock", amount: "45", bucket: "pass-through" }], "j1"), { vendor: "Lowes", date: "", paidBy: null, attributedTo: "u_ray", receiptId: "bJR1", cardLast4: "" });
+  const jr1mat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  ok("N==1 → ONE material record, no splitGroup", jr1res.ok && jr1mat.length === 1 && jr1mat[0].amount === 45 && !("splitGroup" in jr1mat[0]), jr1mat);
+
+  console.log("— JOB RECEIPT: the balance guard blocks an unbalanced set (nothing filed) —");
+  resetStore();
+  const jrU = seedReview({ receiptId: "bJRU", vendor: "X", amount: 100 });
+  const jrUres = rcptApplySplit({ store: "review", jobId: null, recId: jrU.id }, 100, jobRcptBuildAllocations([{ desc: "a", amount: "70", bucket: "business" }, { desc: "b", amount: "40", bucket: "business" }], "j1"), { vendor: "X", receiptId: "bJRU" });
+  ok("unbalanced (70+40 over 100) BLOCKS — nothing filed, review intact", !jrUres.ok && STORE.expenses.filter(e => !e.deleted).length === 0 && rcptReview().length === 1, jrUres);
+
+  console.log("— JOB RECEIPT: fault-dock stamps faultMemberId onto the 🚚 job-expense slices only —");
+  resetStore();
+  const jrF = seedReview({ receiptId: "bJRF", vendor: "HD", amount: 150, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const jrFres = rcptApplySplit({ store: "review", jobId: null, recId: jrF.id }, 150, jobRcptBuildAllocations([{ desc: "rock", amount: "100", bucket: "pass-through" }, { desc: "re-dump (wrong load)", amount: "50", bucket: "job-expense" }], "j1"), { vendor: "HD", receiptId: "bJRF", attributedTo: "u_ray" });
+  const stamped = jobRcptStampFault(jrFres.newLocs, "u_chase");
+  const jrFexp = STORE.jobs[0].expenses.filter(e => !e.deleted);
+  const jrFmat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  ok("fault-dock stamped exactly the ONE 🚚 slice", stamped === 1 && jrFexp.length === 1 && jrFexp[0].faultMemberId === "u_chase", { stamped, jrFexp });
+  ok("fault-dock did NOT touch the 🧱 material slice", jrFmat.length === 1 && !jrFmat[0].faultMemberId, jrFmat);
+  ok("fault-dock is a no-op with no member selected", jobRcptStampFault(jrFres.newLocs, "") === 0);
   ok("the accepted split consumed the original review record", rcptReview().length === 0);
 
   // ========================= CAP AUTO-CATEGORIZE =========================
