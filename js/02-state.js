@@ -29,7 +29,7 @@ function load(){
   // approvals, leads, jobs, routes). Idempotent; null tabs = "all" already sees them; bump updatedAt only on a
   // real change so it propagates once then no-ops. (OTHER-business/advanced tabs like market/opps/plan/research
   // stay excludable — we only restore the core OBX/Jamieson toolset a stale list dropped.)
-  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["accounts","leads","jobs","routes","map","route","pay","approvals"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
+  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["accounts","leads","jobs","routes","map","route","pay","approvals","recurring"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];

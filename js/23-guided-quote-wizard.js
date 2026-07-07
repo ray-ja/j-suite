@@ -306,6 +306,13 @@ function wizReview(){
       else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
       h+=`</div>`;
     }
+    // RECURRING — turn a one-off quote into a standing plan. The q.recurring flag keeps its existing behavior
+    // (the "· recurring" tag + 20% off in pricing); the PLAN is the opt-in (Phase 2). Owner/admin + recurring-org.
+    if(BIZ[S.biz]&&BIZ[S.biz].recurring&&(typeof canSee!=="function"||canSee("recurring"))){
+      h+=`<div class="card" style="margin-top:10px"><label class="row" style="gap:8px;align-items:center;margin-top:0"><input type="checkbox" ${WZ.recurring?"checked":""} onchange="wizToggleRecurring()" style="width:auto"> 🔁 Recurring contract (20% off)</label>`;
+      if(WZ.recurring)h+=`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="recurPlanFromQuote()">🔁 Set up a recurring plan from this →</button><div class="sub" style="margin-top:4px;white-space:normal">Creates a standing plan that auto-schedules visits on a cadence.</div>`;
+      h+=`</div>`;
+    }
     h+=`<button class="btn danger" style="margin-top:10px" onclick="wizDelete()">Delete quote</button>`;
   }
   // sticky footer: back to the load + crew (−/+) + total + save
@@ -387,6 +394,7 @@ window.wizPersist=function(){
   save();return q;
 };
 window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
+window.wizToggleRecurring=function(){if(wizLockedAlert&&wizLockedAlert())return;WZ.recurring=!WZ.recurring;if(typeof wizPersist==="function")wizPersist();render();};   /* recurring-contract toggle: flips q.recurring (20%-off pricing + label); the standing PLAN is the separate opt-in (js/103 recurPlanFromQuote) */
 window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();if(WZ.invoiced&&WZ.jobId&&typeof reviewPrompt==="function")reviewPrompt(WZ.jobId);};   /* ask for the review at the INVOICED moment, not at job-done (Ray) */
 window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};
 window.wizSetFinal=function(){if(wizLockedAlert())return;const v=val("wz_final");WZ.finalPrice=(v===""||v==null)?0:Math.max(0,parseFloat(v)||0);WZ.adjNote=val("wz_adjnote")||"";WZ._verSource="final-price";const q=wizPersist();if(q.paid&&typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,"Final price "+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};

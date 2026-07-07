@@ -12,7 +12,7 @@ const ROLES_ID = "__roles__";
 /* canonical page registry — mirrors the nav tabs (the admin tab itself is owner-only and excluded) */
 const ADMIN_PAGES = [
   { tab: "today", label: "CEO desk" }, { tab: "leads", label: "Leads" }, { tab: "accounts", label: "Customers" },
-  { tab: "quotes", label: "Quotes" }, { tab: "jobs", label: "Jobs" }, { tab: "booking", label: "Booking" }, { tab: "schedule", label: "Schedule" },
+  { tab: "quotes", label: "Quotes" }, { tab: "recurring", label: "Recurring" }, { tab: "jobs", label: "Jobs" }, { tab: "booking", label: "Booking" }, { tab: "schedule", label: "Schedule" },
   { tab: "messages", label: "Messages" },
   { tab: "map", label: "Map" }, { tab: "route", label: "Route" },
   { tab: "todo", label: "To-Do" }, { tab: "plan", label: "Plan" },
@@ -131,6 +131,17 @@ function roleAllows(key, tab) {
   // hides the new tab (the new-tab gotcha). The PAGE itself (rRoutes, js/91) gates its owner/admin content for
   // Phase 1; crew self-view is Phase 3. Signed-out (NO_SESSION) is excluded like receipts/team.
   if (tab === "routes") return key !== NO_SESSION_ROLE;
+  // RECURRING (Sales) — the plan LIFECYCLE (create/pause/end contracts) is an owner/admin management surface;
+  // crew run the generated JOBS (visible on Schedule/Jobs), not the contracts. Owner/admin/manager-tier always
+  // see it — INDEPENDENT of the (possibly stale) persisted pages[] so a pre-existing admin role that predates
+  // this tab isn't hidden from it (the new-tab-hidden-by-stale-pages gotcha). A custom role may still be granted
+  // it via its pages[]. Crew / signed-out are excluded (hidden = unreachable per the access model).
+  if (tab === "recurring") {
+    if (key === "owner" || key === "admin" || key === "manager") return true;
+    if (key === NO_SESSION_ROLE) return false;
+    const rr = roleByKey(key);
+    return !!(rr && Array.isArray(rr.pages) && rr.pages.indexOf("recurring") >= 0);
+  }
   if (key === NO_SESSION_ROLE) return CREW_PAGES.indexOf(tab) >= 0;  // signed-out: fixed crew-equivalent set, independent of editable roles
   const r = roleByKey(key);
   if (!r) return true;                          // unknown role ⇒ fail-open, never brick a user

@@ -152,6 +152,7 @@ window.openCustomer=function(id){
        <button class="btn ghost sm grow" onclick="openQuote(null,'${c.id}')">New quote</button>
        <button class="btn ghost sm grow" onclick="openJob(null,'${c.id}')">Schedule job</button>
        <button class="btn ghost sm grow" onclick="openMessageComposer('${c.id}')">Message</button></div>
+      ${(typeof canSee==="function"&&canSee("recurring"))?`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="if(typeof recurPlanOpen==='function')recurPlanOpen(null,{customerId:'${c.id}'})">🔁 Set up recurring</button>`:""}
       <label>Add note</label><textarea id="f_note" placeholder="Call outcome, details…"></textarea>
       <button class="btn sm" style="margin-top:6px" onclick="addNote('${c.id}')">Add note</button>
       <h2 style="margin-top:16px">Notes</h2>${notesH}${histH}
