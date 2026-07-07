@@ -370,6 +370,36 @@ async function main() {
   await capRcptRun();
   ok("skip reply → no suggested written, no throw", !rcptReview().find(r => r.id === badRec.id).suggested);
 
+  console.log("— client: reread ESCALATES (Opus) vs default & bulk (Sonnet) — client sends only the boolean —");
+  resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {};
+  // default read forwards NO escalate flag → server reads on Sonnet 4.6
+  let bodyDefault = null;
+  CAP_FETCH = function (url, opts) { bodyDefault = JSON.parse(opts.body); return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true }) }); };
+  await capRcptRead("d1.jpg");
+  ok("capRcptRead(id) default sends NO escalate flag (server → Sonnet 4.6)", bodyDefault && bodyDefault.escalate === undefined, bodyDefault);
+  // opts.escalate is forwarded as escalate:true → server reads on Opus 4.8
+  let bodyEsc = null;
+  CAP_FETCH = function (url, opts) { bodyEsc = JSON.parse(opts.body); return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true }) }); };
+  await capRcptRead("d2.jpg", { escalate: true });
+  ok("capRcptRead(id,{escalate:true}) forwards escalate:true (server → Opus 4.8)", bodyEsc && bodyEsc.escalate === true, bodyEsc);
+  // backward-compatible signature: existing single-arg callers are unchanged
+  ok("capRcptRead signature is backward-compatible (opts optional, no escalate by default)", bodyDefault && bodyDefault.escalate === undefined && bodyEsc && bodyEsc.escalate === true, null);
+  // capRcptOne (the reread button) escalates on the currently-open receipt
+  const oneRec = seedReview({ receiptId: "one1.jpg" });
+  global.val = global.val || function () { return ""; };   // rcptEditOpen → rcptEditTypeChange reads form fields
+  rcptEditOpen("review", null, oneRec.id);   // sets RCPT_EDIT to this receipt
+  let bodyOne = null;
+  CAP_FETCH = function (url, opts) { bodyOne = JSON.parse(opts.body); return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true }) }); };
+  await capRcptOne();
+  ok("capRcptOne (reread button) escalates → escalate:true on THIS receipt", bodyOne && bodyOne.escalate === true && bodyOne.receiptId === "one1.jpg", bodyOne);
+  // the bulk auto-read queue stays on the default (never escalates)
+  resetStore(); _capRcptSkip = {}; global.finCanView = function () { return true; };
+  seedReview({ receiptId: "bulk1.jpg" });
+  let bulkBody = null;
+  CAP_FETCH = function (url, opts) { bulkBody = JSON.parse(opts.body); return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.9 } }) }); };
+  await capRcptRun({ auto: true });
+  ok("bulk auto-read does NOT escalate (stays on the default Sonnet read)", bulkBody && bulkBody.escalate === undefined, bulkBody);
+
   // ===================== UNCAPPED / RESUMABLE ONE-AT-A-TIME QUEUE =====================
   console.log("— QUEUE: a large batch drains FULLY, strictly one vision call in flight at a time —");
   resetStore(); _capRcptSkip = {}; _capSweepLast = 0; global.finCanView = function () { return true; };

@@ -39,16 +39,21 @@ function capRcptCtx() {
   return { jobs: jobs, cats: (typeof RCPT_CATS !== "undefined" ? RCPT_CATS : []) };
 }
 
-/* POST one receipt to the org-AI vision endpoint. Returns {suggested} | {skip,reason} | {error}. */
-async function capRcptRead(receiptId) {
+/* POST one receipt to the org-AI vision endpoint. Returns {suggested} | {skip,reason} | {error}.
+   opts.escalate:true sends escalate:true so the SERVER reads with the smartest model (Opus 4.8) instead of the
+   default Sonnet 4.6 — the client only sends the boolean; the server maps it to the model (no free-form model). */
+async function capRcptRead(receiptId, opts) {
+  opts = opts || {};
   const base = (typeof orgAiBase === "function") ? orgAiBase() : "";
   if (!base) return { error: "offline" };
   const ctx = capRcptCtx();
   try {
+    const body = { org: S.biz, receiptId: receiptId, jobs: ctx.jobs, cats: ctx.cats };
+    if (opts.escalate === true) body.escalate = true;
     const r = await fetch(base + "/api/org-ai/read-receipt", {
       method: "POST",
       headers: (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json" },
-      body: JSON.stringify({ org: S.biz, receiptId: receiptId, jobs: ctx.jobs, cats: ctx.cats })
+      body: JSON.stringify(body)
     });
     let j = null; try { j = await r.json(); } catch (e) {}
     if (!r.ok) return { error: (j && j.error) || ("HTTP " + r.status), status: r.status };
@@ -127,13 +132,15 @@ window.capRcptSweep = function () {
   } catch (e) {}
 };
 
-/* single-receipt re-run from the edit modal ("Ask Cap to read this") — uses the currently-open RCPT_EDIT */
+/* single-receipt REREAD from the edit modal ("🤖 Reread — try harder") — uses the currently-open RCPT_EDIT.
+   ESCALATES to the smartest model (Opus 4.8) via {escalate:true}, for the receipts Cap got wrong on the
+   default Sonnet read. Ray taps it whenever he thinks the first guess is off. */
 window.capRcptOne = async function () {
   if (!capRcptCanRun()) return;
   if (typeof RCPT_EDIT === "undefined" || !RCPT_EDIT || !RCPT_EDIT.receiptId) { alert("No photo on this receipt for Cap to read."); return; }
   if (/\.pdf$/i.test(RCPT_EDIT.receiptId)) { alert("Cap can't read PDF receipts — only photos."); return; }
-  const btn = document.getElementById("cap_rcpt_one_btn"); if (btn) { btn.disabled = true; btn.textContent = "🤖 Cap is reading…"; }
-  const res = await capRcptRead(RCPT_EDIT.receiptId);
+  const btn = document.getElementById("cap_rcpt_one_btn"); if (btn) { btn.disabled = true; btn.textContent = "🤖 Rereading with the smartest model…"; }
+  const res = await capRcptRead(RCPT_EDIT.receiptId, { escalate: true });
   if (res && res.suggested) {
     const loc = RCPT_EDIT.loc || {};
     const live = (typeof rcptFindRecord === "function") ? rcptFindRecord(loc.store, loc.jobId, loc.recId) : null;
@@ -147,7 +154,7 @@ window.capRcptOne = async function () {
       return;
     }
   }
-  if (btn) { btn.disabled = false; btn.textContent = "🤖 Ask Cap to read this"; }
+  if (btn) { btn.disabled = false; btn.textContent = "🤖 Reread — try harder (smartest model)"; }
   if (res && res.skip) alert("Cap couldn't read this one clearly — fill it in by hand.");
   else if (res && res.status === 400 && /not set up/i.test(res.error || "")) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant.");
   else alert("Cap couldn't read this receipt right now. Try again in a moment.");
