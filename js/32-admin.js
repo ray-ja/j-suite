@@ -640,19 +640,17 @@ window.adminInviteMember = async function () {
     if (r.status === 409) { setMsg("An account with that email already exists."); return; }
     if (!r.ok || !d || !d.ok) { setMsg((d && d.error) || "Couldn't send the invite — try again."); return; }
     if (typeof logChange === "function") logChange("create", "account", (d.user && d.user.id) || email, "Invited " + email + " to " + (typeof orgName === "function" ? orgName(S.biz) : S.biz) + " (" + ((d.user && d.user.role) || role) + ")");
-    if (d.emailed) {
-      closeModal();
-      if (typeof syncRun === "function") await syncRun("pull");   // pull the new invited account into this device
-      alert("Invite sent to " + email + ".");
-      render();
-    } else {
-      // email isn't configured on the server → show a copyable link for the owner to hand over
-      modal("Invite created", `
-        <p class="muted">Email isn't set up on the server, so copy this set-password link and send it to <b>${esc(email)}</b> yourself. It expires in 7 days.</p>
-        <input id="inv_link" readonly value="${esc(d.link || "")}" onclick="this.select()" style="width:100%">
-        <button class="btn acc" style="margin-top:12px;width:100%" onclick="(function(){try{navigator.clipboard.writeText(document.getElementById('inv_link').value);}catch(e){}})();this.textContent='Copied ✓'">Copy link</button>
-        <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal();(typeof syncRun==='function'&&syncRun('pull'));render()">Done</button>`);
-    }
+    closeModal();
+    if (typeof syncRun === "function") await syncRun("pull");   // pull the new invited account into this device
+    // ALWAYS show the set-password link — even when emailed — so the owner can also text it as a backup.
+    modal(d.emailed ? "Invite sent ✓" : "Invite created", `
+      <p class="muted" style="white-space:normal">${d.emailed
+        ? `Emailed a set-password link to <b>${esc(email)}</b>. You can also copy it below and text it to them as a backup.`
+        : `Email isn't set up on the server, so copy this set-password link and send it to <b>${esc(email)}</b> yourself.`} It expires in 7 days.</p>
+      <input id="inv_link" readonly value="${esc(d.link || "")}" onclick="this.select()" style="width:100%">
+      <button class="btn acc" style="margin-top:12px;width:100%" onclick="(function(){try{navigator.clipboard.writeText(document.getElementById('inv_link').value);}catch(e){}})();this.textContent='Copied ✓'">📋 Copy link</button>
+      <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal()">Done</button>`);
+    render();
   } catch (e) { setMsg("Network error — try again."); }
 };
 window.adminSetName = function (id) {

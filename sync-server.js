@@ -2029,7 +2029,7 @@ const server = http.createServer((req, res) => {
         if (emailConfigured) sendEmail(email, "Welcome to J-Suite — set your password", html).catch(() => {});
         const user = { id: acct.id, username: acct.username, name: acct.name, email: acct.email, role: acct.role, status: "invited" };
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(emailConfigured ? { ok: true, user: user, emailed: true } : { ok: true, user: user, emailed: false, link: link }));
+        res.end(JSON.stringify({ ok: true, user: user, emailed: emailConfigured, link: link }));   // ALWAYS return the link so the owner can also copy/text it as a backup, even when it was emailed
       };
       if (raw && raw.status === "invited") {   // RESEND — don't create a second account, just mint a fresh link
         try { const a = loadAudit(); a.push({ t: Date.now(), u: puid, b: org, c: "account", id: raw.id, act: "invite-resent", label: (raw.name || raw.username || email).slice(0, 60) }); saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a); } catch (e) {}
