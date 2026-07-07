@@ -119,7 +119,36 @@ function storeIsEmpty(){
   function n(b){const x=S[b]||{},c=k=>(x[k]||[]).filter(r=>!r.deleted).length;return c("customers")+c("quotes")+c("jobs")+c("properties")+c("places")+c("mktTracker");}
   return (n("obx")+n("jam"))===0;
 }
-function setSyncState(s){SYNC_STATE=s;renderSyncPill();const e=document.getElementById("sy_state");if(e)e.textContent=SYNC_LABEL[s]||"";}
+function setSyncState(s){SYNC_STATE=s;renderSyncPill();const e=document.getElementById("sy_state");if(e)e.textContent=SYNC_LABEL[s]||"";
+  /* notify any "is my record safe yet?" waiters (the upload-status ✓/⏳ banner). Never let a listener throw
+     into the sync engine. */
+  var ls=window.__syncListeners;if(ls&&ls.length){for(var i=ls.length-1;i>=0;i--){try{ls[i](s,SYNC_DIRTY);}catch(_e){}}}}
+/* ── sync-completion hooks (UX only — read the EXISTING state, trigger the EXISTING push; no protocol change) ──
+   onSyncState(fn) registers a listener called (state,dirty) on every state change; returns an unsubscribe fn.
+   syncSnapshot() is a cheap read of the live state for a badge/guard.
+   whenSynced() resolves "synced" ONCE the local edits have actually PUSHED to the server (the record reached the
+   cloud), or "pending" if we're offline / it stalls — this is what lets an upload flow say "✓ safe to close" only
+   when it's genuinely safe. It does NOT change how sync works; it just watches it and nudges the pending push to
+   fire now instead of waiting out the ~2.5s debounce. file://-safe: no server → resolves "pending" immediately. */
+window.__syncListeners=window.__syncListeners||[];
+window.onSyncState=function(fn){if(typeof fn==="function")window.__syncListeners.push(fn);return function(){var i=window.__syncListeners.indexOf(fn);if(i>=0)window.__syncListeners.splice(i,1);};};
+window.syncSnapshot=function(){return {state:SYNC_STATE,dirty:SYNC_DIRTY,configured:syncConfigured()};};
+window.whenSynced=function(timeoutMs){
+  timeoutMs=(typeof timeoutMs==="number"&&timeoutMs>0)?timeoutMs:20000;
+  if(!syncConfigured())return Promise.resolve("pending");        // file:// / no server → saved on-device only
+  if(SYNC_STATE==="synced"&&!SYNC_DIRTY)return Promise.resolve("synced");
+  return new Promise(function(resolve){
+    var done=false,to=null,off=null;
+    function finish(v){if(done)return;done=true;if(to)clearTimeout(to);if(off)off();resolve(v);}
+    off=window.onSyncState(function(st){
+      if(st==="synced"&&!SYNC_DIRTY)finish("synced");
+      else if(st==="offline")finish("pending");
+    });
+    to=setTimeout(function(){finish((SYNC_STATE==="synced"&&!SYNC_DIRTY)?"synced":"pending");},timeoutMs);
+    /* fire the queued push right away rather than waiting the debounce */
+    if(SYNC_DIRTY&&!_syncInflight){clearTimeout(_syncTimer);syncRun("auto");}
+  });
+};
 const SYNC_LABEL={synced:"✓ Synced",syncing:"⟳ Syncing…",offline:"● Offline — changes saved, will sync"};
 function renderSyncPill(){const b=document.getElementById("syncbtn");if(!b)return;
   if(!S.sync||!S.sync.url){b.style.display="none";return;}

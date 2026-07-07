@@ -264,9 +264,17 @@ function rcptUploadFiles(files) {
   _rcptUpBusy = true;
   const total = files.length; let pending = total, ok = 0;
   rcptSetUpStatus("Uploading 0/" + total + "…");
-  const done = () => { if (--pending <= 0) { _rcptUpBusy = false; rcptSetUpStatus(""); rcptMaybeAutoRead(ok); if (typeof render === "function") render(); } };
-  files.forEach(f => {
-    jsUpload(f).then(id => {
+  if (typeof uploadStatus === "function") uploadStatus("uploading", 0, total > 1 ? "(1 of " + total + ")" : "");
+  const done = () => { if (--pending <= 0) {
+      _rcptUpBusy = false; rcptSetUpStatus("");
+      // "✓ safe to close" is tied to the RECORD's sync push, not the blob upload — uploadTrackSync watches it.
+      if (ok > 0 && typeof uploadTrackSync === "function") uploadTrackSync(total > 1 ? "(" + ok + " receipt" + (ok > 1 ? "s" : "") + ")" : "");
+      else if (typeof uploadStatus === "function") uploadStatus("hide");
+      rcptMaybeAutoRead(ok); if (typeof render === "function") render();
+    } };
+  files.forEach((f, idx) => {
+    const note = total > 1 ? "(" + (idx + 1) + " of " + total + ")" : "";
+    jsUpload(f, function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct, note); }).then(id => {
       rcptColl().push(rcptNewReview(id));   // one review receipt per photo
       if (typeof save === "function") save();
       ok++; rcptSetUpStatus("Uploaded " + ok + "/" + total + "…"); done();
