@@ -26,8 +26,46 @@ function orgAiCardInner() {
       Needs an <b>Anthropic API key</b> (powers this assistant + its Sentinel daily brief).
       Get one at <b>console.anthropic.com → Settings → API Keys → Create Key</b> — a standard key works, no special scopes.
       Billing is on your own Anthropic account. The key is stored <b>server-side only and never shown again</b> after saving.
-    </div>`;
+    </div>
+    ${orgAiModelsSection(st)}`;
 }
+// PER-FUNCTION AI MODEL PICKER — one dropdown per AI function. The allowlist + labels mirror the server's AI_MODELS
+// (the server re-validates on save AND on resolve, so a client can never select a non-allowlisted / free-form model).
+const ORG_AI_MODELS = [
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5 · fastest · $" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6 · balanced · $$" },
+  { id: "claude-opus-4-8", label: "Opus 4.8 · smartest · $$$$" },
+  { id: "claude-fable-5", label: "Fable 5 · creative · $$$" }
+];
+const ORG_AI_FN_META = [
+  { fn: "receipt", emoji: "🧾", label: "Receipt reading", def: "claude-sonnet-4-6" },
+  { fn: "receiptEscalate", emoji: "🔍", label: "Receipt reread", def: "claude-opus-4-8" },
+  { fn: "assistant", emoji: "💬", label: "Cap assistant", def: "claude-sonnet-4-6" },
+  { fn: "ask", emoji: "❓", label: "Cap Q&A", def: "claude-haiku-4-5-20251001" },
+  { fn: "digest", emoji: "📊", label: "Daily digest", def: "claude-haiku-4-5-20251001" }
+];
+function orgAiModelLabel(id) { const m = ORG_AI_MODELS.find(x => x.id === id); return m ? m.label : (id || "").replace("claude-", ""); }
+function orgAiModelsSection(st) {
+  const sel = (st && st.models) || {};
+  const rows = ORG_AI_FN_META.map(f => {
+    const cur = (typeof sel[f.fn] === "string") ? sel[f.fn] : "";
+    const opts = `<option value="">Default — ${esc(orgAiModelLabel(f.def))}</option>`
+      + ORG_AI_MODELS.map(m => `<option value="${esc(m.id)}"${cur === m.id ? " selected" : ""}>${esc(m.label)}</option>`).join("");
+    return `<label class="row" style="align-items:center;gap:8px;margin-bottom:6px">
+      <span class="grow" style="font-size:13px">${f.emoji} ${esc(f.label)}</span>
+      <select id="oai_m_${esc(f.fn)}" style="flex:0 0 auto;max-width:58%">${opts}</select></label>`;
+  }).join("");
+  return `<div style="margin-top:12px;border-top:1px solid var(--line,#333);padding-top:10px">
+    <div class="nm" style="font-size:13px">🎛️ AI models per function</div>
+    <div class="sub" style="white-space:normal;font-size:11px;line-height:1.4;margin-bottom:8px">ℹ Receipts read on the smart model by default; bump Q&amp;A / digest only if you need it. Unset = the shown default.</div>
+    ${rows}
+    <button class="btn acc sm" style="margin-top:6px" onclick="orgAiSaveModels()">Save models</button></div>`;
+}
+window.orgAiSaveModels = function () {
+  const models = {};
+  ORG_AI_FN_META.forEach(f => { const el = document.getElementById("oai_m_" + f.fn); if (el) models[f.fn] = el.value || ""; });
+  orgAiPost({ models: models }).then(() => { if (typeof toast === "function") toast("AI models saved."); });
+};
 function orgAiCard() { setTimeout(orgAiLoadStatus, 30); return `<div class="card" id="orgai-card" style="margin-top:8px;border-left:3px solid var(--acc)">${orgAiCardInner()}</div>`; }
 async function orgAiPost(bodyObj) {
   try {
