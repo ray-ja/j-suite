@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -52,6 +52,7 @@ function load(){
     if(!S[b].pendingChanges)S[b].pendingChanges=[];   // Step 2: approval queue — Cap PROPOSES here; Ray approves; code applies (synced, per-biz)
     if(!S[b].knowledge)S[b].knowledge=[];   // Cap's Playbook — synced facts Cap references when answering
     if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
+    if(!S[b].recurringPlans)S[b].recurringPlans=[];   // RECURRING SERVICE (Phase 1): synced plan contracts {id"rp_",customerId,propertyId,frequency,nextDue,generatedJobIds…}. The engine (js/102) materializes JOBS from these; the plan holds no money → finance byte-identical. Additive, empty by default.
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
     // MULTI-JOB STOPS: job.sharedJobIds[] generalizes the old scalar job.parentJobId — []=generic/overhead
     // (charged to no job), [id]=today's 1:1 sub-job behavior (no-op divide), [id,id,...]=even split across N
@@ -95,7 +96,7 @@ function load(){
     // no finance/AR/invoicing/payout code reads it (they read q.finalPrice||q.total + q.payments), so totals stay
     // byte-identical. Empty-array backfill, idempotent. (Legacy job.changeOrders[] are folded in below, one-shot.)
     (S[b].quotes||[]).forEach(q=>{if(!Array.isArray(q.versions))q.versions=[];});
-    ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory"].forEach(col=>{
+    ["customers","quotes","jobs","todos","mktTracker","docs","places","properties","inventory","recurringPlans"].forEach(col=>{
       (S[b][col]||[]).forEach(r=>{if(!r.updatedAt)r.updatedAt=now()});
     });
     // stable per-biz job numbers: number any quote lacking one, deterministically (by date+id) so every device agrees without syncing
@@ -135,6 +136,7 @@ function load(){
     if(!S[b].budgetTax)S[b].budgetTax=[];            // budget P2 (tax): ONE taxProfile settings record per org {id,filing,state,spouseIncome,dependents,overrideRate}
     if(!S[b].budgetBills)S[b].budgetBills=[];        // budget v2 (recurring bills): scheduled/recurring bills {id,bookId,catId,name,amount,frequency,dueDay,nextDue,autoEstimate,active}
     if(!S[b].customJobs)S[b].customJobs=[];          // WORKSHOP: user-defined scheduled AI tasks (custom cron jobs) — per-org, synced
+    if(!S[b].recurringPlans)S[b].recurringPlans=[];  // RECURRING SERVICE (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/102 engine always find the array
     seedCustomJobsExample(S[b],b);                   // seed the Sentinel EXAMPLE job into obx once (inactive, clonable; runner skips it)
     migrateBudgetBooks(S[b],b);});            // ensure a default Personal book + tag untagged cats/tx (loss-free, idempotent)
   // RESEARCH library (Data → Research): backfill the synced `research` array on EVERY org slab (obx/jam + any

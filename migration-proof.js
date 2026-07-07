@@ -6,7 +6,7 @@ const SS = require("./sync-server");
 const fs = require("fs");
 const file = process.argv[2] || "data.json";
 const raw = JSON.parse(fs.readFileSync(file, "utf8"));
-const COLS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "inventory", "todos", "messages", "timeclock", "resale", "disbursements", "knowledge", "pendingChanges", "docs", "places", "changelog", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "receipts"];
+const COLS = ["customers", "properties", "quotes", "jobs", "income", "expenses", "inventory", "todos", "messages", "timeclock", "resale", "disbursements", "knowledge", "pendingChanges", "docs", "places", "changelog", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "receipts", "recurringPlans"];
 // BILLING FINGERPRINT — the receipts overhaul must NOT change a single dollar of what feeds job cost /
 // customer invoicing. Sum every job's pass-through materials + job expenses + each org's business expenses,
 // per org, in integer cents. Migration is additive (nothing moves an existing receipt), so these must be
