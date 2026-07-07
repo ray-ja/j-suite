@@ -1550,6 +1550,36 @@ ok("a client-supplied model string can never reach the call (helper reads only c
   } finally { https.request = orig; }
 })();
 
+console.log("\n— PER-FUNCTION AI MODEL PICKER (resolveModel: allowlisted pick, else the fn default) —");
+// resolveModel returns the org's configured, ALLOWLISTED model per function; unset OR off-allowlist → the fn default.
+ok("resolveModel: configured allowlisted model per fn is used", t.resolveModel({ models: { ask: "claude-opus-4-8" } }, "ask") === "claude-opus-4-8", null);
+ok("resolveModel: unset fn → the fn default (ask → Haiku)", t.resolveModel({ models: {} }, "ask") === "claude-haiku-4-5-20251001", null);
+ok("resolveModel: no cfg / no models → the fn default (digest → Haiku)", t.resolveModel(null, "digest") === "claude-haiku-4-5-20251001", null);
+ok("resolveModel: OFF-allowlist stored value → default (cost/abuse guard)", t.resolveModel({ models: { assistant: "gpt-4o" } }, "assistant") === "claude-sonnet-4-6", null);
+ok("resolveModel: assistant default is Sonnet 4.6", t.resolveModel({ models: {} }, "assistant") === "claude-sonnet-4-6", null);
+ok("resolveModel: receipt default Sonnet 4.6, receiptEscalate default Opus 4.8", t.resolveModel({}, "receipt") === "claude-sonnet-4-6" && t.resolveModel({}, "receiptEscalate") === "claude-opus-4-8", null);
+ok("resolveModel: Fable 5 is allowlisted + selectable", t.resolveModel({ models: { digest: "claude-fable-5" } }, "digest") === "claude-fable-5", null);
+ok("AI_MODELS allowlist = the 4 known ids only", (function () { const ids = t.AI_MODELS.map(m => m.id).slice().sort().join(","); return ids === ["claude-fable-5", "claude-haiku-4-5-20251001", "claude-opus-4-8", "claude-sonnet-4-6"].slice().sort().join(","); })(), t.AI_MODELS.map(m => m.id));
+// rcptVisionModel now honors the picker's models.receipt / models.receiptEscalate (allowlisted) with legacy fallbacks.
+ok("picker: models.receipt (allowlisted) overrides the default read", t.rcptVisionModel({ models: { receipt: "claude-fable-5" } }, false) === "claude-fable-5", null);
+ok("picker: escalate uses models.receiptEscalate (allowlisted) when set", t.rcptVisionModel({ models: { receiptEscalate: "claude-sonnet-4-6" } }, true) === "claude-sonnet-4-6", null);
+ok("picker: off-allowlist models.receipt IGNORED → legacy cfg.receiptModel still honored", t.rcptVisionModel({ models: { receipt: "evil/model" }, receiptModel: "claude-opus-4-6" }, false) === "claude-opus-4-6", null);
+ok("picker: models.receipt (allowlisted) beats legacy cfg.receiptModel", t.rcptVisionModel({ models: { receipt: "claude-opus-4-8" }, receiptModel: "claude-opus-4-6" }, false) === "claude-opus-4-8", null);
+// Wire: the ask/assistant/digest callers SEND the resolved model on the actual Anthropic HTTPS payload (spy).
+(function () {
+  const https = require("https");
+  const orig = https.request, captured = [];
+  https.request = function () { const req = { on() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };
+  try {
+    t.callAnthropic("key", t.resolveModel({ models: { ask: "claude-opus-4-8" } }, "ask"), "ctx", "q", function () {});
+    ok("wire: ask SENDS the resolved picker model (Opus 4.8)", JSON.parse(captured[0] || "{}").model === "claude-opus-4-8", JSON.parse(captured[0] || "{}").model);
+    t.callAnthropicTask("key", t.resolveModel({ models: { digest: "claude-fable-5" } }, "digest"), "ctx", "task", function () {});
+    ok("wire: digest/task SENDS the resolved picker model (Fable 5)", JSON.parse(captured[1] || "{}").model === "claude-fable-5", JSON.parse(captured[1] || "{}").model);
+    t.callAnthropicTask("key", t.resolveModel({ models: {} }, "digest"), "ctx", "task", function () {});
+    ok("wire: digest unset → default Haiku on the wire", JSON.parse(captured[2] || "{}").model === "claude-haiku-4-5-20251001", JSON.parse(captured[2] || "{}").model);
+  } finally { https.request = orig; }
+})();
+
 console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the security gate) —");
 (async function () {
   const c2 = require("crypto");

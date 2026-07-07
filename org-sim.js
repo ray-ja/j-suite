@@ -202,6 +202,13 @@ async function main() {
     check("a NON-member CANNOT read another org's AI status (403)", aiEve.status === 403);
     let aiAsk = await api("POST", "/api/org-ai/ask", { org: "jam", question: "hi" }, rayTok);
     check("ask fails cleanly when an org has no AI configured (400)", aiAsk.status === 400);
+    // ===== per-function AI MODEL PICKER — allowlisted, owner-gated, server-authoritative =====
+    let aiMod = await api("POST", "/api/org-ai/config", { org: "obx", models: { ask: "claude-opus-4-8", digest: "claude-fable-5", assistant: "not-a-real-model", receipt: "" } }, joeTok);
+    check("model picker: allowlisted picks stored, bogus value skipped, empty cleared", aiMod.status === 200 && aiMod.json.models && aiMod.json.models.ask === "claude-opus-4-8" && aiMod.json.models.digest === "claude-fable-5" && !("assistant" in aiMod.json.models) && !("receipt" in aiMod.json.models));
+    let aiModNon = await api("POST", "/api/org-ai/config", { org: "obx", models: { ask: "claude-haiku-4-5-20251001" } }, moeTok);
+    check("model picker: a non-owner CANNOT change AI models (403)", aiModNon.status === 403);
+    let aiModSt = await api("GET", "/api/org-ai/status?org=obx", null, moeTok);
+    check("model picker: status carries the saved allowlisted picks (no key)", aiModSt.status === 200 && aiModSt.json.models && aiModSt.json.models.ask === "claude-opus-4-8" && !("apiKey" in aiModSt.json));
 
     // ===== WORKSHOP (customJobs) — end-to-end /sync write-authz + the preview route =====
     // roles now: joe = obx OWNER, moe = obx ADMIN (promoted earlier), eve = escaperoom only.
