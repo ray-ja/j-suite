@@ -970,11 +970,14 @@ window.jobAddPhoto = function (jobId, input) {
   const file = input && input.files && input.files[0]; if (!file) return;
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   if (typeof jsUpload !== "function") { alert("Photo upload needs a connection."); return; }
-  jsUpload(file).then(function (id) {
+  if (typeof uploadStatus === "function") uploadStatus("uploading", 0);
+  jsUpload(file, function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct); }).then(function (id) {
     if (!Array.isArray(j.attachments)) j.attachments = [];
     j.attachments.push({ id: id, name: file.name || "photo", ts: now() });
     if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
-  }).catch(function (e) { alert("Upload failed: " + (e.message || e)); });
+    // "✓ safe to close" only once the job RECORD (with the new attachment id) actually syncs to the server.
+    if (typeof uploadTrackSync === "function") uploadTrackSync();
+  }).catch(function (e) { if (typeof uploadStatus === "function") uploadStatus("error", null, (e && e.message) || e); alert("Upload failed: " + (e.message || e)); });
 };
 /* Ask Cap a question scoped to this job — posts to the ONE shared per-job Cap thread (thr_job_<jobId>):
    the whole crew on the job + Cap share it, so everyone sees the same conversation. members carries the

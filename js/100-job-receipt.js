@@ -219,10 +219,15 @@ window.jobRcptUpload = function (input, jobId) {
   if (_jobRcptUpBusy) return;
   if (typeof jsUpload !== "function") { if (typeof alert === "function") alert("Photo upload needs the server — add lines by hand instead."); jobRcptStartManual(jobId); return; }
   _jobRcptUpBusy = true;
-  jsUpload(file).then(function (receiptId) {
+  if (typeof uploadStatus === "function") uploadStatus("uploading", 0);
+  jsUpload(file, function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct); }).then(function (receiptId) {
     var stub = (typeof rcptNewReview === "function") ? rcptNewReview(receiptId) : { id: (typeof uid === "function" ? uid() : String(Math.random())), receiptId: receiptId };
     var coll = (typeof rcptColl === "function") ? rcptColl() : (function () { var d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; })();
     coll.push(stub); if (typeof touch === "function") touch(stub);
+    // Persist + push the receipt RECORD right away so it can't be orphaned if the app closes during the Cap-read
+    // step below, and tie "✓ safe to close" to that RECORD reaching the server (not just the blob upload).
+    if (typeof save === "function") save();
+    if (typeof uploadTrackSync === "function") uploadTrackSync();
     JOB_RCPT = { jobId: jobId, loc: { store: "review", jobId: null, recId: stub.id }, receiptId: receiptId, suggested: null, total: "", rows: [], fault: "", depositFlag: false, reading: false };
     var canRead = false;
     try { canRead = (typeof rcptFinFull === "function" && rcptFinFull()) && (typeof ORG_AI_ST !== "undefined" && ORG_AI_ST && ORG_AI_ST.enabled && ORG_AI_ST.hasKey) && !/\.pdf$/i.test(String(receiptId)) && (typeof capRcptRead === "function"); } catch (e) { canRead = false; }
@@ -250,6 +255,7 @@ window.jobRcptUpload = function (input, jobId) {
     });
   }).catch(function (e) {
     _jobRcptUpBusy = false;
+    if (typeof uploadStatus === "function") uploadStatus("error", null, (e && e.message) || e);
     if (typeof alert === "function") alert("Receipt upload failed: " + ((e && e.message) || e) + " — you can still add lines by hand.");
     if (!JOB_RCPT || JOB_RCPT.jobId !== jobId) jobRcptStartManual(jobId);
   });

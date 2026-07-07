@@ -107,15 +107,32 @@ window.toggleTheme=function(){
   applyTheme();
 };
 /* upload an image OR PDF file → resolves the stored blob id. The bytes live as a server file (uploads/<id>),
-   the record only keeps the small id — so the synced JSON store never bloats. */
-window.jsUpload=function(file){
+   the record only keeps the small id — so the synced JSON store never bloats.
+   `onProgress(pct)` (optional, 0..100) fires as the blob POSTs so the UI can show "Uploading… 45%". It defaults
+   to a no-op, so every existing caller (jsUpload(file)) is byte-for-byte unchanged. We use XMLHttpRequest (not
+   fetch) purely to get xhr.upload.onprogress — the request/response contract (same URL/headers/body, resolves the
+   id, rejects on error) is identical. */
+window.jsUpload=function(file,onProgress){
+  onProgress=(typeof onProgress==="function")?onProgress:function(){};
   return new Promise(function(resolve,reject){
     if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||""))){reject(new Error("Pick an image or PDF"));return;}
     const fr=new FileReader();
     fr.onload=function(){
       const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,""),tok=(S.sync&&S.sync.token)||"";
-      fetch(base+"/api/upload",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+tok},body:JSON.stringify({dataUrl:fr.result})})
-        .then(function(r){return r.json();}).then(function(d){if(d&&d.ok)resolve(d.id);else reject(new Error((d&&d.error)||"upload failed"));}).catch(reject);
+      try{
+        const xhr=new XMLHttpRequest();
+        xhr.open("POST",base+"/api/upload");
+        xhr.setRequestHeader("Content-Type","application/json");
+        xhr.setRequestHeader("Authorization","Bearer "+tok);
+        if(xhr.upload){xhr.upload.onprogress=function(e){if(e&&e.lengthComputable&&e.total>0){try{onProgress(Math.max(0,Math.min(100,Math.round(e.loaded/e.total*100))));}catch(_e){}}};}
+        xhr.onload=function(){
+          var d=null;try{d=JSON.parse(xhr.responseText||"null");}catch(_e){}
+          if(xhr.status>=200&&xhr.status<300&&d&&d.ok){try{onProgress(100);}catch(_e){}resolve(d.id);}
+          else reject(new Error((d&&d.error)||("upload failed"+(xhr.status?" ("+xhr.status+")":""))));
+        };
+        xhr.onerror=function(){reject(new Error("upload failed"));};
+        xhr.send(JSON.stringify({dataUrl:fr.result}));
+      }catch(_e){reject(new Error("upload failed"));}
     };
     fr.onerror=function(){reject(new Error("couldn't read the file"));};
     fr.readAsDataURL(file);
