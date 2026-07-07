@@ -19,7 +19,6 @@ const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals"
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
-const AUTO_READ_MAX = 4;                            // Phase B: auto Cap-read only a SMALL upload (≤N photos), when an org AI key exists
 let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
@@ -238,13 +237,15 @@ function rcptNewReview(receiptId) {
 }
 let _rcptUpBusy = false;
 function rcptSetUpStatus(txt) { const el = document.getElementById("rcpt_upstatus"); if (el) el.textContent = txt || ""; }
-/* Phase B — AUTO Cap-read on a SMALL upload: after a batch finishes, if an org AI key exists AND the batch was
-   ≤ AUTO_READ_MAX photos, kick a NON-BLOCKING capRcptRun({auto:true}). Cost-capped + idempotent (its own busy
-   flag) + owner/admin-gated inside capRcptRun (crew/auto returns silently). No key, a big batch, or offline →
-   the explicit "🤖 Read N" button path is untouched. Never throws. */
+/* AUTO Cap-read after ANY upload (no batch-size cap): if an org AI key exists, kick a NON-BLOCKING
+   capRcptRun({auto:true}). capRcptRun DRAINS the whole needs-review pile ONE AT A TIME (sequential vision
+   calls, throttled) so a 7- or 100-photo drop reads every one — Ray dropped 7 at once and the old ≤4 gate
+   silently skipped them. Idempotent (its own busy flag; reads only receipts with no `suggested`) +
+   owner/admin-gated inside capRcptRun (crew/auto returns silently). No key or offline → the explicit
+   "🤖 Read N" button path is untouched. Never throws. */
 function rcptMaybeAutoRead(n) {
   try {
-    if (!(n > 0 && n <= AUTO_READ_MAX)) return;
+    if (!(n > 0)) return;   // any successful upload kicks the queue — no size cap (the drain reads them one at a time)
     if (typeof ORG_AI_ST === "undefined" || !ORG_AI_ST || !ORG_AI_ST.enabled || !ORG_AI_ST.hasKey) return;   // client sees a key EXISTS (never the key)
     if (typeof capRcptRun !== "function") return;
     if (typeof _capRcptBusy !== "undefined" && _capRcptBusy) return;   // a read is already running — don't double-fire

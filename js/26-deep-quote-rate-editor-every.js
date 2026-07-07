@@ -204,6 +204,11 @@ async function syncRun(mode){
     // (S.recurLastRun) + never-throws inside; NO-OP while recurringPlans is empty (Phase 1 has no create UI yet),
     // so this is zero app-visible effect until a plan exists. If it did generate, re-render to show new jobs.
     var _recurCh=false; if(typeof recurMaterialize==="function"){try{_recurCh=recurMaterialize();}catch(e){}}
+    // RESUMABLE CAP RECEIPT QUEUE: after a fresh pull/merge (this includes the boot pull → covers "app open"),
+    // sweep any UNREAD needs-review receipts one at a time — a batch interrupted by an app-close, or receipts
+    // that arrived via sync from another device / the server, get read without a re-upload. Owner/admin + key
+    // gated, debounced, never-throws, no-op at 0 unread (js/88 capRcptSweep). Fire-and-forget.
+    if(typeof capRcptSweep==="function"){try{capRcptSweep();}catch(e){}}
     if(changed||_recurCh)safeRender();
   }catch(e){_syncInflight=false;setSyncState("offline");syMsg("Offline — changes saved, will sync.");scheduleRetry();}
 }
