@@ -41,7 +41,7 @@ d.jobs = d.jobs || []; if (!d.jobs.length) d.jobs.push({ id: "j_rs", title: "Smo
 d.todos = d.todos || []; if (!d.todos.length) d.todos.push({ id: "t_rs", title: "Smoke todo", done: false, updatedAt: now() });
 
 // ---- the authoritative screen list (keys from render()'s dispatch map in js/03) ----
-var SCREENS = ["today", "messages", "schedule", "leads", "quotes", "accounts",
+var SCREENS = ["today", "messages", "schedule", "leads", "quotes", "recurring", "accounts",
   "finance", "receipts", "pay", "inventory", "resale", "admin", "data", "playbook",
   "research", "todo", "map", "route", "plan", "market", "opps", "sites", "buildplan",
   "training", "time", "approvals", "escape", "booking", "life", "budget", "team", "routes"];
