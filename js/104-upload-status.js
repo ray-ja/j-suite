@@ -31,6 +31,9 @@
           "border:1px solid rgba(0,0,0,.06)}" +
           "#upStatus.show{display:block}" +
           "#upStatus.up{background:#eef2ff;color:#3538cd;border-color:#c7d2fe}" +
+          "#upStatus.read{background:#f5f3ff;color:#6b21a8;border-color:#ddd6fe}" +
+          "#upStatus.read .upbar{background:rgba(124,58,237,.18)}" +
+          "#upStatus.read .upbar > i{background:#7c3aed}" +
           "#upStatus.save{background:#fef3c7;color:#92400e;border-color:#fde68a}" +
           "#upStatus.ok{background:#dcfce7;color:#166534;border-color:#bbf7d0;cursor:pointer}" +
           "#upStatus.warn{background:#fef3c7;color:#92400e;border-color:#fcd34d;cursor:pointer}" +
@@ -54,7 +57,8 @@
     try { if (_dismissT) { clearTimeout(_dismissT); _dismissT = null; } var el = document.getElementById("upStatus"); if (el) { el.className = ""; el.style.display = "none"; el.innerHTML = ""; } } catch (e) {}
   }
 
-  /* state: "uploading" (arg=pct number) | "saving" | "saved" | "pending" | "error" | falsy/"hide".
+  /* state: "uploading" (arg=pct number) | "reading" (arg={done,total}) | "read-done" (arg=count) | "saving" |
+     "saved" | "pending" | "error" | falsy/"hide".
      note: optional small text appended (e.g. batch "(2 of 3)" or an error message). */
   function uploadStatus(state, arg, note) {
     try {
@@ -67,6 +71,19 @@
         var pct = (typeof arg === "number" && isFinite(arg)) ? Math.max(0, Math.min(100, Math.round(arg))) : 0;
         cls = "up";
         html = "⬆ Uploading photo… " + pct + "%" + suffix + "<div class='upbar'><i style='width:" + pct + "%'></i></div>";
+      } else if (state === "reading") {
+        // Cap draining the receipt read-queue → 🤖 progress bar filled to done/total (a distinct purple accent).
+        var d = (arg && typeof arg === "object") ? arg : {};
+        var rt = (typeof d.total === "number" && isFinite(d.total) && d.total > 0) ? Math.round(d.total) : 0;
+        var rd = (typeof d.done === "number" && isFinite(d.done) && d.done >= 0) ? Math.round(d.done) : 0;
+        if (rt && rd > rt) rd = rt;
+        var rpct = rt ? Math.max(0, Math.min(100, Math.round((rd / rt) * 100))) : 0;
+        cls = "read";
+        html = "🤖 Cap is reading " + rd + " of " + (rt || "?") + "…" + suffix +
+               "<div class='upbar'><i style='width:" + rpct + "%'></i></div>";
+      } else if (state === "read-done") {
+        var rn = (typeof arg === "number" && isFinite(arg)) ? Math.max(0, Math.round(arg)) : 0;
+        cls = "ok"; html = "✓ Cap read " + rn + " receipt" + (rn === 1 ? "" : "s") + suffix; auto = AUTO_MS;
       } else if (state === "saving") {
         cls = "save"; html = "💾 Saving…" + suffix;
       } else if (state === "saved") {

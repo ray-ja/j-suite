@@ -84,3 +84,55 @@ if (typeof rcptColl === "function" && typeof rcptUploadFiles === "function") {
 window.jsUpload = _realUp;
 window.whenSynced = _realWS;
 uploadStatus("hide");
+
+// ---- Cap read-progress banner (js/104 "reading" / "read-done") -------------------------------------------------
+if (typeof uploadStatus === "function") {
+  uploadStatus("reading", { done: 3, total: 12 });
+  A(/🤖 Cap is reading 3 of 12/.test(bannerText()), "reading state text wrong: " + bannerText());
+  var _rel = document.getElementById("upStatus");
+  A(_rel && _rel.className.indexOf("read") >= 0, "reading not the .read (purple) style");
+  var _bar = _rel && _rel.querySelector(".upbar > i");
+  A(_bar && /(^|\D)25%/.test(_bar.style.width || ""), "reading bar should be 25% (3/12), got " + (_bar && _bar.style.width));
+  // full-batch progression drives the bar
+  uploadStatus("reading", { done: 12, total: 12 });
+  A(/reading 12 of 12/.test(bannerText()), "reading should reach 12 of 12");
+  var _bar2 = document.getElementById("upStatus").querySelector(".upbar > i");
+  A(_bar2 && /100%/.test(_bar2.style.width || ""), "reading bar should be 100% at 12/12");
+  uploadStatus("read-done", 12);
+  A(/✓ Cap read 12 receipts/.test(bannerText()), "read-done text wrong: " + bannerText());
+  A(document.getElementById("upStatus").className.indexOf("ok") >= 0, "read-done should be green (.ok)");
+  uploadStatus("read-done", 1);
+  A(/✓ Cap read 1 receipt(?!s)/.test(bannerText()), "read-done singular wrong: " + bannerText());
+  uploadStatus("hide");
+  diag("uploadStatus reading/read-done (🤖 bar → ✓): OK");
+}
+
+// ---- capRcptRun DRIVES the banner across a batch, ends at read-done, 0-unread shows NOTHING --------------------
+if (typeof capRcptRun === "function" && typeof capRcptTargets === "function") {
+  var _realRead = window.capRcptRead, _realCanRun = window.capRcptCanRun, _realTargets = window.capRcptTargets;
+  window.CAP_RCPT_THROTTLE_MS = 0;                 // no wait between reads in the test
+  window.capRcptCanRun = function () { return true; };   // owner/admin gate open for the harness
+  // 4 fake needs-review receipts; capRcptTargets is stubbed to return only the still-unstamped ones (deterministic)
+  var _fake = [];
+  for (var i = 0; i < 4; i++) _fake.push({ id: "uptest_" + i, receiptId: "photo_" + i + ".jpg" });
+  window.capRcptTargets = function () { return _fake.filter(function (r) { return !r.suggested; }); };
+  var _maxSeen = 0, _reads = 0;
+  var _origUS = window.uploadStatus;
+  window.uploadStatus = function (state, arg) { if (state === "reading" && arg && arg.total > _maxSeen) _maxSeen = arg.total; return _origUS.apply(this, arguments); };
+  window.capRcptRead = function () { return Promise.resolve({ suggested: { vendor: "T", amount: 1 } }); };
+  var _realFind = window.rcptFindRecord;
+  window.rcptFindRecord = function () { return null; };   // stamp lands on the passed record (our _fake entry) → next pass sees it done
+  await capRcptRun({ auto: true });
+  A(_maxSeen === 4, "banner 'reading' total should have reached 4, saw " + _maxSeen);
+  A(/✓ Cap read 4 receipts/.test(bannerText()), "batch drain must end at read-done ✓: " + bannerText());
+  diag("capRcptRun drives reading banner 1..4 → ✓ Cap read 4: OK");
+  uploadStatus("hide");
+  // 0-unread run: all 4 now stamped → capRcptTargets returns [] → banner must NOT show at all (no phantom bar)
+  await capRcptRun({ auto: true });
+  var _z = document.getElementById("upStatus");
+  A(!_z || _z.style.display === "none" || _z.className.indexOf("show") < 0, "0-unread sweep must show NO banner (phantom bar): " + (_z && _z.className));
+  diag("capRcptRun 0-unread → no banner (no phantom flash): OK");
+  // restore stubs
+  window.uploadStatus = _origUS; window.capRcptRead = _realRead; window.capRcptCanRun = _realCanRun; window.capRcptTargets = _realTargets; window.rcptFindRecord = _realFind;
+  uploadStatus("hide");
+}
