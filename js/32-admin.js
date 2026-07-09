@@ -453,8 +453,7 @@ function rAdmin() {
   if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
   if (canEditNav() && typeof navOrderCard === "function") h += navOrderCard();   // per-org left-nav GROUP order (owner/manager)
   if (canManageVehicles() && typeof vehiclesCard === "function") h += vehiclesCard();   // managed company-truck list (owner/settings-manager)
-  if (canManageVehicles() && typeof bizCardCard === "function") h += bizCardCard();   // shared company-card last-4 list (owner/settings-manager) — js/94
-  if (canManageVehicles() && typeof cardDbCard === "function") h += cardDbCard();   // 💳 Card database — assign unknown receipt cards to a person/company (owner/settings-manager) — js/94
+  if (typeof adminAllCardsCard === "function") h += adminAllCardsCard();   // 💳 Cards — ONE consolidated table: every member's personal last-4s + company cards + unassigned-on-receipts (rows reuse the js/94 ops; owner/manager-visible, cross-user writes owner-only) — js/105
   if (owner && typeof sampleDataCard === "function") h += sampleDataCard();   // Load/Clear obvious SAMPLE records for the enabled org tools (owner-only)
   if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   if (typeof workshopCard === "function") h += workshopCard();   // WORKSHOP: user-defined scheduled AI tasks — owner/admin (self-gates finance/broadcast/propose to owner)
