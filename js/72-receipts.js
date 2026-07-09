@@ -15,7 +15,7 @@
        everything they log shows up in this table too.
    The Receipts table AGGREGATES all four homes into one sortable, click-to-edit view. */
 
-const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "office/admin", "other"];
+const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "meals", "office/admin", "other"];
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
@@ -351,6 +351,76 @@ window.rcptDrop = function (e) {
   rcptUploadFiles((e && e.dataTransfer && e.dataTransfer.files) ? Array.prototype.slice.call(e.dataTransfer.files) : []);
 };
 
+/* ============================== 📋 PASTE FROM CLIPBOARD ==============================
+   Ray copies a screenshot (ShareX) → pastes it straight in. Two paths, both funnel through the SAME
+   rcptUploadFiles() pipeline (upload → review record → Cap auto-read → ✓ safe-to-close banner):
+     • the "📋 Paste from clipboard" button → the async Clipboard API (navigator.clipboard.read), and
+     • plain Ctrl+V anywhere on the Receipts tab → a document 'paste' listener reading e.clipboardData.
+   Additive UX only — no data/schema/billing change. Never throws. */
+
+/* is the async Clipboard read API usable here? (needs a secure context: HTTPS / localhost; absent on file://) */
+function rcptClipboardReadable() {
+  try { return !!(typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.read === "function"); }
+  catch (e) { return false; }
+}
+/* PURE + testable: turn a clipboard image blob/file into a File the upload path accepts, named "pasted-<ts>.<ext>".
+   Returns null for a non-image (so a text/other clipboard yields no upload). Falls back to a shaped object when the
+   File constructor is unavailable (headless), which rcptUploadFiles still accepts (it only reads .type/.name). */
+function rcptImageBlobToFile(blob, ts) {
+  if (!blob || !/^image\//.test(blob.type || "")) return null;
+  const ext = (String(blob.type || "image/png").split("/")[1] || "png").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "png";
+  const name = "pasted-" + (ts != null ? ts : ((typeof Date !== "undefined" && Date.now) ? Date.now() : 0)) + "." + ext;
+  try { return new File([blob], name, { type: blob.type }); }
+  catch (e) { try { blob.name = name; return blob; } catch (z) { return { type: blob.type, name: name }; } }
+}
+/* inline note under the paste button (friendly guidance; no alert/blank) */
+function rcptPasteNote(txt) { const el = (typeof document !== "undefined" && document.getElementById) ? document.getElementById("rcpt_pastenote") : null; if (el) el.textContent = txt || ""; }
+/* BUTTON path — read images off the clipboard via the async API, wrap each as a File, hand to the shared pipeline.
+   Requires secure context + permission + a user gesture (the tap) — all failure modes show a friendly inline note. */
+window.rcptPasteFromClipboard = async function () {
+  if (!rcptFinFull()) return;
+  rcptPasteNote("");
+  if (!rcptClipboardReadable()) { rcptPasteNote("Paste needs the app's https address."); return; }
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of (items || [])) {
+      const types = (item && item.types) ? item.types : [];
+      for (const type of types) {
+        if (!/^image\//.test(type)) continue;
+        try { const blob = await item.getType(type); const f = rcptImageBlobToFile(blob, Date.now()); if (f) files.push(f); } catch (z) {}
+      }
+    }
+    if (!files.length) { rcptPasteNote("No image on the clipboard — copy a screenshot first."); return; }
+    rcptUploadFiles(files);
+  } catch (e) {
+    rcptPasteNote("Couldn't read the clipboard — copy a screenshot, then tap Paste (it needs permission).");
+  }
+};
+/* Ctrl+V path — always-on document listener that only ACTS on the Receipts tab (owner/admin), so it's a harmless
+   no-op everywhere else. Reads e.clipboardData for image items; preventDefault only when an image is found. */
+function rcptOnPaste(e) {
+  try {
+    if (typeof TAB === "undefined" || TAB !== "receipts") return;
+    if (!rcptFinFull()) return;
+    const items = (e && e.clipboardData && e.clipboardData.items) ? e.clipboardData.items : null;
+    if (!items) return;
+    const files = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.kind === "file" && /^image\//.test(it.type || "")) {
+        const f = rcptImageBlobToFile(it.getAsFile(), Date.now());
+        if (f) files.push(f);
+      }
+    }
+    if (!files.length) return;
+    if (e.preventDefault) e.preventDefault();
+    rcptPasteNote("");
+    rcptUploadFiles(files);
+  } catch (x) {}
+}
+if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("paste", rcptOnPaste);
+
 /* ============================== PHASE B — ONE-TAP / BULK FILE (spine funnel) ==============================
    Both file EXISTING review rows in place through rcptFileSuggestion (js/98) → rcptApplyEdit → a BYTE-IDENTICAL
    record to a hand save. Explicit human taps = the confirm; nothing auto-files. Owner/admin only. */
@@ -434,6 +504,9 @@ function rReceipts() {
     <div class="sub" style="white-space:normal">Dump a whole <b>stack</b> of receipts in now — snap or pick several at once, or <b>drag &amp; drop</b> them here. Each lands in <b>Needs review</b>; tap any row below to set vendor/amount/type/job and file it.</div>
     <input type="file" id="rcpt_files" accept="image/*,application/pdf,.pdf,.csv,text/csv" multiple style="display:none" onchange="rcptUpload(this)">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptPickFiles()">📷 Upload receipt photos</button>
+    ${rcptClipboardReadable() ? `<button class="btn ghost" style="width:100%;margin-top:6px" onclick="rcptPasteFromClipboard()">📋 Paste from clipboard</button>
+    <div class="sub" style="text-align:center;opacity:.6">or press <b>Ctrl&nbsp;+&nbsp;V</b> to paste a copied screenshot</div>` : ""}
+    <div id="rcpt_pastenote" class="sub" style="text-align:center;margin-top:4px;color:var(--danger);min-height:0"></div>
     <input type="file" id="rcpt_csv" accept=".csv,text/csv" style="display:none" onchange="rcptCsvPick(this)">
     <button class="btn ghost" style="width:100%;margin-top:6px" onclick="rcptCsvPickOpen()">📄 Import a purchase CSV (Lowe's / Home Depot…)</button>
     <div id="rcpt_upstatus" class="sub" style="text-align:center;margin-top:6px;color:var(--accent);min-height:16px"></div>
