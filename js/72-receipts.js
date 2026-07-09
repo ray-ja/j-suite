@@ -479,6 +479,7 @@ function rcptSortVal(r, col) {
     case "attributedTo": return String(m.forName || "").toLowerCase();
     case "category": return String(r.category || "").toLowerCase();
     case "card": return String(r.cardLast4 || "").replace(/\D/g, "").slice(-4);
+    case "order": return rcptOrderNo(r);
     case "status": return m.status;
     case "date": default: return rcptDate(r) || "0000-00-00";
   }
@@ -699,6 +700,29 @@ function rcptCardCell(r) {
   const l4 = (r && r.cardLast4) ? String(r.cardLast4).replace(/\D/g, "").slice(-4) : "";
   return l4 ? `💳 ••••${esc(l4)}` : `<span style="color:var(--muted)">—</span>`;
 }
+/* The "Order #" cell — the vendor order/transaction number (Lowe's etc.). Lives on r.refNo or is parsed from a
+   "Order #NNN" desc (the CSV import bakes it there). Shown ABBREVIATED (…last 6); tap to COPY the full number to
+   the clipboard (stopPropagation so it doesn't open the modal). "—" when the receipt has no order number. */
+function rcptOrderNo(r) {
+  if (!r) return "";
+  const ref = String(r.refNo || "").replace(/\D/g, "");
+  if (ref) return ref;
+  const m = String(r.desc || "").match(/order\s*#?\s*(\d{4,})/i);   // "Order #147424942 · …"
+  return m ? m[1] : "";
+}
+function rcptOrderCell(r) {
+  const no = rcptOrderNo(r);
+  if (!no) return `<span style="color:var(--muted)">—</span>`;
+  const abbr = no.length > 6 ? "…" + no.slice(-6) : no;
+  return `<span onclick="event.stopPropagation();rcptCopyOrder('${esc(no)}',this)" title="Order #${esc(no)} · tap to copy" style="cursor:pointer;white-space:nowrap;border-bottom:1px dotted var(--muted)">#${esc(abbr)}</span>`;
+}
+window.rcptCopyOrder = function (no, el) {
+  const flash = () => { if (el) { const o = el.textContent; el.textContent = "✓ copied"; el.style.color = "#1e9e5a"; setTimeout(() => { try { el.textContent = o; el.style.color = ""; } catch (z) {} }, 1200); } };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(String(no)).then(flash, flash); return; }
+  } catch (e) {}
+  try { const t = document.createElement("textarea"); t.value = String(no); document.body.appendChild(t); t.select(); document.execCommand("copy"); document.body.removeChild(t); flash(); } catch (e) {}
+};
 /* `dups` = the {recId → group} map from rcptDupIndex().byId (an empty {} = "no dup flags", e.g. in unit tests). */
 /* the 📎 cell: a photo (receiptId) wins; else a CSV-imported row links to its SOURCE CSV (csvFile); else blank.
    stopPropagation so tapping the link opens the file, not the row editor. Tiny + mobile-friendly. */
@@ -853,7 +877,7 @@ function rcptTableHTML(rows, dups) {
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}${th("card", "💳 Card")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
+    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}${th("card", "💳 Card")}${th("order", "Order #")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
   const splitGroups = rcptSplitGroupMap();
   const canFileIt = rcptFinFull();   // one-tap "file it" is owner/admin only (crew never see this table)
   rows.slice(0, 500).forEach(r => {
@@ -889,6 +913,7 @@ function rcptTableHTML(rows, dups) {
       <td style="padding:8px 6px;white-space:nowrap">${esc(m.uploader || "—")}</td>
       ${rcptInlineTd(r.store, r.jobId, r.recId, "attributedTo", forDisp)}
       ${rcptInlineTd(r.store, r.jobId, r.recId, "cardLast4", cardDisp)}
+      <td style="padding:8px 6px;white-space:nowrap">${rcptOrderCell(r)}</td>
       <td style="padding:8px 6px" onclick="event.stopPropagation()">${rcptAttachLink(r)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   });
