@@ -139,7 +139,8 @@ window.rcptEditOpen = function (store, jobId, recId) {
       <a href="${base}" target="_blank" rel="noopener" style="flex:0 0 auto"><img id="rcpt_photoimg" src="${base}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>
       <div class="grow"><input type="file" id="rcpt_photo" accept="image/*,application/pdf,.pdf" style="display:none" onchange="rcptReplacePhoto(this)"><button class="btn ghost sm" style="width:100%" onclick="document.getElementById('rcpt_photo').click()"><span id="rcpt_photolbl">🔄 Replace photo</span></button>
       ${(rec.receiptId && !/\.pdf$/i.test(rec.receiptId) && typeof capRcptOne === "function" && (typeof rcptFinFull !== "function" || rcptFinFull())) ? `<button class="btn ghost sm" id="cap_rcpt_one_btn" style="width:100%;margin-top:6px;color:#6b3fa0" onclick="capRcptOne()">🤖 Reread — try harder (smartest model)</button>` : ""}
-      <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div></div>
+      <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div>
+      ${(!rec.receiptId && rec.csvFile) ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(rec.csvFile) : ""}" target="_blank" rel="noopener" class="sub" style="display:inline-block;margin-top:4px;color:var(--accent)">📄 View source CSV${rec.csvName ? " (" + esc(rec.csvName) + ")" : ""}</a>` : ""}</div>
     </div>
     <!-- ESSENTIALS (always shown): Amount · Vendor · Job. The rest lives under "More options" (js/98 collapse). -->
     <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${rec.amount != null ? esc(rec.amount) : ""}" placeholder="0.00">

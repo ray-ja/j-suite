@@ -586,6 +586,52 @@ async function main() {
   ok("all 3 imported receipts survive the round-trip", survived.length === 3, survived.length);
   ok("survivors keep receiptId:null + importId + csvFp intact", survived.every(r => r.receiptId === null && r.importId && r.csvFp), survived[0]);
 
+  // ===================== CSV SOURCE-FILE LINK (js/93 blob-store + js/72/87 render) =====================
+  console.log("\n— CSV blob-link: import stores the raw CSV once + tags every row with csvFile/csvName —");
+  resetStore();
+  let csvUploads = 0, csvBlob = null;
+  global.jsUpload = function () { csvUploads++; csvBlob = "csvblob_" + csvUploads; return Promise.resolve(csvBlob); };
+  rcptCsvHandle({ name: "lowes-history.csv", __text: LOWES_CSV });
+  rcptCsvCommit();
+  await new Promise(r => setTimeout(r, 20));   // let the async blob-store resolve + attach
+  const linked = rcptReview().filter(r => r.source === "csv");
+  ok("the CSV was uploaded exactly once (one blob for the whole file)", csvUploads === 1, csvUploads);
+  ok("every imported row carries csvFile = the stored blob id", linked.length === 3 && linked.every(r => r.csvFile === csvBlob), linked.map(r => r.csvFile));
+  ok("every imported row carries csvName (source-file label for a nicer link)", linked.every(r => r.csvName === "lowes-history.csv"), linked[0] && linked[0].csvName);
+  ok("csvFile rows stay photo-less (receiptId null) — the link is the CSV, not a photo", linked.every(r => r.receiptId === null));
+
+  console.log("— CSV blob-link: the 📎 cell → 📄 CSV for a csvFile row; a photo (receiptId) still wins —");
+  const csvCell = rcptAttachLink(linked[0]);
+  ok("csvFile + no photo → a 📄 CSV link to the stored blob", /📄 CSV/.test(csvCell) && csvCell.indexOf(jsUploadUrl(csvBlob)) >= 0, csvCell);
+  ok("photo takes precedence: a receiptId row → 📎 (never the CSV link)", (function () { const c = rcptAttachLink({ receiptId: "p.jpg", csvFile: csvBlob }); return /📎/.test(c) && !/📄 CSV/.test(c); })());
+  ok("neither photo nor csvFile → a blank cell", rcptAttachLink({}) === "");
+  // edit modal (js/87): a csvFile row (no photo) renders a "View source CSV" link
+  let LAST_MODAL_HTML = "";
+  global.modal = function (title, html) { LAST_MODAL_HTML = String(html || ""); };
+  rcptEditOpen("review", null, linked[0].id);
+  ok("edit modal shows 'View source CSV' for a csvFile row (links the stored blob)", /View source CSV/.test(LAST_MODAL_HTML) && LAST_MODAL_HTML.indexOf(jsUploadUrl(csvBlob)) >= 0, LAST_MODAL_HTML.slice(0, 60));
+  // a row WITH a photo must not show the CSV link in the modal (photo wins)
+  const photoRec = seedReview({ receiptId: "photo1.jpg", vendor: "Depot", amount: 10 }); photoRec.csvFile = csvBlob; photoRec.source = "csv";
+  rcptEditOpen("review", null, photoRec.id);
+  ok("a photo'd row shows the photo, NOT the CSV link, in the modal", !/View source CSV/.test(LAST_MODAL_HTML), LAST_MODAL_HTML.slice(0, 60));
+  STORE.receipts = STORE.receipts.filter(r => r.id !== photoRec.id);   // drop the extra so re-import counts stay clean
+  global.modal = function () {};
+
+  console.log("— CSV re-import: a dedup MATCH ATTACHES csvFile to the EXISTING record (no dupe, no billing change) —");
+  const beforeLink = linked.map(r => JSON.stringify({ id: r.id, amount: r.amount, vendor: r.vendor, attributedTo: r.attributedTo, refNo: r.refNo || "" })).sort();
+  linked.forEach(r => { delete r.csvFile; delete r.csvName; });   // simulate Ray's pre-existing rows that never had a link
+  const csvCountBefore = rcptReview().filter(r => r.source === "csv").length;
+  global.jsUpload = function () { return Promise.resolve("csvblob_reimport"); };
+  rcptCsvHandle({ name: "lowes-history.csv", __text: LOWES_CSV });   // same file → all rows dup-match
+  ok("re-import pre-unchecks all rows (nothing new to create)", RCSV && RCSV.parsed.length === 3 && RCSV.parsed.every(p => p.keep === false));
+  rcptCsvCommit();
+  await new Promise(r => setTimeout(r, 20));
+  const afterReimport = rcptReview().filter(r => r.source === "csv");
+  ok("NO duplicate rows created on re-import (same count as before)", afterReimport.length === csvCountBefore && afterReimport.length === 3, { before: csvCountBefore, after: afterReimport.length });
+  ok("the EXISTING rows got csvFile attached in place (Ray's already-imported rows get their link)", afterReimport.every(r => r.csvFile === "csvblob_reimport"), afterReimport.map(r => r.csvFile));
+  ok("re-import changed ONLY csvFile/csvName — id/amount/vendor/attribution/refNo untouched (no billing change)", afterReimport.map(r => JSON.stringify({ id: r.id, amount: r.amount, vendor: r.vendor, attributedTo: r.attributedTo, refNo: r.refNo || "" })).sort().join("|") === beforeLink.join("|"), { before: beforeLink, after: afterReimport.map(r => ({ id: r.id, amount: r.amount })) });
+  global.jsUpload = function () { return Promise.resolve("blob_" + (++_n)); };   // restore the default stub for later tests
+
   console.log("— CSV robustness: a header-less / all-junk / empty file never crashes —");
   ok("empty text → empty auto-map, no throw", (function () { try { const a = rcptCsvAutoMap(budgetParseCSV("")); return a.map.amount === -1; } catch (e) { return false; } })());
   ok("a junk-only body parses to 0 records (all skipped)", (function () {

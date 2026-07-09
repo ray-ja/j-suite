@@ -115,7 +115,7 @@ window.toggleTheme=function(){
 window.jsUpload=function(file,onProgress){
   onProgress=(typeof onProgress==="function")?onProgress:function(){};
   return new Promise(function(resolve,reject){
-    if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||""))){reject(new Error("Pick an image or PDF"));return;}
+    if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||"")||file.type==="text/csv"||file.type==="application/csv"||file.type==="application/vnd.ms-excel"||/\.csv$/i.test(file.name||""))){reject(new Error("Pick an image, PDF, or CSV"));return;}
     const fr=new FileReader();
     fr.onload=function(){
       const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,""),tok=(S.sync&&S.sync.token)||"";

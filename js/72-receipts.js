@@ -503,6 +503,15 @@ function rcptCardCell(r) {
   return l4 ? `💳 ••••${esc(l4)}` : `<span style="color:var(--muted)">—</span>`;
 }
 /* `dups` = the {recId → group} map from rcptDupIndex().byId (an empty {} = "no dup flags", e.g. in unit tests). */
+/* the 📎 cell: a photo (receiptId) wins; else a CSV-imported row links to its SOURCE CSV (csvFile); else blank.
+   stopPropagation so tapping the link opens the file, not the row editor. Tiny + mobile-friendly. */
+function rcptAttachLink(r) {
+  if (!r) return "";
+  const url = (typeof jsUploadUrl === "function") ? jsUploadUrl : function () { return ""; };
+  if (r.receiptId) return `<a href="${url(r.receiptId)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎</a>`;
+  if (r.csvFile) return `<a href="${url(r.csvFile)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Source CSV${r.csvName ? " · " + esc(r.csvName) : ""}">📄 CSV</a>`;
+  return "";
+}
 function rcptTableHTML(rows, dups) {
   dups = dups || {};
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
@@ -537,7 +546,7 @@ function rcptTableHTML(rows, dups) {
       <td style="padding:8px 6px;white-space:nowrap">${esc(m.uploader || "—")}</td>
       <td style="padding:8px 6px;white-space:nowrap">${m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`}</td>
       <td style="padding:8px 6px;white-space:nowrap">${rcptCardCell(r)}</td>
-      <td style="padding:8px 6px" onclick="event.stopPropagation()">${r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener">📎</a>` : ""}</td>
+      <td style="padding:8px 6px" onclick="event.stopPropagation()">${rcptAttachLink(r)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   });
   h += `</tbody></table>${rows.length > 500 ? `<div class="sub" style="text-align:center;margin-top:6px">Showing first 500 of ${rows.length}.</div>` : ""}</div>`;
@@ -646,7 +655,7 @@ function rcptCrewView() {
       <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px">${esc(r.desc || r.note)}</div>` : ""}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy === meId ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ paid back" : "reimburse"}</div>` : ""}</td>
       <td style="padding:8px 6px;white-space:normal">${m.cust ? esc(m.cust) : (m.jobLabel ? esc(m.jobLabel) : `<span style="color:var(--muted)">—</span>`)}</td>
-      <td style="padding:8px 6px">${r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener">📎</a>` : ""}</td>
+      <td style="padding:8px 6px">${rcptAttachLink(r)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   }).join("");
   h += `</tbody></table></div>`;
