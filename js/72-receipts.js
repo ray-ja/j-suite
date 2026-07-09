@@ -709,6 +709,145 @@ function rcptAttachLink(r) {
   if (r.csvFile) return `<a href="${url(r.csvFile)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Source CSV${r.csvName ? " · " + esc(r.csvName) : ""}">📄 CSV</a>`;
   return "";
 }
+/* ============================== INLINE CLICK-TO-EDIT (Type · Category · 💳 Card · Job · For) ==============================
+   Ray's ask: "I click on a card number or the type and instead of taking me to the modal, a little dropdown appears
+   right there that lets me change it — so I can edit lots of receipts quickly without pulling up the menu each time."
+   The five re-bucketing/attribution cells become distinct click targets (dotted-underline + ▾). Tapping one swaps
+   ONLY that cell for a native <select> (event.stopPropagation() so the ROW's rcptEditOpen modal never fires); picking
+   a value routes through rcptInlineSet → rcptApplyEdit (THE spine) — byte-identical to a modal save, re-buckets
+   billing correctly (id + photo preserved). Blur/Escape with no change reverts (scoped repaint restores the text).
+   Everything else in the row (Date/Vendor/Amount/By/📎/Status) still opens the full modal. Owner/admin only. */
+let _rcptFlashId = null;   // recId to briefly flash green after an inline edit (self-clears on a timer)
+
+/* distinct REGISTERED card last-4s for the inline 💳 dropdown (personal + company, from js/105). Never throws;
+   returns [] when the card DB module isn't present (e.g. headless unit tests) — the dropdown still offers none + current. */
+function rcptRegisteredCards() {
+  const set = {};
+  try {
+    if (typeof adminCardsData === "function") {
+      const d = adminCardsData() || {};
+      (d.people || []).forEach(p => (p.cards || []).forEach(c => { const l = rcptCard4(c && c.last4); if (l) set[l] = 1; }));
+      (d.company || []).forEach(c => { const l = rcptCard4(c && c.last4); if (l) set[l] = 1; });
+    }
+  } catch (e) {}
+  return Object.keys(set).sort();
+}
+/* the record's current value for `field`, in the same shape the modal's control preselects (so the open dropdown
+   shows what's set today). type: "" = review (mirrors the Type <select>). */
+function rcptInlineCurrentValue(rec, store, jobId, field) {
+  const meta = rcptRowMeta(Object.assign({}, rec, { store: store, jobId: jobId }));
+  if (field === "type") return meta.type === "review" ? "" : meta.type;
+  if (field === "category") return rec.category || "";
+  if (field === "cardLast4") return rcptCard4(rec.cardLast4);
+  if (field === "jobId") return jobId || rec.jobId || "";
+  if (field === "attributedTo") return rec.attributedTo || rec.paidBy || rec.uploadedBy || "";
+  return "";
+}
+/* option list [{v,label}] for `field` — same sources the modal uses (RCPT_TYPE_LABEL / RCPT_CATS / rcptJobs /
+   rcptMembers / registered cards), each with an explicit "clear" option. The record's current odd-value (a
+   category or card not in the registry) is appended so it still shows as selected. */
+function rcptInlineOptions(rec, store, jobId, field) {
+  if (field === "type") return [{ v: "", label: RCPT_TYPE_LABEL.review }, { v: "business", label: RCPT_TYPE_LABEL.business }, { v: "job-expense", label: RCPT_TYPE_LABEL["job-expense"] }, { v: "pass-through", label: RCPT_TYPE_LABEL["pass-through"] }];
+  if (field === "category") {
+    const opts = [{ v: "", label: "— category —" }].concat(RCPT_CATS.map(c => ({ v: c, label: c })));
+    if (rec.category && RCPT_CATS.indexOf(rec.category) < 0) opts.push({ v: rec.category, label: rec.category });
+    return opts;
+  }
+  if (field === "cardLast4") {
+    const cur = rcptCard4(rec.cardLast4);
+    const cards = rcptRegisteredCards();
+    if (cur && cards.indexOf(cur) < 0) cards.push(cur);   // keep the current (unregistered) card visible + selected
+    return [{ v: "", label: "— none —" }].concat(cards.sort().map(l => ({ v: l, label: "••••" + l })));
+  }
+  if (field === "jobId") {
+    return [{ v: "", label: "— no job —" }].concat(rcptJobs().map(j => ({
+      v: j.id,
+      label: ((typeof jobPO === "function" && jobPO(j)) ? jobPO(j) + " · " : "") + (j.title || "Job") + ((j.customerId && typeof custName === "function") ? " · " + custName(j.customerId) : "")
+    })));
+  }
+  if (field === "attributedTo") return [{ v: "", label: "— nobody —" }].concat(rcptMembers().map(u => ({ v: u.id, label: u.username })));
+  return [];
+}
+/* build the inline <select> for a cell (rendered into the tapped <td>). stopPropagation on click/change so the row
+   modal never fires; onchange commits via rcptInlineSet; onblur reverts (scoped repaint) when nothing was picked. */
+function rcptInlineSelectHTML(rec, store, jobId, recId, field) {
+  const opts = rcptInlineOptions(rec, store, jobId, field);
+  const cur = rcptInlineCurrentValue(rec, store, jobId, field);
+  const body = opts.map(o => `<option value="${esc(o.v)}"${o.v === cur ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+  const args = `'${esc(store)}','${esc(jobId || "")}','${esc(recId)}','${esc(field)}'`;
+  return `<select onclick="event.stopPropagation()" onchange="event.stopPropagation();rcptInlineSet(${args},this.value)" onblur="rcptInlineBlur(this)" style="font-size:13px;max-width:160px;padding:5px 4px;min-height:36px">${body}</select>`;
+}
+/* the editable cell: the display value + a subtle dotted-underline / ▾ affordance, the whole <td> a click target
+   that swaps to the inline <select> (event.stopPropagation() so the row's modal-open never fires). */
+function rcptInlineTd(store, jobId, recId, field, display, whiteSpace) {
+  const ws = whiteSpace || "nowrap";
+  return `<td onclick="event.stopPropagation();rcptInlineOpen(this,'${esc(store)}','${esc(jobId || "")}','${esc(recId)}','${esc(field)}')" style="padding:8px 6px;cursor:pointer;white-space:${ws}" title="Tap to change">`
+    + `<span style="border-bottom:1px dotted var(--muted)">${display}</span><span style="color:var(--muted);font-size:10px"> ▾</span></td>`;
+}
+/* TAP → swap this cell for the inline <select> (focused; opened when the browser allows). No-op if it's already
+   an open select, or the record has moved. Owner/admin only. */
+window.rcptInlineOpen = function (td, store, jobId, recId, field) {
+  if (!rcptFinFull()) return;
+  if (!td) return;
+  if (td.querySelector && td.querySelector("select")) return;   // already editing this cell
+  const rec = rcptFindRecord(store, jobId || null, recId);
+  if (!rec) { alert("That receipt isn't here anymore — it may have been moved. Refreshing."); if (typeof render === "function") render(); return; }
+  td.innerHTML = rcptInlineSelectHTML(rec, store, jobId, recId, field);
+  const el = td.querySelector ? td.querySelector("select") : null;
+  if (el) { try { el.focus(); } catch (e) {} try { if (typeof el.showPicker === "function") el.showPicker(); } catch (e) {} }
+};
+/* blur with no committed change → restore the text cell (a committed change already repainted, detaching this
+   select, so the isConnected guard makes that blur a no-op). */
+window.rcptInlineBlur = function (el) {
+  try { if (el && el.isConnected === false) return; } catch (e) {}
+  if (typeof rcptRepaintList === "function") rcptRepaintList();
+};
+/* THE inline commit. Rebuilds the FULL fields object from the record's CURRENT values (mirrors exactly what
+   rcptEditOpen/rcptSaveEdit gather — nothing dropped), overrides the ONE edited field, then routes through
+   rcptApplyEdit (the tested spine). A Type/Job change re-buckets billing (id + photo preserved); a Category/Card/
+   For change updates in place. Byte-identical to a modal save. save() + scoped repaint + a brief green flash. */
+window.rcptInlineSet = function (store, jobId, recId, field, value) {
+  if (!rcptFinFull()) return;
+  const rec = rcptFindRecord(store, jobId || null, recId);
+  if (!rec) { alert("That receipt isn't here anymore — it may have been moved. Refreshing."); if (typeof render === "function") render(); return; }
+  const meta = rcptRowMeta(Object.assign({}, rec, { store: store, jobId: jobId }));
+  // CURRENT values (mirror the modal's gather from the record)
+  let type = meta.type === "review" ? "" : meta.type;                       // "" = review
+  let curJob = jobId || rec.jobId || "";
+  let category = rec.category || "";
+  let cardLast4 = rcptCard4(rec.cardLast4);
+  let attributedTo = rec.attributedTo || rec.paidBy || rec.uploadedBy || "";
+  // apply the ONE inline override
+  if (field === "type") type = value || "";
+  else if (field === "category") category = value || "";
+  else if (field === "cardLast4") cardLast4 = rcptCard4(value);
+  else if (field === "jobId") curJob = value || "";
+  else if (field === "attributedTo") attributedTo = value || "";
+  // jobId tracks the (possibly-new) type exactly like rcptSaveEdit; when the user edited Job itself, honor it too
+  const jobIsType = (type === "job-expense" || type === "pass-through");
+  const jobIdF = jobIsType ? curJob : (field === "jobId" ? curJob : "");
+  // amount / vendor / date / desc / deposit / refund — carried through unchanged (same derivations as rcptSaveEdit)
+  const amount = (rec.amount == null || rec.amount === "") ? null : (parseFloat(rec.amount) || 0);
+  const vendor = String(rec.vendor || "").trim();
+  const date = rcptDate(rec) || "";
+  const desc = String(rec.desc || rec.note || "").trim();
+  const paidBy = rec.paidBy || "";
+  const isDeposit = !!rec.isDeposit;
+  const isRefund = rec.kind === "refund";
+  let amt = amount;
+  if (isRefund && amt != null) amt = -Math.abs(amt);
+  const cat = (isDeposit && !category) ? "rentals" : category;
+  const fields = { type: type || null, jobId: jobIdF || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: rec.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
+  const res = rcptApplyEdit({ store: store, jobId: jobId || null, recId: recId }, fields);
+  if (!res || !res.ok) { alert("Couldn't update: " + ((res && res.error) || "unknown")); return; }
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt inline-edit · " + field + " → " + (value || "—") + (vendor ? " · " + vendor : ""));
+  if (typeof save === "function") save();
+  _rcptFlashId = res.newLoc.recId;
+  if (typeof rcptRepaintList === "function") rcptRepaintList();
+  if (typeof setTimeout === "function") setTimeout(function () { _rcptFlashId = null; if (typeof rcptRepaintList === "function") rcptRepaintList(); }, 1400);
+  return res;
+};
+
 function rcptTableHTML(rows, dups) {
   dups = dups || {};
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
@@ -733,16 +872,23 @@ function rcptTableHTML(rows, dups) {
             ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Paid back</span>`
             : `<span class="badge" style="background:#e0a800;color:#fff">Owed</span>`)
         : `<span class="badge" style="background:var(--soft);color:var(--muted)">filed</span>`;
-    h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${isDup ? ";background:var(--danger-soft,#fdecea)" : ""}">
+    const isFlash = _rcptFlashId && (r.recId === _rcptFlashId || r.id === _rcptFlashId);
+    const typeDisp = esc(RCPT_TYPE_LABEL[m.type] || m.type);
+    const catDisp = r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`;
+    const jobDisp = `${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}`;
+    const forDisp = m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`;
+    const cardDisp = rcptCardCell(r);
+    const rowBg = isFlash ? ";background:var(--ok-soft,#e7f7ee)" : (isDup ? ";background:var(--danger-soft,#fdecea)" : "");
+    h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${rowBg}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
-      <td style="padding:8px 6px;white-space:nowrap">${esc(RCPT_TYPE_LABEL[m.type] || m.type)}</td>
-      <td style="padding:8px 6px;white-space:nowrap">${r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}</td>
+      ${rcptInlineTd(r.store, r.jobId, r.recId, "type", typeDisp)}
+      ${rcptInlineTd(r.store, r.jobId, r.recId, "category", catDisp)}
+      ${rcptInlineTd(r.store, r.jobId, r.recId, "jobId", jobDisp, "normal")}
       <td style="padding:8px 6px;white-space:nowrap">${esc(m.uploader || "—")}</td>
-      <td style="padding:8px 6px;white-space:nowrap">${m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:nowrap">${rcptCardCell(r)}</td>
+      ${rcptInlineTd(r.store, r.jobId, r.recId, "attributedTo", forDisp)}
+      ${rcptInlineTd(r.store, r.jobId, r.recId, "cardLast4", cardDisp)}
       <td style="padding:8px 6px" onclick="event.stopPropagation()">${rcptAttachLink(r)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   });

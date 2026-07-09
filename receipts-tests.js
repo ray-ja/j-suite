@@ -1226,6 +1226,64 @@ async function main() {
   rcptClearFilters();
   ok("filters + rcptListInner NEVER mutate data (STORE byte-identical)", JSON.stringify(STORE) === rcptSnapBefore);
 
+  console.log("\n— INLINE CLICK-TO-EDIT (rcptInlineSet): full fields rebuilt + one override → rcptApplyEdit —");
+  const inlNorm = r => { const c = Object.assign({}, r); delete c.updatedAt; delete c.ts; delete c.id; return c; };   // id preservation asserted separately; the uid counter differs between the two seeds
+  // helper: seed a review record then file it as a job-expense on j1 (a realistic filed receipt with a photo)
+  function seedFiledJobExp() {
+    resetStore();
+    const rv = rcptNewReview("bX"); Object.assign(rv, { amount: 90, vendor: "Depot", date: "2026-07-02", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", cardLast4: "4242" });
+    STORE.receipts.push(rv);
+    const f = rcptApplyEdit({ store: "review", jobId: null, recId: rv.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-02", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bX", cardLast4: "4242" });
+    return { id: rv.id, loc: f.newLoc };
+  }
+  // (A) CATEGORY change → same home (jobexp) + same id, only category changes, nothing else dropped
+  const A = seedFiledJobExp();
+  rcptInlineSet("jobexp", "j1", A.id, "category", "tools/equipment");
+  let aRec = STORE.jobs[0].expenses.find(x => x.id === A.id);
+  ok("category updated in place — same home + id", !!aRec && aRec.id === A.id && aRec.category === "tools/equipment" && !aRec.deleted, aRec);
+  ok("no id churn / one live record", STORE.jobs[0].expenses.filter(x => !x.deleted).length === 1);
+  ok("category change dropped nothing else", aRec.vendor === "Depot" && aRec.amount === 90 && aRec.desc === "gas" && aRec.cardLast4 === "4242" && aRec.attributedTo === "u_chase" && aRec.paidBy === "u_chase", aRec);
+  const aInlineJson = JSON.stringify(inlNorm(aRec));
+  // …byte-identical to the equivalent modal save (rcptApplyEdit with the fields rcptSaveEdit would gather)
+  const A2 = seedFiledJobExp();
+  rcptApplyEdit({ store: "jobexp", jobId: "j1", recId: A2.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-02", category: "tools/equipment", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bX", cardLast4: "4242", isDeposit: false, kind: "" });
+  const aModalJson = JSON.stringify(inlNorm(STORE.jobs[0].expenses.find(x => x.id === A2.id)));
+  ok("category inline edit is BYTE-IDENTICAL to the modal save", aInlineJson === aModalJson, { inline: aInlineJson, modal: aModalJson });
+
+  // (B) CARD + (C) FOR change in place — same home + id
+  const B = seedFiledJobExp();
+  rcptInlineSet("jobexp", "j1", B.id, "cardLast4", "1357");
+  let bRec = STORE.jobs[0].expenses.find(x => x.id === B.id);
+  ok("card updated in place (same home+id)", bRec && bRec.cardLast4 === "1357" && bRec.category === "fuel", bRec);
+  const C = seedFiledJobExp();
+  rcptInlineSet("jobexp", "j1", C.id, "attributedTo", "u_pierce");
+  let cRec = STORE.jobs[0].expenses.find(x => x.id === C.id);
+  ok("For (attributedTo) updated in place (same home+id)", cRec && cRec.attributedTo === "u_pierce", cRec);
+  ok("clearing the card via '' drops it in place", (function () { const Z = seedFiledJobExp(); rcptInlineSet("jobexp", "j1", Z.id, "cardLast4", ""); const z = STORE.jobs[0].expenses.find(x => x.id === Z.id); return !z.cardLast4; })());
+
+  // (D) TYPE → job-type WITH a job re-buckets into job.materials, preserving id + photo
+  resetStore();
+  const rvMat = rcptNewReview("bMat"); Object.assign(rvMat, { amount: 150, vendor: "Depot", desc: "pavers", jobId: "j1", attributedTo: "u_ray" });
+  STORE.receipts.push(rvMat);
+  rcptInlineSet("review", "j1", rvMat.id, "type", "pass-through");
+  ok("Type→pass-through WITH job re-buckets into job.materials (id+photo preserved)", STORE.jobs[0].materials.some(x => x.id === rvMat.id && x.receiptId === "bMat" && !x.deleted) && !rcptReview().some(x => x.id === rvMat.id), { mat: STORE.jobs[0].materials, rev: rcptReview() });
+
+  // (E) TYPE → job-type with NO job stays in review (rcptTargetHome behavior preserved)
+  resetStore();
+  const rvNo = rcptNewReview("bNo"); Object.assign(rvNo, { amount: 20, vendor: "Gas" });
+  STORE.receipts.push(rvNo);
+  rcptInlineSet("review", "", rvNo.id, "type", "job-expense");
+  const noRec = rcptColl().find(x => x.id === rvNo.id);
+  ok("Type→job-expense with NO job stays in review store", !!noRec && !noRec.deleted && noRec.status === "review" && noRec.type === "job-expense", noRec);
+  ok("…and is in no job array", !STORE.jobs.some(j => (j.expenses || []).concat(j.materials || []).some(x => x.id === rvNo.id && !x.deleted)));
+
+  // (F) JOB inline on a pass-through (review) row → re-buckets to job.materials
+  resetStore();
+  const rvPT = rcptNewReview("bPT"); Object.assign(rvPT, { amount: 75, vendor: "Depot", type: "pass-through" });   // pass-through, no job → lives in review
+  STORE.receipts.push(rvPT);
+  rcptInlineSet("review", "", rvPT.id, "jobId", "j2");
+  ok("Job inline on a pass-through review row → job.materials on j2 (id+photo kept)", STORE.jobs[1].materials.some(x => x.id === rvPT.id && x.receiptId === "bPT" && !x.deleted) && !rcptReview().some(x => x.id === rvPT.id), { mat: STORE.jobs[1].materials });
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
