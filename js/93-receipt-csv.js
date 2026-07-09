@@ -3,7 +3,8 @@
    parses it — one REVIEW record per line item — straight into the existing `receipts[]` review queue, where the
    owner categorizes/routes each via the normal edit/split flow. Nothing here touches a billing array, so the
    P&L / invoicing / finance fingerprints stay byte-identical until the owner files each row (mirrors the photo
-   upload path). The raw CSV is DISCARDED — records only carry {source:"csv", importId, csvFp} for dedup/undo.
+   upload path). Records carry {source:"csv", importId, csvFp} for dedup/undo, PLUS the raw CSV is stored as a
+   served blob at commit (jsUpload → csvFile, csvName) so the 📎 slot links to the SOURCE CSV (no photo exists).
 
    REUSES the dependency-free CSV toolkit in js/80-budget-csv.js (loaded before this file):
      budgetParseCSV (quotes/""/CRLF/BOM) · budgetParseDate (ISO/US/D-M-Y) · budgetParseAmount ($/parens/neg)
@@ -259,7 +260,9 @@ window.rcptCsvPick = function (input) {
 window.rcptCsvHandle = function (file) {
   if (!file) return;
   var rdr = new FileReader();
-  rdr.onload = function () { rcptCsvStart(String(rdr.result || ""), file.name || ""); };
+  // parse as TEXT (offline / file:// safe) AND stash the raw File on the session so the commit can ALSO store it
+  // as a served blob (js/27 jsUpload) — imported receipts have no photo, so the 📎 slot links to the source CSV.
+  rdr.onload = function () { rcptCsvStart(String(rdr.result || ""), file.name || ""); if (RCSV) RCSV.file = file; };
   rdr.onerror = function () { if (typeof toast === "function") toast("Could not read that CSV file."); else if (typeof alert === "function") alert("Could not read that CSV file."); };
   try { rdr.readAsText(file); } catch (e) { if (typeof alert === "function") alert("Could not read that CSV file."); }
 };
@@ -435,29 +438,89 @@ window.rcptCsvToggle = function (i) {
   if (RCSV) { var btn = document.querySelector('button[onclick="rcptCsvCommit()"]'); if (btn) { var k = RCSV.parsed.filter(function (x) { return x.keep; }).length; btn.textContent = "Import " + k + " receipt" + (k === 1 ? "" : "s") + " to review"; } }
 };
 
-/* ---------- COMMIT — push N review records (shared importId + csvFp) + ONE save ---------- */
+/* ---------- COMMIT — push N review records (shared importId + csvFp) + ONE save ----------
+   ALSO: store the raw CSV as a served blob (jsUpload → csvFile) so each imported receipt's 📎 slot links to its
+   SOURCE CSV (they have no photo). Best-effort: offline / file:// / non-server / a rejected upload just skips the
+   link — the import itself always succeeds. Re-importing the SAME file DEDUPs: a row that matches an existing
+   review receipt ATTACHES the CSV link to that record in place (csvFile/csvName ONLY — never a duplicate, never a
+   billing/amount/vendor/attribution change), so already-imported rows get their link without re-creating them. */
 window.rcptCsvCommit = function () {
   if (!RCSV || !RCSV.parsed) return;
   RCSV.parsed.forEach(function (row, i) { var cb = document.getElementById("rcsv_keep_" + i); if (cb) row.keep = cb.checked; });
   var vAll = String((document.getElementById("rcsv_vendor") || {}).value || "").trim() || RCSV.vendor || "Lowe's";
   var keep = RCSV.parsed.filter(function (row) { return row.keep; });
-  if (!keep.length) { if (typeof toast === "function") toast("Nothing selected to import."); else if (typeof alert === "function") alert("Nothing selected to import."); return; }
+  var coll = (typeof rcptColl === "function") ? rcptColl() : ((D().receipts = D().receipts || []));
+
+  // dedup-ATTACH: map each LIVE review receipt by the same dup key the preview uses, so an unkept (duplicate) row
+  // can attach its CSV link to the pre-existing record instead of silently doing nothing. Built BEFORE we push the
+  // new rows so a fresh import can't match itself.
+  var existingByKey = {};
+  coll.forEach(function (r) {
+    if (!r || r.deleted || !(+r.amount)) return;
+    var rd = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
+    var k = rcptCsvDupKey({ refNo: r.refNo, vendor: r.vendor, date: rd, amount: r.amount, cardLast4: r.cardLast4 });
+    if (!(k in existingByKey)) existingByKey[k] = r;
+  });
+  var attach = [];
+  RCSV.parsed.forEach(function (row) {
+    if (row.keep) return;   // kept rows become NEW records below
+    var ex = existingByKey[rcptCsvDupKey(row.rec)];
+    if (ex && attach.indexOf(ex) < 0) attach.push(ex);   // matched an existing review receipt → link it in place
+  });
+
+  if (!keep.length && !attach.length) { if (typeof toast === "function") toast("Nothing selected to import."); else if (typeof alert === "function") alert("Nothing selected to import."); return; }
+
   var importId = (typeof uid === "function") ? uid() : ("imp_" + Date.now());
   var t = (typeof now === "function") ? now() : Date.now();
-  var recs = keep.map(function (row) {
+  var csvName = String(RCSV.fileName || "").trim();
+  var newRecs = keep.map(function (row) {
     var r = row.rec;
     r.vendor = row.store || vAll;   // a row's own store wins; else the one Vendor-for-all
     r.importId = importId;
     r.csvFp = RCSV.fp;
+    r.source = "csv";
+    if (csvName) r.csvName = csvName;
     r.updatedAt = t;
     return r;
   });
-  var coll = (typeof rcptColl === "function") ? rcptColl() : ((D().receipts = D().receipts || []));
-  recs.forEach(function (r) { coll.push(r); });
+  newRecs.forEach(function (r) { coll.push(r); });
   if (typeof save === "function") save();
-  var n = recs.length;
+
+  // stash what the async blob-store needs, THEN clear the session
+  var csvFileObj = RCSV.file || null, csvText = RCSV.text || "";
+  var toLink = newRecs.concat(attach);   // records that get csvFile once the blob lands (new imports + dedup matches)
+  var n = newRecs.length, aN = attach.length;
   RCSV = null;
   if (typeof closeModal === "function") closeModal();
-  if (typeof toast === "function") toast("Imported " + n + " line item" + (n === 1 ? "" : "s") + " — categorize them in the review queue");
+
+  // build the upload blob: a text/csv Blob from the parsed text (robust vs. an empty-typed file), else the raw File
+  var upFile = csvFileObj;
+  try { if (typeof Blob === "function" && csvText) upFile = new Blob([csvText], { type: "text/csv" }); } catch (e) {}
+  var willLink = !!(typeof jsUpload === "function" && upFile && toLink.length);
+
+  if (typeof toast === "function") {
+    if (n && aN) toast("Imported " + n + " line item" + (n === 1 ? "" : "s") + " · linking " + aN + " existing to the CSV");
+    else if (n) toast("Imported " + n + " line item" + (n === 1 ? "" : "s") + " — categorize them in the review queue");
+    else if (willLink) toast("Linking " + aN + " already-imported receipt" + (aN === 1 ? "" : "s") + " to the source CSV…");
+    else toast("Those rows are already imported — re-import while online to add the CSV link.");
+  }
   if (typeof render === "function") render();
+
+  // ---- best-effort: store the CSV as a served blob, then link it on every new + dedup-matched record. Never throws. ----
+  if (willLink) {
+    try {
+      jsUpload(upFile).then(function (id) {
+        if (!id) return;
+        var tt = (typeof now === "function") ? now() : Date.now();
+        toLink.forEach(function (r) {
+          if (!r) return;
+          r.csvFile = id;                       // ONLY csvFile/csvName — no billing/amount/vendor/attribution change
+          if (csvName) r.csvName = csvName;
+          if (typeof touch === "function") touch(r); else r.updatedAt = tt;
+        });
+        if (typeof save === "function") save();
+        if (typeof render === "function") render();
+      }).catch(function () { /* offline / rejected → import stands, link just absent */ });
+    } catch (e) { /* never let the blob-store break a committed import */ }
+  }
 };

@@ -2229,12 +2229,14 @@ const server = http.createServer((req, res) => {
     req.on("data", c => { chunks.push(c); blen += c.length; if (blen > 16e6) req.destroy(); });
     req.on("end", () => {
       let p; try { p = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
-      const m = /^data:(image\/(?:png|jpe?g|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/.exec(String((p && p.dataUrl) || ""));
-      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image (png/jpg/webp) or pdf only"}'); }
+      // photos (png/jpg/webp/pdf) AND CSV receipt-import source files — the CSV holds card last-4s just like a
+      // receipt photo, so it lives as a gitignored served blob (never committed), the record keeps only the id.
+      const m = /^data:(image\/(?:png|jpe?g|webp)|application\/pdf|text\/csv|application\/csv|application\/vnd\.ms-excel);base64,([A-Za-z0-9+/=]+)$/.exec(String((p && p.dataUrl) || ""));
+      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image (png/jpg/webp), pdf, or csv only"}'); }
       let buf; try { buf = Buffer.from(m[2], "base64"); } catch (e) { res.writeHead(400); return res.end('{"error":"bad data"}'); }
       if (!buf.length || buf.length > 10e6) { res.writeHead(413, { "Content-Type": "application/json" }); return res.end('{"error":"file too big (max 10MB)"}'); }
       const dir = path.join(__dirname, "uploads"); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-      const id = crypto.randomBytes(12).toString("hex") + "." + (m[1] === "application/pdf" ? "pdf" : (m[1] === "image/jpeg" ? "jpg" : m[1].split("/")[1]));
+      const id = crypto.randomBytes(12).toString("hex") + "." + (m[1] === "application/pdf" ? "pdf" : (m[1] === "image/jpeg" ? "jpg" : (/csv|vnd\.ms-excel/.test(m[1]) ? "csv" : m[1].split("/")[1])));
       try { fs.writeFileSync(path.join(dir, id), buf); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id, url: "/uploads/" + id }));
     });
@@ -2252,7 +2254,7 @@ const server = http.createServer((req, res) => {
     const okFile = [path.join(__dirname,"app.css"), path.join(__dirname,"sw.js"), path.join(__dirname,"manifest.webmanifest"), path.join(__dirname,"favicon.ico"), path.join(__dirname,"availability-resolve.js")].indexOf(full) >= 0;   // root-level shared resolver loaded by the shell — MUST be served or all availability shows "unset"/gray
     if ((okDir || okFile) && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
-      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
+      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".csv": "text/csv; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
       // no-cache = the browser must revalidate before reusing, so a deploy shows up on the next load
       // (no stale code); the ETag makes unchanged files return a fast 304. Without this, browsers
       // heuristically cached old js — which is exactly why a deploy didn't update the app.
