@@ -106,6 +106,80 @@ function rcptApplyEdit(loc, fields) {
   return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: rec.id } };
 }
 
+/* ============================== ➕ ADD TO INVENTORY (tool receipt → asset) ==============================
+   A purchased durable TOOL on a receipt can become a first-class Inventory asset. ONE-TAP SUGGESTION only —
+   never automatic: the owner/admin taps "➕ Add to inventory" on a tools/equipment receipt to track it. Writes
+   the existing (already-synced) `inventory` collection + two additive link fields — receipt.inventoryItemId and
+   the item's fromReceiptId — so re-opening shows "🧰 In inventory ✓" and a second tap can never double-add.
+   Billing arrays + fingerprints are untouched (link fields are additive, read by nothing in the money math). */
+
+/* the live (non-deleted) inventory item a receipt is linked to, or null. DOM-free + safe when there's no store. */
+function rcptInvItem(id) {
+  if (!id) return null;
+  const d = (typeof D === "function") ? D() : null;
+  if (!d || !Array.isArray(d.inventory)) return null;
+  return d.inventory.find(x => x && x.id === id && !x.deleted) || null;
+}
+/* should the "➕ Add to inventory" suggestion show for this receipt? A durable tools/equipment asset, owner/admin,
+   and NOT already linked to a live inventory item (else we show the linked "🧰 In inventory ✓" state instead).
+   Pure + testable — tools/equipment ONLY (materials/disposal/fuel/subscriptions/meals stay pure expenses). */
+function rcptCanAddToInventory(rec) {
+  if (!rec) return false;
+  if (typeof rcptFinFull === "function" && !rcptFinFull()) return false;   // owner/admin gate
+  if ((rec.category || "") !== "tools/equipment") return false;            // durable tools/equipment only
+  if (rcptInvItem(rec.inventoryItemId)) return false;                      // already linked → linked state wins
+  return true;
+}
+/* PURE data op: create an `inventory` item from a receipt record + two-way link them. Matches the shape invSave
+   (js/31) produces for a hand-added item (cat "tool", have true, qty "1", string price, tags []). IDEMPOTENT —
+   if the receipt already resolves to a LIVE inventory item it returns that item without creating a duplicate
+   (created:false), so a second tap is a no-op. Returns {ok, item, created} or {ok:false,error}. */
+function rcptInvAdd(loc) {
+  const rec = rcptFindRecord(loc.store, loc.jobId, loc.recId || loc.id);
+  if (!rec) return { ok: false, error: "record not found" };
+  const existing = rcptInvItem(rec.inventoryItemId);
+  if (existing) return { ok: true, item: existing, created: false };   // dedup — never double-add
+  const d = D(); if (!Array.isArray(d.inventory)) d.inventory = [];
+  const dt = (typeof rcptDate === "function" ? rcptDate(rec) : (rec.date || "")) || (typeof today === "function" ? today() : "");
+  const name = String(rec.desc || rec.note || rec.vendor || "Tool").slice(0, 120);
+  const price = (rec.amount != null && rec.amount !== "") ? ("$" + (Math.round((+rec.amount || 0) * 100) / 100).toFixed(2)) : "";
+  const notes = "From receipt" + (rec.vendor ? " · " + rec.vendor : "") + (dt ? " · " + dt : "");
+  const item = {
+    id: "inv-c-" + ((typeof uid === "function") ? uid() : String(Date.now())),
+    name: name, cat: "tool", have: true, qty: "1", price: price, brand: "", tags: [], section: "",
+    notes: notes, fromReceiptId: rec.id, purchasedAt: dt, updatedAt: (typeof now === "function" ? now() : Date.now())
+  };
+  d.inventory.push(item);
+  if (typeof touch === "function") touch(item);
+  rec.inventoryItemId = item.id;                 // two-way link (additive) — synced via the receipt's own home
+  if (typeof rcptTouchHome === "function") rcptTouchHome(loc, rec);
+  return { ok: true, item: item, created: true };
+}
+/* the in-modal block: the "➕ Add to inventory" suggestion on a tool receipt, OR the linked "🧰 In inventory ✓"
+   chip (tap → openInvItem) once linked. Returns "" for a non-tool receipt (no clutter). */
+function rcptInvBlockHTML(rec) {
+  const linked = rcptInvItem(rec.inventoryItemId);
+  if (linked) {
+    return `<div style="margin-top:12px"><button class="btn ghost" style="width:100%;border-color:#1b7f4d;color:#1b7f4d" onclick="if(typeof openInvItem==='function')openInvItem('${esc(linked.id)}')">🧰 In inventory ✓ — ${esc(linked.name || "item")} ›</button></div>`;
+  }
+  if (rcptCanAddToInventory(rec)) {
+    return `<div style="margin-top:12px"><button class="btn ghost" style="width:100%;border-color:#1b7f4d;color:#1b7f4d" onclick="rcptAddToInventory()">➕ Add to inventory <span class="sub" style="color:var(--muted)">· track this tool as an asset</span></button></div>`;
+  }
+  return "";
+}
+/* ONE-TAP handler — create the asset, link it, save, then re-open the editor so it flips to the linked state
+   (and re-render behind so the receipts table's 🧰 chip updates). Owner/admin only. Never auto-fires. */
+window.rcptAddToInventory = function () {
+  if (!rcptFinFull() || !RCPT_EDIT) return;
+  const res = rcptInvAdd(RCPT_EDIT.loc);
+  if (!res || !res.ok) { alert("Couldn't add to inventory: " + ((res && res.error) || "unknown")); return; }
+  if (typeof logChange === "function") logChange(res.created ? "create" : "update", "inventory", res.item.id, (res.created ? "Added to inventory from receipt: " : "Already in inventory: ") + res.item.name);
+  if (typeof save === "function") save();
+  const loc = RCPT_EDIT.loc;
+  if (typeof render === "function") render();
+  rcptEditOpen(loc.store, loc.jobId, loc.recId);   // re-open → shows "🧰 In inventory ✓" instead of the button
+};
+
 /* ============================== EDIT MODAL ============================== */
 let RCPT_EDIT = null;   // {loc:{store,jobId,recId}, receiptId, suggested}
 window.rcptEditOpen = function (store, jobId, recId) {
@@ -161,6 +235,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
     <div id="rcpt_split_slot"></div>
     </details>
+    ${rcptInvBlockHTML(rec)}
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>
     <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--danger)" onclick="rcptEditMarkDup()">🔁 Mark as duplicate — delete this (other copy stays)</button>`);
   rcptEditTypeChange();
