@@ -119,7 +119,7 @@ function teamRenderDirectory() {
       <div class="row" style="align-items:center;gap:12px;cursor:pointer">
         ${teamAvatar(u, 46)}
         <div class="grow" style="min-width:0">
-          <div class="nm" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamDisplayName(u))}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}</div>
+          <div class="nm" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamDisplayName(u))}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}${(typeof cardDirChip === "function") ? cardDirChip(u.id) : ""}</div>
           <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamTitle(u))}</div>
         </div>
         ${teamQuickIcons(u)}
@@ -158,6 +158,7 @@ function teamRenderProfile(u) {
   else if (!buttons.length) h += `<div class="muted" style="margin-top:14px">No contact details yet.${teamCanEdit(u.id) ? " Tap Edit to add a phone, email, or photo." : ""}</div>`;
 
   h += `</div>`;
+  h += (typeof cardProfileSection === "function") ? cardProfileSection(u.id) : "";   // 💳 Cards — self + owner/super-admin editable (js/94)
   view.innerHTML = h;
 }
 

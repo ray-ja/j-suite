@@ -69,7 +69,8 @@ function rData(){
     <div class="card" style="border-left:4px solid var(--accent)"><div class="row" style="align-items:center"><div class="grow"><strong>🔄 Get the latest version</strong><div class="sub" style="white-space:normal">If a fix or change isn't showing up, tap this — it force-reloads the newest build (clears the app cache; your data is safe).</div></div><button class="btn acc sm" style="flex:0 0 auto" onclick="forceUpdate()">Update now</button></div></div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
-    ${(typeof myCardsCard==="function")?myCardsCard():""}
+    ${curUser()?`<h2>💳 Cards</h2>
+    <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>💳 Manage your cards on your profile</strong><div class="sub" style="white-space:normal">Your saved card last-4s now live on your <b>profile</b> in People &amp; Places — where an owner can also see whose card is whose. Only the last 4 are ever stored.</div></div><button class="btn acc sm" style="flex:0 0 auto" onclick="cardGotoMyProfile()">Open my profile</button></div></div>`:""}
     ${cfg?`<h2>Pricing rates</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Edit every rate, modifier, and minimum behind the <b>deep line-item estimators</b> — with the source of each number shown so you know what you're changing. Flows straight into the Guided Quote.</p>
       <button class="btn acc" onclick="openDeepEditor()">⚙️ Edit deep quote rates</button>

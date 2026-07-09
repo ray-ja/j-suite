@@ -405,6 +405,189 @@ function cardDbCard() {
 }
 if (typeof window !== "undefined") window.cardDbCard = cardDbCard;
 
+/* ============================== PHASE 4 — CARDS ON THE TEAM PROFILE (People & Places) ==============================
+   Card management moved off Settings onto each member's PROFILE (js/89) so an admin can SEE whose card is whose and
+   FIX it. A member manages their OWN cards (self-write rides S.users LWW — sanitizeUserWrites passes own-account
+   non-sensitive fields). A CROSS-USER write (an owner registering/reassigning someone else's card) only survives the
+   server when the writer is a VERIFIED OWNER (role==="owner", which BYPASSES sanitizeUserWrites on the /sync path) or
+   a super-admin. An admin/manager's cross-user write to u.cards would be REVERTED by sanitizeUserWrites (u.id!==selfId
+   → keep stored) — the availability-dataloss lesson — so cross-user card ops are gated to owner/super-admin exactly
+   like cardMatchSaveTo / cardDbAssign already are. Self stays open to everyone. We still store ONLY the last 4. */
+function cardUserById(userId) {
+  const users = (typeof S !== "undefined" && S && Array.isArray(S.users)) ? S.users : [];
+  return users.find(u => u && u.id === userId && !u.kind && !u.deleted) || null;
+}
+function cardIsMe(userId) { const me = (typeof curUser === "function") ? curUser() : null; return !!(me && me.id === userId); }
+// may this session write ANOTHER account's cards and have it stick server-side? verified owner or super-admin only.
+function cardCanCross() { const me = (typeof curUser === "function") ? curUser() : null; return !!(me && (me.superAdmin || ((typeof isOwner === "function") && isOwner()))); }
+// may this session add/edit/remove THIS member's cards? self (self-write always sticks) OR owner/super-admin (cross-user survives sync).
+function cardCanEditFor(userId) { return cardIsMe(userId) || cardCanCross(); }
+function cardListFor(userId) { const u = cardUserById(userId); return (u && Array.isArray(u.cards)) ? u.cards.filter(c => c && !c.deleted) : []; }
+function cardCountFor(userId) { return cardListFor(userId).length; }
+function cardSaveUser(u) { if (!u) return; if (typeof touch === "function") touch(u); if (typeof save === "function") save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); if (typeof render === "function") render(); }
+
+/* ----- ADMIN-CAPABLE ops (target a userId). Pure-ish (authz + validate + mutate + log); the UI wrappers below
+        prompt then save/render. Return {ok,...} so tests can assert without a DOM. Store ONLY last-4 always. ----- */
+function cardAddFor(userId, last4, label, kind) {
+  if (!cardCanEditFor(userId)) return { ok: false, error: "not-authorized" };
+  const u = cardUserById(userId); if (!u) return { ok: false, error: "no-user" };
+  const n = cardNorm4(last4);
+  if (!n.last4) return { ok: false, error: "bad-last4" };
+  if (!Array.isArray(u.cards)) u.cards = [];
+  if (u.cards.some(c => c && !c.deleted && cardClean4(c.last4) === n.last4)) return { ok: false, error: "dupe", last4: n.last4 };
+  const card = { id: "card_" + (typeof uid === "function" ? uid() : Date.now()), last4: n.last4, label: String(label == null ? "" : label).trim().slice(0, 40), kind: kind === "business" ? "business" : "personal", addedAt: (typeof now === "function" ? now() : Date.now()) };
+  u.cards.push(card);
+  if (typeof touch === "function") touch(u);
+  if (typeof logChange === "function") logChange("update", "account", u.id, "Added a card ••••" + n.last4 + (cardIsMe(userId) ? "" : " (admin)"));
+  return { ok: true, card: card, truncated: n.truncated, user: u };
+}
+function cardEditFor(userId, cardId, patch) {
+  if (!cardCanEditFor(userId)) return { ok: false, error: "not-authorized" };
+  const u = cardUserById(userId); if (!u) return { ok: false, error: "no-user" };
+  const c = (u.cards || []).find(x => x && x.id === cardId && !x.deleted); if (!c) return { ok: false, error: "no-card" };
+  patch = patch || {};
+  if (patch.last4 != null) { const n = cardNorm4(patch.last4); if (!n.last4) return { ok: false, error: "bad-last4" }; c.last4 = n.last4; }   // store ONLY last-4
+  if (patch.label != null) c.label = String(patch.label).trim().slice(0, 40);
+  if (patch.kind != null) c.kind = patch.kind === "business" ? "business" : "personal";
+  if (typeof touch === "function") touch(u);
+  if (typeof logChange === "function") logChange("update", "account", u.id, "Edited a card ••••" + cardClean4(c.last4) + (cardIsMe(userId) ? "" : " (admin)"));
+  return { ok: true, card: c, user: u };
+}
+function cardRemoveFor(userId, cardId) {
+  if (!cardCanEditFor(userId)) return { ok: false, error: "not-authorized" };
+  const u = cardUserById(userId); if (!u) return { ok: false, error: "no-user" };
+  const c = (u.cards || []).find(x => x && x.id === cardId); if (!c) return { ok: false, error: "no-card" };
+  c.deleted = true;   // soft-delete: the cards sub-array rides account LWW (replaced wholesale) so a tombstone is the safe signal
+  if (typeof touch === "function") touch(u);
+  if (typeof logChange === "function") logChange("delete", "account", u.id, "Removed a card ••••" + cardClean4(c.last4) + (cardIsMe(userId) ? "" : " (admin)"));
+  return { ok: true, user: u };
+}
+/* Move a card from one member to another — OWNER/super-admin only (both records are cross-user, only a verified
+   owner's write survives sanitizeUserWrites). Soft-delete on the source, add an equivalent (last4/label/kind kept,
+   fresh id/addedAt) on the target; dedupe so a re-parent onto an owner-of-that-card is a no-add. */
+function cardReassign(fromUserId, cardId, toUserId) {
+  if (!cardCanCross()) return { ok: false, error: "not-authorized" };
+  if (fromUserId === toUserId) return { ok: false, error: "same-user" };
+  const from = cardUserById(fromUserId), to = cardUserById(toUserId);
+  if (!from || !to) return { ok: false, error: "no-user" };
+  const c = (from.cards || []).find(x => x && x.id === cardId && !x.deleted); if (!c) return { ok: false, error: "no-card" };
+  const n = cardNorm4(c.last4);
+  if (!Array.isArray(to.cards)) to.cards = [];
+  c.deleted = true;
+  let moved = null;
+  if (!to.cards.some(x => x && !x.deleted && cardClean4(x.last4) === n.last4)) {
+    moved = { id: "card_" + (typeof uid === "function" ? uid() : Date.now()), last4: n.last4, label: c.label || "", kind: c.kind === "business" ? "business" : "personal", addedAt: (typeof now === "function" ? now() : Date.now()) };
+    to.cards.push(moved);
+  }
+  if (typeof touch === "function") { touch(from); touch(to); }
+  if (typeof logChange === "function") logChange("update", "account", to.id, "Reassigned card ••••" + n.last4 + " from " + (from.username || from.id) + " to " + (to.username || to.id));
+  return { ok: true, from: from, to: to, moved: moved };
+}
+
+/* ----- UI wrappers (prompt/confirm → op → save/render) ----- */
+window.cardAddForPrompt = function (userId) {
+  if (!cardCanEditFor(userId)) { alert(cardIsMe(userId) ? "Sign in to save your cards." : "Only an owner can add a card to someone else's profile."); return; }
+  const raw = prompt("Last 4 digits of the card:"); if (raw == null) return;
+  const n = cardNorm4(raw);
+  if (!n.last4) { alert("Enter the last 4 digits (numbers only)."); return; }
+  const label = prompt("A label for this card (optional, e.g. “Visa”):"); if (label == null) return;
+  const res = cardAddFor(userId, n.last4, label, "personal");
+  if (!res.ok) {
+    if (res.error === "dupe") alert("••••" + res.last4 + " is already saved.");
+    else if (res.error === "not-authorized") alert("Only an owner can add a card to someone else's profile.");
+    else alert("Couldn't add that card.");
+    return;
+  }
+  if (res.truncated) alert("We store only the last 4 digits — saved ••••" + res.card.last4 + ".");
+  cardSaveUser(res.user);
+};
+window.cardEditForPrompt = function (userId, cardId) {
+  if (!cardCanEditFor(userId)) { alert("Only an owner can edit someone else's cards."); return; }
+  const u = cardUserById(userId); if (!u) return;
+  const c = (u.cards || []).find(x => x && x.id === cardId && !x.deleted); if (!c) return;
+  const raw = prompt("Last 4 digits:", cardClean4(c.last4)); if (raw == null) return;
+  const n = cardNorm4(raw); if (!n.last4) { alert("Enter the last 4 digits (numbers only)."); return; }
+  const label = prompt("Label (optional):", c.label || ""); if (label == null) return;
+  const res = cardEditFor(userId, cardId, { last4: n.last4, label: label });
+  if (!res.ok) { alert("Couldn't save that card."); return; }
+  if (n.truncated) alert("We store only the last 4 digits — saved ••••" + n.last4 + ".");
+  cardSaveUser(res.user);
+};
+window.cardRemoveForPrompt = function (userId, cardId) {
+  if (!cardCanEditFor(userId)) { alert("Only an owner can remove someone else's cards."); return; }
+  const u = cardUserById(userId); if (!u) return;
+  const c = (u.cards || []).find(x => x && x.id === cardId); if (!c) return;
+  const whose = cardIsMe(userId) ? "your profile" : (u.username || u.name || "this profile");
+  if (!confirm("Remove card ••••" + cardClean4(c.last4) + " from " + whose + "? Receipts already filed keep who they were attributed to.")) return;
+  const res = cardRemoveFor(userId, cardId);
+  if (!res.ok) { alert("Couldn't remove that card."); return; }
+  cardSaveUser(res.user);
+};
+window.cardReassignPrompt = function (fromUserId, cardId) {
+  if (!cardCanCross()) { alert("Only an owner can reassign a card to another person."); return; }
+  const from = cardUserById(fromUserId); if (!from) return;
+  const c = (from.cards || []).find(x => x && x.id === cardId && !x.deleted); if (!c) return;
+  const members = (typeof teamMembers === "function") ? teamMembers() : ((typeof S !== "undefined" && S && Array.isArray(S.users)) ? S.users.filter(u => u && !u.kind && !u.deleted) : []);
+  const list = members.filter(u => u && u.id && u.id !== fromUserId);
+  if (!list.length) { alert("No other team member to reassign to."); return; }
+  const who = prompt("Reassign ••••" + cardClean4(c.last4) + " (now " + (from.username || from.name || "?") + ") to which person? Type their name:\n" + list.map(u => "· " + (u.username || u.name || u.id)).join("\n"));
+  if (who == null) return;
+  const q = String(who).trim().toLowerCase();
+  const to = list.find(u => String(u.username || u.name || "").toLowerCase() === q) || list.find(u => String(u.username || u.name || "").toLowerCase().indexOf(q) >= 0) || null;
+  if (!to) { alert("No team member matched “" + who + "”."); return; }
+  if (!confirm("Move ••••" + cardClean4(c.last4) + " from " + (from.username || from.name) + " to " + (to.username || to.name) + "?")) return;
+  const res = cardReassign(fromUserId, cardId, to.id);
+  if (!res.ok) { alert("Couldn't reassign that card."); return; }
+  cardSaveUser(res.to);
+};
+
+/* The 💳 Cards section for a member's PROFILE (mounted by js/89 teamRenderProfile). Shows THAT member's saved
+   cards (last-4 only); add/edit/remove/reassign controls appear only when the session may write them. A crew
+   member viewing a peer sees the list read-only (last-4s are not a secret). Never throws. */
+function cardProfileSection(userId) {
+  try {
+    const u = cardUserById(userId); if (!u) return "";
+    const nm = esc(u.name || u.username || "this person");
+    const cards = cardListFor(userId);
+    const canEdit = cardCanEditFor(userId);
+    const cross = cardCanCross();
+    const kindTag = c => (c.kind === "business" ? "business" : "personal");
+    const row = c => `<div class="row" style="align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;flex-wrap:wrap">
+        <span class="grow" style="min-width:120px">💳 <b>••••${esc(cardClean4(c.last4))}</b>${c.label ? ` <span class="sub">· ${esc(c.label)}</span>` : ""} <span class="sub">· ${kindTag(c)}</span></span>`
+      + (canEdit ? `<button class="btn ghost sm" onclick="cardEditForPrompt('${esc(userId)}','${esc(c.id)}')">Edit</button>`
+          + (cross ? `<button class="btn ghost sm" onclick="cardReassignPrompt('${esc(userId)}','${esc(c.id)}')">Reassign</button>` : "")
+          + `<button class="btn danger sm" onclick="cardRemoveForPrompt('${esc(userId)}','${esc(c.id)}')">✕</button>` : "")
+      + `</div>`;
+    let h = `<div class="card" style="text-align:left"><div class="nm" style="font-size:15px">💳 Cards</div>
+      <div class="sub" style="margin-bottom:8px;white-space:normal">Last 4 digits of the card(s) ${cardIsMe(userId) ? "you buy with" : nm + " buys with"} — a receipt showing these digits auto-attributes to ${cardIsMe(userId) ? "you" : nm} (personal = reimburse). <b>Only the last 4 are stored.</b></div>`;
+    if (!cards.length) h += `<div class="muted" style="margin:0 0 ${canEdit ? "8px" : "0"}">No cards saved for ${nm} yet.</div>`;
+    else h += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:${canEdit ? "8px" : "0"}">` + cards.map(row).join("") + `</div>`;
+    if (canEdit) h += `<button class="btn acc sm" onclick="cardAddForPrompt('${esc(userId)}')">+ Add a card</button>`;
+    h += `</div>`;
+    return h;
+  } catch (e) { return ""; }
+}
+if (typeof window !== "undefined") window.cardProfileSection = cardProfileSection;
+
+/* Small "💳 N" chip for a team-directory row — how many cards this member has registered (0 → nothing). */
+function cardDirChip(userId) {
+  try { const n = cardCountFor(userId); return n ? ` <span class="badge" style="background:var(--soft);color:var(--muted)" title="${n} card${n === 1 ? "" : "s"} registered">💳 ${n}</span>` : ""; } catch (e) { return ""; }
+}
+if (typeof window !== "undefined") window.cardDirChip = cardDirChip;
+
+/* Settings pointer target — jump to the signed-in user's own profile in People & Places. */
+window.cardGotoMyProfile = function () {
+  const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;
+  window.TEAM_OPEN = me.id;
+  if (typeof navSub === "function") { navSub("team"); return; }
+  try { TAB = "team"; } catch (e) {}
+  if (typeof render === "function") render();
+};
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { cardOwner: cardOwner, cardNorm4: cardNorm4, cardClean4: cardClean4, cardIsValid4: cardIsValid4, unassignedCards: unassignedCards };
+  module.exports = {
+    cardOwner: cardOwner, cardNorm4: cardNorm4, cardClean4: cardClean4, cardIsValid4: cardIsValid4, unassignedCards: unassignedCards,
+    cardUserById: cardUserById, cardListFor: cardListFor, cardCountFor: cardCountFor, cardCanEditFor: cardCanEditFor, cardCanCross: cardCanCross,
+    cardAddFor: cardAddFor, cardEditFor: cardEditFor, cardRemoveFor: cardRemoveFor, cardReassign: cardReassign, cardProfileSection: cardProfileSection, cardDirChip: cardDirChip
+  };
 }
