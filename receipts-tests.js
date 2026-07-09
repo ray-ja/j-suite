@@ -1083,6 +1083,43 @@ async function main() {
   const tblLow = rcptTableHTML(rcptAllRows(), {});
   ok("table shows NO 'file it' button on a LOW-confidence row", !/rcptFileItRow\(/.test(tblLow));
 
+  console.log("\n— MEALS category: allowed in RCPT_CATS + files as a business expense (never billed to a customer) —");
+  ok("'meals' is in RCPT_CATS (Cap can classify it)", (capRcptCtx().cats || []).indexOf("meals") >= 0);
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  const mealRev = seedReview({ receiptId: "blobMeal", amount: 42.5, vendor: "Cookout", desc: "crew lunch" });
+  const mealRes = rcptApplyEdit({ store: "review", jobId: null, recId: mealRev.id }, { type: "business", jobId: null, amount: 42.5, vendor: "Cookout", date: "2026-07-01", category: "meals", desc: "crew lunch", receiptId: "blobMeal" });
+  ok("meals receipt files into org expenses[] (business)", mealRes.ok && mealRes.newLoc.store === "biz");
+  const mealFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobMeal");
+  ok("filed meals record keeps category 'meals'", !!mealFiled && mealFiled.category === "meals", mealFiled && mealFiled.category);
+  ok("meals record lands in NO job's materials/expenses (not billed to a customer)", STORE.jobs.every(j => !(j.materials || []).concat(j.expenses || []).some(e => e && e.receiptId === "blobMeal")));
+
+  console.log("— PASTE FROM CLIPBOARD: image clipboard → an uploadable File; non-image → nothing —");
+  const pf = rcptImageBlobToFile({ type: "image/png" }, 1700000000000);
+  ok("image blob → a File-shaped object rcptUploadFiles accepts", !!pf && rcptIsReceipt(pf), pf && pf.type);
+  ok("pasted file name uses the pasted-<ts> convention + image ext", !!pf && /^pasted-1700000000000\.png$/.test(pf.name), pf && pf.name);
+  ok("non-image clipboard blob → null (no upload)", rcptImageBlobToFile({ type: "text/plain" }, 1) === null);
+  ok("empty/missing blob → null (no upload)", rcptImageBlobToFile(null, 1) === null);
+  // paste-EVENT path: a Ctrl+V with an image item on the Receipts tab uploads through the shared pipeline
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  global.TAB = "receipts";
+  global.jsUpload = function () { return Promise.resolve("blob_paste_" + (++_n)); };
+  let prevented = false;
+  rcptOnPaste({ preventDefault: function () { prevented = true; }, clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: function () { return { type: "image/png" }; } }] } });
+  await new Promise(r => setTimeout(r, 30));
+  ok("Ctrl+V image on Receipts tab creates a review receipt", rcptReview().length === 1, rcptReview().length);
+  ok("Ctrl+V with an image calls preventDefault", prevented === true);
+  // a non-image paste (or the wrong tab) must NOT upload or preventDefault
+  resetStore(); OPEN_SHIFT = null;
+  let prevented2 = false;
+  rcptOnPaste({ preventDefault: function () { prevented2 = true; }, clipboardData: { items: [{ kind: "string", type: "text/plain", getAsFile: function () { return null; } }] } });
+  await new Promise(r => setTimeout(r, 10));
+  ok("non-image paste → no upload, no preventDefault", rcptReview().length === 0 && prevented2 === false);
+  global.TAB = "today";
+  let prevented3 = false;
+  rcptOnPaste({ preventDefault: function () { prevented3 = true; }, clipboardData: { items: [{ kind: "file", type: "image/png", getAsFile: function () { return { type: "image/png" }; } }] } });
+  await new Promise(r => setTimeout(r, 10));
+  ok("image paste OFF the Receipts tab is ignored (no upload)", rcptReview().length === 0 && prevented3 === false);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
