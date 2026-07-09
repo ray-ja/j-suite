@@ -19,17 +19,20 @@ const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals"
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed | owed | paidback (status pills)
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
-// DISPLAY-ONLY search + filters (mirror the Jobs list js/08). All default "" (no filter); survive re-render so
-// they persist across sort/status-pill taps. Applied in rcptSortedRows() AFTER the status pill, BEFORE sort.
-// NO data/schema/billing effect — they only narrow which existing rows the table shows (fingerprints unchanged).
-let RCPT_SEARCH = "";     // free-text substring over vendor/desc/amount/category/card/job/customer/person
-let RCPT_TYPEF = "";      // "" | review | business | job-expense | pass-through  (via rcptRowMeta().type)
-let RCPT_CATF = "";       // "" | a category (r.category)
-let RCPT_PERSONF = "";    // "" | a userId — matches uploadedBy OR attributedTo
-let RCPT_JOBF = "";       // "" | a jobId (r.jobId)
-let RCPT_CARDF = "";      // "" | a card last-4 (rcptCard4(r.cardLast4))
-let RCPT_DFROM = "";      // "" | YYYY-MM-DD (rcptDate(r) >= from)
-let RCPT_DTO = "";        // "" | YYYY-MM-DD (rcptDate(r) <= to)
+// DISPLAY-ONLY search + filters (mirror the Jobs list js/08). Survive re-render so they persist across sort/
+// status-pill taps. Applied in rcptSortedRows() AFTER the status pill, BEFORE sort. NO data/schema/billing
+// effect — they only narrow which existing rows the table shows (fingerprints unchanged).
+// The five value filters are MULTI-SELECT: each is an ARRAY of chosen values (checkboxes). Empty array = that
+// filter is OFF (show all). Semantics: OR within one filter (a row passes if its value is IN that filter's
+// set), AND across filters (a row must pass every non-empty filter). Search + date range stay single-value.
+let RCPT_SEARCH = "";       // free-text substring over vendor/desc/amount/category/card/job/customer/person
+let RCPT_TYPEFS = [];       // [] | selected of review|business|job-expense|pass-through  (via rcptRowMeta().type)
+let RCPT_CATFS = [];        // [] | selected categories (r.category)
+let RCPT_PERSONFS = [];     // [] | selected userIds — a row matches if uploadedBy OR attributedTo is any selected
+let RCPT_JOBFS = [];        // [] | selected jobIds (r.jobId)
+let RCPT_CARDFS = [];       // [] | selected card last-4s (rcptCard4(r.cardLast4))
+let RCPT_DFROM = "";        // "" | YYYY-MM-DD (rcptDate(r) >= from)
+let RCPT_DTO = "";          // "" | YYYY-MM-DD (rcptDate(r) <= to)
 let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
@@ -494,22 +497,24 @@ function rcptRowSearchText(r) {
   return [r.vendor, r.desc, r.note, (r.amount == null || r.amount === "") ? "" : r.amount, r.category, r.cardLast4, m.jobLabel, m.cust, m.uploader, m.forName]
     .map(x => String(x == null ? "" : x)).join(" ").toLowerCase();
 }
-/* is ANY display-only search/filter set? (drives the "showing N of M" line + the Clear-filters button) */
-function rcptAnyFilterActive() { return !!(RCPT_SEARCH || RCPT_TYPEF || RCPT_CATF || RCPT_PERSONF || RCPT_JOBF || RCPT_CARDF || RCPT_DFROM || RCPT_DTO); }
+/* is ANY display-only search/filter set? (drives the "showing N of M" line + the Clear-filters button).
+   A multi-select filter is "active" when its array is non-empty. */
+function rcptAnyFilterActive() { return !!(RCPT_SEARCH || RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_JOBFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO); }
 function rcptSortedRows() {
   let rows = rcptAllRows();
   if (RCPT_FILTER === "review") rows = rows.filter(r => r.store === "review");
   else if (RCPT_FILTER === "filed") rows = rows.filter(r => r.store !== "review");
   else if (RCPT_FILTER === "owed") rows = rows.filter(r => r.paidBy && !r.reimbursedAt);        // personal-card, not yet reimbursed
   else if (RCPT_FILTER === "paidback") rows = rows.filter(r => r.paidBy && r.reimbursedAt);      // reimbursed / settled
-  // DISPLAY-ONLY search + dropdown filters (after the status pill, before sort). Each applies ONLY when set; they
-  // AND together. Mirrors the Jobs list (js/08 quotesListHTML) — narrows the view, never touches the records.
+  // DISPLAY-ONLY search + MULTI-SELECT filters (after the status pill, before sort). Each non-empty filter applies;
+  // OR within a filter (value ∈ its set), AND across filters. Mirrors the Jobs list (js/08 quotesListHTML) —
+  // narrows the view, never touches the records.
   if (RCPT_SEARCH) { const q = RCPT_SEARCH.toLowerCase(); rows = rows.filter(r => rcptRowSearchText(r).includes(q)); }
-  if (RCPT_TYPEF) rows = rows.filter(r => rcptRowMeta(r).type === RCPT_TYPEF);
-  if (RCPT_CATF) rows = rows.filter(r => (r.category || "") === RCPT_CATF);
-  if (RCPT_PERSONF) rows = rows.filter(r => r.uploadedBy === RCPT_PERSONF || r.attributedTo === RCPT_PERSONF);
-  if (RCPT_JOBF) rows = rows.filter(r => r.jobId === RCPT_JOBF);
-  if (RCPT_CARDF) rows = rows.filter(r => rcptCard4(r.cardLast4) === RCPT_CARDF);
+  if (RCPT_TYPEFS.length) rows = rows.filter(r => RCPT_TYPEFS.indexOf(rcptRowMeta(r).type) >= 0);
+  if (RCPT_CATFS.length) rows = rows.filter(r => RCPT_CATFS.indexOf(r.category || "") >= 0);
+  if (RCPT_PERSONFS.length) rows = rows.filter(r => RCPT_PERSONFS.indexOf(r.uploadedBy) >= 0 || RCPT_PERSONFS.indexOf(r.attributedTo) >= 0);
+  if (RCPT_JOBFS.length) rows = rows.filter(r => RCPT_JOBFS.indexOf(r.jobId) >= 0);
+  if (RCPT_CARDFS.length) rows = rows.filter(r => RCPT_CARDFS.indexOf(rcptCard4(r.cardLast4)) >= 0);
   if (RCPT_DFROM) rows = rows.filter(r => rcptDate(r) >= RCPT_DFROM);
   if (RCPT_DTO) rows = rows.filter(r => rcptDate(r) <= RCPT_DTO);
   return rows.sort(rcptSortCmp);
@@ -537,19 +542,42 @@ window.rcptSetFilter = function (f) { RCPT_FILTER = f; render(); };
 /* SEARCH — scoped repaint of #rcptlist ONLY, so the #rcptsearch input is never destroyed (focus + caret survive
    with no setSelectionRange hack — exactly like qSearchOn/#qlist in js/08). */
 window.rcptSetSearch = function (v) { RCPT_SEARCH = v; rcptRepaintList(); };
-/* Dropdown / date filters — each lives in the Filters panel OUTSIDE #rcptlist, so a scoped repaint is safe + snappy
-   (mirrors qTypeFilter/qDateFrom in js/08). The panel's "· on" summary + Clear button refresh on the next full
-   render; the native <select>/<input> keep their chosen value in place meanwhile. */
-window.rcptSetTypeF = function (v) { RCPT_TYPEF = v; rcptRepaintList(); };
-window.rcptSetCatF = function (v) { RCPT_CATF = v; rcptRepaintList(); };
-window.rcptSetPersonF = function (v) { RCPT_PERSONF = v; rcptRepaintList(); };
-window.rcptSetJobF = function (v) { RCPT_JOBF = v; rcptRepaintList(); };
-window.rcptSetCardF = function (v) { RCPT_CARDF = v; rcptRepaintList(); };
+/* MULTI-SELECT toggle handlers — a checkbox flips its value in/out of the filter's array, then scoped-repaints
+   #rcptlist ONLY (the Filters panel lives OUTSIDE #rcptlist, so the checkbox keeps its state meanwhile; the panel's
+   "· on" summary + Clear button + the "(N)" counts refresh on the next full render). Mirrors the old dropdown
+   scoped path. Toggling is by value (the checkbox's own value attr), so no order/index bookkeeping. */
+function rcptToggleF(arr, v) { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); }
+window.rcptToggleTypeF = function (v) { rcptToggleF(RCPT_TYPEFS, v); rcptRepaintList(); };
+window.rcptToggleCatF = function (v) { rcptToggleF(RCPT_CATFS, v); rcptRepaintList(); };
+window.rcptTogglePersonF = function (v) { rcptToggleF(RCPT_PERSONFS, v); rcptRepaintList(); };
+window.rcptToggleJobF = function (v) { rcptToggleF(RCPT_JOBFS, v); rcptRepaintList(); };
+window.rcptToggleCardF = function (v) { rcptToggleF(RCPT_CARDFS, v); rcptRepaintList(); };
 window.rcptSetDateF = function (which, v) { if (which === "from") RCPT_DFROM = v; else RCPT_DTO = v; rcptRepaintList(); };
 /* Clear ALL display-only search + filters (leave the status pill as-is, like js/08 which keeps the stage chip).
-   Full render so the panel inputs + summary reset to empty too. */
-window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEF = ""; RCPT_CATF = ""; RCPT_PERSONF = ""; RCPT_JOBF = ""; RCPT_CARDF = ""; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
+   Empties every multi-select set. Full render so the panel checkboxes + summary reset to empty too. */
+window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEFS = []; RCPT_CATFS = []; RCPT_PERSONFS = []; RCPT_JOBFS = []; RCPT_CARDFS = []; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
 function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === "asc" ? " ▲" : " ▼") : ""; }
+
+/* MULTI-SELECT checkbox group (mobile-first) — one wrapping row of tappable checkbox "chips", one per real value.
+   `opts` = [{v,label}] (populated from the actual rows, exactly like the old dropdown options); `selected` = the
+   filter's current array; `handler` = the window toggle fn name (called with this.value, so no JS-string escaping
+   of values — the value rides the checkbox's own `value` attr, HTML-escaped). A checked chip = value in the set.
+   The header shows a "(N)" count when any are checked. `scroll` caps tall groups (Job) at a scrollable height.
+   Returns "" when there are no options, so an empty group hides itself. */
+function rcptChkGroup(label, selected, opts, handler, scroll) {
+  if (!opts || !opts.length) return "";
+  const n = selected.length;
+  const chips = opts.map(function (o) {
+    const on = selected.indexOf(o.v) >= 0;
+    return `<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:16px;`
+      + `border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent)" : "var(--soft)"};`
+      + `color:${on ? "#fff" : "inherit"};font-size:13px;cursor:pointer;white-space:nowrap;user-select:none">`
+      + `<input type="checkbox" value="${esc(o.v)}"${on ? " checked" : ""} onchange="${handler}(this.value)" style="margin:0;accent-color:var(--accent)">`
+      + `${esc(o.label)}</label>`;
+  }).join("");
+  return `<div style="margin-top:10px"><label>${esc(label)}${n ? ` <span class="badge" style="background:var(--accent);color:#fff">${n}</span>` : ""}</label>`
+    + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px${scroll ? ";max-height:168px;overflow-y:auto;padding:2px" : ""}">${chips}</div></div>`;
+}
 
 /* ============================== PAGE ============================== */
 function rReceipts() {
@@ -611,8 +639,9 @@ function rReceipts() {
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
-  // COLLAPSIBLE ⚙️ Filters — dropdowns populated from the ACTUAL rows so only real values show (mobile-first: each
-  // control is full-width and stacks). Lives OUTSIDE #rcptlist so the scoped repaint never destroys its inputs.
+  // COLLAPSIBLE ⚙️ Filters — MULTI-SELECT checkbox groups populated from the ACTUAL rows so only real values show
+  // (mobile-first: chips wrap; the Job group scrolls). OR within a group, AND across groups. Lives OUTSIDE #rcptlist
+  // so the scoped repaint never destroys the checkboxes; the panel's "(N)" counts + summary refresh on full render.
   {
     const allRows = rcptAllRows();
     const typeOrder = ["review", "business", "job-expense", "pass-through"];
@@ -625,15 +654,15 @@ function rReceipts() {
       .map(id => { const j = (D().jobs || []).find(x => x && x.id === id); return { id: id, label: j ? ((j.title || "Job") + ((j.customerId && typeof custName === "function") ? " · " + custName(j.customerId) : "")) : id }; })
       .sort((a, b) => String(a.label).localeCompare(String(b.label)));
     const cards = Array.from(new Set(allRows.map(r => rcptCard4(r.cardLast4)).filter(Boolean))).sort();
-    const anyExtra = !!(RCPT_TYPEF || RCPT_CATF || RCPT_PERSONF || RCPT_JOBF || RCPT_CARDF || RCPT_DFROM || RCPT_DTO);
+    const anyExtra = !!(RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_JOBFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO);
     h += `<details class="card" style="margin-bottom:10px"${anyExtra ? " open" : ""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyExtra ? " · on" : ""}</summary>`
-      + `<label style="margin-top:8px">Type</label><select onchange="rcptSetTypeF(this.value)" style="font-size:13px;width:100%"><option value="">All types</option>${typesPresent.map(t => `<option value="${esc(t)}"${RCPT_TYPEF === t ? " selected" : ""}>${esc(RCPT_TYPE_LABEL[t] || t)}</option>`).join("")}</select>`
-      + `<label style="margin-top:8px">Category</label><select onchange="rcptSetCatF(this.value)" style="font-size:13px;width:100%"><option value="">All categories</option>${catOpts.map(c => `<option value="${esc(c)}"${RCPT_CATF === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`
-      + `<label style="margin-top:8px">Person</label><select onchange="rcptSetPersonF(this.value)" style="font-size:13px;width:100%"><option value="">Anyone</option>${persons.map(p => `<option value="${esc(p.id)}"${RCPT_PERSONF === p.id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
-      + `<label style="margin-top:8px">Job</label><select onchange="rcptSetJobF(this.value)" style="font-size:13px;width:100%"><option value="">All jobs</option>${jobsF.map(j => `<option value="${esc(j.id)}"${RCPT_JOBF === j.id ? " selected" : ""}>${esc(j.label)}</option>`).join("")}</select>`
-      + `<label style="margin-top:8px">💳 Card</label><select onchange="rcptSetCardF(this.value)" style="font-size:13px;width:100%"><option value="">Any card</option>${cards.map(c => `<option value="${esc(c)}"${RCPT_CARDF === c ? " selected" : ""}>••••${esc(c)}</option>`).join("")}</select>`
-      + `<div class="row" style="gap:8px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
-      + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:8px" onclick="rcptClearFilters()">Clear filters</button>` : "")
+      + rcptChkGroup("Type", RCPT_TYPEFS, typesPresent.map(t => ({ v: t, label: RCPT_TYPE_LABEL[t] || t })), "rcptToggleTypeF")
+      + rcptChkGroup("Category", RCPT_CATFS, catOpts.map(c => ({ v: c, label: c })), "rcptToggleCatF")
+      + rcptChkGroup("Person", RCPT_PERSONFS, persons.map(p => ({ v: p.id, label: p.name })), "rcptTogglePersonF")
+      + rcptChkGroup("Job", RCPT_JOBFS, jobsF.map(j => ({ v: j.id, label: j.label })), "rcptToggleJobF", true)
+      + rcptChkGroup("💳 Card", RCPT_CARDFS, cards.map(c => ({ v: c, label: "••••" + c })), "rcptToggleCardF")
+      + `<div class="row" style="gap:8px;margin-top:10px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
+      + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:10px" onclick="rcptClearFilters()">Clear filters</button>` : "")
       + `</details>`;
   }
 

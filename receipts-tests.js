@@ -1121,9 +1121,9 @@ async function main() {
   ok("image paste OFF the Receipts tab is ignored (no upload)", rcptReview().length === 0 && prevented3 === false);
 
   // ========================= SEARCH + FILTER (display-only) =========================
-  // rcptSortedRows() honors RCPT_SEARCH + each dropdown filter + the date range, they AND together, Clear resets,
-  // a no-match yields 0 rows, and NONE of them mutate the underlying data (it's a view narrower only).
-  console.log("\n— SEARCH + FILTER: rcptSortedRows honors search, each dropdown, date range, combine + clear —");
+  // rcptSortedRows() honors RCPT_SEARCH + each MULTI-SELECT filter (OR within, AND across) + the date range,
+  // Clear resets, a no-match yields 0 rows, and NONE of them mutate the underlying data (a view narrower only).
+  console.log("\n— SEARCH + MULTI-FILTER: rcptSortedRows honors search, each multi-select (OR/AND), date range, combine + clear —");
   resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
   global.render = function () {};
   // NOTE: the RCPT_* filter state are eval-scoped `let`s (like RCPT_FILTER) — drive them through the window
@@ -1156,26 +1156,38 @@ async function main() {
   rcptClearFilters(); rcptSetSearch("LOWES");
   ok("search is case-insensitive (s2)", ids() === "s2", ids());
 
-  // TYPE
-  rcptClearFilters(); rcptSetTypeF("pass-through");
+  // TYPE — single value (checkbox toggle) + MULTI-SELECT (OR within the filter)
+  rcptClearFilters(); rcptToggleTypeF("pass-through");
   ok("type filter pass-through → s1", ids() === "s1", ids());
-  rcptClearFilters(); rcptSetTypeF("job-expense");
+  rcptClearFilters(); rcptToggleTypeF("job-expense");
   ok("type filter job-expense → s3", ids() === "s3", ids());
-  // CATEGORY
-  rcptClearFilters(); rcptSetCatF("tools/equipment");
+  rcptClearFilters(); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense");
+  ok("MULTI type pass-through OR job-expense → s1,s3", ids() === "s1,s3", ids());
+  rcptClearFilters(); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleTypeF("pass-through");
+  ok("toggling a type OFF again removes it (job-expense only → s3)", ids() === "s3", ids());
+  // CATEGORY — single + MULTI (union)
+  rcptClearFilters(); rcptToggleCatF("tools/equipment");
   ok("category filter → s2", ids() === "s2", ids());
-  // PERSON (uploader OR attributedTo)
-  rcptClearFilters(); rcptSetPersonF("u_chase");
+  rcptClearFilters(); rcptToggleCatF("materials"); rcptToggleCatF("fuel");
+  ok("MULTI category materials OR fuel → union s1,s3", ids() === "s1,s3", ids());
+  // PERSON (uploader OR attributedTo) — single + MULTI (union)
+  rcptClearFilters(); rcptTogglePersonF("u_chase");
   ok("person filter matches uploader OR attributedTo (s1,s2)", ids() === "s1,s2", ids());
-  rcptClearFilters(); rcptSetPersonF("u_pierce");
+  rcptClearFilters(); rcptTogglePersonF("u_pierce");
   ok("person filter (s3)", ids() === "s3", ids());
-  // JOB
-  rcptClearFilters(); rcptSetJobF("j2");
+  rcptClearFilters(); rcptTogglePersonF("u_pierce"); rcptTogglePersonF("u_ray");
+  ok("MULTI person u_pierce OR u_ray → union s1,s3 (s1 uploaded by u_ray)", ids() === "s1,s3", ids());
+  // JOB — single + MULTI (union)
+  rcptClearFilters(); rcptToggleJobF("j2");
   ok("job filter → s2", ids() === "s2", ids());
-  // CARD
-  rcptClearFilters(); rcptSetCardF("1234");
+  rcptClearFilters(); rcptToggleJobF("j1"); rcptToggleJobF("j2");
+  ok("MULTI job j1 OR j2 → union s1,s2", ids() === "s1,s2", ids());
+  // CARD — single + MULTI (union)
+  rcptClearFilters(); rcptToggleCardF("1234");
   ok("card filter → s1,s3", ids() === "s1,s3", ids());
-  // DATE RANGE
+  rcptClearFilters(); rcptToggleCardF("1234"); rcptToggleCardF("9999");
+  ok("MULTI card 1234 OR 9999 → union s1,s2,s3", ids() === "s1,s2,s3", ids());
+  // DATE RANGE (unchanged — single value)
   rcptClearFilters(); rcptSetDateF("from", "2026-06-05"); rcptSetDateF("to", "2026-06-15");
   ok("date range 06-05..06-15 → s2", ids() === "s2", ids());
   rcptClearFilters(); rcptSetDateF("from", "2026-06-15");
@@ -1183,24 +1195,33 @@ async function main() {
   rcptClearFilters(); rcptSetDateF("to", "2026-06-05");
   ok("date to only → s1", ids() === "s1", ids());
 
-  // COMBINED (AND)
-  rcptClearFilters(); rcptSetCardF("1234"); rcptSetSearch("home");
+  // COMBINED — OR within a filter, AND across filters
+  rcptClearFilters(); rcptToggleCardF("1234"); rcptSetSearch("home");
   ok("combined card+search AND → s1", ids() === "s1", ids());
-  rcptClearFilters(); rcptSetTypeF("business"); rcptSetJobF("j1");
+  rcptClearFilters(); rcptToggleTypeF("business"); rcptToggleJobF("j1");
   ok("combined type+job with no overlap → 0 rows", rcptSortedRows().length === 0, ids());
+  // MULTI type OR'd, then AND'd with a card filter: {s1,s3} ∩ {card 1234 → s1,s3} = s1,s3
+  rcptClearFilters(); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleCardF("1234");
+  ok("MULTI type (s1,s3) AND card 1234 (s1,s3) → s1,s3", ids() === "s1,s3", ids());
+  // {type multi s1,s3} ∩ {category materials → s1} = s1 (proves AND narrows the OR'd set)
+  rcptClearFilters(); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleCatF("materials");
+  ok("MULTI type (s1,s3) AND category materials (s1) → s1", ids() === "s1", ids());
   // NO MATCH
   rcptClearFilters(); rcptSetSearch("zzznope");
   ok("no-match search → 0 rows", rcptSortedRows().length === 0, ids());
+  // EMPTY set = filter OFF (toggling a value on then off leaves the full list)
+  rcptClearFilters(); rcptToggleTypeF("business"); rcptToggleTypeF("business");
+  ok("empty set (toggled on then off) = no filter → full list", rcptSortedRows().length === totalRcptRows && rcptAnyFilterActive() === false, ids());
 
   // CLEAR resets every filter + restores the full list (verified via behavior + rcptAnyFilterActive())
-  rcptSetSearch("home"); rcptSetTypeF("business"); rcptSetCatF("fuel"); rcptSetPersonF("u_chase"); rcptSetJobF("j1"); rcptSetCardF("1234"); rcptSetDateF("from", "2026-01-01"); rcptSetDateF("to", "2026-12-31");
+  rcptSetSearch("home"); rcptToggleTypeF("business"); rcptToggleTypeF("pass-through"); rcptToggleCatF("fuel"); rcptTogglePersonF("u_chase"); rcptToggleJobF("j1"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-01-01"); rcptSetDateF("to", "2026-12-31");
   ok("rcptAnyFilterActive() true while filters are set", rcptAnyFilterActive() === true);
   rcptClearFilters();
   ok("rcptClearFilters clears everything (rcptAnyFilterActive() false)", rcptAnyFilterActive() === false);
   ok("after clear, the full list shows again", rcptSortedRows().length === totalRcptRows, rcptSortedRows().length);
 
-  // NO MUTATION — running every filter (and the pure list renderer) must never change the underlying data
-  rcptSetSearch("home"); rcptSetTypeF("pass-through"); rcptSetCatF("materials"); rcptSetPersonF("u_chase"); rcptSetJobF("j1"); rcptSetDateF("from", "2026-06-01"); rcptSetDateF("to", "2026-06-30");
+  // NO MUTATION — running every filter (multi-select + the pure list renderer) must never change the underlying data
+  rcptSetSearch("home"); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleCatF("materials"); rcptTogglePersonF("u_chase"); rcptToggleJobF("j1"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-06-01"); rcptSetDateF("to", "2026-06-30");
   rcptSortedRows(); rcptListInner(); rcptSortedRows();
   rcptClearFilters();
   ok("filters + rcptListInner NEVER mutate data (STORE byte-identical)", JSON.stringify(STORE) === rcptSnapBefore);
