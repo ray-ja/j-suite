@@ -84,6 +84,8 @@ window.capRcptRun = async function (opts) {
     const rec = pending[0];
     const totalNow = done + pending.length;            // live denominator (grows if sync injects more mid-drain)
     capRcptSetStatus("🤖 Cap is reading " + (done + 1) + " of " + totalNow + (totalNow > 25 ? " receipts" : "") + "…");
+    // ALSO surface progress in the prominent body-mounted banner (js/104) — visible on EVERY page, not just Receipts
+    if (typeof uploadStatus === "function") uploadStatus("reading", { done: done + 1, total: totalNow });
     const res = await capRcptRead(rec.receiptId);      // ONE dedicated vision call — sequential, never parallel
     if (res && res.suggested) {
       // re-find the live record (the store may have changed) and stamp ONLY `suggested`
@@ -100,6 +102,15 @@ window.capRcptRun = async function (opts) {
   if (ok && typeof save === "function") save();
   _capRcptBusy = false;
   capRcptSetStatus(capped ? "🤖 Cap read " + done + " — more will read shortly…" : "");
+  // Terminal banner (js/104): ✓ only when ≥1 was actually read; capped appends "more will read shortly";
+  // key-missing/offline hide gracefully (no false ✓); read-nothing hides (no phantom bar on a 0-unread sweep).
+  if (typeof uploadStatus === "function") {
+    try {
+      if (keyMissing || offline) uploadStatus("hide");
+      else if (ok >= 1) uploadStatus("read-done", ok, capped ? "more will read shortly" : null);
+      else uploadStatus("hide");
+    } catch (e) {}
+  }
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
   else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". Open a 🤖 row to review and approve its guess."); }
   if (typeof render === "function") render();
