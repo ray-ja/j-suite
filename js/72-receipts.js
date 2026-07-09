@@ -174,6 +174,62 @@ function rcptSplitSubline(r, groupMap) {
 function rcptDupKey(e) { e = e || {}; const v = String(e.vendor || "").trim().toLowerCase(); if (e.refNo) return "ref|" + v + "|" + e.refNo; return Math.round((+e.amount || 0) * 100) + "|" + v + (e.cardLast4 ? "|" + e.cardLast4 : ""); }
 function rcptDupSet(filed) { const cnt = {}, s = {}; (filed || []).forEach(function (e) { if (!(+e.amount)) return; const k = rcptDupKey(e); cnt[k] = (cnt[k] || 0) + 1; }); Object.keys(cnt).forEach(function (k) { if (cnt[k] > 1) s[k] = cnt[k]; }); return s; }
 
+/* ---------- TOLERANT possible-duplicate detection (display only — never auto-deletes) ----------
+   The strict rcptDupKey above requires vendor AND card to match EXACTLY, so Cap reading two photos of the
+   SAME purchase slightly differently (card on one copy, blank vendor on another, "The Home Depot" vs "Home
+   Depot") produced different keys and the real double-charge slipped through. This looser pass groups by
+   EXACT amount (cents) + ANY ONE matching signal, treating a missing card/vendor as a wildcard. It compares
+   ALL receipts (review + filed) so a review copy of a filed receipt also flags. */
+/* normalize a vendor for fuzzy matching: lowercase, drop punctuation ("lowe's"→"lowes"), strip a leading
+   "the ", strip a trailing legal suffix (llc/inc/co/ltd/corp), collapse whitespace. */
+function rcptVendorNorm(v) {
+  var s = String(v == null ? "" : v).toLowerCase();
+  s = s.replace(/[^a-z0-9\s]+/g, "");                 // punctuation → nothing (lowe's → lowes, "centers, llc" → "centers llc")
+  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/^the\s+/, "");                       // leading "the "
+  s = s.replace(/\s+(?:llc|inc|co|ltd|corp)$/, "");   // one trailing legal suffix
+  return s.replace(/\s+/g, " ").trim();
+}
+function rcptCard4(v) { return v ? String(v).replace(/\D/g, "").slice(-4) : ""; }
+/* do two rows look like the same charge? amount (cents) MUST match, plus at least one signal:
+   both have a refNo → identity is the refNo (distinct order #s are NOT dups); else same normalized vendor,
+   or same card last-4 (both present). Amount-only with NO signal (blank vendor + no card + no ref) → NOT a dup. */
+function rcptDupMatch(a, b) {
+  var ca = Math.round((+a.amount || 0) * 100), cb = Math.round((+b.amount || 0) * 100);
+  if (!ca || ca !== cb) return false;                 // amount must match exactly (and be non-zero)
+  var ra = a.refNo ? String(a.refNo) : "", rb = b.refNo ? String(b.refNo) : "";
+  if (ra && rb) return ra === rb;                     // two CSV rows with txn #s: same # = dup, different # = distinct order
+  var va = rcptVendorNorm(a.vendor), vb = rcptVendorNorm(b.vendor);
+  if (va && vb && va === vb) return true;             // same normalized vendor
+  var la = rcptCard4(a.cardLast4), lb = rcptCard4(b.cardLast4);
+  if (la && lb && la === lb) return true;             // same card (both present) — even if vendor differs/blank
+  return false;
+}
+/* group ALL receipts (review + filed) into sets that look like the same charge. Returns an array of groups,
+   each an array of ≥2 rows. Union-find within each exact-amount bucket (matching is by ANY signal → transitive). */
+function rcptDupGroups() {
+  var rows = (typeof rcptAllRows === "function") ? rcptAllRows() : [];
+  var byAmt = {};
+  rows.forEach(function (r) { var c = Math.round((+r.amount || 0) * 100); if (!c) return; (byAmt[c] || (byAmt[c] = [])).push(r); });
+  var groups = [];
+  Object.keys(byAmt).forEach(function (c) {
+    var b = byAmt[c]; if (b.length < 2) return;
+    var parent = b.map(function (_, i) { return i; });
+    function find(i) { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+    for (var i = 0; i < b.length; i++) for (var j = i + 1; j < b.length; j++) if (rcptDupMatch(b[i], b[j])) parent[find(i)] = find(j);
+    var sets = {};
+    b.forEach(function (r, i) { var root = find(i); (sets[root] || (sets[root] = [])).push(r); });
+    Object.keys(sets).forEach(function (k) { if (sets[k].length > 1) groups.push(sets[k]); });
+  });
+  return groups;
+}
+/* {groups, byId} — byId maps each row's record id → its group, so the table badge can flag a member in O(1). */
+function rcptDupIndex() {
+  var groups = rcptDupGroups(), byId = {};
+  groups.forEach(function (g) { g.forEach(function (r) { byId[r.recId != null ? r.recId : r.id] = g; }); });
+  return { groups: groups, byId: byId };
+}
+
 /* tax records: standardized DATE-first filename + a CSV export.
    `capRead` (when Cap has read the receipt) provides the real transaction date/vendor; else we use the filed date. */
 function rcptDate(e) { const cr = e.capRead || {}; if (cr.date) return String(cr.date).slice(0, 10); if (e.date) return String(e.date).slice(0, 10); if (e.ts) { try { return new Date(e.ts).toISOString().slice(0, 10); } catch (x) {} } return ""; }
@@ -369,7 +425,7 @@ function rReceipts() {
 
   const rows = rcptSortedRows();
   const reviewCount = rcptReview().length;
-  const filed = rcptAllFiled(), dups = rcptDupSet(filed), dupCount = Object.keys(dups).length;
+  const filed = rcptAllFiled(), dupIx = rcptDupIndex(), dupById = dupIx.byId, dupCount = dupIx.groups.length;
 
   let h = `<div class="secthd"><h2>📸 Receipts</h2><span class="ct">${rcptAllRows().length}</span></div>`;
 
@@ -395,7 +451,7 @@ function rReceipts() {
   }
   const suggCount = rows.filter(r => r && r.suggested).length;
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
-  if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger)"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + description filed more than once. Flagged in the table; open &amp; delete the extras.</div>`;
+  if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
 
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
   if (typeof depositsAwaitingRefund === "function") { const _deps = depositsAwaitingRefund(); if (_deps.length) h += rcptDepositsAwaitingHTML(_deps); }
@@ -415,7 +471,7 @@ function rReceipts() {
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
   // TABLE
-  h += rcptTableHTML(rows, dups);
+  h += rcptTableHTML(rows, dupById);
 
   // reimbursements owed
   const owed = rcptReimbOwed(), oids = Object.keys(owed).filter(id => owed[id] > 0.005);
@@ -446,7 +502,9 @@ function rcptCardCell(r) {
   const l4 = (r && r.cardLast4) ? String(r.cardLast4).replace(/\D/g, "").slice(-4) : "";
   return l4 ? `💳 ••••${esc(l4)}` : `<span style="color:var(--muted)">—</span>`;
 }
+/* `dups` = the {recId → group} map from rcptDupIndex().byId (an empty {} = "no dup flags", e.g. in unit tests). */
 function rcptTableHTML(rows, dups) {
+  dups = dups || {};
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -455,7 +513,7 @@ function rcptTableHTML(rows, dups) {
   const canFileIt = rcptFinFull();   // one-tap "file it" is owner/admin only (crew never see this table)
   rows.slice(0, 500).forEach(r => {
     const m = rcptRowMeta(r);
-    const isDup = !!(r.amount && dups[rcptDupKey(r)]);
+    const isDup = !!(r.amount && (dups[r.recId] || dups[r.id]));
     // Phase B — a REVIEW row Cap is confident about gets a prominent green one-tap "file it" (in addition to the
     // row opening the modal on tap). Files through rcptFileSuggestion → the spine funnel → byte-identical record.
     const oneTap = canFileIt && r.store === "review" && typeof rcptSuggestionOneTapOk === "function" && rcptSuggestionOneTapOk(r);
@@ -595,15 +653,89 @@ function rcptCrewView() {
   return h;
 }
 
+/* THE reversible soft-delete used by every receipt-delete path (row delete, edit-modal delete, mark-as-duplicate,
+   dup resolver). Tombstones the record IN PLACE in whichever array it lives — for a FILED receipt that removes
+   it from job.materials/expenses or org expenses[] (so billing drops the charge); for a review copy it just
+   tombstones the queue record. Never hard-deletes. Returns true if a record was found + tombstoned. */
+function rcptTombstone(store, jobId, id) {
+  const d = D();
+  if (store === "review") { const e = (d.receipts || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); return true; } return false; }
+  if (store === "biz") { const e = (d.expenses || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); return true; } return false; }
+  const j = (d.jobs || []).find(x => x && x.id === jobId); if (!j) return false;
+  const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []);
+  const e = arr.find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(j); return true; }
+  return false;
+}
 /* delete a receipt from wherever it lives (owner/admin only) */
 window.rcptDelRow = function (store, jobId, id) {
   if (!rcptFinFull()) return;
   if (!confirm("Delete this receipt?")) return;
-  const d = D();
-  if (store === "review") { const e = (d.receipts || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); } }
-  else if (store === "biz") { const e = (d.expenses || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); } }
-  else { const j = (d.jobs || []).find(x => x && x.id === jobId); if (j) { const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []); const e = arr.find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(j); } } }
+  rcptTombstone(store, jobId, id);
   if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); render();
+};
+
+/* ============================== POSSIBLE-DUPLICATES RESOLVER (human fallback) ==============================
+   The "⚠ N possible duplicates" card opens this. Lists each suspected group side by side (vendor · amount ·
+   date · card · 📎 photo) so Ray can eyeball them, then keep one + delete the extra copy/copies. Every delete
+   is a CONFIRMED soft-delete through rcptTombstone (the existing path) — owner/admin only, never auto. */
+function rcptDupResolveHTML() {
+  const groups = rcptDupGroups();
+  if (!groups.length) return `<div class="card"><div class="muted">✓ No possible duplicates right now.</div></div>`;
+  let h = `<div class="sub" style="white-space:normal;margin-bottom:10px">Each block is a set of receipts with the <b>same amount</b> and a matching vendor, card, or transaction #. Eyeball the photos — if they're the same purchase, <b>keep one</b> and delete the extra copy. Deleting removes that charge from the books (an admin can undo). Different purchases that happen to cost the same? Leave them.</div>`;
+  groups.forEach(g => {
+    const amt = money2(+g[0].amount || 0);
+    h += `<div class="card" style="border-left:4px solid var(--danger);padding:8px 10px"><div class="nm" style="white-space:normal;margin-bottom:2px"><b>⚠ ${g.length} copies · ${amt}</b></div>`;
+    g.forEach(r => {
+      const m = (typeof rcptRowMeta === "function") ? rcptRowMeta(r) : { status: "" };
+      const d = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
+      const id = r.recId != null ? r.recId : r.id;
+      const card = r.cardLast4 ? "💳 ••••" + esc(rcptCard4(r.cardLast4)) : "no card";
+      const photo = r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 photo</a>` : `<span style="color:var(--muted)">no photo</span>`;
+      h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+        <div class="grow" style="min-width:150px"><div class="nm" style="white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">(no vendor)</span>`} · ${amt}</div>
+        <div class="sub" style="white-space:normal">${d ? esc(fmtDate(d)) : "no date"} · ${card} · ${esc(m.status || "")}${r.where ? " · " + esc(r.where) : ""} · ${photo}</div></div>
+        <div class="row" style="gap:6px;flex:0 0 auto">
+          <button class="btn ghost sm" onclick="rcptDupKeep('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">✓ Keep this</button>
+          <button class="btn ghost sm" style="color:var(--danger)" onclick="rcptDupDelete('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">🗑 Delete this copy</button>
+        </div></div>`;
+    });
+    h += `</div>`;
+  });
+  return h;
+}
+window.rcptDupResolveOpen = function () {
+  if (!rcptFinFull()) return;
+  if (typeof modal !== "function") return;
+  modal("⚠ Possible duplicates", rcptDupResolveHTML());
+};
+/* after any resolver delete: re-render the page behind, then re-open the resolver on fresh data (or close it
+   when nothing's left to resolve). */
+function rcptDupResolveAfter() {
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+  if (rcptDupGroups().length) rcptDupResolveOpen();
+  else if (typeof closeModal === "function") closeModal();
+}
+/* delete ONE copy from a group (keeps the others) — confirmed soft-delete via the existing path */
+window.rcptDupDelete = function (store, jobId, id) {
+  if (!rcptFinFull()) return;
+  if (!confirm("Delete this copy as a duplicate? The other copy stays. This removes its charge from the books (an admin can undo).")) return;
+  if (!rcptTombstone(store, jobId || null, id)) { alert("That copy isn't here anymore — refreshing."); }
+  else if (typeof logChange === "function") logChange("delete", "expense", id, "Deleted a duplicate receipt (kept the other copy)");
+  rcptDupResolveAfter();
+};
+/* KEEP this copy, delete every OTHER member of its group (one tap) — confirmed soft-delete via the existing path */
+window.rcptDupKeep = function (keepStore, keepJobId, keepId) {
+  if (!rcptFinFull()) return;
+  const grp = rcptDupIndex().byId[keepId];
+  if (!grp) { rcptDupResolveAfter(); return; }
+  const others = grp.filter(r => (r.recId != null ? r.recId : r.id) !== keepId);
+  if (!others.length) return;
+  if (!confirm("Keep this one and delete the other " + others.length + " cop" + (others.length > 1 ? "ies" : "y") + " as duplicates? Their charges come off the books (an admin can undo).")) return;
+  let n = 0;
+  others.forEach(r => { if (rcptTombstone(r.store, r.jobId || null, r.recId != null ? r.recId : r.id)) n++; });
+  if (n && typeof logChange === "function") logChange("delete", "expense", keepId, "Resolved duplicates — kept 1, deleted " + n + " cop" + (n > 1 ? "ies" : "y"));
+  rcptDupResolveAfter();
 };
 window.rcptSettle = function (memberId) {
   if (!rcptFinFull()) return;

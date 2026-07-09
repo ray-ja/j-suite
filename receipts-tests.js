@@ -817,6 +817,98 @@ async function main() {
   ok("rcptDupKey: no refNo → cents+vendor(+card); different cards → different keys", rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "2469" }) !== rcptDupKey({ amount: 38.94, vendor: "Lowe's", cardLast4: "1005" }));
   ok("rcptDupKey: no refNo, same cents+vendor, no card → same key (dup)", rcptDupKey({ amount: 38.94, vendor: "Lowe's" }) === rcptDupKey({ amount: 38.94, vendor: "Lowe's" }));
 
+  // ============ TOLERANT POSSIBLE-DUPLICATE DETECTION (js/72 rcptVendorNorm + rcptDupGroups) ============
+  console.log("\n— DUP-NORM: rcptVendorNorm folds 'the ' + legal suffixes + punctuation —");
+  ok("'The Home Depot' == 'Home Depot'", rcptVendorNorm("The Home Depot") === rcptVendorNorm("Home Depot") && rcptVendorNorm("Home Depot") === "home depot", [rcptVendorNorm("The Home Depot"), rcptVendorNorm("Home Depot")]);
+  ok("\"Lowe's Home Centers, LLC\" == 'lowes home centers'", rcptVendorNorm("Lowe's Home Centers, LLC") === "lowes home centers", rcptVendorNorm("Lowe's Home Centers, LLC"));
+  ok("\"Lowe's\" == 'Lowes' (apostrophe folded)", rcptVendorNorm("Lowe's") === rcptVendorNorm("Lowes") && rcptVendorNorm("Lowe's") === "lowes", rcptVendorNorm("Lowe's"));
+  ok("blank vendor → '' (no false match on empties)", rcptVendorNorm("") === "" && rcptVendorNorm(null) === "");
+
+  console.log("— DUP-GROUP: $26.67 Lowe's filed twice, card on ONE copy only → flagged (the missed case) —");
+  resetStore();
+  const dA = seedReview({ receiptId: "d26a", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
+  const dB = seedReview({ receiptId: "d26b", vendor: "Lowe's", amount: 26.67 });   // NO card
+  let dg = rcptDupGroups();
+  ok("one group of 2 flagged (card-as-wildcard, same vendor+amount)", dg.length === 1 && dg[0].length === 2, dg.map(g => g.length));
+  const dgIx = rcptDupIndex();
+  ok("both copies are in dupIndex.byId", !!dgIx.byId[dA.id] && !!dgIx.byId[dB.id]);
+
+  console.log("— DUP-GROUP: 'The Home Depot' vs 'Home Depot', same amount → flagged (vendor normalized) —");
+  resetStore();
+  seedReview({ receiptId: "hd1", vendor: "The Home Depot", amount: 58.67 });
+  seedReview({ receiptId: "hd2", vendor: "Home Depot", amount: 58.67 });
+  dg = rcptDupGroups();
+  ok("normalized-vendor match flags the pair", dg.length === 1 && dg[0].length === 2, dg.map(g => g.length));
+
+  console.log("— DUP-GROUP: blank vendor on one copy + SAME card → flagged (card links them) —");
+  resetStore();
+  seedReview({ receiptId: "bc1", vendor: "Home Depot", amount: 46.52, cardLast4: "8355" });
+  seedReview({ receiptId: "bc2", vendor: "", amount: 46.52, cardLast4: "8355" });   // blank vendor, same card
+  dg = rcptDupGroups();
+  ok("same-card match flags even with a blank vendor", dg.length === 1 && dg[0].length === 2, dg.map(g => g.length));
+
+  console.log("— DUP-GROUP: a REVIEW copy of a FILED receipt flags (compares review + filed union) —");
+  resetStore();
+  STORE.expenses.push({ id: "fe1", receiptId: "fe1p", vendor: "Home Depot", amount: 99.99, cardLast4: "8355", date: "2026-07-01", category: "materials" });   // filed business expense
+  seedReview({ receiptId: "rv1", vendor: "Home Depot", amount: 99.99 });   // a review copy of the same purchase
+  dg = rcptDupGroups();
+  ok("review-vs-filed pair flagged", dg.length === 1 && dg[0].length === 2, dg.map(g => g.length));
+
+  console.log("— DUP-GROUP: two GENUINELY different same-amount receipts (diff vendor, no shared card, no ref) do NOT flag —");
+  resetStore();
+  seedReview({ receiptId: "x1", vendor: "Lowe's", amount: 42.00, cardLast4: "8355" });
+  seedReview({ receiptId: "x2", vendor: "Chevron", amount: 42.00, cardLast4: "1005" });   // different vendor AND different card
+  ok("no group (different vendor, different card) → not over-flagged", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+  console.log("— DUP-GROUP: same amount, both blank vendor + no card → NOT flagged (too weak, manual-only) —");
+  resetStore();
+  seedReview({ receiptId: "w1", vendor: "", amount: 30.00 });
+  seedReview({ receiptId: "w2", vendor: "", amount: 30.00 });
+  ok("amount-only with no signal is NOT auto-flagged", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+  console.log("— DUP-GROUP: two CSV rows, same $/vendor but DIFFERENT refNo → NOT flagged (distinct orders) —");
+  resetStore();
+  seedReview({ receiptId: "o1", vendor: "Lowe's", amount: 38.94, refNo: "147424942" });
+  seedReview({ receiptId: "o2", vendor: "Lowe's", amount: 38.94, refNo: "494486963" });
+  ok("distinct transaction #s override the vendor+amount match (no false dup)", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+
+  console.log("— DUP-DELETE: rcptDupDelete soft-deletes one copy via the existing path, KEEPS the other —");
+  resetStore(); global.finCanView = function () { return true; };
+  const kA = seedReview({ receiptId: "k1", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
+  const kB = seedReview({ receiptId: "k2", vendor: "Lowe's", amount: 26.67 });
+  ok("pre: the pair is flagged", rcptDupGroups().length === 1);
+  rcptDupDelete("review", "", kB.id);   // confirm() stub returns true
+  ok("deleted copy is tombstoned (soft, not hard)", STORE.receipts.find(r => r.id === kB.id).deleted === true);
+  ok("kept copy survives untouched", !STORE.receipts.find(r => r.id === kA.id).deleted);
+  ok("no group remains after resolving", rcptDupGroups().length === 0);
+
+  console.log("— DUP-DELETE: a FILED (business) copy removes from org expenses[]; the review copy stays —");
+  resetStore();
+  const fBiz = { id: "fb1", receiptId: "fb1p", vendor: "Home Depot", amount: 77.77, cardLast4: "8355", date: "2026-07-01", category: "materials", deleted: false };
+  STORE.expenses.push(fBiz);
+  const rKeep = seedReview({ receiptId: "rk1", vendor: "Home Depot", amount: 77.77 });
+  ok("pre: filed + review flagged as a pair", rcptDupGroups().length === 1);
+  rcptDupDelete("biz", "", "fb1");   // delete the FILED billing record
+  ok("filed business record tombstoned (charge drops from the books)", STORE.expenses.find(e => e.id === "fb1").deleted === true);
+  ok("review copy kept", !STORE.receipts.find(r => r.id === rKeep.id).deleted);
+
+  console.log("— DUP-KEEP: rcptDupKeep keeps one + deletes ALL other copies of the group —");
+  resetStore();
+  const g3a = seedReview({ receiptId: "g3a", vendor: "Home Depot", amount: 12.34, cardLast4: "8355" });
+  const g3b = seedReview({ receiptId: "g3b", vendor: "The Home Depot", amount: 12.34 });
+  const g3c = seedReview({ receiptId: "g3c", vendor: "", amount: 12.34, cardLast4: "8355" });
+  ok("pre: all 3 form one group", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 3);
+  rcptDupKeep("review", "", g3a.id);
+  ok("kept copy alive", !STORE.receipts.find(r => r.id === g3a.id).deleted);
+  ok("both other copies tombstoned", STORE.receipts.find(r => r.id === g3b.id).deleted === true && STORE.receipts.find(r => r.id === g3c.id).deleted === true);
+
+  console.log("— MARK-AS-DUP: the edit-modal rcptEditMarkDup soft-deletes THIS receipt (existing path), keeps the other —");
+  resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; };
+  const mKeep = seedReview({ receiptId: "m1", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
+  const mDel = seedReview({ receiptId: "m2", vendor: "Lowe's", amount: 26.67 });
+  rcptEditOpen("review", null, mDel.id);   // sets RCPT_EDIT to the copy to delete
+  rcptEditMarkDup();                        // confirm() stub → true
+  ok("marked receipt is tombstoned", STORE.receipts.find(r => r.id === mDel.id).deleted === true);
+  ok("the other copy is untouched", !STORE.receipts.find(r => r.id === mKeep.id).deleted);
+
   // ================= RECEIPT SPINE (js/98) — smart-defaults + the BYTE-IDENTICAL file funnel =================
   console.log("\n— SPINE: rcptFileFromFields produces a BYTE-IDENTICAL record to a hand rcptApplyEdit save —");
   OPEN_SHIFT = null; delete CURUSER.cards;   // no clocked job + no cards → smart-defaults add nothing to fully-specified fields
