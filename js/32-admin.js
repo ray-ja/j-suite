@@ -28,7 +28,10 @@ const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // NOT "finance" (the business books / margins / everyone's pay), which stays owner/admin via finCanView().
 // Crew see "pay" (their OWN earnings) and "receipts" (upload + their own / attributed-to-them review queue —
 // rReceipts() self-gates the full financial table/editing to owner+admin), but NOT "finance".
-const CREW_PAGES = ["today", "leads", "accounts", "quotes", "jobs", "booking", "schedule", "messages", "map", "route", "todo", "inventory", "resale", "time", "pay", "receipts", "team"];
+// Crew also reach "data" (Settings) — but rData (js/26) hard-gates its owner/admin-only cards (rate editor, sync
+// config, costs, home base, backups) so a crew member sees ONLY their own settings (sync status, update, theme,
+// their cards, version). Added here so fresh installs + the signed-out crew-equivalent set include it.
+const CREW_PAGES = ["today", "leads", "accounts", "quotes", "jobs", "booking", "schedule", "messages", "map", "route", "todo", "inventory", "resale", "time", "pay", "receipts", "team", "data"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 
 /* ----- ACTIONS (Phase 3e — role hierarchy) -----
@@ -61,6 +64,13 @@ const DEFAULT_ROLES = [
   { key: "supervisor", label: "Supervisor", pages: ESCAPE_PAGES.slice(), actions: ["assign-guides", "edit-schedule"] },             // + assign guides, manage the day
   { key: "manager", label: "Manager", pages: ALL_TABS.slice(), actions: ["assign-guides", "edit-schedule", "edit-settings", "manage-members", "edit-tools"] }   // + org settings, members, module toggles (everything but the AI/tools secrets the owner holds)
 ];
+/* DEFAULT actions of each BUILT-IN restricted role, keyed by role key (owner is implicit-all, excluded). Used to
+   HARDEN roleActionAllows so a legacy __roles__ record whose built-in role predates the actions system can't
+   fail-open to privileged actions — a built-in `crew` with actions:undefined resolves to [] (no Admin), NOT
+   "unrestricted". Only a genuinely CUSTOM role key keeps the backward-compat fail-open. Mirrors the server's
+   BUILTIN_ROLE_ACTIONS + MGR_FALLBACK. */
+const BUILTIN_ROLE_ACTIONS = {};
+DEFAULT_ROLES.forEach(d => { if (d.key !== "owner" && Array.isArray(d.actions)) BUILTIN_ROLE_ACTIONS[d.key] = d.actions.slice(); });
 
 /* ----- accessors ----- */
 function realAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted); }
@@ -79,7 +89,23 @@ function ensureRolesRec() {
   // Local-only seed: do NOT bump updatedAt, so this never pushes over a server's authoritative config; the
   // roles simply become available on this device (and ride along the next genuine edit).
   DEFAULT_ROLES.forEach(d => { if (!r.roles.some(x => x.key === d.key)) r.roles.push(JSON.parse(JSON.stringify(d))); });
+  normalizeBuiltinRoles(r);
   return r;
+}
+/* NORMALIZE the stored role registry — loss-free self-heal (mirrors the account-field migration discipline; does
+   NOT bump updatedAt, so the server's migrateStore stays authoritative and a real owner edit still wins on merge):
+     • give each BUILT-IN restricted role its DEFAULT actions when the stored record predates the actions system
+       (crew.actions = [] etc.) — so the resolver never fail-opens crew into the Admin panel, AND existing installs
+       get the fix persisted server-side too, and
+     • ensure the built-in CREW role can reach Settings (add "data" to its pages) so crew opens Settings.
+   Genuinely CUSTOM roles + any customized pages/actions are left completely untouched. */
+function normalizeBuiltinRoles(r) {
+  if (!r || !Array.isArray(r.roles)) return;
+  r.roles.forEach(role => {
+    if (!role || role.key === "owner") return;
+    if (BUILTIN_ROLE_ACTIONS[role.key] && !Array.isArray(role.actions)) role.actions = BUILTIN_ROLE_ACTIONS[role.key].slice();   // fill missing built-in actions (crew=[] closes the fail-open)
+    if (role.key === "crew" && Array.isArray(role.pages) && role.pages.indexOf("data") < 0) role.pages.push("data");            // crew reaches Settings on existing installs
+  });
 }
 function rolesRec() { return ensureRolesRec(); }
 function allRoles() { return rolesRec().roles; }
@@ -158,7 +184,14 @@ function roleActionAllows(key, action) {
   if (key === NO_SESSION_ROLE) return false;              // logged-out device: no privileged actions
   const r = roleByKey(key);
   if (!r) return false;                                   // unknown role ⇒ no privileged action (fail-closed for actions; pages still fail-open in roleAllows)
-  if (!Array.isArray(r.actions)) return true;             // legacy custom role w/o an actions list ⇒ unrestricted (backward-compatible)
+  if (!Array.isArray(r.actions)) {
+    // A BUILT-IN role whose stored record predates the actions system must NOT fail-open — fall back to its
+    // DEFAULT actions (crew/game-guide ⇒ [] ⇒ no privileged actions; admin/manager keep their grants). This
+    // closes the leak where a legacy crew role (actions:undefined) inherited "manage-members" and reached the
+    // Admin panel. Only a genuinely CUSTOM role key keeps the backward-compat fail-open so it's never bricked.
+    if (BUILTIN_ROLE_ACTIONS[key]) return BUILTIN_ROLE_ACTIONS[key].indexOf(action) >= 0;
+    return true;                                          // legacy CUSTOM role w/o an actions list ⇒ unrestricted (backward-compatible)
+  }
   return r.actions.indexOf(action) >= 0;
 }
 function canDo(action) { return roleActionAllows(curRoleKey(), action); }   // current session's capability check

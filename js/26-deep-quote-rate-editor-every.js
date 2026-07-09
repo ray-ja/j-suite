@@ -23,7 +23,7 @@ function deepEditorHTML(){
     return h+`</div></details>`;
   }).join("");
 }
-window.openDeepEditor=function(){modal("Deep quote rates",`<p class="muted" style="margin-bottom:8px">Every rate, modifier %, and minimum behind the deep estimators — edit any of them and the change flows straight into the Guided Quote. The 📚 line shows where each default came from. Percentages are whole numbers (25 = +25%, −15 = a 15% discount); flat adjustments are dollars.</p><div id="deepEditBody">`+deepEditorHTML()+`</div><button class="btn ghost" style="margin-top:10px" onclick="resetDeepAll()">↺ Reset ALL ${esc(BIZ[S.biz].name)} deep rates</button>`);};
+window.openDeepEditor=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}modal("Deep quote rates",`<p class="muted" style="margin-bottom:8px">Every rate, modifier %, and minimum behind the deep estimators — edit any of them and the change flows straight into the Guided Quote. The 📚 line shows where each default came from. Percentages are whole numbers (25 = +25%, −15 = a 15% discount); flat adjustments are dollars.</p><div id="deepEditBody">`+deepEditorHTML()+`</div><button class="btn ghost" style="margin-top:10px" onclick="resetDeepAll()">↺ Reset ALL ${esc(BIZ[S.biz].name)} deep rates</button>`);};
 function _ovset(key,fn){const o=deepOverrides();if(!o[key])o[key]={};fn(o[key]);setDeepOverrides(o);}
 window.setDeepMin=function(key,v){_ovset(key,x=>x.min=parseFloat(v)||0);};
 window.setDeepItemRate=function(key,ik,v){_ovset(key,x=>{x.items=x.items||{};x.items[ik]=x.items[ik]||{};x.items[ik].rate=parseFloat(v)||0;});};
@@ -34,37 +34,43 @@ window.setDeepJmodSel=function(key,mk,opt,v){_ovset(key,x=>{x.jmods=x.jmods||{};
 window.resetDeepKey=function(key){const o=deepOverrides();delete o[key];setDeepOverrides(o);const b=document.getElementById("deepEditBody");if(b)b.innerHTML=deepEditorHTML();};
 window.resetDeepAll=function(){if(!confirm("Reset ALL deep quote rates for this business to the researched defaults?"))return;setDeepOverrides({});const b=document.getElementById("deepEditBody");if(b)b.innerHTML=deepEditorHTML();};
 
-window.openRatesEditor=function(){modal("Pricing rates",`<p class="muted" style="margin-bottom:8px">Advanced — edit the numbers, keep the format. Tiers are [up-to-amount, price-per-unit]; multipliers like 1.25 add 25%.</p>
+window.openRatesEditor=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}modal("Pricing rates",`<p class="muted" style="margin-bottom:8px">Advanced — edit the numbers, keep the format. Tiers are [up-to-amount, price-per-unit]; multipliers like 1.25 add 25%.</p>
   <textarea id="rates_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getRates(),null,2))}</textarea>
   <p id="rates_err" class="muted"></p>
   <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveRatesEditor()">Save</button><button class="btn ghost grow" onclick="resetRates()">Reset to defaults</button></div>`);};
 window.saveRatesEditor=function(){try{const o=JSON.parse(document.getElementById("rates_json").value);setRates(o);closeModal();alert("Pricing rates saved.");}catch(e){const el=document.getElementById("rates_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
-window.openCostsEditor=function(){modal("Job costs (COGS)",`<p class="muted" style="margin-bottom:8px">Advanced — edit the material/hardware cost defaults. Same shape as the built-in defaults; keep the format.</p>
+window.openCostsEditor=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}modal("Job costs (COGS)",`<p class="muted" style="margin-bottom:8px">Advanced — edit the material/hardware cost defaults. Same shape as the built-in defaults; keep the format.</p>
   <textarea id="costs_json" style="min-height:300px;font-family:monospace;font-size:12px">${esc(JSON.stringify(getCosts(),null,2))}</textarea>
   <p id="costs_err" class="muted"></p>
   <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveCostsEditor()">Save</button><button class="btn ghost grow" onclick="resetCosts()">Reset to defaults</button></div>`);};
 window.saveCostsEditor=function(){try{const o=JSON.parse(document.getElementById("costs_json").value);setCosts(o);closeModal();alert("Job costs saved.");}catch(e){const el=document.getElementById("costs_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
 window.resetCosts=function(){if(!confirm("Reset job costs to defaults?"))return;setCosts(JSON.parse(JSON.stringify(COST_DEFAULT)));closeModal();alert("Job costs reset to defaults.");};
 window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
+/* Owner/admin may configure the SENSITIVE Settings sections (sync URL/token, pricing rate & COGS editors, home
+   base, archive, backups). A CREW member opening Settings ("data" tab) sees ONLY their own stuff — sync status,
+   Update-now, dark mode, their cards, version — never the pricing/secret config. Hidden = unreachable; the
+   mutating handlers below re-check too (defense-in-depth). */
+function settingsCanConfig(){ return (typeof isOwner==="function"&&isOwner()) || (typeof curRoleKey==="function"&&curRoleKey()==="admin"); }
 function rData(){
   const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
+  const cfg=settingsCanConfig();   // owner/admin: show the sensitive config sections; crew: hidden + unreachable
   view.innerHTML=`<h2>Sync</h2>
     <div class="card">
       <div class="nm" id="sy_state">${SYNC_LABEL[SYNC_STATE]||"✓ Synced"}</div>
       <div class="sub">Last synced: ${last}. <span id="sy_msg"></span></div>
       <p class="muted" style="margin-top:8px">Changes sync automatically — pushed a couple seconds after each edit, pulled when you open or focus the app. Nothing to press.</p>
-      <details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">Advanced</summary>
+      ${cfg?`<details style="margin-top:6px"><summary class="sub" style="cursor:pointer;font-weight:700">Advanced</summary>
         <label>Sync server URL</label><input id="sy_url" value="${esc(S.sync.url)}" placeholder="http://your-server:4000">
         <label>Access token (shared secret)</label><input id="sy_token" value="${esc(S.sync.token)}" placeholder="set this same on the server">
         <div class="toggle"><input type="checkbox" id="sy_auto" ${S.sync.auto?"checked":""}><label style="margin:0">Auto-sync</label></div>
         <div class="row" style="gap:8px;margin-top:12px"><button class="btn grow" onclick="saveSync()">Save settings</button><button class="btn ghost grow" onclick="syncNow()">Sync now</button></div>
-      </details>
+      </details>`:""}
     </div>
     <div class="card" style="border-left:4px solid var(--accent)"><div class="row" style="align-items:center"><div class="grow"><strong>🔄 Get the latest version</strong><div class="sub" style="white-space:normal">If a fix or change isn't showing up, tap this — it force-reloads the newest build (clears the app cache; your data is safe).</div></div><button class="btn acc sm" style="flex:0 0 auto" onclick="forceUpdate()">Update now</button></div></div>
     <h2>Appearance</h2>
     <div class="card"><div class="toggle" style="margin-top:0"><input type="checkbox" id="th_dark" ${themePref()==="dark"?"checked":""} onchange="toggleTheme()"><label style="margin:0">Dark mode${curUser()?" · saved to "+esc(curUser().username):" · this device (sign in to sync)"}</label></div></div>
     ${(typeof myCardsCard==="function")?myCardsCard():""}
-    <h2>Pricing rates</h2>
+    ${cfg?`<h2>Pricing rates</h2>
     <div class="card"><p class="muted" style="margin-bottom:8px">Edit every rate, modifier, and minimum behind the <b>deep line-item estimators</b> — with the source of each number shown so you know what you're changing. Flows straight into the Guided Quote.</p>
       <button class="btn acc" onclick="openDeepEditor()">⚙️ Edit deep quote rates</button>
       ${S.biz==="obx"?`<div style="border-top:1px solid var(--line);margin:10px 0"></div><p class="muted" style="margin-bottom:8px">Brush / shrub / small-tree removal — per-item price bands + rental cost defaults.</p><button class="btn ghost" onclick="openBrushEditor()">🌳 Edit brush / tree removal rates</button>` : ""}
@@ -89,7 +95,7 @@ function rData(){
       <label style="margin:0">↩ Restore from a backup file</label>
       <input type="file" accept="application/json" id="impfile" onchange="importData(this)">
       <p class="muted" style="margin-top:8px;font-size:12px">The server auto-backs-up hourly. "Back up now" puts a full copy on this device — keep one off the server.</p>
-    </div>
+    </div>`:""}
     ${(typeof isOwner==="function"&&isOwner())?`
     <h2>🔒 Security</h2>
     <div class="card">
@@ -102,7 +108,7 @@ function rData(){
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
   if(window.loadSecStatus)setTimeout(loadSecStatus,30);
 }
-window.saveSync=function(){S.sync.url=val("sy_url");S.sync.token=val("sy_token");
+window.saveSync=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}S.sync.url=val("sy_url");S.sync.token=val("sy_token");
   S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
   if(syncConfigured())syncRun("pull");};
 function syMsg(t){const e=document.getElementById("sy_msg");if(e)e.textContent=t;}
@@ -258,6 +264,7 @@ window.saveSecret=function(key,inputId){
     .catch(()=>alert("Save failed — are you online?"));
 };
 window.importData=function(inp){
+  if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}
   const file=inp.files[0];if(!file)return;const r=new FileReader();
   r.onload=()=>{try{const o=JSON.parse(r.result);if(!o.obx||!o.jam)throw 0;
     if(!confirm("Replace all current data with this backup?"))return;
