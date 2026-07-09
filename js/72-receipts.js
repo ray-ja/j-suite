@@ -335,6 +335,7 @@ function rcptSortVal(r, col) {
     case "uploader": return String(m.uploader || "").toLowerCase();
     case "attributedTo": return String(m.forName || "").toLowerCase();
     case "category": return String(r.category || "").toLowerCase();
+    case "card": return String(r.cardLast4 || "").replace(/\D/g, "").slice(-4);
     case "status": return m.status;
     case "date": default: return rcptDate(r) || "0000-00-00";
   }
@@ -439,11 +440,17 @@ function rcptDepositsAwaitingHTML(deps) {
   return h;
 }
 
+/* The "💳 Card" cell — just the last-4 used on this receipt (from the read/attribution). "For" already
+   shows who owns it, so we don't repeat the name here. "—" when no card is recorded. Never throws. */
+function rcptCardCell(r) {
+  const l4 = (r && r.cardLast4) ? String(r.cardLast4).replace(/\D/g, "").slice(-4) : "";
+  return l4 ? `💳 ••••${esc(l4)}` : `<span style="color:var(--muted)">—</span>`;
+}
 function rcptTableHTML(rows, dups) {
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
+    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}${th("card", "💳 Card")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
   const splitGroups = rcptSplitGroupMap();
   const canFileIt = rcptFinFull();   // one-tap "file it" is owner/admin only (crew never see this table)
   rows.slice(0, 500).forEach(r => {
@@ -471,6 +478,7 @@ function rcptTableHTML(rows, dups) {
       <td style="padding:8px 6px;white-space:normal">${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}</td>
       <td style="padding:8px 6px;white-space:nowrap">${esc(m.uploader || "—")}</td>
       <td style="padding:8px 6px;white-space:nowrap">${m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`}</td>
+      <td style="padding:8px 6px;white-space:nowrap">${rcptCardCell(r)}</td>
       <td style="padding:8px 6px" onclick="event.stopPropagation()">${r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener">📎</a>` : ""}</td>
       <td style="padding:8px 6px;white-space:nowrap">${statusBadge}</td></tr>`;
   });
