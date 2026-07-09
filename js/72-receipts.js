@@ -17,8 +17,19 @@
 
 const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "meals", "office/admin", "other"];
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
-let RCPT_FILTER = "all";                          // all | review | filed
+let RCPT_FILTER = "all";                          // all | review | filed | owed | paidback (status pills)
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
+// DISPLAY-ONLY search + filters (mirror the Jobs list js/08). All default "" (no filter); survive re-render so
+// they persist across sort/status-pill taps. Applied in rcptSortedRows() AFTER the status pill, BEFORE sort.
+// NO data/schema/billing effect — they only narrow which existing rows the table shows (fingerprints unchanged).
+let RCPT_SEARCH = "";     // free-text substring over vendor/desc/amount/category/card/job/customer/person
+let RCPT_TYPEF = "";      // "" | review | business | job-expense | pass-through  (via rcptRowMeta().type)
+let RCPT_CATF = "";       // "" | a category (r.category)
+let RCPT_PERSONF = "";    // "" | a userId — matches uploadedBy OR attributedTo
+let RCPT_JOBF = "";       // "" | a jobId (r.jobId)
+let RCPT_CARDF = "";      // "" | a card last-4 (rcptCard4(r.cardLast4))
+let RCPT_DFROM = "";      // "" | YYYY-MM-DD (rcptDate(r) >= from)
+let RCPT_DTO = "";        // "" | YYYY-MM-DD (rcptDate(r) <= to)
 let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
@@ -475,20 +486,69 @@ function rcptSortCmp(a, b) {
   if (va < vb) return -1 * dir; if (va > vb) return 1 * dir;
   return (b.ts || 0) - (a.ts || 0);   // stable tiebreak: newest first
 }
+/* one lowercased haystack per row for the SEARCH box — mirrors js/08's QSEARCH concatenation. Covers the same
+   fields the table shows: vendor + desc/note + amount + category + card last-4 + job label + customer + who
+   uploaded it + who it's for. Pure (reads the row + rcptRowMeta), never mutates. */
+function rcptRowSearchText(r) {
+  const m = rcptRowMeta(r);
+  return [r.vendor, r.desc, r.note, (r.amount == null || r.amount === "") ? "" : r.amount, r.category, r.cardLast4, m.jobLabel, m.cust, m.uploader, m.forName]
+    .map(x => String(x == null ? "" : x)).join(" ").toLowerCase();
+}
+/* is ANY display-only search/filter set? (drives the "showing N of M" line + the Clear-filters button) */
+function rcptAnyFilterActive() { return !!(RCPT_SEARCH || RCPT_TYPEF || RCPT_CATF || RCPT_PERSONF || RCPT_JOBF || RCPT_CARDF || RCPT_DFROM || RCPT_DTO); }
 function rcptSortedRows() {
   let rows = rcptAllRows();
   if (RCPT_FILTER === "review") rows = rows.filter(r => r.store === "review");
   else if (RCPT_FILTER === "filed") rows = rows.filter(r => r.store !== "review");
   else if (RCPT_FILTER === "owed") rows = rows.filter(r => r.paidBy && !r.reimbursedAt);        // personal-card, not yet reimbursed
   else if (RCPT_FILTER === "paidback") rows = rows.filter(r => r.paidBy && r.reimbursedAt);      // reimbursed / settled
+  // DISPLAY-ONLY search + dropdown filters (after the status pill, before sort). Each applies ONLY when set; they
+  // AND together. Mirrors the Jobs list (js/08 quotesListHTML) — narrows the view, never touches the records.
+  if (RCPT_SEARCH) { const q = RCPT_SEARCH.toLowerCase(); rows = rows.filter(r => rcptRowSearchText(r).includes(q)); }
+  if (RCPT_TYPEF) rows = rows.filter(r => rcptRowMeta(r).type === RCPT_TYPEF);
+  if (RCPT_CATF) rows = rows.filter(r => (r.category || "") === RCPT_CATF);
+  if (RCPT_PERSONF) rows = rows.filter(r => r.uploadedBy === RCPT_PERSONF || r.attributedTo === RCPT_PERSONF);
+  if (RCPT_JOBF) rows = rows.filter(r => r.jobId === RCPT_JOBF);
+  if (RCPT_CARDF) rows = rows.filter(r => rcptCard4(r.cardLast4) === RCPT_CARDF);
+  if (RCPT_DFROM) rows = rows.filter(r => rcptDate(r) >= RCPT_DFROM);
+  if (RCPT_DTO) rows = rows.filter(r => rcptDate(r) <= RCPT_DTO);
   return rows.sort(rcptSortCmp);
 }
+/* PURE results-list HTML for the SCOPED re-render container (#rcptlist): the "showing N of M" count (only when a
+   filter/search is active) + the sortable table. Kept pure (a function of the current filter state + data) so the
+   keystroke path can rebuild ONLY #rcptlist — the #rcptsearch box + the Filters panel live OUTSIDE it, so they're
+   never destroyed and focus/caret survive (mirrors quotesListHTML()/#qlist in js/08). */
+function rcptListInner() {
+  const rows = rcptSortedRows();
+  const dupById = rcptDupIndex().byId;
+  const count = rcptAnyFilterActive()
+    ? `<div class="sub" style="margin:0 0 6px">Showing ${rows.length} of ${rcptAllRows().length}</div>`
+    : "";
+  return count + rcptTableHTML(rows, dupById);
+}
+/* repaint ONLY the results list — the scoped path shared by search + every dropdown/date filter */
+function rcptRepaintList() { const c = (typeof document !== "undefined" && document.getElementById) ? document.getElementById("rcptlist") : null; if (c) c.innerHTML = rcptListInner(); }
 window.rcptSortBy = function (col) {
   if (RCPT_SORT.col === col) RCPT_SORT.dir = RCPT_SORT.dir === "asc" ? "desc" : "asc";
   else { RCPT_SORT.col = col; RCPT_SORT.dir = (col === "date" || col === "amount") ? "desc" : "asc"; }
   render();
 };
 window.rcptSetFilter = function (f) { RCPT_FILTER = f; render(); };
+/* SEARCH — scoped repaint of #rcptlist ONLY, so the #rcptsearch input is never destroyed (focus + caret survive
+   with no setSelectionRange hack — exactly like qSearchOn/#qlist in js/08). */
+window.rcptSetSearch = function (v) { RCPT_SEARCH = v; rcptRepaintList(); };
+/* Dropdown / date filters — each lives in the Filters panel OUTSIDE #rcptlist, so a scoped repaint is safe + snappy
+   (mirrors qTypeFilter/qDateFrom in js/08). The panel's "· on" summary + Clear button refresh on the next full
+   render; the native <select>/<input> keep their chosen value in place meanwhile. */
+window.rcptSetTypeF = function (v) { RCPT_TYPEF = v; rcptRepaintList(); };
+window.rcptSetCatF = function (v) { RCPT_CATF = v; rcptRepaintList(); };
+window.rcptSetPersonF = function (v) { RCPT_PERSONF = v; rcptRepaintList(); };
+window.rcptSetJobF = function (v) { RCPT_JOBF = v; rcptRepaintList(); };
+window.rcptSetCardF = function (v) { RCPT_CARDF = v; rcptRepaintList(); };
+window.rcptSetDateF = function (which, v) { if (which === "from") RCPT_DFROM = v; else RCPT_DTO = v; rcptRepaintList(); };
+/* Clear ALL display-only search + filters (leave the status pill as-is, like js/08 which keeps the stage chip).
+   Full render so the panel inputs + summary reset to empty too. */
+window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEF = ""; RCPT_CATF = ""; RCPT_PERSONF = ""; RCPT_JOBF = ""; RCPT_CARDF = ""; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
 function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === "asc" ? " ▲" : " ▼") : ""; }
 
 /* ============================== PAGE ============================== */
@@ -498,7 +558,7 @@ function rReceipts() {
 
   const rows = rcptSortedRows();
   const reviewCount = rcptReview().length;
-  const filed = rcptAllFiled(), dupIx = rcptDupIndex(), dupById = dupIx.byId, dupCount = dupIx.groups.length;
+  const filed = rcptAllFiled(), dupIx = rcptDupIndex(), dupCount = dupIx.groups.length;   // dup flags now come from rcptListInner()
 
   let h = `<div class="secthd"><h2>📸 Receipts</h2><span class="ct">${rcptAllRows().length}</span></div>`;
 
@@ -537,7 +597,12 @@ function rReceipts() {
 
   // FILTER + EXPORT bar
   h += `<div class="secthd" style="margin-top:14px"><h2>All receipts</h2></div>`;
-  h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:12px 0 6px">
+
+  // SEARCH box (scoped re-render — mirrors the Jobs list). Lives OUTSIDE #rcptlist so its focus/caret survive.
+  h += `<input class="search" id="rcptsearch" placeholder="Search receipts — vendor, amount, category, card…" value="${esc(RCPT_SEARCH)}" oninput="rcptSetSearch(this.value)">`;
+
+  // STATUS pills (unchanged) + export
+  h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 6px">
     <button class="btn ${RCPT_FILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('all')">All ${rcptAllRows().length}</button>
     <button class="btn ${RCPT_FILTER === "review" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('review')">Needs review ${reviewCount}</button>
     <button class="btn ${RCPT_FILTER === "filed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('filed')">Filed ${filed.length}</button>
@@ -546,8 +611,35 @@ function rReceipts() {
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
-  // TABLE
-  h += rcptTableHTML(rows, dupById);
+  // COLLAPSIBLE ⚙️ Filters — dropdowns populated from the ACTUAL rows so only real values show (mobile-first: each
+  // control is full-width and stacks). Lives OUTSIDE #rcptlist so the scoped repaint never destroys its inputs.
+  {
+    const allRows = rcptAllRows();
+    const typeOrder = ["review", "business", "job-expense", "pass-through"];
+    const typesPresent = typeOrder.filter(t => allRows.some(r => rcptRowMeta(r).type === t));
+    const catExtra = Array.from(new Set(allRows.map(r => r.category).filter(Boolean))).filter(c => RCPT_CATS.indexOf(c) < 0).sort();
+    const catOpts = RCPT_CATS.concat(catExtra);
+    const personIds = Array.from(new Set([].concat(allRows.map(r => r.uploadedBy), allRows.map(r => r.attributedTo)).filter(Boolean)));
+    const persons = personIds.map(id => ({ id: id, name: ((typeof userName === "function" && userName(id)) || id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const jobsF = Array.from(new Set(allRows.map(r => r.jobId).filter(Boolean)))
+      .map(id => { const j = (D().jobs || []).find(x => x && x.id === id); return { id: id, label: j ? ((j.title || "Job") + ((j.customerId && typeof custName === "function") ? " · " + custName(j.customerId) : "")) : id }; })
+      .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const cards = Array.from(new Set(allRows.map(r => rcptCard4(r.cardLast4)).filter(Boolean))).sort();
+    const anyExtra = !!(RCPT_TYPEF || RCPT_CATF || RCPT_PERSONF || RCPT_JOBF || RCPT_CARDF || RCPT_DFROM || RCPT_DTO);
+    h += `<details class="card" style="margin-bottom:10px"${anyExtra ? " open" : ""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyExtra ? " · on" : ""}</summary>`
+      + `<label style="margin-top:8px">Type</label><select onchange="rcptSetTypeF(this.value)" style="font-size:13px;width:100%"><option value="">All types</option>${typesPresent.map(t => `<option value="${esc(t)}"${RCPT_TYPEF === t ? " selected" : ""}>${esc(RCPT_TYPE_LABEL[t] || t)}</option>`).join("")}</select>`
+      + `<label style="margin-top:8px">Category</label><select onchange="rcptSetCatF(this.value)" style="font-size:13px;width:100%"><option value="">All categories</option>${catOpts.map(c => `<option value="${esc(c)}"${RCPT_CATF === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>`
+      + `<label style="margin-top:8px">Person</label><select onchange="rcptSetPersonF(this.value)" style="font-size:13px;width:100%"><option value="">Anyone</option>${persons.map(p => `<option value="${esc(p.id)}"${RCPT_PERSONF === p.id ? " selected" : ""}>${esc(p.name)}</option>`).join("")}</select>`
+      + `<label style="margin-top:8px">Job</label><select onchange="rcptSetJobF(this.value)" style="font-size:13px;width:100%"><option value="">All jobs</option>${jobsF.map(j => `<option value="${esc(j.id)}"${RCPT_JOBF === j.id ? " selected" : ""}>${esc(j.label)}</option>`).join("")}</select>`
+      + `<label style="margin-top:8px">💳 Card</label><select onchange="rcptSetCardF(this.value)" style="font-size:13px;width:100%"><option value="">Any card</option>${cards.map(c => `<option value="${esc(c)}"${RCPT_CARDF === c ? " selected" : ""}>••••${esc(c)}</option>`).join("")}</select>`
+      + `<div class="row" style="gap:8px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
+      + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:8px" onclick="rcptClearFilters()">Clear filters</button>` : "")
+      + `</details>`;
+  }
+
+  // TABLE — wrapped in a stable #rcptlist container so search + the dropdown filters can rebuild ONLY this (the
+  // search box + Filters panel above stay put). rcptListInner() is a pure function of the current filter state.
+  h += `<div id="rcptlist">${rcptListInner()}</div>`;
 
   // reimbursements owed
   const owed = rcptReimbOwed(), oids = Object.keys(owed).filter(id => owed[id] > 0.005);

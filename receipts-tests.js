@@ -1120,6 +1120,91 @@ async function main() {
   await new Promise(r => setTimeout(r, 10));
   ok("image paste OFF the Receipts tab is ignored (no upload)", rcptReview().length === 0 && prevented3 === false);
 
+  // ========================= SEARCH + FILTER (display-only) =========================
+  // rcptSortedRows() honors RCPT_SEARCH + each dropdown filter + the date range, they AND together, Clear resets,
+  // a no-match yields 0 rows, and NONE of them mutate the underlying data (it's a view narrower only).
+  console.log("\n— SEARCH + FILTER: rcptSortedRows honors search, each dropdown, date range, combine + clear —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  global.render = function () {};
+  // NOTE: the RCPT_* filter state are eval-scoped `let`s (like RCPT_FILTER) — drive them through the window
+  // rcptSet*/rcptClearFilters setters (which close over the eval scope), not by assigning the names here.
+  rcptSetFilter("all");
+  rcptClearFilters();   // start from a clean filter state
+  // j1 = "Paver patio" (customer Smith) · j2 = "Junk haul" (customer Jones)
+  seedReview({ receiptId: "s1", vendor: "Home Depot", amount: 120.5, category: "materials", cardLast4: "1234", jobId: "j1", type: "pass-through", uploadedBy: "u_ray", attributedTo: "u_chase", date: "2026-06-01", ts: 100 });
+  seedReview({ receiptId: "s2", vendor: "Lowes", amount: 75, category: "tools/equipment", cardLast4: "9999", jobId: "j2", type: "business", uploadedBy: "u_chase", attributedTo: "u_chase", date: "2026-06-10", ts: 200 });
+  seedReview({ receiptId: "s3", vendor: "Shell Gas", amount: 40, category: "fuel", cardLast4: "1234", jobId: null, type: "job-expense", uploadedBy: "u_pierce", attributedTo: "u_pierce", date: "2026-06-20", ts: 300 });
+  const totalRcptRows = rcptAllRows().length;   // 3
+  const rcptSnapBefore = JSON.stringify(STORE);
+  const ids = () => rcptSortedRows().map(r => r.receiptId).sort().join(",");
+
+  // SEARCH — over the concatenated haystack (vendor/desc/amount/category/card/job/customer/person)
+  rcptClearFilters(); rcptSetSearch("home");
+  ok("search 'home' → vendor Home Depot (s1 only)", ids() === "s1", ids());
+  rcptClearFilters(); rcptSetSearch("75");
+  ok("search '75' → matches amount (s2)", ids() === "s2", ids());
+  rcptClearFilters(); rcptSetSearch("fuel");
+  ok("search 'fuel' → matches category (s3)", ids() === "s3", ids());
+  rcptClearFilters(); rcptSetSearch("9999");
+  ok("search '9999' → matches card last-4 (s2)", ids() === "s2", ids());
+  rcptClearFilters(); rcptSetSearch("pierce");
+  ok("search 'pierce' → matches uploader/for name (s3)", ids() === "s3", ids());
+  rcptClearFilters(); rcptSetSearch("paver");
+  ok("search 'paver' → matches job label (s1)", ids() === "s1", ids());
+  rcptClearFilters(); rcptSetSearch("jones");
+  ok("search 'jones' → matches customer name (s2)", ids() === "s2", ids());
+  rcptClearFilters(); rcptSetSearch("LOWES");
+  ok("search is case-insensitive (s2)", ids() === "s2", ids());
+
+  // TYPE
+  rcptClearFilters(); rcptSetTypeF("pass-through");
+  ok("type filter pass-through → s1", ids() === "s1", ids());
+  rcptClearFilters(); rcptSetTypeF("job-expense");
+  ok("type filter job-expense → s3", ids() === "s3", ids());
+  // CATEGORY
+  rcptClearFilters(); rcptSetCatF("tools/equipment");
+  ok("category filter → s2", ids() === "s2", ids());
+  // PERSON (uploader OR attributedTo)
+  rcptClearFilters(); rcptSetPersonF("u_chase");
+  ok("person filter matches uploader OR attributedTo (s1,s2)", ids() === "s1,s2", ids());
+  rcptClearFilters(); rcptSetPersonF("u_pierce");
+  ok("person filter (s3)", ids() === "s3", ids());
+  // JOB
+  rcptClearFilters(); rcptSetJobF("j2");
+  ok("job filter → s2", ids() === "s2", ids());
+  // CARD
+  rcptClearFilters(); rcptSetCardF("1234");
+  ok("card filter → s1,s3", ids() === "s1,s3", ids());
+  // DATE RANGE
+  rcptClearFilters(); rcptSetDateF("from", "2026-06-05"); rcptSetDateF("to", "2026-06-15");
+  ok("date range 06-05..06-15 → s2", ids() === "s2", ids());
+  rcptClearFilters(); rcptSetDateF("from", "2026-06-15");
+  ok("date from only → s3", ids() === "s3", ids());
+  rcptClearFilters(); rcptSetDateF("to", "2026-06-05");
+  ok("date to only → s1", ids() === "s1", ids());
+
+  // COMBINED (AND)
+  rcptClearFilters(); rcptSetCardF("1234"); rcptSetSearch("home");
+  ok("combined card+search AND → s1", ids() === "s1", ids());
+  rcptClearFilters(); rcptSetTypeF("business"); rcptSetJobF("j1");
+  ok("combined type+job with no overlap → 0 rows", rcptSortedRows().length === 0, ids());
+  // NO MATCH
+  rcptClearFilters(); rcptSetSearch("zzznope");
+  ok("no-match search → 0 rows", rcptSortedRows().length === 0, ids());
+
+  // CLEAR resets every filter + restores the full list (verified via behavior + rcptAnyFilterActive())
+  rcptSetSearch("home"); rcptSetTypeF("business"); rcptSetCatF("fuel"); rcptSetPersonF("u_chase"); rcptSetJobF("j1"); rcptSetCardF("1234"); rcptSetDateF("from", "2026-01-01"); rcptSetDateF("to", "2026-12-31");
+  ok("rcptAnyFilterActive() true while filters are set", rcptAnyFilterActive() === true);
+  rcptClearFilters();
+  ok("rcptClearFilters clears everything (rcptAnyFilterActive() false)", rcptAnyFilterActive() === false);
+  ok("after clear, the full list shows again", rcptSortedRows().length === totalRcptRows, rcptSortedRows().length);
+
+  // NO MUTATION — running every filter (and the pure list renderer) must never change the underlying data
+  rcptSetSearch("home"); rcptSetTypeF("pass-through"); rcptSetCatF("materials"); rcptSetPersonF("u_chase"); rcptSetJobF("j1"); rcptSetDateF("from", "2026-06-01"); rcptSetDateF("to", "2026-06-30");
+  rcptSortedRows(); rcptListInner(); rcptSortedRows();
+  rcptClearFilters();
+  ok("filters + rcptListInner NEVER mutate data (STORE byte-identical)", JSON.stringify(STORE) === rcptSnapBefore);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
