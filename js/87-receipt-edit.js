@@ -147,7 +147,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job" onchange="rcptJobPONote()">${jobOpts}</select>
       <label>PO / job code <span class="sub">(type or paste the P#### off the receipt to auto-pick its job)</span></label><input id="rcpt_po" type="text" placeholder="P1042" value="" oninput="rcptPoBind()" onblur="rcptPoBind()">
       <div id="rcpt_po_note" class="sub" style="margin-top:4px"></div></div>
-    <details id="rcpt_more" style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
+    <details id="rcpt_more" open style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
     <label>Date</label><input id="rcpt_date" type="date" value="${esc(rcptDate(rec))}">
     <label>What was it</label><input id="rcpt_desc" value="${esc(rec.desc || rec.note || "")}" placeholder="pavers, dump fee, fuel…">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
