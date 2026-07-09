@@ -160,7 +160,8 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
     <div id="rcpt_split_slot"></div>
     </details>
-    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>`);
+    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--danger)" onclick="rcptEditMarkDup()">🔁 Mark as duplicate — delete this (other copy stays)</button>`);
   rcptEditTypeChange();
   if (typeof rcptJobPONote === "function") rcptJobPONote();   // js/95: show the pre-selected job's PO code
   if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
@@ -237,6 +238,20 @@ window.rcptReplacePhoto = function (input) {
     if (img && base) { img.src = base; img.style.display = ""; }
     if (lbl) lbl.textContent = "✓ New photo attached — Save to keep";
   }).catch(e => { alert("Upload failed: " + (e.message || e)); if (lbl) lbl.textContent = "🔄 Replace photo"; });
+};
+/* MARK AS DUPLICATE — the catch-all for anything the auto-detector misses. Soft-deletes THIS receipt via the
+   SAME existing path (rcptTombstone) the row/edit deletes use — for a filed receipt that removes it from its
+   billing array so the double-charge drops; the other copy is untouched. Owner/admin only, confirm-first. */
+window.rcptEditMarkDup = function () {
+  if (!rcptFinFull() || !RCPT_EDIT) return;
+  if (!confirm("Delete this as a duplicate? The other copy stays. This removes its charge from the books (an admin can undo).")) return;
+  const loc = RCPT_EDIT.loc;
+  if (typeof rcptTombstone === "function") rcptTombstone(loc.store, loc.jobId || null, loc.recId);
+  if (typeof logChange === "function") logChange("delete", "expense", loc.recId, "Marked receipt as duplicate — deleted (other copy kept)");
+  if (typeof save === "function") save();
+  if (typeof closeModal === "function") closeModal();
+  RCPT_EDIT = null;
+  if (typeof render === "function") render();
 };
 window.rcptSaveEdit = function () {
   if (!rcptFinFull() || !RCPT_EDIT) return;
