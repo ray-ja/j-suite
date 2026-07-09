@@ -59,6 +59,31 @@ async function main() {
   await new Promise(r => setTimeout(r, 1500));
   let _t = 0; const now = () => { let n = Date.now(); if (n <= _t) n = _t + 1; _t = n; return n; };   // strictly-increasing (real clients don't collide updatedAt in the same ms; the sim's fast loop can)
   try {
+    // ===== ROLE-CONFIG NORMALIZATION (the Chase fail-open fix) — pure unit checks on the server helpers =====
+    // A legacy __roles__ sentinel may carry a built-in crew role with actions:undefined (predates the actions
+    // system). The server must NOT read that as "unrestricted", and migrateStore must normalize it (crew.actions=[]
+    // + crew.pages gains "data") while leaving genuinely-custom roles untouched and dropping no account.
+    const legacyStore = { obx: { customers: [] }, jam: {}, users: [
+      { id: "o", username: "o", role: "owner", updatedAt: 1 },
+      { id: "c", username: "c", role: "crew", updatedAt: 1 },
+      { id: "__roles__", kind: "roles", updatedAt: 1, roles: [
+        { key: "owner", label: "Owner", builtin: true },
+        { key: "crew", label: "Crew", pages: ["schedule", "time", "today", "messages", "jobs", "inventory", "routes"] },   // actions:undefined, no "data"
+        { key: "lead", label: "Lead", pages: ["today"] }                                                                    // CUSTOM role, actions:undefined
+      ] }
+    ] };
+    check("server: legacy crew role (no actions) does NOT manage members (no fail-open)", SS.roleManagesMembers(legacyStore, "crew") === false);
+    check("server: custom 'lead' role (no actions) also does NOT manage members (conservative fallback)", SS.roleManagesMembers(legacyStore, "lead") === false);
+    check("server: owner always manages members", SS.roleManagesMembers(legacyStore, "owner") === true);
+    const mig = SS.migrateStore(JSON.parse(JSON.stringify(legacyStore)));
+    const migRoles = mig.users.find(u => u.id === "__roles__").roles;
+    const migCrew = migRoles.find(r => r.key === "crew"), migLead = migRoles.find(r => r.key === "lead");
+    check("server migrateStore: crew.actions normalized to []", Array.isArray(migCrew.actions) && migCrew.actions.length === 0);
+    check("server migrateStore: crew.pages gains 'data' (crew reaches Settings)", migCrew.pages.indexOf("data") >= 0);
+    check("server migrateStore: crew keeps its original pages (loss-free)", ["schedule", "time", "today", "jobs", "inventory", "routes"].every(p => migCrew.pages.indexOf(p) >= 0));
+    check("server migrateStore: custom 'lead' role UNTOUCHED (no actions injected, pages unchanged)", !Array.isArray(migLead.actions) && JSON.stringify(migLead.pages) === JSON.stringify(["today"]));
+    check("server migrateStore: both accounts survive normalization (zero loss)", mig.users.some(u => u.id === "o") && mig.users.some(u => u.id === "c"));
+
     const ol = await login("ray", "ownerpw"), cl = await login("joe", "crewpw");
     const ownerTok = ol && ol.token, crewTok = cl && cl.token;
     check("owner login issues a 48-hex per-user token", !!ownerTok && ownerTok.length === 48 && ownerTok !== SHARED);

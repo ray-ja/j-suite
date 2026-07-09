@@ -293,10 +293,30 @@ function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPla
 const RESERVED = new Set(["users", "registry"]);
 function orgIdsOf(s) { return Object.keys(s || {}).filter(k => !RESERVED.has(k) && s[k] && typeof s[k] === "object" && !Array.isArray(s[k])); }
 const ORG_NAMES = { obx: "OBX Lot Solutions", jam: "Jamieson Automation" };
+// DEFAULT actions of each BUILT-IN restricted role (mirrors js/32 DEFAULT_ROLES + BUILTIN_ROLE_ACTIONS). A legacy
+// __roles__ sentinel may carry a built-in role (esp. crew) with NO actions array — which a fail-open client
+// resolver reads as "unrestricted", leaking privileged actions (crew reaching the Admin panel). Normalizing the
+// stored sentinel closes that at the authoritative source and lets the built-in crew role reach Settings ("data").
+const BUILTIN_ROLE_ACTIONS = {
+  admin: ["assign-guides", "edit-schedule", "edit-settings", "manage-members", "edit-tools"],
+  manager: ["assign-guides", "edit-schedule", "edit-settings", "manage-members", "edit-tools"],
+  supervisor: ["assign-guides", "edit-schedule"],
+  "game-guide": [], crew: []
+};
 function migrateStore(s) {
   s = s || {};
   if (!Array.isArray(s.users)) s.users = [];
   if (!Array.isArray(s.registry)) s.registry = [];
+  // ROLE REGISTRY normalization (loss-free + idempotent; updatedAt NOT bumped so a real owner edit still wins on
+  // merge, and the client applies the same fix): fill each BUILT-IN restricted role's DEFAULT actions when the
+  // stored record predates the actions system (crew.actions=[] closes the client fail-open into Admin), and add
+  // "data" to the built-in crew role's pages so crew reaches Settings. Custom roles are left untouched.
+  { const rolesRec = s.users.find(u => u && u.id === "__roles__" && u.kind === "roles");
+    if (rolesRec && Array.isArray(rolesRec.roles)) rolesRec.roles.forEach(r => {
+      if (!r || r.key === "owner") return;
+      if (BUILTIN_ROLE_ACTIONS[r.key] && !Array.isArray(r.actions)) r.actions = BUILTIN_ROLE_ACTIONS[r.key].slice();
+      if (r.key === "crew" && Array.isArray(r.pages) && r.pages.indexOf("data") < 0) r.pages.push("data");
+    }); }
   // SELF-HEAL: every non-deleted registry org MUST have a data slab. A brand-new org created via sync could
   // lose its slab to write-scoping (the registry record persisted but the slab was dropped) → backfill an
   // empty slab so the org is functional (mergeState + the client fill in the collections). Idempotent.
