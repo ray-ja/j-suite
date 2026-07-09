@@ -308,8 +308,9 @@ function rcptMaybeAutoRead(n) {
     capRcptRun({ auto: true });   // fire-and-forget; stamps only rec.suggested, then re-renders itself
   } catch (x) {}
 }
-function rcptUploadFiles(files) {
+function rcptUploadFiles(files, opts) {
   files = (files || []);
+  const _upLabel = (opts && opts.label) ? String(opts.label) : "";   // e.g. "📋 Pasted" — surfaced in the status banner so a clipboard paste is explicitly confirmed
   // Branch: a purchase-history CSV isn't a photo — parse it into review records (js/93) instead of blob-uploading
   // it. One CSV at a time; everything else falls through to the normal photo/PDF upload path unchanged.
   const csvs = files.filter(rcptIsCsvFile);
@@ -320,17 +321,18 @@ function rcptUploadFiles(files) {
   if (_rcptUpBusy) return;   // a batch is already uploading — ignore repeat taps so a slow upload can't double-create (submitGuard-style busy flag)
   _rcptUpBusy = true;
   const total = files.length; let pending = total, ok = 0;
-  rcptSetUpStatus("Uploading 0/" + total + "…");
-  if (typeof uploadStatus === "function") uploadStatus("uploading", 0, total > 1 ? "(1 of " + total + ")" : "");
+  const _upNote = (i) => [_upLabel, total > 1 ? "(" + i + " of " + total + ")" : ""].filter(Boolean).join(" · ");
+  rcptSetUpStatus((_upLabel ? _upLabel + " — " : "") + "Uploading 0/" + total + "…");
+  if (typeof uploadStatus === "function") uploadStatus("uploading", 0, _upNote(1));
   const done = () => { if (--pending <= 0) {
       _rcptUpBusy = false; rcptSetUpStatus("");
       // "✓ safe to close" is tied to the RECORD's sync push, not the blob upload — uploadTrackSync watches it.
-      if (ok > 0 && typeof uploadTrackSync === "function") uploadTrackSync(total > 1 ? "(" + ok + " receipt" + (ok > 1 ? "s" : "") + ")" : "");
+      if (ok > 0 && typeof uploadTrackSync === "function") uploadTrackSync([_upLabel, total > 1 ? "(" + ok + " receipt" + (ok > 1 ? "s" : "") + ")" : ""].filter(Boolean).join(" · "));
       else if (typeof uploadStatus === "function") uploadStatus("hide");
       rcptMaybeAutoRead(ok); if (typeof render === "function") render();
     } };
   files.forEach((f, idx) => {
-    const note = total > 1 ? "(" + (idx + 1) + " of " + total + ")" : "";
+    const note = _upNote(idx + 1);
     jsUpload(f, function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct, note); }).then(id => {
       rcptColl().push(rcptNewReview(id));   // one review receipt per photo
       if (typeof save === "function") save();
@@ -392,7 +394,8 @@ window.rcptPasteFromClipboard = async function () {
       }
     }
     if (!files.length) { rcptPasteNote("No image on the clipboard — copy a screenshot first."); return; }
-    rcptUploadFiles(files);
+    rcptPasteNote("📋 Pasted " + files.length + " image" + (files.length > 1 ? "s" : "") + " — uploading…");
+    rcptUploadFiles(files, { label: "📋 Pasted" });
   } catch (e) {
     rcptPasteNote("Couldn't read the clipboard — copy a screenshot, then tap Paste (it needs permission).");
   }
@@ -415,8 +418,8 @@ function rcptOnPaste(e) {
     }
     if (!files.length) return;
     if (e.preventDefault) e.preventDefault();
-    rcptPasteNote("");
-    rcptUploadFiles(files);
+    rcptPasteNote("📋 Pasted " + files.length + " image" + (files.length > 1 ? "s" : "") + " — uploading…");
+    rcptUploadFiles(files, { label: "📋 Pasted" });
   } catch (x) {}
 }
 if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("paste", rcptOnPaste);
