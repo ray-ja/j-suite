@@ -916,6 +916,9 @@ function rReceipts() {
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
   if (typeof depositsAwaitingRefund === "function") { const _deps = depositsAwaitingRefund(); if (_deps.length) h += rcptDepositsAwaitingHTML(_deps); }
 
+  // 🔗 DEPOSIT-SETTLEMENT SUGGESTIONS — a rental-cost receipt Cap matched to an open deposit (settle → net, no double-count)
+  { const _sugs = rcptDepositSuggestions(); if (_sugs.length) h += rcptDepositSuggestHTML(_sugs); }
+
   // PER-JOB CLOSE-OUT ROLL-UP — when is a job safe to invoice? (all its crew have closed out their receipts)
   h += rcptJobCloseoutHTML();
 
@@ -989,6 +992,131 @@ function rcptDepositsAwaitingHTML(deps) {
   h += `</div>`;
   return h;
 }
+
+/* ============================== 🔗 DEPOSIT-SETTLEMENT SUGGESTION (Cap links a rental cost → its open deposit) ==============================
+   A rental costs money in TWO records: the up-front refundable DEPOSIT ($300, filed as a HELD job expense — js/96)
+   and, when the contract comes back, Cap reads the rental at its NET cost ($72.59 · rentals) as a SEPARATE review
+   receipt. Left alone the deposit sits forever "awaiting refund" and the $72.59 becomes a SECOND expense (double
+   count). rcptDepositMatch spots that a rental-cost receipt is really the SETTLEMENT of an open deposit so Cap can
+   suggest linking them. PURE + display-only — nothing settles until the owner taps. Reuses rcptVendorNorm (fuzzy
+   vendor) + js/96 depositsAwaitingRefund (the open, unsettled deposits). */
+
+/* the net rental cost a receipt reads at — its own amount, else Cap's suggested amount */
+function rcptNetCostOf(r) {
+  if (!r) return 0;
+  var sug = r.suggested || {};
+  var n = (+r.amount || 0) || (+sug.amount || 0);
+  return Math.round((+n || 0) * 100) / 100;
+}
+/* does this receipt read like a rental COST (not a deposit / refund)? category rentals on the record or Cap's guess */
+function rcptLooksRental(r) {
+  if (!r || r.isDeposit || r.refundOfId || r.depositSettled) return false;
+  var sug = r.suggested || {};
+  var cat = String(r.category || sug.category || "").toLowerCase();
+  return cat === "rentals";
+}
+
+/* rcptDepositMatch(receipt) → the best OPEN unsettled deposit this rental-cost receipt likely SETTLES, or null.
+   Heuristic: same normalized vendor AND (same job, when both name one) AND the deposit ≥ the receipt's net (a
+   deposit covers the rental cost). Returns {deposit, job, net (receipt's net cost), impliedRefund = deposit − net}.
+   Never matches a receipt that is itself a deposit/refund/already-settled. Pure — no DOM, never throws. */
+function rcptDepositMatch(receipt) {
+  if (!receipt || !rcptLooksRental(receipt)) return null;
+  if (typeof depositsAwaitingRefund !== "function") return null;
+  var net = rcptNetCostOf(receipt);
+  if (!(net > 0)) return null;
+  var sug = receipt.suggested || {};
+  var rv = rcptVendorNorm(receipt.vendor || sug.vendor || "");
+  if (!rv) return null;
+  var rJob = receipt.jobId || sug.jobId || null;
+  var best = null;
+  depositsAwaitingRefund().forEach(function (d) {
+    var dep = d && d.deposit; if (!dep) return;
+    if (rcptVendorNorm(dep.vendor || "") !== rv) return;                 // same (normalized) vendor
+    if (rJob && d.job && d.job.id && rJob !== d.job.id) return;          // same job when both name one
+    var depAmt = Math.round((+dep.amount || 0) * 100) / 100;
+    if (!(depAmt >= net)) return;                                        // the deposit must cover the rental cost
+    var cand = { deposit: dep, job: d.job, net: net, impliedRefund: Math.round((depAmt - net) * 100) / 100 };
+    if (!best) { best = cand; return; }
+    var candSameJob = !!(rJob && cand.job && cand.job.id === rJob), bestSameJob = !!(rJob && best.job && best.job.id === rJob);
+    if (candSameJob && !bestSameJob) { best = cand; return; }            // prefer a same-job deposit
+    if (candSameJob === bestSameJob && cand.impliedRefund < best.impliedRefund) best = cand;   // else the tightest fit
+  });
+  return best;
+}
+
+/* every open review receipt that Cap thinks SETTLES an open deposit → [{receipt, match}] (owner/admin only) */
+function rcptDepositSuggestions() {
+  if (!rcptFinFull()) return [];
+  var out = [];
+  (typeof rcptReview === "function" ? rcptReview() : []).forEach(function (r) {
+    var m = rcptDepositMatch(r);
+    if (m) out.push({ receipt: r, match: m });
+  });
+  return out;
+}
+
+/* 🔗 the suggestion card — one per matched receipt. One-tap "Settle from this receipt" runs the settlement through
+   the existing js/96 machinery. Pure suggestion until tapped; owner/admin only (gated by rcptDepositSuggestions). */
+function rcptDepositSuggestHTML(sugs) {
+  var m2 = (typeof money2 === "function") ? money2 : function (n) { return "$" + n; };
+  var h = `<div class="card" style="border-left:4px solid #6b3fa0"><b style="color:#6b3fa0">🔗 ${sugs.length} rental receipt${sugs.length > 1 ? "s" : ""} look${sugs.length > 1 ? "" : "s"} like a deposit settlement</b> — Cap matched ${sugs.length > 1 ? "these rentals" : "this rental"} to an open deposit. Settling links them so the deposit nets to the real cost and the same rental isn't counted twice.`;
+  h += sugs.map(function (s) {
+    var r = s.receipt, mt = s.match, dep = mt.deposit, j = mt.job;
+    var cust = (j && j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
+    var where = (j ? (j.title || "Job") : "no job") + (cust ? " · " + cust : "");
+    var vend = r.vendor || (r.suggested && r.suggested.vendor) || dep.vendor || "";
+    return `<div class="li" style="align-items:flex-start;gap:8px;margin-top:8px"><div class="grow" style="min-width:0">
+      <div class="nm" style="white-space:normal">This looks like the settlement for your <b>${m2(dep.amount)}${vend ? " " + esc(vend) : ""} deposit</b> on <b>${esc(where)}</b>.</div>
+      <div class="sub" style="white-space:normal">Cap read the rental at <b>${m2(mt.net)}</b>, so about <b>${m2(mt.impliedRefund)}</b> came back. Settle it to net the deposit to ${m2(mt.net)} and drop the duplicate.</div>
+      </div><button class="btn sm" style="background:#6b3fa0;border-color:#6b3fa0;color:#fff;flex:0 0 auto" onclick="rcptSettleDepFromRcpt('review','','${esc(r.id)}','${esc(dep.id)}')">🔗 Settle from this receipt</button></div>`;
+  }).join("");
+  h += `</div>`;
+  return h;
+}
+
+/* rcptSettleDepositFromReceipt(receiptLoc, depositId) — the one-tap action, avoids the double-count. receiptLoc =
+   {store, jobId, recId}. Computes refund = depositAmount − receiptNet, adds it (NEGATIVE) + settles the deposit via
+   the SAME js/96 machinery (so the deposit nets to the real cost), attaches the receipt's contract photo to the
+   deposit as proof (only if the deposit has none), then soft-deletes (rcptTombstone — reversible) the separate
+   rental receipt so it isn't a 2nd expense. Refuses if the numbers don't work (receipt net > deposit). Owner/admin.
+   Returns {ok, ...} — never throws. DOM-free (the window wrapper does confirm + toast + render). */
+function rcptSettleDepositFromReceipt(receiptLoc, depositId) {
+  if (!rcptFinFull()) return { ok: false, reason: "denied" };
+  if (!receiptLoc || !depositId) return { ok: false, reason: "missing" };
+  var rec = (typeof rcptFindRecord === "function") ? rcptFindRecord(receiptLoc.store, receiptLoc.jobId || null, receiptLoc.recId) : null;
+  if (!rec) return { ok: false, reason: "receipt-gone" };
+  var entry = null;
+  if (typeof depositsAwaitingRefund === "function") depositsAwaitingRefund().forEach(function (d) { if (d && d.deposit && d.deposit.id === depositId) entry = d; });
+  if (!entry) return { ok: false, reason: "deposit-gone" };
+  var dep = entry.deposit;
+  var net = rcptNetCostOf(rec);
+  var depAmt = Math.round((+dep.amount || 0) * 100) / 100;
+  if (!(net > 0) || !(depAmt >= net)) return { ok: false, reason: "numbers", net: net, deposit: depAmt };   // receipt net > deposit → don't force it
+  var refund = Math.round((depAmt - net) * 100) / 100;
+  if (refund > 0 && typeof depositAddRefund === "function") depositAddRefund(depositId, -refund);   // stored NEGATIVE (js/96 abs()es → −refund)
+  if (typeof depositSettle === "function") depositSettle(depositId);                                 // deposit + its refunds now count at NET
+  if (rec.receiptId && !dep.receiptId && typeof depositAttachPhoto === "function") depositAttachPhoto(depositId, rec.receiptId);   // deposit carries the contract as proof
+  if (typeof rcptTombstone === "function") rcptTombstone(receiptLoc.store, receiptLoc.jobId || null, receiptLoc.recId);            // absorb the redundant receipt (reversible)
+  if (typeof save === "function") save();
+  if (typeof logChange === "function") logChange("update", "expense", depositId, "🔗 Settled rental deposit from a receipt — net " + ((typeof money === "function") ? money(net) : net) + (refund > 0 ? " (refund " + ((typeof money === "function") ? money(refund) : refund) + " logged)" : "") + "; duplicate rental receipt absorbed");
+  return { ok: true, depositId: depositId, net: net, refund: refund };
+}
+window.rcptSettleDepFromRcpt = function (store, jobId, recId, depositId) {
+  if (!rcptFinFull()) return;
+  var loc = { store: store, jobId: jobId || null, recId: recId };
+  var rec = (typeof rcptFindRecord === "function") ? rcptFindRecord(loc.store, loc.jobId, loc.recId) : null;
+  var mt = rec ? rcptDepositMatch(rec) : null;
+  var pre = mt ? ("Link this receipt as the settlement of the " + money2(mt.deposit.amount) + " deposit?\n\nThe deposit will net to " + money2(mt.net) + (mt.impliedRefund > 0 ? " (refund " + money2(mt.impliedRefund) + " logged)" : "") + " and this separate rental receipt will be absorbed so it isn't counted twice. Reversible.") : "Settle this deposit from this receipt?";
+  if (typeof confirm === "function" && !confirm(pre)) return;
+  var res = rcptSettleDepositFromReceipt(loc, depositId);
+  if (typeof closeModal === "function") closeModal();
+  if (res && res.ok) { if (typeof toast === "function") toast("Deposit settled — net " + ((typeof money === "function") ? money(res.net) : res.net) + (res.refund > 0 ? ", refund " + ((typeof money === "function") ? money(res.refund) : res.refund) + " logged" : "") + "; the duplicate rental receipt was absorbed"); }
+  else if (res && res.reason === "numbers") { if (typeof toast === "function") toast("That rental cost is more than the deposit — left both alone; settle it manually."); }
+  else { if (typeof toast === "function") toast("Couldn't settle — the deposit or receipt isn't here anymore."); }
+  if (typeof render === "function") render();
+};
+if (typeof window !== "undefined") { window.rcptDepositMatch = rcptDepositMatch; window.rcptDepositSuggestions = rcptDepositSuggestions; window.rcptSettleDepositFromReceipt = rcptSettleDepositFromReceipt; }
 
 /* The "💳 Card" cell — just the last-4 used on this receipt (from the read/attribution). "For" already
    shows who owns it, so we don't repeat the name here. "—" when no card is recorded. Never throws. */

@@ -95,6 +95,21 @@ function depositAddRefund(depositId, amount) {
   return true;
 }
 
+/* ---- attach a proof PHOTO (receiptId) to a deposit record if it has none — so a deposit settled from an
+        uploaded rental contract carries that contract as its proof. Only fills an EMPTY receiptId (never
+        clobbers an existing photo). Touches the owning job so it syncs. Returns true if it attached. ---- */
+function depositAttachPhoto(depositId, receiptId) {
+  if (!depositId || !receiptId) return false;
+  var done = false, t = (typeof now === "function") ? now() : Date.now();
+  _depJobs().forEach(function (j) {
+    if (!j || j.deleted) return;
+    _depRecs(j).forEach(function (r) {
+      if (r && !r.deleted && r.id === depositId && r.isDeposit && !r.receiptId) { r.receiptId = receiptId; r.updatedAt = t; if (typeof touch === "function") touch(j); done = true; }
+    });
+  });
+  return done;
+}
+
 /* ---- a small badge for a receipt/expense row (js/72 vendor cell) ---- */
 function rentalDepositBadge(rec) {
   if (!rec) return "";
@@ -142,8 +157,8 @@ window.depositMarkSettled = function (depositId) {
 if (typeof window !== "undefined") {
   window.depositHeld = depositHeld; window.depositNetCost = depositNetCost; window.depositLinkedRefunds = depositLinkedRefunds;
   window.depositsAwaitingRefund = depositsAwaitingRefund; window.depositSettle = depositSettle; window.depositAddRefund = depositAddRefund;
-  window.rentalDepositBadge = rentalDepositBadge;
+  window.depositAttachPhoto = depositAttachPhoto; window.rentalDepositBadge = rentalDepositBadge;
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { depositHeld: depositHeld, depositNetCost: depositNetCost, depositLinkedRefunds: depositLinkedRefunds, depositsAwaitingRefund: depositsAwaitingRefund, depositSettle: depositSettle, depositAddRefund: depositAddRefund, rentalDepositBadge: rentalDepositBadge };
+  module.exports = { depositHeld: depositHeld, depositNetCost: depositNetCost, depositLinkedRefunds: depositLinkedRefunds, depositsAwaitingRefund: depositsAwaitingRefund, depositSettle: depositSettle, depositAddRefund: depositAddRefund, depositAttachPhoto: depositAttachPhoto, rentalDepositBadge: rentalDepositBadge };
 }
