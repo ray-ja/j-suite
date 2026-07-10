@@ -30,6 +30,11 @@ window.openQuote=function(id,customerId,preset){
     WZ.cust={id:q.customerId||"",name:q.cust||(q.customerId?custName(q.customerId):""),phone:"",address:q.address||"",source:"",soldBy:"",notes:"",propertyId:q.propertyId||""};
     if(q.customerId){const c=d.customers.find(x=>x.id===q.customerId);if(c){WZ.cust.phone=c.phone||"";WZ.cust.source=c.source||"";WZ.cust.soldBy=c.soldBy||"";}}
     WZ.items=JSON.parse(JSON.stringify(q.items||[]));
+    // WRITE-IN PRICE title: a custom/retroactive quote's flat line should read as the job it was for, not the
+    // generic "Custom price". Carry the quote/job title, and HEAL legacy quotes saved before the _flat marker was
+    // persisted (a lone "Custom price" line on a titled quote): re-mark it flat + adopt the title.
+    WZ.title=q.title||"";
+    if(WZ.items.length===1&&WZ.items[0]&&(WZ.items[0]._flat||WZ.items[0].name==="Custom price")){WZ.items[0]._flat=true;if(WZ.title&&(!WZ.items[0].name||WZ.items[0].name==="Custom price"))WZ.items[0].name=WZ.title;}
     WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.days=q.estDays||1;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.disposalTrip=!!q.disposalTrip;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
@@ -59,6 +64,9 @@ function wizLockedAlert(){if(WZ&&WZ.readonly){alert("This quote is being edited 
 window.wizTakeOver=function(){if(!WZ||!WZ.id)return;WZ.readonly=false;WZ.lockBy=null;
   if(typeof lockAcquire==="function")lockAcquire("quote",WZ.id,{onLost:wizOnLost,alive:wizAlive});render();};
 window.exitWizard=function(){if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZON=false;if(typeof navReturn==="function"){navReturn("quotes");}else{render();}};   // close/cancel/delete/done → return to the list we opened the wizard from (e.g. Jobs table), falling back to the Quotes tab
+/* Save & go back — the bottom (always-visible sticky-footer) exit for an editing session, so you don't have to
+   scroll back up to the top "Close". Persists the current edits first (so nothing typed is lost), then returns. */
+window.wizBack=function(){if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;if(WZ&&WZ.id&&WZ.items&&WZ.items.length&&typeof wizPersist==="function")wizPersist();exitWizard();};
 /* ---- draft autosave + resume (survive back / close) ---- */
 const WZ_DRAFT_KEY="jsuite_wzdraft";
 window.wizAutosave=function(){try{if(WZON&&WZ&&WZ.step&&WZ.step!=="done")localStorage.setItem(WZ_DRAFT_KEY,JSON.stringify({biz:S.biz,ts:now(),wz:WZ}));}catch(e){}};
@@ -164,9 +172,10 @@ window.wizSetFlatPrice=function(v){
   let p=parseFloat(v);if(!isFinite(p)||p<0)p=0;
   WZ.items=WZ.items||[];
   const fi=WZ.items.findIndex(it=>it&&it._flat);
+  const _nm=(WZ.title||"").trim()||"Custom price";   // name the line after the job it was for, not a generic label
   if(p>0){
-    if(fi>=0){WZ.items[fi].price=p;WZ.items[fi].qty=1;WZ.items[fi].cost=0;WZ.items[fi].unit="flat";WZ.items[fi]._flat=true;}
-    else WZ.items.push({name:"Custom price",price:p,qty:1,cost:0,unit:"flat",_flat:true});
+    if(fi>=0){const c=WZ.items[fi];c.price=p;c.qty=1;c.cost=0;c.unit="flat";c._flat=true;if(!c.name||c.name==="Custom price")c.name=_nm;}
+    else WZ.items.push({name:_nm,price:p,qty:1,cost:0,unit:"flat",_flat:true});
     WZ.disc=0;WZ.discPct=null;   // the number you typed IS the price — nothing stacked on top
   } else if(fi>=0){WZ.items.splice(fi,1);}
   if(typeof wizAutosave==="function")wizAutosave();
@@ -347,7 +356,7 @@ function wizReview(){
   }
   // sticky footer: back to the load + crew (−/+) + total + save
   const total=Math.max(0,sub-(WZ.disc||0)),cN=Math.max(1,WZ.crewN||1);
-  h+=`<div class="wizfoot" style="gap:6px">${(editing||WZ.modalBuilt)?"":`<button class="btn ghost sm" onclick="wizBackToBuild()" title="Back to the load">←</button>`}<span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=Math.max(1,(WZ.crewN||2)-1);render()">−</button>${cN}<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=(WZ.crewN||1)+1;render()">+</button></span><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
+  h+=`<div class="wizfoot" style="gap:6px">${editing?`<button class="btn ghost sm" onclick="wizBack()" title="Save & go back">← Back</button>`:(WZ.modalBuilt?"":`<button class="btn ghost sm" onclick="wizBackToBuild()" title="Back to the load">←</button>`)}<span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=Math.max(1,(WZ.crewN||2)-1);render()">−</button>${cN}<button class="btn ghost sm" style="width:28px;padding:2px;margin:0 2px" onclick="WZ.crewN=(WZ.crewN||1)+1;render()">+</button></span><div class="wf-amt"><span class="wf-lab">Total</span><b id="wz_rtotal">${money(total)}</b></div><button class="btn acc grow" onclick="wizFinish()" ${WZ.items.length?"":"disabled"}>${editing?"Save changes":"Save & present"} →</button></div>`;
   return h;
 }
 /* line editing */
@@ -401,7 +410,7 @@ window.wizPersist=function(){
     propertyId:prop?prop.id:(base.propertyId||null),
     address:(prop&&prop.address)||WZ.cust.address||base.address||"",
     date:base.date||today(),
-    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
+    items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_flat:it._flat||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     pv:(WZ.pv&&WZ.items[0]&&(WZ.items[0].bandKey==="paver"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="paver")))?JSON.parse(JSON.stringify(WZ.pv)):undefined,
     fd:(WZ.fd&&WZ.items[0]&&(WZ.items[0].bandKey==="frenchdrain"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="frenchdrain")))?JSON.parse(JSON.stringify(WZ.fd)):undefined,
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),estDays:Math.max(1,+WZ.days||1),disposalTrip:!!WZ.disposalTrip,total:total,
