@@ -87,27 +87,18 @@ function capRcptFanStamp(liveRec, suggested) {
   }
   return out;
 }
-/* AUTO-APPLY one stamped review record through the EXACT one-tap spine the manual "✓ file it" uses
-   (rcptSuggestionOneTapOk → rcptFileSuggestion, which files a POSITIVE amount and never sets kind:refund /
-   isDeposit — the confirmation-only refund path). Stamps the additive cap-review markers on the filed record.
-   Returns true iff it filed. Never throws. Shared by the drain AND the reread fan-out so a fanned sibling files
-   BYTE-IDENTICALLY to a normal auto-file. opts.batch defers save() to the caller. */
+/* AUTO-FILL one stamped review record from Cap's confident guess — applies the fields (type/job/category/
+   amount/vendor/card) to the record but KEEPS IT IN NEEDS REVIEW (keepReview) so the owner reviews + files it.
+   Cap fills, the owner files. Uses the same one-tap spine (rcptSuggestionOneTapOk → rcptFileSuggestion) with the
+   confirmation-only refund/deposit guard. Returns true iff it applied. Never throws. opts.batch defers save(). */
 function capRcptAutoFileOne(rec, opts) {
   opts = opts || {};
   try {
     if (!rec || rec.deleted || !rec.suggested) return false;
     if (typeof rcptSuggestionOneTapOk !== "function" || typeof rcptFileSuggestion !== "function") return false;
     if (!rcptSuggestionOneTapOk(rec)) return false;
-    var fres = rcptFileSuggestion("review", null, rec.id, { batch: opts.batch !== false });   // default batch:true
-    if (!(fres && fres.ok && fres.newLoc)) return false;
-    var filed = (typeof rcptFindRecord === "function") ? rcptFindRecord(fres.newLoc.store, fres.newLoc.jobId, fres.newLoc.recId) : null;
-    if (!filed) return false;
-    filed.capAutoFiled = true;                 // Cap filed this from its own confident guess — owner hasn't reviewed it
-    filed.capReviewedAt = null;                // → shows the purple "🤖 review" mark until a human touches it
-    filed.capAutoAt = (typeof now === "function") ? now() : Date.now();
-    if (typeof rcptTouchHome === "function") rcptTouchHome({ store: fres.newLoc.store, jobId: fres.newLoc.jobId }, filed);
-    else if (typeof touch === "function") touch(filed);
-    return true;
+    var fres = rcptFileSuggestion("review", null, rec.id, { batch: opts.batch !== false, keepReview: true });   // FILL — stays in Needs review
+    return !!(fres && fres.ok);
   } catch (e) { return false; }
 }
 

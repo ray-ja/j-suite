@@ -518,12 +518,15 @@ async function main() {
   ok("blank record + business suggestion → vendor pre-filled Sunoco", /id="rcpt_vendor"[^>]*value="Sunoco"/.test(PF_HTML));
   ok("blank record + business suggestion → Business type option pre-selected", /<option value="business"[^>]*selected/.test(PF_HTML));
   ok("the record itself is NOT mutated (still blank, suggested-only)", pfBiz.amount === null && pfBiz.type === null && pfBiz.vendor === "", { a: pfBiz.amount, t: pfBiz.type });
-  // …and a PLAIN Save (reading the pre-filled values off the form) FILES it to biz — leaves review
+  // …a PLAIN Save now KEEPS it in Needs review (Cap fills, you file). ✓ File it is what routes it to biz.
   global.val = function (id) { return ({ rcpt_type: "business", rcpt_amt: "144.69", rcpt_vendor: "Sunoco", rcpt_cat: "fuel" })[id] || ""; };
   rcptSaveEdit();
-  ok("plain Save on the pre-filled business receipt → left the review queue", !rcptReview().some(r => r.id === pfBiz.id), rcptReview().map(r => r.id));
-  ok("plain Save → filed to biz (expenses[]) with the guessed amount, same id", STORE.expenses.some(e => e.id === pfBiz.id && !e.deleted && e.amount === 144.69), STORE.expenses.map(e => e.id + ":" + e.amount));
+  ok("plain Save on a review receipt → STAYS in Needs review (edits saved, not filed)", rcptReview().some(r => r.id === pfBiz.id), rcptReview().map(r => r.id));
+  ok("Save stored the type + amount on the review record (ready to file)", (function () { const r = rcptReview().find(x => x.id === pfBiz.id); return !!r && r.type === "business" && r.amount === 144.69; })());
   global.val = function () { return ""; };
+  rcptFileRow("review", null, pfBiz.id);   // the explicit ✓ File it — routes on the record's OWN fields
+  ok("✓ File it → left the review queue", !rcptReview().some(r => r.id === pfBiz.id), rcptReview().map(r => r.id));
+  ok("✓ File it → filed to biz (expenses[]) with the guessed amount, same id", STORE.expenses.some(e => e.id === pfBiz.id && !e.deleted && e.amount === 144.69), STORE.expenses.map(e => e.id + ":" + e.amount));
 
   // (2) the record's OWN value WINS — a human-set amount/vendor is never overwritten by the suggestion
   const pfHuman = seedReview({ receiptId: "pf2", amount: 99, vendor: "Manual entry", suggested: { vendor: "Sunoco", amount: 144.69, type: "business", confidence: 0.95 } });
@@ -559,6 +562,21 @@ async function main() {
   ok("rental-deposit box NOT pre-ticked", !/id="rcpt_deposit"[^>]*checked/.test(PF_HTML));
   global.val = _valPF; global.document.getElementById = _geiPF; global.modal = _modalPF;
 
+  // ========================= PIPELINE: rcptRecordFileable gate + FILE ALL READY (bulk) =========================
+  console.log("— PIPELINE: File all ready files only COMPLETE review receipts; incomplete ones stay in the queue —");
+  resetStore(); global.finCanView = function () { return true; };
+  const rdyBiz = seedReview({ receiptId: "rdy1", vendor: "Costco", amount: 40, type: "business", category: "office/admin" });   // complete → fileable
+  const rdyMat = seedReview({ receiptId: "rdy2", vendor: "Lowe's", amount: 25, type: "pass-through", jobId: "j1", category: "materials" });   // complete → fileable
+  const rdyNoJob = seedReview({ receiptId: "rdy3", vendor: "Lowe's", amount: 30, type: "pass-through", jobId: null, category: "materials" });   // no job → NOT fileable
+  const rdyNoType = seedReview({ receiptId: "rdy4", vendor: "Shell", amount: 20 });   // no type → NOT fileable
+  ok("fileable gate: complete business + complete pass-through are ready", rcptRecordFileable(rdyBiz) && rcptRecordFileable(rdyMat));
+  ok("fileable gate: a pass-through with NO job / a receipt with NO type are NOT ready", !rcptRecordFileable(rdyNoJob) && !rcptRecordFileable(rdyNoType));
+  ok("rcptReadyCount = 2 of the 4 review receipts", rcptReadyCount() === 2, rcptReadyCount());
+  global.confirm = function () { return true; };
+  rcptFileAllReady();
+  ok("File all ready → the 2 complete ones LEFT review; the 2 incomplete STAYED", rcptReview().length === 2 && rcptReview().every(r => r.id === rdyNoJob.id || r.id === rdyNoType.id), rcptReview().map(r => r.receiptId));
+  ok("File all ready → business one landed in expenses[], material in job.materials[]", (STORE.expenses || []).some(e => e.receiptId === "rdy1" && e.amount === 40) && STORE.jobs[0].materials.some(m => m.receiptId === "rdy2" && m.amount === 25), { biz: (STORE.expenses || []).map(e => e.receiptId), mat: STORE.jobs[0].materials.map(m => m.receiptId) });
+
   // ========================= CAP SWEEP: re-file leftover CONFIDENT already-suggested review rows =========================
   console.log("— CAP SWEEP: re-applies a confident unapplied review receipt via rcptFileSuggestion; a no-job pass-through stays in review —");
   resetStore(); _capRcptSkip = {}; _capSweepLast = 0; _capRcptBusy = false; OPEN_SHIFT = null; global.finCanView = function () { return true; };
@@ -567,8 +585,8 @@ async function main() {
   const swPT = seedReview({ receiptId: "sw2", suggested: { vendor: "W", amount: 70, type: "pass-through", jobId: null, category: "materials", confidence: 0.95 } });   // no resolvable job — stays
   capRcptSweep(); await new Promise(r => setTimeout(r, 20));
   ok("sweep made NO vision call (both rows already have a suggestion)", swReads === 0, swReads);
-  ok("confident business row re-filed out of review", !rcptReview().some(r => r.id === swBiz.id), rcptReview().map(r => r.id));
-  ok("…landed in biz with the same id + capAutoFiled (purple review) mark", STORE.expenses.some(e => e.id === swBiz.id && !e.deleted && e.amount === 60 && e.capAutoFiled === true));
+  ok("confident business row FILLED by Cap but STAYS in Needs review (Cap fills, owner files)", rcptReview().some(r => r.id === swBiz.id), rcptReview().map(r => r.id));
+  ok("…the review record now carries Cap's fields (type business, amount 60), ready to file — NOT auto-filed", (function () { const r = rcptReview().find(x => x.id === swBiz.id); return !!r && r.type === "business" && r.amount === 60 && !r.capAutoFiled; })());
   ok("no-job pass-through STAYS in review (needs the owner to pick a job)", rcptReview().some(r => r.id === swPT.id));
 
   // ========================= PER-JOB RECEIPT CLOSE-OUT =========================
@@ -1408,7 +1426,7 @@ async function main() {
   resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
   const smokeRow = seedReview({ receiptId: "blobSmoke", suggested: { confidence: 0.9, amount: 99, type: "business", vendor: "SmokeCo", category: "other", desc: "x" } });
   const tblSmoke = rcptTableHTML(rcptAllRows(), {});
-  ok("table shows a 'file it' button wired to rcptFileItRow on the confident row", /file it/.test(tblSmoke) && /rcptFileItRow\(/.test(tblSmoke));
+  ok("table shows a File button wired to rcptFileRow on a review row", /rcptFileRow\(/.test(tblSmoke) && /(File it|Finish \+ file)/.test(tblSmoke));
   rcptFileItRow("review", smokeRow.jobId || "", smokeRow.id);
   ok("tapping 'file it' filed the smoke receipt (left review + landed in a home)", rcptReview().every(r => r.id !== smokeRow.id) && (STORE.expenses || []).some(e => e && e.receiptId === "blobSmoke"));
   resetStore();
@@ -1429,19 +1447,21 @@ async function main() {
   const autoRec = seedReview({ receiptId: "blobAuto", vendor: "", amount: null, type: null, jobId: null, category: "" });
   CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: AUTO_SUGG }) }); };
   await capRcptRun({ auto: true });
-  const autoFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobAuto");
-  ok("confident read → auto-filed into org expenses[] (left the review queue)", !!autoFiled && rcptReview().every(r => r.id !== autoRec.id), { autoFiled: !!autoFiled, stillReview: rcptReview().map(r => r.receiptId) });
-  ok("auto-filed record stamped capAutoFiled:true + capReviewedAt:null", !!autoFiled && autoFiled.capAutoFiled === true && autoFiled.capReviewedAt === null, autoFiled && { f: autoFiled.capAutoFiled, r: autoFiled.capReviewedAt });
-  ok("auto-filed record stamped capAutoAt (a timestamp)", !!autoFiled && typeof autoFiled.capAutoAt === "number");
-  ok("auto-filed record carries NO leftover `suggested` (distinct from the pre-file 🤖 Cap badge)", !!autoFiled && !autoFiled.suggested);
-  // BYTE-IDENTICAL to a manual one-tap file of the SAME suggestion (minus id/ts + the additive cap* flags)
+  // NEW MODEL: Cap FILLS the review record (keepReview) — it does NOT route it out. Owner reviews + files.
+  const autoFilled = rcptReview().find(r => r && r.receiptId === "blobAuto");
+  ok("confident read → Cap FILLED the record but it STAYS in Needs review (Cap fills, owner files)", !!autoFilled && rcptReview().some(r => r.id === autoRec.id), { filled: !!autoFilled, stillReview: rcptReview().map(r => r.receiptId) });
+  ok("the filled review record carries Cap's fields (type business, amount 88, vendor)", !!autoFilled && autoFilled.type === "business" && autoFilled.amount === 88 && autoFilled.vendor === "AutoCostco", autoFilled && { t: autoFilled.type, a: autoFilled.amount });
+  ok("Cap's fill did NOT route it to org expenses[] (nothing filed yet)", !(STORE.expenses || []).some(e => e && !e.deleted && e.receiptId === "blobAuto"));
+  // FILING the Cap-filled record (rcptFileRow) is byte-identical to a manual one-tap file of the SAME guess.
+  rcptFileRow("review", null, autoRec.id);
+  const autoThenFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobAuto");
+  ok("filing the Cap-filled record routes it to org expenses[] with the guessed amount", !!autoThenFiled && autoThenFiled.amount === 88, autoThenFiled && autoThenFiled.amount);
   resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
   const manualRec = seedReview({ receiptId: "blobAuto", vendor: "", amount: null, type: null, jobId: null, category: "", suggested: AUTO_SUGG });
-  const manRes = rcptFileSuggestion("review", null, manualRec.id);
+  rcptFileSuggestion("review", null, manualRec.id);
   const manualFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobAuto");
-  const eqAuto = autoFiled && manualFiled && JSON.stringify(stripCap(autoFiled)) === JSON.stringify(stripCap(manualFiled));
-  ok("auto-filed record is BYTE-IDENTICAL to the manual one-tap file (minus id/ts + additive cap flags)", eqAuto, eqAuto ? undefined : { auto: stripCap(autoFiled), manual: stripCap(manualFiled) });
-  ok("the manual one-tap file has NO cap flags (non-retroactive / marker is auto-only)", !!manualFiled && !("capAutoFiled" in manualFiled) && !("capReviewedAt" in manualFiled));
+  const eqAuto = autoThenFiled && manualFiled && JSON.stringify(stripCap(autoThenFiled)) === JSON.stringify(stripCap(manualFiled));
+  ok("a Cap-filled-then-filed record is BYTE-IDENTICAL to the manual one-tap file (minus id/ts)", eqAuto, eqAuto ? undefined : { auto: stripCap(autoThenFiled), manual: stripCap(manualFiled) });
 
   console.log("— CAP AUTO-APPLY: a LOW-confidence / incomplete guess is NOT auto-filed (stays suggested in review) —");
   resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
@@ -1768,16 +1788,20 @@ async function main() {
   global.val = function (id) { return ({ rcpt_type: "job-expense", rcpt_job: "j1", rcpt_amt: "90", rcpt_vendor: "Sunbelt", rcpt_date: "2026-07-01", rcpt_cat: "rentals", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "trailer", rcpt_card4: "" })[id] || ""; };
   global.document.getElementById = function (id) { return id === "rcpt_refund" ? { checked: true } : (id === "rcpt_deposit" ? { checked: false } : null); };
   rcptSaveEdit();
+  global.val = _valT;   // restore before File reads the record's own fields (not the form)
+  rcptFileRow("review", "j1", tickRec.id);   // Save kept the refund flag on the review record; File routes it
   const tickFiled = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickref");
-  ok("explicit refund tick + Save → kind:'refund' + NEGATIVE amount (the ONE path that sets it)", tickFiled && tickFiled.kind === "refund" && tickFiled.amount === -90, tickFiled && [tickFiled.kind, tickFiled.amount]);
+  ok("explicit refund tick + Save + ✓ File → kind:'refund' + NEGATIVE amount (the ONE path that sets it)", tickFiled && tickFiled.kind === "refund" && tickFiled.amount === -90, tickFiled && [tickFiled.kind, tickFiled.amount]);
   resetStore();
   const dTick = seedReview({ receiptId: "tickdep", vendor: "Sunbelt", amount: 300 });
   rcptEditOpen("review", "", dTick.id);
   global.val = function (id) { return ({ rcpt_type: "job-expense", rcpt_job: "j1", rcpt_amt: "300", rcpt_vendor: "Sunbelt", rcpt_date: "2026-07-01", rcpt_cat: "rentals", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "deposit", rcpt_card4: "" })[id] || ""; };
   global.document.getElementById = function (id) { return id === "rcpt_deposit" ? { checked: true } : null; };
   rcptSaveEdit();
+  global.val = _valT;
+  rcptFileRow("review", "j1", dTick.id);
   const depTick = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickdep");
-  ok("explicit deposit tick + Save → isDeposit:true (the ONE path that sets it)", depTick && depTick.isDeposit === true, depTick && depTick.isDeposit);
+  ok("explicit deposit tick + Save + ✓ File → isDeposit:true (the ONE path that sets it)", depTick && depTick.isDeposit === true, depTick && depTick.isDeposit);
   global.val = _valT; global.document.getElementById = _geiT;
 
   // ========================= DATE-EDIT BUG: capRead.date "unknown" must not mask/blank the date field =========================
@@ -1864,12 +1888,12 @@ async function main() {
   ] };
   CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: STMT_B }) }); };
   await capRcptRun({ auto: true });
-  const filedB = (STORE.expenses || []).filter(e => e && !e.deleted && e.receiptId === "stmtB.png");
-  ok("confident statement auto-files BOTH transactions into expenses[]", filedB.length === 2, filedB.map(e => [e.vendor, e.amount]));
-  ok("each fanned expense is POSITIVE (a debit shown -$ files as +$)", filedB.every(e => e.amount > 0) && filedB.some(e => e.amount === 68.69) && filedB.some(e => e.amount === 67.21), filedB.map(e => e.amount));
-  ok("no fanned expense is a refund (kind never 'refund')", filedB.every(e => e.kind !== "refund"), filedB.map(e => e.kind));
-  ok("both fanned rows left the review queue", rcptReview().filter(r => r.receiptId === "stmtB.png").length === 0);
-  ok("fanned expenses stamped capAutoFiled (purple 🤖 review)", filedB.every(e => e.capAutoFiled === true && e.capReviewedAt === null));
+  // NEW MODEL: Cap FILLS each fanned transaction into its review record; they STAY in Needs review for the owner to file.
+  const fannedB = rcptReview().filter(e => e && !e.deleted && e.receiptId === "stmtB.png");
+  ok("confident statement fans into 2 review records, each FILLED by Cap (stays in review)", fannedB.length === 2, fannedB.map(e => [e.vendor, e.amount]));
+  ok("each fanned review record is a POSITIVE expense (a debit shown -$ fills as +$)", fannedB.every(e => e.amount > 0) && fannedB.some(e => e.amount === 68.69) && fannedB.some(e => e.amount === 67.21), fannedB.map(e => e.amount));
+  ok("no fanned record is a refund (kind never 'refund')", fannedB.every(e => e.kind !== "refund"), fannedB.map(e => e.kind));
+  ok("nothing auto-routed to expenses[] yet — the owner files (Cap fills, owner files)", (STORE.expenses || []).filter(e => e && !e.deleted && e.receiptId === "stmtB.png").length === 0);
 
   console.log("— STATEMENT FAN-OUT: a SINGLE / normal receipt makes exactly ONE record, unchanged —");
   // (a) explicit transactions:[] (a normal itemized receipt) → single-object path, no fan, one record

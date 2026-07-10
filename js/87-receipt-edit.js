@@ -96,10 +96,12 @@ function rcptBuildRecord(home, id, fields, carry) {
 /* THE PURE RE-BUCKETING OP. loc={store,jobId,recId}; fields={type,jobId,amount,vendor,date,category,paidBy,desc,receiptId}.
    Same home → mutate in place (id kept, zero churn). Different home → tombstone old + create SAME-id record in
    the new array (preserves id + photo, moves the billing). Returns {ok,newLoc} or {ok:false,error}. */
-function rcptApplyEdit(loc, fields) {
+function rcptApplyEdit(loc, fields, opts) {
   const cur = rcptFindRecord(loc.store, loc.jobId, loc.recId || loc.id);
   if (!cur) return { ok: false, error: "record not found" };
-  const home = rcptTargetHome(fields);
+  // keepReview: a plain SAVE on a Needs-review receipt stores the fields (type/job/paidBy included) IN PLACE and
+  // does NOT route it out — filing is a separate, explicit step. Force the home to stay 'review'.
+  const home = (opts && opts.keepReview) ? { store: "review", jobId: null } : rcptTargetHome(fields);
   const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
@@ -247,7 +249,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
   let sugg = "";
   if (RCPT_EDIT.suggested) {
     const s = RCPT_EDIT.suggested;
-    sugg = `<div id="rcpt_suggbanner" class="card" style="background:#6b3fa0;color:#fff;padding:10px;margin-bottom:8px"><div style="font-weight:700">🤖 Cap suggests${s.confidence != null ? ` (${Math.round(s.confidence * 100)}% sure)` : ""}</div><div class="sub" style="color:#fff;opacity:.9;white-space:normal">${[s.vendor, s.amount != null ? money(s.amount) : "", s.type ? (RCPT_TYPE_LABEL[s.type] || s.type) : "", s.category].filter(Boolean).map(esc).join(" · ")}</div><button class="btn sm" style="margin-top:8px;background:#fff;color:#6b3fa0" onclick="rcptApplySuggestion()">Use Cap's guess</button> <span class="sub" style="color:#fff;opacity:.8">— then Save to confirm</span></div>`;
+    sugg = `<div id="rcpt_suggbanner" class="card" style="background:#6b3fa0;color:#fff;padding:10px;margin-bottom:8px"><div style="font-weight:700">🤖 Cap suggests${s.confidence != null ? ` (${Math.round(s.confidence * 100)}% sure)` : ""}</div><div class="sub" style="color:#fff;opacity:.9;white-space:normal">${[s.vendor, s.amount != null ? money(s.amount) : "", s.type ? (RCPT_TYPE_LABEL[s.type] || s.type) : "", s.category].filter(Boolean).map(esc).join(" · ")}</div><button class="btn sm" style="margin-top:8px;background:#fff;color:#6b3fa0" onclick="rcptApplySuggestion()">Use Cap's guess</button> <span class="sub" style="color:#fff;opacity:.8">— review, then ✓ File it</span></div>`;
   }
   // 🔗 DEPOSIT-SETTLEMENT match (js/72) — this rental cost looks like the settlement of an open deposit. One tap
   // settles it through the js/96 machinery (net + absorb the duplicate). Suggestion-only until tapped; owner/admin.
@@ -293,7 +295,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_split_slot"></div>
     </details>
     ${rcptInvBlockHTML(rec)}
-    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>
+    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn ${store === "review" ? "ghost" : "acc"} grow" onclick="rcptSaveEdit()" title="${store === "review" ? "Save your edits — stays in Needs review" : "Save"}">✓ Save</button>${store === "review" ? `<button class="btn acc grow" onclick="rcptFileEdit()" title="File it — moves it to Owed / Filed">✓ File it</button>` : ""}</div>
     ${rcptEditDupActionsHTML({ store: store, jobId: jobId, recId: recId })}`);
   rcptEditTypeChange();   // the pre-filled type (if any) makes the "Assign to job" field visible for a job type
   // CONFIRMATION-ONLY refund/deposit (Ray): if Cap flagged a possible refund/rental-deposit, surface the SAME
@@ -384,7 +386,7 @@ window.rcptApplySuggestion = function () {
   // Cap SPLIT SUGGESTION (js/92) — a MIXED receipt (≥2 buckets, e.g. materials + a reusable tool). OPEN the
   // split editor PRE-FILLED from Cap's balanced allocations for the owner to review + tap "Save splits".
   // Cap proposes, the owner confirms — this never auto-commits. <2 splits → the single-categorization above stands.
-  let banner = "✓ Cap's guess applied — review the fields and tap Save to confirm.";
+  let banner = "✓ Cap's guess applied — review the fields, then tap ✓ File it (or Save to keep editing).";
   if (s.splits && Array.isArray(s.splits) && s.splits.length >= 2 && typeof rcptSplitStartFromSuggestion === "function") {
     rcptSplitStartFromSuggestion(s.splits, s.jobId || "");
     banner = "✓ Cap split this into " + s.splits.length + " parts — review the amounts + jobs, then tap Save splits.";
@@ -449,9 +451,9 @@ window.rcptEditMarkDup = function () {
   RCPT_EDIT = null;
   if (typeof render === "function") render();
 };
-window.rcptSaveEdit = function () {
-  if (!rcptFinFull() || !RCPT_EDIT) return;
-  const type = val("rcpt_type") || "";   // "" = review
+/* read the edit form → the fields object rcptApplyEdit consumes (+ raw values for validation). No DOM writes. */
+function rcptReadEditForm() {
+  const type = val("rcpt_type") || "";
   const jobId = (type === "job-expense" || type === "pass-through") ? (val("rcpt_job") || "") : "";
   const amtRaw = val("rcpt_amt");
   const amount = amtRaw === "" ? null : (parseFloat(amtRaw) || 0);
@@ -461,26 +463,56 @@ window.rcptSaveEdit = function () {
   const paidBy = val("rcpt_paidby") || "";
   const attributedTo = val("rcpt_attr") || "";
   const desc = (val("rcpt_desc") || "").trim();
-  const cardLast4 = (val("rcpt_card4") || "").replace(/\D/g, "").slice(-4);   // js/94: 0-4 digits — "" clears it, a valid 4-digit is stored + drives auto-attribution
-  const refNo = (val("rcpt_refno") || "").replace(/[^A-Za-z0-9 -]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);   // js/72 "Ref #": order/contract/invoice/txn #; "" clears it
-  const isDeposit = !!(document.getElementById("rcpt_deposit") || {}).checked;   // js/96: a refundable rental deposit (HELD out of job cost until settled)
-  const isRefund = !!(document.getElementById("rcpt_refund") || {}).checked;     // js/96: a refund/credit — stored NEGATIVE so it offsets the charge
-  // a refund stores the amount as negative + kind:"refund"; a deposit nudges category to "rentals" (equipment-rental hard cost)
+  const cardLast4 = (val("rcpt_card4") || "").replace(/\D/g, "").slice(-4);   // js/94: 0-4 digits — "" clears it
+  const refNo = (val("rcpt_refno") || "").replace(/[^A-Za-z0-9 -]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);   // js/72 "Ref #"
+  const isDeposit = !!(document.getElementById("rcpt_deposit") || {}).checked;
+  const isRefund = !!(document.getElementById("rcpt_refund") || {}).checked;
   let amt = amount;
-  if (isRefund && amt != null) amt = -Math.abs(amt);
+  if (isRefund && amt != null) amt = -Math.abs(amt);   // refund = negative + kind:"refund"
   const cat = (isDeposit && !category) ? "rentals" : category;
-  if ((type === "job-expense" || type === "pass-through") && !jobId) { alert("Pick a job for this receipt — or set Type to Business, or leave it as Needs review."); return; }
-  if (type && (amt == null || amt === 0)) { alert("Enter the amount to file this receipt."); return; }
-  if (type && amt < 0 && !isRefund) { alert("A negative amount is only for a refund/credit — tick “↩ This is a refund” to file it."); return; }
-  if (type && !vendor) { alert("Enter the vendor / where it was bought."); return; }
-  if (typeof submitGuard === "function" && !submitGuard("rcptSaveEdit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
   const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, refNo: refNo, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
-  const res = rcptApplyEdit(RCPT_EDIT.loc, fields);
+  return { fields: fields, type: type, jobId: jobId, amt: amt, vendor: vendor, isDeposit: isDeposit, isRefund: isRefund };
+}
+/* completeness gate — only needed to FILE a receipt (a draft Save may be incomplete). "" = OK, else the message. */
+function rcptFileValidateForm(f) {
+  if (!f.type) return "Pick a category first (materials / job expense / business) before filing this one.";
+  if ((f.type === "job-expense" || f.type === "pass-through") && !f.jobId) return "Pick a job for this receipt — or set it to Business.";
+  if (f.amt == null || f.amt === 0) return "Enter the amount before filing.";
+  if (f.amt < 0 && !f.isRefund) return "A negative amount is only for a refund/credit — tick “↩ This is a refund”.";
+  if (!f.vendor) return "Enter the vendor / where it was bought.";
+  return "";
+}
+/* SAVE — Cap fills, you review. Saving a Needs-review receipt just SAVES your edits and it STAYS in Needs review
+   (filing is the separate ✓ File it step). Editing an already-FILED receipt updates/re-buckets it in place. */
+window.rcptSaveEdit = function () {
+  if (!rcptFinFull() || !RCPT_EDIT) return;
+  const f = rcptReadEditForm();
+  if (typeof submitGuard === "function" && !submitGuard("rcptSaveEdit:" + RCPT_EDIT.loc.recId)) return;
+  if (RCPT_EDIT.loc.store === "review") {
+    const res = rcptApplyEdit(RCPT_EDIT.loc, f.fields, { keepReview: true });   // edits only — do NOT file
+    if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
+    if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);
+    if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt edited (Needs review)" + (f.vendor ? " · " + f.vendor : ""));
+    if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); RCPT_EDIT = null; render(); return;
+  }
+  // already filed → keep it valid + update/re-bucket in place
+  const err = rcptFileValidateForm(f); if (err) { alert(err); return; }
+  const res = rcptApplyEdit(RCPT_EDIT.loc, f.fields);
   if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
-  if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);   // a human modal save = reviewed → clears the purple Cap-auto-file mark
-  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (type ? "filed" : "updated") + " — " + (amt != null ? money(amt) : "") + (vendor ? " · " + vendor : "") + (isDeposit ? " · ⚠ deposit" : "") + (isRefund ? " · ↩ refund" : "") + " · " + (fields.type || "review") + (jobId ? " → job" : ""));
-  if (typeof save === "function") save();
-  if (typeof closeModal === "function") closeModal();
-  RCPT_EDIT = null;
-  render();
+  if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt updated — " + (f.amt != null ? money(f.amt) : "") + (f.vendor ? " · " + f.vendor : ""));
+  if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); RCPT_EDIT = null; render();
+};
+/* FILE IT — the explicit "good to go" step: routes a Needs-review receipt to its home (→ 💸 Owed if a person
+   fronted it on a personal card, else ✓ Filed). Requires the receipt to be complete. */
+window.rcptFileEdit = function () {
+  if (!rcptFinFull() || !RCPT_EDIT) return;
+  const f = rcptReadEditForm();
+  const err = rcptFileValidateForm(f); if (err) { alert(err); return; }
+  if (typeof submitGuard === "function" && !submitGuard("rcptFileEdit:" + RCPT_EDIT.loc.recId)) return;
+  const res = rcptApplyEdit(RCPT_EDIT.loc, f.fields);   // routes on type
+  if (!res || !res.ok) { alert("Couldn't file: " + ((res && res.error) || "unknown")); return; }
+  if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt FILED — " + (f.amt != null ? money(f.amt) : "") + (f.vendor ? " · " + f.vendor : "") + " · " + f.fields.type + (f.jobId ? " → job" : ""));
+  if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); RCPT_EDIT = null; render();
 };

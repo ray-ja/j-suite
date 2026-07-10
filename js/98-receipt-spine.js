@@ -195,10 +195,12 @@ function rcptFileSuggestion(store, jobId, recId, opts) {
   var f = _rcptMergeDefaults(raw, _rcptMeId());
   var err = rcptFileValidate(f);
   if (err) return { ok: false, error: err };
-  var res = rcptApplyEdit({ store: store, jobId: jobId, recId: recId }, f);
+  // keepReview: APPLY Cap's fields to the review record but DON'T route it out — it stays in Needs review for the
+  // owner to file (Cap fills, the owner files). Without keepReview this files/routes exactly as before.
+  var res = rcptApplyEdit({ store: store, jobId: jobId, recId: recId }, f, opts.keepReview ? { keepReview: true } : undefined);
   if (!res || !res.ok) return { ok: false, error: (res && res.error) || "could not file receipt" };
   if (!opts.batch) {
-    if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt filed from Cap — " + ((f.amount != null && typeof money === "function") ? money(f.amount) : "") + (f.vendor ? " · " + f.vendor : "") + " · " + (f.type || "review") + (f.jobId ? " → job" : ""));
+    if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (opts.keepReview ? "pre-filled by Cap" : "filed from Cap") + " — " + ((f.amount != null && typeof money === "function") ? money(f.amount) : "") + (f.vendor ? " · " + f.vendor : "") + " · " + (f.type || "review") + (f.jobId ? " → job" : ""));
     if (typeof save === "function") save();
   }
   return res;
