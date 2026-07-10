@@ -1442,6 +1442,101 @@ async function main() {
   rcptInlineSet("review", "", rvPT.id, "jobId", "j2");
   ok("Job inline on a pass-through review row → job.materials on j2 (id+photo kept)", STORE.jobs[1].materials.some(x => x.id === rvPT.id && x.receiptId === "bPT" && !x.deleted) && !rcptReview().some(x => x.id === rvPT.id), { mat: STORE.jobs[1].materials });
 
+  // ========================= REFUND / DEPOSIT ARE CONFIRMATION-ONLY (Cap may suggest, NEVER auto-applies) =========================
+  // A wrong Cap "refund" read would auto-file the receipt with its amount flipped NEGATIVE; a wrong "deposit" would
+  // hold money out of a job's cost. Ray's rule: those two flags are set ONLY by his tick + Save. So (a) the Cap
+  // auto-file spine (rcptFileSuggestion) NEVER sets kind:"refund"/isDeposit and always files a POSITIVE amount, and
+  // (b) "Use Cap's guess" (rcptApplySuggestion) surfaces a hint but leaves the boxes UNCHECKED.
+  console.log("\n— REFUND/DEPOSIT confirmation-only: Cap auto-file (rcptFileSuggestion) IGNORES suggested.refund/deposit —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;
+  const refSug = seedReview({ receiptId: "autoref", vendor: "Sunbelt", amount: 50 });
+  refSug.suggested = { confidence: 0.95, amount: 50, type: "business", vendor: "Sunbelt", category: "rentals", desc: "credit", refund: true };
+  rcptFileSuggestion("review", null, refSug.id);
+  const caRefFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "autoref");
+  ok("Cap auto-file with suggested.refund:true → amount stays POSITIVE (never negated)", caRefFiled && caRefFiled.amount === 50, caRefFiled && caRefFiled.amount);
+  ok("Cap auto-file with suggested.refund:true → kind is NOT 'refund'", caRefFiled && caRefFiled.kind !== "refund", caRefFiled && caRefFiled.kind);
+  resetStore();
+  const depSug = seedReview({ receiptId: "autodep", vendor: "Sunbelt", amount: 300 });
+  depSug.suggested = { confidence: 0.95, amount: 300, type: "business", vendor: "Sunbelt", category: "rentals", desc: "deposit", deposit: true };
+  rcptFileSuggestion("review", null, depSug.id);
+  const depFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "autodep");
+  ok("Cap auto-file with suggested.deposit:true → amount POSITIVE", depFiled && depFiled.amount === 300, depFiled && depFiled.amount);
+  ok("Cap auto-file with suggested.deposit:true → isDeposit is NOT set", depFiled && !depFiled.isDeposit, depFiled && depFiled.isDeposit);
+
+  console.log("— REFUND/DEPOSIT confirmation-only: 'Use Cap's guess' (rcptApplySuggestion) surfaces a hint but does NOT tick the box —");
+  resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {};
+  const supRec = seedReview({ receiptId: "sugg1", vendor: "Sunbelt", amount: 50 });
+  supRec.suggested = { confidence: 0.9, amount: 50, type: "business", vendor: "Sunbelt", category: "other", desc: "x", refund: true, deposit: true };   // category NON-rentals → proves the deposit flag no longer forces "rentals"
+  rcptEditOpen("review", "", supRec.id);   // sets the module-scoped RCPT_EDIT.suggested (only way in)
+  const _geiS = global.document.getElementById, _valS = global.val;
+  const sEls = { rcpt_refund: { checked: false }, rcpt_deposit: { checked: false }, rcpt_refund_hint: { innerHTML: "" }, rcpt_deposit_hint: { innerHTML: "" }, rcpt_type: { value: "" }, rcpt_cat: { value: "" }, rcpt_jobwrap: { style: {} }, rcpt_vendor: { value: "" }, rcpt_amt: { value: "" }, rcpt_desc: { value: "" }, rcpt_suggbanner: { innerHTML: "" } };
+  global.document.getElementById = function (id) { return Object.prototype.hasOwnProperty.call(sEls, id) ? sEls[id] : null; };
+  global.val = function (id) { return (sEls[id] && sEls[id].value != null) ? sEls[id].value : ""; };
+  rcptApplySuggestion();
+  global.document.getElementById = _geiS; global.val = _valS;
+  ok("'Use Cap's guess' does NOT tick the refund box", sEls.rcpt_refund.checked === false);
+  ok("'Use Cap's guess' does NOT tick the deposit box", sEls.rcpt_deposit.checked === false);
+  ok("a suggested refund SURFACES a highlighted hint next to the box", /Cap thinks/.test(sEls.rcpt_refund_hint.innerHTML), sEls.rcpt_refund_hint.innerHTML);
+  ok("a suggested deposit SURFACES a highlighted hint next to the box", /Cap thinks/.test(sEls.rcpt_deposit_hint.innerHTML), sEls.rcpt_deposit_hint.innerHTML);
+  ok("suggested deposit does NOT auto-nudge the category to rentals (rides on tick)", sEls.rcpt_cat.value !== "rentals", sEls.rcpt_cat.value);
+
+  console.log("— REFUND/DEPOSIT: the ONLY way the flags get set is an explicit tick + Save (rcptSaveEdit) —");
+  resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {};
+  const _geiT = global.document.getElementById, _valT = global.val;
+  const tickRec = seedReview({ receiptId: "tickref", vendor: "Sunbelt", amount: 90 });
+  rcptEditOpen("review", "", tickRec.id);
+  global.val = function (id) { return ({ rcpt_type: "job-expense", rcpt_job: "j1", rcpt_amt: "90", rcpt_vendor: "Sunbelt", rcpt_date: "2026-07-01", rcpt_cat: "rentals", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "trailer", rcpt_card4: "" })[id] || ""; };
+  global.document.getElementById = function (id) { return id === "rcpt_refund" ? { checked: true } : (id === "rcpt_deposit" ? { checked: false } : null); };
+  rcptSaveEdit();
+  const tickFiled = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickref");
+  ok("explicit refund tick + Save → kind:'refund' + NEGATIVE amount (the ONE path that sets it)", tickFiled && tickFiled.kind === "refund" && tickFiled.amount === -90, tickFiled && [tickFiled.kind, tickFiled.amount]);
+  resetStore();
+  const dTick = seedReview({ receiptId: "tickdep", vendor: "Sunbelt", amount: 300 });
+  rcptEditOpen("review", "", dTick.id);
+  global.val = function (id) { return ({ rcpt_type: "job-expense", rcpt_job: "j1", rcpt_amt: "300", rcpt_vendor: "Sunbelt", rcpt_date: "2026-07-01", rcpt_cat: "rentals", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "deposit", rcpt_card4: "" })[id] || ""; };
+  global.document.getElementById = function (id) { return id === "rcpt_deposit" ? { checked: true } : null; };
+  rcptSaveEdit();
+  const depTick = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickdep");
+  ok("explicit deposit tick + Save → isDeposit:true (the ONE path that sets it)", depTick && depTick.isDeposit === true, depTick && depTick.isDeposit);
+  global.val = _valT; global.document.getElementById = _geiT;
+
+  // ========================= DATE-EDIT BUG: capRead.date "unknown" must not mask/blank the date field =========================
+  // The Cloudflare biz expense carries capRead.date:"unknown" (Cap couldn't read a date). The old rcptDate returned
+  // "unknown", which an <input type=date> silently REJECTS (renders BLANK) AND which masked the record's real
+  // e.date — so on Ray's device the date field looked empty and un-settable. rcptDate now only accepts a real
+  // YYYY-MM-DD. Prove both editors set + persist a new date on the Cloudflare-shaped record.
+  console.log("\n— DATE BUG: capRead.date 'unknown' no longer masks/blanks the date; both editors persist a date change —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; }; global.modal = global.modal || function () {};
+  global.closeModal = global.closeModal || function () {};
+  const cfShape = { id: "cf1", receiptId: "cfblob.png", vendor: "Cloudflare", amount: 10.46, desc: "J-suite DNS", category: "subscription/software", paidBy: "u_ray", by: "Rj", date: "2026-06-01", note: "J-suite DNS", memberId: "u_ray", capRead: { date: "unknown", vendor: "Cloudflare", amount: 10.46, match: false }, deleted: false, updatedAt: Date.now(), ts: Date.now() };
+  STORE.expenses.push(cfShape);
+  ok("rcptDate rejects capRead.date 'unknown' → falls through to the record's real date (2026-06-01)", rcptDate(STORE.expenses.find(e => e.id === "cf1")) === "2026-06-01", rcptDate(STORE.expenses.find(e => e.id === "cf1")));
+  ok("rcptDate on a genuine capRead date still prefers it", rcptDate({ capRead: { date: "2026-05-20" }, date: "2026-06-01" }) === "2026-05-20");
+  // (a) Receipts modal (js/87 rcptSaveEdit) — set a new date + Save → persists on the biz record
+  rcptEditOpen("biz", null, "cf1");
+  const _valD = global.val;
+  global.val = function (id) { return ({ rcpt_type: "business", rcpt_amt: "10.46", rcpt_vendor: "Cloudflare", rcpt_date: "2026-06-15", rcpt_cat: "subscription/software", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "J-suite DNS", rcpt_card4: "" })[id] || ""; };
+  rcptSaveEdit();
+  global.val = _valD;
+  const cfAfter = STORE.expenses.find(e => e && !e.deleted && e.id === "cf1");
+  ok("Receipts modal: setting a new date on the Cloudflare biz record persists (e.date → 2026-06-15)", cfAfter && cfAfter.date === "2026-06-15", cfAfter && cfAfter.date);
+  ok("…and the date now DISPLAYS on reopen (rcptDate returns the saved date, no longer 'unknown')", rcptDate(cfAfter) === "2026-06-15", rcptDate(cfAfter));
+  // (b) Finance editor (js/40 saveExpense) — same record shape, set a new date + Save → persists
+  const j40Src = fs.readFileSync(__dirname + "/js/40-finance.js", "utf8");
+  const saveExpSrc = (j40Src.match(/window\.saveExpense = function[\s\S]*?\n\};/) || [])[0];
+  ok("js/40 saveExpense extractable for the finance-editor date test", !!saveExpSrc);
+  if (saveExpSrc) {
+    eval(saveExpSrc.replace("window.saveExpense", "global.saveExpense"));
+    resetStore();
+    STORE.expenses.push({ id: "cffin", vendor: "Cloudflare", amount: 10.46, category: "subscription/software", date: "2026-06-01", note: "J-suite DNS", memberId: "", capRead: { date: "unknown" }, deleted: false, updatedAt: Date.now() });
+    const _valF = global.val;
+    global.val = function (id) { return ({ ex_amt: "10.46", ex_date: "2026-06-20", ex_cat: "subscription/software", ex_note: "J-suite DNS", ex_vendor: "Cloudflare", ex_member: "" })[id] || ""; };
+    global.saveExpense("cffin", false);
+    global.val = _valF;
+    const cffin = STORE.expenses.find(e => e && !e.deleted && e.id === "cffin");
+    ok("Finance editor (js/40 saveExpense): setting a new date on the Cloudflare biz record persists (2026-06-20)", cffin && cffin.date === "2026-06-20", cffin && cffin.date);
+  }
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

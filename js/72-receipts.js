@@ -258,7 +258,13 @@ function rcptDupIndex() {
 
 /* tax records: standardized DATE-first filename + a CSV export.
    `capRead` (when Cap has read the receipt) provides the real transaction date/vendor; else we use the filed date. */
-function rcptDate(e) { const cr = e.capRead || {}; if (cr.date) return String(cr.date).slice(0, 10); if (e.date) return String(e.date).slice(0, 10); if (e.ts) { try { return new Date(e.ts).toISOString().slice(0, 10); } catch (x) {} } return ""; }
+/* A receipt's display date. Prefers Cap's read date, then the record's own date, then the upload timestamp — but
+   ONLY accepts a real YYYY-MM-DD. Cap writes capRead.date:"unknown" (or "n/a") when it can't read a date off the
+   photo; those are NOT dates. The old code returned "unknown", which (a) an <input type=date> silently REJECTS →
+   the Date field renders BLANK and won't save, and (b) MASKS the record's real date. Validating here fixes both
+   (the fix is display-only — nothing about how dates are STORED changes). */
+function _rcptIsoDate(v) { const s = String(v == null ? "" : v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ""; }
+function rcptDate(e) { const cr = e.capRead || {}; return _rcptIsoDate(cr.date) || _rcptIsoDate(e.date) || (e.ts ? (function () { try { return new Date(e.ts).toISOString().slice(0, 10); } catch (x) { return ""; } })() : "") || ""; }
 function rcptSan(s, n) { s = String(s || "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); return n ? s.slice(0, n) : s; }
 function rcptStdName(e) { const ext = (/\.([A-Za-z0-9]+)$/.exec(e.receiptId || "") || [, "jpg"])[1]; return [rcptDate(e) || "undated", rcptSan(e.vendor || "vendor", 24), "$" + (+e.amount || 0).toFixed(2), rcptSan(e.desc || e.note || "", 24)].filter(Boolean).join("_") + "." + ext; }
 function rcptCsvString() {
