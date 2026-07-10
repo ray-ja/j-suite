@@ -1549,6 +1549,53 @@ ok("transaction vendor truncated to 120 chars", t.rcptParseSuggestion('{"transac
 // regression: transactions ride alongside everything else without disturbing the single-object fields
 ok("all prior fields intact when transactions present", rpsStmt.vendor === "" && Array.isArray(rpsStmt.splits) && rpsStmt.splits.length === 0 && Array.isArray(rpsStmt.lineItems) && rpsStmt.lineItems.length === 0 && rpsStmt.refund === false, rpsStmt);
 
+console.log("\n— Cap receipt-vision RENTAL CONTRACT (rcptParseSuggestion): net rental cost, NOT the deposit —");
+// A Home Depot rental contract read: the CORRECT shape the (prompted) model returns — amount = rental + tax
+// (the 'Estimated Total' $72.59), category rentals, refund:false. The $300 deposit + the negative Due-on-Return
+// WASH, so they never become the amount and the contract is NOT flagged as a refund. Parse passes it through clean.
+const rpsRental = t.rcptParseSuggestion('{"vendor":"The Home Depot","amount":72.59,"date":"2026-07-03","desc":"Vibratory Plate Compactor 14\\"","type":"job-expense","category":"rentals","jobId":null,"refund":false,"deposit":false,"confidence":0.9}', rpsCats, rpsJobs);
+ok("rental contract: amount = net rental (rental+tax) 72.59, NOT the $300 deposit", rpsRental && rpsRental.amount === 72.59, rpsRental);
+ok("rental contract: category = rentals", rpsRental.category === "rentals", rpsRental.category);
+ok("rental contract: refund FALSE (the contract is a charge, not a refund)", rpsRental.refund === false, rpsRental.refund);
+ok("rental contract: deposit FALSE on the main charge (deposit/return wash)", rpsRental.deposit === false, rpsRental.deposit);
+ok("rental contract: equipment kept in desc", rpsRental.desc === 'Vibratory Plate Compactor 14"', rpsRental.desc);
+ok("rental contract: ONE transaction — NOT a statement (no fanned transactions, no lineItems to sum)", rpsRental.transactions.length === 0 && rpsRental.lineItems.length === 0, { tx: rpsRental.transactions, li: rpsRental.lineItems });
+
+console.log("\n— Cap receipt-vision REQUEST SHAPE (callAnthropicVision): PDF → document block, photo → image block —");
+(function () {
+  const https = require("https");
+  const orig = https.request;
+  let captured = null;
+  // spy: capture the request BODY (what we'd send to Anthropic) without any network I/O
+  https.request = function (url, opts, cb) { return { on: function () { return this; }, write: function (p) { captured = p; }, end: function () {} }; };
+  try {
+    t.callAnthropicVision("k", "claude-sonnet-4-6", "application/pdf", "UERGQg==", "read it", function () {}, 1500);
+    let body = null; try { body = JSON.parse(captured); } catch (e) {}
+    const pblock = body && body.messages && body.messages[0] && body.messages[0].content && body.messages[0].content[0];
+    ok("application/pdf → a `document` content block (base64 application/pdf, the PDF bytes)", !!pblock && pblock.type === "document" && pblock.source && pblock.source.type === "base64" && pblock.source.media_type === "application/pdf" && pblock.source.data === "UERGQg==", pblock);
+    ok("PDF request keeps a text (task) block AFTER the document block", !!(body.messages[0].content[1] && body.messages[0].content[1].type === "text"), body && body.messages[0].content.map(function (b) { return b.type; }));
+
+    captured = null;
+    t.callAnthropicVision("k", "claude-sonnet-4-6", "image/png", "SU1H", "read it", function () {}, 1500);
+    body = JSON.parse(captured);
+    const iblock = body.messages[0].content[0];
+    ok("image/png → an `image` content block (NOT document)", iblock.type === "image" && iblock.source.media_type === "image/png" && iblock.source.data === "SU1H", iblock);
+
+    captured = null;
+    t.callAnthropicVision("k", "claude-sonnet-4-6", "image/jpeg", "SU1H", "read it", function () {}, 1500);
+    body = JSON.parse(captured);
+    ok("image/jpeg → an `image` content block (media_type image/jpeg)", body.messages[0].content[0].type === "image" && body.messages[0].content[0].source.media_type === "image/jpeg", body.messages[0].content[0]);
+  } finally { https.request = orig; }
+})();
+
+console.log("\n— Cap read-receipt endpoint: PDFs are read (no early skip), mapped to application/pdf, size-guarded —");
+(function () {
+  const srv = require("fs").readFileSync(require("path").join(__dirname, "sync-server.js"), "utf8");
+  ok("endpoint no longer early-returns skip:pdf for a .pdf (the skip line is gone)", srv.indexOf('reason: "pdf" }') < 0 && srv.indexOf("vision reads images, not PDFs") < 0, null);
+  ok("endpoint maps a .pdf to the application/pdf media type", /isPdf \? "application\/pdf"/.test(srv), null);
+  ok("endpoint size-guards a PDF (graceful skip, never hangs the drain)", srv.indexOf('reason: "pdf-too-large"') >= 0, null);
+})();
+
 console.log("\n— Cap receipt-vision MODEL (server-authoritative: Sonnet 4.6 default, Opus 4.8 escalate; no client model) —");
 // rcptVisionModel maps the strictly-boolean escalate flag → a model. cfg.model is IGNORED (Ray: never Haiku for reads).
 ok("default read → Sonnet 4.6 even when cfg.model = Haiku", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false) === "claude-sonnet-4-6", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false));

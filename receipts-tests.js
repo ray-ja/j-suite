@@ -1745,6 +1745,19 @@ async function main() {
   await capRcptRun({ auto: true });
   ok("1-entry transactions array → exactly ONE record, no sibling", rcptReview().filter(r => r.receiptId === "one.png").length === 1 && rcptColl().filter(r => r.id === opid + "_tx1").length === 0);
 
+  console.log("— PDF receipts are now valid Cap read targets (server reads them via a document block) —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  const pdfRow = seedReview({ receiptId: "contract42.pdf", uploadedBy: "u_ray", attributedTo: "u_ray" });
+  seedReview({ receiptId: "photo1.png", uploadedBy: "u_ray", attributedTo: "u_ray" });
+  seedReview({ receiptId: null, source: "csv", uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const tgtIds = capRcptTargets().map(r => r.receiptId);
+  ok("PDF receipt IS a Cap read target now (no longer skipped)", tgtIds.indexOf("contract42.pdf") >= 0, tgtIds);
+  ok("photo receipt still a target", tgtIds.indexOf("photo1.png") >= 0, tgtIds);
+  ok("CSV row (receiptId:null) is NOT a vision target (parsed, not read)", tgtIds.indexOf(null) < 0 && capRcptTargets().every(r => r.receiptId), tgtIds);
+  ok("PDF is in the pending drain (capRcptPending includes it)", capRcptPending().some(r => r.receiptId === "contract42.pdf"), capRcptPending().map(r => r.receiptId));
+  pdfRow.suggested = { vendor: "Home Depot", amount: 72.59, confidence: 0.9 };
+  ok("an already-read PDF (has suggested) is NOT re-targeted", capRcptTargets().every(r => r.id !== pdfRow.id), capRcptTargets().map(r => r.receiptId));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
