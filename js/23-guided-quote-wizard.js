@@ -155,6 +155,23 @@ window.wizDiscFlat=function(v){WZ.disc=parseFloat(v)||0;WZ.discPct=null;wizRevie
 window.wizPriceSlide=function(price,sub){price=parseFloat(price)||0;WZ.disc=Math.round((sub||0)-price);WZ.discPct=null;
   const fl=document.getElementById("wz_disc");if(fl)fl.value=WZ.disc>0?WZ.disc:"";const pf=document.getElementById("wz_discpct");if(pf)pf.value="";
   wizReviewTotals();};
+/* WRITE-IN PRICE — for a custom / retroactive quote with no line items (the slider needs line items to work off,
+   and negative-discount "markup" is nonsense at a $0 subtotal). Type the total → it becomes a single flat line
+   item (_flat), so the whole pricing/finance/invoice chain treats it as a normal quote (sub=price, no discount).
+   Only offered when there are NO real line items; clearing the box drops the flat line. */
+window.wizSetFlatPrice=function(v){
+  if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;
+  let p=parseFloat(v);if(!isFinite(p)||p<0)p=0;
+  WZ.items=WZ.items||[];
+  const fi=WZ.items.findIndex(it=>it&&it._flat);
+  if(p>0){
+    if(fi>=0){WZ.items[fi].price=p;WZ.items[fi].qty=1;WZ.items[fi].cost=0;WZ.items[fi].unit="flat";WZ.items[fi]._flat=true;}
+    else WZ.items.push({name:"Custom price",price:p,qty:1,cost:0,unit:"flat",_flat:true});
+    WZ.disc=0;WZ.discPct=null;   // the number you typed IS the price — nothing stacked on top
+  } else if(fi>=0){WZ.items.splice(fi,1);}
+  if(typeof wizAutosave==="function")wizAutosave();
+  render();
+};
 /* ← from the review back to the load builder; drop the line being edited so re-adding doesn't duplicate (the builder still holds WZ.junk / WZ.inp) */
 window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(function(){if(typeof wizLive==="function")wizLive();},20);};   // one service per quote — drop this build's lines; the builder keeps its state (WZ.junk/WZ.deep/WZ.brush). Hidden for the modal tools (paver/demo).
 
@@ -267,7 +284,20 @@ function wizReview(){
   const floorP=_mk?Math.max(Math.ceil(_cost*1.2/5)*5,Math.round(_mk.natLo*0.8/5)*5):Math.max(Math.ceil(_cost*1.2/5)*5,Math.min(_B.lo,Math.round(sub*0.6/5)*5));
   const ceilP=_mk?Math.max(floorP+5,Math.round(_mk.obxHi/5)*5,Math.round(sub*1.2/5)*5):Math.max(floorP+5,Math.round(sub*1.2/5)*5,_payTarget);
   const curP=Math.max(floorP,Math.min(ceilP,sub-(WZ.disc||0)));
-  h+=`<div class="card" style="margin-top:10px"><label style="margin-top:0">Set the price — ◀ discount · mark up ▶</label>
+  // WRITE-IN PRICE box — only when there are no real line items (a custom/retroactive quote). The slider works off
+  // line-item subtotals, so with none it's dead; this lets you just type the price. Once typed it's a flat line and
+  // the slider below fine-tunes it. Real service-wizard quotes (with line items) keep the slider-only UI unchanged.
+  const _realItems=(WZ.items||[]).filter(it=>it&&!it._flat);
+  const _flatItem=(WZ.items||[]).find(it=>it&&it._flat);
+  const _showFlat=_realItems.length===0;
+  h+=`<div class="card" style="margin-top:10px">`;
+  if(_showFlat){
+    h+=`<label style="margin-top:0">💵 Set the price <span class="sub" style="font-weight:400">· just write it in</span></label>
+    <div class="row" style="gap:8px"><input type="number" id="wz_flat" inputmode="decimal" placeholder="e.g. 350" value="${_flatItem?_flatItem.price:''}" style="flex:1;font-size:18px" onchange="wizSetFlatPrice(this.value)"><button class="btn acc sm" onclick="wizSetFlatPrice(document.getElementById('wz_flat').value)">Set</button></div>
+    <div class="sub muted" style="margin-top:4px;white-space:normal">Type the total price the job was charged at. The slider &amp; discount below are optional.</div>
+    <div style="border-top:1px solid var(--line);margin:12px 0 2px"></div>`;
+  }
+  h+=`<label style="margin-top:0">${_showFlat?"Fine-tune":"Set the price"} — ◀ discount · mark up ▶</label>
     <input type="range" min="${floorP}" max="${ceilP}" step="5" value="${curP}" oninput="wizPriceSlide(this.value,${sub})" style="width:100%;accent-color:var(--accent)">
     <div class="row" style="justify-content:space-between"><span class="sub">◀ floor ${money(floorP)}</span><span class="sub">full ${money(sub)} · ${ceilP>Math.round(sub*1.2/5)*5?`up to ${money(ceilP)} (clears $45/hr)`:`+20% ${money(ceilP)}`} ▶</span></div>
     <div class="row" style="gap:8px;margin-top:6px"><div class="grow"><label style="margin-top:0">Custom % off</label><input type="number" id="wz_discpct" inputmode="decimal" value="${WZ.discPct||''}" placeholder="%" oninput="wizDiscPctLive(this.value)"></div><div class="grow"><label style="margin-top:0">Or flat $ off</label><input type="number" id="wz_disc" inputmode="decimal" value="${WZ.disc>0?WZ.disc:''}" oninput="wizDiscFlat(this.value)"></div></div></div>`;
