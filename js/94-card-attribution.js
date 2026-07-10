@@ -196,10 +196,11 @@ window.bizCardRemove = function (id) {
    Called by js/87 rcptEditOpen after the modal mounts (into #rcpt_card_slot) and again on every keystroke of the
    card field (rcptCardInput → cardMatchRefresh). PURELY a default: it sets the dropdown value + shows a note; it
    NEVER writes. Save reads whatever the dropdown shows and routes via the UNCHANGED rcptApplyEdit — so a manual
-   choice always wins. Only pre-selects while the dropdown is still on Business ("" = untouched), never clobbering
-   a choice the owner has made. */
+   choice always wins. THE CARD IS AUTHORITATIVE for "who paid": a resolvable card SETS the dropdown (personal →
+   its owner / business → Business / unknown → NOBODY), so a stale value — most often the old viewer stamp — is
+   never left behind. An unregistered card resolves to NOBODY (""), never the viewer; the owner then picks. */
 window.cardMatchInit = function (rec) {
-  cardMatchRender((rec && rec.cardLast4) || "", true);   // initial pass: allowed to pre-select the empty dropdown
+  cardMatchRender((rec && rec.cardLast4) || "", true);   // initial pass: resolve the stored card → set "Who paid?"
 };
 window.cardMatchRefresh = function () {
   const v = (typeof val === "function") ? val("rcpt_card4") : "";
@@ -209,16 +210,16 @@ function cardMatchRender(rawLast4, mayPreselect) {
   const slot = document.getElementById("rcpt_card_slot"); if (!slot) return;
   const sel = document.getElementById("rcpt_paidby");
   const n = cardNorm4(rawLast4);
-  if (!n.last4) { slot.innerHTML = ""; return; }
+  if (!n.last4) { slot.innerHTML = ""; return; }   // no card → don't touch the dropdown (a manual paidBy stands)
   const res = cardOwner(n.last4);
   const dots = "••••" + n.last4;
   let h = "";
   if (res.resolution === "personal") {
     const un = (typeof userName === "function") ? userName(res.ownerId) : res.ownerId;
-    if (mayPreselect && sel && (sel.value || "") === "") sel.value = res.ownerId;   // pre-select — untouched only
+    if (mayPreselect && sel) sel.value = res.ownerId;   // card is authoritative → the registered owner is the payer
     h = `<div class="sub" style="margin:6px 0 0;color:var(--accent);white-space:normal">✓ auto-matched ${esc(dots)} → <b>${esc(un)}</b>'s personal card — set to reimburse them (change "Who paid?" to override).</div>`;
   } else if (res.resolution === "business") {
-    if (mayPreselect && sel && (sel.value || "") === "") sel.value = "";   // company card → Business (no reimburse)
+    if (mayPreselect && sel) sel.value = "";   // company card → Business (no reimburse) — clears any stale payer
     const lbl = (res.matches[0] && res.matches[0].label) ? " (" + esc(res.matches[0].label) + ")" : "";
     h = `<div class="sub" style="margin:6px 0 0;color:var(--accent);white-space:normal">✓ auto-matched ${esc(dots)} → company card${lbl} — kept on <b>Business card</b> (no reimburse).</div>`;
   } else if (res.resolution === "ambiguous") {
@@ -228,7 +229,8 @@ function cardMatchRender(rawLast4, mayPreselect) {
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">` +
       cands.map(id => `<button class="btn ghost sm" onclick="cardMatchPick('${esc(id)}')">${esc((typeof userName === "function") ? userName(id) : id)}</button>`).join("") + `</div>`;
   } else {
-    h = `<div class="sub" style="margin:6px 0 0;white-space:normal">Unknown card ${esc(dots)} — whose is this?</div>
+    if (mayPreselect && sel) sel.value = "";   // UNKNOWN/unregistered card → NOBODY paid (clear any stale viewer stamp); the owner picks
+    h = `<div class="sub" style="margin:6px 0 0;white-space:normal">Unknown card ${esc(dots)} — whose is this? <span style="color:var(--muted)">Left as <b>nobody</b> until you say — pick "Who paid?" above, or save the card:</span></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">
         <button class="btn ghost sm" onclick="cardMatchSaveTo('__me__')">Save ${esc(dots)} to me</button>
         <button class="btn ghost sm" onclick="cardMatchSaveTo('__pick__')">Save to a user…</button>
