@@ -456,7 +456,7 @@ async function main() {
   ok("STRICTLY sequential — never more than 1 vision call in flight", maxInFlight === 1, maxInFlight);
   ok("queue fully drained — 0 unread pending remain", capRcptPending().length === 0, capRcptPending().length);
 
-  console.log("— QUEUE: an unreadable receipt is skipped ONCE and never loops the drain —");
+  console.log("— QUEUE: an unreadable receipt gets ONE escalate retry then is skipped (never loops the drain) —");
   resetStore(); _capRcptSkip = {}; global.finCanView = function () { return true; };
   seedReview({ receiptId: "good.jpg" }); const stuck = seedReview({ receiptId: "stuck.jpg" });
   let stuckReads = 0;
@@ -466,8 +466,23 @@ async function main() {
     return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.7 } }) });   // 0.7 → stays in review (drain-mechanics test)
   };
   await capRcptRun({ auto: true });
-  ok("drain terminated (did not loop on the unreadable one)", stuckReads === 1, stuckReads);
+  // escalate-on-miss: a default MISS triggers exactly ONE Opus retry (also a miss here) → 2 reads, then skipped for
+  // the session. Bounded, not a loop — the drain still terminates and never re-reads the stuck one.
+  ok("drain terminated — one escalate retry then skipped (did not loop on the unreadable one)", stuckReads === 2, stuckReads);
   ok("the readable one still got read past the stuck one", rcptReview().find(r => r.id !== stuck.id && r.receiptId === "good.jpg").suggested, true);
+
+  console.log("— ESCALATE-ON-MISS: the default read whiffs → auto-retry with the smart model rescues it (no manual reread) —");
+  resetStore(); _capRcptSkip = {}; global.finCanView = function () { return true; };
+  const escRec = seedReview({ receiptId: "escme.jpg" });
+  let escDefault = 0, escSmart = 0;
+  CAP_FETCH = function (url, opts) {
+    const body = JSON.parse(opts.body);
+    if (body.escalate === true) { escSmart++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "RescuedCo", amount: 42, date: "2026-07-02", type: "business", category: "other", jobId: null, confidence: 0.95 } }) }); }
+    escDefault++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true, reason: "unparseable" }) });   // Sonnet miss
+  };
+  await capRcptRun({ auto: true });
+  ok("default read tried first, then escalated exactly once on the miss", escDefault === 1 && escSmart === 1, { escDefault, escSmart });
+  ok("the smart-model retry's suggestion is stamped on the receipt (auto-read succeeds without a manual reread)", (rcptReview().find(r => r.id === escRec.id) || {}).suggested && rcptReview().find(r => r.id === escRec.id).suggested.vendor === "RescuedCo");
 
   console.log("— QUEUE: the busy flag blocks a SECOND drain launched while the first is in flight —");
   resetStore(); global.finCanView = function () { return true; };

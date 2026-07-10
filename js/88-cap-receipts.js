@@ -156,7 +156,14 @@ window.capRcptRun = async function (opts) {
     capRcptSetStatus("🤖 Cap is reading " + (done + 1) + " of " + totalNow + (totalNow > 25 ? " receipts" : "") + "…");
     // ALSO surface progress in the prominent body-mounted banner (js/104) — visible on EVERY page, not just Receipts
     if (typeof uploadStatus === "function") uploadStatus("reading", { done: done + 1, total: totalNow });
-    const res = await capRcptRead(rec.receiptId);      // ONE dedicated vision call — sequential, never parallel
+    let res = await capRcptRead(rec.receiptId);        // ONE dedicated vision call — sequential, never parallel (default: Sonnet)
+    // AUTO ESCALATE-ON-MISS: if the default read couldn't produce a suggestion (unparseable / skip — NOT offline
+    // or a missing key), retry this ONE receipt with the smartest model (Opus) before giving up. So an upload gets
+    // read automatically without the owner opening it and tapping "Reread — try harder" (Ray's daily complaint).
+    if (!(res && res.suggested) && !(res && res.error === "offline") && !(res && res.status === 400 && /not set up/i.test(res.error || ""))) {
+      const _esc = await capRcptRead(rec.receiptId, { escalate: true });
+      if (_esc && _esc.suggested) res = _esc; else if (_esc && (_esc.error === "offline" || (_esc.status === 400 && /not set up/i.test(_esc.error || "")))) res = _esc;
+    }
     if (res && res.suggested) {
       // re-find the live record (the store may have changed) and stamp `suggested`
       const live = (typeof rcptFindRecord === "function") ? rcptFindRecord("review", null, rec.id) : rec;
