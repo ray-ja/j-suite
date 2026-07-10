@@ -24,6 +24,13 @@ window.popSetWeight = function (jobId, userId, val) {
   if (!finCanView()) return;
   const j = (D().jobs || []).find(x => x && x.id === jobId); if (!j) return;
   let pct = parseInt(val, 10); if (isNaN(pct)) pct = 100; pct = Math.max(0, Math.min(100, pct));
+  // guard the degenerate all-zero case: if this would leave EVERY crew member at 0, the field pool would fall
+  // back to a full equal split (finSplitWeighted total=0 → equal) — the opposite of the intent. Keep ≥1 non-zero.
+  if (pct === 0) {
+    const w = j.crewWeights || {}, crew = (j.crew || []);
+    const anotherNonZero = crew.some(id => id !== userId && ((w[id] == null || w[id] === "") ? 100 : (+w[id] || 0)) > 0);
+    if (!anotherNonZero) { alert("At least one person needs a share above 0 — otherwise the job's field pay can't be split. If someone didn't work this job, remove them from the crew instead."); render(); return; }
+  }
   j.crewWeights = j.crewWeights || {};
   if (pct === 100) delete j.crewWeights[userId]; else j.crewWeights[userId] = pct;   // 100 = default → don't persist
   if (!Object.keys(j.crewWeights).length) delete j.crewWeights;
@@ -269,15 +276,17 @@ function rFinPriority() {
   /* CREW SHARES — dial a partial helper's share of a job down from the 100% default (feeds Wages above) */
   h += popCrewSharesHTML();
 
-  /* TARGET CHARGE */
-  const peopleAndBiz = m.peopleTotal + m.business + m.tax;
-  const gapCash = Math.max(0, m.peopleTotal - avail);
-  const coversPeople = m.pool.expected >= m.peopleTotal;
+  /* WHAT TO CHARGE — revenue vs the obligation. Wages are self-funding (60% of whatever you invoice), so the
+     binding constraint is the OUT-OF-POCKET expenses: they're a fixed cash obligation the 15% business fund is
+     supposed to cover. When expenses run above 15% of revenue, the business can't reimburse everyone — the fix is
+     pricing/spend, not more of the same low-margin work. (No double-count: reimbursements come FROM the 15%.) */
+  const gapPeople = Math.max(0, m.peopleTotal - m.pool.expected);              // revenue short to cover people at all
+  const expRatio = m.pool.expected > 0 ? Math.round(m.backTotal / m.pool.expected * 1000) / 10 : 0;   // out-of-pocket as % of revenue
   h += `<div class="secthd"><h2>🎯 What to charge</h2></div><div class="card">
-    <div class="li"><div class="grow"><div class="nm">People must receive</div><div class="sub">reimbursements + gas + wages</div></div><b>${fm(m.peopleTotal)}</b></div>
-    <div class="li"><div class="grow"><div class="nm">Accepted work to date</div><div class="sub">${coversPeople ? "covers people if fully collected" : "does NOT cover people — you're underwater"}</div></div><b style="${coversPeople ? "" : "color:var(--danger)"}">${fm(m.pool.expected)}</b></div>
-    <div class="li"><div class="grow"><div class="nm">Gap to fund people from cash</div><div class="sub">collect A/R + invoice backlog to close it</div></div><b style="${gapCash > 0.5 ? "color:var(--danger)" : "color:#1e9e5a"}">${fm(gapCash)}</b></div>
-    <div class="sub" style="white-space:normal;margin-top:8px">To fund <b>everyone + the business + taxes</b> at the full 25/15/60 split you'd need to have invoiced <b>${fm(peopleAndBiz)}</b> total — you've booked ${fm(m.pool.expected)}. ${peopleAndBiz > m.pool.expected ? `That ${fm(peopleAndBiz - m.pool.expected)} gap is the margin you're giving up by pricing low — bake more into upcoming quotes.` : `You're priced to cover it. 👍`}</div></div>`;
+    <div class="li"><div class="grow"><div class="nm">People must receive</div><div class="sub" style="white-space:normal">reimbursements ${fm(m.reimbTotal)}${m.gasTotal ? " + gas " + fm(m.gasTotal) : ""} + wages ${fm(m.wageTotal)}</div></div><b>${fm(m.peopleTotal)}</b></div>
+    <div class="li"><div class="grow"><div class="nm">Accepted work to date</div><div class="sub">${gapPeople > 0.5 ? "doesn't cover people yet" : "covers people if fully collected"}</div></div><b style="${gapPeople > 0.5 ? "color:var(--danger)" : "color:#1e9e5a"}">${fm(m.pool.expected)}</b></div>
+    ${gapPeople > 0.5 ? `<div class="li"><div class="grow"><div class="nm">Short to cover people</div><div class="sub">before the business or taxes get a cent</div></div><b style="color:var(--danger)">${fm(gapPeople)}</b></div>` : ""}
+    <div class="sub" style="white-space:normal;margin-top:8px">Your out-of-pocket expenses are <b>${fm(m.backTotal)} = ${expRatio}% of revenue</b>, but the operating split budgets just <b>15%</b> to the business fund that covers them. ${expRatio > 15 ? `That's why the business can't reimburse everyone yet — <b>price higher or spend less on tools</b> on upcoming jobs to bring it toward 15%.` : `You're inside the 15% budget. 👍`}</div></div>`;
 
   return h;
 }
