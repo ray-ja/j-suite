@@ -54,7 +54,8 @@ function settingsCanConfig(){ return (typeof isOwner==="function"&&isOwner()) ||
 function rData(){
   const last=S.sync.last?new Date(S.sync.last).toLocaleString():"never";
   const cfg=settingsCanConfig();   // owner/admin: show the sensitive config sections; crew: hidden + unreachable
-  view.innerHTML=`<h2>Sync</h2>
+  view.innerHTML=`<div class="card" style="border-left:4px solid var(--danger)"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:15px">🐞 Error log</div><div class="sub" style="white-space:normal">Recent app errors on this device (also sent to the server). Reproduce a glitch, then open this.</div></div><button class="btn ghost sm" onclick="showErrorLog()">Open</button></div></div>
+    <h2>Sync</h2>
     <div class="card">
       <div class="nm" id="sy_state">${SYNC_LABEL[SYNC_STATE]||"✓ Synced"}</div>
       <div class="sub">Last synced: ${last}. <span id="sy_msg"></span></div>

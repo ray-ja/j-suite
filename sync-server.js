@@ -1853,6 +1853,33 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify(backupNow()));
   }
 
+  // CLIENT ERROR LOG — POST /api/clientlog. A device posts a runtime JS error; we append one JSONL line to
+  // client-errors.log so the owner/builder can SEE field errors. Rate-limited + size-capped + field-clamped; not
+  // token-gated (errors must log even when auth is broken) and NEVER touches data.json / the sync layer.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/clientlog") {
+    const ip = (req.socket && req.socket.remoteAddress) || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end('{"error":"rate"}'); }
+    readBodyUtf8(req, 8000, (body) => {
+      try {
+        let p = null; try { p = JSON.parse(body); } catch (e) { p = null; }
+        if (p && (p.msg || p.stack)) {
+          const clamp = (s, n) => String(s == null ? "" : s).replace(/[\r\n]+/g, " ").slice(0, n);
+          const line = JSON.stringify({
+            t: new Date().toISOString(), ip: ip, org: clamp(p.org, 24), who: clamp(p.who, 40), tab: clamp(p.tab, 24),
+            ver: clamp(p.ver, 24), msg: clamp(p.msg, 500), url: clamp(p.url, 200),
+            ua: clamp(req.headers["user-agent"], 160), stack: String(p.stack == null ? "" : p.stack).slice(0, 2500)
+          }) + "\n";
+          const f = path.join(__dirname, "client-errors.log");
+          try { const st = fs.statSync(f); if (st.size > 3 * 1024 * 1024) fs.renameSync(f, f + ".1"); } catch (e) { }   // rotate at ~3MB
+          fs.appendFileSync(f, line);
+        }
+      } catch (e) { }
+      res.writeHead(204, { "Cache-Control": "no-store" }); res.end();
+    });
+    return;
+  }
+
   // CONFIG SECRETS (Security GUI) — token-gated. STATUS returns booleans only, NEVER the secret values.
   if (req.method === "GET" && req.url.split("?")[0] === "/api/config/status") {
     const q = new URL(req.url, "http://x");
