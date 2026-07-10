@@ -20,7 +20,11 @@ const TC_PING_MS = 120000;    // foreground ping cadence (~2 min) — enough to 
 const TC_TOL = 0.25;          // GPS-vs-odometer verification tolerance (25%, ASYMMETRIC — see tcVerify)
 const TC_HOME_RADIUS_MI = 0.14;      // ~225m — "you're home" radius around a user's homeLocation (task: 150-250m)
 const TC_HOME_SUGGEST_MIN_MS = 600000;   // only SUGGEST a home clock-out if the phone got home >=10 min ago (the forgot-to-clock-out case)
-let TCSUB = "clock";          // "clock" (crew) | "report" (owner: hours + miles per job/user)
+/* ABSURD-DISTANCE sanity ceiling. An OBX workday is local — a normal day is tens of miles; a 2000-mi reading
+   (Ray's field report) is obviously bad GPS/odometer. A shift over this many miles is FLAGGED for owner review
+   (display-only — it NEVER rewrites miles/odoStart/odoEnd/computedMiles; the owner confirms the rare legit haul). */
+const TC_SANE_MAX_MILES = 300;
+let TCSUB = "clock";          // "clock" (crew) | "roster" (owner: live who's-on-the-clock) | "report" (owner: hours + miles per job/user)
 let _tcPing = null, _tcClock = null;
 
 /* ----- data accessors ----- */
@@ -152,6 +156,18 @@ function tcVerify(e) {
   if (odo < gps * (1 - 0.02)) return { flag: true, kind: "odo-low", odo: odo, gps: gps, deltaPct: Math.round((gps - odo) / gps * 100) };  // odometer below the GPS-traced distance (impossible) — tiny epsilon for rounding
   return { flag: false, kind: "ok", odo: odo, gps: gps, deltaPct: Math.round(Math.abs(odo - gps) / gps * 100) };
 }
+/* ABSURD-DISTANCE SANITY FLAG (display-only; NEVER changes the computed miles). A shift whose billed miles
+   (odometer delta OR GPS estimate, via tcMiles) exceed TC_SANE_MAX_MILES is surfaced for OWNER REVIEW — like
+   the odo/GPS flags in tcVerify, additive. It does not rewrite miles/odoStart/odoEnd/computedMiles; the owner
+   confirms the rare legit long haul. Returns { flag:true, miles, max } or null. Works for open + closed shifts. */
+function tcSaneMiles(e) {
+  if (!e) return null;
+  const mi = tcMiles(e);
+  return (mi > TC_SANE_MAX_MILES) ? { flag: true, miles: mi, max: TC_SANE_MAX_MILES } : null;
+}
+/* would this many miles be implausible for a local workday? used to WITHHOLD auto-confirmation on a new
+   clock-out so an obviously-wrong distance lands in the owner's review queue instead of silently counting. */
+function tcMilesImplausible(mi) { return (+mi) > TC_SANE_MAX_MILES; }
 /* source badge — where the entry's miles came from (provenance) */
 function tcSourceBadge(e) {
   const s = e && e.milesSource;
@@ -241,7 +257,11 @@ window.tcClockInWith = async function (args) {
   if (_tcInBusy) return { ok: false, error: "busy" };   // a clock-in save is already in flight
   const jobId = args.jobId;
   if (!jobId) return { ok: false, error: "no-job" };
-  const who = tcWho();
+  // `who` override (additive): an owner/admin can clock ANOTHER person in from the live roster. Existing callers
+  // pass no `who`, so this is byte-identical to tcWho() for every self clock-in.
+  const who = (args.who && args.who.userId)
+    ? { userId: args.who.userId, name: args.who.name || ((typeof userName === "function") ? userName(args.who.userId) : "") || "Crew" }
+    : tcWho();
   if (tcOpenShift(who.userId)) return { ok: false, error: "already-open" };
   // RIDER ROLE — only the DRIVER logs a vehicle's miles. A passenger / no-vehicle shift carries NO vehicle, so the
   // truck is never double-counted. Default to driver if the caller predates the picker (defensive).
@@ -286,7 +306,8 @@ window.tcClockInWith = async function (args) {
     }
   } catch (ex) {}
   clearTimeout(_tcInWatchdog); _tcInBusy = false;
-  save(); tcPingStart();
+  save();
+  if (!(args.who && args.who.userId)) tcPingStart();   // only ping when clocking in on THIS device (a self clock-in), not when an owner clocks someone else in
   return { ok: true, entry: e };
 };
 window.tcClockIn = async function () {
@@ -330,8 +351,8 @@ window.tcClockOut = function (id, contJobId) {
   const finishFn = contJobId ? `tcFinishChangeJob('${id}','${contJobId}')` : `tcFinishClockOut('${id}')`;
   const gpsFn = contJobId ? `tcChangeJobGps('${id}','${contJobId}')` : `tcClockOutGps('${id}')`;
   const title = contJobId ? "Change job" : "Clock out";
-  const doneLabel = contJobId ? "🔁 Switch job" : "⏱ Clock out now";
-  const odoLabel = contJobId ? "🔁 Switch job" : "📍 Clock out now";
+  const doneLabel = contJobId ? "🔁 Switch job" : "✓ Clock out now";
+  const odoLabel = contJobId ? "🔁 Switch job" : "✓ Clock out now";
   // SUGGESTED CLOCK-OUT (real clock-out only, never Change Job): if the shift's own GPS history shows the phone
   // got back home a meaningful while ago, offer that time as the likely real clock-out (forgot-to-clock-out).
   // Additive only — it doesn't alter the odometer/GPS buttons below; it just adds a "use that time" shortcut.
@@ -355,14 +376,112 @@ window.tcClockOut = function (id, contJobId) {
       <button class="btn ${suggestHtml ? "ghost" : "acc"}" style="margin-top:8px;width:100%" onclick="${finishFn}">${doneLabel}</button>`);
     return;
   }
-  modal(title + " — odometer", suggestHtml + `
-    <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
-    <label>End odometer</label>
+  if (contJobId) {   // CHANGE JOB keeps the odometer-led modal — the new segment's start-odometer needs the reading for gap-free continuity
+    modal(title + " — odometer", suggestHtml + `
+      <p class="muted" style="margin-bottom:8px">Ending odometer reading on <b>${esc(e.vehicle || "the vehicle")}</b>. The odometer is the number of record.</p>
+      <label>End odometer</label>
+      <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}" oninput="tcOdoCheck('${e.id}')">
+      <div class="sub" style="margin-top:6px">${e.odoStart != null ? "Start was " + e.odoStart + "." : "No start reading — the GPS estimate is " + gpsEst + " mi."} </div>
+      ${tcClockOutEstLine(e)}
+      <button class="btn acc" style="margin-top:14px;width:100%" onclick="${finishFn}">${odoLabel}</button>
+      <button class="btn ghost" style="margin-top:8px;width:100%" onclick="${gpsFn}">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
+    return;
+  }
+  // REAL CLOCK-OUT (driver): the PRIMARY, loud action clocks out IMMEDIATELY. The odometer is OPTIONAL/deferred —
+  // Ray's field bug was that the old modal LED with the odometer and the "clock out anyway" path was a ghost he
+  // didn't trust, so he backed out and stayed clocked in. Now: tap ✓ Clock out now → you're out (odometer if you
+  // typed one, else the GPS estimate + "odometer pending"). It NEVER blocks on the odometer or on GPS.
+  modal(title, suggestHtml + `
+    <div class="card" style="border-left:5px solid var(--accent);background:var(--soft);margin-bottom:12px">
+      <div class="sub" style="white-space:normal">You've been on <b>${esc(tcJobTitle(e.jobId))}</b> for <b>${tcFmtDur(now() - e.clockIn)}</b> in ${esc(e.vehicle || "the vehicle")}. Tap below and you're clocked out right away — the odometer is optional.</div>
+    </div>
+    <button class="btn acc" style="width:100%;font-size:17px;padding:14px" onclick="tcClockOutNow('${id}')">✓ Clock out now</button>
+    <label style="margin-top:16px">Add your ending odometer <span class="sub">(optional — you can add it later)</span></label>
     <input id="tc_odo_end" type="number" inputmode="decimal" value="${e.odoEnd != null ? e.odoEnd : ""}" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}" oninput="tcOdoCheck('${e.id}')">
-    <div class="sub" style="margin-top:6px">${e.odoStart != null ? "Start was " + e.odoStart + "." : "No start reading — the GPS estimate is " + gpsEst + " mi."} </div>
+    <div class="sub" style="margin-top:6px;white-space:normal">${e.odoStart != null ? "Start was " + e.odoStart + " — enter the ending reading for exact miles." : "No start reading — without an odometer we'll use the GPS estimate (" + gpsEst + " mi)."}</div>
     ${tcClockOutEstLine(e)}
-    <button class="btn acc" style="margin-top:14px;width:100%" onclick="${finishFn}">${odoLabel}</button>
-    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="${gpsFn}">🛰 No odometer — use GPS estimate (${gpsEst} mi)</button>`);
+    <div class="sub" style="margin-top:12px;white-space:normal;text-align:center">✓ Clock out now uses your odometer if you entered one, otherwise the GPS estimate (${gpsEst} mi) and marks the odometer <b>pending</b> so you can add it later. You are never stuck clocked in waiting for it.</div>`);
+};
+/* the loud PRIMARY clock-out: completes the shift IMMEDIATELY (never blocks on the odometer or GPS). Uses the
+   typed ending odometer if present + valid, otherwise the GPS estimate + marks the shift "odometer pending"
+   (a soft, additive reminder — display-only, never a blocker). Then flips the pill + shows the unmistakable
+   "✓ You're clocked out" confirmation. Reuses tcFinalizeSegment (the shared miles math — unchanged). */
+window.tcClockOutNow = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e || e.clockOut) { if (typeof closeModal === "function") closeModal(); return; }
+  const hasVeh = tcEntryHasVehicle(e);
+  let odoEnd = null;
+  if (hasVeh) {
+    const raw = val("tc_odo_end");
+    if (raw != null && String(raw).trim() !== "") {   // they typed something — use it if it's a valid reading
+      const o = parseFloat(raw);
+      if (o >= 0) {
+        if (e.odoStart != null && o < e.odoStart) { alert("End reading (" + o + ") can't be less than the start (" + e.odoStart + "). Clear it to clock out now on the GPS estimate and add the odometer later."); return; }
+        odoEnd = o;
+      }
+    }
+  }
+  if (typeof closeModal === "function") closeModal();
+  if (hasVeh && odoEnd == null) e.odoPending = true;   // deferred odometer → soft reminder (additive, display-only; finMileage never reads it)
+  else if (e.odoPending) e.odoPending = false;
+  tcFinalizeSegment(e, odoEnd);   // shared miles math — sets clockOut, miles, source (unchanged); withholds auto-confirm on an implausible distance
+  touch(e); tcPingStop();
+  if (typeof renderClockPill === "function") renderClockPill();   // OPTIMISTIC: flip the header pill to "clocked out" this instant
+  const src = (odoEnd != null) ? "odometer" : "GPS";
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (" + src + ") — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi" + (odoEnd != null ? "" : " est") + " · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠" : ""));
+  save();
+  // best-effort out-location, fully non-blocking (mirrors tcFinishClockOut / tcClockOutWith) — never affects the clock-out
+  try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
+  render();
+  tcClockedOutFlash(e);
+};
+/* the unmistakable "✓ You're clocked out" confirmation. Surfaces the odometer-pending reminder + the implausible-
+   distance review flag when they apply. Never throws (wrapped) so it can't blank the app after a successful close. */
+function tcClockedOutFlash(e) {
+  try {
+    if (typeof renderClockPill === "function") renderClockPill();
+    if (!e) return;
+    const pend = !!e.odoPending;
+    const sane = tcSaneMiles(e);
+    const canOdo = (typeof tcCanEditEntry === "function") ? tcCanEditEntry(e) : true;
+    modal("✓ You're clocked out", `
+      <div class="card" style="border-left:5px solid var(--accent);background:var(--soft)">
+        <div class="nm" style="font-size:18px;white-space:normal">✓ Clocked out — ${esc(tcJobTitle(e.jobId))}</div>
+        <div class="sub" style="white-space:normal;margin-top:2px">${tcFmtDur((e.clockOut || now()) - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}</div>
+      </div>
+      ${sane ? `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${tcMiles(e)} mi is over ${TC_SANE_MAX_MILES} — flagged for the owner to review (it won't count as confirmed until they check it).</div></div>` : ""}
+      ${pend ? `<div class="card" style="border-left:4px solid #E1A100;background:var(--soft)"><div class="sub" style="white-space:normal">🕑 Odometer pending — no ending reading yet, so we used the GPS estimate. Your time is saved either way; ${canOdo ? `<a href="#" onclick="closeModal();tcAddEndOdo('${e.id}');return false" style="color:var(--brand-text);font-weight:700">add the odometer now</a> or later` : "the owner can add the odometer later"}.</div></div>` : ""}
+      <button class="btn acc" style="margin-top:14px;width:100%" onclick="closeModal()">Done</button>`);
+  } catch (ex) {}
+}
+/* add the ending odometer AFTER a deferred clock-out (the "odometer pending" case). Replaces the GPS estimate
+   with the real driven miles for THIS shift only — an explicit user action on their own record (same result as
+   entering it at clock-out). Owner-any / crew-own-unconfirmed, per tcCanEditEntry. */
+window.tcAddEndOdo = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  if (typeof tcCanEditEntry === "function" && !tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can change it." : "You can only add the odometer on your own shift."); return; }
+  modal("Add ending odometer", `
+    <p class="muted" style="margin-bottom:8px">Ending odometer on <b>${esc(e.vehicle || "the vehicle")}</b>${e.odoStart != null ? " · start was " + e.odoStart : ""}. Replaces the GPS estimate with the real driven miles.</p>
+    <label>End odometer</label>
+    <input id="tc_end_odo" type="number" inputmode="decimal" placeholder="${e.odoStart != null ? "more than " + e.odoStart : "miles showing now"}">
+    <div id="tc_end_odo_err" class="sub" style="white-space:normal;color:var(--danger);display:none;margin-top:6px"></div>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcSaveEndOdo('${e.id}')">Save odometer</button>`);
+  setTimeout(function () { const el = document.getElementById("tc_end_odo"); if (el) el.focus(); }, 30);
+};
+window.tcSaveEndOdo = function (id) {
+  const e = tcoll().find(x => x.id === id); if (!e) return;
+  if (typeof tcCanEditEntry === "function" && !tcCanEditEntry(e)) { alert("Not allowed."); return; }
+  const o = parseFloat(val("tc_end_odo"));
+  const err = document.getElementById("tc_end_odo_err");
+  if (!(o >= 0)) { if (err) { err.textContent = "Enter a number for the odometer."; err.style.display = ""; } return; }
+  if (e.odoStart != null && o < e.odoStart) { if (err) { err.textContent = "End reading can't be less than the start (" + e.odoStart + ")."; err.style.display = ""; } return; }
+  e.odoEnd = o; e.odoPending = false;
+  if (e.odoStart != null) {   // full pair now → odometer is the number of record (owner-confirmed unless implausibly long)
+    e.miles = Math.max(0, o - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = !tcMilesImplausible(e.miles);
+    const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;
+  }
+  touch(e);
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added ending odometer " + o + " — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  save(); if (typeof closeModal === "function") closeModal(); render();
 };
 /* Item 8 — the INFORMATIONAL route-estimate line inside the clock-out odometer modal. Shows the job's offline
    route estimate and, once an end reading is typed, a live odometer-delta vs estimate soft-flag (>20% off). This
@@ -412,7 +531,8 @@ function tcFinalizeSegment(e, odoEnd, atTs) {
   e.clockOut = (atTs != null && atTs >= e.clockIn) ? atTs : now(); e.odoEnd = odoEnd;
   e.computedMiles = tcComputeMiles(e);
   if (hasVeh && e.odoStart != null && odoEnd != null) {   // full odometer pair → odometer is the number of record, auto-confirmed
-    e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer"; e.milesConfirmed = true;
+    e.miles = Math.max(0, odoEnd - e.odoStart); e.milesSource = "odometer";
+    e.milesConfirmed = !tcMilesImplausible(e.miles);   // auto-confirm UNLESS the distance is absurd (>TC_SANE_MAX_MILES) — that lands in the owner's review queue instead of silently counting
     const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;   // GPS only FLAGS; never overrides the odometer
   } else if (hasVeh && odoEnd != null && e.odoStart == null) {   // only an end reading, no start → can't compute a delta; fall back to GPS
     if (e.miles == null) { e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; }
@@ -476,6 +596,7 @@ window.tcFinishClockOut = function (id) {
   // delegate the close (finalize + log + save + out-location) to the shared core — byte-identical record
   tcClockOutWith(id, { odoEnd: hasVeh ? odoEnd : null });
   render();
+  tcClockedOutFlash(e);   // unmistakable "✓ You're clocked out" confirmation
 };
 
 /* ===== FEATURE: "Change job" — the active shift is really ONE continuous work session (same truck, same
@@ -990,6 +1111,8 @@ window.tcOpenEntry = function (id) {
   if (e.milesFlag === "odo-high" || (v && v.kind === "odo-high")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) reads <b>${(v||{}).deltaPct||""}% higher</b> than the GPS path (${(v||{}).gps||tcRound(e.computedMiles)} mi). Odometer is still the number of record — verify it's right.</div></div>`;
   else if (e.milesFlag === "odo-low" || (v && v.kind === "odo-low")) flagHtml = `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ Odometer (${odoM} mi) is <b>lower than the GPS-traced distance</b> (${(v||{}).gps||tcRound(e.computedMiles)} mi) — that's not possible. Check the readings.</div></div>`;
   else if (v && !v.flag && odoM != null) flagHtml = `<div class="sub" style="margin-bottom:8px;color:var(--ok,#1a9a5a)">✓ Odometer ${odoM} mi matches the GPS path (${v.gps} mi) within tolerance.</div>`;
+  const sane = tcSaneMiles(e);
+  if (sane) flagHtml += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ <b>Implausible distance</b> — this shift's ${tcMiles(e)} mi is over the ${TC_SANE_MAX_MILES}-mi sanity ceiling for a local day. It won't count as confirmed until you check it. If it's a real long haul, adjust/confirm the miles below; otherwise fix the reading.</div></div>`;
   modal("Time entry — " + esc(tcJobTitle(e.jobId)), `
     <div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}</div>
       <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur((e.clockOut || now()) - e.clockIn)} worked${e.clockOut ? "" : " · still open"}</div>
@@ -1213,12 +1336,98 @@ window.tcSaveManualPunch = function (jobId) {
   save(); if (typeof closeModal === "function") closeModal(); render();
 };
 
+/* ===== ADMIN LIVE ROSTER — who's on the clock right now, which job, where, plus one-tap clock-in/out THIS
+   person. Owner/admin only. Reuses the shared cores: tcClockOut (act on anyone's open entry) + tcClockInWith
+   (now with a `who` override). Display-only reads; the mileage/hours math is untouched. ===== */
+/* last-known GPS for an OPEN shift (most recent good path point, else the clock-in fix) → a maps link + "ago". */
+function tcWhereLine(e) {
+  const pts = (typeof tcPath === "function") ? tcPath(e) : [];
+  const p = (pts && pts.length) ? pts[pts.length - 1] : (tcGoodPt(e && e.inLoc) ? e.inLoc : null);
+  if (!p || p.lat == null || p.lng == null) return `<div class="sub" style="white-space:normal">📍 No GPS location yet</div>`;
+  const lat = (+p.lat).toFixed(4), lng = (+p.lng).toFixed(4);
+  const url = "https://maps.google.com/?q=" + lat + "," + lng;
+  const ago = p.ts ? " · " + tcFmtDur(now() - p.ts) + " ago" : "";
+  return `<div class="sub" style="white-space:normal">📍 <a href="${url}" target="_blank" rel="noopener" style="color:var(--brand-text);font-weight:700">${lat}, ${lng}</a>${ago}</div>`;
+}
+function tcRosterHTML() {
+  if (!((typeof isOwner === "function") && isOwner())) return `<div class="card"><div class="muted">Owner/admin only.</div></div>`;
+  const openAll = actTC().filter(e => !e.clockOut).sort((a, b) => (a.clockIn || 0) - (b.clockIn || 0));
+  const members = (typeof schedMembers === "function") ? schedMembers() : [];
+  const onClock = {}; openAll.forEach(e => { onClock[e.userId] = 1; });
+  const offN = members.filter(m => !onClock[m.id]).length;
+  let h = `<div class="card" style="display:flex;gap:6px;text-align:center">
+    <div class="grow"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${openAll.length}</div><div class="sub">on the clock</div></div>
+    <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--muted)">${offN}</div><div class="sub">off the clock</div></div>
+  </div>`;
+  if (!openAll.length) {
+    h += `<div class="card"><div class="muted">Nobody's on the clock right now.</div></div>`;
+  } else {
+    h += `<div class="secthd"><h2>🟢 On the clock now</h2><span class="ct">${openAll.length}</span></div>`;
+    openAll.forEach(e => {
+      const j = tcJob(e.jobId);
+      const nm = (typeof userName === "function" ? userName(e.userId) : "") || e.userName || "Crew";
+      const first = (nm.split(" ")[0]) || "this person";
+      const sane = tcSaneMiles(e);
+      const flags = [];
+      if (sane) flags.push(`<span class="badge" style="background:var(--danger);color:#fff">⚠ implausible ${tcMiles(e)} mi — needs review</span>`);
+      if (e.odoPending) flags.push(`<span class="badge" style="background:#E1A100;color:#fff">🕑 odometer pending</span>`);
+      if (e.milesFlag) flags.push(`<span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>`);
+      h += `<div class="card">
+        <div class="nm" style="font-size:16px;white-space:normal">${esc(nm)}</div>
+        <div class="sub" style="white-space:normal">⏱ ${tcFmtDur(now() - (e.clockIn || now()))} · since ${tcHHMM(e.clockIn)}</div>
+        <div class="sub" style="white-space:normal">📋 ${esc(tcJobTitle(e.jobId))}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div>
+        ${tcShiftVehLine(e)}
+        ${tcWhereLine(e)}
+        ${flags.length ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${flags.join("")}</div>` : ""}
+        <div class="row" style="margin-top:10px;gap:8px">
+          <button class="btn danger grow" onclick="tcClockOut('${e.id}')">⏹ Clock out ${esc(first)}</button>
+          <button class="btn ghost grow" onclick="tcOpenEntry('${e.id}')">Details</button>
+        </div>
+      </div>`;
+    });
+  }
+  const off = members.filter(m => !onClock[m.id]);
+  if (off.length) {
+    h += `<div class="secthd"><h2>Off the clock</h2><span class="ct">${off.length}</span></div><div class="card">` +
+      off.map(m => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(m.username || "Crew")}</div><div class="sub">not clocked in</div></div><button class="btn ghost sm" onclick="tcRosterClockIn('${esc(m.id)}')">Clock in</button></div>`).join("") + `</div>`;
+  }
+  return h;
+}
+/* owner clocks ANOTHER person in from the roster — pick a job, then a time-only (no-vehicle) clock-in via the
+   shared tcClockInWith `who` override. They can switch to driver from their own phone if they actually drove. */
+window.tcRosterClockIn = function (userId) {
+  if (!((typeof isOwner === "function") && isOwner())) { alert("Owner/admin only."); return; }
+  if (!userId) return;
+  if (tcOpenShift(userId)) { alert("They're already on the clock."); render(); return; }
+  const nm = (typeof userName === "function" ? userName(userId) : "") || "Crew";
+  const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+  const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
+  if (!jobs.length) { alert("No open jobs to clock into."); return; }
+  const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
+  modal("Clock in — " + esc(nm), `
+    <p class="muted" style="margin-bottom:8px">Clock <b>${esc(nm)}</b> in on-site (time only, no vehicle — they can switch to driver from their own phone if they drove).</p>
+    <label>Job</label>
+    <select id="tc_ri_job">${jobs.map(opt).join("")}</select>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcRosterClockInGo('${esc(userId)}')">📍 Clock in ${esc((nm.split(" ")[0]) || "them")}</button>`);
+};
+window.tcRosterClockInGo = async function (userId) {
+  if (!((typeof isOwner === "function") && isOwner())) { alert("Owner/admin only."); return; }
+  const jobId = val("tc_ri_job"); if (!jobId) { alert("Pick a job."); return; }
+  const nm = (typeof userName === "function" ? userName(userId) : "") || "Crew";
+  if (typeof closeModal === "function") closeModal();
+  const r = await tcClockInWith({ jobId: jobId, role: "none", who: { userId: userId, name: nm } });
+  if (!r || !r.ok) { alert("Couldn't clock them in" + (r && r.error ? " (" + r.error + ")" : "") + "."); }
+  render();
+};
+
 /* ===== views ===== */
 window.tcSub = function (s) { TCSUB = s; render(); };
 function rTime() {
   if (_tcClock) { clearInterval(_tcClock); _tcClock = null; }
   const owner = (typeof isOwner === "function") && isOwner();
-  let sub = `<div class="subnav"><button class="subbtn ${TCSUB !== "report" ? "on" : ""}" onclick="tcSub('clock')">⏱ Clock</button>${owner ? `<button class="subbtn ${TCSUB === "report" ? "on" : ""}" onclick="tcSub('report')">📊 Hours &amp; miles</button>` : ""}</div>`;
+  let sub = `<div class="subnav"><button class="subbtn ${(TCSUB !== "report" && TCSUB !== "roster") ? "on" : ""}" onclick="tcSub('clock')">⏱ Clock</button>${owner ? `<button class="subbtn ${TCSUB === "roster" ? "on" : ""}" onclick="tcSub('roster')">🟢 On the clock</button><button class="subbtn ${TCSUB === "report" ? "on" : ""}" onclick="tcSub('report')">📊 Hours &amp; miles</button>` : ""}</div>`;
+  if (owner && TCSUB === "roster") { view.innerHTML = sub + tcRosterHTML(); return; }
   if (owner && TCSUB === "report") { view.innerHTML = sub + tcReportHTML(); return; }
   view.innerHTML = sub + tcClockHTML();
   // live elapsed ticker while a shift is open
@@ -1309,7 +1518,7 @@ function tcClockHTML() {
   if (recent.length) {
     h += `<div class="secthd"><h2>Your recent shifts</h2><span class="ct">${recent.length}</span></div><div class="card">` +
       recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcJobTitle(e.jobId))}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}</div></div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
+        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}${tcSaneMiles(e) ? " · ⚠ review" : ""}${e.odoPending ? " · 🕑 odo" : ""}</div>${e.odoPending && (typeof tcCanEditEntry === "function" && tcCanEditEntry(e)) ? `<div class="sub" style="margin-top:2px"><a href="#" onclick="tcAddEndOdo('${e.id}');return false" style="color:var(--brand-text);font-weight:700">＋ Add ending odometer</a></div>` : ""}</div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
   }
   return h;
 }
@@ -1327,6 +1536,8 @@ function tcReportHTML() {
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${money(totMi * TC_RATE)}</div><div class="sub">mileage @ $${TC_RATE}</div></div>
   </div>`;
   if (unconf) h += `<div class="card" style="border-left:4px solid #E1A100;background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${unconf} entr${unconf === 1 ? "y has" : "ies have"} estimated (GPS) mileage not yet confirmed. Tap an entry to verify the real driven miles before payroll.</div></div>`;
+  const review = all.filter(e => tcSaneMiles(e)).length;
+  if (review) h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${review} shift${review === 1 ? "" : "s"} with an <b>implausible distance</b> (over ${TC_SANE_MAX_MILES} mi) — tap to review before it counts. A real cross-country haul is rare; a 2,000-mi local day is almost always bad GPS/odometer.</div></div>`;
   if (open.length) h += `<div class="secthd"><h2>On the clock now</h2><span class="ct">${open.length}</span></div><div class="card">` +
     open.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} · ${esc(tcJobTitle(e.jobId))}</div><div class="sub">since ${new Date(e.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${tcRound(e.computedMiles)} mi est</div></div></div>`).join("") + `</div>`;
 
@@ -1337,7 +1548,7 @@ function tcReportHTML() {
     const es = byJob[jid], jh = es.reduce((s, e) => s + tcHours(e), 0), jm = es.reduce((s, e) => s + tcMiles(e), 0);
     const j = tcJob(jid);
     h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(tcJobTitle(jid))}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div></div></div>` +
-      es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}</div>
+      es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}${tcSaneMiles(e) ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ needs review</span>` : ""}${e.odoPending ? ` <span class="badge" style="background:#E1A100;color:#fff">🕑 odo pending</span>` : ""}</div>
         <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
   });
 
