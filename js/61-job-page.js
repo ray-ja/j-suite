@@ -536,7 +536,7 @@ function jobPageRouteCard(j) {
   const flagBadge = () => `<div style="${badgeBase};background:var(--accent);color:#fff">🏁</div>`;
   // Start/End bookends — a 🏁 flag point that is STILL editable (the address input sits under the label). They are
   // points 0 and last of the SAME sequence, styled like the numbered stops so the whole thing reads as one path.
-  const endpointRow = (title, id, value, custom, setFn, resetFn) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative;z-index:1">${flagBadge()}
+  const endpointRow = (title, id, value, custom, setFn, resetFn) => `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;position:relative">${flagBadge()}
     <div class="grow" style="min-width:0">
       <div class="row" style="align-items:center;gap:6px"><div class="nm grow" style="font-size:16px;font-weight:700">${title}${custom ? "" : ` <span class="sub" style="font-weight:400">· home base</span>`}</div>${custom ? `<button class="btn ghost sm" style="flex:0 0 auto;opacity:.7" onclick="${resetFn}('${j.id}')" title="Reset to home base">↺ base</button>` : ""}</div>
       <div class="acwrap" style="margin-top:4px"><input id="${id}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}','${id}_ac')" oninput="addrSuggest('${id}','${id}_ac')" onchange="${setFn}('${j.id}', this.value)"><div class="acbox" id="${id}_ac"></div></div>

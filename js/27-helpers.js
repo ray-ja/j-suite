@@ -93,6 +93,13 @@ window.addrPick=function(inpId,boxId,el){const inp=document.getElementById(inpId
   if((inp.dataset&&inp.dataset.pairLabel)&&nameVal){const lf=document.getElementById(inp.dataset.pairLabel);if(lf&&!lf.value)lf.value=nameVal;}
   if(boxId){const b=document.getElementById(boxId);if(b)b.innerHTML="";}
   try{addrInp.dispatchEvent(new Event("change"));}catch(e){}};
+/* Enter picks the FIRST open suggestion — click already works via addrPick's onclick. One document-level
+   listener, bound once, so every .acwrap address field (route Start/End, add-stop, job/home-base, properties)
+   gets keyboard-select for free. No-op when no suggestion box is open under the focused input. */
+if(!window._addrKeyBound){window._addrKeyBound=true;document.addEventListener("keydown",function(e){
+  if(e.key!=="Enter")return;const inp=e.target;if(!inp||inp.tagName!=="INPUT"||!inp.closest)return;
+  const wrap=inp.closest(".acwrap");if(!wrap)return;const box=wrap.querySelector(".acbox");if(!box)return;
+  const first=box.querySelector(".acitem");if(!first)return;e.preventDefault();first.click();});}
 /* Settings are per-user: stored on the signed-in account (u.settings, synced via S.users).
    When signed out we fall back to this device's localStorage so the toggle still works. */
 function curUserSettings(){try{const u=(typeof curUser==="function")?curUser():null;return (u&&u.settings)||null;}catch(e){return null;}}
