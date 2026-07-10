@@ -1336,6 +1336,130 @@ window.tcSaveManualPunch = function (jobId) {
   save(); if (typeof closeModal === "function") closeModal(); render();
 };
 
+/* ===== 🚗 LOG A DRIVE (retroactive mileage) — owner/admin records a drive that ALREADY happened, for a driver
+   who never clocked in (e.g. an airport pickup). It creates an ORDINARY CONFIRMED mileage timeclock entry — the
+   exact same record shape a clocked-and-confirmed drive produces — so it flows through the identical reimbursement
+   (finMileage, keyed vehicleOwnerId||userId) + per-job cost (jobMileageCost). Additive path: the live clock-in flow
+   is untouched. The nominal clock span is tiny (TC_LOGDRIVE_SPAN_MS) so it logs the MILES without inflating hours.
+   milesConfirmed:true → owner-only to edit/delete afterward via the existing punch/mileage editors (tcOpenEntry /
+   tcEditPunch / tcDelPunch). Never throws; a fresh uid() each call (owner deletes a mistaken one rather than dedup). */
+const TC_LOGDRIVE_SPAN_MS = 60000;   // 1-min nominal span — this is a MILEAGE record, not work-hours
+window.tcLogDrive = function (jobId, args) {
+  try {
+    const owner = (typeof isOwner === "function") && isOwner();
+    const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
+    if (!canAdd) return { ok: false, error: "not-allowed" };
+    args = args || {};
+    const j = tcJob(jobId); if (!j) return { ok: false, error: "no-job" };
+    const userId = args.userId; if (!userId) return { ok: false, error: "no-driver" };
+    const miles = +args.miles; if (!(miles > 0)) return { ok: false, error: "no-miles" };
+    // resolve the encoded picker value → the same {vehicleId, vehicleOwnerId, vehicle} a clock-in would write
+    const veh = (args.veh && typeof args.veh === "object") ? args.veh : tcResolveVehicle(args.vehicle != null ? args.vehicle : "", userId);
+    if (!veh.vehicleId && !veh.vehicleOwnerId && !veh.vehicle) return { ok: false, error: "no-vehicle" };
+    const day = args.date || ((typeof today === "function") ? today() : tcLocalDay(now()));
+    let inMs = new Date(day + "T09:00").getTime();
+    if (!(inMs > 0)) inMs = now();
+    const outMs = inMs + TC_LOGDRIVE_SPAN_MS;   // nominal tiny span — clearly a mileage entry, editable after
+    const me = tcWho();
+    const uname = (typeof userName === "function" ? userName(userId) : "") || "Crew";
+    const e = {
+      id: uid(), jobId: jobId, userId: userId, userName: uname,
+      clockIn: inMs, clockOut: outMs,
+      inLoc: null, outLoc: null, pings: [], stops: [],
+      computedMiles: 0, miles: miles, milesConfirmed: true, milesSource: "manual",
+      odoStart: null, odoEnd: null,
+      riderRole: "driver", trailerId: null, rodeWith: null,
+      vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, invVehicleId: veh.invVehicleId || null,
+      rate: TC_RATE, manual: true, by: me.userId, source: "admin-logged", updatedAt: now()
+    };
+    tcoll().push(e);
+    // put the driver on the job's crew (they drove) + grow the work days — mirrors tcAddPersonToPunch, idempotent
+    if (!Array.isArray(j.crew)) j.crew = [];
+    if (j.crew.indexOf(userId) < 0) { j.crew.push(userId); if (typeof touch === "function") touch(j); }
+    try {
+      const _cur = (typeof jobWorkDays === "function") ? jobWorkDays(j) : ((Array.isArray(j.workDays) ? j.workDays : (j.date ? [j.date] : [])));
+      if (_cur.indexOf(day) < 0 && typeof jobPageCommitDays === "function") jobPageCommitDays(j, _cur.concat([day]));
+    } catch (ex) {}
+    if (typeof touch === "function") touch(e);
+    if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Logged a drive — " + miles + " mi · " + uname + " · " + tcJobTitle(jobId));
+    if (typeof save === "function") save();
+    return { ok: true, entry: e };
+  } catch (ex) { return { ok: false, error: "threw" }; }
+};
+/* the 🚗 Log-a-drive MODAL (owner/admin) — Driver + Vehicle (reusing the clock-in picker source) + Miles (prefilled
+   from the job's route estimate: manualRouteMiles || estRouteMiles) + Date (today) + a live IRS-$ readout. */
+window.tcLogDriveForm = function (jobId) {
+  const owner = (typeof isOwner === "function") && isOwner();
+  const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
+  if (!canAdd) { alert("Owner/admin only — logging a drive for someone."); return; }
+  const j = tcJob(jobId); if (!j) { alert("That job is gone."); return; }
+  const members = (typeof schedMembers === "function") ? schedMembers() : [];
+  if (!members.length) { alert("No crew members to attribute a drive to."); return; }
+  const crew = Array.isArray(j.crew) ? j.crew : [];
+  const dfltDriver = crew.find(id => members.some(m => m.id === id)) || members[0].id;
+  const pre = (+j.manualRouteMiles > 0) ? +j.manualRouteMiles : (+j.estRouteMiles > 0 ? +j.estRouteMiles : "");
+  const day = (typeof today === "function") ? today() : tcLocalDay(now());
+  const estLine = (pre > 0)
+    ? `≈ IRS <b>${money(Math.round(pre * TC_RATE * 100) / 100)}</b> @ $${TC_RATE}/mi · ${pre} mi`
+    : `Enter the round-trip miles — reimbursed @ $${TC_RATE}/mi`;
+  modal("🚗 Log a drive — " + esc(tcJobTitle(jobId)), `
+    <p class="muted" style="margin-bottom:8px;white-space:normal">Record a drive that <b>already happened</b> (no clock-in needed) — the driver gets reimbursed @ $${TC_RATE}/mi and the job shows the mileage cost. Creates a confirmed mileage entry you can edit or delete later.</p>
+    <label>Driver</label>
+    <select id="tc_ld_user" onchange="tcLogDriveDriverChanged()">${members.map(u => `<option value="${esc(u.id)}" ${u.id === dfltDriver ? "selected" : ""}>${esc(u.username || "Crew")}</option>`).join("")}</select>
+    <label style="margin-top:8px">Vehicle</label>
+    <select id="tc_ld_veh">${tcVehicleOptions(tcDefaultVehVal(dfltDriver), dfltDriver)}</select>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <div class="grow"><label style="margin-top:0">Miles (round trip)</label><input id="tc_ld_miles" type="number" inputmode="decimal" step="0.1" value="${pre}" placeholder="e.g. 170" oninput="tcLogDriveEst()"></div>
+      <div class="grow"><label style="margin-top:0">Date</label><input id="tc_ld_date" type="date" value="${esc(day)}"></div>
+    </div>
+    <div class="sub" id="tc_ld_est" style="margin-top:6px;white-space:normal;color:var(--brand-text)">${estLine}</div>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcLogDriveSubmit('${jobId}')">🚗 Log the drive</button>`);
+};
+/* re-default the vehicle picker to the newly-chosen driver's usual vehicle (same source as clock-in) */
+window.tcLogDriveDriverChanged = function () {
+  const uid2 = val("tc_ld_user"); const sel = document.getElementById("tc_ld_veh");
+  if (sel && uid2) sel.innerHTML = tcVehicleOptions(tcDefaultVehVal(uid2), uid2);
+};
+/* live IRS-$ readout as the owner types the miles */
+window.tcLogDriveEst = function () {
+  const box = document.getElementById("tc_ld_est"); if (!box) return;
+  const m = parseFloat(val("tc_ld_miles"));
+  box.innerHTML = (m > 0)
+    ? `≈ IRS <b>${money(Math.round(m * TC_RATE * 100) / 100)}</b> @ $${TC_RATE}/mi · ${m} mi`
+    : `Enter the round-trip miles — reimbursed @ $${TC_RATE}/mi`;
+};
+window.tcLogDriveSubmit = function (jobId) {
+  const userId = val("tc_ld_user"), vehicle = val("tc_ld_veh"), miles = parseFloat(val("tc_ld_miles")), date = val("tc_ld_date");
+  if (!userId) { alert("Pick a driver."); return; }
+  if (!(miles > 0)) { alert("Enter the miles driven (more than 0)."); return; }
+  const r = tcLogDrive(jobId, { userId: userId, vehicle: vehicle, miles: miles, date: date });
+  if (!r || !r.ok) {
+    alert(r && r.error === "no-vehicle" ? "Pick a vehicle for the drive (or add one in Admin)."
+      : r && r.error === "not-allowed" ? "Owner/admin only."
+      : "Couldn't log the drive" + (r && r.error ? " (" + r.error + ")" : "") + ".");
+    return;
+  }
+  if (typeof closeModal === "function") closeModal();
+  if (typeof render === "function") render();
+  alert("Logged " + miles + " mi for " + ((typeof userName === "function" ? userName(userId) : "") || "the driver") + " — reimbursed @ $" + TC_RATE + "/mi. Edit or delete it anytime from the work-days list.");
+};
+/* roster entry point — pick a job first (the roster isn't job-scoped), then open the log-drive form */
+window.tcLogDrivePickJob = function () {
+  const owner = (typeof isOwner === "function") && isOwner();
+  const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
+  if (!canAdd) { alert("Owner/admin only."); return; }
+  const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+  const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
+  if (!jobs.length) { alert("No open jobs to log a drive against."); return; }
+  const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
+  modal("🚗 Log a drive", `
+    <p class="muted" style="margin-bottom:8px">Which job was this drive for?</p>
+    <label>Job</label>
+    <select id="tc_ld_job">${jobs.map(opt).join("")}</select>
+    <button class="btn acc" style="margin-top:14px;width:100%" onclick="var jid=document.getElementById('tc_ld_job').value;if(jid){closeModal();tcLogDriveForm(jid);}">Next →</button>`);
+};
+
 /* ===== ADMIN LIVE ROSTER — who's on the clock right now, which job, where, plus one-tap clock-in/out THIS
    person. Owner/admin only. Reuses the shared cores: tcClockOut (act on anyone's open entry) + tcClockInWith
    (now with a `who` override). Display-only reads; the mileage/hours math is untouched. ===== */
@@ -1359,6 +1483,8 @@ function tcRosterHTML() {
     <div class="grow"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${openAll.length}</div><div class="sub">on the clock</div></div>
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--muted)">${offN}</div><div class="sub">off the clock</div></div>
   </div>`;
+  // retroactive mileage — a drive that already happened for someone who never clocked in (e.g. an airport pickup)
+  h += `<button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="tcLogDrivePickJob()">🚗 Log a drive <span class="sub" style="font-weight:400">· retroactive mileage, no clock-in</span></button>`;
   if (!openAll.length) {
     h += `<div class="card"><div class="muted">Nobody's on the clock right now.</div></div>`;
   } else {

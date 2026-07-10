@@ -353,6 +353,11 @@ function rJobPage(j) {
   // separate trailer dropdown + rider-role + start-odometer + route estimate. Replaces the OLD free-text vehicle
   // input that resolved empty and blocked the driver clock-in. riderRole + vehicle-owner reimbursement preserved.
   else h += (typeof tcClockInFormHTML === "function" ? tcClockInFormHTML(j.id) : "") + `<div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div>`;
+  // 🚗 LOG A DRIVE (owner/admin) — retroactively attribute mileage to a driver who never clocked in (e.g. an airport
+  // pickup). Creates a confirmed mileage timeclock entry (js/38 tcLogDriveForm → tcLogDrive) → the driver is
+  // reimbursed at the IRS rate + the job shows the mileage cost. Additive; the live clock-in flow above is untouched.
+  if ((typeof isOwner === "function" && isOwner()) || (typeof canManageMembers === "function" && canManageMembers()))
+    h += `<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="tcLogDriveForm('${j.id}')">🚗 Log a drive <span class="sub" style="font-weight:400">· retroactive mileage, no clock-in</span></button>`;
   h += `</div>`;
 
   // 4) Job photos — documentation gallery, inline so anyone who opens the job sees them
