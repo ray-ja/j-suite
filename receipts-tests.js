@@ -947,6 +947,73 @@ async function main() {
   ok("kept copy alive", !STORE.receipts.find(r => r.id === g3a.id).deleted);
   ok("both other copies tombstoned", STORE.receipts.find(r => r.id === g3b.id).deleted === true && STORE.receipts.find(r => r.id === g3c.id).deleted === true);
 
+  // ============ INFO-RICHNESS SCORE + "keep the richest" RECOMMENDATION (js/72 rcptInfoScore / resolver) ============
+  global.money2 = global.money2 || function (n) { return "$" + (+n || 0).toFixed(2); };
+  console.log("\n— INFO-SCORE: photo dominates; a photo+lineItems+card receipt outscores a bare CSV row —");
+  const rich = rcptInfoScore({ receiptId: "p.jpg", suggested: { lineItems: [1, 2] }, cardLast4: "8355", category: "materials", jobId: "j1", desc: "pavers and sand delivery", vendor: "Lowe's", date: "2026-07-01" });
+  const bare = rcptInfoScore({ vendor: "Lowe's", amount: 26.67, refNo: "999" });   // thin CSV row: vendor + (no photo/items/card/cat/job/date)
+  ok("rich copy outscores the bare CSV row", rich.score > bare.score, [rich.score, bare.score]);
+  ok("photo dominates: same row WITH a photo outscores WITHOUT (a re-uploaded photo beats a thin CSV row)", rcptInfoScore({ receiptId: "x", vendor: "Lowe's" }).score > rcptInfoScore({ vendor: "Lowe's" }).score, [rcptInfoScore({ receiptId: "x", vendor: "Lowe's" }).score, rcptInfoScore({ vendor: "Lowe's" }).score]);
+  ok("photo (+5) is the single largest weight (beats line items +3)", rcptInfoScore({ receiptId: "x" }).score === 5 && rcptInfoScore({ suggested: { lineItems: [1] } }).score === 3);
+  ok("has/missing explain the reasons", rich.has.indexOf("photo") >= 0 && rich.has.indexOf("line items") >= 0 && bare.missing.indexOf("photo") >= 0, { has: rich.has, missing: bare.missing });
+  ok("weights: photo 5 + items 3 + card/cat/job/desc/vendor/date 1 ea = 14 (max)", rich.score === 14, rich.score);
+  ok("short desc (<12 chars) does NOT score", rcptInfoScore({ desc: "paver" }).has.indexOf("description") < 0 && rcptInfoScore({ desc: "pavers & 3 bags sand" }).has.indexOf("description") >= 0);
+  ok("a Cap-'unknown' date does NOT count as a date", rcptInfoScore({ date: "unknown" }).has.indexOf("date") < 0 && rcptInfoScore({ date: "2026-07-01" }).has.indexOf("date") >= 0);
+
+  console.log("— RESOLVER: recommends the highest-score copy to KEEP, the thinner to delete —");
+  resetStore(); global.finCanView = function () { return true; };
+  const recKeep = seedReview({ receiptId: "photo.jpg", vendor: "Lowe's", amount: 26.67, cardLast4: "8355", category: "materials", jobId: "j1", desc: "pavers and sand delivery" });
+  const recThin = seedReview({ receiptId: "", vendor: "Lowe's", amount: 26.67, refNo: "1234" });   // thin CSV row (no photo)
+  recThin.receiptId = "";
+  const rankHtml = rcptDupResolveHTML();
+  ok("resolver marks the photo copy '✅ Recommended — keep'", /✅ Recommended — keep/.test(rankHtml) && rankHtml.indexOf("✅ Recommended — keep") < rankHtml.indexOf("🗑 Recommended delete"), rankHtml.slice(0, 40));
+  ok("resolver marks the thinner copy '🗑 Recommended delete'", /🗑 Recommended delete — thinner/.test(rankHtml));
+  ok("the keep reason names the photo (most info: photo…)", /most info:[^<]*photo/.test(rankHtml));
+  ok("the delete reason names what's missing (photo)", /missing:[^<]*photo/.test(rankHtml));
+  ok("a group one-tap 'Keep the richest · delete the N thinner' is offered", /Keep the richest · delete the 1 thinner/.test(rankHtml) && /rcptDupKeepRichest\(/.test(rankHtml));
+
+  console.log("— RESOLVER: a within-1-point NEAR-TIE is labeled 'Similar', NOT strong-recommended, no one-tap —");
+  resetStore(); global.finCanView = function () { return true; };
+  seedReview({ receiptId: "a.jpg", vendor: "Home Depot", amount: 40.00, cardLast4: "8355", jobId: "j1" });   // photo + card + job
+  seedReview({ receiptId: "b.jpg", vendor: "Home Depot", amount: 40.00, cardLast4: "8355", jobId: "j2" });   // photo + card + job (diff job) → tie
+  const tieHtml = rcptDupResolveHTML();
+  ok("near-tie is labeled '≈ Similar — your call'", /≈ Similar — your call/.test(tieHtml));
+  ok("near-tie does NOT strong-recommend keep/delete", !/✅ Recommended — keep/.test(tieHtml) && !/🗑 Recommended delete/.test(tieHtml));
+  ok("near-tie offers NO group one-tap", !/rcptDupKeepRichest\(/.test(tieHtml));
+  ok("near-tie still allows manual per-row Keep/Delete", /rcptDupKeep\(/.test(tieHtml) && /rcptDupDelete\(/.test(tieHtml));
+
+  console.log("— ONE-TAP: rcptDupKeepRichest keeps the top, soft-deletes exactly the thinner via rcptTombstone —");
+  resetStore(); global.finCanView = function () { return true; };
+  const otKeep = seedReview({ receiptId: "keep.jpg", vendor: "Lowe's", amount: 55.55, cardLast4: "8355", category: "materials", jobId: "j1", desc: "long enough description here" });
+  const otThin1 = seedReview({ receiptId: "", vendor: "Lowe's", amount: 55.55, refNo: "a" }); otThin1.receiptId = "";
+  const otThin2 = seedReview({ receiptId: "", vendor: "Lowe's", amount: 55.55, cardLast4: "8355" }); otThin2.receiptId = "";
+  const topId = rcptInfoScore(otKeep).score;   // sanity: keep scores highest
+  ok("pre: all 3 in one group, keep scores highest", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 3 && rcptInfoScore(otKeep).score > rcptInfoScore(otThin1).score && rcptInfoScore(otKeep).score > rcptInfoScore(otThin2).score);
+  rcptDupKeepRichest("review", "", otKeep.id);
+  ok("richest (recommended-keep) is NEVER deleted", !STORE.receipts.find(r => r.id === otKeep.id).deleted);
+  ok("both thinner copies soft-deleted via the existing tombstone path", STORE.receipts.find(r => r.id === otThin1.id).deleted === true && STORE.receipts.find(r => r.id === otThin2.id).deleted === true);
+  ok("no group remains after the one-tap", rcptDupGroups().length === 0);
+
+  console.log("— ONE-TAP GUARD: rcptDupKeepRichest refuses when the id isn't the richest (never deletes the richer copy) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const grKeep = seedReview({ receiptId: "rich.jpg", vendor: "Lowe's", amount: 33.33, cardLast4: "8355", category: "materials", jobId: "j1", desc: "long enough description here" });
+  const grThin = seedReview({ receiptId: "", vendor: "Lowe's", amount: 33.33, refNo: "z" }); grThin.receiptId = "";
+  rcptDupKeepRichest("review", "", grThin.id);   // caller passes the THIN id → must refuse
+  ok("passing the thinner id deletes NOTHING (guard refuses)", !STORE.receipts.find(r => r.id === grKeep.id).deleted && !STORE.receipts.find(r => r.id === grThin.id).deleted);
+
+  console.log("— ONE-TAP: refuses on a near-tie (owner's call, no auto-delete) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const ntA = seedReview({ receiptId: "na.jpg", vendor: "Home Depot", amount: 41.00, cardLast4: "8355", jobId: "j1" });
+  const ntB = seedReview({ receiptId: "nb.jpg", vendor: "Home Depot", amount: 41.00, cardLast4: "8355", jobId: "j2" });
+  rcptDupKeepRichest("review", "", ntA.id);
+  ok("near-tie one-tap deletes nothing", !STORE.receipts.find(r => r.id === ntA.id).deleted && !STORE.receipts.find(r => r.id === ntB.id).deleted);
+
+  console.log("— DETECTION unchanged: recommendation is display-only, groups match the pre-change detector —");
+  resetStore();
+  seedReview({ receiptId: "p1.jpg", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
+  seedReview({ receiptId: "", vendor: "Lowe's", amount: 26.67 });
+  ok("scoring adds NO groups and drops none (same tolerant detection)", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2, rcptDupGroups().map(g => g.length));
+
   console.log("— MARK-AS-DUP: the edit-modal rcptEditMarkDup soft-deletes THIS receipt (existing path), keeps the other —");
   resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; };
   const mKeep = seedReview({ receiptId: "m1", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
