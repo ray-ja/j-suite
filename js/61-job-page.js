@@ -239,6 +239,13 @@ function rJobPage(j) {
     h += `<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">`;
     h += `<div><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Customer</label><select id="jcust_${j.id}" onchange="jobSetCustomer('${j.id}',this.value)" style="width:100%"><option value="">— none —</option>${_cs.map(c => `<option value="${c.id}"${c.id === j.customerId ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select></div>`;
     h += `<div class="row" style="gap:8px"><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Date</label><input id="jdate_${j.id}" type="date" value="${esc(j.date || "")}" onchange="jobSetDate('${j.id}',this.value)" style="width:100%"></div><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Time</label><input id="jtime_${j.id}" type="time" value="${esc(j.time || "")}" onchange="jobSetTime('${j.id}',this.value)" style="width:100%"></div></div>`;
+    // 🔁 RECURRING — right in the date area (Ray). If the job already belongs to a recurring plan, link to it;
+    // otherwise "make this recurring" opens the recurring-plan editor (js/103) pre-filled from THIS job.
+    if (typeof recurCanManage === "function" && recurCanManage()) {
+      const _plan = (j.planId && typeof recurPlanById === "function") ? recurPlanById(j.planId) : null;
+      if (_plan) h += `<button class="btn ghost sm" style="width:100%" onclick="recurPlanOpen('${esc(j.planId)}')">🔁 Recurring${typeof recurFreqLine === "function" ? " · " + esc(recurFreqLine(_plan)) : ""} — open plan ›</button>`;
+      else h += `<button class="btn ghost sm" style="width:100%" onclick="jobMakeRecurring('${j.id}')">🔁 Make this a recurring job…</button>`;
+    }
     if (crewNames) h += `<div class="sub" style="white-space:normal">👥 ${esc(crewNames)}</div>`;
     h += `</div>`;
   } else {
@@ -560,9 +567,13 @@ function jobPageRouteCard(j) {
   } else if (_src === "none") {
     h += `<div class="sub muted" style="margin-top:8px;white-space:normal">🧭 The map couldn't route this — add manual route miles below to get an estimate.</div>`;
   } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Computing the road route… the mileage estimate appears once the map answers (needs a home base set in Settings).</div>`;
-  // 🚗 MANUAL route miles (round-trip) — the fallback for when the map can't route (offline / a bad-geocode address).
-  // OSRM road miles win when available; this manual value takes over when they aren't. Owner/admin only.
-  h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)"><label style="margin-top:0">🚗 Route miles <span class="sub" style="font-weight:400">(manual, if the map can't route — round-trip)</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${(j.manualRouteMiles > 0) ? j.manualRouteMiles : ""}" placeholder="round-trip miles" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${(j.manualRouteMiles > 0) ? "✓ Using your manual miles — this overrides the map + the odometer estimate." : "Enter the round-trip miles to override the map/odometer estimate for this job."}</div></div>`;
+  // 🚗 OVERRIDE the mileage (round-trip) — the map estimate above is used AUTOMATICALLY; this box is ONLY to
+  // override it when the map routed wrong (or couldn't route). When there's a map estimate and no override it's
+  // tucked into a collapsed "override" toggle so it isn't mistaken for a required field. Owner/admin only.
+  const _hasEst = j.estRouteMiles > 0, _manOn = j.manualRouteMiles > 0;
+  const _manBox = `<label style="margin-top:0">🚗 ${_hasEst ? "Override the mileage" : "Route miles"} <span class="sub" style="font-weight:400">· round-trip</span></label><div class="row" style="gap:8px"><input id="jrm_miles" type="number" inputmode="decimal" value="${_manOn ? j.manualRouteMiles : ""}" placeholder="${_hasEst ? j.estRouteMiles + " mi — the map estimate" : "round-trip miles"}" style="flex:1" onchange="jobSetManualRouteMiles('${j.id}', this.value)"><button class="btn ghost sm" onclick="jobSetManualRouteMiles('${j.id}', document.getElementById('jrm_miles').value)">Save</button></div><div class="sub muted" style="margin-top:4px;white-space:normal">${_manOn ? `✓ Overriding with <b>${j.manualRouteMiles} mi</b> — clear the box + Save to go back to the map estimate.` : (_hasEst ? "The map estimate above is used automatically — you don't need to type anything. Only enter a number if the map routed it wrong." : "The map couldn't route this — enter the round-trip miles so the mileage cost is right.")}</div>`;
+  if (_hasEst && !_manOn) h += `<details style="margin-top:8px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">🚗 Map estimate wrong? Override the mileage ›</summary><div style="margin-top:6px">${_manBox}</div></details>`;
+  else h += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">${_manBox}</div>`;
   // 🗺 View route (owner/admin) — deep-link to the read-only GPS route-review page for THIS job (js/91). Lives here
   // in the admin route card (was in the crew "Where & when" card); it was already jobCanEditPlan-gated.
   if (typeof openRouteReview === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:10px" onclick="openRouteReview('${j.id}')">🗺 View route (GPS)</button>`;
@@ -738,6 +749,22 @@ window.jobSetCustomer = function (jobId, custId) {
   if (typeof touch === "function") touch(j);
   if (typeof logChange === "function") logChange("update", "job", j.id, "Set customer" + (custId && typeof custName === "function" ? " → " + custName(custId) : " → none"));
   if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* 🔁 turn THIS job into a recurring plan — opens the recurring-plan editor (js/103 recurPlanOpen) pre-filled
+   from the job's customer / property / service / price / crew / time, starting on the job's date. Owner/admin. */
+window.jobMakeRecurring = function (jobId) {
+  const j = (typeof actJ === "function" ? actJ() : (D().jobs || [])).find(x => x && x.id === jobId); if (!j) return;
+  if (typeof recurPlanOpen !== "function") { if (typeof alert === "function") alert("Recurring plans aren't available here."); return; }
+  const q = j.quoteId ? ((typeof actQ === "function" ? actQ() : []).find(x => x && x.id === j.quoteId)) : null;
+  recurPlanOpen(null, {
+    customerId: j.customerId || "", propertyId: j.propertyId || "",
+    address: (typeof jobAddr === "function" ? jobAddr(j) : (j.address || "")),
+    title: j.title || "", serviceId: j.serviceId || "",
+    price: q ? (q.finalPrice || q.total || "") : "",
+    time: j.time || "", estDays: (q && +q.estDays > 0) ? +q.estDays : 1,
+    crew: Array.isArray(j.crew) ? j.crew.slice() : [],
+    startDate: j.date || (typeof today === "function" ? today() : "")
+  });
 };
 window.jobSetDate = function (jobId, ds) {
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }

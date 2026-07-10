@@ -114,8 +114,8 @@ window.recurPlanOpen = function (id, prefill) {
   var p = isNew
     ? { id: "", customerId: prefill.customerId || "", propertyId: prefill.propertyId || "", serviceId: prefill.serviceId || "",
         title: prefill.title || "", price: (prefill.price != null ? prefill.price : ""), discountPct: (prefill.discountPct != null ? prefill.discountPct : 20),
-        frequency: "weekly", weekday: (new Date().getDay()), dayOfMonth: 1, monthlyMode: "date", nthWeek: 1, interval: 1,
-        seasonStart: "06-01", seasonEnd: "08-31", time: "", estDays: 1, startDate: today(), endMode: "endless", status: "active", notes: "" }
+        frequency: "weekly", weekday: (prefill.startDate ? new Date(prefill.startDate + "T00:00:00").getDay() : new Date().getDay()), dayOfMonth: 1, monthlyMode: "date", nthWeek: 1, interval: 1,
+        seasonStart: "06-01", seasonEnd: "08-31", time: (prefill.time || ""), estDays: (prefill.estDays != null ? prefill.estDays : 1), crew: (Array.isArray(prefill.crew) ? prefill.crew.slice() : []), address: (prefill.address || ""), startDate: (prefill.startDate || today()), endMode: "endless", status: "active", notes: "" }
     : recurPlanById(id);
   if (!p) { closeModal(); return; }
   RECUR_CREW = new Set(Array.isArray(p.crew) ? p.crew : []);
