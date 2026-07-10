@@ -199,9 +199,54 @@ function rcptVendorRecord(f) {
   return rec;
 }
 
+/* ---- map a Square-statement category (+ vendor) to one of our RCPT_CATS. Square's own Category is a decent hint;
+        a few vendor keywords override it (a dump fee filed "Other", Proton filed "Supplies", a gas station, etc.).
+        Returns "" when nothing's confident → the row imports uncategorized for the owner to set. ---- */
+function rcptSquareCat(sqCat, vendor) {
+  var c = String(sqCat || "").toLowerCase(), v = String(vendor || "").toLowerCase();
+  if (/county|currituck|dare co|transfer station|landfill|\bwaste\b|\bdump\b|disposal|sanitation|republic services/.test(v)) return "disposal";
+  if (/proton|cloudflare|github|\badobe\b|microsoft|google|godaddy|namecheap|quickbooks|mailchimp|openai|anthropic|\bvpn\b/.test(v) || /subscription|software|saas/.test(c)) return "subscription/software";
+  if (/\bfuel\b|\bgas\b|petrol/.test(c) || /shell|exxon|\bbp\b|marathon|circle k|sheetz|\bwawa\b|speedway|chevron|citgo/.test(v)) return "fuel";
+  if (/meal|food|restaurant|dining/.test(c)) return "meals";
+  if (/rental|\brent\b/.test(c)) return "rentals";
+  if (/inventory|material/.test(c)) return "materials";
+  if (/supplies|equipment|\btool/.test(c)) return "tools/equipment";
+  return "";
+}
 /* ---- THE REGISTRY. Each parser owns one vendor's CSV export. Add Home Depot / Walmart / Amazon here when a
         real sample arrives — same {id,name,detect,parseRow} shape, no other file changes. ---- */
 var VENDOR_PARSERS = [
+  {
+    id: "square-card", name: "Square card",
+    /* signature of Square's business-card "All activity" export: Details + Activity Type + Balance + Amount */
+    detect: function (headerCells) {
+      var H = rcptVendorH(headerCells);
+      return rcptHIdx(H, /^details$/) >= 0 && rcptHIdx(H, /activity type/) >= 0 && rcptHIdx(H, /^balance$/) >= 0 && rcptHIdx(H, /^amount$/) >= 0;
+    },
+    parseRow: function (cells, H) {
+      if (!cells) return null;
+      var activity = rcptHVal(H, cells, /activity type/).toLowerCase();
+      var vendor = rcptHVal(H, cells, /^details$/);
+      var isSpend = activity.indexOf("card spend") >= 0;
+      var isRefund = activity.indexOf("refund") >= 0;
+      // Card payments / "Sales" (paying the balance DOWN), transfers, and anything that isn't a spend/refund are
+      // NOT expenses — skip them so the card statement imports only actual purchases.
+      if ((!isSpend && !isRefund) || /^card payment$/i.test(vendor)) return null;
+      var raw = budgetParseAmount(rcptHVal(H, cells, /^amount$/));   // "-$12.17" → -12.17 · "$30.73" → 30.73
+      if (raw == null || isNaN(raw) || raw === 0 || !vendor) return null;
+      var date = rcptCsvVendorDate(rcptHVal(H, cells, /^date$/));    // "7/6/26" (M/D/YY)
+      var sqCat = rcptHVal(H, cells, /^category$/);
+      // spend (money out, negative on the statement) → a POSITIVE expense; refund (money in) → NEGATIVE + kind:refund
+      var amt = isRefund ? -Math.abs(raw) : Math.abs(raw);
+      var rec = rcptVendorRecord({ amount: amt, vendor: vendor, date: date, desc: sqCat || "", cardLast4: "" });
+      rec.paidBy = "";           // the Square BUSINESS card — nothing owed (files to 🗂 Filed, not 💸 Owed)
+      rec.attributedTo = "";
+      if (isRefund) rec.kind = "refund";
+      var mapped = rcptSquareCat(sqCat, vendor);
+      if (mapped) rec.category = mapped;
+      return rec;
+    }
+  },
   {
     id: "lowes", name: "Lowe's",
     /* signature of Lowe's "Order History" export — three columns no other file combines */

@@ -871,6 +871,27 @@ async function main() {
   ok("detect(headerCells) → Lowe's parser (id 'lowes')", detected && detected.id === "lowes", detected && detected.id);
   ok("unknown/generic header → no vendor (null → generic fallback)", rcptCsvDetectVendor(budgetParseCSV(LOWES_CSV)[0]) === null);
 
+  console.log("— VENDOR CSV: Square business-card statement — spend/refund/skip, categories, business-card —");
+  const SQCARD = '"Date","Details","Amount","Balance","Activity Type","Status","Expense Type","Category"\n'
+    + '"7/6/26","Proton Proton Ag","-$12.17","$1.84","Card spend","Completed","Business","Supplies & Equipment"\n'
+    + '"6/25/26","The Home Depot","-$28.79","$14.01","Card spend","Completed","Business","Inventory"\n'
+    + '"6/25/26","County of Currituck","-$38.00","$199.55","Card spend","Completed","Business","Other"\n'
+    + '"6/22/26","Ace Hardware","$30.73","$237.55","Card refund","Completed","Business","Supplies & Equipment"\n'
+    + '"6/21/26","First Light","-$44.12","$214.82","Card spend","Completed","Business","Meals"\n'
+    + '"6/19/26","Card payment","$185.36","$289.67","Sales","Completed","Business",""';
+  const sqParser = rcptCsvDetectVendor(budgetParseCSV(SQCARD)[0]);
+  ok("Square card statement detected (id 'square-card')", sqParser && sqParser.id === "square-card", sqParser && sqParser.id);
+  const sqH = rcptVendorH(budgetParseCSV(SQCARD)[0]);
+  const sqRecs = budgetParseCSV(SQCARD).slice(1).map(r => { try { return sqParser.parseRow(r, sqH); } catch (e) { return null; } });
+  const sqKept = sqRecs.filter(Boolean);
+  ok("Card payment (Sales) SKIPPED — 5 of 6 rows imported", sqKept.length === 5 && !sqKept.some(r => /card payment/i.test(r.vendor)), sqKept.length);
+  const sqHD = sqKept.find(r => r.vendor === "The Home Depot");
+  ok("Card spend → POSITIVE expense (28.79), business card (paidBy '')", sqHD && sqHD.amount === 28.79 && sqHD.paidBy === "" && sqHD.category === "materials" && !sqHD.kind, sqHD);
+  ok("Card refund → NEGATIVE amount + kind:refund (Ace)", (function () { const r = sqKept.find(x => x.kind === "refund"); return r && r.amount === -30.73 && /ace/i.test(r.vendor); })(), sqKept.find(x => x.kind === "refund"));
+  ok("Proton → subscription/software (so it auto-assesses NON-taxable)", sqKept.find(r => /proton/i.test(r.vendor)).category === "subscription/software");
+  ok("County of Currituck → disposal; First Light (Meals) → meals", sqKept.find(r => /currituck/i.test(r.vendor)).category === "disposal" && sqKept.find(r => /first light/i.test(r.vendor)).category === "meals");
+  ok("dates parsed M/D/YY → ISO (7/6/26 → 2026-07-06)", sqKept.find(r => /proton pro/i.test(r.vendor)).date === "2026-07-06", sqKept.find(r => /proton pro/i.test(r.vendor)).date);
+
   console.log("— VENDOR CSV: zero-map parse — Order Total / D-Mon-YYYY date / cardLast4 / PO hint —");
   resetStore();
   CURUSER = { id: "u_ray", username: "Ray" };
