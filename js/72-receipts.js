@@ -256,6 +256,31 @@ function rcptDupIndex() {
   return { groups: groups, byId: byId };
 }
 
+/* ---------- INFO-RICHNESS SCORE (pure, display-only — powers the dup-resolver "keep the richest" pick) ----------
+   When Ray re-uploads a receipt PHOTO that duplicates a thin CSV-imported row, the photo copy is worth keeping.
+   This scores the signals that make one copy more useful than another so the resolver can RECOMMEND keeping the
+   richest and deleting the thinner duplicate(s). Weights (photo dominates): photo(receiptId) +5, line items +3,
+   then card / category / job / a real >12-char desc-or-note / non-blank vendor / a real date +1 each. Returns
+   {score, has:[labels], missing:[labels]} so the UI can explain WHY ("most info: photo, line items" / "missing:
+   photo"). Read-only — never mutates a record, never throws. Pure display: does NOT touch the money math. */
+function rcptInfoScore(r) {
+  r = r || {};
+  var has = [], missing = [], score = 0;
+  function chk(cond, label, pts) { if (cond) { score += pts; has.push(label); } else missing.push(label); }
+  var li = (r.suggested && Array.isArray(r.suggested.lineItems) && r.suggested.lineItems.length) || (Array.isArray(r.lineItems) && r.lineItems.length) || 0;
+  var dn = String(r.desc || r.note || "").trim();
+  var realDate = (typeof _rcptIsoDate === "function") ? (_rcptIsoDate(r.date) || _rcptIsoDate((r.capRead || {}).date)) : (r.date || "");
+  chk(!!r.receiptId, "photo", 5);
+  chk(li > 0, "line items", 3);
+  chk(!!r.cardLast4, "card", 1);
+  chk(!!r.category, "category", 1);
+  chk(!!r.jobId, "job", 1);
+  chk(dn.length > 12, "description", 1);
+  chk(!!String(r.vendor || "").trim(), "vendor", 1);
+  chk(!!realDate, "date", 1);
+  return { score: score, has: has, missing: missing };
+}
+
 /* tax records: standardized DATE-first filename + a CSV export.
    `capRead` (when Cap has read the receipt) provides the real transaction date/vendor; else we use the filed date. */
 /* A receipt's display date. Prefers Cap's read date, then the record's own date, then the upload timestamp — but
@@ -1176,19 +1201,36 @@ window.rcptDelRow = function (store, jobId, id) {
 function rcptDupResolveHTML() {
   const groups = rcptDupGroups();
   if (!groups.length) return `<div class="card"><div class="muted">✓ No possible duplicates right now.</div></div>`;
-  let h = `<div class="sub" style="white-space:normal;margin-bottom:10px">Each block is a set of receipts with the <b>same amount</b> and a matching vendor, card, or transaction #. Eyeball the photos — if they're the same purchase, <b>keep one</b> and delete the extra copy. Deleting removes that charge from the books (an admin can undo). Different purchases that happen to cost the same? Leave them.</div>`;
+  let h = `<div class="sub" style="white-space:normal;margin-bottom:10px">Each block is a set of receipts with the <b>same amount</b> and a matching vendor, card, or transaction #. We <b>recommend keeping the copy with the most info</b> (a photo beats a thin CSV row) and deleting the thinner duplicate(s). Deleting removes that charge from the books (an admin can undo). Different purchases that happen to cost the same? Leave them.</div>`;
+  const GREEN = "#1b7f4d";
   groups.forEach(g => {
     const amt = money2(+g[0].amount || 0);
-    h += `<div class="card" style="border-left:4px solid var(--danger);padding:8px 10px"><div class="nm" style="white-space:normal;margin-bottom:2px"><b>⚠ ${g.length} copies · ${amt}</b></div>`;
-    g.forEach(r => {
+    // rank a COPY by info-richness (desc); newest breaks a tie. Never mutates the group used elsewhere.
+    const ranked = g.map(r => ({ r: r, sc: rcptInfoScore(r) })).sort((a, b) => (b.sc.score - a.sc.score) || ((b.r.ts || 0) - (a.r.ts || 0)));
+    const top = ranked[0], second = ranked[1];
+    const topId = top.r.recId != null ? top.r.recId : top.r.id;
+    // near-tie = the top two are within 1 point (e.g. two photo copies filed to different jobs) → don't strong-recommend
+    const nearTie = !!(second && (top.sc.score - second.sc.score) <= 1);
+    h += `<div class="card" style="border-left:4px solid ${nearTie ? "var(--muted)" : "var(--danger)"};padding:8px 10px"><div class="nm" style="white-space:normal;margin-bottom:2px"><b>⚠ ${g.length} copies · ${amt}</b>${nearTie ? ` <span class="pill" style="background:var(--soft);color:var(--muted);margin-left:6px">≈ Similar — your call</span>` : ""}</div>`;
+    if (nearTie) {
+      h += `<div class="sub" style="white-space:normal;color:var(--muted);margin-bottom:4px">These carry about the same info (within 1 point) — e.g. two photo copies filed to different jobs. No clear "richest" — pick which to keep yourself.</div>`;
+    } else {
+      h += `<div class="row" style="margin:2px 0 6px"><button class="btn sm" style="background:${GREEN};color:#fff" onclick="rcptDupKeepRichest('${top.r.store}','${esc(top.r.jobId || "")}','${esc(topId)}')">✅ Keep the richest · delete the ${g.length - 1} thinner</button></div>`;
+    }
+    ranked.forEach(({ r, sc }, idx) => {
       const m = (typeof rcptRowMeta === "function") ? rcptRowMeta(r) : { status: "" };
       const d = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
       const id = r.recId != null ? r.recId : r.id;
       const card = r.cardLast4 ? "💳 ••••" + esc(rcptCard4(r.cardLast4)) : "no card";
       const photo = r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 photo</a>` : `<span style="color:var(--muted)">no photo</span>`;
+      let rec;
+      if (nearTie) rec = `<div class="sub" style="white-space:normal;color:var(--muted)">info: ${esc(sc.has.join(", ") || "—")}${sc.missing.length ? " · missing " + esc(sc.missing.join(", ")) : ""} · score ${sc.score}</div>`;
+      else if (idx === 0) rec = `<div class="sub" style="white-space:normal;color:${GREEN};font-weight:600">✅ Recommended — keep (most info: ${esc(sc.has.join(", ") || "—")})</div>`;
+      else rec = `<div class="sub" style="white-space:normal;color:var(--danger)">🗑 Recommended delete — thinner${sc.missing.length ? " (missing: " + esc(sc.missing.join(", ")) + ")" : ""}</div>`;
       h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
         <div class="grow" style="min-width:150px"><div class="nm" style="white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">(no vendor)</span>`} · ${amt}</div>
-        <div class="sub" style="white-space:normal">${d ? esc(fmtDate(d)) : "no date"} · ${card} · ${esc(m.status || "")}${r.where ? " · " + esc(r.where) : ""} · ${photo}</div></div>
+        <div class="sub" style="white-space:normal">${d ? esc(fmtDate(d)) : "no date"} · ${card} · ${esc(m.status || "")}${r.where ? " · " + esc(r.where) : ""} · ${photo}</div>
+        ${rec}</div>
         <div class="row" style="gap:6px;flex:0 0 auto">
           <button class="btn ghost sm" onclick="rcptDupKeep('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">✓ Keep this</button>
           <button class="btn ghost sm" style="color:var(--danger)" onclick="rcptDupDelete('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">🗑 Delete this copy</button>
@@ -1230,6 +1272,28 @@ window.rcptDupKeep = function (keepStore, keepJobId, keepId) {
   let n = 0;
   others.forEach(r => { if (rcptTombstone(r.store, r.jobId || null, r.recId != null ? r.recId : r.id)) n++; });
   if (n && typeof logChange === "function") logChange("delete", "expense", keepId, "Resolved duplicates — kept 1, deleted " + n + " cop" + (n > 1 ? "ies" : "y"));
+  rcptDupResolveAfter();
+};
+/* ONE-TAP "keep the richest · delete the thinner" for a whole group. Re-derives the richest by rcptInfoScore
+   (belt-and-suspenders — never trusts a stale button id), REFUSES on a near-tie (top two within 1 pt → owner's
+   call), then soft-deletes ONLY the thinner copies via the existing rcptTombstone path. Never deletes the
+   recommended-keep; never deletes more than the group's thinner copies. Owner/admin-gated, confirm-before,
+   reversible. Reuses rcptDupIndex / rcptInfoScore / rcptTombstone / rcptDupResolveAfter — no new delete path. */
+window.rcptDupKeepRichest = function (keepStore, keepJobId, keepId) {
+  if (!rcptFinFull()) return;
+  const grp = rcptDupIndex().byId[keepId];
+  if (!grp) { rcptDupResolveAfter(); return; }
+  const ranked = grp.map(r => ({ r: r, sc: rcptInfoScore(r) })).sort((a, b) => (b.sc.score - a.sc.score) || ((b.r.ts || 0) - (a.r.ts || 0)));
+  const top = ranked[0], second = ranked[1];
+  const topId = top.r.recId != null ? top.r.recId : top.r.id;
+  if (topId !== keepId) { rcptDupResolveAfter(); return; }                          // stale id — the richest changed; re-open on fresh data
+  if (second && (top.sc.score - second.sc.score) <= 1) { rcptDupResolveAfter(); return; }   // near-tie → no one-tap (owner's call)
+  const others = grp.filter(r => (r.recId != null ? r.recId : r.id) !== keepId);
+  if (!others.length) return;
+  if (!confirm("Keep the richest copy (most info: " + (top.sc.has.join(", ") || "—") + ") and delete the " + others.length + " thinner cop" + (others.length > 1 ? "ies" : "y") + " as duplicates? Their charges come off the books (an admin can undo).")) return;
+  let n = 0;
+  others.forEach(r => { if (rcptTombstone(r.store, r.jobId || null, r.recId != null ? r.recId : r.id)) n++; });
+  if (n && typeof logChange === "function") logChange("delete", "expense", keepId, "Resolved duplicates — kept the richest, deleted " + n + " thinner cop" + (n > 1 ? "ies" : "y"));
   rcptDupResolveAfter();
 };
 window.rcptSettle = function (memberId) {
