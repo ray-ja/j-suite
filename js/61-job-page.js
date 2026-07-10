@@ -182,6 +182,45 @@ function jobRouteMilesSource(j) {
   return c.anyNone ? "none" : "pending";
 }
 
+/* ===== JOB-PAGE LAYOUT — owner-reorderable section order, saved ORG-WIDE (a docs sentinel "jobLayout", synced
+   like financeConfig). Everyone in the org sees the same order. Unknown/new section keys never vanish: the saved
+   order is validated against the canonical key list and any missing keys are appended in their default order. ===== */
+const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "clock", "load", "route", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
+function jobLayoutDoc() { try { return (D().docs || []).find(x => x && x.id === "jobLayout") || null; } catch (e) { return null; } }
+function jobLayoutOrder() {
+  const doc = jobLayoutDoc();
+  const saved = (doc && Array.isArray(doc.order)) ? doc.order.filter(k => JOB_LAYOUT_KEYS_DEFAULT.indexOf(k) >= 0) : [];
+  const rest = JOB_LAYOUT_KEYS_DEFAULT.filter(k => saved.indexOf(k) < 0);   // new sections → appended in default order
+  return saved.concat(rest);
+}
+/* reorder a [{key,...}] section list by the saved org order; never drops a section */
+function jobLayoutApply(sections) {
+  const order = jobLayoutOrder(), byKey = {}; sections.forEach(s => { byKey[s.key] = s; });
+  const out = order.map(k => byKey[k]).filter(Boolean);
+  sections.forEach(s => { if (out.indexOf(s) < 0) out.push(s); });
+  return out;
+}
+function jobLayoutEnsureDoc() { const d = D(); d.docs = d.docs || []; let c = d.docs.find(x => x && x.id === "jobLayout"); if (!c) { c = { id: "jobLayout", order: jobLayoutOrder(), updatedAt: (typeof now === "function" ? now() : Date.now()) }; d.docs.push(c); } if (!Array.isArray(c.order)) c.order = jobLayoutOrder(); return c; }
+window.jobLayoutToggleEdit = function () { window.JOB_LAYOUT_EDIT = !window.JOB_LAYOUT_EDIT; if (typeof render === "function") render(); };
+window.jobLayoutMove = function (key, dir) {
+  if (!jobCanEditPlan()) return;
+  const order = jobLayoutOrder().slice(), i = order.indexOf(key); if (i < 0) return;
+  const ni = i + dir; if (ni < 0 || ni >= order.length) return;
+  order.splice(i, 1); order.splice(ni, 0, key);
+  const c = jobLayoutEnsureDoc(); c.order = order; if (typeof touch === "function") touch(c);
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof render === "function") render();
+};
+window.jobLayoutReset = function () {
+  if (!jobCanEditPlan()) return;
+  if (typeof confirm === "function" && !confirm("Reset the job-page layout to the default order for everyone in the org?")) return;
+  const c = jobLayoutEnsureDoc(); c.order = JOB_LAYOUT_KEYS_DEFAULT.slice(); if (typeof touch === "function") touch(c);
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof render === "function") render();
+};
+
 function rJobPage(j) {
   const cust = (typeof custName === "function") ? custName(j.customerId) : "";
   const _cust = (typeof actC === "function") ? actC().find(c => c.id === j.customerId) : null;
@@ -219,16 +258,16 @@ function rJobPage(j) {
   h += `<button class="btn ghost sm" style="margin-left:auto" onclick="jobPageBack()">← Back</button></div>`;
   h += editedByLine(j);
 
-  // 1) Where & when — CONTACT header (name · address · tap-to-call) then where you're going
-  h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
-  h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px"><a href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener" style="color:var(--brand-text);text-decoration:none">📍 ${esc(addr)} <span class="sub" style="font-weight:400">· directions ›</span></a></div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
-  h += _primaryCall;      // PRIMARY phone — big tap-to-call, hoisted to the top (was at the bottom)
-  h += _secondaryCalls;   // any secondary numbers — smaller ghost Call buttons
-  if (_drive) h += `<div class="sub" style="margin-top:8px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;   // driveBadge ETA — kept for everyone, crew included
+  // 1) Where & when — CONTACT header (name · address · tap-to-call) then where you're going  [reorderable: key "data"]
+  let _secData = `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
+  _secData += addr ? `<div class="sub" style="white-space:normal;margin-top:3px"><a href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener" style="color:var(--brand-text);text-decoration:none">📍 ${esc(addr)} <span class="sub" style="font-weight:400">· directions ›</span></a></div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
+  _secData += _primaryCall;      // PRIMARY phone — big tap-to-call, hoisted to the top (was at the bottom)
+  _secData += _secondaryCalls;   // any secondary numbers — smaller ghost Call buttons
+  if (_drive) _secData += `<div class="sub" style="margin-top:8px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;   // driveBadge ETA — kept for everyone, crew included
   // EDIT LOCATION (owner/admin) — set a real location on a job with none (e.g. an airport pickup with no
   // customer address): pick a saved property (its map pin) OR type a free-text address saved to j.address,
   // which jobAddr() already reads as a fallback. Crew see the location read-only.
-  if (jobCanEditPlan()) h += `<button class="btn ghost sm" style="margin-top:6px" onclick="jobEditLoc('${j.id}')">✏️ Edit location</button>`;
+  if (jobCanEditPlan()) _secData += `<button class="btn ghost sm" style="margin-top:6px" onclick="jobEditLoc('${j.id}')">✏️ Edit location</button>`;
   // WHO / WHEN — inline editable for owner/admin (customer · date · time), replacing the old read-only line so a
   // job no longer needs the separate openJob modal to change these. Each control commits on `change` to a small
   // job-page handler (jobSetCustomer/jobSetDate/jobSetTime → write + touch + save + render), matching the inline
@@ -236,27 +275,27 @@ function rJobPage(j) {
   // jobPageCrewCard below — here we only SHOW the 👥 crew summary.
   if (jobCanEditPlan()) {
     const _cs = (typeof actC === "function") ? actC() : [];
-    h += `<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">`;
-    h += `<div><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Customer</label><select id="jcust_${j.id}" onchange="jobSetCustomer('${j.id}',this.value)" style="width:100%"><option value="">— none —</option>${_cs.map(c => `<option value="${c.id}"${c.id === j.customerId ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select></div>`;
-    h += `<div class="row" style="gap:8px"><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Date</label><input id="jdate_${j.id}" type="date" value="${esc(j.date || "")}" onchange="jobSetDate('${j.id}',this.value)" style="width:100%"></div><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Time</label><input id="jtime_${j.id}" type="time" value="${esc(j.time || "")}" onchange="jobSetTime('${j.id}',this.value)" style="width:100%"></div></div>`;
+    _secData += `<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">`;
+    _secData += `<div><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Customer</label><select id="jcust_${j.id}" onchange="jobSetCustomer('${j.id}',this.value)" style="width:100%"><option value="">— none —</option>${_cs.map(c => `<option value="${c.id}"${c.id === j.customerId ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select></div>`;
+    _secData += `<div class="row" style="gap:8px"><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Date</label><input id="jdate_${j.id}" type="date" value="${esc(j.date || "")}" onchange="jobSetDate('${j.id}',this.value)" style="width:100%"></div><div class="grow"><label class="sub" style="margin:0 0 2px;display:block;font-weight:700">Time</label><input id="jtime_${j.id}" type="time" value="${esc(j.time || "")}" onchange="jobSetTime('${j.id}',this.value)" style="width:100%"></div></div>`;
     // 🔁 RECURRING — right in the date area (Ray). If the job already belongs to a recurring plan, link to it;
     // otherwise "make this recurring" opens the recurring-plan editor (js/103) pre-filled from THIS job.
     if (typeof recurCanManage === "function" && recurCanManage()) {
       const _plan = (j.planId && typeof recurPlanById === "function") ? recurPlanById(j.planId) : null;
-      if (_plan) h += `<button class="btn ghost sm" style="width:100%" onclick="recurPlanOpen('${esc(j.planId)}')">🔁 Recurring${typeof recurFreqLine === "function" ? " · " + esc(recurFreqLine(_plan)) : ""} — open plan ›</button>`;
-      else h += `<button class="btn ghost sm" style="width:100%" onclick="jobMakeRecurring('${j.id}')">🔁 Make this a recurring job…</button>`;
+      if (_plan) _secData += `<button class="btn ghost sm" style="width:100%" onclick="recurPlanOpen('${esc(j.planId)}')">🔁 Recurring${typeof recurFreqLine === "function" ? " · " + esc(recurFreqLine(_plan)) : ""} — open plan ›</button>`;
+      else _secData += `<button class="btn ghost sm" style="width:100%" onclick="jobMakeRecurring('${j.id}')">🔁 Make this a recurring job…</button>`;
     }
-    if (crewNames) h += `<div class="sub" style="white-space:normal">👥 ${esc(crewNames)}</div>`;
-    h += `</div>`;
+    if (crewNames) _secData += `<div class="sub" style="white-space:normal">👥 ${esc(crewNames)}</div>`;
+    _secData += `</div>`;
   } else {
-    h += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
+    _secData += `<div class="sub" style="margin-top:8px;white-space:normal">📅 ${j.date ? fmtDate(j.date) : "—"}${j.time ? " · " + esc(j.time) : ""}${crewNames ? " · 👥 " + esc(crewNames) : ""}</div>`;
   }
   // PER-JOB PO CODE (js/95) — tap-to-copy chip Ray types into a vendor's register PO field; the CSV import then
   // EXACT-matches the receipt back to this job. Skip pure stop/sub jobs (they ride their parent's paperwork).
   if (typeof jobPO === "function" && jobPO(j) && !j.stopKind && !Array.isArray(j.sharedJobIds)) {
-    h += `<div style="margin-top:8px"><button class="btn ghost sm" onclick="jobCopyPO('${j.id}')" title="Type this into the store's PO field so the receipt auto-files to this job">🧾 PO ${jobPO(j)} · tap to copy</button></div>`;
+    _secData += `<div style="margin-top:8px"><button class="btn ghost sm" onclick="jobCopyPO('${j.id}')" title="Type this into the store's PO field so the receipt auto-files to this job">🧾 PO ${jobPO(j)} · tap to copy</button></div>`;
   }
-  if (j.done) h += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
+  if (j.done) _secData += `<div class="sub" style="margin-top:6px;color:var(--accent);font-weight:800">✓ Completed</div>`;
   // DERIVED lifecycle badge — where this job sits in the pipeline (lead→quote→job→expense collecting→invoice→paid).
   // Reads through the linked quote; the expense-collecting badge shows live "N/M crew closed" + who we're waiting on.
   if (typeof workStage === "function" && typeof actQ === "function") {
@@ -265,13 +304,13 @@ function rJobPage(j) {
       const _st = workStage(_wq), _m = (typeof workStageMeta !== "undefined" && workStageMeta[_st]) || { label: _st, color: "var(--muted)" };
       const _lbl = (typeof workStageLabel === "function") ? workStageLabel(_wq) : _m.label;
       const _wait = (_st === "expense" && typeof workStageWaiting === "function") ? workStageWaiting(_wq) : [];
-      h += `<div style="margin-top:8px"><span class="badge" style="background:${_m.color};color:#fff">${esc(_lbl)}</span>${_wait.length ? `<span class="sub" style="margin-left:6px">waiting on ${esc(_wait.join(", "))}</span>` : ""}</div>`;
+      _secData += `<div style="margin-top:8px"><span class="badge" style="background:${_m.color};color:#fff">${esc(_lbl)}</span>${_wait.length ? `<span class="sub" style="margin-left:6px">waiting on ${esc(_wait.join(", "))}</span>` : ""}</div>`;
       // Payment-decoupled FOLLOW-UP: even once a job is invoiced/PAID, if the expenses aren't signed-off collected
       // AND crew are still open, surface a muted reminder so the slow crew member's missing receipts aren't
       // forgotten. Visible to everyone (crew see it too so they know to submit); the owner sign-off card is below.
       if ((_st === "invoice" || _st === "paid") && !j.expensesCollected && typeof workStageWaiting === "function") {
         const _openNames = workStageWaiting(_wq);
-        if (_openNames.length) h += `<div class="sub" style="margin-top:6px;white-space:normal;color:var(--muted)">⚠ Expenses not yet collected — ${_openNames.length} crew still open: <b>${esc(_openNames.join(", "))}</b></div>`;
+        if (_openNames.length) _secData += `<div class="sub" style="margin-top:6px;white-space:normal;color:var(--muted)">⚠ Expenses not yet collected — ${_openNames.length} crew still open: <b>${esc(_openNames.join(", "))}</b></div>`;
       }
     }
   }
@@ -288,11 +327,10 @@ function rJobPage(j) {
     _navN++;
     _navRows += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${_navN}. ${_lbl}</div><div class="sub" style="white-space:normal">${esc(_stopAddr)}</div></div><a class="btn ghost sm" href="${gmapsDirUrl(_stopAddr)}" target="_blank" rel="noopener" style="flex:0 0 auto">🧭 Directions ›</a></div>`;
   });
-  if (_navRows) h += `<div class="sub" style="margin-top:12px;font-weight:700">🧭 Where you're going <span class="sub" style="font-weight:400">· tap to navigate</span></div>` + _navRows;
-  h += `</div>`;
+  if (_navRows) _secData += `<div class="sub" style="margin-top:12px;font-weight:700">🧭 Where you're going <span class="sub" style="font-weight:400">· tap to navigate</span></div>` + _navRows;
+  _secData += `</div>`;
 
-  // ===== SECTIONS captured as variables, then assembled in WORKDAY ORDER at the end (Ray 2026-07-10 reorder):
-  //   Data → who's-on-crew → clock in → load the truck → drive (route) → buy (costs) → wrap up → admin (workdays).
+  // ===== SECTIONS captured as variables, then assembled in the ORG-CONFIGURED order (owner-reorderable):
   // Route/stops editor (owner/admin), Work days, and Crew are helper cards. =====
   const _secRoute = jobPageRouteCard(j);          // home→site→transfer→home + mileage estimate
   const _secWorkdays = jobPageWorkDaysCard(j);    // multi-day editor — admin, goes to the very bottom
@@ -453,14 +491,39 @@ function rJobPage(j) {
   //  CREATE form only, reached from Schedule / customer / property "Add job".)
   if (typeof isOwner === "function" && isOwner()) _secDone += `<button class="btn ghost sm" style="width:100%;margin:8px 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
 
-  // ===== ASSEMBLE the page in WORKDAY ORDER (h already has the header + the top DATA card):
-  //   data → part-of-bigger → change-order → ask-cap → crew → clock in → load the truck → drive (route) →
-  //   costs/receipts → materials report → photos → notes → invoice → close-out → work-days (admin) → done.
-  h += _secPartOf + _secChange + _secAskCap
-    + _secCrew + _secClock + _secLoad
-    + _secRoute + _secCosts + _secMatReport
-    + _secPhotos + _secNotes + _secInvoice + _secCloseout
-    + _secWorkdays + _secDone;
+  // ===== ASSEMBLE in the ORG-CONFIGURED order (owner-reorderable, org-wide). Each section has a stable key +
+  // short label; jobLayoutOrder() returns the saved order (default = the workday order below). In "Edit layout"
+  // mode (owner) every section gets a ▲▼ move bar that writes the org-wide order. h already has the fixed header.
+  const _sections = [
+    { key: "data", label: "📋 Details", html: _secData },
+    { key: "partof", label: "↳ Part of a bigger job", html: _secPartOf },
+    { key: "change", label: "🧾 Change order", html: _secChange },
+    { key: "askcap", label: "💬 Ask Cap", html: _secAskCap },
+    { key: "crew", label: "👥 Crew", html: _secCrew },
+    { key: "clock", label: "⏱️ Time clock", html: _secClock },
+    { key: "load", label: "🧰 Load checklist", html: _secLoad },
+    { key: "route", label: "🧭 Route & mileage", html: _secRoute },
+    { key: "costs", label: "💵 Job costs & receipts", html: _secCosts },
+    { key: "matreport", label: "📄 Materials report", html: _secMatReport },
+    { key: "photos", label: "🖼 Job photos", html: _secPhotos },
+    { key: "notes", label: "📝 Notes", html: _secNotes },
+    { key: "invoice", label: "💵 Invoice & payment", html: _secInvoice },
+    { key: "closeout", label: "✅ Close-out sign-offs", html: _secCloseout },
+    { key: "workdays", label: "🗓 Work days", html: _secWorkdays },
+    { key: "done", label: "✓ Job actions", html: _secDone }
+  ];
+  const _ordered = (typeof jobLayoutApply === "function") ? jobLayoutApply(_sections) : _sections;
+  const _editing = !!window.JOB_LAYOUT_EDIT && jobCanEditPlan();
+  if (jobCanEditPlan()) h += `<div class="row" style="justify-content:flex-end;margin:2px 2px 6px"><button class="btn ${_editing ? "acc" : "ghost"} sm" onclick="jobLayoutToggleEdit()">${_editing ? "✓ Done reordering" : "⇅ Edit layout"}</button>${_editing ? `<button class="btn ghost sm" style="margin-left:6px" onclick="jobLayoutReset()">↺ Reset</button>` : ""}</div>`;
+  if (_editing) h += `<div class="sub muted" style="white-space:normal;margin:0 2px 8px">Reordering the sections for <b>everyone</b> — use ▲▼ to move a section. Empty sections (that don't apply to this job) are hidden but keep their place.</div>`;
+  _ordered.forEach((s, i) => {
+    if (_editing) {
+      const up = i === 0 ? "disabled" : "", dn = i === _ordered.length - 1 ? "disabled" : "";
+      h += `<div class="card" style="padding:6px 10px;background:var(--soft);margin-bottom:6px"><div class="row" style="align-items:center;gap:6px"><div class="grow nm" style="font-size:14px">${s.label}${s.html ? "" : ` <span class="sub" style="font-weight:400">· not on this job</span>`}</div><button class="btn ghost sm" ${up} onclick="jobLayoutMove('${s.key}',-1)" title="Move up">▲</button><button class="btn ghost sm" ${dn} onclick="jobLayoutMove('${s.key}',1)" title="Move down">▼</button></div></div>`;
+    } else {
+      h += s.html || "";
+    }
+  });
   return h;
 }
 
