@@ -821,8 +821,12 @@ function tcRolePicker(sel) {
    tcJobPicked() can swap it in place when the job <select> changes. */
 function tcJobEstBox(jobId) {
   const j = jobId ? tcJob(jobId) : null;
-  if (!j || !(j.estRouteMiles > 0)) return `<div id="tc_est_box"></div>`;
-  return `<div id="tc_est_box"><div class="sub" style="margin-top:6px;white-space:normal;color:var(--brand-text)">🧭 Est. route ~<b>${j.estRouteMiles} mi</b> <span class="muted">· informational — the odometer is the billed number</span></div></div>`;
+  if (!j) return `<div id="tc_est_box"></div>`;
+  // V3: if a vehicle is picked AND it has its own route on this job, show THAT vehicle's estimate; else the whole job's.
+  const vehEst = (typeof jobVehEstForPick === "function" && typeof val === "function") ? jobVehEstForPick(j, val("tc_vehicle")) : null;
+  const est = (vehEst > 0) ? vehEst : (j.estRouteMiles > 0 ? j.estRouteMiles : null);
+  if (!(est > 0)) return `<div id="tc_est_box"></div>`;
+  return `<div id="tc_est_box"><div class="sub" style="margin-top:6px;white-space:normal;color:var(--brand-text)">🧭 Est. ${vehEst > 0 ? "your route" : "route"} ~<b>${est} mi</b> <span class="muted">· informational — the odometer is the billed number</span></div></div>`;
 }
 /* job <select> changed on the clock-in form → refresh the route-estimate box for the newly-picked job (no full
    re-render, so the role/vehicle/odometer the user already set survive). */
@@ -849,7 +853,7 @@ function tcRoleDetail(role, defVehVal, driverId, jobId) {
       // chosen the instant this block renders — hiding the field on an unset default (the old `_hasVeh`
       // check) meant a first-time driver's odometer input was invisible even though a vehicle WAS selected.
       h += `<label style="margin-top:10px">Vehicle you're driving${(typeof curUser === "function" && curUser()) ? ` <span class="sub">· <a href="#" onclick="tcSetDefaultVehicle();return false" style="color:var(--brand-text);font-weight:700">set default</a></span>` : ""}</label>
-        <select id="tc_vehicle">${vehOpts}</select>
+        <select id="tc_vehicle" onchange="if(typeof tcJobPicked==='function')tcJobPicked()">${vehOpts}</select>
         <div class="sub" style="margin-top:4px;white-space:normal">Driving your own? <a href="#" onclick="tcAddMyVehicle(true);return false" style="color:var(--brand-text);font-weight:700">＋ Add your vehicle</a></div>
         <div id="tc_odo_wrap">
           <label>Odometer — start <span class="sub">(optional — you can add it later)</span></label>

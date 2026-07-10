@@ -43,6 +43,8 @@ function jobVehShim(j, vr) {
 function jobVehRecalc(j, vehId) {
   if (!j || typeof jobRouteTaggedSeq !== "function" || typeof jobRouteMilesCompute !== "function") return;
   const vr = jobVehRouteEnsure(j, vehId);
+  // V3 MANUAL OVERRIDE (mirrors jobRecalcRouteMiles): the owner's round-trip miles are authoritative — skip the map.
+  if (+vr.manualMiles > 0) { vr.estMiles = Math.round(+vr.manualMiles * 10) / 10; vr.milesSource = "manual"; return; }
   const extra = (typeof jobRouteExtraManual === "function") ? jobRouteExtraManual(jobVehShim(j, vr)) : 0;
   const seq = jobRouteTaggedSeq(jobVehShim(j, vr));
   if (!seq) { if (!(vr.estMiles > 0)) vr.estMiles = extra > 0 ? Math.round(extra * 10) / 10 : null; vr.milesSource = vr.estMiles > 0 ? "manual" : "pending"; return; }
@@ -161,6 +163,45 @@ function jobAutoAssignVehicle(j, userId) {
   } catch (e) { return false; }
 }
 window.jobAutoAssignVehicle = jobAutoAssignVehicle;
+/* V3 — per-vehicle MANUAL round-trip miles override (mirrors jobSetManualRouteMiles): vr.manualMiles > 0 wins over
+   the map. Empty/0 clears back to the map estimate. */
+window.jobVehSetManualMiles = function (jobId, vehId, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const vr = jobVehRouteEnsure(j, vehId);
+  const n = parseFloat(v);
+  if (isFinite(n) && n > 0) vr.manualMiles = Math.round(n * 10) / 10; else delete vr.manualMiles;
+  jobVehRecalc(j, vehId);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* V3 — the route estimate for a vehicle PICKED on the clock-in form (before an entry exists). encVal is the
+   tc_vehicle select value ("inv:<id>" | "truck:<id>" | "owner:<uid>"); map to a job.vehicleRoutes key. null when
+   the picked vehicle has no per-vehicle route on this job (caller falls back to the whole-job estimate). */
+function jobVehEstForPick(job, encVal) {
+  try {
+    if (!job || !encVal || !job.vehicleRoutes) return null;
+    let vid = null;
+    if (encVal.indexOf("inv:") === 0) vid = encVal.slice(4);
+    else if (encVal.indexOf("truck:") === 0) vid = encVal.slice(6);
+    const vr = vid ? job.vehicleRoutes[vid] : null;
+    return (vr && vr.estMiles > 0) ? vr.estMiles : null;
+  } catch (e) { return null; }
+}
+window.jobVehEstForPick = jobVehEstForPick;
+/* V3 — job-total mileage roll-up across all assigned vehicles: {miles, reimb, perOwner:{ownerId|"_driver":cents...}}.
+   Read-only; reimb per vehicle at JOB_VEH_RATE, grouped by the vehicle owner (company trucks → the "_driver" bucket). */
+function jobVehTotals(j) {
+  const out = { miles: 0, reimb: 0, perOwner: {} };
+  (Array.isArray(j.vehicleIds) ? j.vehicleIds : []).forEach(vehId => {
+    const vr = jobVehRouteRead(j, vehId); if (!(vr.estMiles > 0)) return;
+    const v = jobVehById(vehId); const owner = (v && v.ownerId) ? v.ownerId : "_driver";
+    const r = Math.round(vr.estMiles * JOB_VEH_RATE * 100) / 100;
+    out.miles += vr.estMiles; out.reimb += r; out.perOwner[owner] = (out.perOwner[owner] || 0) + r;
+  });
+  out.miles = Math.round(out.miles * 10) / 10; out.reimb = Math.round(out.reimb * 100) / 100;
+  return out;
+}
+window.jobVehTotals = jobVehTotals;
 
 /* ---------- the job-page card ---------- */
 function jobPageVehiclesCard(j) {
@@ -168,6 +209,14 @@ function jobPageVehiclesCard(j) {
   const canEdit = (typeof jobCanEditPlan === "function") && jobCanEditPlan();
   const m = (typeof money === "function") ? money : (n => "$" + (+n || 0).toFixed(0));
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">🚚 Vehicles & routes${assigned.length ? ` · <span class="sub" style="font-weight:400">${assigned.length}</span>` : ""}</div>`;
+  // V3 — job-total mileage + reimbursement roll-up across all assigned vehicles (per owner)
+  if (assigned.length) {
+    const T = jobVehTotals(j);
+    if (T.miles > 0) {
+      const per = Object.keys(T.perOwner).map(oid => { const nm = oid === "_driver" ? "the driver" : ((typeof userName === "function" ? userName(oid) : "") || "?"); return esc(nm) + " " + m(T.perOwner[oid]); }).join(" · ");
+      h += `<div class="card" style="background:var(--soft);padding:6px 10px;margin-bottom:8px"><div class="row" style="justify-content:space-between"><span class="sub">Planned mileage (all vehicles)</span><b>~${T.miles} mi · ${m(T.reimb)}</b></div>${per ? `<div class="sub" style="white-space:normal;margin-top:2px">${per}</div>` : ""}<div class="sub muted" style="white-space:normal;margin-top:2px">Estimate to reimburse — the odometer at clock-out is the billed number.</div></div>`;
+    }
+  }
   // assigned vehicles — each with its own route + owner + estimate
   if (!assigned.length) h += `<div class="muted" style="margin-bottom:6px">No vehicles on this job yet.${canEdit ? " Assign the ones driving to it below." : ""}</div>`;
   assigned.forEach(vehId => {
@@ -205,6 +254,14 @@ function jobPageVehiclesCard(j) {
       const loop = [startVal].concat(combo.map(t => t.kind === "site" ? siteAddr : (t.stop && t.stop.address))).concat([endVal]);
       const url = gmapsRouteUrl(loop);
       if (url) h += `<a class="btn ghost sm" style="margin-top:6px;display:flex;align-items:center;justify-content:center;gap:6px" href="${url}" target="_blank" rel="noopener">🗺 Open this vehicle's route in Google Maps</a>`;
+    }
+    // V3 — per-vehicle MANUAL round-trip miles override (map wrong / couldn't route). Collapsed when a map estimate
+    // exists (so it's clearly optional); open when there's no estimate to fall back on.
+    if (canEdit) {
+      const _hasEst = vr.estMiles > 0, _manOn = +vr.manualMiles > 0;
+      const box = `<label style="margin-top:6px">🚗 ${_hasEst && !_manOn ? "Override the mileage" : "Round-trip miles"} <span class="sub" style="font-weight:400">· this vehicle</span></label><div class="row" style="gap:8px"><input id="jvm_${esc(vehId)}" type="number" inputmode="decimal" value="${_manOn ? vr.manualMiles : ""}" placeholder="${_hasEst ? vr.estMiles + " mi — map estimate" : "round-trip miles"}" style="flex:1" onchange="jobVehSetManualMiles('${j.id}','${esc(vehId)}',this.value)"><button class="btn ghost sm" onclick="jobVehSetManualMiles('${j.id}','${esc(vehId)}',document.getElementById('jvm_${esc(vehId)}').value)">Save</button></div><div class="sub muted" style="margin-top:2px;white-space:normal">${_manOn ? `✓ Using <b>${vr.manualMiles} mi</b> — clear + Save to go back to the map estimate.` : (_hasEst ? "Map estimate is used automatically — only type here if it routed wrong." : "The map couldn't route this — enter the round-trip miles.")}</div>`;
+      if (_hasEst && !_manOn) h += `<details style="margin-top:4px"><summary style="cursor:pointer;color:var(--muted);font-size:12px">🚗 Map estimate wrong? Override ›</summary><div style="margin-top:4px">${box}</div></details>`;
+      else h += `<div style="margin-top:6px">${box}</div>`;
     }
     // add a stop to THIS vehicle (e.g. the transfer station on the hauler)
     if (canEdit) {
