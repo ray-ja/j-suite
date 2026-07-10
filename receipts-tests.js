@@ -464,6 +464,74 @@ async function main() {
   ok("empty pile → no vision call", emptyReads === 0, emptyReads);
   delete window.CAP_RCPT_THROTTLE_MS;
 
+  // ========================= CAP PRE-FILL: read-but-unapplied receipt opens with the guess IN THE FORM =========================
+  console.log("— CAP PRE-FILL: rcptEditOpen defaults the form from `suggested` when the record field is blank (record value always wins) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const _valPF = global.val, _geiPF = global.document.getElementById, _modalPF = global.modal;
+  let PF_HTML = "";
+  global.modal = function (t, html) { PF_HTML = String(html || ""); };
+  global.val = function () { return ""; };
+  global.document.getElementById = function () { return null; };
+  // (1) a blank business receipt Cap READ ($144.69 business) → the form pre-fills amount + vendor + selects Business
+  const pfBiz = seedReview({ receiptId: "pf1", suggested: { vendor: "Sunoco", amount: 144.69, type: "business", category: "fuel", confidence: 0.95 } });
+  rcptEditOpen("review", null, pfBiz.id);
+  ok("blank record + business suggestion → amount pre-filled 144.69", /id="rcpt_amt"[^>]*value="144\.69"/.test(PF_HTML), PF_HTML.match(/id="rcpt_amt"[^>]*>/));
+  ok("blank record + business suggestion → vendor pre-filled Sunoco", /id="rcpt_vendor"[^>]*value="Sunoco"/.test(PF_HTML));
+  ok("blank record + business suggestion → Business type option pre-selected", /<option value="business"[^>]*selected/.test(PF_HTML));
+  ok("the record itself is NOT mutated (still blank, suggested-only)", pfBiz.amount === null && pfBiz.type === null && pfBiz.vendor === "", { a: pfBiz.amount, t: pfBiz.type });
+  // …and a PLAIN Save (reading the pre-filled values off the form) FILES it to biz — leaves review
+  global.val = function (id) { return ({ rcpt_type: "business", rcpt_amt: "144.69", rcpt_vendor: "Sunoco", rcpt_cat: "fuel" })[id] || ""; };
+  rcptSaveEdit();
+  ok("plain Save on the pre-filled business receipt → left the review queue", !rcptReview().some(r => r.id === pfBiz.id), rcptReview().map(r => r.id));
+  ok("plain Save → filed to biz (expenses[]) with the guessed amount, same id", STORE.expenses.some(e => e.id === pfBiz.id && !e.deleted && e.amount === 144.69), STORE.expenses.map(e => e.id + ":" + e.amount));
+  global.val = function () { return ""; };
+
+  // (2) the record's OWN value WINS — a human-set amount/vendor is never overwritten by the suggestion
+  const pfHuman = seedReview({ receiptId: "pf2", amount: 99, vendor: "Manual entry", suggested: { vendor: "Sunoco", amount: 144.69, type: "business", confidence: 0.95 } });
+  rcptEditOpen("review", null, pfHuman.id);
+  ok("record's own amount (99) wins over the suggestion (144.69)", /id="rcpt_amt"[^>]*value="99"/.test(PF_HTML) && !/id="rcpt_amt"[^>]*value="144\.69"/.test(PF_HTML));
+  ok("record's own vendor wins over the suggestion", /id="rcpt_vendor"[^>]*value="Manual entry"/.test(PF_HTML));
+
+  // (2b) a FILED record (real type from its home) is never re-typed by a stale suggestion
+  STORE.expenses.push({ id: "pfFiled", amount: 200, vendor: "Bought", category: "", suggested: { vendor: "S", amount: 999, type: "pass-through", jobId: "j1", confidence: 0.95 }, status: undefined, updatedAt: Date.now() });
+  rcptEditOpen("biz", null, "pfFiled");
+  ok("filed biz record keeps Business type (suggestion's pass-through ignored)", /<option value="business"[^>]*selected/.test(PF_HTML) && !/<option value="pass-through"[^>]*selected/.test(PF_HTML));
+  ok("filed biz record keeps its own amount 200 (not the suggestion's 999)", /id="rcpt_amt"[^>]*value="200"/.test(PF_HTML));
+
+  // (3) a pass-through suggestion WITH a real job pre-fills type + pre-selects the job (fileable)
+  const pfPT = seedReview({ receiptId: "pf3", suggested: { vendor: "Depot", amount: 80, type: "pass-through", jobId: "j1", category: "materials", confidence: 0.95 } });
+  rcptEditOpen("review", null, pfPT.id);
+  ok("pass-through suggestion → Pass-through type pre-selected (drives the job field visibility)", /<option value="pass-through"[^>]*selected/.test(PF_HTML));
+  ok("pass-through suggestion with a real job → that job pre-selected", /<option value="j1"[^>]*selected/.test(PF_HTML));
+
+  // (3b) a pass-through suggestion with NO job pre-fills type but no job → a plain Save still needs a job (stays review)
+  const pfNoJob = seedReview({ receiptId: "pf4", suggested: { vendor: "Depot", amount: 50, type: "pass-through", jobId: null, category: "materials", confidence: 0.95 } });
+  rcptEditOpen("review", null, pfNoJob.id);
+  ok("no-job pass-through → type pre-filled, NO job option selected", /<option value="pass-through"[^>]*selected/.test(PF_HTML) && !/<option value="j[12]"[^>]*selected/.test(PF_HTML));
+  global.val = function (id) { return ({ rcpt_type: "pass-through", rcpt_job: "", rcpt_amt: "50", rcpt_vendor: "Depot" })[id] || ""; };
+  rcptSaveEdit();
+  ok("Save without a job → the alert path fires, receipt STAYS in review", rcptReview().some(r => r.id === pfNoJob.id), rcptReview().map(r => r.id));
+  global.val = function () { return ""; };
+
+  // (4) refund / rental-deposit are NEVER pre-ticked (confirmation-only)
+  const pfRD = seedReview({ receiptId: "pf5", suggested: { vendor: "Sunbelt", amount: 300, type: "business", refund: true, deposit: true, confidence: 0.95 } });
+  rcptEditOpen("review", null, pfRD.id);
+  ok("refund box NOT pre-ticked", !/id="rcpt_refund"[^>]*checked/.test(PF_HTML));
+  ok("rental-deposit box NOT pre-ticked", !/id="rcpt_deposit"[^>]*checked/.test(PF_HTML));
+  global.val = _valPF; global.document.getElementById = _geiPF; global.modal = _modalPF;
+
+  // ========================= CAP SWEEP: re-file leftover CONFIDENT already-suggested review rows =========================
+  console.log("— CAP SWEEP: re-applies a confident unapplied review receipt via rcptFileSuggestion; a no-job pass-through stays in review —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; _capRcptBusy = false; OPEN_SHIFT = null; global.finCanView = function () { return true; };
+  let swReads = 0; CAP_FETCH = function () { swReads++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: {} }) }); };
+  const swBiz = seedReview({ receiptId: "sw1", suggested: { vendor: "V", amount: 60, type: "business", category: "other", confidence: 0.95 } });   // confident business — should re-file
+  const swPT = seedReview({ receiptId: "sw2", suggested: { vendor: "W", amount: 70, type: "pass-through", jobId: null, category: "materials", confidence: 0.95 } });   // no resolvable job — stays
+  capRcptSweep(); await new Promise(r => setTimeout(r, 20));
+  ok("sweep made NO vision call (both rows already have a suggestion)", swReads === 0, swReads);
+  ok("confident business row re-filed out of review", !rcptReview().some(r => r.id === swBiz.id), rcptReview().map(r => r.id));
+  ok("…landed in biz with the same id + capAutoFiled (purple review) mark", STORE.expenses.some(e => e.id === swBiz.id && !e.deleted && e.amount === 60 && e.capAutoFiled === true));
+  ok("no-job pass-through STAYS in review (needs the owner to pick a job)", rcptReview().some(r => r.id === swPT.id));
+
   // ========================= PER-JOB RECEIPT CLOSE-OUT =========================
   console.log("— close-out: helpers tolerate a legacy job with no receiptsClosedBy —");
   resetStore();
