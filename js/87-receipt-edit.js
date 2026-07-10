@@ -294,7 +294,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     </details>
     ${rcptInvBlockHTML(rec)}
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>
-    <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--danger)" onclick="rcptEditMarkDup()">🔁 Mark as duplicate — delete this (other copy stays)</button>`);
+    ${rcptEditDupActionsHTML({ store: store, jobId: jobId, recId: recId })}`);
   rcptEditTypeChange();   // the pre-filled type (if any) makes the "Assign to job" field visible for a job type
   // CONFIRMATION-ONLY refund/deposit (Ray): if Cap flagged a possible refund/rental-deposit, surface the SAME
   // hint the "Use Cap's guess" tap shows but leave the boxes UNCHECKED — a misread must never negate an amount or
@@ -401,6 +401,39 @@ window.rcptReplacePhoto = function (input) {
     if (img && base) { img.src = base; img.style.display = ""; }
     if (lbl) lbl.textContent = "✓ New photo attached — Save to keep";
   }).catch(e => { alert("Upload failed: " + (e.message || e)); if (lbl) lbl.textContent = "🔄 Replace photo"; });
+};
+/* DUPLICATE ACTIONS in the editor. When the OPEN receipt is part of a detected duplicate group (rcptDupIndex —
+   the SAME tolerant detection the page-level "⚠ possible duplicates" resolver uses), offer MERGE as the PRIMARY
+   action (🔗 keep-the-best-of-each via the tested rcptMergeGroup, absorbing the other copy through rcptApplyEdit +
+   the reversible rcptTombstone) and keep the plain "🔁 Mark as duplicate — delete this" as the SECONDARY option
+   (for genuine junk). No detected duplicate → just the existing delete, unchanged. Owner/admin gated, confirm-first,
+   reversible. NO new merge logic — reuses rcptDupIndex / rcptMergeGroup / rcptMergePreviewText. */
+function rcptEditDupActionsHTML(loc) {
+  const delBtn = `<button class="btn ghost" style="width:100%;margin-top:8px;color:var(--danger)" onclick="rcptEditMarkDup()">🔁 Mark as duplicate — delete this (other copy stays)</button>`;
+  const grp = (typeof rcptDupIndex === "function" && loc && loc.recId != null) ? rcptDupIndex().byId[loc.recId] : null;
+  if (!grp || grp.length < 2) return delBtn;   // no detected duplicate of THIS receipt → plain delete only (unchanged)
+  const note = (typeof rcptMergePreviewText === "function") ? rcptMergePreviewText(grp) : "";
+  const mergeBtn = `<button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptEditMergeDup()">🔗 Merge with the duplicate — keep the best of each${grp.length > 2 ? " (" + grp.length + " copies)" : ""}</button>`
+    + (note ? `<div class="sub" style="white-space:normal;margin-top:4px;color:var(--muted)">${esc(note)}</div>` : "");
+  return mergeBtn + delBtn;   // MERGE primary, delete secondary
+}
+/* MERGE the open receipt with its detected duplicate(s) — the SAME merge the resolver runs (rcptMergeGroup keeps
+   the best of each field via rcptMergeFields → rcptApplyEdit and absorbs the other copy via rcptTombstone). No
+   forced survivor: rcptMergeGroup picks the best home (a filed copy wins → billing preserved). Owner/admin only,
+   confirm-with-preview, reversible. Close + repaint after (the survivor may be a different id than the open one). */
+window.rcptEditMergeDup = function () {
+  if (!rcptFinFull() || !RCPT_EDIT) return;
+  const grp = (typeof rcptDupIndex === "function") ? rcptDupIndex().byId[RCPT_EDIT.loc.recId] : null;
+  if (!grp || grp.length < 2) { alert("No duplicate of this receipt anymore — refreshing."); if (typeof closeModal === "function") closeModal(); RCPT_EDIT = null; if (typeof render === "function") render(); return; }
+  const preview = (typeof rcptMergePreviewText === "function") ? rcptMergePreviewText(grp) : "";
+  if (!confirm("Merge these " + grp.length + " copies into one receipt?\n\n" + preview + "\n\n(An admin can undo.)")) return;
+  const res = (typeof rcptMergeGroup === "function") ? rcptMergeGroup(grp) : null;
+  if (!res || !res.ok) { alert("Couldn't merge these copies: " + ((res && res.error) || "unknown")); return; }
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Merged " + grp.length + " duplicate receipts into one — kept the best photo + line items + your categorization; removed " + res.absorbed + " absorbed cop" + (res.absorbed > 1 ? "ies" : "y"));
+  if (typeof save === "function") save();
+  if (typeof closeModal === "function") closeModal();
+  RCPT_EDIT = null;
+  if (typeof render === "function") render();
 };
 /* MARK AS DUPLICATE — the catch-all for anything the auto-detector misses. Soft-deletes THIS receipt via the
    SAME existing path (rcptTombstone) the row/edit deletes use — for a filed receipt that removes it from its

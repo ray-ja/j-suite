@@ -1160,6 +1160,43 @@ async function main() {
   ok("marked receipt is tombstoned", STORE.receipts.find(r => r.id === mDel.id).deleted === true);
   ok("the other copy is untouched", !STORE.receipts.find(r => r.id === mKeep.id).deleted);
 
+  // ============ FIX 1 — the "🤖 Cap" suggestion badge is gated to REVIEW-store rows (never a filed row) ============
+  console.log("\n— FIX 1: 🤖 Cap suggestion badge shows on a REVIEW row but NOT on a filed row (both carry `suggested`) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const capReviewRow = { store: "review", jobId: null, recId: "cr1", id: "cr1", vendor: "Depot", amount: 12, suggested: { vendor: "Depot", type: "business" } };
+  const capFiledRow = { store: "jobexp", jobId: "j1", recId: "cf1", id: "cf1", vendor: "Depot", amount: 12, suggested: { vendor: "Depot", type: "job-expense" } };
+  ok("🤖 Cap badge renders on a REVIEW row that carries `suggested`", rcptTableHTML([capReviewRow], {}).indexOf("🤖 Cap") >= 0);
+  ok("🤖 Cap badge does NOT render on a FILED (jobexp) row that still carries `suggested`", rcptTableHTML([capFiledRow], {}).indexOf("🤖 Cap") < 0);
+  ok("filed biz/jobmat rows with `suggested` also show NO 🤖 Cap badge", rcptTableHTML([{ store: "biz", recId: "b9", id: "b9", vendor: "V", amount: 5, suggested: { vendor: "V" } }], {}).indexOf("🤖 Cap") < 0 && rcptTableHTML([{ store: "jobmat", jobId: "j1", recId: "jm9", id: "jm9", vendor: "V", amount: 5, suggested: { vendor: "V" } }], {}).indexOf("🤖 Cap") < 0);
+  ok("the filed record KEEPS `suggested` (provenance/reread) — only the badge is gated, not the data", capFiledRow.suggested != null);
+
+  // ============ FIX 2 — the editor offers MERGE (reusing rcptMergeGroup) when the open receipt has a duplicate ============
+  console.log("\n— FIX 2: editor exposes 🔗 Merge when the open receipt has a duplicate; plain delete when it doesn't —");
+  resetStore(); global.finCanView = function () { return true; };
+  const edA = seedReview({ receiptId: "eA.jpg", vendor: "Home Depot", amount: 55, cardLast4: "8355" });
+  const edB = seedReview({ receiptId: "eB.jpg", vendor: "Home Depot", amount: 55, cardLast4: "8355" });
+  ok("pre: the two copies form ONE dup group of 2", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
+  const actHtmlDup = rcptEditDupActionsHTML({ store: "review", jobId: null, recId: edA.id });
+  ok("editor surfaces a 🔗 Merge action (→ rcptEditMergeDup) when the open receipt has a duplicate", actHtmlDup.indexOf("🔗 Merge") >= 0 && actHtmlDup.indexOf("rcptEditMergeDup()") >= 0);
+  ok("the plain 'Mark as duplicate — delete this' stays as the SECONDARY option", actHtmlDup.indexOf("rcptEditMarkDup()") >= 0);
+
+  resetStore(); global.finCanView = function () { return true; };
+  const lone = seedReview({ receiptId: "lone.jpg", vendor: "Solo", amount: 77 });
+  const actHtmlNo = rcptEditDupActionsHTML({ store: "review", jobId: null, recId: lone.id });
+  ok("no duplicate → editor shows ONLY the plain delete (no Merge button)", actHtmlNo.indexOf("🔗 Merge") < 0 && actHtmlNo.indexOf("rcptEditMarkDup()") >= 0);
+
+  console.log("— FIX 2: rcptEditMergeDup runs the SAME rcptMergeGroup (one survivor, other absorbed, reversible) —");
+  resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; }; global.closeModal = global.closeModal || function () {};
+  const mmA = seedReview({ receiptId: "mmA.jpg", vendor: "Lowe's", amount: 33.33, cardLast4: "1212", suggested: { lineItems: [1, 2] } });
+  const mmB = seedReview({ receiptId: "mmB.jpg", vendor: "Lowe's", amount: 33.33, cardLast4: "1212" });
+  rcptEditOpen("review", null, mmA.id);   // open one copy → RCPT_EDIT.loc points at it
+  ok("pre: the open receipt is in a dup group of 2", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
+  rcptEditMergeDup();                      // confirm() stub → true → merge via rcptMergeGroup
+  const liveAfterMerge = rcptAllRows().filter(r => !r.deleted && (r.id === mmA.id || r.id === mmB.id));
+  ok("after the editor merge exactly ONE copy survives (the other absorbed)", liveAfterMerge.length === 1, liveAfterMerge.length);
+  ok("the absorbed copy is soft-deleted (reversible, not hard-gone)", STORE.receipts.filter(r => (r.id === mmA.id || r.id === mmB.id) && r.deleted).length === 1);
+  ok("no dup group remains after the editor merge", rcptDupGroups().length === 0);
+
   // ================= RECEIPT SPINE (js/98) — smart-defaults + the BYTE-IDENTICAL file funnel =================
   console.log("\n— SPINE: rcptFileFromFields produces a BYTE-IDENTICAL record to a hand rcptApplyEdit save —");
   OPEN_SHIFT = null; delete CURUSER.cards;   // no clocked job + no cards → smart-defaults add nothing to fully-specified fields
