@@ -1431,9 +1431,14 @@ function rcptJobCloseoutHTML() {
       : `<span class="badge" style="background:#e0a800;color:#fff">${closedN}/${crew.length} crew closed</span>`;
     const waiting = open.map(id => (typeof userName === "function" ? userName(id) : "") || "?").filter(Boolean).join(", ");
     const expTot = jobExpenseTotal(j);   // pass-through materials + job expenses logged so far
+    // MILEAGE is a SEPARATE hard cost (confirmed time-clock miles, else the route estimate — jobMilesCostEst, ×IRS
+    // rate) that jobExpenseTotal doesn't include. Surface it so a job with a logged drive but no receipts doesn't
+    // read "$0". Displayed total = expenses + mileage (no double-count — the two are disjoint), mileage sub-labeled.
+    const mil = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
+    const dispTot = expTot + mil;
     // whole row taps through to the job's expense page (js/61 openJobPage → the materials/expenses section)
     h += `<div class="li" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')" style="cursor:pointer;align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
-      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(expTot)}</b> expenses${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
+      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> expenses${mil > 0 ? ` · 🚗 mileage ${money2(mil)}` : ""}${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
       <div style="flex:0 0 auto">${badge}</div></div>`;
   });
   h += `</div>`;
