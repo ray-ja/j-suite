@@ -111,6 +111,35 @@ function capRcptAutoFileOne(rec, opts) {
   } catch (e) { return false; }
 }
 
+/* LEFTOVER CONFIDENT SUGGESTIONS — review rows that ALREADY carry a `suggested` which clears the one-tap bar
+   (rcptSuggestionOneTapOk: high confidence · real amount · business OR a resolvable job) but were never applied
+   (e.g. restored/synced back AFTER the auto-file pass, so they keep `suggested` yet blank record fields and sit
+   in review). These are NOT re-read by the drain (they already have a suggestion), so without this they'd stew
+   in the queue forever. A pass-through/job-expense suggestion with NO resolvable job FAILS rcptSuggestionOneTapOk
+   → stays in review for the owner to pick a job (the js/87 pre-fill makes that: open → pick job → Save). Pure/
+   DOM-free + never-throws so the sweep can call it offline (files locally — rcptFileSuggestion makes NO network
+   call). */
+function capRcptReapplyPending() {
+  try {
+    if (typeof rcptReview !== "function" || typeof rcptSuggestionOneTapOk !== "function") return [];
+    return rcptReview().filter(function (r) { return r && !r.deleted && r.suggested && rcptSuggestionOneTapOk(r); });
+  } catch (e) { return []; }
+}
+/* RE-FILE those leftover confident rows through the EXACT auto-file spine (capRcptAutoFileOne → rcptFileSuggestion),
+   each stamped capAutoFiled (purple "🤖 review"). IDEMPOTENT — a filed row leaves the review store, so a re-run
+   finds nothing; never re-applies an already-filed / human-touched record. Owner/admin gated by the caller.
+   opts.batch defers the save to the caller. Returns the count filed. Never throws. */
+function capRcptReapplyConfident(opts) {
+  opts = opts || {};
+  var filed = 0;
+  try {
+    var rows = capRcptReapplyPending();
+    for (var i = 0; i < rows.length; i++) { if (capRcptAutoFileOne(rows[i], { batch: true })) filed++; }
+    if (filed && !opts.batch && typeof save === "function") save();
+  } catch (e) {}
+  return filed;
+}
+
 /* TRIGGER — DRAIN the whole needs-review pile, strictly ONE AT A TIME. Writes ONLY `suggested`; never a real
    field. The store changes as it stamps, so each pass RE-DERIVES the pending set (capRcptPending) and keeps
    reading until NONE remain — any batch size (7, 100, …) reads fully; nothing is silently skipped. Reads are
@@ -158,7 +187,10 @@ window.capRcptRun = async function (opts) {
     done++;
     if (capRcptPending().length && done < CAP_RCPT_CEILING && throttle > 0) await capRcptSleep(throttle);
   }
-  if (ok && typeof save === "function") save();
+  // Also RE-FILE any leftover CONFIDENT already-suggested review rows (carried a suggestion but blank fields —
+  // never read again since they already have one). Idempotent; batch-saved with the drain below. Local, no fetch.
+  try { autoFiled += capRcptReapplyConfident({ batch: true }); } catch (e) {}
+  if ((ok || autoFiled) && typeof save === "function") save();
   _capRcptBusy = false;
   capRcptSetStatus(capped ? "🤖 Cap read " + done + " — more will read shortly…" : "");
   // Terminal banner (js/104): ✓ only when ≥1 was actually read; capped appends "more will read shortly";
@@ -183,6 +215,10 @@ window.capRcptSweep = function () {
   try {
     if (!capRcptCanRun()) return;                       // owner/admin only (auto path is silent)
     if (_capRcptBusy) return;                            // a drain is already running
+    // (A) RE-FILE leftover CONFIDENT already-suggested review rows FIRST — LOCAL (no server/key needed): these are
+    // restored/synced-back rows carrying `suggested` but blank fields that the drain never re-reads. Idempotent.
+    if (capRcptReapplyPending().length) { if (capRcptReapplyConfident() && typeof render === "function") render(); }
+    // (B) VISION DRAIN of the still-UNREAD pile — needs the org AI server + key.
     if (!capRcptPending().length) return;               // nothing unread → no-op
     if (typeof orgAiBase === "function" && !orgAiBase()) return;   // offline / file:// → no server, no-op
     var t = (typeof now === "function") ? now() : Date.now();

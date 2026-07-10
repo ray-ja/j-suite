@@ -193,10 +193,35 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const jobSel = jobId || rec.jobId || "";
   const base = (typeof jsUploadUrl === "function") ? jsUploadUrl(rec.receiptId) : "";
 
+  // ── PRE-FILL FROM CAP'S GUESS (DISPLAY DEFAULT ONLY — the record's OWN value ALWAYS wins) ──────────────
+  // A receipt Cap READ (has `suggested`) but whose record fields are still blank — e.g. it was restored / synced
+  // back AFTER the auto-file pass, so it carries `suggested` yet blank fields and sits in review — used to open
+  // BLANK. A plain Save then read type="" → rcptTargetHome → straight back into "Needs review" (the dead-end the
+  // owner keeps hitting). We now DEFAULT each blank input to Cap's guess, so opening shows the guess IN THE FORM
+  // and a normal Save FILES it. This never mutates `rec`: the actual file still routes through rcptApplyEdit
+  // (rcptSaveEdit) → byte-identical. A field the record already has set is untouched (never overwrite a human
+  // edit). Refund/deposit are NOT pre-filled (confirmation-only) — only their hint is surfaced (after render).
+  const sg = RCPT_EDIT.suggested || {};
+  const _iso = (typeof _rcptIsoDate === "function") ? _rcptIsoDate : (v => /^\d{4}-\d{2}-\d{2}$/.test(String(v == null ? "" : v).slice(0, 10)) ? String(v).slice(0, 10) : "");
+  const preAmount = (rec.amount != null && rec.amount !== "") ? rec.amount : ((sg.amount != null && sg.amount !== "") ? sg.amount : null);
+  const preVendor = (rec.vendor && String(rec.vendor).trim()) ? rec.vendor : (sg.vendor || "");
+  const preDesc = (rec.desc || rec.note) ? (rec.desc || rec.note) : (sg.desc || "");
+  const preCat = rec.category ? rec.category : (sg.category || "");
+  const preDate = _iso(rec.date) || _iso((rec.capRead || {}).date) || _iso(sg.date) || rcptDate(rec);   // real ISO wins; a Cap "unknown" can't win (guarded), else the existing ts fallback
+  const preCard4 = (/^\d{4}$/.test(String(rec.cardLast4 || ""))) ? rec.cardLast4 : ((/^\d{4}$/.test(String(sg.last4 || ""))) ? sg.last4 : (rec.cardLast4 || ""));
+  // TYPE — the record's own type wins; a blank review row inherits Cap's REAL filed type (business/job-expense/
+  // pass-through) so rcptEditTypeChange shows the "Assign to job" field and a plain Save files it out of review.
+  let preType = curType;
+  if (curType === "review" && !rec.type && (sg.type === "business" || sg.type === "job-expense" || sg.type === "pass-through")) preType = sg.type;
+  // JOB — only inherit Cap's job when it's a REAL job that exists (a Cap "unknown"/unmatched id never wins) and
+  // the record has no job of its own — so a pass-through/job-expense guess pre-selects the job the owner can Save.
+  let preJob = jobSel;
+  if (!preJob && sg.jobId && jobs.some(j => j && j.id === sg.jobId)) preJob = sg.jobId;
+
   const typeOpts = [["", "🕓 Needs review (unassigned)"], ["business", "🏢 Business expense"], ["job-expense", "💵 Job expense — reimbursed to uploader"], ["pass-through", "🧱 Pass-through material — billed to customer"]]
-    .map(([v, l]) => `<option value="${v}" ${curType === (v || "review") ? "selected" : ""}>${l}</option>`).join("");
-  const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${jobSel === j.id ? "selected" : ""}>${(typeof jobPO === "function" && jobPO(j)) ? esc(jobPO(j)) + " · " : ""}${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
-  const catOpts = `<option value="">— category —</option>` + RCPT_CATS.map(c => `<option ${rec.category === c ? "selected" : ""}>${c}</option>`).join("");
+    .map(([v, l]) => `<option value="${v}" ${preType === (v || "review") ? "selected" : ""}>${l}</option>`).join("");
+  const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${preJob === j.id ? "selected" : ""}>${(typeof jobPO === "function" && jobPO(j)) ? esc(jobPO(j)) + " · " : ""}${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
+  const catOpts = `<option value="">— category —</option>` + RCPT_CATS.map(c => `<option ${preCat === c ? "selected" : ""}>${c}</option>`).join("");
   const paidOpts = `<option value="">💳 Business card (no reimburse)</option>` + members.map(u => `<option value="${esc(u.id)}" ${rec.paidBy === u.id ? "selected" : ""}>${esc(u.username)} — personal card (reimburse)</option>`).join("");
   const attrCur = rec.attributedTo || rec.paidBy || rec.uploadedBy || "";
   const attrOpts = `<option value="">— nobody in particular —</option>` + members.map(u => `<option value="${esc(u.id)}" ${attrCur === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("");
@@ -228,18 +253,18 @@ window.rcptEditOpen = function (store, jobId, recId) {
       ${(!rec.receiptId && rec.csvFile) ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(rec.csvFile) : ""}" target="_blank" rel="noopener" class="sub" style="display:inline-block;margin-top:4px;color:var(--accent)">📄 View source CSV${rec.csvName ? " (" + esc(rec.csvName) + ")" : ""}</a>` : ""}</div>
     </div>
     <!-- ESSENTIALS (always shown): Amount · Vendor · Job. The rest lives under "More options" (js/98 collapse). -->
-    <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${rec.amount != null ? esc(rec.amount) : ""}" placeholder="0.00">
-    <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(rec.vendor || "")}" placeholder="Home Depot, dump, gas…">
+    <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${preAmount != null ? esc(preAmount) : ""}" placeholder="0.00">
+    <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(preVendor)}" placeholder="Home Depot, dump, gas…">
     <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job" onchange="rcptJobPONote()">${jobOpts}</select>
       <label>PO / job code <span class="sub">(type or paste the P#### off the receipt to auto-pick its job)</span></label><input id="rcpt_po" type="text" placeholder="P1042" value="" oninput="rcptPoBind()" onblur="rcptPoBind()">
       <div id="rcpt_po_note" class="sub" style="margin-top:4px"></div></div>
     <details id="rcpt_more" open style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
-    <label>Date</label><input id="rcpt_date" type="date" value="${esc(rcptDate(rec))}">
-    <label>What was it</label><input id="rcpt_desc" value="${esc(rec.desc || rec.note || "")}" placeholder="pavers, dump fee, fuel…">
+    <label>Date</label><input id="rcpt_date" type="date" value="${esc(preDate)}">
+    <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
     <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
-    <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(rec.cardLast4 || "")}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
+    <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(preCard4)}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>
     <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
@@ -251,7 +276,15 @@ window.rcptEditOpen = function (store, jobId, recId) {
     ${rcptInvBlockHTML(rec)}
     <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn acc grow" onclick="rcptSaveEdit()">✓ Save</button></div>
     <button class="btn ghost" style="width:100%;margin-top:8px;color:var(--danger)" onclick="rcptEditMarkDup()">🔁 Mark as duplicate — delete this (other copy stays)</button>`);
-  rcptEditTypeChange();
+  rcptEditTypeChange();   // the pre-filled type (if any) makes the "Assign to job" field visible for a job type
+  // CONFIRMATION-ONLY refund/deposit (Ray): if Cap flagged a possible refund/rental-deposit, surface the SAME
+  // hint the "Use Cap's guess" tap shows but leave the boxes UNCHECKED — a misread must never negate an amount or
+  // hold money out of a job's cost. The flag is set only when the owner ticks it + Saves (rcptSaveEdit).
+  try {
+    const _hint = (id, msg) => { const el = document.getElementById(id); if (el && msg) el.innerHTML = `<div class="sub" style="color:#6b3fa0;font-weight:600;white-space:normal;margin:2px 0 4px">🤖 ${esc(msg)}</div>`; };
+    if (sg.refund && !rec.kind) _hint("rcpt_refund_hint", "Cap thinks this may be a refund — tick “↩ This is a refund” to confirm (left unchecked).");
+    if (sg.deposit && !rec.isDeposit) _hint("rcpt_deposit_hint", "Cap thinks this may be a rental deposit — tick “⚠ Rental deposit” to confirm (left unchecked).");
+  } catch (_e) {}
   if (typeof rcptJobPONote === "function") rcptJobPONote();   // js/95: show the pre-selected job's PO code
   if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
   if (typeof cardMatchInit === "function") cardMatchInit(rec);   // js/94: match the card last-4 → pre-select "Who paid?" (default only, never writes)
