@@ -1392,7 +1392,7 @@ window.tcLogDrive = function (jobId, args) {
 };
 /* the 🚗 Log-a-drive MODAL (owner/admin) — Driver + Vehicle (reusing the clock-in picker source) + Miles (prefilled
    from the job's route estimate: manualRouteMiles || estRouteMiles) + Date (today) + a live IRS-$ readout. */
-window.tcLogDriveForm = function (jobId) {
+window.tcLogDriveForm = function (jobId, prefill) {
   const owner = (typeof isOwner === "function") && isOwner();
   const canAdd = owner || ((typeof canManageMembers === "function") && canManageMembers());
   if (!canAdd) { alert("Owner/admin only — logging a drive for someone."); return; }
@@ -1400,8 +1400,9 @@ window.tcLogDriveForm = function (jobId) {
   const members = (typeof schedMembers === "function") ? schedMembers() : [];
   if (!members.length) { alert("No crew members to attribute a drive to."); return; }
   const crew = Array.isArray(j.crew) ? j.crew : [];
-  const dfltDriver = crew.find(id => members.some(m => m.id === id)) || members[0].id;
-  const pre = (+j.manualRouteMiles > 0) ? +j.manualRouteMiles : (+j.estRouteMiles > 0 ? +j.estRouteMiles : "");
+  // prefill (from the per-vehicle "Pay estimated mileage" on the job page): driver + vehicle + the unlogged miles.
+  const dfltDriver = (prefill && prefill.driverId && members.some(m => m.id === prefill.driverId)) ? prefill.driverId : (crew.find(id => members.some(m => m.id === id)) || members[0].id);
+  const pre = (prefill && +prefill.miles > 0) ? Math.round(+prefill.miles * 10) / 10 : ((+j.manualRouteMiles > 0) ? +j.manualRouteMiles : (+j.estRouteMiles > 0 ? +j.estRouteMiles : ""));
   const day = (typeof today === "function") ? today() : tcLocalDay(now());
   const estLine = (pre > 0)
     ? `≈ IRS <b>${money(Math.round(pre * TC_RATE * 100) / 100)}</b> @ $${TC_RATE}/mi · ${pre} mi`
@@ -1411,7 +1412,7 @@ window.tcLogDriveForm = function (jobId) {
     <label>Driver</label>
     <select id="tc_ld_user" onchange="tcLogDriveDriverChanged()">${members.map(u => `<option value="${esc(u.id)}" ${u.id === dfltDriver ? "selected" : ""}>${esc(u.username || "Crew")}</option>`).join("")}</select>
     <label style="margin-top:8px">Vehicle</label>
-    <select id="tc_ld_veh">${tcVehicleOptions(tcDefaultVehVal(dfltDriver), dfltDriver)}</select>
+    <select id="tc_ld_veh">${tcVehicleOptions((prefill && prefill.vehVal) || tcDefaultVehVal(dfltDriver), dfltDriver)}</select>
     <div class="row" style="gap:8px;margin-top:8px">
       <div class="grow"><label style="margin-top:0">Miles (round trip)</label><input id="tc_ld_miles" type="number" inputmode="decimal" step="0.1" value="${pre}" placeholder="e.g. 170" oninput="tcLogDriveEst()"></div>
       <div class="grow"><label style="margin-top:0">Date</label><input id="tc_ld_date" type="date" value="${esc(day)}"></div>

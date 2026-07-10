@@ -59,7 +59,20 @@ function jobVehRecalc(j, vehId) {
   });
   if (c.anyNone && !(vr.estMiles > 0)) vr.estMiles = extra > 0 ? Math.round(extra * 10) / 10 : null;
 }
-function jobVehReimb(vr) { return (vr && vr.estMiles > 0) ? Math.round(vr.estMiles * JOB_VEH_RATE * 100) / 100 : 0; }
+/* how many DAYS this vehicle is on the job (Ray's counter — one vehicle may work more days than another). Default =
+   the job's work-day count (jobPageWorkDays), else 1. Owner can override per vehicle (vr.days). */
+function jobVehDays(j, vr) {
+  if (vr && +vr.days > 0) return Math.round(+vr.days);
+  const wd = (typeof jobPageWorkDays === "function") ? jobPageWorkDays(j) : null;
+  return (wd && wd.length) ? wd.length : 1;
+}
+/* TOTAL estimated miles for a vehicle = its daily round-trip loop × the days it's on the job. */
+function jobVehTotalMiles(j, vr) { return (vr && vr.estMiles > 0) ? Math.round(vr.estMiles * jobVehDays(j, vr) * 10) / 10 : 0; }
+function jobVehReimb(j, vr) { const t = jobVehTotalMiles(j, vr); return t > 0 ? Math.round(t * JOB_VEH_RATE * 100) / 100 : 0; }
+/* confirmed odometer miles already logged on THIS vehicle for the job (the billed number that offsets the estimate). */
+function jobVehConfMiles(j, vehId) {
+  return ((typeof actTC === "function") ? actTC() : []).filter(e => e && !e.deleted && e.jobId === j.id && (e.invVehicleId === vehId || e.vehicleId === vehId) && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
+}
 
 /* ---------- handlers (owner/admin) ---------- */
 window.jobToggleVehicle = function (jobId, vehId) {
@@ -174,6 +187,30 @@ window.jobVehSetManualMiles = function (jobId, vehId, v) {
   jobVehRecalc(j, vehId);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
+/* V4 — DAYS this vehicle works the job (Ray's counter). vr.days > 0 overrides the work-day default. */
+window.jobVehSetDays = function (jobId, vehId, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const vr = jobVehRouteEnsure(j, vehId);
+  const n = parseInt(v, 10);
+  if (isFinite(n) && n > 0) vr.days = n; else delete vr.days;
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* V4 — PAY THE ESTIMATE (owner-confirmed): turn this vehicle's route estimate into an actual mileage reimbursement
+   when the odometer's missing. Reuses the proven "Log a drive" flow (js/38) — creates a confirmed mileage entry
+   paid to the vehicle owner — prefilled with the UNLOGGED portion (total estimate − odometer already on record). */
+window.jobVehPayEstimate = function (jobId, vehId) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const vr = jobVehRouteRead(j, vehId); const tot = jobVehTotalMiles(j, vr);
+  if (!(tot > 0)) { alert("No route estimate for this vehicle yet — set its route/miles first."); return; }
+  const gap = Math.round(Math.max(0, tot - jobVehConfMiles(j, vehId)) * 10) / 10;
+  const v = jobVehById(vehId);
+  const vehVal = v ? (v.kind === "personal" ? "inv:" + vehId : "truck:" + vehId) : "";
+  const driverId = (v && v.ownerId) || ((Array.isArray(j.crew) && j.crew[0]) || "");
+  if (typeof tcLogDriveForm === "function") tcLogDriveForm(jobId, { miles: gap > 0 ? gap : tot, vehVal: vehVal, driverId: driverId });
+  else alert("Mileage logging isn't available here.");
+};
 /* V3 — the route estimate for a vehicle PICKED on the clock-in form (before an entry exists). encVal is the
    tc_vehicle select value ("inv:<id>" | "truck:<id>" | "owner:<uid>"); map to a job.vehicleRoutes key. null when
    the picked vehicle has no per-vehicle route on this job (caller falls back to the whole-job estimate). */
@@ -193,10 +230,10 @@ window.jobVehEstForPick = jobVehEstForPick;
 function jobVehTotals(j) {
   const out = { miles: 0, reimb: 0, perOwner: {} };
   (Array.isArray(j.vehicleIds) ? j.vehicleIds : []).forEach(vehId => {
-    const vr = jobVehRouteRead(j, vehId); if (!(vr.estMiles > 0)) return;
+    const vr = jobVehRouteRead(j, vehId); const tot = jobVehTotalMiles(j, vr); if (!(tot > 0)) return;
     const v = jobVehById(vehId); const owner = (v && v.ownerId) ? v.ownerId : "_driver";
-    const r = Math.round(vr.estMiles * JOB_VEH_RATE * 100) / 100;
-    out.miles += vr.estMiles; out.reimb += r; out.perOwner[owner] = (out.perOwner[owner] || 0) + r;
+    const r = Math.round(tot * JOB_VEH_RATE * 100) / 100;
+    out.miles += tot; out.reimb += r; out.perOwner[owner] = (out.perOwner[owner] || 0) + r;
   });
   out.miles = Math.round(out.miles * 10) / 10; out.reimb = Math.round(out.reimb * 100) / 100;
   return out;
@@ -223,14 +260,22 @@ function jobPageVehiclesCard(j) {
     const v = jobVehById(vehId); const nm = v ? v.name : vehId;
     const vr = jobVehRouteRead(j, vehId);
     const owner = v && v.ownerId ? jobVehOwnerName(v) : "";
-    const reimb = jobVehReimb(vr);
-    const est = (vr.estMiles > 0) ? `~<b>${vr.estMiles} mi</b> round trip` : (vr.milesSource === "none" ? `<span class="muted">map couldn't route it</span>` : `<span class="muted">estimating…</span>`);
+    const days = jobVehDays(j, vr), totMi = jobVehTotalMiles(j, vr), reimb = jobVehReimb(j, vr);
+    const est = (vr.estMiles > 0)
+      ? (days > 1 ? `${days} days × ~<b>${vr.estMiles} mi</b> = <b>${totMi} mi</b>` : `~<b>${vr.estMiles} mi</b> round trip`)
+      : (vr.milesSource === "none" ? `<span class="muted">map couldn't route it</span>` : `<span class="muted">estimating…</span>`);
     const who = owner ? `reimburses <b>${esc(owner)}</b>${reimb ? ` ~${m(reimb)}` : ""}` : `<span class="muted">company truck — reimburses whoever drives it${reimb ? ` (~${m(reimb)})` : ""}</span>`;
     h += `<div class="card" style="background:var(--soft);padding:8px 10px;margin-bottom:8px"><div class="row" style="align-items:baseline"><div class="grow nm" style="font-size:15px">🚚 ${esc(nm)}${v && v.plate ? ` <span class="sub" style="font-weight:400">${esc(v.plate)}</span>` : ""}</div>${canEdit ? `<button class="btn ghost sm" onclick="jobToggleVehicle('${j.id}','${esc(vehId)}')" title="Remove from job">✕</button>` : ""}</div>`;
     h += `<div class="sub" style="white-space:normal;margin-top:2px">${est} · ${who}</div>`;
     // ODOMETER OF RECORD (the billed number) — confirmed clock-out miles logged on THIS vehicle for this job.
-    const _conf = ((typeof actTC === "function") ? actTC() : []).filter(e => e && !e.deleted && e.jobId === j.id && (e.invVehicleId === vehId || e.vehicleId === vehId) && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
-    if (_conf > 0) h += `<div class="sub" style="white-space:normal;margin-top:1px">🚗 Odometer of record: <b>${Math.round(_conf * 10) / 10} mi</b>${vr.estMiles > 0 ? ` <span class="muted">(${Math.round(_conf / vr.estMiles * 100)}% of estimate — odometer wins)</span>` : ""}</div>`;
+    const _conf = jobVehConfMiles(j, vehId);
+    if (_conf > 0) h += `<div class="sub" style="white-space:normal;margin-top:1px">🚗 Odometer of record: <b>${Math.round(_conf * 10) / 10} mi</b>${totMi > 0 ? ` <span class="muted">(${Math.round(_conf / totMi * 100)}% of the ${totMi} mi estimate — odometer wins)</span>` : ""}</div>`;
+    // DAYS counter (owner) + PAY-THE-ESTIMATE (owner-confirmed) — turn the unlogged estimate into an actual reimbursement.
+    if (canEdit) {
+      const gap = Math.round(Math.max(0, totMi - _conf) * 10) / 10;
+      h += `<div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="sub">🗓 Days on job</span><input type="number" inputmode="numeric" min="1" value="${days}" style="width:56px" onchange="jobVehSetDays('${j.id}','${esc(vehId)}',this.value)">${vr.days ? "" : ` <span class="sub muted">· default from work-days</span>`}</div>`;
+      if (gap > 0.05) h += `<button class="btn ghost sm" style="width:100%;margin-top:4px;border-color:#e0a800;color:#e0a800" onclick="jobVehPayEstimate('${j.id}','${esc(vehId)}')" title="Reimburse the estimated miles the odometer hasn't covered">🚗 Pay estimated mileage · ${gap} mi not logged (~${m(Math.round(gap * JOB_VEH_RATE * 100) / 100)}) ›</button>`;
+    }
     // the vehicle's ORDERED route: Start → [stops/site, reorderable ▲▼] → End. Start/End default to home base but
     // are editable (a crew member who drives from home). Reuses jobRouteOrdered on the shim so ordering matches.
     const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
