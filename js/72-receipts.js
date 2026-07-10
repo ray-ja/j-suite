@@ -125,6 +125,60 @@ function rcptReimbOwed() {
   (D().expenses || []).forEach(add);
   return per;
 }
+
+/* ---------- SALES-TAX BACKFILL ----------
+   Everything OBX-purchased is taxable at 6.75% (Dare + Currituck County NC). A receipt whose tax hasn't been
+   evaluated is FLAGGED; the bulk action stamps taxAmount/taxRate as ADDITIVE metadata (a shown "incl. $X sales
+   tax" sub-line) WITHOUT touching amount / bucket / job — customer totals unchanged, fully reversible. Tax is
+   the printed value when Cap read one (capRead.tax), else a 6.75% tax-INCLUSIVE back-out of the total paid.
+   Deposits, refunds, and tax lines themselves are never flagged. */
+function rcptTaxRate() { return (typeof RCPT_OBX_TAX_RATE !== "undefined") ? RCPT_OBX_TAX_RATE : 0.0675; }
+function rcptTaxable(r) {
+  return !!(r && !r.deleted && (+r.amount > 0) && String(r.category || "").toLowerCase() !== "sales tax"
+    && !r.isTax && !r.isDeposit && !r.deposit && !r.refund && !r.refundOfId);
+}
+function rcptNeedsTax(r) { return rcptTaxable(r) && !r.taxEvaluated; }
+function rcptNeedsTaxCount() { return rcptAllRows().filter(rcptNeedsTax).length; }
+/* tax-INCLUSIVE back-out: the tax already embedded in a total that includes it ($106.75 → $6.75) */
+function rcptTaxBackout(amount, rate) { rate = rate || rcptTaxRate(); return Math.round((+amount || 0) * (rate / (1 + rate)) * 100) / 100; }
+/* evaluate + STAMP the live record. Returns true if stamped. */
+function rcptEvalTaxRecord(rec) {
+  if (!rcptTaxable(rec)) return false;
+  const rate = rcptTaxRate();
+  const explicit = (rec.capRead && rec.capRead.tax != null && +rec.capRead.tax > 0) ? Math.round(+rec.capRead.tax * 100) / 100 : null;
+  rec.taxAmount = (explicit != null) ? explicit : rcptTaxBackout(rec.amount, rate);
+  rec.taxRate = rate; rec.taxAssumed = (explicit == null); rec.taxEvaluated = true;
+  if (typeof touch === "function") touch(rec);
+  return true;
+}
+window.rcptEvalTaxAll = function () {
+  if (!rcptFinFull()) return;
+  const flagged = rcptAllRows().filter(rcptNeedsTax);
+  if (!flagged.length) { alert("Every receipt already has its sales tax evaluated. 🎉"); return; }
+  if (!confirm("Evaluate sales tax on " + flagged.length + " receipt" + (flagged.length > 1 ? "s" : "") + "?\n\nFills each receipt's tax (6.75% OBX, or the printed amount where Cap read one) as an itemized sub-line. It does NOT change any amounts, buckets, or jobs — fully reversible.")) return;
+  let n = 0;
+  flagged.forEach(row => { const rec = rcptFindRecord(row.store, row.jobId, row.recId); if (rec && rcptEvalTaxRecord(rec)) n++; });
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof logChange === "function") logChange("update", "receipts", "*", "Evaluated sales tax on " + n + " receipt" + (n > 1 ? "s" : "") + " (6.75% OBX)");
+  render();
+};
+window.rcptEvalTaxOne = function (store, jobId, recId) {
+  if (!rcptFinFull()) return;
+  const rec = rcptFindRecord(store, jobId || "", recId); if (!rec || !rcptEvalTaxRecord(rec)) return;
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  render();
+};
+window.rcptClearTax = function (store, jobId, recId) {   // undo — the reversible flag
+  if (!rcptFinFull()) return;
+  const rec = rcptFindRecord(store, jobId || "", recId); if (!rec) return;
+  delete rec.taxAmount; delete rec.taxRate; delete rec.taxAssumed; delete rec.taxEvaluated;
+  if (typeof touch === "function") touch(rec);
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  render();
+};
 function rcptThumb(id) {
   const up = (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   if (!id) return `<div style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--line);background:var(--soft);flex:0 0 auto;font-size:22px">📷</div>`;
@@ -806,6 +860,7 @@ function rcptSortedRows() {
   else if (RCPT_FILTER === "owed") rows = rows.filter(r => r.paidBy && !r.reimbursedAt);        // personal-card, not yet reimbursed
   else if (RCPT_FILTER === "paidback") rows = rows.filter(r => r.paidBy && r.reimbursedAt);      // reimbursed / settled
   else if (RCPT_FILTER === "capreview") rows = rows.filter(rcptNeedsCapReview);                   // Cap auto-filed, owner hasn't reviewed
+  else if (RCPT_FILTER === "needtax") rows = rows.filter(rcptNeedsTax);                            // sales tax not evaluated yet
   // DISPLAY-ONLY search + MULTI-SELECT filters (after the status pill, before sort). Each non-empty filter applies;
   // OR within a filter (value ∈ its set), AND across filters. Mirrors the Jobs list (js/08 quotesListHTML) —
   // narrows the view, never touches the records.
@@ -887,6 +942,7 @@ function rReceipts() {
   const rows = rcptSortedRows();
   const reviewCount = rcptReview().length;
   const capReviewN = rcptCapReviewCount();   // Cap auto-filed, owner hasn't reviewed → the purple "🤖 To review" pile
+  const needTaxN = rcptNeedsTaxCount();      // receipts whose sales tax hasn't been evaluated yet
   const filed = rcptAllFiled(), dupIx = rcptDupIndex(), dupCount = dupIx.groups.length;   // dup flags now come from rcptListInner()
 
   let h = `<div class="secthd"><h2>📸 Receipts</h2><span class="ct">${rcptAllRows().length}</span></div>`;
@@ -917,6 +973,7 @@ function rReceipts() {
   if (capReviewN) h += `<div class="card" style="border-left:4px solid ${RCPT_CAP_PURPLE};cursor:pointer" onclick="rcptSetFilter('capreview')"><b style="color:${RCPT_CAP_PURPLE}">🤖 ${capReviewN} receipt${capReviewN > 1 ? "s" : ""} Cap auto-filed — needs your review</b> — Cap was confident and filed ${capReviewN > 1 ? "these" : "this"} for you (purple <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff">🤖 review</span> rows). Tap to jump to them, glance each is right, then tap <b>✓ Reviewed</b> (any edit also clears the mark). →</div>`;
   const suggCount = rows.filter(r => r && r.suggested && r.store === "review").length;   // same gate as the row 🤖 Cap badge: only a REVIEW-queue row is an unresolved "Cap read this, review it" to-do (a filed receipt keeps `suggested` for provenance but was already reviewed when filed)
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
+  if (needTaxN) h += `<div class="card" style="border-left:4px solid #e0a800"><b>🧾 ${needTaxN} receipt${needTaxN > 1 ? "s" : ""} need sales tax evaluated</b> — fill in each receipt's tax (6.75% OBX, or the printed amount where Cap read one) as an itemized sub-line. It doesn't change any amounts, buckets, or jobs — additive &amp; reversible. <button class="btn sm" style="background:#e0a800;border-color:#e0a800;color:#fff;margin-top:6px" onclick="rcptEvalTaxAll()">🧾 Evaluate all ${needTaxN}</button></div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
 
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
@@ -942,6 +999,7 @@ function rReceipts() {
     <button class="btn ${RCPT_FILTER === "owed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('owed')">💸 Owed ${rcptAllRows().filter(r => r.paidBy && !r.reimbursedAt).length}</button>
     <button class="btn ${RCPT_FILTER === "paidback" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('paidback')">✓ Paid back ${rcptAllRows().filter(r => r.paidBy && r.reimbursedAt).length}</button>
     ${(capReviewN || RCPT_FILTER === "capreview") ? `<button class="btn ${RCPT_FILTER === "capreview" ? "acc" : "ghost"} sm" style="${RCPT_FILTER === "capreview" ? "" : "border-color:" + RCPT_CAP_PURPLE + ";color:" + RCPT_CAP_PURPLE}" onclick="rcptSetFilter('capreview')">🤖 To review ${capReviewN}</button>` : ""}
+    ${(needTaxN || RCPT_FILTER === "needtax") ? `<button class="btn ${RCPT_FILTER === "needtax" ? "acc" : "ghost"} sm" style="${RCPT_FILTER === "needtax" ? "" : "border-color:#e0a800;color:#e0a800"}" onclick="rcptSetFilter('needtax')">🧾 Needs tax ${needTaxN}</button>` : ""}
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
@@ -1382,7 +1440,7 @@ function rcptTableHTML(rows, dups) {
     const capBorder = needsCapReview ? `;border-left:3px solid ${RCPT_CAP_PURPLE}` : "";
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${capBorder}${rowBg}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${(r.suggested && r.store === "review") ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${needsCapReview ? ` <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff" title="Cap auto-filed this from its guess — review it">🤖 review</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}${reviewedBtn}${splitBtn}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${(r.taxEvaluated && r.taxAmount) ? `<div class="sub" style="font-size:11px;color:var(--muted);white-space:normal">incl. ${money2(r.taxAmount)} sales tax (${Math.round((r.taxRate || rcptTaxRate()) * 10000) / 100}%)${r.taxAssumed ? " · assumed" : ""}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${rcptNeedsTax(r) ? ` <span class="badge" style="background:#e0a800;color:#fff" title="Sales tax not evaluated yet — tap Evaluate all up top, or open to set it">🧾 tax?</span>` : ""}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${(r.suggested && r.store === "review") ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${needsCapReview ? ` <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff" title="Cap auto-filed this from its guess — review it">🤖 review</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}${reviewedBtn}${splitBtn}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       ${rcptInlineTd(r.store, r.jobId, r.recId, "type", typeDisp)}
       ${rcptInlineTd(r.store, r.jobId, r.recId, "category", catDisp)}

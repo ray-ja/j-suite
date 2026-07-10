@@ -256,6 +256,20 @@ async function main() {
   ok("tax check: $12.00 on $150 subtotal is FLAGGED (≠ 6.75%)", rcptTaxCheck(15000, 1200).ok === false, rcptTaxCheck(15000, 1200));
   ok("rcptTaxExpected: 6.75% of $150 = $10.13 (1013¢)", rcptTaxExpected(15000) === 1013, rcptTaxExpected(15000));
 
+  console.log("\n— SALES-TAX BACKFILL: flag + tax-inclusive back-out + additive stamp (reversible) —");
+  ok("back-out: $106.75 total → $6.75 embedded tax (6.75% inclusive)", rcptTaxBackout(106.75) === 6.75, rcptTaxBackout(106.75));
+  const trec = { amount: 106.75, type: "pass-through", category: "materials" };
+  ok("a plain positive receipt is taxable + needs tax before eval", rcptTaxable(trec) && rcptNeedsTax(trec), trec);
+  rcptEvalTaxRecord(trec);
+  ok("eval STAMPS taxAmount/rate/assumed/evaluated, no amount change", trec.taxAmount === 6.75 && trec.taxRate === 0.0675 && trec.taxAssumed === true && trec.taxEvaluated === true && trec.amount === 106.75, trec);
+  ok("after eval it no longer needs tax", !rcptNeedsTax(trec), trec);
+  ok("deposits / refunds / tax-lines are NEVER flagged", !rcptTaxable({ amount: 300, isDeposit: true }) && !rcptTaxable({ amount: 50, refund: true }) && !rcptTaxable({ amount: 6.75, category: "sales tax" }), null);
+  const erec = { amount: 100, type: "business", capRead: { tax: 7.11 } };
+  rcptEvalTaxRecord(erec);
+  ok("an explicitly-read tax (capRead.tax) wins over the 6.75% assumption", erec.taxAmount === 7.11 && erec.taxAssumed === false, erec);
+  const zrec = { amount: 0 }, drec = { amount: -20 };
+  ok("$0 / negative receipts are not taxable (not flagged)", !rcptTaxable(zrec) && !rcptTaxable(drec), null);
+
   // ========================= UNIFIED JOB RECEIPT (js/100) → rcptApplySplit =========================
   console.log("\n— JOB RECEIPT: jobRcptSeed builds rows from Cap lineItems (+ whole-receipt client fallback) —");
   const seedFull = jobRcptSeed({ amount: 200, lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] });
