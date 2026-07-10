@@ -340,11 +340,12 @@ async function main() {
   ok("another org's blob → false", !SS.rcptOwnedByOrg(vstore, "jam", "mine.jpg"));
   ok("unknown blob → false", !SS.rcptOwnedByOrg(vstore, "obx", "nope.jpg"));
 
-  console.log("— client: Cap stamps ONLY `suggested` (never a real field) on approve-in-edit —");
+  console.log("— client: Cap stamps ONLY `suggested` (never a real field) on a NON-auto-filed (low-confidence) read —");
   resetStore();
   const capRec = seedReview({ receiptId: "cap1.jpg", vendor: "", amount: null, type: null, jobId: null, category: "" });
   const before = JSON.stringify(capRec);
-  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ suggested: { vendor: "Depot", amount: 88, date: "2026-06-30", desc: "pavers", type: "pass-through", category: "materials", jobId: "j1", confidence: 0.9 } }); } }); };
+  // confidence 0.5 (< the 0.8 one-tap bar) → NOT auto-filed → stays a review row with ONLY `suggested` stamped
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ suggested: { vendor: "Depot", amount: 88, date: "2026-06-30", desc: "pavers", type: "pass-through", category: "materials", jobId: "j1", confidence: 0.5 } }); } }); };
   global.finCanView = function () { return true; };   // owner/admin
   await capRcptRun();
   const capAfter = rcptReview().find(r => r.id === capRec.id);
@@ -408,7 +409,7 @@ async function main() {
   let inFlight = 0, maxInFlight = 0, reads = 0;
   CAP_FETCH = function () {
     inFlight++; reads++; if (inFlight > maxInFlight) maxInFlight = inFlight;
-    return new Promise(res => setTimeout(() => { inFlight--; res({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 5, date: "2026-06-01", desc: "d", type: "business", category: "other", jobId: null, confidence: 0.8 } }) }); }, 0));
+    return new Promise(res => setTimeout(() => { inFlight--; res({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 5, date: "2026-06-01", desc: "d", type: "business", category: "other", jobId: null, confidence: 0.7 } }) }); }, 0));   // 0.7 < one-tap bar → stays in review (this test isolates DRAIN mechanics, not the auto-file gate)
   };
   await capRcptRun({ auto: true });
   ok("all " + BIG + " receipts were read (past the old cap of 15) — none silently skipped", reads === BIG, reads);
@@ -423,7 +424,7 @@ async function main() {
   CAP_FETCH = function (url, opts) {
     const body = JSON.parse(opts.body);
     if (body.receiptId === "stuck.jpg") { stuckReads++; return Promise.resolve({ ok: true, json: () => Promise.resolve({ skip: true, reason: "blurry" }) }); }
-    return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.9 } }) });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 1, type: "business", category: "other", jobId: null, confidence: 0.7 } }) });   // 0.7 → stays in review (drain-mechanics test)
   };
   await capRcptRun({ auto: true });
   ok("drain terminated (did not loop on the unreadable one)", stuckReads === 1, stuckReads);
@@ -442,7 +443,7 @@ async function main() {
   console.log("— RESUMABLE SWEEP: leftover unread receipts get read on a simulated re-open —");
   resetStore(); _capRcptSkip = {}; _capSweepLast = 0; global.finCanView = function () { return true; };
   for (let i = 0; i < 5; i++) seedReview({ receiptId: "left" + i + ".jpg" });
-  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 2, type: "business", category: "other", jobId: null, confidence: 0.9 } }) }); };
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "V", amount: 2, type: "business", category: "other", jobId: null, confidence: 0.7 } }) }); };   // 0.7 → stays in review (sweep-mechanics test)
   capRcptSweep();                                  // fire-and-forget (as js/26 does on the boot pull / after sync)
   await new Promise(r => setTimeout(r, 60));       // let the drain complete
   ok("sweep drained all 5 leftover receipts", capRcptPending().length === 0 && rcptReview().filter(r => r.suggested).length === 5, rcptReview().filter(r => r.suggested).length);
@@ -1082,6 +1083,111 @@ async function main() {
   seedReview({ receiptId: "blobLow2", suggested: { confidence: 0.4, amount: 10, type: "business", vendor: "L", category: "other" } });
   const tblLow = rcptTableHTML(rcptAllRows(), {});
   ok("table shows NO 'file it' button on a LOW-confidence row", !/rcptFileItRow\(/.test(tblLow));
+
+  // ================= CAP AUTO-APPLY + PURPLE "🤖 review" MARK (js/88 auto-file, js/72 mark/clear/filter) =================
+  // Ray: "default to using Cap's guess … mark everything Cap put in with that purple mark so I know I need to
+  // review it … future only." Auto-apply reuses rcptFileSuggestion (the SAME spine the "✓ file it" button uses) →
+  // byte-identical filed record + additive capAutoFiled/capReviewedAt flags. NON-RETROACTIVE; finance-safe.
+  console.log("\n— CAP AUTO-APPLY: a CONFIDENT read auto-files via rcptFileSuggestion + stamps capAutoFiled/capReviewedAt:null —");
+  const stripCap = r => { if (!r) return r; const c = stripVol(r); delete c.capAutoFiled; delete c.capReviewedAt; delete c.capAutoAt; return c; };
+  window.CAP_RCPT_THROTTLE_MS = 0;
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
+  global.finCanView = function () { return true; };
+  const AUTO_SUGG = { confidence: 0.92, amount: 88, type: "business", vendor: "AutoCostco", date: "2026-07-01", category: "office/admin", desc: "paper" };
+  const autoRec = seedReview({ receiptId: "blobAuto", vendor: "", amount: null, type: null, jobId: null, category: "" });
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: AUTO_SUGG }) }); };
+  await capRcptRun({ auto: true });
+  const autoFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobAuto");
+  ok("confident read → auto-filed into org expenses[] (left the review queue)", !!autoFiled && rcptReview().every(r => r.id !== autoRec.id), { autoFiled: !!autoFiled, stillReview: rcptReview().map(r => r.receiptId) });
+  ok("auto-filed record stamped capAutoFiled:true + capReviewedAt:null", !!autoFiled && autoFiled.capAutoFiled === true && autoFiled.capReviewedAt === null, autoFiled && { f: autoFiled.capAutoFiled, r: autoFiled.capReviewedAt });
+  ok("auto-filed record stamped capAutoAt (a timestamp)", !!autoFiled && typeof autoFiled.capAutoAt === "number");
+  ok("auto-filed record carries NO leftover `suggested` (distinct from the pre-file 🤖 Cap badge)", !!autoFiled && !autoFiled.suggested);
+  // BYTE-IDENTICAL to a manual one-tap file of the SAME suggestion (minus id/ts + the additive cap* flags)
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
+  const manualRec = seedReview({ receiptId: "blobAuto", vendor: "", amount: null, type: null, jobId: null, category: "", suggested: AUTO_SUGG });
+  const manRes = rcptFileSuggestion("review", null, manualRec.id);
+  const manualFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobAuto");
+  const eqAuto = autoFiled && manualFiled && JSON.stringify(stripCap(autoFiled)) === JSON.stringify(stripCap(manualFiled));
+  ok("auto-filed record is BYTE-IDENTICAL to the manual one-tap file (minus id/ts + additive cap flags)", eqAuto, eqAuto ? undefined : { auto: stripCap(autoFiled), manual: stripCap(manualFiled) });
+  ok("the manual one-tap file has NO cap flags (non-retroactive / marker is auto-only)", !!manualFiled && !("capAutoFiled" in manualFiled) && !("capReviewedAt" in manualFiled));
+
+  console.log("— CAP AUTO-APPLY: a LOW-confidence / incomplete guess is NOT auto-filed (stays suggested in review) —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  const lowRec = seedReview({ receiptId: "blobLowAuto" });
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { confidence: 0.5, amount: 20, type: "business", vendor: "Gas", category: "fuel" } }) }); };
+  await capRcptRun({ auto: true });
+  const lowAfter = rcptReview().find(r => r.id === lowRec.id);
+  ok("low-confidence → NOT auto-filed (still in review)", !!lowAfter, lowAfter);
+  ok("low-confidence review row got the suggestion (owner reviews it as today)", !!lowAfter && lowAfter.suggested && lowAfter.suggested.amount === 20);
+  ok("low-confidence row has NO capAutoFiled flag", !!lowAfter && !("capAutoFiled" in lowAfter));
+  ok("low-confidence row did NOT land in any billing home", (STORE.expenses || []).every(e => e.receiptId !== "blobLowAuto"));
+  // incomplete: confident job-type but NO resolvable job → also stays in review
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  const incRec = seedReview({ receiptId: "blobIncAuto" });
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { confidence: 0.95, amount: 50, type: "job-expense", vendor: "DumpCo" } }) }); };
+  await capRcptRun({ auto: true });
+  const incAfter = rcptReview().find(r => r.id === incRec.id);
+  ok("confident job-type WITH no resolvable job → NOT auto-filed (stays in review)", !!incAfter && !("capAutoFiled" in incAfter), incAfter);
+
+  console.log("— CAP AUTO-APPLY: rcptNeedsCapReview + the purple badge/tint show ONLY on unreviewed auto-filed rows —");
+  global.money2 = function (n) { return "$" + (+n || 0).toFixed(2); };
+  ok("rcptNeedsCapReview: auto-filed + not-yet-reviewed → true", rcptNeedsCapReview({ capAutoFiled: true, capReviewedAt: null }) === true);
+  ok("rcptNeedsCapReview: reviewed → false", rcptNeedsCapReview({ capAutoFiled: true, capReviewedAt: 123 }) === false);
+  ok("rcptNeedsCapReview: plain owner-filed (no flag) → false (non-retroactive)", rcptNeedsCapReview({ amount: 5 }) === false);
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  STORE.expenses.push({ id: "eAuto", receiptId: "bMark", vendor: "AutoCo", amount: 25, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  STORE.expenses.push({ id: "ePlain", receiptId: "bPlain", vendor: "PlainCo", amount: 30, category: "other", date: "2026-07-01", deleted: false, updatedAt: Date.now() });
+  const tblMark = rcptTableHTML(rcptAllRows(), {});
+  ok("table shows the purple '🤖 review' badge on the auto-filed row", /🤖 review/.test(tblMark));
+  ok("table wires a '✓ Reviewed' button to rcptMarkReviewed on the auto-filed row", /rcptMarkReviewed\(/.test(tblMark) && /✓ Reviewed/.test(tblMark));
+  ok("table applies the purple left-border tint (#6b3fa0) to the auto-filed row", /border-left:3px solid #6b3fa0/.test(tblMark));
+
+  console.log("— CAP AUTO-APPLY: rcptMarkReviewed + inline edit + modal save each set capReviewedAt (drop the mark) —");
+  // (a) explicit "✓ Reviewed"
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  STORE.expenses.push({ id: "eRev", receiptId: "bRev", vendor: "RevCo", amount: 25, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  rcptMarkReviewed("biz", null, "eRev");
+  const revd = STORE.expenses.find(e => e.id === "eRev");
+  ok("rcptMarkReviewed → capReviewedAt set", typeof revd.capReviewedAt === "number" && revd.capReviewedAt > 0, revd.capReviewedAt);
+  ok("rcptMarkReviewed → rcptNeedsCapReview now false (mark dropped)", rcptNeedsCapReview(revd) === false);
+  ok("rcptMarkReviewed → capAutoFiled preserved (audit trail intact)", revd.capAutoFiled === true);
+  const prevRev = revd.capReviewedAt; rcptMarkReviewed("biz", null, "eRev");
+  ok("rcptMarkReviewed is idempotent (a second tap doesn't re-stamp)", STORE.expenses.find(e => e.id === "eRev").capReviewedAt === prevRev);
+  // (b) an inline edit (same-home) clears the mark
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  STORE.expenses.push({ id: "eInl", receiptId: "bInl", vendor: "InlCo", amount: 25, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  rcptInlineSet("biz", null, "eInl", "category", "office/admin");
+  const inl = STORE.expenses.find(e => e && !e.deleted && e.id === "eInl");
+  ok("inline edit → capReviewedAt set (human touch = reviewed)", inl && typeof inl.capReviewedAt === "number" && inl.category === "office/admin", inl && { r: inl.capReviewedAt, c: inl.category });
+  ok("inline edit → rcptNeedsCapReview false (mark dropped)", inl && rcptNeedsCapReview(inl) === false);
+  // (c) a modal save (same-home) clears the mark
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; }; global.modal = global.modal || function () {};
+  STORE.expenses.push({ id: "eMod", receiptId: "bMod", vendor: "ModCo", amount: 25, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  rcptEditOpen("biz", null, "eMod");
+  const _prevVal = global.val;
+  global.val = function (id) { return ({ rcpt_type: "business", rcpt_amt: "25", rcpt_vendor: "ModCo", rcpt_date: "2026-07-01", rcpt_cat: "other", rcpt_paidby: "", rcpt_attr: "", rcpt_desc: "", rcpt_card4: "" })[id] || ""; };
+  rcptSaveEdit();
+  global.val = _prevVal;
+  const modRec = STORE.expenses.find(e => e && !e.deleted && e.id === "eMod");
+  ok("modal save → capReviewedAt set (mark dropped)", modRec && typeof modRec.capReviewedAt === "number" && rcptNeedsCapReview(modRec) === false, modRec && modRec.capReviewedAt);
+
+  console.log("— CAP AUTO-APPLY: the '🤖 To review' filter selects EXACTLY the unreviewed auto-filed rows —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  global.render = function () {};
+  rcptSetFilter("all"); rcptClearFilters();
+  STORE.expenses.push({ id: "cap1", receiptId: "cp1", vendor: "Cap1", amount: 10, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  STORE.expenses.push({ id: "cap2", receiptId: "cp2", vendor: "Cap2", amount: 20, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: null, capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });
+  STORE.expenses.push({ id: "cap3", receiptId: "cp3", vendor: "Cap3", amount: 30, category: "other", date: "2026-07-01", capAutoFiled: true, capReviewedAt: Date.now(), capAutoAt: Date.now(), deleted: false, updatedAt: Date.now() });   // already reviewed
+  STORE.expenses.push({ id: "plain", receiptId: "cp4", vendor: "Plain", amount: 40, category: "other", date: "2026-07-01", deleted: false, updatedAt: Date.now() });   // never auto-filed
+  ok("rcptCapReviewCount = 2 (only the two unreviewed auto-filed)", rcptCapReviewCount() === 2, rcptCapReviewCount());
+  rcptSetFilter("capreview");
+  const capRows = rcptSortedRows().map(r => r.receiptId).sort();
+  ok("filter 'capreview' selects EXACTLY cp1 + cp2 (not the reviewed one, not the plain one)", capRows.join(",") === "cp1,cp2", capRows);
+  rcptSetFilter("all");
+  ok("filter 'all' still shows every row (filter is view-only)", rcptSortedRows().length === 4, rcptSortedRows().length);
+  // NON-RETROACTIVE: the plain (pre-feature) record is never marked, never in the pile
+  ok("a plain record without the flag is never counted / never marked (non-retroactive)", rcptCapReviewCount() === 2 && rcptNeedsCapReview(STORE.expenses.find(e => e.id === "plain")) === false);
+  delete window.CAP_RCPT_THROTTLE_MS;
 
   console.log("\n— MEALS category: allowed in RCPT_CATS + files as a business expense (never billed to a customer) —");
   ok("'meals' is in RCPT_CATS (Cap can classify it)", (capRcptCtx().cats || []).indexOf("meals") >= 0);

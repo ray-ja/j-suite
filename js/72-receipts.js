@@ -164,6 +164,18 @@ function rcptRowMeta(r) {
 }
 const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🔧 Business / tool", "job-expense": "🚚 Job expense", "pass-through": "🧱 Pass-through" };
 
+/* ---- CAP AUTO-FILE "needs review" mark (additive flags; js/88 stamps them) --------------------------------
+   Cap AUTO-files a receipt from its own confident guess (rcptFileSuggestion → the tested spine) and stamps
+   capAutoFiled:true + capReviewedAt:null on the filed record. Until a HUMAN touches it (an inline/modal edit,
+   or the explicit "✓ Reviewed" tap → rcptMarkReviewed/rcptStampReviewed sets capReviewedAt) it shows a distinct
+   PURPLE "🤖 review" badge + tint so the owner knows Cap filled it and it wasn't hand-entered. Purely additive:
+   NON-RETROACTIVE (existing/owner-filed receipts lack capAutoFiled → never marked) and read by NOTHING in the
+   money math. Distinct from the pre-file "🤖 Cap" suggestion badge (which keys off r.suggested on a review row). */
+const RCPT_CAP_PURPLE = "#6b3fa0";
+function rcptNeedsCapReview(r) { return !!(r && r.capAutoFiled && !r.capReviewedAt); }
+/* count of Cap-auto-filed receipts the owner hasn't reviewed yet (drives the "🤖 To review N" pill) */
+function rcptCapReviewCount() { return rcptAllRows().filter(rcptNeedsCapReview).length; }
+
 /* ---- SPLIT grouping (display only) — flat-value receipt slices share a splitGroup (js/92). Group all live rows
    by splitGroup (falling back to receiptId, then record id, so a non-split receipt is a lone group of 1). A
    group with >1 slice gets a muted sub-line under each row: "part of a $200 <vendor> receipt · 🧱 $120 · 🔧 $80".
@@ -507,6 +519,7 @@ function rcptSortedRows() {
   else if (RCPT_FILTER === "filed") rows = rows.filter(r => r.store !== "review");
   else if (RCPT_FILTER === "owed") rows = rows.filter(r => r.paidBy && !r.reimbursedAt);        // personal-card, not yet reimbursed
   else if (RCPT_FILTER === "paidback") rows = rows.filter(r => r.paidBy && r.reimbursedAt);      // reimbursed / settled
+  else if (RCPT_FILTER === "capreview") rows = rows.filter(rcptNeedsCapReview);                   // Cap auto-filed, owner hasn't reviewed
   // DISPLAY-ONLY search + MULTI-SELECT filters (after the status pill, before sort). Each non-empty filter applies;
   // OR within a filter (value ∈ its set), AND across filters. Mirrors the Jobs list (js/08 quotesListHTML) —
   // narrows the view, never touches the records.
@@ -587,6 +600,7 @@ function rReceipts() {
 
   const rows = rcptSortedRows();
   const reviewCount = rcptReview().length;
+  const capReviewN = rcptCapReviewCount();   // Cap auto-filed, owner hasn't reviewed → the purple "🤖 To review" pile
   const filed = rcptAllFiled(), dupIx = rcptDupIndex(), dupCount = dupIx.groups.length;   // dup flags now come from rcptListInner()
 
   let h = `<div class="secthd"><h2>📸 Receipts</h2><span class="ct">${rcptAllRows().length}</span></div>`;
@@ -614,6 +628,7 @@ function rReceipts() {
       <div class="grow" style="white-space:normal"><b>✓ ${confN} confident receipt${confN > 1 ? "s" : ""} ready to file</b><div class="sub">Cap is confident about ${confN > 1 ? "these" : "this one"} (high confidence · real amount · job resolved or business). File ${confN > 1 ? "them all" : "it"} in one tap — anything iffy stays in the queue for you to review.</div></div>
       <button class="btn sm" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff" onclick="rcptFileAllConfident()">✓ File all ${confN} confident</button></div></div>`;
   }
+  if (capReviewN) h += `<div class="card" style="border-left:4px solid ${RCPT_CAP_PURPLE};cursor:pointer" onclick="rcptSetFilter('capreview')"><b style="color:${RCPT_CAP_PURPLE}">🤖 ${capReviewN} receipt${capReviewN > 1 ? "s" : ""} Cap auto-filed — needs your review</b> — Cap was confident and filed ${capReviewN > 1 ? "these" : "this"} for you (purple <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff">🤖 review</span> rows). Tap to jump to them, glance each is right, then tap <b>✓ Reviewed</b> (any edit also clears the mark). →</div>`;
   const suggCount = rows.filter(r => r && r.suggested).length;
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", then Save to confirm.</div>`;
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
@@ -637,6 +652,7 @@ function rReceipts() {
     <button class="btn ${RCPT_FILTER === "filed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('filed')">Filed ${filed.length}</button>
     <button class="btn ${RCPT_FILTER === "owed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('owed')">💸 Owed ${rcptAllRows().filter(r => r.paidBy && !r.reimbursedAt).length}</button>
     <button class="btn ${RCPT_FILTER === "paidback" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('paidback')">✓ Paid back ${rcptAllRows().filter(r => r.paidBy && r.reimbursedAt).length}</button>
+    ${(capReviewN || RCPT_FILTER === "capreview") ? `<button class="btn ${RCPT_FILTER === "capreview" ? "acc" : "ghost"} sm" style="${RCPT_FILTER === "capreview" ? "" : "border-color:" + RCPT_CAP_PURPLE + ";color:" + RCPT_CAP_PURPLE}" onclick="rcptSetFilter('capreview')">🤖 To review ${capReviewN}</button>` : ""}
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
@@ -864,12 +880,45 @@ window.rcptInlineSet = function (store, jobId, recId, field, value) {
   const fields = { type: type || null, jobId: jobIdF || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: rec.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
   const res = rcptApplyEdit({ store: store, jobId: jobId || null, recId: recId }, fields);
   if (!res || !res.ok) { alert("Couldn't update: " + ((res && res.error) || "unknown")); return; }
+  rcptStampReviewed(res.newLoc);   // a human inline edit = reviewed → clears the purple Cap-auto-file mark
   if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt inline-edit · " + field + " → " + (value || "—") + (vendor ? " · " + vendor : ""));
   if (typeof save === "function") save();
   _rcptFlashId = res.newLoc.recId;
   if (typeof rcptRepaintList === "function") rcptRepaintList();
   if (typeof setTimeout === "function") setTimeout(function () { _rcptFlashId = null; if (typeof rcptRepaintList === "function") rcptRepaintList(); }, 1400);
   return res;
+};
+
+/* ============================== CAP AUTO-FILE — CLEAR THE PURPLE "🤖 review" MARK ==============================
+   A Cap-auto-filed receipt (capAutoFiled:true, capReviewedAt:null) carries the purple mark until a HUMAN touches
+   it. Any human touch counts as reviewed:
+     • an inline edit (rcptInlineSet) or modal save (js/87 rcptSaveEdit) → both call rcptStampReviewed(newLoc);
+     • the explicit one-tap "✓ Reviewed" on the purple row → rcptMarkReviewed.
+   Both just stamp capReviewedAt (additive; read by nothing in the money math) + touch + save + scoped repaint —
+   no re-bucketing, so the billing record is untouched. Owner/admin only. */
+window.rcptStampReviewed = function (loc) {
+  if (!loc || typeof rcptFindRecord !== "function") return null;
+  const rec = rcptFindRecord(loc.store, loc.jobId || null, loc.recId);
+  if (rec && rec.capAutoFiled && !rec.capReviewedAt) {
+    rec.capReviewedAt = (typeof now === "function") ? now() : Date.now();
+    if (typeof rcptTouchHome === "function") rcptTouchHome({ store: loc.store, jobId: loc.jobId || null }, rec);
+    else if (typeof touch === "function") touch(rec);
+  }
+  return rec;
+};
+window.rcptMarkReviewed = function (store, jobId, recId) {
+  if (!rcptFinFull()) return;
+  const rec = rcptFindRecord(store, jobId || null, recId);
+  if (!rec) { alert("That receipt isn't here anymore — it may have been moved. Refreshing."); if (typeof render === "function") render(); return; }
+  if (!rec.capAutoFiled || rec.capReviewedAt) return;   // nothing to clear (idempotent)
+  rec.capReviewedAt = (typeof now === "function") ? now() : Date.now();
+  if (typeof rcptTouchHome === "function") rcptTouchHome({ store: store, jobId: jobId || null }, rec);
+  else if (typeof touch === "function") touch(rec);
+  if (typeof logChange === "function") logChange("update", "expense", recId, "Reviewed Cap-auto-filed receipt" + (rec.vendor ? " · " + rec.vendor : ""));
+  if (typeof save === "function") save();
+  _rcptFlashId = recId;
+  if (typeof rcptRepaintList === "function") rcptRepaintList();
+  if (typeof setTimeout === "function") setTimeout(function () { _rcptFlashId = null; if (typeof rcptRepaintList === "function") rcptRepaintList(); }, 1400);
 };
 
 function rcptTableHTML(rows, dups) {
@@ -887,6 +936,10 @@ function rcptTableHTML(rows, dups) {
     // row opening the modal on tap). Files through rcptFileSuggestion → the spine funnel → byte-identical record.
     const oneTap = canFileIt && r.store === "review" && typeof rcptSuggestionOneTapOk === "function" && rcptSuggestionOneTapOk(r);
     const fileItBtn = oneTap ? `<div style="margin-top:5px"><button class="btn sm" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff;white-space:normal" onclick="event.stopPropagation();rcptFileItRow('${r.store}','${r.jobId || ""}','${r.recId}')">✓ Looks right — file it</button></div>` : "";
+    // Cap AUTO-FILED (purple) — the owner reviews it instead of confirming it: a one-tap "✓ Reviewed" clears the
+    // mark (any inline/modal edit clears it too). Owner/admin only (this table is never shown to crew).
+    const needsCapReview = rcptNeedsCapReview(r);
+    const reviewedBtn = (canFileIt && needsCapReview) ? `<div style="margin-top:5px"><button class="btn sm" style="background:${RCPT_CAP_PURPLE};border-color:${RCPT_CAP_PURPLE};color:#fff;white-space:normal" onclick="event.stopPropagation();rcptMarkReviewed('${r.store}','${r.jobId || ""}','${r.recId}')">✓ Reviewed</button></div>` : "";
     const amt = (r.amount == null || r.amount === "") ? `<span style="color:var(--muted)">—</span>` : money2(r.amount);
     const d = rcptDate(r);
     const statusBadge = m.status === "review"
@@ -902,10 +955,11 @@ function rcptTableHTML(rows, dups) {
     const jobDisp = `${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}`;
     const forDisp = m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`;
     const cardDisp = rcptCardCell(r);
-    const rowBg = isFlash ? ";background:var(--ok-soft,#e7f7ee)" : (isDup ? ";background:var(--danger-soft,#fdecea)" : "");
-    h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${rowBg}">
+    const rowBg = isFlash ? ";background:var(--ok-soft,#e7f7ee)" : (isDup ? ";background:var(--danger-soft,#fdecea)" : (needsCapReview ? ";background:rgba(107,63,160,.08)" : ""));
+    const capBorder = needsCapReview ? `;border-left:3px solid ${RCPT_CAP_PURPLE}` : "";
+    h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${capBorder}${rowBg}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${r.suggested ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${needsCapReview ? ` <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff" title="Cap auto-filed this from its guess — review it">🤖 review</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}${reviewedBtn}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       ${rcptInlineTd(r.store, r.jobId, r.recId, "type", typeDisp)}
       ${rcptInlineTd(r.store, r.jobId, r.recId, "category", catDisp)}

@@ -356,6 +356,7 @@ window.rcptSaveEdit = function () {
   const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
   const res = rcptApplyEdit(RCPT_EDIT.loc, fields);
   if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
+  if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);   // a human modal save = reviewed → clears the purple Cap-auto-file mark
   if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt " + (type ? "filed" : "updated") + " — " + (amt != null ? money(amt) : "") + (vendor ? " · " + vendor : "") + (isDeposit ? " · ⚠ deposit" : "") + (isRefund ? " · ↩ refund" : "") + " · " + (fields.type || "review") + (jobId ? " → job" : ""));
   if (typeof save === "function") save();
   if (typeof closeModal === "function") closeModal();
