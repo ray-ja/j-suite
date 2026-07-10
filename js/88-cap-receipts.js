@@ -76,7 +76,7 @@ window.capRcptRun = async function (opts) {
   if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
   _capRcptBusy = true;
   const throttle = capRcptThrottleMs();
-  let done = 0, ok = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
+  let done = 0, ok = 0, autoFiled = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
   while (true) {
     const pending = capRcptPending();
     if (!pending.length) break;                       // drained — nothing unread remains
@@ -88,10 +88,33 @@ window.capRcptRun = async function (opts) {
     if (typeof uploadStatus === "function") uploadStatus("reading", { done: done + 1, total: totalNow });
     const res = await capRcptRead(rec.receiptId);      // ONE dedicated vision call — sequential, never parallel
     if (res && res.suggested) {
-      // re-find the live record (the store may have changed) and stamp ONLY `suggested`
+      // re-find the live record (the store may have changed) and stamp `suggested`
       const live = (typeof rcptFindRecord === "function") ? rcptFindRecord("review", null, rec.id) : rec;
       const tgt = live || rec;
       tgt.suggested = res.suggested; if (typeof touch === "function") touch(tgt); ok++;
+      // AUTO-APPLY (Ray's default — "I'm always going to use it and then just review it"): if Cap's guess clears the
+      // SAME one-tap bar the manual "✓ file it" button uses (rcptSuggestionOneTapOk — high confidence · real amount ·
+      // job resolved or business), file it NOW through the EXACT spine the button uses (rcptFileSuggestion →
+      // rcptApplyEdit → a record BYTE-IDENTICAL to the manual one-tap), then stamp additive flags capAutoFiled +
+      // capReviewedAt:null (+ capAutoAt) so the owner REVIEWS it (the purple "🤖 review" mark) instead of confirming
+      // each one. Never-throws: a failed auto-apply just leaves the suggested review row (exactly today's behavior).
+      // A LOW-confidence / incomplete guess is NOT auto-filed — it stays a suggested review row for the owner, as today.
+      try {
+        if (typeof rcptSuggestionOneTapOk === "function" && typeof rcptFileSuggestion === "function" && rcptSuggestionOneTapOk(tgt)) {
+          const fres = rcptFileSuggestion("review", null, tgt.id, { batch: true });   // batch → this drain's save() persists it
+          if (fres && fres.ok && fres.newLoc) {
+            const filed = (typeof rcptFindRecord === "function") ? rcptFindRecord(fres.newLoc.store, fres.newLoc.jobId, fres.newLoc.recId) : null;
+            if (filed) {
+              filed.capAutoFiled = true;                 // Cap filed this from its own confident guess — owner hasn't reviewed it
+              filed.capReviewedAt = null;                // → shows the purple "🤖 review" mark until a human touches it
+              filed.capAutoAt = (typeof now === "function") ? now() : Date.now();
+              if (typeof rcptTouchHome === "function") rcptTouchHome({ store: fres.newLoc.store, jobId: fres.newLoc.jobId }, filed);
+              else if (typeof touch === "function") touch(filed);
+              autoFiled++;
+            }
+          }
+        }
+      } catch (e) {}
       if (typeof save === "function") save();          // persist as we go → resumable across an app-close
     } else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { keyMissing = true; break; }
     else if (res && res.error === "offline") { offline = true; break; }   // connectivity gone — stop churning; the sweep resumes on reconnect
@@ -112,7 +135,7 @@ window.capRcptRun = async function (opts) {
     } catch (e) {}
   }
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
-  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". Open a 🤖 row to review and approve its guess."); }
+  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · auto-filed " + autoFiled + " for review" : "") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". " + (autoFiled ? "The purple 🤖 review rows are Cap's — check them (use the “🤖 To review” filter)." : "Open a 🤖 row to review and approve its guess.")); }
   if (typeof render === "function") render();
 };
 
@@ -177,7 +200,7 @@ function capRcptButtonHTML() {
   const n = capRcptTargets().length;
   if (!n) return "";
   return `<div class="card" style="border-left:4px solid #6b3fa0"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
-    <div class="grow" style="white-space:normal"><b>🤖 Cap: categorize needs-review</b><div class="sub">Cap reads your needs-review photos <b>one at a time</b> and proposes vendor / amount / type / category / job for each. You approve every one — nothing is applied automatically.</div></div>
+    <div class="grow" style="white-space:normal"><b>🤖 Cap: categorize needs-review</b><div class="sub">Cap reads your needs-review photos <b>one at a time</b> and proposes vendor / amount / type / category / job for each. Confident guesses are <b>auto-filed</b> and marked <span style="color:#6b3fa0">🤖 review</span> (purple) for you to review; anything unsure stays here for you to approve.</div></div>
     <button class="btn acc sm" onclick="capRcptRun()">🤖 Read ${n}</button></div>
     <div id="cap_rcpt_status" class="sub" style="text-align:center;color:#6b3fa0;min-height:16px;margin-top:4px"></div></div>`;
 }
