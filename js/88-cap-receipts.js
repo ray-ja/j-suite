@@ -22,9 +22,11 @@ function capRcptSleep(ms) { return (ms > 0) ? new Promise(function (r) { setTime
 /* the still-unread targets minus ones this session already failed on (so the drain terminates + doesn't churn) */
 function capRcptPending() { return capRcptTargets().filter(function (r) { return r && !_capRcptSkip[r.id]; }); }
 
-/* review receipts that still have a photo but no Cap suggestion yet (skip PDFs — vision reads images) */
+/* review receipts that still have an uploaded file (photo OR pdf) but no Cap suggestion yet. PDFs are now read
+   too — the server sends them to Claude as a document block (rental contracts, statements). CSV-imported rows
+   carry receiptId:null and are excluded by the truthy receiptId check (they're parsed, not vision-read). */
 function capRcptTargets() {
-  return rcptReview().filter(r => r && r.receiptId && !r.suggested && !/\.pdf$/i.test(r.receiptId));
+  return rcptReview().filter(r => r && r.receiptId && !r.suggested);
 }
 function capRcptCanRun() { return typeof rcptFinFull === "function" ? rcptFinFull() : false; }   // owner/admin only
 function capRcptSetStatus(txt) { const el = document.getElementById("cap_rcpt_status"); if (el) el.textContent = txt || ""; }
@@ -121,7 +123,7 @@ window.capRcptRun = async function (opts) {
   opts = opts || {};
   if (!capRcptCanRun()) { if (!opts.auto) alert("Only an owner or admin can run Cap."); return; }
   if (_capRcptBusy) return;
-  if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips PDFs and ones it's already read)."); return; }
+  if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips ones it's already read)."); return; }
   _capRcptBusy = true;
   const throttle = capRcptThrottleMs();
   let done = 0, ok = 0, autoFiled = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
@@ -206,7 +208,6 @@ window.capRcptSweep = function () {
 window.capRcptOne = async function () {
   if (!capRcptCanRun()) return;
   if (typeof RCPT_EDIT === "undefined" || !RCPT_EDIT || !RCPT_EDIT.receiptId) { alert("No photo on this receipt for Cap to read."); return; }
-  if (/\.pdf$/i.test(RCPT_EDIT.receiptId)) { alert("Cap can't read PDF receipts — only photos."); return; }
   const btn = document.getElementById("cap_rcpt_one_btn"); if (btn) { btn.disabled = true; btn.textContent = "🤖 Rereading with the smartest model…"; }
   const res = await capRcptRead(RCPT_EDIT.receiptId, { escalate: true });
   if (res && res.suggested) {
