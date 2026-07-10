@@ -77,6 +77,7 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "priority" ? "on" : ""}" onclick="finSub('priority')">🪜 Payout plan</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
     <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
+    <button class="subbtn ${FINSUB === "tax" ? "on" : ""}" onclick="finSub('tax')">🧾 Tax</button>
     <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 A/R</button>
     <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 Job P&L</button>
     <button class="subbtn ${FINSUB === "analysis" ? "on" : ""}" onclick="finSub('analysis')">📈 Analysis</button></div>`;
@@ -85,6 +86,7 @@ function rFinance() {
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "analysis" && typeof rJobAnalysis === "function") { view.innerHTML = sub + rJobAnalysis(); return; }
+  if (FINSUB === "tax" && typeof rFinTax === "function") { view.innerHTML = sub + rFinTax(); return; }
   if (FINSUB === "priority" && typeof rFinPriority === "function") { view.innerHTML = sub + rFinPriority(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }
   if (FINSUB === "expenses") { view.innerHTML = sub + rFinExpenses(); return; }
