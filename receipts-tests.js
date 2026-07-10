@@ -1890,6 +1890,57 @@ async function main() {
   ok("settle refused when the rental cost exceeds the deposit", !dsBad.ok && dsBad.reason === "numbers", dsBad);
   ok("refused settle left the deposit unsettled + the receipt intact", dsSmall.depositSettled !== true && rcptReview().some(r => r.id === dsBig.id));
 
+  // ========================= "FOR" FOLLOWS "WHO PAID?" (attribution alignment) =========================
+  // Whoever paid with their PERSONAL card IS who the receipt is for (they get reimbursed). The "For" column
+  // (rcptRowMeta.forName) + the editor "For" default (attrCur) must show the paidBy person when one is set — even
+  // on an ALREADY-STORED record whose attributedTo got stuck on the filer/uploader — and a Save must persist the
+  // aligned value. A business-card receipt (paidBy empty) keeps its own attributedTo/uploader. NO money change.
+  console.log("\n— FOR follows WHO PAID: rcptRowMeta.forName + editor default prefer paidBy; save persists aligned; business-card fallback kept —");
+  resetStore(); global.finCanView = function () { return true; };
+  // (1) TABLE display — the real $72.59 case: paidBy=Pierce but attributedTo stuck on Rj → "For" shows Pierce
+  const fpFiled = { store: "jobexp", jobId: "j1", recId: "rentPierce", id: "rentPierce", amount: 72.59, vendor: "Sunbelt", paidBy: "u_pierce", attributedTo: "u_ray", category: "rentals" };
+  ok("$72.59 rental paidBy=Pierce (attributedTo=Rj) → table 'For' shows Pierce (paidBy wins, display-only)", rcptRowMeta(fpFiled).forName === "Pierce", rcptRowMeta(fpFiled).forName);
+  ok("…and the stored record is NOT mutated by the display (attributedTo still u_ray)", fpFiled.attributedTo === "u_ray", fpFiled.attributedTo);
+  // (2) TABLE fallback — a BUSINESS-card receipt (paidBy empty) still shows its own attributedTo
+  const fpBiz = { store: "biz", jobId: null, recId: "bizRcpt", id: "bizRcpt", amount: 50, vendor: "Costco", paidBy: null, attributedTo: "u_chase", category: "office/admin" };
+  ok("business-card receipt (paidBy empty) → 'For' falls back to attributedTo (Chase)", rcptRowMeta(fpBiz).forName === "Chase", rcptRowMeta(fpBiz).forName);
+  const fpNone = { store: "biz", jobId: null, recId: "n", id: "n", amount: 10, vendor: "X", paidBy: null, attributedTo: "" };
+  ok("no paidBy + no attributedTo → 'For' blank (no false name)", rcptRowMeta(fpNone).forName === "", rcptRowMeta(fpNone).forName);
+  // (3) EDITOR default — attrCur prefers paidBy: opening the Pierce receipt pre-selects Pierce in the "For" select,
+  // NOT the stored attributedTo (Chase here so both are real members). Inspect the rendered modal HTML.
+  const _valFOR = global.val, _geiFOR = global.document.getElementById, _modalFOR = global.modal;
+  let FOR_HTML = "";
+  global.modal = function (t, html) { FOR_HTML = String(html || ""); };
+  global.val = function () { return ""; };
+  global.document.getElementById = function () { return null; };
+  STORE.jobs[0].expenses.push({ id: "editPierce", amount: 72.59, vendor: "Sunbelt", category: "rentals", paidBy: "u_pierce", attributedTo: "u_chase", receiptId: "bP", updatedAt: Date.now() });
+  rcptEditOpen("jobexp", "j1", "editPierce");
+  const attrBlock = (FOR_HTML.match(/id="rcpt_attr">([\s\S]*?)<\/select>/) || [, ""])[1];
+  ok("editor 'For' default prefers paidBy → Pierce pre-selected in the For select", /<option value="u_pierce"[^>]*selected/.test(attrBlock), attrBlock);
+  ok("…and the stored attributedTo (Chase) is NOT what pre-selects", !/<option value="u_chase"[^>]*selected/.test(attrBlock), attrBlock);
+  ok("the 'For' select carries the auto-follows hint label", /auto-follows who paid/.test(FOR_HTML));
+  global.val = _valFOR; global.document.getElementById = _geiFOR; global.modal = _modalFOR;
+  // (4) SAVE persists aligned — the coupled "For" select sends fields.attributedTo = paidBy; the record files with
+  //     attributedTo = the payer (Pierce). Amount is untouched (money-agnostic).
+  const fpSave = seedReview({ receiptId: "bSave", vendor: "Sunbelt", amount: 72.59, status: "review" });
+  const fpRes = rcptApplyEdit({ store: "review", jobId: null, recId: fpSave.id }, { type: "job-expense", jobId: "j1", amount: 72.59, vendor: "Sunbelt", date: "2026-07-01", category: "rentals", paidBy: "u_pierce", attributedTo: "u_pierce", desc: "rental", receiptId: "bSave" });
+  const fpRec = STORE.jobs[0].expenses.find(e => e.id === fpSave.id && !e.deleted);
+  ok("save with paidBy=Pierce + coupled For → record.attributedTo = Pierce (aligned)", fpRec && fpRec.attributedTo === "u_pierce", fpRec && fpRec.attributedTo);
+  ok("…and the amount is unchanged (no money-math change from the attribution fix)", fpRec && fpRec.amount === 72.59, fpRec && fpRec.amount);
+  ok("…and the filed row's table 'For' shows Pierce", rcptRowMeta(Object.assign({}, fpRec, { store: "jobexp", jobId: "j1" })).forName === "Pierce");
+  // (5) rcptBuildRecord fallback safety — even if fields.attributedTo comes through blank, paidBy fills it (never
+  //     the uploader when a payer is set). Simulates the coupling not having fired but paidBy being set.
+  const fpSave2 = seedReview({ receiptId: "bSave2", vendor: "Depot", amount: 40, uploadedBy: "u_ray", status: "review" });
+  rcptApplyEdit({ store: "review", jobId: null, recId: fpSave2.id }, { type: "job-expense", jobId: "j1", amount: 40, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: null, desc: "gas", receiptId: "bSave2" });
+  const fpRec2 = STORE.jobs[0].expenses.find(e => e.id === fpSave2.id && !e.deleted);
+  ok("blank fields.attributedTo + paidBy set → attributedTo falls to the payer (Chase), NOT the uploader", fpRec2 && fpRec2.attributedTo === "u_chase", fpRec2 && fpRec2.attributedTo);
+  // (6) business-card save (paidBy empty) → attributedTo keeps the explicit choice, never forced blank
+  const fpSave3 = seedReview({ receiptId: "bSave3", vendor: "Costco", amount: 25, uploadedBy: "u_ray", status: "review" });
+  rcptApplyEdit({ store: "review", jobId: null, recId: fpSave3.id }, { type: "business", jobId: null, amount: 25, vendor: "Costco", date: "2026-07-01", category: "office/admin", paidBy: null, attributedTo: "u_chase", desc: "paper", receiptId: "bSave3" });
+  const fpRec3 = STORE.expenses.find(e => e.id === fpSave3.id && !e.deleted);
+  ok("business-card save (paidBy empty) → attributedTo keeps the explicit choice (Chase), not blanked", fpRec3 && fpRec3.attributedTo === "u_chase", fpRec3 && fpRec3.attributedTo);
+  ok("…business-card 'For' shows that person (Chase) in the table", rcptRowMeta(Object.assign({}, fpRec3, { store: "biz" })).forName === "Chase");
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

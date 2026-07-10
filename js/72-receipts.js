@@ -159,7 +159,12 @@ function rcptRowMeta(r) {
   let jobLabel = "", cust = "";
   if (r.jobId) { const j = (D().jobs || []).find(x => x && x.id === r.jobId); if (j) { jobLabel = j.title || "Job"; cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : ""; } }
   const uploader = (r.uploadedBy && typeof userName === "function" && userName(r.uploadedBy)) || r.by || "";
-  const forName = (r.attributedTo && typeof userName === "function" && userName(r.attributedTo)) || "";   // "For" = whose receipt it is / who gets paid back
+  // "For" = whose receipt it is / who gets paid back. When someone paid with a PERSONAL card (paidBy set), THAT
+  // person IS who the receipt is for (they get reimbursed) — so paidBy WINS for display, even on an already-stored
+  // record whose attributedTo got stuck on the uploader/filer. A business-card receipt (paidBy empty) has no payee
+  // to reimburse, so it falls back to the explicit attributedTo (unchanged behavior). Display-only — no data write.
+  const forWho = r.paidBy || r.attributedTo || "";
+  const forName = (forWho && typeof userName === "function" && userName(forWho)) || "";
   return { type: type, status: status, jobLabel: jobLabel, cust: cust, uploader: uploader, forName: forName };
 }
 const RCPT_TYPE_LABEL = { "review": "🕓 Needs review", "business": "🔧 Business / tool", "job-expense": "🚚 Job expense", "pass-through": "🧱 Pass-through" };

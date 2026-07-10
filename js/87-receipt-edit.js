@@ -223,7 +223,10 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${preJob === j.id ? "selected" : ""}>${(typeof jobPO === "function" && jobPO(j)) ? esc(jobPO(j)) + " · " : ""}${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
   const catOpts = `<option value="">— category —</option>` + RCPT_CATS.map(c => `<option ${preCat === c ? "selected" : ""}>${c}</option>`).join("");
   const paidOpts = `<option value="">💳 Business card (no reimburse)</option>` + members.map(u => `<option value="${esc(u.id)}" ${rec.paidBy === u.id ? "selected" : ""}>${esc(u.username)} — personal card (reimburse)</option>`).join("");
-  const attrCur = rec.attributedTo || rec.paidBy || rec.uploadedBy || "";
+  // "For" default: the PERSONAL-card payer wins (they get reimbursed → the receipt is theirs), so opening + Save
+  // aligns attributedTo to paidBy. Only when nobody paid personally (business card) do we fall back to the record's
+  // own attributedTo, then the uploader. The select stays editable — the owner can still pick someone else.
+  const attrCur = rec.paidBy || rec.attributedTo || rec.uploadedBy || "";
   const attrOpts = `<option value="">— nobody in particular —</option>` + members.map(u => `<option value="${esc(u.id)}" ${attrCur === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("");
 
   let sugg = "";
@@ -263,10 +266,10 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <label>Category</label><select id="rcpt_cat">${catOpts}</select>
-    <label>Who paid?</label><select id="rcpt_paidby">${paidOpts}</select>
+    <label>Who paid?</label><select id="rcpt_paidby" onchange="rcptPaidByCouple()">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(preCard4)}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>
-    <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
+    <label>Whose receipt / For <span class="sub">(auto-follows who paid — shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
     <div id="rcpt_deposit_hint"></div>
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
@@ -309,6 +312,17 @@ window.rcptEditOpen = function (store, jobId, recId) {
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
   if (wrap) wrap.style.display = (t === "job-expense" || t === "pass-through") ? "block" : "none";
+};
+/* "For" FOLLOWS "Who paid?" — whoever paid with their PERSONAL card IS who the receipt is for (they get
+   reimbursed). When "Who paid?" is set to a PERSON, push that person into the "For" (attributedTo) select so the
+   two never disagree. When it's cleared to "" (business card, nobody to reimburse) we DON'T force "For" — the
+   owner's existing choice stands (never blank a deliberately-set attribution). The owner can still hand-pick a
+   different "For" afterward if a rare case needs it. Coupling only ever PUSHES a person, never blanks. */
+window.rcptPaidByCouple = function () {
+  const p = val("rcpt_paidby");
+  if (!p) return;                                   // business card / cleared → leave "For" as the owner set it
+  const a = document.getElementById("rcpt_attr");
+  if (a) a.value = p;                               // personal-card payer = who it's for
 };
 /* PER-JOB PO CODE (js/95) — AUTO-FILL the PO field from the currently-selected job (no button): picking a job
    (owner inline OR Cap's guess) stamps the job's own P#### into the PO input + the note. Purely display/UX — the
