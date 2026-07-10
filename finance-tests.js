@@ -103,6 +103,29 @@ let wleak = null;   // sweep: weighted split never leaks a cent across many pool
 for (let c = 0; c <= 5000; c += 7) { const x = f.finSplitWeighted(c, ["a", "b", "c"], { a: 2.5, b: 1.1, c: 0.4 }); const sum = x.perMember.a + x.perMember.b + x.perMember.c; if (sum !== c) { wleak = { c: c, x: x }; break; } }
 ok("weighted split never leaks a cent across a sweep", wleak === null, wleak);
 
+console.log("— finFieldSplit: EQUAL by default (byte-identical), share-weighted only when a weight ≠ 100 —");
+// no weights → identical to finSplitEqual (the byte-identity guarantee for existing data)
+const fsNone = f.finFieldSplit(1000, ["m1", "m2", "m3"], null);
+const fsEqual = f.finSplitEqual(1000, ["m1", "m2", "m3"]);
+ok("finFieldSplit with no weights === finSplitEqual (byte-identical)", JSON.stringify(fsNone) === JSON.stringify(fsEqual), fsNone);
+// every member at the 100 default → still equal (not weighted path)
+const fsAll100 = f.finFieldSplit(1000, ["m1", "m2", "m3"], { m1: 100, m2: 100, m3: 100 });
+ok("finFieldSplit with all-100 weights === finSplitEqual (default is a no-op)", JSON.stringify(fsAll100) === JSON.stringify(fsEqual), fsAll100);
+ok("finWeightsActive false when no weight is dialed off 100", f.finWeightsActive(["m1", "m2"], { m1: 100, m2: 100 }) === false);
+ok("finWeightsActive true when a partial helper is dialed to 60", f.finWeightsActive(["m1", "m2"], { m1: 100, m2: 60 }) === true);
+// partial helper: full members 100, helper 50 → helper gets half a full share ($1000 across 100+100+50=250 → 400/400/200)
+const fsPartial = f.finFieldSplit(1000, ["m1", "m2", "h1"], { h1: 50 });   // m1/m2 default to 100
+ok("partial helper at 50 → 400/400/200 of a $1000 field pool", fsPartial.perMember.m1 === 400 && fsPartial.perMember.m2 === 400 && fsPartial.perMember.h1 === 200, fsPartial.perMember);
+ok("weighted field pool sums to the pool exactly", fsPartial.perMember.m1 + fsPartial.perMember.m2 + fsPartial.perMember.h1 === 1000, fsPartial.perMember);
+// through finRollup: a job whose income carries weights splits the FIELD pool proportionally, pool preserved
+const Rw = f.finRollup([{ id: "iw", jobId: "jw", date: "2026-06-10", amount: 1000, crew: ["m1", "h1"], weights: { h1: 50 } }], {});
+const pjw = Rw.perJob[0];
+ok("finRollup honors income.weights (helper h1 gets less field than m1)", pjw.field.m1 > pjw.field.h1, pjw.field);
+ok("finRollup weighted field pool still sums to the job's field pool", pjw.field.m1 + pjw.field.h1 === pjw.fieldPool, { field: pjw.field, pool: pjw.fieldPool });
+// a job with NO weights through finRollup is unchanged vs equal
+const Rn = f.finRollup([{ id: "in", jobId: "jn", date: "2026-06-10", amount: 1000, crew: ["m1", "m2"] }], {});
+ok("finRollup with no weights splits field equally (byte-identical path)", Rn.perJob[0].field.m1 === Rn.perJob[0].field.m2, Rn.perJob[0].field);
+
 console.log("— per-person earnings RECONCILE to the pooled rollup —");
 // reuse R (two $100 jobs, crew m1+m2, m1 originator, admin1) + a timeclock with uneven hours on job1
 const tcHrs = [

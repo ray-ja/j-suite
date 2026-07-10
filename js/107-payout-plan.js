@@ -17,6 +17,46 @@
 let POP_CASH = "collected";                          // collected | ar | backlog — which cash scenario the waterfall runs on
 window.popCash = function (s) { POP_CASH = s; render(); };
 
+/* set a crew member's SHARE weight on a job (0–100; 100 = full/equal). Stored on job.crewWeights, but a 100
+   default is NOT stored (kept absent → the field split stays byte-identical for everyone at the default). A
+   partial helper dialed below 100 earns proportionally less of that job's field pool. Owner/admin only. */
+window.popSetWeight = function (jobId, userId, val) {
+  if (!finCanView()) return;
+  const j = (D().jobs || []).find(x => x && x.id === jobId); if (!j) return;
+  let pct = parseInt(val, 10); if (isNaN(pct)) pct = 100; pct = Math.max(0, Math.min(100, pct));
+  j.crewWeights = j.crewWeights || {};
+  if (pct === 100) delete j.crewWeights[userId]; else j.crewWeights[userId] = pct;   // 100 = default → don't persist
+  if (!Object.keys(j.crewWeights).length) delete j.crewWeights;
+  if (typeof touch === "function") touch(j);
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  render();
+};
+
+/* the "⚖️ Crew shares" editor — every accepted job with 2+ crew, a slider per member (100 = full share).
+   Dial a partial helper down (e.g. 60) and that job's field pool splits proportionally. */
+function popCrewSharesHTML() {
+  const jobs = D().jobs || [];
+  const rows = popAcceptedIncome().filter(inc => (inc.crew || []).length >= 2);
+  if (!rows.length) return "";
+  let h = `<details style="margin-top:2px"><summary style="cursor:pointer;font-weight:700;padding:6px 4px">⚖️ Crew shares <span class="sub" style="font-weight:400">· dial a partial helper's share of a job down from 100%</span></summary>`;
+  h += rows.map(inc => {
+    const j = jobs.find(x => x && x.id === inc.jobId), title = (j && j.title) || "Job";
+    const w = inc.weights || {};
+    const sliders = inc.crew.map(id => {
+      const pct = (w[id] == null || w[id] === "") ? 100 : Math.max(0, Math.min(100, +w[id] || 0));
+      const sid = "w_" + inc.jobId + "_" + id;
+      return `<div class="row" style="align-items:center;gap:8px;margin-top:6px">
+        <div class="grow" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(finName(id))}</div>
+        <input type="range" min="0" max="100" step="5" value="${pct}" style="flex:0 0 130px" oninput="var e=document.getElementById('${sid}');if(e)e.textContent=this.value+'%'" onchange="popSetWeight('${esc(inc.jobId)}','${esc(id)}',this.value)">
+        <b id="${sid}" style="flex:0 0 42px;text-align:right">${pct}%</b></div>`;
+    }).join("");
+    return `<div class="card" style="margin-top:8px;padding:10px"><div class="nm" style="white-space:normal">${esc(title)}</div>${sliders}</div>`;
+  }).join("");
+  h += `<div class="sub" style="white-space:normal;margin-top:6px">100% = a full, equal share. Everyone at 100% splits equally (unchanged). Lower a helper who only worked part of the job — the pool re-splits proportionally.</div></details>`;
+  return h;
+}
+
 /* synthesize income-shaped records from every ACCEPTED quote (paid OR not) so wages reflect all work DONE,
    not just work already collected. Same field shape finRollup/finJobSplit read. */
 function popAcceptedIncome() {
@@ -31,6 +71,7 @@ function popAcceptedIncome() {
       amount: (q.finalPrice || q.total || 0),
       date: (job && job.date) || q.acceptedDate || q.date || "",
       crew: (job && Array.isArray(job.crew)) ? job.crew.slice() : [],
+      weights: (job && job.crewWeights) || null,
       originator: (cust && cust.soldBy) || "",
       bookedAt: q.acceptedDate || q.date || "", houseAccount: false
     };
@@ -160,6 +201,9 @@ function rFinPriority() {
       <div class="sub" style="white-space:normal">Back ${fm(r.back)}${r.gas ? ` <span style="color:var(--muted)">(incl ${fm(r.gas)} gas)</span>` : ""} · Wages ${fm(r.wage)}</div></div>
       <div style="text-align:right;flex:0 0 auto;margin-left:10px"><b>${fm(got)}</b><div class="sub" style="font-size:11px">paid now${stillOwed > 0.5 ? `<br><span style="color:var(--danger)">${fm(stillOwed)} still owed</span>` : `<br><span style="color:#1e9e5a">fully paid</span>`}</div></div></div>`;
   }).join("") + `</div>`;
+
+  /* CREW SHARES — dial a partial helper's share of a job down from the 100% default (feeds Wages above) */
+  h += popCrewSharesHTML();
 
   /* TARGET CHARGE */
   const peopleAndBiz = m.peopleTotal + m.business + m.tax;
