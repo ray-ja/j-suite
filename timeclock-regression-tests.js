@@ -707,3 +707,131 @@ await (async function () {
   localStorage.setItem("jra_session", owner.id);
   diag("CA7 add-person: passenger=" + (!!pass) + " inCrew=" + (j.crew.indexOf(chase.id) >= 0) + " miTotal " + before + "→" + after + " dupSkipped=" + (cntAfter === cntBefore) + " gated=" + (!joeEntry));
 })();
+
+/* =====================================================================================================
+   CLUSTER B — TIMECLOCK UX REDESIGN (2026-07-09). Ray's field report: (1) clock-out must COMPLETE without
+   the odometer and be unmistakable; (2) an absurd distance (he clocked out to "2000 miles") must be FLAGGED
+   for review, not silently confirmed; (3) an admin LIVE roster of who's on the clock + clock-out-this-person;
+   (4) the mileage/hours MATH is unchanged (flag + UX + roster only). All additive — billed mileage never moves.
+   ===================================================================================================== */
+
+// (B1) CLOCK-OUT COMPLETES via the PRIMARY "✓ Clock out now" button with NO odometer entered → clockOut set,
+//      odometer marked PENDING (not a blocker), and the shift is no longer open. Never stuck clocked in.
+await (async function () {
+  var u = { id: "u_b1", username: "B1 Driver", active: true };
+  S.users.push(u);
+  if (typeof orgSetRole === "function") orgSetRole(u.id, "obx", "owner");
+  S.biz = "obx"; localStorage.setItem("jra_session", u.id); localStorage.setItem("jra_offline_ok", "1");
+  var job = { id: "j_b1", title: "Clock-out-no-odo job", customerId: null, date: today(), crew: [u.id], done: false, updatedAt: now() };
+  D().jobs.push(job);
+  var e = {
+    id: "tc_b1", jobId: "j_b1", userId: u.id, userName: "B1 Driver",
+    clockIn: now() - 90 * 60000, clockOut: null,
+    inLoc: { lat: 36.1, lng: -75.7, ts: now() - 90 * 60000, dev: "mobile" }, outLoc: null,
+    pings: [{ lat: 36.15, lng: -75.75, ts: now() - 60 * 60000, dev: "mobile" }], stops: [],
+    computedMiles: 6.0, miles: null, milesConfirmed: false, milesSource: null,
+    odoStart: 1000, odoEnd: null, riderRole: "driver", trailerId: null, rodeWith: null,
+    vehicleId: null, vehicle: "B1's truck", vehicleOwnerId: u.id, rate: 0.725, updatedAt: now()
+  };
+  D().timeclock.push(e);
+  if (!tcEntryHasVehicle(e)) __errs.push("B1: fixture broken — driver shift must count as having a vehicle");
+  if (tcOpenShift(u.id) == null) __errs.push("B1: fixture broken — the shift should be open before clock-out");
+  tcClockOut("tc_b1");   // opens the redesigned clock-out modal
+  var primary = document.querySelector('button[onclick*="tcClockOutNow"]');
+  diag("B1 primary button present=" + !!primary);
+  if (!primary) __errs.push("B1: the redesigned clock-out modal has no primary ✓ Clock out now button (tcClockOutNow)");
+  var odoEl = document.getElementById("tc_odo_end");
+  if (odoEl) { odoEl.value = ""; odoEl.dispatchEvent(new Event("input", { bubbles: true })); }   // leave the odometer BLANK
+  if (primary) primary.click();   // tap ✓ Clock out now with no odometer
+  var after = D().timeclock.find(function (x) { return x.id === "tc_b1"; });
+  diag("B1 after clock-out: clockOut=" + (after && after.clockOut) + " odoPending=" + (after && after.odoPending) + " source=" + (after && after.milesSource) + " open=" + !!tcOpenShift(u.id));
+  if (!after || after.clockOut == null) __errs.push("B1: ✓ Clock out now did NOT complete the clock-out (clockOut still null) — Ray's stuck-clocked-in bug");
+  if (after && tcOpenShift(u.id)) __errs.push("B1: the shift is STILL OPEN after clocking out (never-stuck invariant violated)");
+  if (after && after.odoPending !== true) __errs.push("B1: a deferred (no-odometer) clock-out must mark the shift odometer-pending, got " + (after && after.odoPending));
+  if (after && after.milesSource !== "gps") __errs.push("B1: a no-odometer clock-out must fall to the GPS estimate (milesSource gps), got " + (after && after.milesSource));
+  if (after && after.milesConfirmed) __errs.push("B1: a GPS-estimate clock-out must NOT be auto-confirmed");
+  if (typeof closeModal === "function") closeModal();
+  localStorage.removeItem("jra_session");
+})();
+
+// (B2) ABSURD-MILEAGE SANITY FLAG — a shift over TC_SANE_MAX_MILES flags "needs review" and is NOT auto-confirmed;
+//      a normal local shift does not flag and DOES auto-confirm. Display-only: the odometer delta math is unchanged.
+(function () {
+  if (typeof TC_SANE_MAX_MILES !== "number") { __errs.push("B2: TC_SANE_MAX_MILES constant is missing"); return; }
+  // absurd: 1000 -> 3200 odometer = 2200 mi (Ray's "2000 miles" case)
+  var big = { id: "tc_b2_big", jobId: "x", userId: "d", userName: "D", clockIn: now() - 3600000, clockOut: null, inLoc: null, outLoc: null, pings: [], stops: [], computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null, odoStart: 1000, odoEnd: null, riderRole: "driver", trailerId: null, rodeWith: null, vehicleId: null, vehicle: "Truck", vehicleOwnerId: "d", rate: 0.725, updatedAt: now() };
+  tcFinalizeSegment(big, 3200);
+  diag("B2 absurd: miles=" + big.miles + " source=" + big.milesSource + " confirmed=" + big.milesConfirmed + " sane=" + JSON.stringify(tcSaneMiles(big)));
+  if (big.miles !== 2200) __errs.push("B2: odometer delta math changed — expected 2200 mi, got " + big.miles);
+  if (big.milesSource !== "odometer") __errs.push("B2: the odometer must still be the number of record (source odometer)");
+  if (big.milesConfirmed) __errs.push("B2: an implausible-distance shift must NOT be auto-confirmed (owner reviews it)");
+  var sf = tcSaneMiles(big);
+  if (!sf || !sf.flag) __errs.push("B2: a shift over TC_SANE_MAX_MILES must flag needs-review via tcSaneMiles");
+  // a GPS-estimate shift with an absurd computed distance must also flag
+  var bigGps = { id: "tc_b2_gps", clockOut: now(), miles: 2000, computedMiles: 2000, milesConfirmed: false };
+  if (!tcSaneMiles(bigGps)) __errs.push("B2: a GPS shift with absurd miles must also flag needs-review");
+  // normal local shift: 1000 -> 1042 = 42 mi → NO flag, auto-confirmed
+  var ok = { id: "tc_b2_ok", jobId: "x", userId: "d", userName: "D", clockIn: now() - 3600000, clockOut: null, inLoc: null, outLoc: null, pings: [], stops: [], computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null, odoStart: 1000, odoEnd: null, riderRole: "driver", trailerId: null, rodeWith: null, vehicleId: null, vehicle: "Truck", vehicleOwnerId: "d", rate: 0.725, updatedAt: now() };
+  tcFinalizeSegment(ok, 1042);
+  diag("B2 normal: miles=" + ok.miles + " confirmed=" + ok.milesConfirmed + " sane=" + !!tcSaneMiles(ok));
+  if (ok.miles !== 42) __errs.push("B2: normal odometer delta changed — expected 42 mi, got " + ok.miles);
+  if (tcSaneMiles(ok)) __errs.push("B2: a normal local shift (42 mi) must NOT flag as implausible");
+  if (!ok.milesConfirmed) __errs.push("B2: a normal odometer shift must still auto-confirm");
+})();
+
+// (B3) ADMIN LIVE ROSTER — lists everyone on the clock with their job + a clock-out-THIS-person action; owner/admin
+//      only. A crew member must not reach it.
+(function () {
+  var owner = { id: "u_b3_own", username: "B3 Owner", active: true };
+  var hand = { id: "u_b3_hand", username: "Buddy", active: true };
+  S.users.push(owner, hand);
+  if (typeof orgSetRole === "function") { orgSetRole(owner.id, "obx", "owner"); orgSetRole(hand.id, "obx", "crew"); }
+  S.biz = "obx"; localStorage.setItem("jra_session", owner.id); localStorage.setItem("jra_offline_ok", "1");
+  var job = { id: "j_b3", title: "Roster-visible job", customerId: null, date: today(), crew: [hand.id], done: false, updatedAt: now() };
+  D().jobs.push(job);
+  var open = { id: "tc_b3_open", jobId: "j_b3", userId: hand.id, userName: "Buddy", clockIn: now() - 45 * 60000, clockOut: null, inLoc: { lat: 36.12, lng: -75.73, ts: now() - 40 * 60000, dev: "mobile" }, outLoc: null, pings: [], stops: [], computedMiles: 3, miles: null, milesConfirmed: false, milesSource: null, odoStart: null, odoEnd: null, riderRole: "none", trailerId: null, rodeWith: null, vehicleId: null, vehicle: "", vehicleOwnerId: null, rate: 0.725, updatedAt: now() };
+  D().timeclock.push(open);
+  var html = tcRosterHTML();
+  diag("B3 roster: hasName=" + /Buddy/.test(html) + " hasJob=" + /Roster-visible job/.test(html) + " hasClockOut=" + /tcClockOut\('tc_b3_open'\)/.test(html) + " hasWhere=" + /maps\.google/.test(html));
+  if (!/Buddy/.test(html)) __errs.push("B3: the roster does not list the on-the-clock person by name");
+  if (!/Roster-visible job/.test(html)) __errs.push("B3: the roster does not show which job the person is on");
+  if (!/On the clock now/.test(html)) __errs.push("B3: the roster is missing the 'On the clock now' section");
+  if (!/tcClockOut\('tc_b3_open'\)/.test(html)) __errs.push("B3: the roster has no clock-out-THIS-person action wired to the shared tcClockOut core");
+  // owner reaches the roster via the sub-tab
+  TCSUB = "roster"; TAB = "time"; render();
+  if (!/On the clock now/.test(view.innerHTML)) __errs.push("B3: owner could not reach the live roster via the Time page sub-tab");
+  if (!/tcClockOut\('tc_b3_open'\)/.test(view.innerHTML)) __errs.push("B3: the rendered owner roster is missing the clock-out-this-person button");
+  // a CREW member must NOT reach it (owner/admin gate)
+  localStorage.setItem("jra_session", hand.id);
+  if (typeof orgSetRole === "function") orgSetRole(hand.id, "obx", "crew");
+  var gated = tcRosterHTML();
+  if (!/Owner\/admin only/.test(gated)) __errs.push("B3: tcRosterHTML is not owner/admin gated for a crew member");
+  TCSUB = "roster"; TAB = "time"; render();
+  // a crew member with TCSUB=roster must fall through to the plain Clock view — never the owner roster section
+  // (they may still see their OWN active-shift clock-out button; the gate is the roster SECTION, not that button)
+  if (/On the clock now/.test(view.innerHTML) || /Off the clock/.test(view.innerHTML)) __errs.push("B3: a crew member reached the owner live-roster section (gate failed)");
+  // owner clocks the person OUT from the roster (reuses tcClockOut → tcClockOutNow, no-vehicle path completes)
+  localStorage.setItem("jra_session", owner.id);
+  TCSUB = "clock";
+  tcClockOut("tc_b3_open");
+  var doneBtn = document.querySelector('button[onclick*="tcClockOutNow"]') || document.querySelector('button[onclick*="tcFinishClockOut"]');
+  if (doneBtn) doneBtn.click();
+  var closed = D().timeclock.find(function (x) { return x.id === "tc_b3_open"; });
+  diag("B3 owner clocked out buddy: clockOut=" + (closed && closed.clockOut));
+  if (!closed || closed.clockOut == null) __errs.push("B3: the owner could not clock the person out from the roster");
+  if (typeof closeModal === "function") closeModal();
+  localStorage.removeItem("jra_session");
+})();
+
+// (B4) MATH UNCHANGED — tcMiles / tcOdoMiles / tcComputeMiles are pure and untouched by the flag/UX/roster work.
+(function () {
+  var e = { odoStart: 100, odoEnd: 140, miles: 40, computedMiles: 37.6 };
+  if (tcOdoMiles(e) !== 40) __errs.push("B4: tcOdoMiles math changed — expected 40, got " + tcOdoMiles(e));
+  if (tcMiles(e) !== 40) __errs.push("B4: tcMiles must return the confirmed miles (40), got " + tcMiles(e));
+  var g = { computedMiles: 12.34 };   // no e.miles → tcMiles = rounded computedMiles
+  if (tcMiles(g) !== 12.3) __errs.push("B4: tcMiles GPS-fallback rounding changed — expected 12.3, got " + tcMiles(g));
+  var path = { inLoc: { lat: 36.0, lng: -75.7 }, pings: [{ lat: 36.1, lng: -75.7 }], outLoc: { lat: 36.2, lng: -75.7 }, stops: [] };
+  var d = tcComputeMiles(path);   // two ~6.9-mi legs of pure-latitude travel
+  diag("B4 tcComputeMiles two legs=" + d);
+  if (!(d > 13 && d < 14.5)) __errs.push("B4: tcComputeMiles haversine drifted — expected ~13.8 mi, got " + d);
+})();
