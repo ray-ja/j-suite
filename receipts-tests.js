@@ -1941,6 +1941,45 @@ async function main() {
   ok("business-card save (paidBy empty) → attributedTo keeps the explicit choice (Chase), not blanked", fpRec3 && fpRec3.attributedTo === "u_chase", fpRec3 && fpRec3.attributedTo);
   ok("…business-card 'For' shows that person (Chase) in the table", rcptRowMeta(Object.assign({}, fpRec3, { store: "biz" })).forName === "Chase");
 
+  // ── REF / ORDER # (js/72 "Ref #" column) — Cap's primary reference on photo/PDF receipts, editable + additive ──
+  console.log("\n— REF/ORDER #: rcptOrderNo alphanumeric · suggestion→record.refNo · carried across a type change · column shows it —");
+  // (1) rcptOrderNo — alphanumeric refs kept intact; numeric contract # as-is; desc fallback; blank when neither
+  ok("rcptOrderNo keeps an alphanumeric invoice ref intact (INV-2024-118)", rcptOrderNo({ refNo: "INV-2024-118" }) === "INV-2024-118", rcptOrderNo({ refNo: "INV-2024-118" }));
+  ok("rcptOrderNo shows a numeric contract # as-is (186510)", rcptOrderNo({ refNo: "186510" }) === "186510", rcptOrderNo({ refNo: "186510" }));
+  ok("rcptOrderNo falls back to 'Order #NNN' in desc when no refNo", rcptOrderNo({ desc: "Order #147424942 · pavers" }) === "147424942", rcptOrderNo({ desc: "Order #147424942 · pavers" }));
+  ok("rcptOrderNo → '' when neither refNo nor a desc order#", rcptOrderNo({ vendor: "x" }) === "", rcptOrderNo({ vendor: "x" }));
+  // (2) a photo/PDF Cap SUGGESTION with refNo → applied to the record on file (record gets refNo:'186510', refType:'contract')
+  resetStore();
+  const sgRef = seedReview({ receiptId: "bRef", vendor: "The Home Depot", suggested: { vendor: "The Home Depot", amount: 72.59, type: "business", category: "rentals", refNo: "186510", refType: "contract", confidence: 0.9 } });
+  const rfRes = rcptFileSuggestion("review", null, sgRef.id);
+  ok("rcptFileSuggestion files the rental ok", rfRes && rfRes.ok, rfRes);
+  const rfRec = STORE.expenses.find(e => e.id === sgRef.id && !e.deleted);
+  ok("photo/PDF suggestion applied → record.refNo = '186510' (the contract #)", rfRec && rfRec.refNo === "186510", rfRec && rfRec.refNo);
+  ok("…and record.refType = 'contract'", rfRec && rfRec.refType === "contract", rfRec && rfRec.refType);
+  ok("…and the amount is unchanged (net rental 72.59 — no money-math change)", rfRec && rfRec.amount === 72.59, rfRec && rfRec.amount);
+  // (3) refNo is ADDITIVE — carried across a type/job change with NO refNo in the edit fields (like cardLast4)
+  resetStore();
+  const mc = seedReview({ receiptId: "bMC", vendor: "Depot", amount: 150, refNo: "ORD-77", status: "review" });
+  rcptApplyEdit({ store: "review", jobId: null, recId: mc.id }, { type: "pass-through", jobId: "j1", amount: 150, vendor: "Depot", desc: "pavers", receiptId: "bMC" });
+  const mcMat = STORE.jobs[0].materials.find(e => e.id === mc.id && !e.deleted);
+  ok("refNo preserved review→pass-through (no refNo in fields)", mcMat && mcMat.refNo === "ORD-77", mcMat && mcMat.refNo);
+  rcptApplyEdit({ store: "jobmat", jobId: "j1", recId: mc.id }, { type: "business", jobId: null, amount: 150, vendor: "Depot", category: "materials", receiptId: "bMC" });
+  const mcBiz = STORE.expenses.find(e => e.id === mc.id && !e.deleted);
+  ok("refNo carried across a type change (pass-through→business)", mcBiz && mcBiz.refNo === "ORD-77", mcBiz && mcBiz.refNo);
+  // the modal SAVE can set a new ref (form value wins) and clear it (explicit "" drops the stale value)
+  rcptApplyEdit({ store: "biz", jobId: null, recId: mc.id }, { type: "business", jobId: null, amount: 150, vendor: "Depot", category: "materials", receiptId: "bMC", refNo: "INV-2024-118" });
+  ok("modal save with a new refNo (INV-2024-118) → stored intact", mcBiz && mcBiz.refNo === "INV-2024-118", mcBiz && mcBiz.refNo);
+  rcptApplyEdit({ store: "biz", jobId: null, recId: mc.id }, { type: "business", jobId: null, amount: 150, vendor: "Depot", category: "materials", receiptId: "bMC", refNo: "" });
+  ok("modal save with an explicit blank refNo → cleared off the record", !("refNo" in mcBiz), mcBiz && mcBiz.refNo);
+  // (4) the "Ref #" column renders — header relabelled + the number shown + refType tooltip
+  resetStore();
+  const colRec = seedReview({ receiptId: "bCol", vendor: "The Home Depot", amount: 72.59, refNo: "186510", refType: "contract", status: "review" });
+  const colTbl = rcptTableHTML(rcptAllRows(), {});
+  ok("table header relabelled 'Ref #' (was 'Order #')", /Ref #/.test(colTbl) && !/Order #/.test(colTbl), colTbl.slice(0, 0));
+  ok("the Ref # column shows the contract number (186510)", /186510/.test(colTbl));
+  ok("the cell tooltip labels it by refType ('Contract #186510')", /Contract #186510/.test(rcptOrderCell(colRec)), rcptOrderCell(colRec));
+  ok("rcptOrderCell → '—' when the receipt has no ref", /—/.test(rcptOrderCell({ vendor: "x" })));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

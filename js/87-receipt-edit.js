@@ -52,10 +52,20 @@ function rcptBuildRecord(home, id, fields, carry) {
   // present, even ""; else preserved from the original like capRead). Only a valid 4-digit string is stored.
   const rawCard4 = (fields.cardLast4 != null) ? String(fields.cardLast4).replace(/\D/g, "").slice(-4) : (carry.cardLast4 || "");
   const card4 = /^\d{4}$/.test(rawCard4) ? rawCard4 : "";
+  // REF / ORDER # (js/72 "Ref #" column): the receipt's primary reference — order/contract/invoice/transaction/rental #.
+  // Purely additive on ALL homes (like cardLast4) — carried through a type/job/split change (form value wins when the
+  // key is present, even ""; else preserved). Keeps letters + dash/space (INV-2024-118, 186510); clamped ≤40 chars.
+  const refNo = (fields.refNo != null) ? String(fields.refNo).replace(/[^A-Za-z0-9 -]/g, "").replace(/\s+/g, " ").trim().slice(0, 40) : (carry.refNo || "");
+  // refType (optional) LABELS the ref for the tooltip ("Contract #186510"). No form input — flows from Cap's suggestion
+  // on apply, else preserved. Only a known kind is stamped; blank/unknown = omitted (the cell falls back to "Ref #").
+  const rt = (fields.refType != null) ? String(fields.refType) : (carry.refType || "");
+  const refType = (["contract", "order", "invoice", "transaction", "rental"].indexOf(rt) >= 0) ? rt : "";
   const base = { id: id, amount: amount, vendor: fields.vendor || "", desc: fields.desc || "", receiptId: fields.receiptId || null, paidBy: fields.paidBy || null, attributedTo: attributedTo, by: by, ts: carry.ts || now() };
   if (carry.reimbursedAt) base.reimbursedAt = carry.reimbursedAt;
   if (carry.capRead) base.capRead = carry.capRead;
   if (card4) base.cardLast4 = card4;
+  if (refNo) base.refNo = refNo;
+  if (refType) base.refType = refType;
   // SPLIT: when one receipt is split into N flat-dollar slices, every slice carries the same splitGroup id (uid,
   // set only when N>1 by js/92 rcptApplySplit) so the table can group them back under one receipt. Purely
   // additive on ALL homes — old records lack it, no migration, no fingerprint reads it. (js/92-receipt-split.js)
@@ -78,6 +88,8 @@ function rcptBuildRecord(home, id, fields, carry) {
   // review
   const rev = { id: id, receiptId: fields.receiptId || null, amount: amount, vendor: fields.vendor || "", date: fields.date || "", type: fields.type || null, jobId: fields.jobId || null, category: fields.category || "", paidBy: fields.paidBy || null, attributedTo: attributedTo, desc: fields.desc || "", uploadedBy: carry.uploadedBy || "", by: by, status: "review", suggested: carry.suggested || null, ts: carry.ts || now(), deleted: false, updatedAt: now() };
   if (card4) rev.cardLast4 = card4;
+  if (refNo) rev.refNo = refNo;
+  if (refType) rev.refType = refType;
   Object.assign(rev, dep);
   return rev;
 }
@@ -88,7 +100,7 @@ function rcptApplyEdit(loc, fields) {
   const cur = rcptFindRecord(loc.store, loc.jobId, loc.recId || loc.id);
   if (!cur) return { ok: false, error: "record not found" };
   const home = rcptTargetHome(fields);
-  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind };
+  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
   if (sameHome) {
@@ -96,6 +108,7 @@ function rcptApplyEdit(loc, fields) {
     Object.assign(cur, rebuilt);
     if (carry.reimbursedAt === undefined && "reimbursedAt" in cur) delete cur.reimbursedAt;
     if ((fields.cardLast4 != null) && !("cardLast4" in rebuilt) && ("cardLast4" in cur)) delete cur.cardLast4;   // the form explicitly cleared the card last-4 → drop the stale value (Object.assign wouldn't remove it)
+    if ((fields.refNo != null) && !("refNo" in rebuilt) && ("refNo" in cur)) delete cur.refNo;   // the form explicitly cleared the ref/order # → drop the stale value
     ["isDeposit", "depositSettled", "refundOfId", "kind"].forEach(function (k) { if ((k in fields) && !fields[k] && !(k in rebuilt) && (k in cur)) delete cur[k]; });   // an explicit false/"" in the form clears a stale deposit/refund flag
     rcptTouchHome(home, cur);
     return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: cur.id } };
@@ -209,6 +222,8 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const preCat = rec.category ? rec.category : (sg.category || "");
   const preDate = _iso(rec.date) || _iso((rec.capRead || {}).date) || _iso(sg.date) || rcptDate(rec);   // real ISO wins; a Cap "unknown" can't win (guarded), else the existing ts fallback
   const preCard4 = (/^\d{4}$/.test(String(rec.cardLast4 || ""))) ? rec.cardLast4 : ((/^\d{4}$/.test(String(sg.last4 || ""))) ? sg.last4 : (rec.cardLast4 || ""));
+  // REF / ORDER # — the record's own ref wins; a blank record inherits Cap's read (sg.refNo) so opening + Save keeps it.
+  const preRefNo = (rec.refNo && String(rec.refNo).trim()) ? rec.refNo : (sg.refNo || "");
   // TYPE — the record's own type wins; a blank review row inherits Cap's REAL filed type (business/job-expense/
   // pass-through) so rcptEditTypeChange shows the "Assign to job" field and a plain Save files it out of review.
   let preType = curType;
@@ -269,6 +284,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>Who paid?</label><select id="rcpt_paidby" onchange="rcptPaidByCouple()">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(preCard4)}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>
+    <label>Ref / Order # <span class="sub">(order / contract / invoice / transaction #)</span></label><input id="rcpt_refno" type="text" maxlength="40" value="${esc(preRefNo)}" placeholder="186510, INV-2024-118…">
     <label>Whose receipt / For <span class="sub">(auto-follows who paid — shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
     <div id="rcpt_deposit_hint"></div>
@@ -352,7 +368,7 @@ window.rcptPoBind = function () {
 window.rcptApplySuggestion = function () {
   const s = RCPT_EDIT && RCPT_EDIT.suggested; if (!s) return;
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") el.value = v; };
-  set("rcpt_vendor", s.vendor); set("rcpt_amt", s.amount); set("rcpt_cat", s.category); set("rcpt_desc", s.desc);
+  set("rcpt_vendor", s.vendor); set("rcpt_amt", s.amount); set("rcpt_cat", s.category); set("rcpt_desc", s.desc); set("rcpt_refno", s.refNo);
   if (s.type) { const el = document.getElementById("rcpt_type"); if (el) { el.value = s.type; rcptEditTypeChange(); } }
   if (s.jobId) { set("rcpt_job", s.jobId); if (typeof rcptJobPONote === "function") rcptJobPONote(); }   // Cap assigns the job → its PO auto-fills too (Request 2)
   // Cap Phase 4 — card last-4 (js/94: auto-matches "Who paid?"), refund + rental-deposit toggles (js/96).
@@ -413,6 +429,7 @@ window.rcptSaveEdit = function () {
   const attributedTo = val("rcpt_attr") || "";
   const desc = (val("rcpt_desc") || "").trim();
   const cardLast4 = (val("rcpt_card4") || "").replace(/\D/g, "").slice(-4);   // js/94: 0-4 digits — "" clears it, a valid 4-digit is stored + drives auto-attribution
+  const refNo = (val("rcpt_refno") || "").replace(/[^A-Za-z0-9 -]/g, "").replace(/\s+/g, " ").trim().slice(0, 40);   // js/72 "Ref #": order/contract/invoice/txn #; "" clears it
   const isDeposit = !!(document.getElementById("rcpt_deposit") || {}).checked;   // js/96: a refundable rental deposit (HELD out of job cost until settled)
   const isRefund = !!(document.getElementById("rcpt_refund") || {}).checked;     // js/96: a refund/credit — stored NEGATIVE so it offsets the charge
   // a refund stores the amount as negative + kind:"refund"; a deposit nudges category to "rentals" (equipment-rental hard cost)
@@ -424,7 +441,7 @@ window.rcptSaveEdit = function () {
   if (type && amt < 0 && !isRefund) { alert("A negative amount is only for a refund/credit — tick “↩ This is a refund” to file it."); return; }
   if (type && !vendor) { alert("Enter the vendor / where it was bought."); return; }
   if (typeof submitGuard === "function" && !submitGuard("rcptSaveEdit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
-  const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
+  const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, refNo: refNo, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
   const res = rcptApplyEdit(RCPT_EDIT.loc, fields);
   if (!res || !res.ok) { alert("Couldn't save: " + ((res && res.error) || "unknown")); return; }
   if (typeof rcptStampReviewed === "function") rcptStampReviewed(res.newLoc);   // a human modal save = reviewed → clears the purple Cap-auto-file mark

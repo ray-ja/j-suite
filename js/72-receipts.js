@@ -571,6 +571,7 @@ function rcptTxToSuggested(tx, parent) {
     last4: (typeof tx.last4 === "string" && /^\d{4}$/.test(tx.last4)) ? tx.last4 : null,
     refund: tx.refund === true,
     deposit: false,
+    refNo: (typeof tx.refNo === "string" && tx.refNo.trim()) ? tx.refNo.trim().slice(0, 40) : null,
     splits: [],
     lineItems: [],
     confidence: (parent && typeof parent.confidence === "number") ? parent.confidence : null
@@ -1134,8 +1135,11 @@ function rcptCardCell(r) {
    the clipboard (stopPropagation so it doesn't open the modal). "—" when the receipt has no order number. */
 function rcptOrderNo(r) {
   if (!r) return "";
-  const ref = String(r.refNo || "").replace(/\D/g, "");
-  if (ref) return ref;
+  // refNo can now be alphanumeric (contract/invoice #s from Cap vision, e.g. "INV-2024-118", "186510") — preserve it
+  // AS-IS when it carries letters; a pure-digit ref is normalized to its digits (CSV order#s stay identical). Only
+  // when there's no refNo do we fall back to parsing an "Order #NNN" out of the desc (the CSV import bakes it there).
+  const raw = String(r.refNo || "").trim();
+  if (raw) return /[A-Za-z]/.test(raw) ? raw : (raw.replace(/\D/g, "") || raw);
   const m = String(r.desc || "").match(/order\s*#?\s*(\d{4,})/i);   // "Order #147424942 · …"
   return m ? m[1] : "";
 }
@@ -1143,7 +1147,10 @@ function rcptOrderCell(r) {
   const no = rcptOrderNo(r);
   if (!no) return `<span style="color:var(--muted)">—</span>`;
   const abbr = no.length > 6 ? "…" + no.slice(-6) : no;
-  return `<span onclick="event.stopPropagation();rcptCopyOrder('${esc(no)}',this)" title="Order #${esc(no)} · tap to copy" style="cursor:pointer;white-space:nowrap;border-bottom:1px dotted var(--muted)">#${esc(abbr)}</span>`;
+  // label the tooltip by what KIND of reference it is (Cap's refType) — "Contract #186510", "Invoice #INV-…" — else "Ref #".
+  const rt = r && typeof r.refType === "string" ? r.refType : "";
+  const label = rt ? (rt.charAt(0).toUpperCase() + rt.slice(1)) : "Ref";
+  return `<span onclick="event.stopPropagation();rcptCopyOrder('${esc(no)}',this)" title="${esc(label)} #${esc(no)} · tap to copy" style="cursor:pointer;white-space:nowrap;border-bottom:1px dotted var(--muted)">#${esc(abbr)}</span>`;
 }
 window.rcptCopyOrder = function (no, el) {
   const flash = () => { if (el) { const o = el.textContent; el.textContent = "✓ copied"; el.style.color = "#1e9e5a"; setTimeout(() => { try { el.textContent = o; el.style.color = ""; } catch (z) {} }, 1200); } };
@@ -1339,7 +1346,7 @@ function rcptTableHTML(rows, dups) {
   if (!rows.length) return `<div class="card"><div class="muted">No receipts here. Upload a stack above.</div></div>`;
   const th = (col, label, align) => `<th onclick="rcptSortBy('${col}')" style="text-align:${align || "left"};cursor:pointer;white-space:nowrap;padding:8px 6px;border-bottom:2px solid var(--line);font-size:12px;color:var(--muted);user-select:none">${label}${rcptSortArrow(col)}</th>`;
   let h = `<div class="card" style="padding:4px 4px 6px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}${th("card", "💳 Card")}${th("order", "Order #")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
+    <thead><tr>${th("date", "Date")}${th("vendor", "Vendor")}${th("amount", "Amount", "right")}${th("type", "Type")}${th("category", "Category")}${th("job", "Job / Customer")}${th("uploader", "By")}${th("attributedTo", "For")}${th("card", "💳 Card")}${th("order", "Ref #")}<th style="padding:8px 6px;border-bottom:2px solid var(--line)">📎</th>${th("status", "Status")}</tr></thead><tbody>`;
   const splitGroups = rcptSplitGroupMap();
   const canFileIt = rcptFinFull();   // one-tap "file it" is owner/admin only (crew never see this table)
   rows.slice(0, 500).forEach(r => {

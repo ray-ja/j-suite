@@ -189,6 +189,7 @@ function rcptFileSuggestion(store, jobId, recId, opts) {
     type: s.type || null, jobId: s.jobId || null, amount: amount, vendor: s.vendor || rec.vendor || "",
     date: s.date || rec.date || "", category: s.category || "", desc: s.desc || rec.desc || "",
     paidBy: null, receiptId: rec.receiptId || null, cardLast4: s.last4 || "",
+    refNo: rec.refNo || s.refNo || "", refType: rec.refType || s.refType || "",   // js/72 "Ref #" — record value wins, else Cap's read
     isDeposit: false, kind: ""
   };
   var f = _rcptMergeDefaults(raw, _rcptMeId());

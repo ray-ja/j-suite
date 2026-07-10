@@ -1461,6 +1461,22 @@ ok("refund:true → refund true", t.rcptParseSuggestion('{"vendor":"x","refund":
 ok("refund non-boolean (\"yes\") → refund false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","refund":"yes"}', rpsCats, rpsJobs).refund === false, null);
 ok("deposit:true → deposit true", t.rcptParseSuggestion('{"vendor":"x","deposit":true}', rpsCats, rpsJobs).deposit === true, null);
 ok("deposit:1 (truthy non-bool) → deposit false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","deposit":1}', rpsCats, rpsJobs).deposit === false, null);
+// PRIMARY REFERENCE NUMBER (js/72 "Ref #" column) — order/contract/invoice/transaction/rental #
+ok("absent refNo/refType → null (today's behavior)", rpsBase && rpsBase.refNo === null && rpsBase.refType === null, rpsBase);
+// a rental CONTRACT: Cap returns the CONTRACT # (186510) as the primary ref, not the transaction/rental id
+const rpsRefRental = t.rcptParseSuggestion('{"vendor":"The Home Depot","amount":72.59,"date":"2026-07-06","desc":"Vibratory Plate Compactor","type":"job-expense","category":"rentals","refNo":"186510","refType":"contract"}', rpsCats, rpsJobs);
+ok("rental contract → refNo '186510' (the contract #, primary reference)", rpsRefRental && rpsRefRental.refNo === "186510", rpsRefRental);
+ok("rental contract → refType 'contract'", rpsRefRental && rpsRefRental.refType === "contract", rpsRefRental);
+// a store receipt order # is kept as-is
+ok("store receipt Order # '147424942' → refNo intact, refType 'order'", (function () { var r = t.rcptParseSuggestion('{"vendor":"Lowe\'s","amount":38,"refNo":"147424942","refType":"order"}', rpsCats, rpsJobs); return r.refNo === "147424942" && r.refType === "order"; })(), null);
+// an alphanumeric invoice ref keeps its letters + dashes
+ok("invoice ref 'INV-2024-118' keeps letters + dash", t.rcptParseSuggestion('{"vendor":"x","refNo":"INV-2024-118"}', rpsCats, rpsJobs).refNo === "INV-2024-118", null);
+// clamp: junk chars stripped, length capped at 40
+ok("garbage/long ref clamped (junk stripped, ≤40 chars)", (function () { var r = t.rcptParseSuggestion('{"vendor":"x","refNo":"##Contract*/ 1234567890123456789012345678901234567890EXTRA"}', rpsCats, rpsJobs); return typeof r.refNo === "string" && r.refNo.length <= 40 && !/[#*\/]/.test(r.refNo); })(), t.rcptParseSuggestion('{"vendor":"x","refNo":"##Contract*/ 1234567890123456789012345678901234567890EXTRA"}', rpsCats, rpsJobs).refNo);
+ok("non-string refNo (number) → null", t.rcptParseSuggestion('{"vendor":"x","refNo":186510}', rpsCats, rpsJobs).refNo === null, null);
+ok("unknown refType → null", t.rcptParseSuggestion('{"vendor":"x","refNo":"A1","refType":"purchase-order"}', rpsCats, rpsJobs).refType === null, null);
+// a statement fan-out transaction can carry its own refNo
+ok("transaction-level refNo clamped + kept", (function () { var r = t.rcptParseSuggestion('{"vendor":"Bank","transactions":[{"vendor":"Shell","amount":40,"type":"job-expense","refNo":"TXN-9910"}]}', rpsCats, rpsJobs); return r.transactions.length === 1 && r.transactions[0].refNo === "TXN-9910"; })(), null);
 // a malformed reply still returns null (unchanged — a bad reply is never applied)
 ok("malformed reply (no JSON object) still returns null", t.rcptParseSuggestion("sorry, I can't read that", rpsCats, rpsJobs) === null, null);
 ok("broken JSON still returns null", t.rcptParseSuggestion('{"vendor":"x", "last4":', rpsCats, rpsJobs) === null, null);
