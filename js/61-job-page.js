@@ -422,6 +422,16 @@ function rJobPage(j) {
   }
   h += `</div>`;
 
+  // 6c-ii) 📄 Customer materials report — a clean, branded, print/Save-as-PDF document of every PASS-THROUGH
+  //     charge (materials + any pass-through rentals) with the actual receipts as proof, to hand a customer who
+  //     wants to see everything they were charged for. Owner/admin (finCanView), and ONLY when the job actually
+  //     has pass-through items. Read-only (js/106 jobMaterialsReport) — reads j.materials[], never writes/bills.
+  if ((typeof finCanView !== "function" || finCanView()) && typeof jobHasPassThrough === "function" && jobHasPassThrough(j)) {
+    h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📄 Customer materials report</div>`;
+    h += `<div class="sub" style="white-space:normal;margin-bottom:8px">A professional, printable document of every pass-through material charge on this job — with the receipts attached — to hand the customer.</div>`;
+    h += `<button class="btn acc" style="width:100%" onclick="jobMaterialsReport('${j.id}')">📄 Materials report (for customer)</button></div>`;
+  }
+
   // 6d) Close-out sign-offs (owner/admin) — TWO independent checks, DECOUPLED from payment: neither gates nor is
   //     gated by paid/invoiced, and both are visible + settable at any stage. (a) "Reviewed" reuses the existing
   //     j.reviewed / plReview mechanism (js/67); (b) "All expenses collected" flips the additive j.expensesCollected
