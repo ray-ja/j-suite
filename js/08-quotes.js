@@ -6,7 +6,11 @@ let QSORT="date",QSORTDIR="desc",QTYPE_FILTER="",QDATE_FROM="",QDATE_TO="";
 const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
-function quoteType(q){ if(q&&q._jobOnly)return q.title||""; const n=(q.items||[]).map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):""; }
+function quoteType(q){ if(q&&q._jobOnly)return q.title||""; const items=(q&&q.items)||[];
+  // A custom/write-in flat line renders as the generic "Custom price"; prefer the quote/job title so the row reads
+  // as the real job (e.g. "Moving Labor"). Covers legacy rows saved before the _flat marker persisted (name only).
+  if(q&&q.title&&items.length===1&&items[0]&&(items[0]._flat||items[0].name==="Custom price"))return q.title;
+  const n=items.map(it=>it&&it.name).filter(Boolean); return n.length?(n[0]+(n.length>1?" +"+(n.length-1):"")):((q&&q.title)||""); }
 /* stable human job number (#0001) + the next one to hand out */
 function nextQuoteNum(){ return (D().quotes||[]).reduce((m,q)=>Math.max(m,+q.num||0),0)+1; }
 function quoteNum(q){ return (q&&q.num)?("#"+String(q.num).padStart(4,"0")):""; }
