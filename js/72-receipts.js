@@ -281,6 +281,197 @@ function rcptInfoScore(r) {
   return { score: score, has: has, missing: missing };
 }
 
+/* ---------- DUPLICATE MERGE (Ray's insight: don't pick-one-and-delete — COMBINE the copies) ----------
+   The old resolver's one-tap "keep the richest · delete the thinner" THREW AWAY good data: Ray had manually
+   categorized one copy, then re-uploaded a clearer photo of the SAME receipt, and delete-the-thinner discarded
+   one or the other. Merging keeps BOTH — the survivor's manual work (category/job/amount he typed) AND the
+   better receipt (the photo + line items from the later, clearer upload) fold into ONE rich record.
+
+   rcptMergeFields(records[, forcedSurvivorId]) is the PURE, testable core: it picks the SURVIVOR (which record
+   keeps its id + BILLING HOME) and folds the BEST of every field into a merged field set. It NEVER mutates a
+   record and NEVER throws. rcptMergeGroup (js/72 lower) applies that field set to the survivor via the tested
+   rcptApplyEdit spine (byte-identical to an edit → billing home + id preserved) and soft-deletes the absorbed
+   copies via the existing reversible rcptTombstone path. Owner/admin, confirm-before, reversible. */
+
+/* the billing TYPE a row files as, derived from its home store (matches rcptRowMeta) — a filed copy's type is
+   implied by which array it lives in; a review copy carries its own (usually null) type. */
+function _rcptRowType(r) {
+  if (!r) return null;
+  if (r.store === "jobmat") return "pass-through";
+  if (r.store === "jobexp") return "job-expense";
+  if (r.store === "biz") return "business";
+  return r.type || null;
+}
+/* a FILED copy = one that already lives in a billing array (a human categorized/billed it) */
+function _rcptRowIsFiled(r) { return !!r && (r.store === "jobmat" || r.store === "jobexp" || r.store === "biz"); }
+/* the line-items array a copy carries (Cap read), preferring suggested.lineItems, then a top-level lineItems */
+function _rcptLineItems(r) {
+  if (!r) return [];
+  if (r.suggested && Array.isArray(r.suggested.lineItems) && r.suggested.lineItems.length) return r.suggested.lineItems;
+  if (Array.isArray(r.lineItems) && r.lineItems.length) return r.lineItems;
+  return [];
+}
+/* how much HUMAN work a copy carries — count of non-blank billing/identity fields someone had to set. Used to
+   pick the survivor among filed copies (the one a person invested the most categorization in wins). */
+function _rcptManualCount(r) {
+  r = r || {};
+  var n = 0;
+  if (r.category) n++;
+  if (r.jobId) n++;
+  if (r.paidBy) n++;
+  if (rcptCard4(r.cardLast4)) n++;
+  if (String(r.vendor || "").trim()) n++;
+  if (String(r.desc || r.note || "").trim().length > 0) n++;
+  if (_rcptIsoDate(r.date)) n++;
+  if (r.amount != null && r.amount !== "") n++;
+  return n;
+}
+/* is `a` a better SURVIVOR than `b`? filedPool=true → prefer more human-set fields, then info-richness, then
+   newest. filedPool=false (all copies are review) → prefer a photo, then more line items, then newest. */
+function _rcptSurvivorBetter(a, b, filedPool) {
+  if (filedPool) {
+    var ma = _rcptManualCount(a), mb = _rcptManualCount(b);
+    if (ma !== mb) return ma > mb;
+    var sa = rcptInfoScore(a).score, sb = rcptInfoScore(b).score;
+    if (sa !== sb) return sa > sb;
+    return (a.ts || 0) > (b.ts || 0);
+  }
+  var pa = a.receiptId ? 1 : 0, pb = b.receiptId ? 1 : 0;
+  if (pa !== pb) return pa > pb;
+  var la = _rcptLineItems(a).length, lb = _rcptLineItems(b).length;
+  if (la !== lb) return la > lb;
+  return (a.ts || 0) > (b.ts || 0);
+}
+function _rcptRowId(r) { return r ? (r.recId != null ? r.recId : r.id) : null; }
+/* pick the survivor record from a group (prefer a FILED copy so billing + manual categorization are preserved;
+   among filed, the most human-set fields; if all review, the one with a photo). Never throws. */
+function rcptMergeSurvivor(records, forcedSurvivorId) {
+  var recs = (records || []).filter(Boolean);
+  if (!recs.length) return null;
+  if (forcedSurvivorId != null) {
+    var forced = recs.filter(function (r) { return _rcptRowId(r) === forcedSurvivorId; })[0];
+    if (forced) return forced;
+  }
+  var filed = recs.filter(_rcptRowIsFiled);
+  var pool = filed.length ? filed : recs;
+  var best = pool[0];
+  for (var i = 1; i < pool.length; i++) if (_rcptSurvivorBetter(pool[i], best, filed.length > 0)) best = pool[i];
+  return best;
+}
+/* THE PURE MERGE CORE. Returns {survivor, survivorLoc:{store,jobId,recId}, fields} — `fields` is the best-of
+   field set to apply to the survivor via rcptApplyEdit. survivor keeps its BILLING HOME (its own type + jobId
+   win, so the applied edit is same-home) and its id. For every field we keep the survivor's value when it's
+   set/non-blank (his manual work wins), else fill from another copy's non-blank value — so NO field any copy
+   had is ever blanked. The photo comes from whichever copy has one (the richer Cap read wins on a tie); the
+   line items / suggested come from the copy with the most. Pure — never mutates a record, never throws. */
+function rcptMergeFields(records, forcedSurvivorId) {
+  var recs = (records || []).filter(Boolean);
+  var survivor = rcptMergeSurvivor(recs, forcedSurvivorId);
+  if (!survivor) return { survivor: null, survivorLoc: null, fields: {} };
+
+  // PHOTO: keep the survivor's if it has one; a copy with strictly MORE line items (a fuller re-upload) wins;
+  // if the survivor has none, take any copy's photo. Never ends up blank when any copy had a photo.
+  var photoRec = survivor.receiptId ? survivor : null;
+  recs.forEach(function (r) {
+    if (!r.receiptId) return;
+    if (!photoRec) { photoRec = r; return; }
+    if (_rcptLineItems(r).length > _rcptLineItems(photoRec).length) photoRec = r;
+  });
+
+  // LINE ITEMS / suggested: the copy with the most line items (the "better receipt" Cap read).
+  var suggRec = survivor;
+  recs.forEach(function (r) { if (_rcptLineItems(r).length > _rcptLineItems(suggRec).length) suggRec = r; });
+  var mergedSuggested = (suggRec && suggRec.suggested) ? suggRec.suggested : (survivor.suggested || null);
+
+  // survivor-wins-if-set, else first non-blank other copy (never blanks a field any copy had)
+  function foldStr(field) {
+    var sv = String(survivor[field] == null ? "" : survivor[field]).trim();
+    if (sv) return survivor[field];
+    for (var i = 0; i < recs.length; i++) { var v = String(recs[i][field] == null ? "" : recs[i][field]).trim(); if (v) return recs[i][field]; }
+    return survivor[field] || "";
+  }
+  function foldDesc() {
+    var sv = String(survivor.desc || survivor.note || "").trim();
+    if (sv) return survivor.desc || survivor.note;
+    for (var i = 0; i < recs.length; i++) { var v = String(recs[i].desc || recs[i].note || "").trim(); if (v) return recs[i].desc || recs[i].note; }
+    return survivor.desc || survivor.note || "";
+  }
+  // AMOUNT: dup groups match on amount, but fold defensively (survivor's, else any non-null).
+  var mergedAmount = (survivor.amount != null && survivor.amount !== "") ? survivor.amount : null;
+  if (mergedAmount == null) for (var i = 0; i < recs.length; i++) if (recs[i].amount != null && recs[i].amount !== "") { mergedAmount = recs[i].amount; break; }
+  // DATE: a REAL YYYY-MM-DD only — reuse the ISO guard so a Cap "unknown" never wins over a real date.
+  var mergedDate = _rcptIsoDate(survivor.date) || _rcptIsoDate((survivor.capRead || {}).date) || "";
+  if (!mergedDate) for (var j = 0; j < recs.length; j++) { var dd = _rcptIsoDate(recs[j].date) || _rcptIsoDate((recs[j].capRead || {}).date); if (dd) { mergedDate = dd; break; } }
+  // CARD last-4: survivor's, else any copy's valid 4-digit.
+  var mergedCard = rcptCard4(survivor.cardLast4) || "";
+  if (!mergedCard) for (var k = 0; k < recs.length; k++) { var c4 = rcptCard4(recs[k].cardLast4); if (c4) { mergedCard = c4; break; } }
+  // TYPE + JOB: the survivor's home is preserved — its own type/job win (a filed survivor always has them). Only
+  // when the survivor is an unfiled review copy do we fold in a type/job some other copy carried.
+  var mergedType = _rcptRowType(survivor);
+  if (!mergedType) for (var t = 0; t < recs.length; t++) { var rt = _rcptRowType(recs[t]); if (rt) { mergedType = rt; break; } }
+  var mergedJob = survivor.jobId || null;
+  if (!mergedJob && mergedType !== "business") for (var g = 0; g < recs.length; g++) if (recs[g].jobId) { mergedJob = recs[g].jobId; break; }
+
+  var fields = {
+    type: mergedType || null,
+    jobId: mergedJob || null,
+    amount: mergedAmount,
+    vendor: foldStr("vendor"),
+    date: mergedDate,
+    category: foldStr("category"),
+    paidBy: foldStr("paidBy") || null,
+    attributedTo: foldStr("attributedTo") || null,
+    cardLast4: mergedCard,
+    desc: foldDesc(),
+    receiptId: photoRec ? photoRec.receiptId : (survivor.receiptId || null),
+    suggested: mergedSuggested
+  };
+  return {
+    survivor: survivor,
+    survivorLoc: { store: survivor.store, jobId: survivor.jobId || null, recId: _rcptRowId(survivor) },
+    fields: fields
+  };
+}
+/* a small PREVIEW summary (pure, testable) — what the merge KEEPS + where it lands, so the resolver can show it
+   before committing. Labels copies A/B/C… by info-rank so "photo from copy B" is meaningful. Never throws. */
+function rcptMergeSummary(group, forcedSurvivorId) {
+  var g = (group || []).filter(Boolean);
+  var merged = rcptMergeFields(g, forcedSurvivorId);
+  if (!merged.survivor) return null;
+  // rank the same way the resolver lists them so the A/B/C letters line up with the rows shown
+  var ranked = g.map(function (r) { return { r: r, sc: rcptInfoScore(r) }; }).sort(function (a, b) { return (b.sc.score - a.sc.score) || ((b.r.ts || 0) - (a.r.ts || 0)); }).map(function (x) { return x.r; });
+  function letter(rec) { var i = ranked.indexOf(rec); return i >= 0 ? String.fromCharCode(65 + i) : "?"; }
+  var f = merged.fields, sv = merged.survivor;
+  var photoCopy = null;
+  if (f.receiptId) { photoCopy = ranked.filter(function (r) { return r.receiptId === f.receiptId; })[0] || null; }
+  var jobLabel = "";
+  if (f.jobId) { var j = ((typeof D === "function" ? D().jobs : []) || []).find(function (x) { return x && x.id === f.jobId; }); if (j) jobLabel = j.title || "job"; }
+  return {
+    survivor: sv,
+    survivorLetter: letter(sv),
+    fields: f,
+    photoLetter: photoCopy ? letter(photoCopy) : "",
+    photoFromSurvivor: !!(photoCopy && photoCopy === sv),
+    categoryFromSurvivor: !!(String(sv.category || "").trim() && f.category === sv.category),
+    jobLabel: jobLabel,
+    lineItems: _rcptLineItems(merged.survivor).length || (f.suggested && Array.isArray(f.suggested.lineItems) ? f.suggested.lineItems.length : 0),
+    removed: g.length - 1
+  };
+}
+/* human-readable one-line preview for the confirm dialog + the inline resolver hint */
+function rcptMergePreviewText(group, forcedSurvivorId) {
+  var s = rcptMergeSummary(group, forcedSurvivorId);
+  if (!s) return "";
+  var f = s.fields, bits = [];
+  if (f.receiptId) bits.push("📎 photo" + (s.photoLetter && !s.photoFromSurvivor ? " (from copy " + s.photoLetter + ")" : ""));
+  if (String(f.vendor || "").trim()) bits.push(String(f.vendor).trim());
+  if (f.amount != null) bits.push((typeof money2 === "function") ? money2(f.amount) : ("$" + f.amount));
+  if (String(f.category || "").trim()) bits.push("category " + f.category + (s.categoryFromSurvivor ? " (yours)" : ""));
+  if (s.jobLabel) bits.push("job " + s.jobLabel);
+  if (s.lineItems > 0) bits.push(s.lineItems + " line item" + (s.lineItems > 1 ? "s" : ""));
+  return "Keeps: " + (bits.join(" · ") || "the best of each copy") + " — the other " + s.removed + " cop" + (s.removed > 1 ? "ies are" : "y is") + " removed (undoable).";
+}
+
 /* tax records: standardized DATE-first filename + a CSV export.
    `capRead` (when Cap has read the receipt) provides the real transaction date/vendor; else we use the filed date. */
 /* A receipt's display date. Prefers Cap's read date, then the record's own date, then the upload timestamp — but
@@ -1194,45 +1385,57 @@ window.rcptDelRow = function (store, jobId, id) {
   if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); render();
 };
 
-/* ============================== POSSIBLE-DUPLICATES RESOLVER (human fallback) ==============================
-   The "⚠ N possible duplicates" card opens this. Lists each suspected group side by side (vendor · amount ·
-   date · card · 📎 photo) so Ray can eyeball them, then keep one + delete the extra copy/copies. Every delete
-   is a CONFIRMED soft-delete through rcptTombstone (the existing path) — owner/admin only, never auto. */
+/* ============================== POSSIBLE-DUPLICATES RESOLVER (MERGE-first) ==============================
+   The "⚠ N possible duplicates" card opens this. The RECOMMENDED action is now MERGE, not delete: Ray's insight
+   — among duplicate copies of the SAME receipt, don't pick one and throw the other away (that lost the manual
+   categorization he'd typed on one copy, or the clearer photo he re-uploaded on another). COMBINE them into one
+   record keeping the best of each — the survivor's billing home + manual work AND the best photo + richest line
+   items. The primary group action is "🔗 Merge into one receipt" (with a preview of what it keeps + where it
+   lands). Per-copy "🗑 Delete this copy" stays as a SECONDARY manual option for genuine junk. Every action is
+   owner/admin, confirm-before, reversible (rcptApplyEdit + the existing rcptTombstone soft-delete). */
 function rcptDupResolveHTML() {
   const groups = rcptDupGroups();
   if (!groups.length) return `<div class="card"><div class="muted">✓ No possible duplicates right now.</div></div>`;
-  let h = `<div class="sub" style="white-space:normal;margin-bottom:10px">Each block is a set of receipts with the <b>same amount</b> and a matching vendor, card, or transaction #. We <b>recommend keeping the copy with the most info</b> (a photo beats a thin CSV row) and deleting the thinner duplicate(s). Deleting removes that charge from the books (an admin can undo). Different purchases that happen to cost the same? Leave them.</div>`;
+  let h = `<div class="sub" style="white-space:normal;margin-bottom:10px">Each block is a set of receipts with the <b>same amount</b> and a matching vendor, card, or transaction #. The recommended fix is to <b>🔗 merge them into one</b> — that keeps the <b>best of each copy</b> (your categorization + the clearest photo + the richest line items) instead of throwing one away. The absorbed copies are removed (an admin can undo). Different purchases that happen to cost the same? Leave them.</div>`;
   const GREEN = "#1b7f4d";
   groups.forEach(g => {
     const amt = money2(+g[0].amount || 0);
-    // rank a COPY by info-richness (desc); newest breaks a tie. Never mutates the group used elsewhere.
+    // rank a COPY by info-richness (desc); newest breaks a tie. Matches rcptMergeSummary's A/B/C lettering.
     const ranked = g.map(r => ({ r: r, sc: rcptInfoScore(r) })).sort((a, b) => (b.sc.score - a.sc.score) || ((b.r.ts || 0) - (a.r.ts || 0)));
     const top = ranked[0], second = ranked[1];
-    const topId = top.r.recId != null ? top.r.recId : top.r.id;
-    // near-tie = the top two are within 1 point (e.g. two photo copies filed to different jobs) → don't strong-recommend
+    // the DEFAULT survivor the auto-merge would keep (a filed copy when one exists → billing preserved)
+    const summary = (typeof rcptMergeSummary === "function") ? rcptMergeSummary(g) : null;
+    const survivor = summary ? summary.survivor : top.r;
+    const survivorId = survivor.recId != null ? survivor.recId : survivor.id;
+    // near-tie = the top two are within 1 point (e.g. two photo copies filed to DIFFERENT jobs) → warn which job
+    // the merge lands on and let Ray pick a different survivor per copy.
     const nearTie = !!(second && (top.sc.score - second.sc.score) <= 1);
+    const jobIds = {}; g.forEach(r => { if (r.jobId) jobIds[r.jobId] = 1; });
+    const diffJobs = Object.keys(jobIds).length > 1;
     h += `<div class="card" style="border-left:4px solid ${nearTie ? "var(--muted)" : "var(--danger)"};padding:8px 10px"><div class="nm" style="white-space:normal;margin-bottom:2px"><b>⚠ ${g.length} copies · ${amt}</b>${nearTie ? ` <span class="pill" style="background:var(--soft);color:var(--muted);margin-left:6px">≈ Similar — your call</span>` : ""}</div>`;
-    if (nearTie) {
-      h += `<div class="sub" style="white-space:normal;color:var(--muted);margin-bottom:4px">These carry about the same info (within 1 point) — e.g. two photo copies filed to different jobs. No clear "richest" — pick which to keep yourself.</div>`;
-    } else {
-      h += `<div class="row" style="margin:2px 0 6px"><button class="btn sm" style="background:${GREEN};color:#fff" onclick="rcptDupKeepRichest('${top.r.store}','${esc(top.r.jobId || "")}','${esc(topId)}')">✅ Keep the richest · delete the ${g.length - 1} thinner</button></div>`;
+    // PRIMARY action: merge into one, with a live preview of what it keeps + where it lands.
+    h += `<div class="row" style="margin:2px 0 4px"><button class="btn sm" style="background:${GREEN};color:#fff" onclick="rcptDupMerge('${esc(survivorId)}')">🔗 Merge into one receipt</button></div>`;
+    if (summary) h += `<div class="sub" style="white-space:normal;color:${GREEN};margin-bottom:4px">${esc(rcptMergePreviewText(g))}</div>`;
+    if (diffJobs) {
+      h += `<div class="sub" style="white-space:normal;color:var(--muted);margin-bottom:4px">These copies are filed to <b>different jobs</b>. The merge lands on <b>${esc((summary && summary.jobLabel) || "the survivor's job")}</b> — if you want a different job, tap <b>🔗 Merge into THIS one</b> on that copy instead.</div>`;
     }
     ranked.forEach(({ r, sc }, idx) => {
       const m = (typeof rcptRowMeta === "function") ? rcptRowMeta(r) : { status: "" };
       const d = (typeof rcptDate === "function") ? rcptDate(r) : (r.date || "");
       const id = r.recId != null ? r.recId : r.id;
+      const isSurv = id === survivorId;
+      const letter = String.fromCharCode(65 + idx);
       const card = r.cardLast4 ? "💳 ••••" + esc(rcptCard4(r.cardLast4)) : "no card";
       const photo = r.receiptId ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(r.receiptId) : ""}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 photo</a>` : `<span style="color:var(--muted)">no photo</span>`;
-      let rec;
-      if (nearTie) rec = `<div class="sub" style="white-space:normal;color:var(--muted)">info: ${esc(sc.has.join(", ") || "—")}${sc.missing.length ? " · missing " + esc(sc.missing.join(", ")) : ""} · score ${sc.score}</div>`;
-      else if (idx === 0) rec = `<div class="sub" style="white-space:normal;color:${GREEN};font-weight:600">✅ Recommended — keep (most info: ${esc(sc.has.join(", ") || "—")})</div>`;
-      else rec = `<div class="sub" style="white-space:normal;color:var(--danger)">🗑 Recommended delete — thinner${sc.missing.length ? " (missing: " + esc(sc.missing.join(", ")) + ")" : ""}</div>`;
+      const rec = isSurv
+        ? `<div class="sub" style="white-space:normal;color:${GREEN};font-weight:600">✅ Survivor — keeps its billing + your categorization (info: ${esc(sc.has.join(", ") || "—")})</div>`
+        : `<div class="sub" style="white-space:normal;color:var(--muted)">↪ folds into the survivor — its ${esc(sc.has.join(", ") || "info")} is kept, nothing is lost${sc.missing.length ? " · missing: " + esc(sc.missing.join(", ")) : ""}</div>`;
       h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
-        <div class="grow" style="min-width:150px"><div class="nm" style="white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">(no vendor)</span>`} · ${amt}</div>
+        <div class="grow" style="min-width:150px"><div class="nm" style="white-space:normal"><span class="pill" style="background:var(--soft);color:var(--muted);margin-right:4px">${letter}</span>${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">(no vendor)</span>`} · ${amt}</div>
         <div class="sub" style="white-space:normal">${d ? esc(fmtDate(d)) : "no date"} · ${card} · ${esc(m.status || "")}${r.where ? " · " + esc(r.where) : ""} · ${photo}</div>
         ${rec}</div>
         <div class="row" style="gap:6px;flex:0 0 auto">
-          <button class="btn ghost sm" onclick="rcptDupKeep('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">✓ Keep this</button>
+          ${isSurv ? "" : `<button class="btn ghost sm" style="color:${GREEN}" onclick="rcptDupMerge('${esc(id)}')">🔗 Merge into THIS one</button>`}
           <button class="btn ghost sm" style="color:var(--danger)" onclick="rcptDupDelete('${r.store}','${esc(r.jobId || "")}','${esc(id)}')">🗑 Delete this copy</button>
         </div></div>`;
     });
@@ -1253,7 +1456,51 @@ function rcptDupResolveAfter() {
   if (rcptDupGroups().length) rcptDupResolveOpen();
   else if (typeof closeModal === "function") closeModal();
 }
-/* delete ONE copy from a group (keeps the others) — confirmed soft-delete via the existing path */
+/* MERGE a whole group into ONE record. Picks the survivor via rcptMergeFields (a filed copy when one exists →
+   billing home + manual categorization preserved; forcedSurvivorId lets Ray override which copy survives), folds
+   the richest line items onto the survivor, then applies the merged best-of field set through the tested
+   rcptApplyEdit spine (same home → id + billing preserved, photo swapped in) and soft-deletes the absorbed copies
+   via the existing reversible rcptTombstone path. Returns {ok,newLoc,absorbed} or {ok:false,error}. Never throws.
+   NO new billing logic — reuses rcptMergeFields / rcptFindRecord / rcptApplyEdit / rcptTombstone. */
+function rcptMergeGroup(group, forcedSurvivorId) {
+  try {
+    var g = (group || []).filter(Boolean);
+    if (g.length < 2) return { ok: false, error: "need at least 2 copies to merge" };
+    var merged = rcptMergeFields(g, forcedSurvivorId);
+    if (!merged || !merged.survivor || !merged.survivorLoc) return { ok: false, error: "no survivor" };
+    var loc = merged.survivorLoc;
+    var survRec = (typeof rcptFindRecord === "function") ? rcptFindRecord(loc.store, loc.jobId, loc.recId) : null;
+    if (!survRec) return { ok: false, error: "survivor not found" };
+    // fold the richest line items / Cap read onto the survivor BEFORE the edit so the spine carries it through
+    // (rcptApplyEdit preserves the survivor's own `suggested` — cap read isn't part of the fields set).
+    if (merged.fields.suggested && merged.fields.suggested !== survRec.suggested) survRec.suggested = merged.fields.suggested;
+    var res = (typeof rcptApplyEdit === "function") ? rcptApplyEdit({ store: loc.store, jobId: loc.jobId, recId: loc.recId }, merged.fields) : null;
+    if (!res || !res.ok) return { ok: false, error: (res && res.error) || "merge edit failed" };
+    // soft-delete every ABSORBED copy (reversible). The survivor kept its id (same-home edit), so skip it.
+    var absorbed = 0;
+    g.forEach(function (r) {
+      var rid = r.recId != null ? r.recId : r.id;
+      if (rid === loc.recId) return;
+      if (typeof rcptTombstone === "function" && rcptTombstone(r.store, r.jobId || null, rid)) absorbed++;
+    });
+    return { ok: true, newLoc: res.newLoc, absorbed: absorbed };
+  } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
+}
+/* the resolver's primary action — MERGE the group holding `survivorId` into that copy, keeping the best of each.
+   Owner/admin, confirm (with the merged preview), reversible. Reuses rcptDupIndex / rcptMergeGroup / rcptDupResolveAfter. */
+window.rcptDupMerge = function (survivorId) {
+  if (!rcptFinFull()) return;
+  const grp = rcptDupIndex().byId[survivorId];
+  if (!grp) { rcptDupResolveAfter(); return; }
+  const preview = (typeof rcptMergePreviewText === "function") ? rcptMergePreviewText(grp, survivorId) : "";
+  if (!confirm("Merge these " + grp.length + " copies into one receipt?\n\n" + preview + "\n\n(An admin can undo.)")) return;
+  const res = rcptMergeGroup(grp, survivorId);
+  if (!res || !res.ok) { alert("Couldn't merge these copies: " + ((res && res.error) || "unknown")); return; }
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Merged " + grp.length + " duplicate receipts into one — kept the best photo + line items + your categorization; removed " + res.absorbed + " absorbed cop" + (res.absorbed > 1 ? "ies" : "y"));
+  rcptDupResolveAfter();
+};
+/* delete ONE copy from a group (keeps the others) — confirmed soft-delete via the existing path (SECONDARY:
+   for genuine junk; MERGE is the recommended default) */
 window.rcptDupDelete = function (store, jobId, id) {
   if (!rcptFinFull()) return;
   if (!confirm("Delete this copy as a duplicate? The other copy stays. This removes its charge from the books (an admin can undo).")) return;

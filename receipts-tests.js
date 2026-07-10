@@ -960,27 +960,28 @@ async function main() {
   ok("short desc (<12 chars) does NOT score", rcptInfoScore({ desc: "paver" }).has.indexOf("description") < 0 && rcptInfoScore({ desc: "pavers & 3 bags sand" }).has.indexOf("description") >= 0);
   ok("a Cap-'unknown' date does NOT count as a date", rcptInfoScore({ date: "unknown" }).has.indexOf("date") < 0 && rcptInfoScore({ date: "2026-07-01" }).has.indexOf("date") >= 0);
 
-  console.log("— RESOLVER: recommends the highest-score copy to KEEP, the thinner to delete —");
+  console.log("— RESOLVER (MERGE-first): '🔗 Merge into one receipt' is the primary action + a preview —");
   resetStore(); global.finCanView = function () { return true; };
   const recKeep = seedReview({ receiptId: "photo.jpg", vendor: "Lowe's", amount: 26.67, cardLast4: "8355", category: "materials", jobId: "j1", desc: "pavers and sand delivery" });
   const recThin = seedReview({ receiptId: "", vendor: "Lowe's", amount: 26.67, refNo: "1234" });   // thin CSV row (no photo)
   recThin.receiptId = "";
   const rankHtml = rcptDupResolveHTML();
-  ok("resolver marks the photo copy '✅ Recommended — keep'", /✅ Recommended — keep/.test(rankHtml) && rankHtml.indexOf("✅ Recommended — keep") < rankHtml.indexOf("🗑 Recommended delete"), rankHtml.slice(0, 40));
-  ok("resolver marks the thinner copy '🗑 Recommended delete'", /🗑 Recommended delete — thinner/.test(rankHtml));
-  ok("the keep reason names the photo (most info: photo…)", /most info:[^<]*photo/.test(rankHtml));
-  ok("the delete reason names what's missing (photo)", /missing:[^<]*photo/.test(rankHtml));
-  ok("a group one-tap 'Keep the richest · delete the N thinner' is offered", /Keep the richest · delete the 1 thinner/.test(rankHtml) && /rcptDupKeepRichest\(/.test(rankHtml));
+  ok("resolver's PRIMARY action is '🔗 Merge into one receipt' (not delete)", /🔗 Merge into one receipt/.test(rankHtml) && /rcptDupMerge\(/.test(rankHtml));
+  ok("the delete-the-thinner one-tap is GONE (no longer the recommended default)", !/Keep the richest · delete/.test(rankHtml) && !/rcptDupKeepRichest\(/.test(rankHtml));
+  ok("a merge PREVIEW of what it keeps is shown (Keeps: … photo …)", /Keeps:/.test(rankHtml) && /photo/.test(rankHtml));
+  ok("the survivor row is labeled '✅ Survivor — keeps its billing + your categorization'", /✅ Survivor — keeps its billing/.test(rankHtml));
+  ok("the absorbed copy is labeled '↪ folds into the survivor' (nothing lost)", /↪ folds into the survivor/.test(rankHtml));
+  ok("per-copy '🗑 Delete this copy' stays as a SECONDARY manual option", /rcptDupDelete\(/.test(rankHtml) && /🗑 Delete this copy/.test(rankHtml));
 
-  console.log("— RESOLVER: a within-1-point NEAR-TIE is labeled 'Similar', NOT strong-recommended, no one-tap —");
+  console.log("— RESOLVER: two photo copies filed to DIFFERENT jobs surface the landing job + per-copy 'Merge into THIS one' —");
   resetStore(); global.finCanView = function () { return true; };
   seedReview({ receiptId: "a.jpg", vendor: "Home Depot", amount: 40.00, cardLast4: "8355", jobId: "j1" });   // photo + card + job
-  seedReview({ receiptId: "b.jpg", vendor: "Home Depot", amount: 40.00, cardLast4: "8355", jobId: "j2" });   // photo + card + job (diff job) → tie
+  seedReview({ receiptId: "b.jpg", vendor: "Home Depot", amount: 40.00, cardLast4: "8355", jobId: "j2" });   // photo + card + job (diff job) → near-tie
   const tieHtml = rcptDupResolveHTML();
   ok("near-tie is labeled '≈ Similar — your call'", /≈ Similar — your call/.test(tieHtml));
-  ok("near-tie does NOT strong-recommend keep/delete", !/✅ Recommended — keep/.test(tieHtml) && !/🗑 Recommended delete/.test(tieHtml));
-  ok("near-tie offers NO group one-tap", !/rcptDupKeepRichest\(/.test(tieHtml));
-  ok("near-tie still allows manual per-row Keep/Delete", /rcptDupKeep\(/.test(tieHtml) && /rcptDupDelete\(/.test(tieHtml));
+  ok("still offers MERGE on a near-tie (no delete-one-tap)", /🔗 Merge into one receipt/.test(tieHtml) && !/rcptDupKeepRichest\(/.test(tieHtml));
+  ok("surfaces which job the merged receipt lands on (different jobs warning)", /filed to <b>different jobs<\/b>/.test(tieHtml) && /The merge lands on/.test(tieHtml));
+  ok("lets Ray pick the survivor per copy (🔗 Merge into THIS one)", /🔗 Merge into THIS one/.test(tieHtml));
 
   console.log("— ONE-TAP: rcptDupKeepRichest keeps the top, soft-deletes exactly the thinner via rcptTombstone —");
   resetStore(); global.finCanView = function () { return true; };
@@ -1013,6 +1014,74 @@ async function main() {
   seedReview({ receiptId: "p1.jpg", vendor: "Lowe's", amount: 26.67, cardLast4: "8355" });
   seedReview({ receiptId: "", vendor: "Lowe's", amount: 26.67 });
   ok("scoring adds NO groups and drops none (same tolerant detection)", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2, rcptDupGroups().map(g => g.length));
+
+  // ============ DUPLICATE MERGE (Ray's insight: COMBINE copies, don't delete one) — js/72 rcptMergeFields / rcptMergeGroup ============
+  console.log("\n— MERGE CORE (rcptMergeFields): folds the best of each copy; never blanks a field any copy had —");
+  // a FILED copy (human categorized/billed, no photo) + a REVIEW copy (clearer photo + richest Cap read, blank category)
+  const mfFiled = { store: "jobexp", jobId: "j1", recId: "s1", receiptId: "", category: "fuel", vendor: "Depot", amount: 90, date: "2026-07-01", paidBy: "u_chase", desc: "gas station" };
+  const mfReview = { store: "review", jobId: null, recId: "r1", receiptId: "clear.jpg", suggested: { lineItems: [1, 2, 3] }, category: "", vendor: "Depot", amount: 90, cardLast4: "8355" };
+  const mf = rcptMergeFields([mfFiled, mfReview]);
+  ok("survivor is the FILED copy when one exists (billing home preserved)", mf.survivor === mfFiled && mf.survivorLoc.store === "jobexp" && mf.survivorLoc.jobId === "j1");
+  ok("keeps the PHOTO from the copy that has one (a re-uploaded clearer photo)", mf.fields.receiptId === "clear.jpg");
+  ok("keeps the human-set CATEGORY over a blank/guess", mf.fields.category === "fuel");
+  ok("keeps the human-set JOB (survivor's billing home)", mf.fields.jobId === "j1" && mf.fields.type === "job-expense");
+  ok("keeps the RICHEST line items", mf.fields.suggested && mf.fields.suggested.lineItems.length === 3);
+  ok("never blanks a field any copy had — pulls the card the review copy carried", mf.fields.cardLast4 === "8355");
+  ok("survivor's manual work wins but the review's photo folds in (both survive — nothing lost)", mf.fields.category === "fuel" && mf.fields.receiptId === "clear.jpg" && mf.fields.vendor === "Depot" && mf.fields.amount === 90);
+
+  console.log("— MERGE CORE: a REAL date beats a Cap 'unknown' (the ISO guard) —");
+  const mfDate = rcptMergeFields([
+    { store: "review", recId: "a", receiptId: "x", date: "unknown", vendor: "V", amount: 5 },   // survivor (first) has a Cap 'unknown'
+    { store: "review", recId: "b", receiptId: "y", date: "2026-07-02", vendor: "V", amount: 5 }
+  ]);
+  ok("merged date is the real YYYY-MM-DD, not 'unknown'", mfDate.fields.date === "2026-07-02");
+
+  console.log("— MERGE CORE: never blanks a value — a field the survivor lacks is filled from another copy —");
+  const mfFill = rcptMergeFields([
+    { store: "review", recId: "a", receiptId: "x", vendor: "Lowe's", amount: 12, category: "" },
+    { store: "review", recId: "b", receiptId: "", vendor: "", amount: 12, category: "materials", desc: "pavers and sand" }
+  ]);
+  ok("blank category filled from the other copy (materials)", mfFill.fields.category === "materials");
+  ok("blank desc filled from the other copy", mfFill.fields.desc === "pavers and sand");
+  ok("survivor's vendor kept (its own non-blank value wins)", mfFill.fields.vendor === "Lowe's");
+
+  console.log("— MERGE CORE: near-tie survivor selection is EXPLICIT (forcedSurvivorId → lands on THAT copy's job) —");
+  const twoJobsGroup = [
+    { store: "jobmat", jobId: "j1", recId: "pa", receiptId: "a.jpg", vendor: "Home Depot", amount: 40, cardLast4: "8355" },
+    { store: "jobmat", jobId: "j2", recId: "pb", receiptId: "b.jpg", vendor: "Home Depot", amount: 40, cardLast4: "8355" }
+  ];
+  ok("forcing copy B → survivor is B, merge lands on job j2", rcptMergeFields(twoJobsGroup, "pb").survivor.recId === "pb" && rcptMergeFields(twoJobsGroup, "pb").fields.jobId === "j2");
+  ok("forcing copy A → survivor is A, merge lands on job j1", rcptMergeFields(twoJobsGroup, "pa").survivor.recId === "pa" && rcptMergeFields(twoJobsGroup, "pa").fields.jobId === "j1");
+
+  console.log("— MERGE END-TO-END (rcptMergeGroup): ONE record via rcptApplyEdit + the others soft-deleted (reversible) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const survRev = seedReview({ receiptId: "old.jpg", vendor: "Depot", amount: 90, date: "2026-07-01" });
+  const fres = rcptApplyEdit({ store: "review", jobId: null, recId: survRev.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas station", receiptId: "old.jpg" });
+  ok("pre: the manual copy is FILED to j1.expenses (human categorized)", fres.ok && STORE.jobs[0].expenses.some(e => e.id === survRev.id && !e.deleted));
+  const better = seedReview({ receiptId: "clear.jpg", vendor: "Depot", amount: 90, suggested: { lineItems: [1, 2, 3] } });
+  const grp = rcptDupGroups()[0];
+  ok("pre: the filed copy + the clearer review copy form ONE dup group of 2", grp && grp.length === 2);
+  const mres = rcptMergeGroup(grp);
+  ok("merge succeeds, absorbs exactly 1 copy", mres.ok && mres.absorbed === 1, mres);
+  const survFiled = rcptFindRecord("jobexp", "j1", survRev.id);
+  ok("survivor keeps its id + billing home (still in j1.expenses)", !!survFiled && mres.newLoc.store === "jobexp" && mres.newLoc.jobId === "j1" && mres.newLoc.recId === survRev.id);
+  ok("survivor kept the human category (fuel) + swapped in the CLEARER photo", survFiled.category === "fuel" && survFiled.receiptId === "clear.jpg");
+  ok("survivor absorbed the richest line items", survFiled.suggested && survFiled.suggested.lineItems.length === 3);
+  ok("the absorbed copy is soft-deleted (reversible, not hard-gone)", STORE.receipts.find(r => r.id === better.id).deleted === true);
+  ok("exactly ONE live copy remains — no dup group left", rcptDupGroups().length === 0);
+  ok("merge NEVER blanked the vendor/amount the survivor had", survFiled.vendor === "Depot" && survFiled.amount === 90);
+
+  console.log("— MERGE END-TO-END: forcing the OTHER copy as survivor lands the merge on ITS home (Ray overrides) —");
+  resetStore(); global.finCanView = function () { return true; };
+  const revA = seedReview({ receiptId: "pa.jpg", vendor: "Home Depot", amount: 40, date: "2026-07-01" });
+  const mgFileA = rcptApplyEdit({ store: "review", jobId: null, recId: revA.id }, { type: "pass-through", jobId: "j1", amount: 40, vendor: "Home Depot", date: "2026-07-01", category: "materials", desc: "pavers here", receiptId: "pa.jpg" });
+  const revJB = seedReview({ receiptId: "pb.jpg", vendor: "Home Depot", amount: 40, date: "2026-07-01" });
+  const mgFileB = rcptApplyEdit({ store: "review", jobId: null, recId: revJB.id }, { type: "pass-through", jobId: "j2", amount: 40, vendor: "Home Depot", date: "2026-07-01", category: "materials", desc: "pavers here", receiptId: "pb.jpg" });
+  ok("pre: two photo copies filed to DIFFERENT jobs (near-tie)", mgFileA.ok && mgFileB.ok && rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
+  const grp2 = rcptDupGroups()[0];
+  const mres2 = rcptMergeGroup(grp2, revJB.id);   // Ray picks copy B (j2) as survivor
+  ok("merge lands on the CHOSEN survivor's job (j2), not the auto pick", mres2.ok && mres2.newLoc.jobId === "j2" && mres2.newLoc.recId === revJB.id);
+  ok("the other job's copy (j1) is soft-deleted", !STORE.jobs[0].materials.find(e => e.id === revA.id && !e.deleted) && STORE.jobs[1].materials.some(e => e.id === revJB.id && !e.deleted));
 
   console.log("— MARK-AS-DUP: the edit-modal rcptEditMarkDup soft-deletes THIS receipt (existing path), keeps the other —");
   resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; };
