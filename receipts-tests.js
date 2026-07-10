@@ -235,6 +235,27 @@ async function main() {
   const tol = rcptApplySplit(vloc, 100, [{ amount: 33.33, type: "business" }, { amount: 33.33, type: "business" }, { amount: 33.34, type: "business" }], vsh);
   ok("Σ within ±$0.01 is accepted (33.33+33.33+33.34=100.00 → 3 records)", tol.ok && STORE.expenses.filter(e => !e.deleted).length === 3, tol);
 
+  console.log("\n— SALES TAX: apportion the real tax by pre-tax bucket, one tax line per bucket, exact —");
+  // $100 materials (pass-through) + $50 tools (business), 6.75% tax = $10.13 → $6.75 to materials, $3.38 to tools
+  const at = rcptApportionTax(1013, { "pass-through|j1": 10000, "business|": 5000 });
+  ok("apportion $10.13 by 100:50 → 675 / 338 (sums EXACTLY to the tax)", at["pass-through|j1"] === 675 && at["business|"] === 338 && (at["pass-through|j1"] + at["business|"]) === 1013, at);
+  let taxLeak = null;   // sweep: never invent/lose a cent across many tax amounts + weightings
+  for (let c = 0; c <= 5000; c += 3) { const x = rcptApportionTax(c, { a: 7333, b: 2201, d: 466 }); if (x.a + x.b + x.d !== c) { taxLeak = { c, x }; break; } }
+  ok("apportioned tax never leaks a cent across a sweep", taxLeak === null, taxLeak);
+  // rcptSpreadTaxRows → adds one Sales-tax row per (bucket,jobId) group
+  const spread = rcptSpreadTaxRows([{ bucket: "pass-through", jobId: "j1", amount: "100.00" }, { bucket: "business", jobId: "", amount: "50.00" }], 10.13);
+  const matTax = spread.find(r => r.isTax && r.bucket === "pass-through"), bizTax = spread.find(r => r.isTax && r.bucket === "business");
+  ok("spread → 2 pre-tax rows + 2 tax rows (one per bucket)", spread.length === 4 && !!matTax && !!bizTax, spread);
+  ok("materials tax row = $6.75 pass-through on j1, business tax row = $3.38", matTax.amount === "6.75" && matTax.jobId === "j1" && bizTax.amount === "3.38", { matTax, bizTax });
+  ok("spread rows sum to items + tax (reconciles to the receipt total)", spread.reduce((s, r) => s + Math.round(parseFloat(r.amount) * 100), 0) === 16013, spread.map(r => r.amount));
+  // idempotent: spreading again drops the old tax rows first
+  const respread = rcptSpreadTaxRows(spread, 10.13);
+  ok("re-spreading is idempotent (still 2 tax rows, not 4)", respread.filter(r => r.isTax).length === 2, respread);
+  // county-rate check: $10.13 on $150 is within tolerance of 6.75%; $12.00 is flagged
+  ok("tax check: $10.13 on $150.07 subtotal is within 6.75% tolerance (ok)", rcptTaxCheck(15007, 1013).ok === true, rcptTaxCheck(15007, 1013));
+  ok("tax check: $12.00 on $150 subtotal is FLAGGED (≠ 6.75%)", rcptTaxCheck(15000, 1200).ok === false, rcptTaxCheck(15000, 1200));
+  ok("rcptTaxExpected: 6.75% of $150 = $10.13 (1013¢)", rcptTaxExpected(15000) === 1013, rcptTaxExpected(15000));
+
   // ========================= UNIFIED JOB RECEIPT (js/100) → rcptApplySplit =========================
   console.log("\n— JOB RECEIPT: jobRcptSeed builds rows from Cap lineItems (+ whole-receipt client fallback) —");
   const seedFull = jobRcptSeed({ amount: 200, lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] });

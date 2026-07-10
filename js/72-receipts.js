@@ -15,7 +15,7 @@
        everything they log shows up in this table too.
    The Receipts table AGGREGATES all four homes into one sortable, click-to-edit view. */
 
-const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "meals", "crew supplies", "office/admin", "other"];
+const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "meals", "crew supplies", "office/admin", "sales tax", "other"];
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed | owed | paidback (status pills)
 let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
