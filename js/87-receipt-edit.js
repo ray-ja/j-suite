@@ -206,6 +206,17 @@ window.rcptEditOpen = function (store, jobId, recId) {
     const s = RCPT_EDIT.suggested;
     sugg = `<div id="rcpt_suggbanner" class="card" style="background:#6b3fa0;color:#fff;padding:10px;margin-bottom:8px"><div style="font-weight:700">🤖 Cap suggests${s.confidence != null ? ` (${Math.round(s.confidence * 100)}% sure)` : ""}</div><div class="sub" style="color:#fff;opacity:.9;white-space:normal">${[s.vendor, s.amount != null ? money(s.amount) : "", s.type ? (RCPT_TYPE_LABEL[s.type] || s.type) : "", s.category].filter(Boolean).map(esc).join(" · ")}</div><button class="btn sm" style="margin-top:8px;background:#fff;color:#6b3fa0" onclick="rcptApplySuggestion()">Use Cap's guess</button> <span class="sub" style="color:#fff;opacity:.8">— then Save to confirm</span></div>`;
   }
+  // 🔗 DEPOSIT-SETTLEMENT match (js/72) — this rental cost looks like the settlement of an open deposit. One tap
+  // settles it through the js/96 machinery (net + absorb the duplicate). Suggestion-only until tapped; owner/admin.
+  let depSugg = "";
+  if (typeof rcptDepositMatch === "function") {
+    const dm = rcptDepositMatch(Object.assign({}, rec, { jobId: rec.jobId != null ? rec.jobId : (jobId || null) }));
+    if (dm && dm.deposit) {
+      const dvend = rec.vendor || (rec.suggested && rec.suggested.vendor) || dm.deposit.vendor || "";
+      depSugg = `<div class="card" style="border-left:4px solid #6b3fa0;margin-bottom:8px"><div style="font-weight:700;color:#6b3fa0;white-space:normal">🔗 Looks like the settlement of your ${money(dm.deposit.amount)}${dvend ? " " + esc(dvend) : ""} deposit</div><div class="sub" style="white-space:normal">Cap read the rental at ${money(dm.net)}, so about ${money(dm.impliedRefund)} came back. Settling nets the deposit to ${money(dm.net)} and absorbs this receipt so it isn't counted twice.</div><button class="btn sm" style="margin-top:8px;background:#6b3fa0;border-color:#6b3fa0;color:#fff" onclick="rcptSettleDepFromRcpt('${store}','${jobId || ""}','${recId}','${esc(dm.deposit.id)}')">🔗 Settle from this receipt</button></div>`;
+    }
+  }
+  sugg = depSugg + sugg;
 
   modal("Edit receipt", `
     ${sugg}

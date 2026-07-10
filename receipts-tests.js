@@ -1758,6 +1758,70 @@ async function main() {
   pdfRow.suggested = { vendor: "Home Depot", amount: 72.59, confidence: 0.9 };
   ok("an already-read PDF (has suggested) is NOT re-targeted", capRcptTargets().every(r => r.id !== pdfRow.id), capRcptTargets().map(r => r.receiptId));
 
+  console.log("— 🔗 DEPOSIT-SETTLEMENT: Cap matches a rental cost to its open deposit + settles from the receipt —");
+  // Set up the REAL scenario: an open $300 The Home Depot deposit (HELD) on the Paver job + a separate $72.59
+  // Home Depot rental review receipt Cap read (net cost · rentals) → the same rental, currently double-countable.
+  resetStore(); global.finCanView = function () { return true; };
+  const dsPaver = STORE.jobs.find(j => j.id === "j1");
+  const dsDep = { id: "dep_hd", amount: 300, vendor: "The Home Depot", category: "rentals", isDeposit: true, depositSettled: false, desc: "Trailer rental deposit", deleted: false, updatedAt: Date.now() };
+  dsPaver.expenses.push(dsDep);
+  const dsRcpt = seedReview({ receiptId: "hd_contract.pdf", vendor: "The Home Depot", amount: null, category: "", jobId: "j1", suggested: { vendor: "The Home Depot", amount: 72.59, category: "rentals", confidence: 0.9 } });
+
+  const dsM = rcptDepositMatch(dsRcpt);
+  ok("rcptDepositMatch finds the $300 Home Depot open deposit", !!dsM && dsM.deposit && dsM.deposit.id === "dep_hd", dsM && dsM.deposit && dsM.deposit.id);
+  ok("match net cost = the receipt's 72.59", !!dsM && dsM.net === 72.59, dsM && dsM.net);
+  ok("match implied refund = 300 − 72.59 = 227.41", !!dsM && dsM.impliedRefund === 227.41, dsM && dsM.impliedRefund);
+  ok("match carries the deposit's job", !!dsM && dsM.job && dsM.job.id === "j1", dsM && dsM.job && dsM.job.id);
+
+  // NO match when the vendor differs
+  const dsWrongVendor = seedReview({ receiptId: "x.pdf", vendor: "Lowe's", category: "rentals", jobId: "j1", suggested: { amount: 50, category: "rentals" } });
+  ok("no match when vendor differs (Lowe's vs Home Depot)", rcptDepositMatch(dsWrongVendor) === null);
+  // NO match when the job differs (receipt on j2, deposit on j1)
+  const dsWrongJob = seedReview({ receiptId: "y.pdf", vendor: "The Home Depot", category: "rentals", jobId: "j2", suggested: { amount: 50, category: "rentals" } });
+  ok("no match when the job differs", rcptDepositMatch(dsWrongJob) === null);
+  // NO match when the deposit is SMALLER than the rental cost (deposit can't cover it)
+  const dsTooBig = seedReview({ receiptId: "z.pdf", vendor: "The Home Depot", category: "rentals", jobId: "j1", suggested: { amount: 400, category: "rentals" } });
+  ok("no match when deposit < receipt net (deposit can't cover it)", rcptDepositMatch(dsTooBig) === null);
+  // NO match for a non-rental receipt / a deposit itself
+  ok("no match for a non-rentals receipt", rcptDepositMatch(seedReview({ receiptId: "n.pdf", vendor: "The Home Depot", category: "materials", jobId: "j1", suggested: { amount: 20, category: "materials" } })) === null);
+  ok("a deposit receipt never matches itself", rcptDepositMatch(dsDep) === null);
+
+  // the page suggestion only surfaces the real match, and only for owner/admin
+  global.finCanView = function () { return true; };
+  const dsSugIds = rcptDepositSuggestions().map(s => s.receipt.id);
+  ok("suggestion surfaces the real $72.59 match", dsSugIds.indexOf(dsRcpt.id) >= 0, dsSugIds);
+  ok("suggestion does NOT surface the non-matches", dsSugIds.indexOf(dsWrongVendor.id) < 0 && dsSugIds.indexOf(dsWrongJob.id) < 0 && dsSugIds.indexOf(dsTooBig.id) < 0);
+  global.finCanView = function () { return false; };   // crew
+  ok("crew see NO deposit-settlement suggestions (owner/admin only)", rcptDepositSuggestions().length === 0);
+  global.finCanView = function () { return true; };
+
+  // ONE-TAP SETTLE: adds a −227.41 refund + settles → net 72.59; attaches the contract photo; absorbs the receipt
+  const dsRes = rcptSettleDepositFromReceipt({ store: "review", jobId: null, recId: dsRcpt.id }, "dep_hd");
+  ok("rcptSettleDepositFromReceipt returns ok", !!dsRes && dsRes.ok === true, dsRes);
+  ok("computed refund = 227.41", dsRes.refund === 227.41, dsRes.refund);
+  const dsRefunds = dsPaver.expenses.filter(e => e.refundOfId === "dep_hd");
+  ok("a −227.41 refund record was added against the deposit", dsRefunds.length === 1 && dsRefunds[0].amount === -227.41, dsRefunds.map(r => r.amount));
+  ok("the deposit is now settled", dsDep.depositSettled === true && dsRefunds[0].depositSettled === true);
+  ok("depositNetCost = 72.59 (the real rental cost)", depositNetCost(dsDep) === 72.59, depositNetCost(dsDep));
+  ok("the deposit no longer counts as HELD (settled)", depositHeld(dsDep) === false);
+  ok("contract photo attached to the deposit as proof", dsDep.receiptId === "hd_contract.pdf", dsDep.receiptId);
+  ok("the separate rental receipt was soft-deleted (no double-count)", rcptReview().every(r => r.id !== dsRcpt.id) && STORE.receipts.find(r => r.id === dsRcpt.id).deleted === true);
+  ok("the settled deposit dropped off depositsAwaitingRefund", depositsAwaitingRefund().every(d => d.deposit.id !== "dep_hd"));
+  // reversible: un-tombstone the receipt brings it back
+  STORE.receipts.find(r => r.id === dsRcpt.id).deleted = false;
+  ok("absorb is reversible (clearing the tombstone restores the receipt)", rcptReview().some(r => r.id === dsRcpt.id));
+  STORE.receipts.find(r => r.id === dsRcpt.id).deleted = true;
+
+  // GUARD: a receipt net > deposit is refused (numbers don't work) — nothing settled, both left alone
+  resetStore(); global.finCanView = function () { return true; };
+  const dsPaver2 = STORE.jobs.find(j => j.id === "j1");
+  const dsSmall = { id: "dep_small", amount: 50, vendor: "The Home Depot", category: "rentals", isDeposit: true, depositSettled: false, deleted: false, updatedAt: Date.now() };
+  dsPaver2.expenses.push(dsSmall);
+  const dsBig = seedReview({ receiptId: "big.pdf", vendor: "The Home Depot", amount: 80, category: "rentals", jobId: "j1" });
+  const dsBad = rcptSettleDepositFromReceipt({ store: "review", jobId: null, recId: dsBig.id }, "dep_small");
+  ok("settle refused when the rental cost exceeds the deposit", !dsBad.ok && dsBad.reason === "numbers", dsBad);
+  ok("refused settle left the deposit unsettled + the receipt intact", dsSmall.depositSettled !== true && rcptReview().some(r => r.id === dsBig.id));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }
