@@ -91,7 +91,7 @@ function sanitizeUserWrites(incoming, pre, selfId) {
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
-  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin", "superAdmin"];   // owner-only fields (superAdmin = platform owner — never settable by a non-owner sync); adminPin is also self-settable
+  const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin", "superAdmin", "archived"];   // owner-only fields (superAdmin = platform owner — never settable by a non-owner sync); adminPin is also self-settable; archived = owner-only (a verified owner bypasses this whole fn, so owner archiving still persists — a crew member cannot archive anyone via a crafted sync)
   const safe = [];
   for (const u of incoming.users) {
     if (!u || !u.id) continue;

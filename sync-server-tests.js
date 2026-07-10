@@ -164,6 +164,20 @@ const crwCardsOther = t.sanitizeUserWrites({ users: [{ id: "own", username: "ray
 const ownOtherOut = crwCardsOther.users.find(u => u.id === "own");
 ok("card GATE: a crew member CANNOT write ANOTHER user's cards (reverted to stored — no card injected on Ray's account)", !!ownOtherOut && !Object.prototype.hasOwnProperty.call(ownOtherOut, "cards"));
 
+// ARCHIVED is owner-only (SENSITIVE). A verified OWNER bypasses sanitizeUserWrites entirely (handler line ~2221),
+// so owner archiving persists; a crew member must not be able to archive anyone via a crafted sync, and an
+// archived account must survive the merge with its flag (kept for pay + history — never dropped).
+const archPre = { users: [{ id: "own", username: "ray", role: "owner", passhash: "x", updatedAt: 1 }, { id: "crw2", username: "vlad", role: "crew", passhash: "y", updatedAt: 1 }] };
+const crwSelfArch = t.sanitizeUserWrites({ users: [{ id: "crw2", username: "vlad", role: "crew", archived: true, updatedAt: 50 }] }, archPre, "crw2");
+const crwSelfArchOut = crwSelfArch.users.find(u => u.id === "crw2");
+ok("archive GATE: a crew member CANNOT archive themselves via sync (archived reverted — owner-only)", !!crwSelfArchOut && !crwSelfArchOut.archived);
+const crwArchOther = t.sanitizeUserWrites({ users: [{ id: "own", username: "ray", role: "owner", archived: true, updatedAt: 60 }] }, archPre, "crw2");
+const crwArchOtherOut = crwArchOther.users.find(u => u.id === "own");
+ok("archive GATE: a crew member CANNOT archive ANOTHER account (reverted to stored)", !!crwArchOtherOut && !crwArchOtherOut.archived);
+const archRT = t.mergeState({ users: [{ id: "own", username: "ray", role: "owner", passhash: "x", updatedAt: 1 }, { id: "gone", username: "vlad", role: "crew", passhash: "y", archived: true, updatedAt: 5 }] }, { users: [] });
+const goneRT = archRT.users.find(u => u.id === "gone");
+ok("archive: an archived account SURVIVES a sync round-trip with the flag intact (kept for pay + history, never dropped)", !!goneRT && goneRT.archived === true && goneRT.username === "vlad");
+
 // CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
 // + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
 // server suite proves the client migration is loss-free + sane.
