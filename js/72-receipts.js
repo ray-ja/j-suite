@@ -1478,6 +1478,45 @@ function jobExpenseTotal(j) {
   const sum = arr => (Array.isArray(arr) ? arr : []).filter(x => x && !x.deleted && !held(x)).reduce((s, x) => s + (+x.amount || 0), 0);
   return sum(j.materials) + sum(j.expenses);
 }
+/* expenses on a job broken down BY PERSON (dollars) — who put each expense on the job. Keyed by the person the
+   expense is attributed to (paidBy who fronted it → attributedTo → uploadedBy). Unattributed expenses group
+   under "" (shown as "business/unassigned"). Materials + job expenses, deposits held out (same as the total). */
+function jobExpenseByPerson(j) {
+  const held = x => typeof depositHeld === "function" && depositHeld(x);
+  const per = {};
+  const add = arr => (Array.isArray(arr) ? arr : []).forEach(x => {
+    if (!x || x.deleted || held(x)) return;
+    const who = x.paidBy || x.attributedTo || x.uploadedBy || "";
+    per[who] = (per[who] || 0) + (+x.amount || 0);
+  });
+  add(j && j.materials); add(j && j.expenses);
+  return per;
+}
+/* mileage payback on a job BY PERSON (dollars) — confirmed time-clock miles × IRS rate, credited to the VEHICLE
+   OWNER (vehicleOwnerId, falling back to the driver). Mirrors jobMileageCost, just split out per person. */
+function jobMileageByPerson(j) {
+  if (!j) return {};
+  const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725);
+  const per = {};
+  (D().timeclock || []).forEach(e => {
+    if (!e || e.deleted || e.jobId !== j.id || !e.clockOut || !e.milesConfirmed) return;
+    const who = e.vehicleOwnerId || e.userId || "";
+    per[who] = (per[who] || 0) + (+e.miles || 0) * rate;
+  });
+  return per;
+}
+/* owner "I've reviewed this job's receipts — all in, looks good to invoice" flag. Additive (job.rcptReviewedAt);
+   a plain toggle on the job record, reversible. Owner/admin only. Separate from the crew's per-person close-out. */
+window.rcptToggleJobReviewed = function (jobId) {
+  if (!rcptFinFull()) return;
+  const j = (D().jobs || []).find(x => x && x.id === jobId); if (!j) return;
+  j.rcptReviewedAt = j.rcptReviewedAt ? 0 : now();
+  if (!j.rcptReviewedAt) delete j.rcptReviewedAt;
+  if (typeof touch === "function") touch(j);
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  render();
+};
 function rcptJobCloseoutHTML() {
   const jobs = rcptCloseoutJobs();
   const ready = jobs.filter(jobReceiptsFullyClosed);
@@ -1505,10 +1544,22 @@ function rcptJobCloseoutHTML() {
     // read "$0". Displayed total = expenses + mileage (no double-count — the two are disjoint), mileage sub-labeled.
     const mil = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
     const dispTot = expTot + mil;
-    // whole row taps through to the job's expense page (js/61 openJobPage → the materials/expenses section)
-    h += `<div class="li" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')" style="cursor:pointer;align-items:flex-start;flex-wrap:wrap;gap:6px${full ? "" : ";border-left:3px solid #e0a800;padding-left:8px"}">
-      <div class="grow" style="min-width:160px"><div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div><div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> expenses${mil > 0 ? ` · 🚗 mileage ${money2(mil)}` : ""}${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div></div>
-      <div style="flex:0 0 auto">${badge}</div></div>`;
+    // PER-PERSON breakdown — who put which expenses on the job, and each person's mileage payback. Right there
+    // in the bar so the owner can review + check off without opening the job page.
+    const _nm = id => id ? ((typeof userName === "function" && userName(id)) || "?") : "business";
+    const expBy = jobExpenseByPerson(j), milBy = jobMileageByPerson(j);
+    const expParts = Object.keys(expBy).filter(id => expBy[id] > 0.005).sort((a, b) => expBy[b] - expBy[a]).map(id => `${esc(_nm(id))} ${money2(expBy[id])}`);
+    const milParts = Object.keys(milBy).filter(id => milBy[id] > 0.005).sort((a, b) => milBy[b] - milBy[a]).map(id => `${esc(_nm(id))} ${money2(milBy[id])}`);
+    const reviewed = !!j.rcptReviewedAt;
+    const accent = reviewed ? "#1e9e5a" : (full ? "" : "#e0a800");
+    // left/title taps to the job page; the RIGHT-side review button checks it off in place (stopPropagation).
+    h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px${accent ? `;border-left:3px solid ${accent};padding-left:8px` : ""}${reviewed ? ";opacity:.72" : ""}">
+      <div class="grow" style="min-width:160px;cursor:pointer" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')">
+        <div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div>
+        <div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> total${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div>
+        ${expParts.length ? `<div class="sub" style="white-space:normal">👤 expenses: ${expParts.join(" · ")}</div>` : ""}
+        ${milParts.length ? `<div class="sub" style="white-space:normal">🚗 mileage back: ${milParts.join(" · ")}</div>` : ""}</div>
+      <div style="flex:0 0 auto;text-align:right"><button class="btn ${reviewed ? "acc" : "ghost"} sm" style="white-space:nowrap" onclick="event.stopPropagation();rcptToggleJobReviewed('${esc(j.id)}')" title="${reviewed ? "Reviewed — tap to undo" : "I've checked this job's receipts — good to go"}">${reviewed ? "✓ Reviewed" : "☐ Review"}</button><div style="margin-top:5px">${badge}</div></div></div>`;
   });
   h += `</div>`;
   return h;

@@ -235,6 +235,22 @@ async function main() {
   const tol = rcptApplySplit(vloc, 100, [{ amount: 33.33, type: "business" }, { amount: 33.33, type: "business" }, { amount: 33.34, type: "business" }], vsh);
   ok("Σ within ±$0.01 is accepted (33.33+33.33+33.34=100.00 → 3 records)", tol.ok && STORE.expenses.filter(e => !e.deleted).length === 3, tol);
 
+  console.log("\n— JOB CLOSE-OUT: per-person expenses + per-person mileage breakdown —");
+  const jbp = { id: "jbp", materials: [{ id: "m1", amount: 100, paidBy: "RJ" }, { id: "m2", amount: 40, paidBy: "CH" }], expenses: [{ id: "e1", amount: 20, paidBy: "RJ" }, { id: "e2", amount: 15 }] };
+  const ebp = jobExpenseByPerson(jbp);
+  ok("expenses per person: RJ 100+20=120, CH 40, unattributed 15 under ''", ebp.RJ === 120 && ebp.CH === 40 && ebp[""] === 15, ebp);
+  const jbpDel = { id: "jd", materials: [{ id: "m1", amount: 100, paidBy: "RJ", deleted: true }, { id: "m2", amount: 50, paidBy: "RJ" }], expenses: [] };
+  ok("deleted expenses are excluded from the per-person breakdown", jobExpenseByPerson(jbpDel).RJ === 50, jobExpenseByPerson(jbpDel));
+  STORE.timeclock = [
+    { id: "t1", jobId: "jm", userId: "CH", vehicleOwnerId: "CH", clockOut: 1, milesConfirmed: true, miles: 10 },
+    { id: "t2", jobId: "jm", userId: "RJ", clockOut: 1, milesConfirmed: true, miles: 4 },          // no vehicleOwnerId → falls back to driver
+    { id: "t3", jobId: "jm", userId: "CH", clockOut: 1, milesConfirmed: false, miles: 99 },        // unconfirmed → excluded
+    { id: "t4", jobId: "OTHER", userId: "CH", clockOut: 1, milesConfirmed: true, miles: 50 }       // other job → excluded
+  ];
+  const mbp = jobMileageByPerson({ id: "jm" });
+  ok("mileage per person: CH 10mi×0.725=7.25, RJ 4mi=2.90 (confirmed + this job only)", Math.abs(mbp.CH - 7.25) < 0.001 && Math.abs(mbp.RJ - 2.90) < 0.001, mbp);
+  STORE.timeclock = [];
+
   console.log("\n— SALES-TAX BACKFILL: flag + tax-inclusive back-out + additive stamp (reversible) —");
   ok("back-out: $106.75 total → $6.75 embedded tax (6.75% inclusive)", rcptTaxBackout(106.75) === 6.75, rcptTaxBackout(106.75));
   const trec = { amount: 106.75, type: "pass-through", category: "materials" };
