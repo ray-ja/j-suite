@@ -179,12 +179,17 @@ function rcptFileSuggestion(store, jobId, recId, opts) {
   var rec = rcptFindRecord(store, jobId, recId);
   if (!rec) return { ok: false, error: "record not found" };
   var s = rec.suggested; if (!s) return { ok: false, error: "no suggestion to file" };
-  var amount = (s.amount == null) ? null : (s.refund ? -Math.abs(+s.amount || 0) : (+s.amount || 0));
+  // CONFIRMATION-ONLY refund/deposit (Ray): Cap may SUGGEST a refund or rental-deposit, but an auto-file NEVER
+  // applies them — a misread "refund" must never silently NEGATE an amount, and a misread "deposit" must never
+  // hold money out of a job's cost. So auto-file with a POSITIVE amount, kind:"" and isDeposit:false REGARDLESS
+  // of s.refund / s.deposit. The ONLY way those flags get set is the owner ticking the box + Saving (js/87
+  // rcptSaveEdit). Everything else (type/job/category/card/amount) still auto-applies exactly as before.
+  var amount = (s.amount == null) ? null : Math.abs(+s.amount || 0);
   var raw = {
     type: s.type || null, jobId: s.jobId || null, amount: amount, vendor: s.vendor || rec.vendor || "",
     date: s.date || rec.date || "", category: s.category || "", desc: s.desc || rec.desc || "",
     paidBy: null, receiptId: rec.receiptId || null, cardLast4: s.last4 || "",
-    isDeposit: !!s.deposit, kind: s.refund ? "refund" : ""
+    isDeposit: false, kind: ""
   };
   var f = _rcptMergeDefaults(raw, _rcptMeId());
   var err = rcptFileValidate(f);

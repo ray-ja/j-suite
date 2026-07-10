@@ -232,7 +232,9 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_card_slot"></div>
     <label>Whose receipt <span class="sub">(shows on their tab so they don't re-upload it)</span></label><select id="rcpt_attr">${attrOpts}</select>
     <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="rcpt_deposit" ${rec.isDeposit ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">⚠ Rental deposit (refund may come back)</div><div class="sub" style="white-space:normal">A refundable equipment-rental hold. HELD out of the job's cost ($0) until you confirm the refund — then it counts at net (deposit − refund).</div></div></label>
+    <div id="rcpt_deposit_hint"></div>
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
+    <div id="rcpt_refund_hint"></div>
     <div id="rcpt_split_slot"></div>
     </details>
     ${rcptInvBlockHTML(rec)}
@@ -298,8 +300,13 @@ window.rcptApplySuggestion = function () {
   // Cap Phase 4 — card last-4 (js/94: auto-matches "Who paid?"), refund + rental-deposit toggles (js/96).
   // Only APPLY when present: a null last4 / false toggle leaves the owner's existing entry untouched.
   if (s.last4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card
-  if (s.refund) { const el = document.getElementById("rcpt_refund"); if (el) el.checked = true; }
-  if (s.deposit) { const el = document.getElementById("rcpt_deposit"); if (el) el.checked = true; if (!val("rcpt_cat")) set("rcpt_cat", "rentals"); }   // rental deposit → nudge category (save also nudges)
+  // REFUND / RENTAL-DEPOSIT are CONFIRMATION-ONLY (Ray): Cap may SUGGEST them, but "Use Cap's guess" must NEVER
+  // TICK the box — a wrong "refund" read would flip the amount NEGATIVE, a wrong "deposit" would hold it out of
+  // the job's cost. So instead of checking the box we SURFACE a highlighted hint next to it and leave it UNCHECKED;
+  // the flag is set only when the owner ticks it + Saves (rcptSaveEdit). No category nudge either — that rides on tick.
+  const hint = (id, msg) => { const el = document.getElementById(id); if (el) el.innerHTML = msg ? `<div class="sub" style="color:#6b3fa0;font-weight:600;white-space:normal;margin:2px 0 4px">🤖 ${esc(msg)}</div>` : ""; };
+  hint("rcpt_refund_hint", s.refund ? "Cap thinks this may be a refund — tick “↩ This is a refund” to confirm (left unchecked)." : "");
+  hint("rcpt_deposit_hint", s.deposit ? "Cap thinks this may be a rental deposit — tick “⚠ Rental deposit” to confirm (left unchecked)." : "");
   // Cap SPLIT SUGGESTION (js/92) — a MIXED receipt (≥2 buckets, e.g. materials + a reusable tool). OPEN the
   // split editor PRE-FILLED from Cap's balanced allocations for the owner to review + tap "Save splits".
   // Cap proposes, the owner confirms — this never auto-commits. <2 splits → the single-categorization above stands.
