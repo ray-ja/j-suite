@@ -647,7 +647,9 @@ function jobPageRouteCard(j) {
   // offline estimate couldn't route. Ordered exactly like the sequence above; drops any empty/missing address.
   const _routeAddrs = [startVal].concat(combo.map(t => t.kind === "site" ? siteAddr : (t.stop && t.stop.address))).concat([endVal]);
   const _gmapsRoute = (typeof gmapsRouteUrl === "function") ? gmapsRouteUrl(_routeAddrs) : "";
-  if (_gmapsRoute) h += `<a class="btn ghost sm" style="width:100%;margin-top:8px;text-align:center" href="${_gmapsRoute}" target="_blank" rel="noopener">🗺 Open the full route in Google Maps <span class="sub" style="font-weight:400">· read the round-trip miles</span></a>`;
+  // NB: an <a class="btn"> defaults to display:inline, so .btn's min-height/padding overflow its line box and
+  // overlap the estimate line above — force flex block layout (like a real <button>) so it sits on its own row.
+  if (_gmapsRoute) h += `<a class="btn ghost sm" style="width:100%;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap" href="${_gmapsRoute}" target="_blank" rel="noopener">🗺 Open the full route in Google Maps <span class="sub" style="font-weight:400">· read the round-trip miles</span></a>`;
   // 🚗 OVERRIDE the mileage (round-trip) — the map estimate above is used AUTOMATICALLY; this box is ONLY to
   // override it when the map routed wrong (or couldn't route). When there's a map estimate and no override it's
   // tucked into a collapsed "override" toggle so it isn't mistaken for a required field. Owner/admin only.
