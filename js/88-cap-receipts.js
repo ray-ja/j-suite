@@ -61,6 +61,54 @@ async function capRcptRead(receiptId, opts) {
   } catch (e) { return { error: (e && e.message) || "request failed" }; }
 }
 
+/* SHARED READ-APPLY — FAN OUT a multi-transaction read (a bank/card STATEMENT, or several receipts photographed
+   together). If the read carries `suggested.transactions` with ≥2 valid entries, the source record takes
+   transactions[0] and each further entry i≥1 spawns a DETERMINISTIC sibling review record (rec.id + "_tx" + i)
+   that SHARES the same source image — idempotent, so re-reading the same statement NEVER duplicates. Returns the
+   list of records now carrying a suggestion (primary first), so the caller runs the normal auto-apply per record.
+   A SINGLE transaction (or none) → [liveRec] with liveRec.suggested = the whole suggestion, EXACTLY as before.
+   Never throws. Used by BOTH the auto-drain (capRcptRun) and the manual reread (capRcptOne). */
+function capRcptFanStamp(liveRec, suggested) {
+  if (!liveRec) return [];
+  var txs = (suggested && Array.isArray(suggested.transactions)) ? suggested.transactions : [];
+  if (txs.length < 2 || typeof rcptNewReviewSibling !== "function" || typeof rcptTxToSuggested !== "function") {
+    liveRec.suggested = suggested; if (typeof touch === "function") touch(liveRec);   // single-object path — unchanged
+    return [liveRec];
+  }
+  var out = [];
+  liveRec.suggested = rcptTxToSuggested(txs[0], suggested);   // primary keeps the source record + first transaction
+  if (typeof touch === "function") touch(liveRec);
+  out.push(liveRec);
+  for (var i = 1; i < txs.length; i++) {
+    var sib = rcptNewReviewSibling(liveRec, i, rcptTxToSuggested(txs[i], suggested));   // deterministic _tx sibling, shares the image
+    if (sib && !sib.deleted) out.push(sib);
+  }
+  return out;
+}
+/* AUTO-APPLY one stamped review record through the EXACT one-tap spine the manual "✓ file it" uses
+   (rcptSuggestionOneTapOk → rcptFileSuggestion, which files a POSITIVE amount and never sets kind:refund /
+   isDeposit — the confirmation-only refund path). Stamps the additive cap-review markers on the filed record.
+   Returns true iff it filed. Never throws. Shared by the drain AND the reread fan-out so a fanned sibling files
+   BYTE-IDENTICALLY to a normal auto-file. opts.batch defers save() to the caller. */
+function capRcptAutoFileOne(rec, opts) {
+  opts = opts || {};
+  try {
+    if (!rec || rec.deleted || !rec.suggested) return false;
+    if (typeof rcptSuggestionOneTapOk !== "function" || typeof rcptFileSuggestion !== "function") return false;
+    if (!rcptSuggestionOneTapOk(rec)) return false;
+    var fres = rcptFileSuggestion("review", null, rec.id, { batch: opts.batch !== false });   // default batch:true
+    if (!(fres && fres.ok && fres.newLoc)) return false;
+    var filed = (typeof rcptFindRecord === "function") ? rcptFindRecord(fres.newLoc.store, fres.newLoc.jobId, fres.newLoc.recId) : null;
+    if (!filed) return false;
+    filed.capAutoFiled = true;                 // Cap filed this from its own confident guess — owner hasn't reviewed it
+    filed.capReviewedAt = null;                // → shows the purple "🤖 review" mark until a human touches it
+    filed.capAutoAt = (typeof now === "function") ? now() : Date.now();
+    if (typeof rcptTouchHome === "function") rcptTouchHome({ store: fres.newLoc.store, jobId: fres.newLoc.jobId }, filed);
+    else if (typeof touch === "function") touch(filed);
+    return true;
+  } catch (e) { return false; }
+}
+
 /* TRIGGER — DRAIN the whole needs-review pile, strictly ONE AT A TIME. Writes ONLY `suggested`; never a real
    field. The store changes as it stamps, so each pass RE-DERIVES the pending set (capRcptPending) and keeps
    reading until NONE remain — any batch size (7, 100, …) reads fully; nothing is silently skipped. Reads are
@@ -91,30 +139,16 @@ window.capRcptRun = async function (opts) {
       // re-find the live record (the store may have changed) and stamp `suggested`
       const live = (typeof rcptFindRecord === "function") ? rcptFindRecord("review", null, rec.id) : rec;
       const tgt = live || rec;
-      tgt.suggested = res.suggested; if (typeof touch === "function") touch(tgt); ok++;
-      // AUTO-APPLY (Ray's default — "I'm always going to use it and then just review it"): if Cap's guess clears the
-      // SAME one-tap bar the manual "✓ file it" button uses (rcptSuggestionOneTapOk — high confidence · real amount ·
-      // job resolved or business), file it NOW through the EXACT spine the button uses (rcptFileSuggestion →
-      // rcptApplyEdit → a record BYTE-IDENTICAL to the manual one-tap), then stamp additive flags capAutoFiled +
-      // capReviewedAt:null (+ capAutoAt) so the owner REVIEWS it (the purple "🤖 review" mark) instead of confirming
-      // each one. Never-throws: a failed auto-apply just leaves the suggested review row (exactly today's behavior).
-      // A LOW-confidence / incomplete guess is NOT auto-filed — it stays a suggested review row for the owner, as today.
-      try {
-        if (typeof rcptSuggestionOneTapOk === "function" && typeof rcptFileSuggestion === "function" && rcptSuggestionOneTapOk(tgt)) {
-          const fres = rcptFileSuggestion("review", null, tgt.id, { batch: true });   // batch → this drain's save() persists it
-          if (fres && fres.ok && fres.newLoc) {
-            const filed = (typeof rcptFindRecord === "function") ? rcptFindRecord(fres.newLoc.store, fres.newLoc.jobId, fres.newLoc.recId) : null;
-            if (filed) {
-              filed.capAutoFiled = true;                 // Cap filed this from its own confident guess — owner hasn't reviewed it
-              filed.capReviewedAt = null;                // → shows the purple "🤖 review" mark until a human touches it
-              filed.capAutoAt = (typeof now === "function") ? now() : Date.now();
-              if (typeof rcptTouchHome === "function") rcptTouchHome({ store: fres.newLoc.store, jobId: fres.newLoc.jobId }, filed);
-              else if (typeof touch === "function") touch(filed);
-              autoFiled++;
-            }
-          }
-        }
-      } catch (e) {}
+      // FAN-OUT (statement / multiple receipts): capRcptFanStamp stamps the source record with transactions[0] and
+      // spawns one DETERMINISTIC sibling review row per further transaction (same image, idempotent). A single/normal
+      // read → just [tgt] with tgt.suggested = res.suggested, exactly as before. ok++ counts the READ (one vision call).
+      const records = capRcptFanStamp(tgt, res.suggested); ok++;
+      // AUTO-APPLY (Ray's default — "I'm always going to use it and then just review it") PER RECORD: each record that
+      // clears the one-tap bar (rcptSuggestionOneTapOk — high confidence · real amount · job resolved or business) is
+      // filed NOW through the EXACT spine the "✓ file it" button uses (rcptFileSuggestion → a POSITIVE-amount record,
+      // never a refund), stamped with the purple "🤖 review" markers. A fanned statement files each of its N rows the
+      // same way. Never-throws: a failed / low-confidence one just stays a suggested review row (today's behavior).
+      records.forEach(function (r) { if (capRcptAutoFileOne(r, { batch: true })) autoFiled++; });
       if (typeof save === "function") save();          // persist as we go → resumable across an app-close
     } else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { keyMissing = true; break; }
     else if (res && res.error === "offline") { offline = true; break; }   // connectivity gone — stop churning; the sweep resumes on reconnect
@@ -179,7 +213,13 @@ window.capRcptOne = async function () {
     const loc = RCPT_EDIT.loc || {};
     const live = (typeof rcptFindRecord === "function") ? rcptFindRecord(loc.store, loc.jobId, loc.recId) : null;
     if (live) {
-      live.suggested = res.suggested;
+      // FAN-OUT honored on the REREAD too — this is how Ray's already-stuck blank statement gets fixed: he taps
+      // "🤖 Reread — try harder" on it and it splits into one review row per transaction. The primary (this open
+      // record) takes transactions[0] and reopens in the modal for him to review; each further transaction becomes
+      // a deterministic sibling review row (same image, idempotent) that AUTO-FILES if confident — so no negative
+      // surprise (rcptFileSuggestion files positive). A single/normal read → unchanged: just stamps live.suggested.
+      const records = capRcptFanStamp(live, res.suggested);
+      records.forEach(function (r, i) { if (i >= 1) capRcptAutoFileOne(r, { batch: true }); });   // siblings auto-file; primary reopens for review
       if (loc.store === "jobmat" || loc.store === "jobexp") { const jb = (D().jobs || []).find(x => x && x.id === loc.jobId); if (jb && typeof touch === "function") touch(jb); }
       else if (typeof touch === "function") touch(live);
       if (typeof save === "function") save();

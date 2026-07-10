@@ -323,6 +323,64 @@ function rcptNewReview(receiptId) {
   // to the uploader so a crew member sees their own upload; the owner can re-attribute it when they file it.
   return { id: uid(), receiptId: receiptId, amount: null, vendor: "", date: "", type: null, jobId: null, category: "", paidBy: null, desc: "", uploadedBy: me ? me.id : "", attributedTo: me ? me.id : "", by: me ? (me.username || "") : "", status: "review", suggested: null, ts: now(), deleted: false, updatedAt: now() };
 }
+/* ---------- STATEMENT / MULTI-RECEIPT FAN-OUT helpers ----------
+   A bank/card STATEMENT (or several receipts in one photo) reads back as suggested.transactions — one entry per
+   transaction (server rcptParseSuggestion). js/88 fans those into one review receipt EACH: the source record
+   takes transactions[0], and every further entry becomes a DETERMINISTIC sibling review record that SHARES the
+   same source image, so re-reading the same statement never duplicates. Both helpers never throw. */
+
+/* Build a full `suggested` object (the shape js/98 rcptFileSuggestion / rcptSuggestionOneTapOk read) from ONE
+   statement transaction entry. A statement DEBIT is a NORMAL POSITIVE expense: amount forced positive; deposit
+   false and splits/lineItems empty (a statement line has none); jobId null (a statement line rarely resolves a
+   job — smart-defaults/the owner assign it); confidence INHERITS the parent read so a confident statement fans
+   into confident (auto-fileable) rows. refund honored from the entry (the parse already made a debit refund:false;
+   belt-and-suspenders with the confirmation-only refund path, which files positive regardless). Pure; no throw. */
+function rcptTxToSuggested(tx, parent) {
+  tx = tx || {}; parent = parent || {};
+  var amt = (tx.amount == null || tx.amount === "" || isNaN(+tx.amount)) ? null : Math.abs(+tx.amount);
+  var vend = String(tx.vendor == null ? "" : tx.vendor).slice(0, 120);
+  return {
+    vendor: vend,
+    amount: amt,
+    date: (typeof tx.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(tx.date)) ? tx.date : null,
+    desc: vend.slice(0, 200),
+    type: (["business", "job-expense", "pass-through"].indexOf(tx.type) >= 0) ? tx.type : null,
+    category: tx.category || "",
+    jobId: null,
+    last4: (typeof tx.last4 === "string" && /^\d{4}$/.test(tx.last4)) ? tx.last4 : null,
+    refund: tx.refund === true,
+    deposit: false,
+    splits: [],
+    lineItems: [],
+    confidence: (parent && typeof parent.confidence === "number") ? parent.confidence : null
+  };
+}
+/* Create (or re-find) the sibling review record for transaction #txIndex of a fanned statement. The id is
+   DETERMINISTIC — rec.id + "_tx" + txIndex — so a RE-READ of the same statement image reuses it instead of
+   duplicating (idempotent). Shares the source receiptId + attribution with the primary. If the sibling already
+   exists it is NOT re-created: a live one has its suggestion refreshed; a soft-deleted one is left deleted (the
+   owner removed it — never resurrect). Returns the sibling record (or null on a bad call). Never throws. */
+function rcptNewReviewSibling(rec, txIndex, suggested) {
+  try {
+    if (!rec || !rec.id) return null;
+    var sibId = rec.id + "_tx" + txIndex;
+    var coll = rcptColl();
+    var existing = coll.find(function (r) { return r && r.id === sibId; });
+    if (existing) {
+      if (!existing.deleted) { existing.suggested = suggested || existing.suggested; if (typeof touch === "function") touch(existing); }
+      return existing;
+    }
+    var sib = rcptNewReview(rec.receiptId || null);
+    sib.id = sibId;                                   // deterministic → re-read never duplicates
+    if (rec.attributedTo) sib.attributedTo = rec.attributedTo;
+    if (rec.uploadedBy) sib.uploadedBy = rec.uploadedBy;
+    if (rec.by) sib.by = rec.by;
+    sib.suggested = suggested || null;
+    coll.push(sib);
+    if (typeof touch === "function") touch(sib);
+    return sib;
+  } catch (e) { return null; }
+}
 let _rcptUpBusy = false;
 function rcptSetUpStatus(txt) { const el = document.getElementById("rcpt_upstatus"); if (el) el.textContent = txt || ""; }
 /* AUTO Cap-read after ANY upload (no batch-size cap): if an org AI key exists, kick a NON-BLOCKING
