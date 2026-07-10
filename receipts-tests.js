@@ -268,6 +268,14 @@ async function main() {
   const badTax = { amount: 100, type: "business", capRead: { tax: 711 } };
   rcptEvalTaxRecord(badTax);
   ok("explicit tax ≥ the receipt total is a misread → ignored, 6.75% assumed", badTax.taxAssumed === true && Math.abs(badTax.taxAmount - 6.32) < 0.01, badTax);
+  // SMART NC EXEMPTION: SaaS/hosting/software/insurance carry no NC sales tax → assessed $0 exempt, not 6.75%
+  const cf = { category: "subscription/software", vendor: "Cloudflare", amount: 25 }; rcptEvalTaxRecord(cf);
+  ok("SaaS (subscription/software) is exempt → $0, taxExempt, still evaluated", cf.taxEvaluated === true && cf.taxExempt === true && cf.taxAmount === 0, cf);
+  const ins = { category: "office/admin", vendor: "State Farm Insurance", amount: 180 }; rcptEvalTaxRecord(ins);
+  ok("insurance (vendor keyword) is exempt → $0", ins.taxExempt === true && ins.taxAmount === 0, ins);
+  const host = { category: "other", vendor: "Namecheap", desc: "annual web hosting", amount: 120 }; rcptEvalTaxRecord(host);
+  ok("web hosting (desc keyword) is exempt → $0", host.taxExempt === true, host);
+  ok("rcptTaxExempt: materials/fuel NOT exempt (stay taxable)", !rcptTaxExempt({ category: "materials", vendor: "Home Depot" }) && !rcptTaxExempt({ category: "fuel", vendor: "BP" }), null);
   // stamping tax on a NESTED job material must bump the PARENT job (sync home), not just the record
   resetStore();
   const jmat = { id: "jm_tax", amount: 106.75, type: "pass-through" }; STORE.jobs[0].materials.push(jmat); STORE.jobs[0].updatedAt = 111;

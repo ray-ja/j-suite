@@ -137,6 +137,18 @@ function rcptTaxable(r) {
   return !!(r && !r.deleted && (+r.amount > 0) && String(r.category || "").toLowerCase() !== "sales tax"
     && !r.isTax && !r.isDeposit && !r.deposit && !r.refund && !r.refundOfId);
 }
+/* NC SALES-TAX EXEMPT? — the "smart" call the Playbook tax guidance encodes: NC does NOT sales-tax SaaS / cloud /
+   web hosting / software subscriptions, or insurance. Those receipts (e.g. Cloudflare) carry NO embedded sales tax,
+   so assessing them at 6.75% would invent tax that was never paid. Matches the "subscription/software" category or
+   common SaaS/hosting/insurance vendors in vendor/desc/note. Everything else stays taxable (owner can override any
+   receipt by hand). Grounded in the Playbook → Tax facts (js/63). */
+function rcptTaxExempt(r) {
+  if (!r) return false;
+  const cat = String(r.category || "").toLowerCase();
+  if (cat === "subscription/software") return true;   // SaaS / cloud / software subscriptions — not NC sales-taxed
+  const hay = ((r.vendor || "") + " " + (r.desc || "") + " " + (r.note || "") + " " + cat).toLowerCase();
+  return /(insurance|cloudflare|hosting|web ?host|\bsaas\b|\bdomain\b|godaddy|namecheap|\baws\b|amazon web services|azure|google cloud|\bgcp\b|vercel|netlify|github|digitalocean|linode|quickbooks|\badobe\b|microsoft 365|office 365|google workspace|mailchimp|twilio|openai|anthropic)/.test(hay);
+}
 function rcptNeedsTax(r) { return rcptTaxable(r) && !r.taxEvaluated; }
 function rcptNeedsTaxCount() { return rcptAllRows().filter(rcptNeedsTax).length; }
 /* tax-INCLUSIVE back-out: the tax already embedded in a total that includes it ($106.75 → $6.75) */
@@ -152,18 +164,24 @@ function rcptTouchRow(store, jobId, rec) {
    An explicit tax that exceeds the receipt total is a misread → ignore it and fall back to the 6.75% back-out. */
 function rcptEvalTaxRecord(rec) {
   if (!rcptTaxable(rec)) return false;
+  // SMART: a NC-exempt receipt (SaaS/hosting/software/insurance — e.g. Cloudflare) carries no sales tax → stamp $0
+  // and note it non-taxable, instead of inventing 6.75%. Still marked evaluated so "Assess for taxes" clears it.
+  if (typeof rcptTaxExempt === "function" && rcptTaxExempt(rec)) {
+    rec.taxAmount = 0; rec.taxRate = 0; rec.taxAssumed = false; rec.taxExempt = true; rec.taxEvaluated = true;
+    return true;
+  }
   const rate = rcptTaxRate();
   let explicit = (rec.capRead && rec.capRead.tax != null && +rec.capRead.tax > 0) ? Math.round(+rec.capRead.tax * 100) / 100 : null;
   if (explicit != null && explicit >= (+rec.amount || 0)) explicit = null;   // tax ≥ total → misread, use the assumption
   rec.taxAmount = (explicit != null) ? explicit : rcptTaxBackout(rec.amount, rate);
-  rec.taxRate = rate; rec.taxAssumed = (explicit == null); rec.taxEvaluated = true;
+  rec.taxRate = rate; rec.taxAssumed = (explicit == null); rec.taxExempt = false; rec.taxEvaluated = true;
   return true;
 }
 window.rcptEvalTaxAll = function () {
   if (!rcptFinFull()) return;
   const flagged = rcptAllRows().filter(rcptNeedsTax);
   if (!flagged.length) { alert("Every receipt already has its sales tax evaluated. 🎉"); return; }
-  if (!confirm("Evaluate sales tax on " + flagged.length + " receipt" + (flagged.length > 1 ? "s" : "") + "?\n\nFills each receipt's tax (6.75% OBX, or the printed amount where Cap read one) as an itemized sub-line. It does NOT change any amounts, buckets, or jobs — fully reversible.")) return;
+  if (!confirm("Evaluate sales tax on " + flagged.length + " receipt" + (flagged.length > 1 ? "s" : "") + "?\n\nTaxable receipts get 6.75% (Dare/Currituck NC) — the printed amount where Cap read one, else backed out of the total. SaaS / hosting / software / insurance (Cloudflare, etc.) are marked NON-taxable in NC ($0). Additive sub-line only — no amounts, buckets, or jobs change; fully reversible.")) return;
   let n = 0;
   flagged.forEach(row => { const rec = rcptFindRecord(row.store, row.jobId, row.recId); if (rec && rcptEvalTaxRecord(rec)) { rcptTouchRow(row.store, row.jobId, rec); n++; } });
   if (typeof save === "function") save();
@@ -182,7 +200,7 @@ window.rcptEvalTaxOne = function (store, jobId, recId) {
 window.rcptClearTax = function (store, jobId, recId) {   // undo — the reversible flag
   if (!rcptFinFull()) return;
   const rec = rcptFindRecord(store, jobId || "", recId); if (!rec) return;
-  delete rec.taxAmount; delete rec.taxRate; delete rec.taxAssumed; delete rec.taxEvaluated;
+  delete rec.taxAmount; delete rec.taxRate; delete rec.taxAssumed; delete rec.taxExempt; delete rec.taxEvaluated;
   rcptTouchRow(store, jobId, rec);
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
@@ -1499,7 +1517,7 @@ function rcptTableHTML(rows, dups) {
     const capBorder = needsCapReview ? `;border-left:3px solid ${RCPT_CAP_PURPLE}` : "";
     h += `<tr onclick="rcptEditOpen('${r.store}','${r.jobId || ""}','${r.recId}')" style="cursor:pointer;border-bottom:1px solid var(--line)${capBorder}${rowBg}">
       <td style="padding:8px 6px;white-space:nowrap">${d ? esc(fmtDate(d)) : `<span style="color:var(--muted)">—</span>`}</td>
-      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${(r.taxEvaluated && r.taxAmount) ? `<div class="sub" style="font-size:11px;color:var(--muted);white-space:normal">incl. ${money2(r.taxAmount)} sales tax (${Math.round((r.taxRate || rcptTaxRate()) * 10000) / 100}%)${r.taxAssumed ? " · assumed" : ""}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${rcptNeedsTax(r) ? ` <span class="badge" style="background:#e0a800;color:#fff" title="Sales tax not evaluated yet — tap Evaluate all up top, or open to set it">🧾 tax?</span>` : ""}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${(r.suggested && r.store === "review") ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${needsCapReview ? ` <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff" title="Cap auto-filed this from its guess — review it">🤖 review</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}${reviewedBtn}</td>
+      <td style="padding:8px 6px;white-space:normal">${r.vendor ? esc(r.vendor) : `<span style="color:var(--muted)">—</span>`}${(r.desc || r.note) ? `<div class="sub" style="font-size:11px;white-space:normal">${esc(r.desc || r.note)}</div>` : ""}${(r.taxEvaluated && r.taxExempt) ? `<div class="sub" style="font-size:11px;color:var(--muted);white-space:normal">🧾 non-taxable in NC (SaaS / hosting / insurance)</div>` : (r.taxEvaluated && r.taxAmount) ? `<div class="sub" style="font-size:11px;color:var(--muted);white-space:normal">incl. ${money2(r.taxAmount)} sales tax (${Math.round((r.taxRate || rcptTaxRate()) * 10000) / 100}%)${r.taxAssumed ? " · assumed" : ""}</div>` : ""}${rcptSplitSubline(r, splitGroups)}${rcptNeedsTax(r) ? ` <span class="badge" style="background:#e0a800;color:#fff" title="Sales tax not evaluated yet — tap Evaluate all up top, or open to set it">🧾 tax?</span>` : ""}${isDup ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ dup</span>` : ""}${isFlash ? ` <span class="badge" style="background:#1e9e5a;color:#fff">✓ updated</span>` : ""}${(r.suggested && r.store === "review") ? ` <span class="badge" style="background:#6b3fa0;color:#fff">🤖 Cap</span>` : ""}${needsCapReview ? ` <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff" title="Cap auto-filed this from its guess — review it">🤖 review</span>` : ""}${typeof rentalDepositBadge === "function" ? " " + rentalDepositBadge(r) : ""}${typeof cardUnknownBadge === "function" ? cardUnknownBadge(r) : ""}${(r.inventoryItemId && typeof rcptInvItem === "function" && rcptInvItem(r.inventoryItemId)) ? ` <span class="badge" style="background:#1b7f4d;color:#fff" title="In inventory">🧰</span>` : ""}${fileItBtn}${reviewedBtn}</td>
       <td style="padding:8px 6px;text-align:right;white-space:nowrap">${amt}${r.paidBy ? `<div class="sub" style="font-size:10px">${r.reimbursedAt ? "✓ reimb" : "reimb"}</div>` : ""}</td>
       ${rcptInlineTd(r.store, r.jobId, r.recId, "type", typeDisp)}
       ${rcptInlineTd(r.store, r.jobId, r.recId, "category", catDisp)}
