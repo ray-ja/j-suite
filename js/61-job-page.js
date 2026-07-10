@@ -221,7 +221,7 @@ function rJobPage(j) {
 
   // 1) Where & when — CONTACT header (name · address · tap-to-call) then where you're going
   h += `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;
-  h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px">${esc(addr)}</div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
+  h += addr ? `<div class="sub" style="white-space:normal;margin-top:3px"><a href="${gmapsDirUrl(addr)}" target="_blank" rel="noopener" style="color:var(--brand-text);text-decoration:none">📍 ${esc(addr)} <span class="sub" style="font-weight:400">· directions ›</span></a></div>` : `<div class="muted" style="margin-top:3px">No address on file.</div>`;
   h += _primaryCall;      // PRIMARY phone — big tap-to-call, hoisted to the top (was at the bottom)
   h += _secondaryCalls;   // any secondary numbers — smaller ghost Call buttons
   if (_drive) h += `<div class="sub" style="margin-top:8px;font-weight:600;color:var(--brand-text)">${_drive}</div>`;   // driveBadge ETA — kept for everyone, crew included
@@ -284,19 +284,12 @@ function rJobPage(j) {
   if (_navRows) h += `<div class="sub" style="margin-top:12px;font-weight:700">🧭 Where you're going <span class="sub" style="font-weight:400">· tap to navigate</span></div>` + _navRows;
   h += `</div>`;
 
-  // 1z) Route / stops editor (owner/admin) — surfaced ON the job page (not just the editor modal). Writes the
-  // SAME j.plannedStops[] the modal editor writes, via job-page handlers that persist immediately + recompute
-  // the mileage estimate. Crew see the labeled links above but not this editor.
-  h += jobPageRouteCard(j);
-
-  // 1a) Work days — fast, low-friction multi-day editing from the field, without opening the full job editor.
-  // Compact chip list of the job's work days (jobWorkDays), today's chip marked, start-day un-removable;
-  // "+ Add today" is a one-tap no-modal add; "+ Add another day" opens a small mini-calendar-only picker.
-  h += jobPageWorkDaysCard(j);
-
-  // 1a2) Crew — availability-aware editor (owner/admin) writing j.crew directly (like the on-page route editor,
-  // not the modal). Crew see read-only chips. Mirrors js/09 renderJobCrew's availability badges + conflict flags.
-  h += jobPageCrewCard(j);
+  // ===== SECTIONS captured as variables, then assembled in WORKDAY ORDER at the end (Ray 2026-07-10 reorder):
+  //   Data → who's-on-crew → clock in → load the truck → drive (route) → buy (costs) → wrap up → admin (workdays).
+  // Route/stops editor (owner/admin), Work days, and Crew are helper cards. =====
+  const _secRoute = jobPageRouteCard(j);          // home→site→transfer→home + mileage estimate
+  const _secWorkdays = jobPageWorkDaysCard(j);    // multi-day editor — admin, goes to the very bottom
+  const _secCrew = jobPageCrewCard(j);            // who you're working with — hoisted near the top
 
   // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up.
   // sharedJobIds[] generalizes the old scalar parentJobId (0/1/N jobs); this single-select stays the UNCHANGED
@@ -304,15 +297,15 @@ function rJobPage(j) {
   // "🔀 Split across other jobs" picker below, on the OTHER job's page (the one the stop-job is created from).
   const _subs = (typeof subJobsOf === "function") ? subJobsOf(j.id) : [];
   const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && !Array.isArray(x.sharedJobIds));
-  h += `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${(Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1 && j.sharedJobIds[0] === x.id) ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
-  if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1) h += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
+  let _secPartOf = `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${(Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1 && j.sharedJobIds[0] === x.id) ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
+  if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1) _secPartOf += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
   else if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length > 1) {
     const _names = j.sharedJobIds.map(id => { const oj = (typeof actJ === "function" ? actJ() : []).find(x => x.id === id); return oj ? (oj.title || "Job") : null; }).filter(Boolean);
-    h += `<div class="sub" style="margin-top:6px;white-space:normal">Split evenly across ${j.sharedJobIds.length} jobs: ${_names.map(esc).join(", ")}.</div>`;
+    _secPartOf += `<div class="sub" style="margin-top:6px;white-space:normal">Split evenly across ${j.sharedJobIds.length} jobs: ${_names.map(esc).join(", ")}.</div>`;
   } else if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 0) {
-    h += `<div class="sub" style="margin-top:6px;white-space:normal">Marked as general business overhead — not charged to any job.</div>`;
+    _secPartOf += `<div class="sub" style="margin-top:6px;white-space:normal">Marked as general business overhead — not charged to any job.</div>`;
   }
-  if (_subs.length) h += `<div class="sub" style="margin-top:8px;font-weight:700">Stops rolled into this job:</div>` + _subs.map(sj => {
+  if (_subs.length) _secPartOf += `<div class="sub" style="margin-top:8px;font-weight:700">Stops rolled into this job:</div>` + _subs.map(sj => {
     const n = Math.max(1, (sj.sharedJobIds || []).length);
     const _total = (typeof plExpenses === "function" ? plExpenses(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) : 0) + (typeof plMaterials === "function" ? plMaterials(sj).filter(x => x && !x.deleted).reduce((s, e) => s + (+e.amount || 0), 0) : 0);
     const _share = _total / n;
@@ -320,168 +313,147 @@ function rJobPage(j) {
     const _others = (sj.sharedJobIds || []).filter(id => id !== j.id).map(id => { const oj = (typeof actJ === "function" ? actJ() : []).find(x => x.id === id); return oj ? (oj.title || "Job") : null; }).filter(Boolean);
     return `<div class="li" onclick="openJobPage('${sj.id}')" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">${(typeof stopEmoji === "function" ? stopEmoji(sj.stopKind) : "🔀")} ${esc(sj.title || "Job")}${_assignee ? " · " + esc(_assignee) : ""}${sj.date ? " · " + fmtDate(sj.date) : ""}</div><div class="sub" style="white-space:normal">${money(_total)} total${n > 1 ? ` · split ${n} ways${_others.length ? " with " + _others.map(esc).join(", ") : ""} · this job's share ${money(_share)}` : ""}</div></div><span class="sub">open →</span></div>`;
   }).join("");
-  h += `</div>`;
+  _secPartOf += `</div>`;
 
-  // 2) Load checklist — load the truck before you drive. Prominent progress count (N/M loaded) + a
-  // needs-cleaning badge on any flagged item (ties Part A + B: "grab the chainsaw — it needs cleaning first").
+  // Load checklist — load the truck before you drive. Progress count (N/M) + a needs-cleaning badge on flagged items.
   const _eq = (j.equipment || []).filter(e => e && e.itemId);
   const _loadedN = _eq.filter(e => e.loaded).length;
   const _allLoaded = _eq.length && _loadedN === _eq.length;
   const _prog = _eq.length ? ` <span class="badge" style="background:${_allLoaded ? "var(--accent)" : "var(--soft)"};color:${_allLoaded ? "#fff" : "var(--muted)"};margin-left:2px">${_loadedN}/${_eq.length} loaded</span>` : "";
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Load checklist${_prog} <span class="sub" style="font-weight:400">· check off as you load</span></div>`;
-  h += _eq.length ? _eq.map(e => { const it = (typeof eqItemById === "function") ? eqItemById(e.itemId) : null; const nm = it ? (it.name || e.itemId) : e.itemId; const dirty = (it && it.needsCleaning) ? ` <span class="badge" style="background:#b8860b;color:#fff">🧽 needs cleaning</span>` : ""; return `<label class="li" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal;${e.loaded ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(nm)}${dirty}</div></div><div class="row" style="gap:10px;align-items:center"><span class="sub">×${e.qty || 1}</span><input type="checkbox" style="width:22px;height:22px" ${e.loaded ? "checked" : ""} onchange="jobToggleLoaded('${j.id}','${esc(e.itemId)}')"></div></label>`; }).join("") : `<div class="muted">No equipment assigned to this job.</div>`;
-  h += `</div>`;
+  let _secLoad = `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧰 Load checklist${_prog} <span class="sub" style="font-weight:400">· check off as you load</span></div>`;
+  _secLoad += _eq.length ? _eq.map(e => { const it = (typeof eqItemById === "function") ? eqItemById(e.itemId) : null; const nm = it ? (it.name || e.itemId) : e.itemId; const dirty = (it && it.needsCleaning) ? ` <span class="badge" style="background:#b8860b;color:#fff">🧽 needs cleaning</span>` : ""; return `<label class="li" style="cursor:pointer"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal;${e.loaded ? 'text-decoration:line-through;color:var(--muted)' : ''}">${esc(nm)}${dirty}</div></div><div class="row" style="gap:10px;align-items:center"><span class="sub">×${e.qty || 1}</span><input type="checkbox" style="width:22px;height:22px" ${e.loaded ? "checked" : ""} onchange="jobToggleLoaded('${j.id}','${esc(e.itemId)}')"></div></label>`; }).join("") : `<div class="muted">No equipment assigned to this job.</div>`;
+  _secLoad += `</div>`;
 
-  // 3) Time clock — each person clocks in with their own vehicle + odometer
-  h += `<div class="card" style="border-left:5px solid var(--accent)"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
+  // Time clock — each person clocks in with their own vehicle + odometer
+  let _secClock = `<div class="card" style="border-left:5px solid var(--accent)"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
   const _estEach = (typeof jobEstHrsEach === "function") ? jobEstHrsEach(j) : 0, _estCrew = (typeof jobEstCrew === "function") ? jobEstCrew(j) : 1, _estCH = (typeof jobEstCrewHrs === "function") ? jobEstCrewHrs(j) : 0, _actCH = (typeof jobClockedHrs === "function") ? jobClockedHrs(j) : 0;
   if (_estCH > 0 || _actCH > 0) {
     let _cmp = "";
     if (_estCH > 0 && _actCH > 0) { const _p = Math.round(_actCH / _estCH * 100); _cmp = ` · logged <b>${_actCH}</b> (${_p}% of est${j.done ? (_actCH > _estCH ? ` · ${(_actCH - _estCH).toFixed(1)}h over` : ` · ${(_estCH - _actCH).toFixed(1)}h under`) : ""})`; }
     else if (_actCH > 0) _cmp = ` · logged <b>${_actCH}</b> crew-hrs so far`;
-    h += `<div class="sub" style="margin-bottom:8px;white-space:normal">📐 Estimated <b>${_estCH || "—"} crew-hrs</b>${_estEach ? ` (~${_estEach} hr each · ${_estCrew} ${_estCrew === 1 ? "person" : "people"})` : ""}${_cmp}. <span style="color:var(--muted)">Breaks don't count — clock out for lunch, back in after.</span></div>`;
+    _secClock += `<div class="sub" style="margin-bottom:8px;white-space:normal">📐 Estimated <b>${_estCH || "—"} crew-hrs</b>${_estEach ? ` (~${_estEach} hr each · ${_estCrew} ${_estCrew === 1 ? "person" : "people"})` : ""}${_cmp}. <span style="color:var(--muted)">Breaks don't count — clock out for lunch, back in after.</span></div>`;
   }
-  // Effective field pay $/hr — now derived from CLOCKED time (jobHourly reads the timeclock, not typed-in hours).
-  // No clocked time yet → prompt to clock in rather than show a stale number.
   const _hh = (typeof jobHourly === "function") ? jobHourly(j) : null;
-  if (_hh && _hh.perHr != null) h += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 Effective field pay: <b style="${_hh.perHr < 35 ? "color:var(--danger)" : _hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(_hh.perHr)}/hr each</b> · ${_hh.crew}p × ${_hh.personHrs.toFixed(1)} crew-hrs clocked · cost ${money(_hh.cost)} · profit ${money(_hh.profit)}</div>`;
-  else if (_hh && _hh.price > 0) h += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 <span style="color:var(--muted)">Clock in to see the real $/hr — pay is derived from clocked time now.</span></div>`;
-  if (onJob.length) h += `<div class="sub" style="margin-bottom:8px">On this job now: ${onJob.map(e => `<b>${esc((typeof userName === "function" ? userName(e.userId) : "") || "crew")}</b>${e.vehicle ? " · " + esc(e.vehicle) : ""}`).join(" · ")}</div>`;
-  if (openThis) h += `<div class="sub">You're clocked in since <b>${hhmm(openThis.clockIn)}</b>${openThis.vehicle ? " · " + esc(openThis.vehicle) : ""}</div>${_estEach ? `<div class="sub" style="margin-top:2px;color:var(--brand-text);font-weight:600">⏱ Likely finish ~${hhmm(openThis.clockIn + _estEach * 3600000)} (your ~${_estEach} hr share, excl. breaks)</div>` : ""}<button class="btn danger" style="margin-top:8px;width:100%;padding:13px" onclick="tcClockOut('${openThis.id}')">Clock out</button>`;
-  else if (openOther) { const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null; h += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`; }
-  // SHARED clock-in flow (js/38 tcClockInFormHTML) PRE-SCOPED to this job — the grouped vehicle dropdown +
-  // separate trailer dropdown + rider-role + start-odometer + route estimate. Replaces the OLD free-text vehicle
-  // input that resolved empty and blocked the driver clock-in. riderRole + vehicle-owner reimbursement preserved.
-  else h += (typeof tcClockInFormHTML === "function" ? tcClockInFormHTML(j.id) : "") + `<div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div>`;
-  // 🚗 LOG A DRIVE (owner/admin) — retroactively attribute mileage to a driver who never clocked in (e.g. an airport
-  // pickup). Creates a confirmed mileage timeclock entry (js/38 tcLogDriveForm → tcLogDrive) → the driver is
-  // reimbursed at the IRS rate + the job shows the mileage cost. Additive; the live clock-in flow above is untouched.
+  if (_hh && _hh.perHr != null) _secClock += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 Effective field pay: <b style="${_hh.perHr < 35 ? "color:var(--danger)" : _hh.perHr >= 45 ? "color:var(--accent)" : ""}">${money(_hh.perHr)}/hr each</b> · ${_hh.crew}p × ${_hh.personHrs.toFixed(1)} crew-hrs clocked · cost ${money(_hh.cost)} · profit ${money(_hh.profit)}</div>`;
+  else if (_hh && _hh.price > 0) _secClock += `<div class="sub" style="margin-bottom:8px;white-space:normal">💵 <span style="color:var(--muted)">Clock in to see the real $/hr — pay is derived from clocked time now.</span></div>`;
+  if (onJob.length) _secClock += `<div class="sub" style="margin-bottom:8px">On this job now: ${onJob.map(e => `<b>${esc((typeof userName === "function" ? userName(e.userId) : "") || "crew")}</b>${e.vehicle ? " · " + esc(e.vehicle) : ""}`).join(" · ")}</div>`;
+  if (openThis) _secClock += `<div class="sub">You're clocked in since <b>${hhmm(openThis.clockIn)}</b>${openThis.vehicle ? " · " + esc(openThis.vehicle) : ""}</div>${_estEach ? `<div class="sub" style="margin-top:2px;color:var(--brand-text);font-weight:600">⏱ Likely finish ~${hhmm(openThis.clockIn + _estEach * 3600000)} (your ~${_estEach} hr share, excl. breaks)</div>` : ""}<button class="btn danger" style="margin-top:8px;width:100%;padding:13px" onclick="tcClockOut('${openThis.id}')">Clock out</button>`;
+  else if (openOther) { const oj = (typeof actJ === "function") ? actJ().find(x => x.id === openOther.jobId) : null; _secClock += `<div class="note">You're clocked into <b>${esc(oj ? (oj.title || "another job") : "another job")}</b> — clock out of it first.</div><button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockOut('${openOther.id}')">Clock out of that job</button>`; }
+  else _secClock += (typeof tcClockInFormHTML === "function" ? tcClockInFormHTML(j.id) : "") + `<div class="sub" style="margin-top:8px;white-space:normal">🚗 <b>Clock in when you leave for the job</b> (not when you arrive) — keeps the time estimate honest.</div>`;
   if ((typeof isOwner === "function" && isOwner()) || (typeof canManageMembers === "function" && canManageMembers()))
-    h += `<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="tcLogDriveForm('${j.id}')">🚗 Log a drive <span class="sub" style="font-weight:400">· retroactive mileage, no clock-in</span></button>`;
-  h += `</div>`;
+    _secClock += `<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="tcLogDriveForm('${j.id}')">🚗 Log a drive <span class="sub" style="font-weight:400">· retroactive mileage, no clock-in</span></button>`;
+  _secClock += `</div>`;
 
-  // 4) Job photos — documentation gallery, inline so anyone who opens the job sees them
+  // Job photos — documentation gallery
   const atts = (j.attachments || []).filter(a => a && !a.deleted);
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:8px">🖼 Job photos <span class="sub" style="font-weight:400">· documentation</span></div>`;
-  if (atts.length) h += `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">` + atts.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>`;
-  else h += `<div class="muted" style="margin-bottom:8px">No photos yet.</div>`;
-  h += `<input type="file" id="job_photo" accept="image/*" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo</button></div>`;
+  let _secPhotos = `<div class="card"><div style="font-weight:800;margin-bottom:8px">🖼 Job photos <span class="sub" style="font-weight:400">· documentation</span></div>`;
+  if (atts.length) _secPhotos += `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:8px">` + atts.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:100px;height:100px;object-fit:cover;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>`;
+  else _secPhotos += `<div class="muted" style="margin-bottom:8px">No photos yet.</div>`;
+  _secPhotos += `<input type="file" id="job_photo" accept="image/*" style="display:none" onchange="jobAddPhoto('${j.id}',this)"><button class="btn acc" style="width:100%" onclick="document.getElementById('job_photo').click()">📷 Add photo</button></div>`;
 
-  // 5) Job costs & receipts — the UNIFIED receipt card (js/100 jobRcptCardHTML) REPLACES the two old separate
-  //    add-forms (💵 job expense + 🧱 pass-through material): one photo → Cap line items → per-line 🧱/🚚/🔧
-  //    bucket → the SHIPPED split engine (js/92 rcptApplySplit). Just above it, the FILED list renders — grouped
-  //    by receipt (splitGroup||receiptId||id), each line tagged 🧱/🚚, with the virtual 🛣 mileage line + the
-  //    fault-dock summary + per-line delete (jobDelExpense/jobDelMaterial, kept). jobOpenSplitPicker (cross-job
-  //    even split — a DIFFERENT axis) stays reachable on the card. Old jobAddExpense/jobAddMaterial retired (P3).
-  h += jobFiledCostsHTML(j);
-  h += (typeof jobRcptCardHTML === "function") ? jobRcptCardHTML(j) : "";
+  // Job costs & receipts — the UNIFIED receipt card + the filed list. After the drive (you buy en route/on-site).
+  let _secCosts = jobFiledCostsHTML(j);
+  _secCosts += (typeof jobRcptCardHTML === "function") ? jobRcptCardHTML(j) : "";
 
-  // 6) Notes
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
+  // Notes
+  let _secNotes = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
     <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
     <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
 
-  // 6b) Ask Cap about THIS job — context-aware (Cap pulls the job's customer/address/notes/equipment)
+  // Ask Cap about THIS job — context-aware
   const me2 = (typeof curUser === "function") ? curUser() : null;
   const capTid = "thr_job_" + j.id;   // ONE shared thread per job — the whole crew + Cap share it
   const _legacyPrefix = capTid + "_";  // tolerate un-migrated per-user threads (thr_job_<id>_<uid>) so no message is lost
   const capMsgs = (D().messages || []).filter(m => m && !m.kind && !m.deleted && (m.threadId === capTid || (m.threadId || "").indexOf(_legacyPrefix) === 0)).sort((a, b) => (a.ts || 0) - (b.ts || 0));
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap <span class="sub" style="font-weight:400">· attach a photo</span></div>`;
-  h += capMsgs.length
+  let _secAskCap = `<div class="card"><div style="font-weight:800;margin-bottom:6px">💬 Ask Cap <span class="sub" style="font-weight:400">· attach a photo</span></div>`;
+  _secAskCap += capMsgs.length
     ? capMsgs.slice(-6).map(m => { const isCap = m.senderId === "__ceo__" || m.senderId === "__cap__"; const _ma = (m.attachments || []).filter(a => a && a.id && !a.deleted); return `<div class="li" style="${isCap ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${isCap ? "🤖 Cap" : esc(m.senderLabel || "You")} <span style="font-weight:400">· ${typeof relTime === "function" ? relTime(m.ts) : ""}</span></div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_ma.map(a => `<a href="${upUrl(a.id)}" target="_blank" rel="noopener"><img src="${upUrl(a.id)}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);margin-top:6px" loading="lazy"></a>`).join("")}</div></div>`; }).join("")
     : `<div class="muted">Ask Cap anything about this job — he knows the customer, address, notes &amp; equipment. e.g. "Are we providing the pavers, or is it client-provided?"</div>`;
-  h += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap… (e.g. send a photo of the spot and ask what base it needs)"></textarea><input type="file" id="jobcap_photo" accept="image/*" style="display:none" onchange="var l=document.getElementById('jobcap_photo_lbl');if(l)l.textContent='✓ Photo ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('jobcap_photo').click()"><span id="jobcap_photo_lbl">📷 Attach photo</span></button><button class="btn acc grow" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div></div>`;
+  _secAskCap += `<textarea id="jobcap_q" style="min-height:48px;margin-top:8px" placeholder="Ask Cap… (e.g. send a photo of the spot and ask what base it needs)"></textarea><input type="file" id="jobcap_photo" accept="image/*" style="display:none" onchange="var l=document.getElementById('jobcap_photo_lbl');if(l)l.textContent='✓ Photo ready'"><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('jobcap_photo').click()"><span id="jobcap_photo_lbl">📷 Attach photo</span></button><button class="btn acc grow" onclick="jobAskCap('${j.id}')">💬 Ask Cap</button></div></div>`;
 
-  // 6c) 💵 Invoice & payment — the one place to bill + take payment on an accepted job. REUSES the exact finance
-  //     mutators (invMark js/46, recordPayment js/50, snapshotQuoteVersion js/90 like wizSetFinal, syncQuoteIncome)
-  //     so the money side can't drift from the wizard. Touches ONLY finalPrice/invoiced/payments/paymentLink —
-  //     never items/q.total (those stay in the wizard for versioning). Crew see read-only amounts; edit controls
-  //     are gated to owner/admin (jobCanEditPlan). Resolves the linked quote the same way the workStage badge does.
-  h += `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">💵 Invoice &amp; payment</div>`;
+  // 💵 Invoice & payment
+  let _secInvoice = `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">💵 Invoice &amp; payment</div>`;
   const _mq = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
   if (_mq) {
     const _tot = (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(_mq) : (+(_mq.finalPrice || _mq.total) || 0);
     const _paid = (typeof quotePaidAmt === "function") ? quotePaidAmt(_mq) : 0;
     const _bal = (typeof quoteBalAmt === "function") ? quoteBalAmt(_mq) : Math.max(0, _tot - _paid);
     const _canEdit = jobCanEditPlan();
-    h += `<div class="sub" style="white-space:normal">Invoice <b>${money(_tot)}</b>${_paid > 0 ? ` · ${money(_paid)} paid · <b>${money(_bal)} owed</b>` : ""}${_mq.finalPrice ? ` <span class="muted">(quote was ${money(_mq.total || 0)})</span>` : ""}</div>`;
-    if (_mq.invoiced) h += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:700">✓ Invoiced${_mq.invoiceNo ? ` #${esc(_mq.invoiceNo)}` : ""}${_mq.invoicedDate ? " · " + fmtDate(_mq.invoicedDate) : ""}</div>`;
-    if (_mq.paid) h += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:800">✓ Paid in full${_mq.paidDate ? " · " + fmtDate(_mq.paidDate) : ""}</div>`;
-    if (_mq.paymentLink) h += `<div style="margin-top:8px"><a class="btn acc sm" href="${esc(_mq.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a></div>`;
+    _secInvoice += `<div class="sub" style="white-space:normal">Invoice <b>${money(_tot)}</b>${_paid > 0 ? ` · ${money(_paid)} paid · <b>${money(_bal)} owed</b>` : ""}${_mq.finalPrice ? ` <span class="muted">(quote was ${money(_mq.total || 0)})</span>` : ""}</div>`;
+    if (_mq.invoiced) _secInvoice += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:700">✓ Invoiced${_mq.invoiceNo ? ` #${esc(_mq.invoiceNo)}` : ""}${_mq.invoicedDate ? " · " + fmtDate(_mq.invoicedDate) : ""}</div>`;
+    if (_mq.paid) _secInvoice += `<div class="sub" style="margin-top:4px;color:var(--accent);font-weight:800">✓ Paid in full${_mq.paidDate ? " · " + fmtDate(_mq.paidDate) : ""}</div>`;
+    if (_mq.paymentLink) _secInvoice += `<div style="margin-top:8px"><a class="btn acc sm" href="${esc(_mq.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a></div>`;
     if (_canEdit) {
-      h += `<div class="row" style="gap:8px;margin-top:10px">`;
-      if (!_mq.invoiced) h += `<button class="btn acc grow" onclick="invMark('${_mq.id}')">🧾 Mark invoiced</button>`;
-      h += `<button class="btn ${_mq.paid ? "ghost" : "acc"} grow" onclick="recordPayment('${_mq.id}')">💵 ${_mq.paid ? "Payments" : "Record payment"}</button>`;
-      h += `</div>`;
-      // Final price charged — mirrors wizSetFinal (finalPrice + version snapshot). NEVER touches items/q.total.
-      h += `<label style="margin-top:10px">Final price charged <span class="sub">(if different from the ${money(_mq.total || 0)} quote)</span></label>`;
-      h += `<div class="row" style="gap:8px"><input id="job_final" type="number" inputmode="decimal" placeholder="${_mq.total || 0}" value="${_mq.finalPrice || ""}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSaveFinal('${j.id}')">Save</button></div>`;
-      h += `<input id="job_adjnote" placeholder="Reason (e.g. added a step, gave a discount)" value="${esc(_mq.adjNote || "")}" style="margin-top:6px">`;
-      // Stripe / pay-now link — display-only field (no finance code reads paymentLink).
-      h += `<label style="margin-top:10px">Payment link <span class="sub">(Stripe / pay-now URL — shown to the customer)</span></label>`;
-      h += `<div class="row" style="gap:8px"><input id="job_paylink" placeholder="https://…" value="${esc(_mq.paymentLink || "")}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSetPayLink('${j.id}')">Save</button></div>`;
-      h += `<div class="sub" style="margin-top:8px;white-space:normal">Item &amp; line-price change orders stay in the full quote (📜 version history) — this card only sets the final charge, invoice &amp; payment.</div>`;
+      _secInvoice += `<div class="row" style="gap:8px;margin-top:10px">`;
+      if (!_mq.invoiced) _secInvoice += `<button class="btn acc grow" onclick="invMark('${_mq.id}')">🧾 Mark invoiced</button>`;
+      _secInvoice += `<button class="btn ${_mq.paid ? "ghost" : "acc"} grow" onclick="recordPayment('${_mq.id}')">💵 ${_mq.paid ? "Payments" : "Record payment"}</button>`;
+      _secInvoice += `</div>`;
+      _secInvoice += `<label style="margin-top:10px">Final price charged <span class="sub">(if different from the ${money(_mq.total || 0)} quote)</span></label>`;
+      _secInvoice += `<div class="row" style="gap:8px"><input id="job_final" type="number" inputmode="decimal" placeholder="${_mq.total || 0}" value="${_mq.finalPrice || ""}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSaveFinal('${j.id}')">Save</button></div>`;
+      _secInvoice += `<input id="job_adjnote" placeholder="Reason (e.g. added a step, gave a discount)" value="${esc(_mq.adjNote || "")}" style="margin-top:6px">`;
+      _secInvoice += `<label style="margin-top:10px">Payment link <span class="sub">(Stripe / pay-now URL — shown to the customer)</span></label>`;
+      _secInvoice += `<div class="row" style="gap:8px"><input id="job_paylink" placeholder="https://…" value="${esc(_mq.paymentLink || "")}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSetPayLink('${j.id}')">Save</button></div>`;
+      _secInvoice += `<div class="sub" style="margin-top:8px;white-space:normal">Item &amp; line-price change orders stay in the full quote (📜 version history) — this card only sets the final charge, invoice &amp; payment.</div>`;
     }
   } else {
-    h += `<div class="muted">No quote is linked to this job yet.</div>`;
+    _secInvoice += `<div class="muted">No quote is linked to this job yet.</div>`;
   }
-  h += `</div>`;
+  _secInvoice += `</div>`;
 
-  // 6c-ii) 📄 Customer materials report — a clean, branded, print/Save-as-PDF document of every PASS-THROUGH
-  //     charge (materials + any pass-through rentals) with the actual receipts as proof, to hand a customer who
-  //     wants to see everything they were charged for. Owner/admin (finCanView), and ONLY when the job actually
-  //     has pass-through items. Read-only (js/106 jobMaterialsReport) — reads j.materials[], never writes/bills.
+  // 📄 Customer materials report — owner/admin, only when the job has pass-through items
+  let _secMatReport = "";
   if ((typeof finCanView !== "function" || finCanView()) && typeof jobHasPassThrough === "function" && jobHasPassThrough(j)) {
-    h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📄 Customer materials report</div>`;
-    h += `<div class="sub" style="white-space:normal;margin-bottom:8px">A professional, printable document of every pass-through material charge on this job — with the receipts attached — to hand the customer.</div>`;
-    h += `<button class="btn acc" style="width:100%" onclick="jobMaterialsReport('${j.id}')">📄 Materials report (for customer)</button></div>`;
+    _secMatReport += `<div class="card"><div style="font-weight:800;margin-bottom:6px">📄 Customer materials report</div>`;
+    _secMatReport += `<div class="sub" style="white-space:normal;margin-bottom:8px">A professional, printable document of every pass-through material charge on this job — with the receipts attached — to hand the customer.</div>`;
+    _secMatReport += `<button class="btn acc" style="width:100%" onclick="jobMaterialsReport('${j.id}')">📄 Materials report (for customer)</button></div>`;
   }
 
-  // 6d) Close-out sign-offs (owner/admin) — TWO independent checks, DECOUPLED from payment: neither gates nor is
-  //     gated by paid/invoiced, and both are visible + settable at any stage. (a) "Reviewed" reuses the existing
-  //     j.reviewed / plReview mechanism (js/67); (b) "All expenses collected" flips the additive j.expensesCollected
-  //     (+ stamps At/By). The expenses sign-off ALSO lets workStage (js/60) move a done job past a SLOW crew member
-  //     without waiting for the auto close-out — so payment is never held up, but the follow-up isn't forgotten
-  //     (the ⚠ reminder above surfaces open crew on a paid/invoiced job). Crew don't see this card.
+  // Close-out sign-offs (owner/admin) — reviewed + all-expenses-collected, decoupled from payment
+  let _secCloseout = "";
   if (jobCanEditPlan()) {
     const _revd = (typeof plReviewed === "function" && _mq) ? plReviewed(_mq) : !!j.reviewed;
     const _coll = !!j.expensesCollected;
     const _openC = (typeof jobReceiptsOpenCrew === "function") ? jobReceiptsOpenCrew(j).map(id => (typeof userName === "function" ? userName(id) : "") || "").filter(Boolean) : [];
-    h += `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:4px">✅ Close-out sign-offs <span class="sub" style="font-weight:400">· independent of payment</span></div>`;
-    h += `<div class="sub" style="margin-bottom:6px;white-space:normal">Two separate checks so a slow crew member can't hold up payment: mark the job <b>reviewed</b> and confirm <b>all expenses are collected</b>. A paid job with expenses still open stays flagged for follow-up.</div>`;
-    h += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_revd ? "checked" : ""} onchange="jobToggleReviewed('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">⭐ Reviewed</div><div class="sub" style="white-space:normal">${_revd ? "Signed off — the after-action is done." : "The after-action review — what went well / do differently."}</div></div>${_revd && _mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Edit</button>` : (_mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Write ›</button>` : "")}</label>`;
-    h += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_coll ? "checked" : ""} onchange="jobToggleExpensesCollected('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">🧾 All expenses collected</div><div class="sub" style="white-space:normal">${_coll ? `Signed off${j.expensesCollectedBy ? " by " + esc(j.expensesCollectedBy) : ""}${j.expensesCollectedAt && typeof relTime === "function" ? " · " + relTime(j.expensesCollectedAt) : ""} — every crew member's receipts are in.` : "Confirm every crew member submitted their expenses for this job."}</div></div></label>`;
-    if (!_coll && _openC.length) h += `<div class="note" style="margin-top:8px;white-space:normal;border-left:3px solid #d9822b">⚠ ${_openC.length} crew still to close out: <b>${esc(_openC.join(", "))}</b>. You can sign off anyway once you've confirmed their expenses are in — payment isn't blocked either way.</div>`;
-    h += `</div>`;
+    _secCloseout += `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:4px">✅ Close-out sign-offs <span class="sub" style="font-weight:400">· independent of payment</span></div>`;
+    _secCloseout += `<div class="sub" style="margin-bottom:6px;white-space:normal">Two separate checks so a slow crew member can't hold up payment: mark the job <b>reviewed</b> and confirm <b>all expenses are collected</b>. A paid job with expenses still open stays flagged for follow-up.</div>`;
+    _secCloseout += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_revd ? "checked" : ""} onchange="jobToggleReviewed('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">⭐ Reviewed</div><div class="sub" style="white-space:normal">${_revd ? "Signed off — the after-action is done." : "The after-action review — what went well / do differently."}</div></div>${_revd && _mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Edit</button>` : (_mq ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="plReview('${_mq.id}')">Write ›</button>` : "")}</label>`;
+    _secCloseout += `<label class="li" style="cursor:pointer"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ${_coll ? "checked" : ""} onchange="jobToggleExpensesCollected('${j.id}')"><div class="grow"><div class="nm" style="font-size:15px">🧾 All expenses collected</div><div class="sub" style="white-space:normal">${_coll ? `Signed off${j.expensesCollectedBy ? " by " + esc(j.expensesCollectedBy) : ""}${j.expensesCollectedAt && typeof relTime === "function" ? " · " + relTime(j.expensesCollectedAt) : ""} — every crew member's receipts are in.` : "Confirm every crew member submitted their expenses for this job."}</div></div></label>`;
+    if (!_coll && _openC.length) _secCloseout += `<div class="note" style="margin-top:8px;white-space:normal;border-left:3px solid #d9822b">⚠ ${_openC.length} crew still to close out: <b>${esc(_openC.join(", "))}</b>. You can sign off anyway once you've confirmed their expenses are in — payment isn't blocked either way.</div>`;
+    _secCloseout += `</div>`;
   }
 
-  // 7) Change order — a change order is an EDIT to the SAME quote, saved as a version (not a second record).
-  //    Editing the full quote updates the customer's price IN PLACE (one invoice per job — no new invoice #);
-  //    once the quote is committed (accepted/invoiced/paid) each change is logged to q.versions[] for review.
-  h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change order</div>`;
+  // Change order — an EDIT to the same quote, saved as a version. (Data-ish → hoisted up near the top.)
+  let _secChange = `<div class="card"><div style="font-weight:800;margin-bottom:6px">🧾 Change order</div>`;
   if (j.quoteId) {
     const _cq = (typeof actQ === "function") ? actQ().find(x => x && x.id === j.quoteId) : null;
-    h += `<div class="sub" style="margin-bottom:8px;white-space:normal">Something changed on-site? Edit the full quote — size · materials · price. The customer's price updates in place; if the quote's already accepted or invoiced, each change is saved to its version history (no new invoice number).</div>`;
-    h += `<button class="btn acc" style="width:100%;text-align:left" onclick="openQuote('${j.quoteId}')">🧾 Make a change order — edit the full quote</button>`;
+    _secChange += `<div class="sub" style="margin-bottom:8px;white-space:normal">Something changed on-site? Edit the full quote — size · materials · price. The customer's price updates in place; if the quote's already accepted or invoiced, each change is saved to its version history (no new invoice number).</div>`;
+    _secChange += `<button class="btn acc" style="width:100%;text-align:left" onclick="openQuote('${j.quoteId}')">🧾 Make a change order — edit the full quote</button>`;
     const _vn = (_cq && Array.isArray(_cq.versions)) ? _cq.versions.length : 0;
     const _canReview = (typeof isOwner === "function" && isOwner()) || (typeof canDo === "function" && canDo("manage-members"));
-    if (_vn && _canReview) h += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="quoteVersionHistory('${j.quoteId}')">📜 Version history (${_vn})</button>`;
-    // Manual "send updated quote" — reuses the existing print/share path; it never auto-emails the customer.
-    h += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="jobSendUpdatedQuote('${j.quoteId}')">📤 Send updated quote</button>`;
+    if (_vn && _canReview) _secChange += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="quoteVersionHistory('${j.quoteId}')">📜 Version history (${_vn})</button>`;
+    _secChange += `<button class="btn ghost sm" style="width:100%;margin-top:8px;text-align:left" onclick="jobSendUpdatedQuote('${j.quoteId}')">📤 Send updated quote</button>`;
   } else {
-    h += `<div class="muted">No quote is linked to this job yet.</div>`;
+    _secChange += `<div class="muted">No quote is linked to this job yet.</div>`;
   }
-  h += `</div>`;
+  _secChange += `</div>`;
 
-  // 8) Done + actions
-  h += `<button class="btn ${j.done ? "ghost" : "acc"}" style="width:100%;margin-top:4px" onclick="toggleJob('${j.id}')">${j.done ? "↩ Reopen job" : "✓ Mark job done"}</button>`;
-  if (typeof jobTemplates === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="jobSaveAsTemplate('${j.id}')">⭐ Save as a common job (reuse this)</button>`;
+  // Done + actions (Google-review + Edit-job buttons removed earlier; "Save as a common job" dropped per Ray)
+  let _secDone = `<button class="btn ${j.done ? "ghost" : "acc"}" style="width:100%;margin-top:4px" onclick="toggleJob('${j.id}')">${j.done ? "↩ Reopen job" : "✓ Mark job done"}</button>`;
   // (Google-review BUTTON removed per Ray — the job-done auto-prompt (js/51 reviewPrompt, fired from js/09 toggleJob)
   //  still asks at the right moment; reviewAsk() itself stays (used to SET the review link from js/18 + js/51).)
   // ("✏️ Edit job" button removed — customer/date/time are now inline in the "where & when" card above, and
   //  title/crew/notes/location/route/work-days/equipment were already inline. The openJob modal remains the
   //  CREATE form only, reached from Schedule / customer / property "Add job".)
-  if (typeof isOwner === "function" && isOwner()) h += `<button class="btn ghost sm" style="width:100%;margin:8px 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
+  if (typeof isOwner === "function" && isOwner()) _secDone += `<button class="btn ghost sm" style="width:100%;margin:8px 0 14px;color:var(--danger)" onclick="delJob('${j.id}')">🗑 Delete job (to Archive, 60-day undo)</button>`;
+
+  // ===== ASSEMBLE the page in WORKDAY ORDER (h already has the header + the top DATA card):
+  //   data → part-of-bigger → change-order → ask-cap → crew → clock in → load the truck → drive (route) →
+  //   costs/receipts → materials report → photos → notes → invoice → close-out → work-days (admin) → done.
+  h += _secPartOf + _secChange + _secAskCap
+    + _secCrew + _secClock + _secLoad
+    + _secRoute + _secCosts + _secMatReport
+    + _secPhotos + _secNotes + _secInvoice + _secCloseout
+    + _secWorkdays + _secDone;
   return h;
 }
 
