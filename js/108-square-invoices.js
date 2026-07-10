@@ -52,9 +52,11 @@ function sqInvParse(text) {
   }
   return out;
 }
-/* match a Square invoice to a j-Suite customer by name / phone-last-10 / email. Returns the customer or null. */
+/* match a Square invoice to a j-Suite customer. A COMMITTED invoice already carries the resolved customerId — use
+   it directly (survives a later name change). Otherwise (fresh import) match by name / phone-last-10 / email. */
 function sqMatchCustomer(inv) {
   const cs = (typeof actC === "function") ? actC() : [];
+  if (inv && inv.customerId) { const byId = cs.find(c => c && c.id === inv.customerId); if (byId) return byId; }
   const nm = sqNorm(inv.customerName), ph = sqPhone10(inv.phone), em = sqNorm(inv.email);
   return cs.find(c => c && ((nm && sqNorm(c.name || c.company) === nm) || (ph && ph.length === 10 && sqPhone10(c.phone) === ph) || (em && sqNorm(c.email) === em))) || null;
 }
@@ -174,16 +176,87 @@ window.sqInvCommit = function () {
   if (typeof toast === "function") toast(`Imported ${added} new · ${updated} updated`); else alert(`Imported ${added} new · ${updated} updated invoices.`);
   if (typeof render === "function") render();
 };
-/* reopen the reconciliation review from the STORED invoices (recomputes matches live so it always reflects the
-   current quotes). Phase-1: read-only report. */
+/* ========================= PHASE 2 — INVOICE-WINS APPLY (Ray's rule: the Square invoice is the income of record) =========================
+   Applying a customer's reconciliation: (1) book EACH of their paid Square invoices as an income record (inc_sq_<token> =
+   amountPaid), and (2) stamp reconciledInvoiceId on ALL their paid quotes so syncQuoteIncome TOMBSTONES the quotes' own
+   income (js/40) → no double-count. Net taxable income for the customer = what Square actually collected. Orphan paid
+   quotes (no matching invoice) are flagged reconciledDuplicate — income suppressed, record kept (non-destructive; Ray can
+   archive the quote later). Fully reversible via Undo. FINANCE-CRITICAL — only changes income on this explicit action. */
+function sqInvCustReconciled(custId) { const invs = actInvoices().filter(iv => iv.customerId === custId); return invs.length > 0 && invs.every(iv => iv.reconciled); }
+window.sqInvApplyCustomer = function (custId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner/admin only."); return; }
+  const d = D(); const cust = ((typeof actC === "function") ? actC() : []).find(c => c && c.id === custId); if (!cust) return;
+  const invs = actInvoices().filter(iv => iv.customerId === custId); if (!invs.length) { alert("No imported Square invoices for this customer."); return; }
+  const R = sqReconcile(invs), claimByQuote = {}; R.rows.forEach(r => (r.quoteIds || []).forEach(qid => { claimByQuote[qid] = r.inv.id; }));
+  d.income = d.income || [];
+  // (1) book each invoice as the income of record
+  invs.forEach(iv => {
+    const incId = "inc_sq_" + iv.id;
+    const jobs = (iv.quoteIds || []).map(qid => { const q = (d.quotes || []).find(x => x.id === qid); return q && q.jobId ? (d.jobs || []).find(j => j && j.id === q.jobId) : null; }).filter(Boolean);
+    const crew = []; jobs.forEach(j => (j.crew || []).forEach(m => { if (crew.indexOf(m) < 0) crew.push(m); }));
+    let e = d.income.find(x => x && x.id === incId);
+    const fields = { invoiceId: iv.id, fromInvoice: true, source: "square", amount: iv.amountPaid, date: iv.lastPaymentDate || iv.invoiceDate || (typeof today === "function" ? today() : ""), crew: crew, originator: cust.soldBy || "", bookedAt: iv.invoiceDate || "", houseAccount: false, deleted: false };
+    if (e) Object.assign(e, fields); else { e = Object.assign({ id: incId }, fields); d.income.push(e); }
+    if (typeof touch === "function") touch(e);
+    iv.reconciled = true; if (typeof touch === "function") touch(iv);
+  });
+  // (2) suppress every one of this customer's paid quotes' own income — invoice wins (no double count)
+  (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && q.paid).forEach(q => {
+    q.reconciledInvoiceId = claimByQuote[q.id] || invs[0].id;   // its claiming invoice, or (orphan) the first invoice
+    q.reconciledDuplicate = !claimByQuote[q.id];                // orphan paid quote = a duplicate / over-booking
+    if (typeof touch === "function") touch(q);
+    if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);   // tombstones inc_q_<id>
+  });
+  if (typeof logChange === "function") logChange("update", "invoices", custId, "Reconciled " + (cust.name || "") + " to Square (" + invs.length + " invoice" + (invs.length > 1 ? "s" : "") + ")");
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof render === "function") render();
+};
+window.sqInvUnapplyCustomer = function (custId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner/admin only."); return; }
+  const d = D();
+  actInvoices().filter(iv => iv.customerId === custId).forEach(iv => { const e = (d.income || []).find(x => x && x.id === "inc_sq_" + iv.id); if (e && !e.deleted) { e.deleted = true; if (typeof touch === "function") touch(e); } iv.reconciled = false; if (typeof touch === "function") touch(iv); });
+  (d.quotes || []).filter(q => q && q.customerId === custId && q.reconciledInvoiceId).forEach(q => { delete q.reconciledInvoiceId; delete q.reconciledDuplicate; if (typeof touch === "function") touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q); });
+  if (typeof logChange === "function") logChange("update", "invoices", custId, "Un-reconciled from Square");
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof render === "function") render();
+};
+/* customer-grouped reconcile view WITH the apply/undo actions (from the stored invoices; recomputes matches live). */
+function sqInvReconcileRows() {
+  const list = actInvoices(), R = sqReconcile(list), byCust = {};
+  R.rows.forEach(r => { const cid = r.cust ? r.cust.id : ("__none_" + r.inv.id); (byCust[cid] = byCust[cid] || { cust: r.cust, rows: [], over: 0, orphans: [] }).rows.push(r); });
+  Object.keys(R.cust).forEach(cid => { if (byCust[cid]) { byCust[cid].over = R.cust[cid].over; byCust[cid].orphans = R.cust[cid].orphans; } });
+  let truth = 0, unresolved = 0, html = "";
+  Object.keys(byCust).sort((a, b) => byCust[b].rows.reduce((s, r) => s + r.inv.amountPaid, 0) - byCust[a].rows.reduce((s, r) => s + r.inv.amountPaid, 0)).forEach(cid => {
+    const g = byCust[cid], cust = g.cust, invTotal = g.rows.reduce((a, r) => a + r.inv.amountPaid, 0);
+    truth += invTotal;
+    const reconciled = cust && sqInvCustReconciled(cust.id);
+    if (cust && !reconciled && g.over > 0.5) unresolved += g.over;
+    html += `<div class="card" style="margin-bottom:8px${reconciled ? ";border-left:4px solid var(--accent)" : (g.over > 0.5 ? ";border-left:4px solid #c1121f" : "")}">`;
+    html += `<div class="row" style="align-items:baseline"><div class="grow nm" style="font-size:15px">${esc(cust ? cust.name : (g.rows[0].inv.customerName || "—"))}</div><b>${money(invTotal)}</b></div>`;
+    g.rows.forEach(r => { const inv = r.inv, qn = r.quoteIds.map(sqQName); html += `<div class="sub" style="white-space:normal;margin-top:3px">${esc(inv.invoiceNo || "")} · ${money(inv.amountPaid)} · ${esc(inv.title || "(no title)")}${qn.length ? " → " + esc(qn.join(" + ")) : ` <span style="color:#e0a800">· no matching quote</span>`}</div>`; });
+    if (!cust) { html += `<div class="sub" style="color:#e0a800;white-space:normal;margin-top:6px">⚠ No customer on file matches this invoice — add/rename the customer, then re-import.</div>`; }
+    else if (reconciled) {
+      html += `<div class="sub" style="color:var(--accent);font-weight:700;margin-top:6px">✓ Reconciled — booking ${money(invTotal)} from Square as the income of record</div>`;
+      html += `<button class="btn ghost sm" style="margin-top:6px" onclick="sqInvUnapplyCustomer('${cust.id}')">Undo reconcile</button>`;
+    } else {
+      if (g.over > 0.5) html += `<div class="sub" style="color:#c1121f;white-space:normal;margin-top:6px">⚠ Over-booked ${money(g.over)} — paid quotes with no matching invoice (likely duplicates): ${esc(g.orphans.map(q => sqQName(q.id) + " (" + money(sqQuoteTotal(q)) + ")").join(", "))}</div>`;
+      html += `<button class="btn acc sm" style="margin-top:6px;width:100%" onclick="sqInvApplyCustomer('${cust.id}')">✅ Reconcile — book ${money(invTotal)} from Square${g.over > 0.5 ? ", stop the " + money(g.over) + " over-book" : ""}</button>`;
+    }
+    html += `</div>`;
+  });
+  const summary = `<div class="card" style="background:var(--soft);margin-bottom:10px"><div class="row" style="justify-content:space-between"><span class="sub">Square collected (truth)</span><b>${money(truth)}</b></div>${unresolved > 0.5 ? `<div class="row" style="justify-content:space-between;color:#c1121f;font-weight:800"><span>Still over-booked (unreconciled)</span><span>${money(unresolved)}</span></div>` : `<div class="sub" style="color:var(--accent)">✓ all reconciled — books match Square</div>`}</div>`;
+  return summary + html;
+}
+/* reopen the reconciliation review from the STORED invoices, WITH the per-customer Apply/Undo actions. */
 window.sqInvReconcileOpen = function () {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner/admin only."); return; }
-  const list = actInvoices().slice().sort((a, b) => String(b.lastPaymentDate || b.invoiceDate || "").localeCompare(String(a.lastPaymentDate || a.invoiceDate || "")));
-  if (!list.length) { sqInvImportOpen(); return; }
+  if (!actInvoices().length) { sqInvImportOpen(); return; }
   if (typeof modal !== "function") return;
-  modal(`Square reconciliation (${list.length})`,
-    `<p class="muted" style="margin:0 0 10px;white-space:normal">Paid Square invoices matched to your quotes. ⚠ over-booked rows are where j-Suite has more marked paid than Square actually collected — the cleanup (booking the invoice as the income of record + archiving duplicates) is the next step.</p>`
-    + sqInvReviewRows(list)
+  modal(`Square reconciliation (${actInvoices().length})`,
+    `<p class="muted" style="margin:0 0 10px;white-space:normal">Paid Square invoices vs your quotes. <b>Reconcile</b> books the invoice as the income of record and stops the matched quotes from double-counting — so income = what Square actually collected. Reversible.</p>`
+    + sqInvReconcileRows()
     + `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="sqInvImportOpen()">⬆ Import more / re-import</button>`);
 };
 /* the entry card shown on the Finance page (owner/admin) — launch import + a live over-booked flag. */

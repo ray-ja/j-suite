@@ -36,6 +36,11 @@ window.syncQuoteIncome = function (q) {
   const d = D(); d.income = d.income || [];
   const incId = "inc_q_" + q.id;
   let e = d.income.find(x => x && x.id === incId);
+  // RECONCILED TO A SQUARE INVOICE (js/108): the paid Square invoice is the income of record (inc_sq_*), so a
+  // reconciled quote must NOT book its own income — otherwise the same money counts twice (e.g. Michelle's $960
+  // junk + $720 move both marked paid vs the ONE $960 Square invoice). Tombstone any inc_q_* it left. This makes
+  // taxable income = what Square actually collected. Un-reconciling (clear reconciledInvoiceId) re-books it.
+  if (q.reconciledInvoiceId) { if (e && !e.deleted) { e.deleted = true; if (typeof touch === "function") touch(e); } return; }
   if (q.paid) {
     const job = q.jobId ? (d.jobs || []).find(j => j && j.id === q.jobId && !j.deleted) : null;
     const cust = q.customerId ? (d.customers || []).find(c => c && c.id === q.customerId) : null;
