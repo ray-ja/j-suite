@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[]}}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -53,6 +53,7 @@ function load(){
     if(!S[b].knowledge)S[b].knowledge=[];   // Cap's Playbook — synced facts Cap references when answering
     if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
     if(!S[b].recurringPlans)S[b].recurringPlans=[];   // RECURRING SERVICE (Phase 1): synced plan contracts {id"rp_",customerId,propertyId,frequency,nextDue,generatedJobIds…}. The engine (js/102) materializes JOBS from these; the plan holds no money → finance byte-identical. Additive, empty by default.
+    if(!S[b].invoices)S[b].invoices=[];   // SQUARE INVOICE RECONCILIATION (js/108): imported paid invoices {id:<Square token>,customerId,quoteIds,amountPaid…}, the paid-invoice source of truth. Additive, empty by default; Phase 1 doesn't touch income.
     (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
     // MULTI-JOB STOPS: job.sharedJobIds[] generalizes the old scalar job.parentJobId — []=generic/overhead
     // (charged to no job), [id]=today's 1:1 sub-job behavior (no-op divide), [id,id,...]=even split across N
