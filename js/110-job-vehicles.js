@@ -228,6 +228,9 @@ function jobPageVehiclesCard(j) {
     const who = owner ? `reimburses <b>${esc(owner)}</b>${reimb ? ` ~${m(reimb)}` : ""}` : `<span class="muted">company truck — reimburses whoever drives it${reimb ? ` (~${m(reimb)})` : ""}</span>`;
     h += `<div class="card" style="background:var(--soft);padding:8px 10px;margin-bottom:8px"><div class="row" style="align-items:baseline"><div class="grow nm" style="font-size:15px">🚚 ${esc(nm)}${v && v.plate ? ` <span class="sub" style="font-weight:400">${esc(v.plate)}</span>` : ""}</div>${canEdit ? `<button class="btn ghost sm" onclick="jobToggleVehicle('${j.id}','${esc(vehId)}')" title="Remove from job">✕</button>` : ""}</div>`;
     h += `<div class="sub" style="white-space:normal;margin-top:2px">${est} · ${who}</div>`;
+    // ODOMETER OF RECORD (the billed number) — confirmed clock-out miles logged on THIS vehicle for this job.
+    const _conf = ((typeof actTC === "function") ? actTC() : []).filter(e => e && !e.deleted && e.jobId === j.id && (e.invVehicleId === vehId || e.vehicleId === vehId) && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0), 0);
+    if (_conf > 0) h += `<div class="sub" style="white-space:normal;margin-top:1px">🚗 Odometer of record: <b>${Math.round(_conf * 10) / 10} mi</b>${vr.estMiles > 0 ? ` <span class="muted">(${Math.round(_conf / vr.estMiles * 100)}% of estimate — odometer wins)</span>` : ""}</div>`;
     // the vehicle's ORDERED route: Start → [stops/site, reorderable ▲▼] → End. Start/End default to home base but
     // are editable (a crew member who drives from home). Reuses jobRouteOrdered on the shim so ordering matches.
     const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
@@ -236,18 +239,26 @@ function jobPageVehiclesCard(j) {
     const startVal = startCustom ? vr.routeStart.address : baseAddr, endVal = endCustom ? vr.routeEnd.address : baseAddr;
     const combo = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(jobVehShim(j, vr)) : [];
     const ep = (side, id, value, custom, resetFn) => `<div class="sub" style="margin-top:4px"><span class="muted">${side}</span>${custom ? ` <a onclick="${resetFn}('${j.id}','${esc(vehId)}')" style="cursor:pointer;color:var(--brand-text)">↺ base</a>` : ` <span class="sub">· home base</span>`}</div><div class="acwrap"><input id="${id}_${esc(vehId)}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}_${esc(vehId)}','${id}_${esc(vehId)}_ac')" oninput="addrSuggest('${id}_${esc(vehId)}','${id}_${esc(vehId)}_ac')" onchange="${side === "Start" ? "jobVehSetStart" : "jobVehSetEnd"}('${j.id}','${esc(vehId)}',this.value)" style="width:100%"><div class="acbox" id="${id}_${esc(vehId)}_ac"></div></div>`;
+    // name + ADDRESS for each ordered item (Ray: the site row must SHOW the address so he can verify it's the right site)
+    const rowNameAddr = (t) => {
+      if (t.kind === "site") return { nm: "🏁 Job site", ad: siteAddr ? esc(siteAddr) : `<span class="muted">no location set — ✏️ Edit location above</span>` };
+      const s = t.stop; return { nm: esc(s.label || s.address || "Stop"), ad: (s.label && s.address) ? esc(s.address) : (s.address ? esc(s.address) : "") };
+    };
     if (canEdit) {
       h += ep("Start", "jvrs_start", startVal, startCustom, "jobVehResetStart");
       h += combo.map((t, ci) => {
         const up = ci === 0 ? "disabled" : "", dn = ci === combo.length - 1 ? "disabled" : "";
-        const lbl = t.kind === "site" ? `🏁 Job site${siteAddr ? "" : " <span class='muted'>(set location)</span>"}` : esc(t.stop.label || t.stop.address || "Stop");
+        const na = rowNameAddr(t);
         const del = t.kind === "stop" ? `<button class="btn ghost sm" onclick="jobVehStopDel('${j.id}','${esc(vehId)}',${t.raw})" title="Remove">✕</button>` : "";
-        return `<div class="row" style="align-items:center;gap:3px;padding:3px 0"><div class="grow nm" style="font-size:13px;white-space:normal">${ci + 1}. ${lbl}</div><button class="btn ghost sm" ${up} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},-1)" title="Up">▲</button><button class="btn ghost sm" ${dn} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},1)" title="Down">▼</button>${del}</div>`;
+        return `<div class="row" style="align-items:flex-start;gap:3px;padding:4px 0"><div class="grow" style="min-width:0"><div class="nm" style="font-size:14px;white-space:normal">${ci + 1}. ${na.nm}</div>${na.ad ? `<div class="sub" style="white-space:normal">${na.ad}</div>` : ""}</div><button class="btn ghost sm" ${up} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},-1)" title="Up">▲</button><button class="btn ghost sm" ${dn} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},1)" title="Down">▼</button>${del}</div>`;
       }).join("");
       h += ep("End", "jvrs_end", endVal, endCustom, "jobVehResetEnd");
     } else {
-      const seqTxt = [startCustom ? esc(startVal) : "🏁 base"].concat(combo.map(t => t.kind === "site" ? "📍 site" : esc(t.stop.label || t.stop.address || "stop"))).concat([endCustom ? esc(endVal) : "🏁 base"]);
-      h += `<div class="sub" style="white-space:normal;margin-top:4px">${seqTxt.join(" → ")}</div>`;
+      // crew read-only: 🏁 Start · then each stop/site with its address · 🏁 End
+      let ro = `<div class="sub" style="white-space:normal;margin-top:4px">🏁 ${startCustom ? esc(startVal) : "Home base"}</div>`;
+      combo.forEach(t => { const na = rowNameAddr(t); ro += `<div class="sub" style="white-space:normal">↳ ${na.nm}${na.ad ? ` — ${na.ad}` : ""}</div>`; });
+      ro += `<div class="sub" style="white-space:normal">🏁 ${endCustom ? esc(endVal) : "Home base"}</div>`;
+      h += ro;
     }
     // a Google Maps link for the whole loop (read the round-trip miles) — Start → site/stops (in order) → End
     if (typeof gmapsRouteUrl === "function") {
@@ -283,6 +294,8 @@ function jobPageVehiclesCard(j) {
       h += `<div class="muted">No vehicles yet — add them in Inventory (personal vehicles) or Admin (company trucks).</div>`;
     }
   }
+  // 🗺 View the ACTUAL driven route (GPS) for this job — the tool from the old Route & mileage card (js/91).
+  if (canEdit && assigned.length && typeof openRouteReview === "function") h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="openRouteReview('${j.id}')">🗺 View the actual driven route (GPS)</button>`;
   return h + `</div>`;
 }
 window.jobPageVehiclesCard = jobPageVehiclesCard;
