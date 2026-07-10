@@ -178,6 +178,12 @@ const archRT = t.mergeState({ users: [{ id: "own", username: "ray", role: "owner
 const goneRT = archRT.users.find(u => u.id === "gone");
 ok("archive: an archived account SURVIVES a sync round-trip with the flag intact (kept for pay + history, never dropped)", !!goneRT && goneRT.archived === true && goneRT.username === "vlad");
 
+// TAX-BORROW LEDGER — a per-org docs sentinel (id "taxBorrow", like financeConfig). Must survive a round-trip
+// with its borrow/repay entries intact so the running balance is never lost.
+const tbRT = t.mergeState({ obx: { docs: [{ id: "taxBorrow", entries: [{ id: "b1", type: "borrow", amount: 500, date: "2026-07-10" }, { id: "r1", type: "repay", amount: 200, date: "2026-07-11" }], updatedAt: 5 }] } }, { obx: { docs: [] } });
+const tbDoc = (((tbRT.obx) || {}).docs || []).find(d => d && d.id === "taxBorrow");
+ok("tax-borrow ledger doc survives a sync round-trip with borrow + repay entries intact", !!tbDoc && Array.isArray(tbDoc.entries) && tbDoc.entries.length === 2 && tbDoc.entries[0].amount === 500 && tbDoc.entries[1].type === "repay");
+
 // CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
 // + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
 // server suite proves the client migration is loss-free + sane.

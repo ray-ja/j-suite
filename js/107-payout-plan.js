@@ -33,6 +33,67 @@ window.popSetWeight = function (jobId, userId, val) {
   render();
 };
 
+/* ---- TAX-RESERVE BORROW LEDGER (manual) — a running balance you drive yourself ----
+   Rides the synced docs collection as a per-org sentinel (id "taxBorrow"), exactly like financeConfig — no new
+   collection, no migration. entries: [{id,type:"borrow"|"repay",amount,date,note}]. Read paths NEVER create the
+   doc (no empty-doc noise); only recording a borrow/repayment materializes it. */
+function popTaxBorrowDoc() { return (D().docs || []).find(x => x && x.id === "taxBorrow") || null; }
+function popBorrowEntries() { const c = popTaxBorrowDoc(); return (c && Array.isArray(c.entries)) ? c.entries.filter(x => x && !x.deleted) : []; }
+function popBorrowSums() { let b = 0, r = 0; popBorrowEntries().forEach(x => { const c = finCents(x.amount); if (x.type === "repay") r += c; else b += c; }); return { borrowed: b, repaid: r, balance: Math.max(0, b - r) }; }
+function popBorrowEnsureDoc() { const d = D(); d.docs = d.docs || []; let c = d.docs.find(x => x && x.id === "taxBorrow"); if (!c) { c = { id: "taxBorrow", entries: [], updatedAt: (typeof now === "function" ? now() : Date.now()) }; d.docs.push(c); } if (!Array.isArray(c.entries)) c.entries = []; return c; }
+window.popBorrowOpen = function (kind, prefill) {
+  if (!finCanView()) return;
+  const repay = kind === "repay";
+  modal(repay ? "Log a repayment to the tax reserve" : "Record a tax-reserve borrow", `
+    <label>Amount ($)</label><input id="pb_amt" type="number" inputmode="decimal" value="${prefill != null ? esc(prefill) : ""}" placeholder="0.00">
+    <label>Note <span class="sub">(optional)</span></label><input id="pb_note" placeholder="${repay ? "e.g. from June business fund" : "e.g. to pay Chaz + Vlad now"}">
+    <div class="sub" style="white-space:normal;margin-top:8px">${repay ? "Money you routed BACK into the tax reserve (e.g. the business 15% share this period) — brings the reserve toward whole." : "Money you're pulling FROM the tax reserve to pay people now — tracked so you can pay it back over time."}</div>
+    <button class="btn acc" style="margin-top:12px" onclick="popBorrowSave('${repay ? "repay" : "borrow"}')">Save</button>`);
+};
+window.popBorrowSave = function (kind) {
+  if (!finCanView()) return;
+  const amt = parseFloat(val("pb_amt")) || 0; if (amt <= 0) { alert("Enter an amount."); return; }
+  if (typeof submitGuard === "function" && !submitGuard("popBorrow:" + kind)) return;
+  const c = popBorrowEnsureDoc();
+  c.entries.push({ id: uid(), type: kind === "repay" ? "repay" : "borrow", amount: amt, date: (typeof today === "function" ? today() : ""), note: val("pb_note") || "" });
+  if (typeof touch === "function") touch(c);
+  if (typeof logChange === "function") logChange("update", "docs", "taxBorrow", (kind === "repay" ? "Repaid " : "Borrowed ") + money(amt) + " tax reserve");
+  save(); if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof closeModal === "function") closeModal(); render();
+};
+window.popBorrowUndo = function (id) {
+  if (!finCanView()) return;
+  const c = popTaxBorrowDoc(); if (!c) return; const e = (c.entries || []).find(x => x && x.id === id); if (!e) return;
+  if (!confirm("Remove this " + (e.type === "repay" ? "repayment" : "borrow") + " entry?")) return;
+  e.deleted = true; if (typeof touch === "function") touch(c);
+  save(); if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow(); render();
+};
+/* the tax-reserve card body — recommended raid + the manual borrow/repay ledger with a running balance */
+function popTaxReserveHTML(m, taxRaid) {
+  const s = popBorrowSums(), bal = s.balance;
+  let h = `<div class="secthd"><h2>🏦 Tax reserve</h2>${bal > 0 ? `<span class="ct" style="color:var(--danger)">${fm(bal)} borrowed</span>` : ""}</div>`;
+  if (taxRaid <= 0.5 && bal <= 0) {
+    return h + `<div class="card"><div class="sub" style="white-space:normal">Cash covers reimbursements + wages — no need to touch the ${fm(m.tax)} tax reserve. 🎉</div></div>`;
+  }
+  h += `<div class="card" style="border-left:4px solid var(--danger)">`;
+  if (taxRaid > 0.5) {
+    h += `<div class="nm" style="white-space:normal">Cash can't make everyone whole — short <b style="color:var(--danger)">${fm(taxRaid)}</b> on reimbursements + wages.</div>
+      <div class="sub" style="white-space:normal;margin-top:6px">Pull from the Tax Reserve to pay people now (reserve target this round is ${fm(m.tax)}), then pay it back by routing the Business Fund's 15% into taxes on the next jobs until it's whole.</div>
+      <button class="btn sm" style="margin-top:8px;background:var(--danger);border-color:var(--danger);color:#fff" onclick="popBorrowOpen('borrow','${(taxRaid / 100).toFixed(2)}')">🏦 Record borrow ${fm(taxRaid)}</button>`;
+  }
+  if (bal > 0) {
+    const pct = s.borrowed > 0 ? Math.round(s.repaid / s.borrowed * 100) : 0;
+    h += `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+      <div class="row" style="align-items:center"><div class="grow"><div class="nm">Owed back to tax reserve</div><div class="sub">${fm(s.repaid)} repaid of ${fm(s.borrowed)} borrowed</div></div><b style="color:var(--danger)">${fm(bal)}</b></div>
+      <div style="height:7px;border-radius:4px;background:var(--soft);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#1e9e5a"></div></div>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="popBorrowOpen('repay','')">✓ Log a repayment</button>`;
+    const ents = popBorrowEntries().slice().sort((a, b) => (a.date + a.id) < (b.date + b.id) ? 1 : -1);
+    h += ents.map(e => `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${e.type === "repay" ? "↩ Repaid" : "🏦 Borrowed"} ${fm(finCents(e.amount))}</div><div class="sub" style="white-space:normal">${fmtDate(e.date)}${e.note ? " · " + esc(e.note) : ""}</div></div><button class="btn ghost sm" style="flex:0 0 auto;opacity:.6" onclick="popBorrowUndo('${esc(e.id)}')" title="Remove">✕</button></div>`).join("");
+  }
+  h += `</div>`;
+  return h;
+}
+
 /* the "⚖️ Crew shares" editor — every accepted job with 2+ crew, a slider per member (100 = full share).
    Dial a partial helper down (e.g. 60) and that job's field pool splits proportionally. */
 function popCrewSharesHTML() {
@@ -182,15 +243,8 @@ function rFinPriority() {
   h += tierRow("3️⃣", "Business fund", `15% of revenue — overhead / growth (last in line)`, m.business, toBusiness);
   h += `</div>`;
 
-  /* TAX RESERVE RAID */
-  if (taxRaid > 0.5) {
-    h += `<div class="secthd"><h2>🏦 Tax reserve</h2></div><div class="card" style="border-left:4px solid var(--danger)">
-      <div class="nm" style="white-space:normal">Cash can't make everyone whole — you're short <b style="color:var(--danger)">${fm(taxRaid)}</b> to fully pay reimbursements + wages.</div>
-      <div class="sub" style="white-space:normal;margin-top:6px">Pull <b>${fm(taxRaid)}</b> from the Tax Reserve to pay people now. The reserve target this round is ${fm(m.tax)} (25%). <b>Pay it back</b> by routing the Business Fund's 15% share back into taxes on the next jobs until the reserve is whole again — you're front-loaded on tools and pricing low while new; that evens out.</div>
-      <div class="sub" style="white-space:normal;margin-top:6px;color:var(--muted)">Tracking this borrow as a running balance is a one-tap add once you confirm the approach — see the morning notes.</div></div>`;
-  } else {
-    h += `<div class="secthd"><h2>🏦 Tax reserve</h2></div><div class="card"><div class="sub" style="white-space:normal">Cash covers reimbursements + wages — no need to touch the ${fm(m.tax)} tax reserve. 🎉</div></div>`;
-  }
+  /* TAX RESERVE — recommended raid + the manual borrow/repay ledger (running balance) */
+  h += popTaxReserveHTML(m, taxRaid);
 
   /* PER-PERSON */
   h += `<div class="secthd"><h2>👤 Per person</h2><span class="ct">${fm(m.peopleTotal)} owed</span></div><div class="card">`;
