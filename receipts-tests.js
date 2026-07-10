@@ -1537,6 +1537,78 @@ async function main() {
     ok("Finance editor (js/40 saveExpense): setting a new date on the Cloudflare biz record persists (2026-06-20)", cffin && cffin.date === "2026-06-20", cffin && cffin.date);
   }
 
+  // ========================= STATEMENT FAN-OUT: one review receipt PER transaction =========================
+  // Ray uploaded a card-statement screenshot with TWO POS debits (Vulcan -$68.69 + Home Depot -$67.21, card 8355).
+  // The OLD path made ONE blank review receipt. A read returning suggested.transactions must fan out into one
+  // review record PER transaction, sharing the SAME source image, with DETERMINISTIC _tx ids (idempotent on
+  // re-read), each a POSITIVE expense (the minus sign on a statement debit must NOT flag a refund).
+  console.log("\n— STATEMENT FAN-OUT: a 2-transaction read → 2 review records sharing the image, deterministic _tx ids —");
+  window.CAP_RCPT_THROTTLE_MS = 0;
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
+  global.finCanView = function () { return true; };
+  const stmtRec = seedReview({ receiptId: "stmt8355.png" });   // the ONE upload of the statement screenshot
+  const pid = stmtRec.id;
+  // low confidence (0.5) → the fanned rows STAY in review (so we can inspect their ids + suggestions), amounts NEGATIVE
+  // on the statement to prove they come back POSITIVE and NOT flagged as refunds.
+  const STMT_TX = { confidence: 0.5, transactions: [
+    { vendor: "VULCAN MIDEAST", amount: -68.69, date: "2026-07-08", last4: "8355", type: "job-expense", category: "materials", refund: false },
+    { vendor: "THE HOME DEPOT #3650", amount: -67.21, date: "2026-07-08", last4: "8355", type: "pass-through", category: "materials", refund: false }
+  ] };
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: STMT_TX }) }); };
+  await capRcptRun({ auto: true });
+  const fanRows = rcptReview().filter(r => r.receiptId === "stmt8355.png");
+  ok("2-transaction statement fanned into 2 review records", fanRows.length === 2, fanRows.map(r => r.id));
+  const prim = rcptReview().find(r => r.id === pid);
+  const sib1 = rcptReview().find(r => r.id === pid + "_tx1");
+  ok("primary keeps the SOURCE record id + transactions[0] (Vulcan)", prim && prim.suggested && prim.suggested.vendor === "VULCAN MIDEAST", prim && prim.suggested);
+  ok("sibling id is DETERMINISTIC (<primary>_tx1) + carries transactions[1] (Home Depot)", !!sib1 && sib1.suggested && sib1.suggested.vendor === "THE HOME DEPOT #3650", sib1 && sib1.id);
+  ok("both fanned rows SHARE the one source image (receiptId)", prim.receiptId === "stmt8355.png" && sib1.receiptId === "stmt8355.png");
+  ok("statement DEBITS shown NEGATIVE become POSITIVE suggestions (money out = a normal expense)", prim.suggested.amount === 68.69 && sib1.suggested.amount === 67.21, [prim.suggested.amount, sib1.suggested.amount]);
+  ok("a statement debit is NOT a refund (the minus sign must not flag one)", prim.suggested.refund === false && sib1.suggested.refund === false);
+  ok("each fanned row carries card last4 + date", prim.suggested.last4 === "8355" && prim.suggested.date === "2026-07-08" && sib1.suggested.last4 === "8355");
+
+  console.log("— STATEMENT FAN-OUT: re-reading the SAME image does NOT duplicate (idempotent _tx ids) —");
+  prim.suggested = null; if (typeof touch === "function") touch(prim);   // simulate Ray tapping 'Reread' on the (re-blanked) primary
+  await capRcptRun({ auto: true });                                       // re-reads the primary → fans AGAIN
+  const afterReread = rcptReview().filter(r => r.receiptId === "stmt8355.png");
+  ok("re-read fans to the SAME 2 records (no 3rd / no _tx1 duplicate)", afterReread.length === 2, afterReread.map(r => r.id));
+  ok("still exactly ONE sibling with id <primary>_tx1", rcptReview().filter(r => r.id === pid + "_tx1").length === 1);
+
+  console.log("— STATEMENT FAN-OUT: a confident statement AUTO-FILES each row as a POSITIVE expense, not a refund —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
+  global.finCanView = function () { return true; };
+  seedReview({ receiptId: "stmtB.png" });
+  const STMT_B = { confidence: 0.92, transactions: [
+    { vendor: "VULCAN MIDEAST", amount: -68.69, date: "2026-07-08", last4: "8355", type: "business", category: "materials", refund: false },
+    { vendor: "THE HOME DEPOT #3650", amount: -67.21, date: "2026-07-08", last4: "8355", type: "business", category: "materials", refund: false }
+  ] };
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: STMT_B }) }); };
+  await capRcptRun({ auto: true });
+  const filedB = (STORE.expenses || []).filter(e => e && !e.deleted && e.receiptId === "stmtB.png");
+  ok("confident statement auto-files BOTH transactions into expenses[]", filedB.length === 2, filedB.map(e => [e.vendor, e.amount]));
+  ok("each fanned expense is POSITIVE (a debit shown -$ files as +$)", filedB.every(e => e.amount > 0) && filedB.some(e => e.amount === 68.69) && filedB.some(e => e.amount === 67.21), filedB.map(e => e.amount));
+  ok("no fanned expense is a refund (kind never 'refund')", filedB.every(e => e.kind !== "refund"), filedB.map(e => e.kind));
+  ok("both fanned rows left the review queue", rcptReview().filter(r => r.receiptId === "stmtB.png").length === 0);
+  ok("fanned expenses stamped capAutoFiled (purple 🤖 review)", filedB.every(e => e.capAutoFiled === true && e.capReviewedAt === null));
+
+  console.log("— STATEMENT FAN-OUT: a SINGLE / normal receipt makes exactly ONE record, unchanged —");
+  // (a) explicit transactions:[] (a normal itemized receipt) → single-object path, no fan, one record
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  const normRec = seedReview({ receiptId: "norm.png" });
+  const npid = normRec.id;
+  const NORM_SUGG = { vendor: "Depot", amount: 50, date: "2026-07-01", type: "business", category: "materials", jobId: null, confidence: 0.5, transactions: [] };
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: NORM_SUGG }) }); };
+  await capRcptRun({ auto: true });
+  ok("transactions:[] → exactly ONE review record (no fan)", rcptReview().filter(r => r.receiptId === "norm.png").length === 1);
+  ok("its suggested is the WHOLE object (not a wrapped transaction)", rcptReview().find(r => r.id === npid).suggested.vendor === "Depot" && rcptReview().find(r => r.id === npid).suggested.amount === 50);
+  ok("no _tx sibling was created for a single/normal read", rcptReview().filter(r => r.id === npid + "_tx1").length === 0 && rcptColl().filter(r => r.id === npid + "_tx1").length === 0);
+  // (b) a ONE-entry transactions array is NOT a fan (needs ≥2) → single-object path unchanged
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
+  const fanOneRec = seedReview({ receiptId: "one.png" }); const opid = fanOneRec.id;
+  CAP_FETCH = function () { return Promise.resolve({ ok: true, json: () => Promise.resolve({ suggested: { vendor: "Solo", amount: 9, type: "business", category: "materials", confidence: 0.5, transactions: [{ vendor: "Solo", amount: 9 }] } }) }); };
+  await capRcptRun({ auto: true });
+  ok("1-entry transactions array → exactly ONE record, no sibling", rcptReview().filter(r => r.receiptId === "one.png").length === 1 && rcptColl().filter(r => r.id === opid + "_tx1").length === 0);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

@@ -1521,6 +1521,34 @@ ok("non-string line desc coerced to string (\"\")", t.rcptParseSuggestion('{"ven
 const rpsLiMix = t.rcptParseSuggestion('{"vendor":"Sunbelt","amount":300,"last4":"2469","refund":true,"deposit":true,"splits":[{"amount":120,"type":"pass-through","category":"materials","note":"pavers"},{"amount":180,"type":"business","category":"tools/equipment","note":"tamper"}],"lineItems":[{"desc":"pavers","amount":120,"bucket":"pass-through"},{"desc":"tamper","amount":180,"bucket":"business"}]}', rpsCats.concat(["materials", "tools/equipment"]), rpsJobs);
 ok("splits + last4 + refund + deposit UNCHANGED with lineItems present", rpsLiMix.splits.length === 2 && rpsLiMix.last4 === "2469" && rpsLiMix.refund === true && rpsLiMix.deposit === true && rpsLiMix.lineItems.length === 2, rpsLiMix);
 
+console.log("\n— Cap STATEMENT fan-out (rcptParseSuggestion.transactions): one entry per POS transaction, debit = POSITIVE expense —");
+// SINGLE-RECEIPT PATH UNCHANGED: no transactions key → transactions:[] (a normal receipt never fans out)
+ok("no transactions key → transactions:[] (single-receipt path unchanged)", Array.isArray(rpsBase.transactions) && rpsBase.transactions.length === 0, rpsBase.transactions);
+ok("explicit empty transactions array → transactions:[]", t.rcptParseSuggestion('{"vendor":"x","amount":50,"transactions":[]}', rpsCats, rpsJobs).transactions.length === 0, null);
+ok("non-array transactions (\"foo\") → transactions:[]", t.rcptParseSuggestion('{"vendor":"x","amount":50,"transactions":"foo"}', rpsCats, rpsJobs).transactions.length === 0, null);
+// Ray's real statement: TWO POS debits on card 8355 (both printed with a minus sign) → 2 POSITIVE, not-refund entries
+const rpsStmt = t.rcptParseSuggestion('{"vendor":"","amount":null,"transactions":[{"vendor":"VULCAN MIDEAST","amount":-68.69,"date":"2026-07-08","last4":"8355","type":"job-expense","category":"materials","refund":false},{"vendor":"THE HOME DEPOT #3650","amount":-67.21,"date":"2026-07-08","last4":"8355","type":"pass-through","category":"materials","refund":false}]}', rpsCats.concat(["materials"]), rpsJobs);
+ok("statement with 2 POS debits → 2 transaction entries", rpsStmt && rpsStmt.transactions.length === 2, rpsStmt && rpsStmt.transactions);
+ok("a statement DEBIT shown NEGATIVE comes back POSITIVE (money out = a normal expense)", rpsStmt.transactions[0].amount === 68.69 && rpsStmt.transactions[1].amount === 67.21, rpsStmt.transactions.map(x => x.amount));
+ok("a statement debit is refund:FALSE (the minus sign must NOT flag a refund)", rpsStmt.transactions[0].refund === false && rpsStmt.transactions[1].refund === false, rpsStmt.transactions.map(x => x.refund));
+ok("each entry keeps vendor / date / last4 / type / category", rpsStmt.transactions[0].vendor === "VULCAN MIDEAST" && rpsStmt.transactions[0].date === "2026-07-08" && rpsStmt.transactions[0].last4 === "8355" && rpsStmt.transactions[0].type === "job-expense" && rpsStmt.transactions[0].category === "materials" && rpsStmt.transactions[1].vendor === "THE HOME DEPOT #3650", rpsStmt.transactions);
+// even a POSITIVE-printed statement debit stays positive & not-refund (Math.abs); refund:true honored ONLY when explicit
+const rpsStmt2 = t.rcptParseSuggestion('{"transactions":[{"vendor":"Store","amount":10,"refund":false},{"vendor":"Return","amount":5,"refund":true}]}', rpsCats, rpsJobs);
+ok("explicit refund:true on a genuine credit line is honored (positive amount kept)", rpsStmt2.transactions.length === 2 && rpsStmt2.transactions[1].refund === true && rpsStmt2.transactions[1].amount === 5, rpsStmt2.transactions);
+// MALFORMED entries dropped (no usable amount / not an object); valid ones survive
+const rpsStmtBad = t.rcptParseSuggestion('{"transactions":[{"vendor":"Good","amount":30},{"vendor":"NoAmt"},{"vendor":"ZeroAmt","amount":0},{"vendor":"NaN","amount":"abc"},null,"foo",{"vendor":"Good2","amount":12.5}]}', rpsCats, rpsJobs);
+ok("malformed transaction entries (no/zero/NaN amount, non-object) dropped; valid kept", rpsStmtBad.transactions.length === 2 && rpsStmtBad.transactions[0].vendor === "Good" && rpsStmtBad.transactions[1].vendor === "Good2", rpsStmtBad.transactions);
+// bad type / category inside a valid entry → clamped (entry retained, not dropped — the owner classifies it)
+const rpsStmtClamp = t.rcptParseSuggestion('{"transactions":[{"vendor":"V","amount":9,"type":"NOPE","category":"NOTACAT"}]}', rpsCats, rpsJobs);
+ok("bad type/category inside a valid entry → clamped to null/\"\" (entry retained)", rpsStmtClamp.transactions.length === 1 && rpsStmtClamp.transactions[0].type === null && rpsStmtClamp.transactions[0].category === "", rpsStmtClamp.transactions);
+// LENGTH CAP: a 45-transaction statement caps at 40
+const rpsBig = t.rcptParseSuggestion('{"transactions":[' + Array.from({ length: 45 }, (_, i) => '{"vendor":"V' + i + '","amount":' + (i + 1) + '}').join(",") + ']}', rpsCats, rpsJobs);
+ok("transactions array capped at 40 (45 valid entries → 40)", rpsBig.transactions.length === 40, rpsBig.transactions.length);
+// vendor coerced/truncated to 120
+ok("transaction vendor truncated to 120 chars", t.rcptParseSuggestion('{"transactions":[{"vendor":' + JSON.stringify("V".repeat(200)) + ',"amount":1}]}', rpsCats, rpsJobs).transactions[0].vendor.length === 120, null);
+// regression: transactions ride alongside everything else without disturbing the single-object fields
+ok("all prior fields intact when transactions present", rpsStmt.vendor === "" && Array.isArray(rpsStmt.splits) && rpsStmt.splits.length === 0 && Array.isArray(rpsStmt.lineItems) && rpsStmt.lineItems.length === 0 && rpsStmt.refund === false, rpsStmt);
+
 console.log("\n— Cap receipt-vision MODEL (server-authoritative: Sonnet 4.6 default, Opus 4.8 escalate; no client model) —");
 // rcptVisionModel maps the strictly-boolean escalate flag → a model. cfg.model is IGNORED (Ray: never Haiku for reads).
 ok("default read → Sonnet 4.6 even when cfg.model = Haiku", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false) === "claude-sonnet-4-6", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false));
