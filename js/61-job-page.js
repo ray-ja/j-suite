@@ -25,6 +25,15 @@ function gmapsDirUrl(destination, waypoints) {
   if (waypoints && waypoints.length) u += "&waypoints=" + waypoints.map(w => encodeURIComponent(w)).join("|");
   return u;
 }
+/* WHOLE-ROUTE link — the path form Google Maps itself emits: /maps/dir/A/B/C/…  Lists every ordered stop in the
+   URL path (home base → job site → transfer → base), so opening it shows the FULL loop with the round-trip miles
+   Google computes — no API key, no current-GPS assumption. This is the manual-read fallback when the offline map
+   estimate couldn't resolve: tap it, read the round-trip mileage off Google's route. Needs ≥2 real addresses. */
+function gmapsRouteUrl(stops) {
+  const pts = (stops || []).map(s => (s || "").trim()).filter(Boolean);
+  if (pts.length < 2) return "";
+  return "https://www.google.com/maps/dir/" + pts.map(p => encodeURIComponent(p)).join("/");
+}
 /* ADMIN-PLANNED route for a job — ordered [{id,label,address,lat,lng}] set on the job editor (js/09), e.g.
    "Stoneworks — pick up base" before the job site itself. Distinct from js/38's crew-added ad hoc timeclock
    stops[] (logged as-driven, after the fact) — this is the route planned in ADVANCE by the owner/admin. */
@@ -442,6 +451,9 @@ function rJobPage(j) {
     }
   } else {
     _secInvoice += `<div class="muted">No quote is linked to this job yet.</div>`;
+    // Retroactive / custom-price jobs (the job already happened, no wizard needed): a one-tap "create a quote"
+    // that spins up a blank quote linked to THIS job + customer and opens it, so you can just type the price.
+    if (jobCanEditPlan()) _secInvoice += `<button class="btn acc" style="width:100%;margin-top:10px" onclick="jobCreateQuote('${j.id}')">🧾 Create a quote for this job</button><div class="sub muted" style="margin-top:6px;white-space:normal">Makes a blank quote linked to this job — add a line or just set the price it was charged at.</div>`;
   }
   _secInvoice += `</div>`;
 
@@ -630,6 +642,12 @@ function jobPageRouteCard(j) {
   } else if (_src === "none") {
     h += `<div class="sub muted" style="margin-top:8px;white-space:normal">🧭 The map couldn't route this — add manual route miles below to get an estimate.</div>`;
   } else if (ps.length || startCustom || endCustom) h += `<div class="sub muted" style="margin-top:8px;white-space:normal">Computing the road route… the mileage estimate appears once the map answers (needs a home base set in Settings).</div>`;
+  // 🗺 OPEN THE WHOLE ROUTE IN GOOGLE MAPS — the ordered loop (Start → stops/site → End) packed into one /maps/dir/
+  // path URL, so you can read the round-trip miles straight off Google. Especially the manual fallback when the
+  // offline estimate couldn't route. Ordered exactly like the sequence above; drops any empty/missing address.
+  const _routeAddrs = [startVal].concat(combo.map(t => t.kind === "site" ? siteAddr : (t.stop && t.stop.address))).concat([endVal]);
+  const _gmapsRoute = (typeof gmapsRouteUrl === "function") ? gmapsRouteUrl(_routeAddrs) : "";
+  if (_gmapsRoute) h += `<a class="btn ghost sm" style="width:100%;margin-top:8px;text-align:center" href="${_gmapsRoute}" target="_blank" rel="noopener">🗺 Open the full route in Google Maps <span class="sub" style="font-weight:400">· read the round-trip miles</span></a>`;
   // 🚗 OVERRIDE the mileage (round-trip) — the map estimate above is used AUTOMATICALLY; this box is ONLY to
   // override it when the map routed wrong (or couldn't route). When there's a map estimate and no override it's
   // tucked into a collapsed "override" toggle so it isn't mistaken for a required field. Owner/admin only.
@@ -1017,6 +1035,40 @@ window.jobPageToggleCrew = function (jobId, userId) {
    + prevItems BEFORE the edit, set q.finalPrice (Math.max(0)) + q.adjNote, touch, then snapshotQuoteVersion so a
    committed quote logs a "final-price" version identical to the wizard's. Re-syncs cash-basis income only when the
    quote is already paid. NEVER touches q.items or q.total — item/line change orders stay in the wizard. */
+/* CREATE-A-QUOTE for a job that has none (retroactive / custom-price work — the job already happened, you just
+   need to record what it was charged). Spins up a blank quote linked BOTH ways (q.jobId ↔ job.quoteId, same as
+   the recurring engine) with the job's customer/property/address/date, marks it accepted (the work is done), and
+   opens the wizard so you can add a line or set a custom price. Dedupes to any quote already pointing at the job. */
+window.jobCreateQuote = function (jobId) {
+  const d = D();
+  const j = (typeof actJ === "function" ? actJ() : (d.jobs || [])).find(x => x && x.id === jobId); if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  let q = (d.quotes || []).find(x => x && !x.deleted && (x.id === j.quoteId || x.jobId === j.id));
+  if (!q) {
+    q = {
+      id: (typeof uid === "function") ? uid() : "q_" + (typeof now === "function" ? now() : Date.now()),
+      customerId: j.customerId || "",
+      cust: (typeof custName === "function") ? (custName(j.customerId) || "") : "",
+      propertyId: j.propertyId || "",
+      address: (typeof jobAddr === "function") ? (jobAddr(j) || "") : (j.address || ""),
+      date: j.date || "",
+      title: j.title || "",
+      items: [], subtotal: 0, discount: 0, total: 0,
+      jobId: j.id, num: (typeof nextQuoteNum === "function") ? nextQuoteNum() : 0,
+      accepted: true, acceptedDate: j.date || "",   // the job already ran — it's not an open pipeline quote
+      invoiced: false, paid: false,
+      updatedAt: (typeof now === "function") ? now() : Date.now()
+    };
+    if (typeof touch === "function") touch(q);
+    (d.quotes = d.quotes || []).push(q);
+    j.quoteId = q.id;
+    if (typeof touch === "function") touch(j);
+    if (typeof logChange === "function") logChange("create", "quote", q.id, "Quote for " + (j.title || "job") + (q.cust ? " · " + q.cust : ""));
+    if (typeof save === "function") save();
+    if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  }
+  if (typeof openQuote === "function") openQuote(q.id); else if (typeof render === "function") render();
+};
 window.jobPageSaveFinal = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
