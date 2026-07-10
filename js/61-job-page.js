@@ -194,7 +194,7 @@ function jobRouteMilesSource(j) {
 /* ===== JOB-PAGE LAYOUT — owner-reorderable section order, saved ORG-WIDE (a docs sentinel "jobLayout", synced
    like financeConfig). Everyone in the org sees the same order. Unknown/new section keys never vanish: the saved
    order is validated against the canonical key list and any missing keys are appended in their default order. ===== */
-const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "clock", "load", "route", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
+const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "vehicles", "clock", "load", "route", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
 function jobLayoutDoc() { try { return (D().docs || []).find(x => x && x.id === "jobLayout") || null; } catch (e) { return null; } }
 function jobLayoutOrder() {
   const doc = jobLayoutDoc();
@@ -344,6 +344,7 @@ function rJobPage(j) {
   const _secRoute = jobPageRouteCard(j);          // home→site→transfer→home + mileage estimate
   const _secWorkdays = jobPageWorkDaysCard(j);    // multi-day editor — admin, goes to the very bottom
   const _secCrew = jobPageCrewCard(j);            // who you're working with — hoisted near the top
+  const _secVehicles = (typeof jobPageVehiclesCard === "function") ? jobPageVehiclesCard(j) : "";   // 🚚 assign vehicles + per-vehicle route + owner reimbursement (js/110)
 
   // 1b) Part of a bigger job? — file this under a parent (e.g. a dump run under a tree job); its costs roll up.
   // sharedJobIds[] generalizes the old scalar parentJobId (0/1/N jobs); this single-select stays the UNCHANGED
@@ -512,6 +513,7 @@ function rJobPage(j) {
     { key: "change", label: "🧾 Change order", html: _secChange },
     { key: "askcap", label: "💬 Ask Cap", html: _secAskCap },
     { key: "crew", label: "👥 Crew", html: _secCrew },
+    { key: "vehicles", label: "🚚 Vehicles & routes", html: _secVehicles },
     { key: "clock", label: "⏱️ Time clock", html: _secClock },
     { key: "load", label: "🧰 Load checklist", html: _secLoad },
     { key: "route", label: "🧭 Route & mileage", html: _secRoute },
