@@ -11,6 +11,15 @@ function fm(c) { const neg = (c || 0) < 0; c = Math.abs(Math.round(c || 0)); ret
 
 /* ---- accessors ---- */
 function actIncome() { return (D().income || []).filter(x => x && !x.deleted); }
+/* attach each income's linked-job crew share weights (job.crewWeights) so the field split honors a partial
+   helper. Income with no linked job or a job with no weights is returned unchanged → equal split (byte-identical). */
+function incomeWithWeights(list) {
+  const jobs = D().jobs || [];
+  return (list || []).map(e => {
+    if (e && e.jobId && !e.weights) { const j = jobs.find(x => x && x.id === e.jobId); if (j && j.crewWeights) return Object.assign({}, e, { weights: j.crewWeights }); }
+    return e;
+  });
+}
 function actExpenses() { return (D().expenses || []).filter(x => x && !x.deleted); }
 function finMembers() { return (typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted); }
 function finName(id) { return (typeof userName === "function" && userName(id)) || id || "—"; }
@@ -60,6 +69,7 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "overview" ? "on" : ""}" onclick="finSub('overview')">📊 Overview</button>
     <button class="subbtn ${FINSUB === "cash" ? "on" : ""}" onclick="finSub('cash')">🏦 Cash</button>
     <button class="subbtn ${FINSUB === "payouts" ? "on" : ""}" onclick="finSub('payouts')">💵 Payouts</button>
+    <button class="subbtn ${FINSUB === "priority" ? "on" : ""}" onclick="finSub('priority')">🪜 Payout plan</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
     <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
     <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 A/R</button>
@@ -70,6 +80,7 @@ function rFinance() {
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "analysis" && typeof rJobAnalysis === "function") { view.innerHTML = sub + rJobAnalysis(); return; }
+  if (FINSUB === "priority" && typeof rFinPriority === "function") { view.innerHTML = sub + rFinPriority(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }
   if (FINSUB === "expenses") { view.innerHTML = sub + rFinExpenses(); return; }
   view.innerHTML = sub + rFinPayouts();
@@ -78,7 +89,7 @@ function rFinance() {
 /* ---------- PAYOUTS: the split engine for the period ---------- */
 function rFinPayouts() {
   const ym = finMonth(), b = monthBounds(ym), adminId = finAdminMember();
-  const roll = finRollup(actIncome(), { adminMemberId: adminId, from: b.from, to: b.to });
+  const roll = finRollup(incomeWithWeights(actIncome()), { adminMemberId: adminId, from: b.from, to: b.to });
   const mil = finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true });
   const exps = actExpenses().filter(e => e.date >= b.from && e.date <= b.to);
   const expCents = exps.reduce((s, e) => s + finCents(e.amount), 0);

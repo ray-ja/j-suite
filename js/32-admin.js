@@ -73,7 +73,13 @@ const BUILTIN_ROLE_ACTIONS = {};
 DEFAULT_ROLES.forEach(d => { if (d.key !== "owner" && Array.isArray(d.actions)) BUILTIN_ROLE_ACTIONS[d.key] = d.actions.slice(); });
 
 /* ----- accessors ----- */
-function realAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted); }
+/* Active team accounts. `archived` = a departed helper kept for pay + history but hidden from every
+   active-crew list (schedMembers → this, so schedule/timeclock/crew-pickers/availability all inherit it).
+   Names still resolve via userName() (direct S.users read), so archived people still show in payouts. */
+function realAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted && !u.archived); }
+/* every real account INCLUDING archived — for the management UI (list + reactivate) only */
+function allAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted); }
+function archivedAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted && u.archived); }
 function ensureRolesRec() {
   if (!Array.isArray(S.users)) S.users = [];
   let r = S.users.find(u => u && u.id === ROLES_ID);

@@ -79,6 +79,21 @@ function finSplitWeighted(cents, ids, weights) {
   return { perMember: out, unallocated: 0 };
 }
 
+/* is any crew member carrying an EXPLICIT non-default (≠100) share weight? Only then do we leave the equal
+   split — so a job with no weights (or every member at the 100 default) stays byte-identical to finSplitEqual. */
+function finWeightsActive(ids, weights) {
+  if (!weights) return false;
+  return (ids || []).some(function (id) { var v = weights[id]; return v != null && v !== "" && (+v || 0) !== 100; });
+}
+/* THE field-pool split used everywhere: equal by default (byte-identical to before), or share-weighted when a
+   partial helper's weight is dialed off 100 (e.g. a helper who only worked part of the job → 60). Missing/blank
+   weights default to 100. Sums to `cents` exactly either way, so the per-job pool never gains or loses a cent. */
+function finFieldSplit(cents, ids, weights) {
+  if (!finWeightsActive(ids, weights)) return finSplitEqual(cents, ids);
+  var w = {}; (ids || []).forEach(function (id) { var v = weights[id]; w[id] = (v == null || v === "") ? 100 : Math.max(0, +v || 0); });
+  return finSplitWeighted(cents, ids, w);
+}
+
 /* ---------- PER-PERSON EARNINGS (one source of truth; reconciles to the pooled "owed to members") ----------
    Re-derives the SAME per-job field pool the rollup computes (fieldBeforeAdmin + admin overflow), but splits
    each job's field pool by who actually CLOCKED the job, weighted by their hours (finSplitWeighted). Sales
@@ -111,13 +126,14 @@ function finPerPerson(rollup, mileage, hoursByJob, payouts) {
   Object.keys(rollup.member || {}).forEach(function (id) {
     var m = rollup.member[id]; if (m.sales) M(id).sales += m.sales; if (m.admin) M(id).admin += m.admin;
   });
-  // 2) field — re-split each job's field POOL (identical total) EQUALLY among whoever was on the job.
-  // Ray's call: not hours-weighted — a faster crew member shouldn't earn less for finishing quicker.
+  // 2) field — re-split each job's field POOL (identical total) among whoever was on the job, using the SAME
+  // share weights the rollup used: equal by default (a faster crew member shouldn't earn less for finishing
+  // quicker), or dialed down for a partial helper (e.g. 60) — never hours-weighted.
   (rollup.perJob || []).forEach(function (pj) {
     var crew = Object.keys(pj.field || {});                                   // the crew the rollup distributed to (income.crew)
     if (pj.unallocated) unallocatedField += pj.unallocated;                   // job had no crew → stays unassigned (matches pool)
     if (!crew.length) return;
-    var es = finSplitEqual(pj.fieldPool, crew);
+    var es = finFieldSplit(pj.fieldPool, crew, pj.weights);                   // same share-weighting the rollup used (equal by default)
     Object.keys(es.perMember).forEach(function (id) { M(id).field += es.perMember[id]; });
     unallocatedField += es.unallocated || 0;
   });
@@ -175,10 +191,10 @@ function finRollup(incomes, opts) {
     }
     totals.adminOverflow += overflow;
     var fieldPool = js.fieldBeforeAdmin + overflow;
-    var fs = finSplitEqual(fieldPool, js.crew);
+    var fs = finFieldSplit(fieldPool, js.crew, inc.weights);
     Object.keys(fs.perMember).forEach(function (id) { M(id).field += fs.perMember[id]; });
     totals.field += fieldPool - fs.unallocated; totals.unallocatedField += fs.unallocated;
-    perJob.push({ id: inc.id, jobId: inc.jobId, date: inc.date, amount: js.amount, split: js, adminToMember: adminToMember, adminOverflow: overflow, fieldPool: fieldPool, field: fs.perMember, unallocated: fs.unallocated });
+    perJob.push({ id: inc.id, jobId: inc.jobId, date: inc.date, amount: js.amount, split: js, adminToMember: adminToMember, adminOverflow: overflow, fieldPool: fieldPool, field: fs.perMember, unallocated: fs.unallocated, weights: inc.weights || null });
   });
   return { totals: totals, member: member, perJob: perJob };
 }
@@ -246,7 +262,7 @@ function finPayouts(rollup, mileage, fault) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     FIN: FIN, finCents: finCents, finDollars: finDollars, finSplitAmount: finSplitAmount,
-    finWithinSalesWindow: finWithinSalesWindow, finSplitEqual: finSplitEqual, finSplitWeighted: finSplitWeighted, finJobSplit: finJobSplit,
+    finWithinSalesWindow: finWithinSalesWindow, finSplitEqual: finSplitEqual, finSplitWeighted: finSplitWeighted, finFieldSplit: finFieldSplit, finWeightsActive: finWeightsActive, finJobSplit: finJobSplit,
     finRollup: finRollup, finMileage: finMileage, finAccounts: finAccounts, finPayouts: finPayouts, finDayOf: finDayOf,
     finHoursByJob: finHoursByJob, finPerPerson: finPerPerson
   };
