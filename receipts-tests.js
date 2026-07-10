@@ -1008,20 +1008,72 @@ async function main() {
   ok("vendor memory → bucket→type (business)", mem && mem.type === "business", mem);
   ok("vendor memory → null for an unseen vendor", rcptVendorMemory("NeverBoughtHere") === null);
 
-  console.log("— SPINE: rcptSmartDefaults resolves the clocked-in job + the user's personal card —");
+  console.log("— SPINE: rcptSmartDefaults resolves the clocked-in job but NEVER stamps the viewer as payer —");
   resetStore();
   CURUSER.cards = [{ id: "c1", last4: "9999", kind: "personal" }];
   OPEN_SHIFT = { userId: "u_ray", jobId: "j1" };
   const sd = rcptSmartDefaults({ meId: "u_ray" });
   ok("clocked-in job → jobId j1", sd.jobId === "j1", sd.jobId);
-  ok("personal card → paidBy = me + cardLast4", sd.paidBy === "u_ray" && sd.cardLast4 === "9999", sd);
+  ok("NO LONGER stamps the viewer as payer — paidBy '' + cardLast4 '' even with a personal card", sd.paidBy === "" && sd.cardLast4 === "", sd);
   OPEN_SHIFT = null; delete CURUSER.cards;
   CURUSER.cards = [{ id: "c2", last4: "1000", kind: "business" }];
   const sdBiz = rcptSmartDefaults({ meId: "u_ray" });
-  ok("business-only card → paidBy '' + cardLast4 set", sdBiz.paidBy === "" && sdBiz.cardLast4 === "1000", sdBiz);
+  ok("business-only card → still paidBy '' + NO card stamped (who-paid follows the card, not the viewer)", sdBiz.paidBy === "" && sdBiz.cardLast4 === "", sdBiz);
   delete CURUSER.cards;
   const sdNone = rcptSmartDefaults({ meId: "u_ray" });
   ok("no card → paidBy '' + cardLast4 ''", sdNone.paidBy === "" && sdNone.cardLast4 === "", sdNone);
+
+  console.log("— WHO PAID follows the CARD, never the viewer (js/98 mergeDefaults + rcptFileSuggestion; unknown 1077 = NOBODY) —");
+  resetStore(); OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };   // the VIEWER/filer = Ray
+  const _uW = S.users, _rW = S.registry;
+  S.users = [{ id: "u_chase", username: "Chase", cards: [{ id: "kC", last4: "4242", kind: "personal" }] }, { id: "u_ray", username: "Ray", cards: [] }];
+  S.registry = [{ id: "obx", businessCards: [{ id: "bB", last4: "3005", active: true }] }];
+  // helper: file a review row (uploaded by Chase) from a Cap suggestion carrying a card last-4, return the filed biz record
+  function fileCardSugg(receiptId, last4) {
+    const rec = seedReview({ receiptId: receiptId, uploadedBy: "u_chase", attributedTo: "u_chase" });   // Chase uploaded it
+    rec.suggested = { confidence: 0.95, amount: 50, type: "business", vendor: "V", category: "other", desc: "x", last4: last4 };
+    rcptFileSuggestion("review", null, rec.id);
+    return (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === receiptId);
+  }
+  const pcFiled = fileCardSugg("wp_personal", "4242");   // Chase's registered personal card
+  ok("PERSONAL card → paidBy = the card owner (Chase), NOT the viewer (Ray)", pcFiled && pcFiled.paidBy === "u_chase", pcFiled && pcFiled.paidBy);
+  ok("PERSONAL card → attributedTo = the card owner (Chase), never the viewer", pcFiled && pcFiled.attributedTo === "u_chase", pcFiled && pcFiled.attributedTo);
+  resetStore();
+  const bcFiled = fileCardSugg("wp_business", "3005");   // registered company card
+  ok("BUSINESS card → paidBy '' (no reimburse), NOT the viewer", bcFiled && !bcFiled.paidBy, bcFiled && bcFiled.paidBy);
+  ok("BUSINESS card → attributedTo = the uploader (Chase), never the viewer (Ray)", bcFiled && bcFiled.attributedTo === "u_chase", bcFiled && bcFiled.attributedTo);
+  resetStore();
+  const ukFiled = fileCardSugg("wp_unknown", "1077");   // Ray's real bug: an UNKNOWN/unregistered card
+  ok("UNKNOWN card 1077 → paidBy '' (NOBODY), NOT the viewer (Ray)", ukFiled && !ukFiled.paidBy, ukFiled && ukFiled.paidBy);
+  ok("UNKNOWN card 1077 → attributedTo = the uploader (Chase), never the viewer (Ray)", ukFiled && ukFiled.attributedTo === "u_chase", ukFiled && ukFiled.attributedTo);
+  // rcptFileFromFields funnel (snap/floating capture): a personal card resolves the payer, no card → nobody
+  resetStore();
+  rcptFileFromFields({ type: "business", vendor: "V2", amount: 25, category: "other", receiptId: "wp_ff", cardLast4: "4242" }, { meId: "u_ray", batch: true });
+  const ffFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "wp_ff");
+  ok("funnel: a receipt on Chase's personal card → paidBy = Chase, not the filer (Ray)", ffFiled && ffFiled.paidBy === "u_chase", ffFiled && ffFiled.paidBy);
+  resetStore();
+  rcptFileFromFields({ type: "business", vendor: "V3", amount: 25, category: "other", receiptId: "wp_ff2" }, { meId: "u_ray", batch: true });
+  const ffNone = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "wp_ff2");
+  ok("funnel: NO card → paidBy '' (nobody), never the filer", ffNone && !ffNone.paidBy, ffNone && ffNone.paidBy);
+  S.users = _uW; S.registry = _rW;
+
+  console.log("— PO AUTO-FILL (js/87 rcptJobPONote + js/95 jobPO): picking/assigning a job fills the PO field —");
+  resetStore();
+  STORE.jobs[0].poNum = 1042;   // jobPO(j1) → "P1042"
+  STORE.jobs[1].poNum = 1050;   // jobPO(j2) → "P1050"
+  const _valPO = global.val, _geiPO = global.document.getElementById;
+  const poEls = { rcpt_po: { value: "" }, rcpt_po_note: { innerHTML: "" }, rcpt_job: { value: "" } };
+  let _poJob = "j1";
+  global.document.getElementById = function (id) { return Object.prototype.hasOwnProperty.call(poEls, id) ? poEls[id] : null; };
+  global.val = function (id) { return id === "rcpt_job" ? _poJob : ""; };
+  rcptJobPONote();
+  ok("selecting job j1 auto-fills rcpt_po = P1042 (no button)", poEls.rcpt_po.value === "P1042", poEls.rcpt_po.value);
+  ok("the PO note shows the job's PO", /P1042/.test(poEls.rcpt_po_note.innerHTML), poEls.rcpt_po_note.innerHTML);
+  _poJob = "j2"; rcptJobPONote();   // Cap/owner switches the job → the PO follows
+  ok("switching to j2 (owner or Cap) updates rcpt_po = P1050", poEls.rcpt_po.value === "P1050", poEls.rcpt_po.value);
+  _poJob = ""; poEls.rcpt_po.value = "P1050"; rcptJobPONote();   // no job selected → a typed lookup PO is left alone
+  ok("no job selected → does NOT clobber a PO the owner is typing to look up", poEls.rcpt_po.value === "P1050", poEls.rcpt_po.value);
+  global.val = _valPO; global.document.getElementById = _geiPO;
 
   console.log("— SPINE: rcptSuggestionOneTapOk threshold + job-resolution —");
   resetStore(); OPEN_SHIFT = null; delete CURUSER.cards;

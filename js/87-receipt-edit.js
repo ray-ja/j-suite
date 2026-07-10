@@ -264,13 +264,19 @@ window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
   if (wrap) wrap.style.display = (t === "job-expense" || t === "pass-through") ? "block" : "none";
 };
-/* PER-JOB PO CODE (js/95) — show the currently-selected job's PO under the picker ("PO for this job: P1042"). */
+/* PER-JOB PO CODE (js/95) — AUTO-FILL the PO field from the currently-selected job (no button): picking a job
+   (owner inline OR Cap's guess) stamps the job's own P#### into the PO input + the note. Purely display/UX — the
+   receipt stores jobId (as today); the PO is derived from the job (jobPO(j)), so nothing new is persisted and the
+   CSV PO→job matching (js/93/95) is untouched. Only fills when the job HAS a PO; never clobbers a code the owner
+   is typing to LOOK UP a job (that path leaves rcpt_job empty → po "" → we leave the field alone). */
 window.rcptJobPONote = function () {
-  const note = document.getElementById("rcpt_po_note"); if (!note) return;
+  const note = document.getElementById("rcpt_po_note");
   const sel = val("rcpt_job");
   const j = (sel && typeof actJ === "function") ? actJ().find(x => x && x.id === sel) : null;
   const po = (j && typeof jobPO === "function") ? jobPO(j) : "";
-  note.innerHTML = po ? ("PO for this job: <b>" + esc(po) + "</b>") : "";
+  const poInput = document.getElementById("rcpt_po");
+  if (poInput && po) poInput.value = po;   // AUTO-FILL: the picked job's PO follows into the field (Request 2)
+  if (note) note.innerHTML = po ? ("PO for this job: <b>" + esc(po) + "</b>") : "";
 };
 /* Manual bind — Ray types/pastes a P#### code → jobByPO uniquely resolves it → pre-select the job picker. */
 window.rcptPoBind = function () {
@@ -288,7 +294,7 @@ window.rcptApplySuggestion = function () {
   const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") el.value = v; };
   set("rcpt_vendor", s.vendor); set("rcpt_amt", s.amount); set("rcpt_cat", s.category); set("rcpt_desc", s.desc);
   if (s.type) { const el = document.getElementById("rcpt_type"); if (el) { el.value = s.type; rcptEditTypeChange(); } }
-  if (s.jobId) set("rcpt_job", s.jobId);
+  if (s.jobId) { set("rcpt_job", s.jobId); if (typeof rcptJobPONote === "function") rcptJobPONote(); }   // Cap assigns the job → its PO auto-fills too (Request 2)
   // Cap Phase 4 — card last-4 (js/94: auto-matches "Who paid?"), refund + rental-deposit toggles (js/96).
   // Only APPLY when present: a null last4 / false toggle leaves the owner's existing entry untouched.
   if (s.last4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card

@@ -52,14 +52,15 @@ function rcptVendorMemory(vendor) {
 /* ============================== SMART DEFAULTS (pure, no writes) ==============================
    ctx = {vendor?, meId?}. Returns the best-guess {jobId,type,paidBy,cardLast4,category} for a new receipt:
      jobId    = the job you're CLOCKED INTO now (js/38 tcOpenShift) else your ONLY job today (crew includes you)
-     paidBy   = you, when you have a PERSONAL card (reimburse); "" for a business-only card (no reimburse)
-     cardLast4= that card's last 4
      type+cat = per-vendor memory (rcptVendorMemory)
-   Every field independently degrades to "" so a missing context never invents data. */
+   WHO PAID is NOT guessed here. paidBy/cardLast4 always come back "" — "who paid" must follow the CARD (resolved
+   by cardOwner in _rcptPayerFromCard), NEVER the person merely FILING the receipt. Stamping the viewer as payer
+   was the "RJ always gets reimbursed" bug: whoever ran the batch reader got attributed regardless of the real
+   card. Every field independently degrades to "" so a missing context never invents data. */
 function rcptSmartDefaults(ctx) {
   ctx = ctx || {};
   var meId = _rcptMeId(ctx.meId);
-  var jobId = "", paidBy = "", cardLast4 = "", type = "", category = "";
+  var jobId = "", type = "", category = "";
 
   // JOB — clocked-in shift first, else your one-and-only job today
   try {
@@ -75,22 +76,30 @@ function rcptSmartDefaults(ctx) {
     }
   } catch (x) {}
 
-  // CARD / WHO PAID — your personal card (reimburse you) beats a business-only card (no reimburse)
-  try {
-    var cards = (typeof cardMyList === "function") ? cardMyList() : [];
-    var personal = null, business = null;
-    for (var i = 0; i < cards.length; i++) { var c = cards[i]; if (!c) continue; if (c.kind === "business") { if (!business) business = c; } else if (!personal) personal = c; }
-    if (personal) { paidBy = meId; cardLast4 = _rcpt4(personal.last4); }
-    else if (business) { paidBy = ""; cardLast4 = _rcpt4(business.last4); }
-  } catch (x) {}
-
   // TYPE + CATEGORY — per-vendor memory
   try { var mem = rcptVendorMemory(ctx.vendor); if (mem) { type = mem.type || ""; category = mem.category || ""; } } catch (x) {}
 
-  return { jobId: jobId, type: type, paidBy: paidBy, cardLast4: cardLast4, category: category };
+  // paidBy/cardLast4 deliberately stay "" — the card (cardOwner) drives who paid, never the viewer.
+  return { jobId: jobId, type: type, paidBy: "", cardLast4: "", category: category };
 }
 
-/* ---- gap-fill: caller VALUES WIN; only blank fields inherit the smart default ---- */
+/* ---- WHO PAID follows the CARD (js/94 cardOwner), never the viewer:
+       a registered PERSONAL card → that owner's id (reimburse them);
+       a registered BUSINESS card → "" (the business paid, no reimburse);
+       an UNKNOWN/unregistered card OR no card → "" (NOBODY — the owner picks it manually).
+   Pure/offline; degrades to "" whenever cardOwner is unavailable or can't resolve a single owner. */
+function _rcptPayerFromCard(last4) {
+  try {
+    var l = _rcpt4(last4);
+    if (!/^\d{4}$/.test(l) || typeof cardOwner !== "function") return "";
+    var o = cardOwner(l);
+    return (o && o.resolution === "personal" && o.ownerId) ? o.ownerId : "";
+  } catch (x) { return ""; }
+}
+
+/* ---- gap-fill: caller VALUES WIN; only blank fields inherit the smart default.
+   After the gap-fill, WHO PAID is resolved from the CARD (never the viewer): if paidBy is still blank and a card
+   last-4 is present, cardOwner decides it (personal→owner / business→"" / unknown→"") via _rcptPayerFromCard. ---- */
 function _rcptMergeDefaults(fields, meId) {
   var f = {};
   for (var k in fields) if (Object.prototype.hasOwnProperty.call(fields, k)) f[k] = fields[k];
@@ -98,6 +107,7 @@ function _rcptMergeDefaults(fields, meId) {
   ["jobId", "type", "paidBy", "cardLast4", "category"].forEach(function (k) {
     if (_rcptBlank(f[k]) && !_rcptBlank(d[k])) f[k] = d[k];
   });
+  if (_rcptBlank(f.paidBy) && !_rcptBlank(f.cardLast4)) { var payer = _rcptPayerFromCard(f.cardLast4); if (payer) f.paidBy = payer; }
   return f;
 }
 
