@@ -35,7 +35,8 @@ function payPaidByMember(opts) {
 function payPerPerson(opts) {
   opts = opts || {};
   const adminId = (typeof finAdminMember === "function") ? finAdminMember() : "";
-  const roll = finRollup(actIncome(), Object.assign({ adminMemberId: adminId }, opts.from ? { from: opts.from } : {}, opts.to ? { to: opts.to } : {}));
+  const inc = (typeof incomeWithWeights === "function") ? incomeWithWeights(actIncome()) : actIncome();   // honor per-job crew share weights (matches the Payouts tab)
+  const roll = finRollup(inc, Object.assign({ adminMemberId: adminId }, opts.from ? { from: opts.from } : {}, opts.to ? { to: opts.to } : {}));
   const mil = finMileage(D().timeclock || [], Object.assign({ confirmedOnly: true }, opts.from ? { from: opts.from } : {}, opts.to ? { to: opts.to } : {}));
   const hoursByJob = finHoursByJob(D().timeclock || [], opts.from || opts.to ? { from: opts.from, to: opts.to } : {});
   const payouts = payPaidByMember(opts);
@@ -53,7 +54,7 @@ function payJobsForMember(pp, memberId) {
   (pp.roll.perJob || []).forEach(pj => {
     const crew = Object.keys(pj.field || {});
     if (crew.indexOf(memberId) < 0) return;
-    const es = finSplitEqual(pj.fieldPool, crew);
+    const es = (typeof finFieldSplit === "function") ? finFieldSplit(pj.fieldPool, crew, pj.weights) : finSplitEqual(pj.fieldPool, crew);
     const share = es.perMember[memberId] || 0;
     if (!(share > 0)) return;
     const j = (D().jobs || []).find(x => x && x.id === pj.jobId);

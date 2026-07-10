@@ -170,7 +170,9 @@ window.openIncome = function (id, jobId) {
   FININCOME_CREW = new Set(e.crew || []);
   const members = finMembers();
   const jobOpts = `<option value="">— none / manual —</option>` + actJ().map(j => `<option value="${j.id}" ${e.jobId === j.id ? "selected" : ""}>${esc((j.title || "Job") + " · " + fmtDate(j.date))}</option>`).join("");
-  const origOpts = `<option value="">— none / house account —</option>` + members.map(u => `<option value="${u.id}" ${e.originator === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("");
+  // keep an ARCHIVED originator selectable so editing an old income never silently wipes their sales credit
+  const origArchived = (e.originator && !members.some(u => u.id === e.originator)) ? `<option value="${esc(e.originator)}" selected>${esc(finName(e.originator))} (archived)</option>` : "";
+  const origOpts = `<option value="">— none / house account —</option>` + origArchived + members.map(u => `<option value="${u.id}" ${e.originator === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("");
   modal(isNew ? "Record income" : "Income", `
     ${isNew ? `<label>From job (prefills amount, crew, sale)</label><select id="in_job" onchange="if(this.value)openIncome(null,this.value)">${jobOpts}</select>` : ``}
     <div class="row" style="gap:8px"><div class="grow"><label>Amount ($)</label><input id="in_amt" type="number" inputmode="decimal" value="${e.amount || 0}" oninput="renderIncomePreview()"></div>

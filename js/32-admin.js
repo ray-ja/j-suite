@@ -77,8 +77,7 @@ DEFAULT_ROLES.forEach(d => { if (d.key !== "owner" && Array.isArray(d.actions)) 
    active-crew list (schedMembers → this, so schedule/timeclock/crew-pickers/availability all inherit it).
    Names still resolve via userName() (direct S.users read), so archived people still show in payouts. */
 function realAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted && !u.archived); }
-/* every real account INCLUDING archived — for the management UI (list + reactivate) only */
-function allAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted); }
+/* archived accounts — for the team management UI (list + reactivate) only */
 function archivedAccounts() { return (S.users || []).filter(u => u && !u.kind && !u.deleted && u.archived); }
 function ensureRolesRec() {
   if (!Array.isArray(S.users)) S.users = [];

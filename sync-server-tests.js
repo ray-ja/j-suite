@@ -202,6 +202,13 @@ ok("nested dup HEAL: two same-id materials collapse to ONE (the newer $34.39, or
 ok("nested dup HEAL: distinct records are preserved (m2 survives)", jd.materials.some(r => r.id === "m2" && r.amount === 9.99), jd.materials);
 ok("nested dup HEAL: the healed job's updatedAt is bumped (propagates to every device)", jd.updatedAt > 100, jd.updatedAt);
 ok("nested dup HEAL: a CLEAN job is untouched (no needless updatedAt bump)", jc.updatedAt === 300 && jc.materials.length === 1, jc);
+ok("nested dup HEAL: bump is max(nested)+1, NOT server-now (won't clobber a genuine unsynced edit)", jd.updatedAt === 201, jd.updatedAt);
+
+// ARCHIVED accounts cannot log in — accountByName skips them (a departed helper stays in pay/history but no access).
+const alStore = { users: [{ id: "a1", username: "vlad", passhash: "x", archived: true }, { id: "a2", username: "chase", passhash: "y" }, { id: "a3", username: "gone", passhash: "z", active: false }] };
+ok("archived account is NOT found by login (accountByName skips archived)", t.accountByName(alStore, "vlad") === null);
+ok("deactivated (active:false) account still not found by login", t.accountByName(alStore, "gone") === null);
+ok("a normal active account still logs in fine", (t.accountByName(alStore, "chase") || {}).id === "a2");
 // CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
 // + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
 // server suite proves the client migration is loss-free + sane.

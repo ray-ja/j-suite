@@ -248,6 +248,15 @@ async function main() {
   ok("an explicitly-read tax (capRead.tax) wins over the 6.75% assumption", erec.taxAmount === 7.11 && erec.taxAssumed === false, erec);
   const zrec = { amount: 0 }, drec = { amount: -20 };
   ok("$0 / negative receipts are not taxable (not flagged)", !rcptTaxable(zrec) && !rcptTaxable(drec), null);
+  // a misread explicit tax that meets/exceeds the total is ignored → fall back to the 6.75% assumption
+  const badTax = { amount: 100, type: "business", capRead: { tax: 711 } };
+  rcptEvalTaxRecord(badTax);
+  ok("explicit tax ≥ the receipt total is a misread → ignored, 6.75% assumed", badTax.taxAssumed === true && Math.abs(badTax.taxAmount - 6.32) < 0.01, badTax);
+  // stamping tax on a NESTED job material must bump the PARENT job (sync home), not just the record
+  resetStore();
+  const jmat = { id: "jm_tax", amount: 106.75, type: "pass-through" }; STORE.jobs[0].materials.push(jmat); STORE.jobs[0].updatedAt = 111;
+  rcptEvalTaxRecord(jmat); rcptTouchRow("jobmat", "j1", jmat);
+  ok("evaluating tax on a job material bumps the PARENT job's updatedAt (nested → syncs)", STORE.jobs[0].updatedAt > 111, STORE.jobs[0].updatedAt);
 
   // ========================= UNIFIED JOB RECEIPT (js/100) → rcptApplySplit =========================
   console.log("\n— JOB RECEIPT: jobRcptSeed builds rows from Cap lineItems (+ whole-receipt client fallback) —");

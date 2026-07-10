@@ -46,19 +46,22 @@ function teamArchivedMembers() {
   return arch.filter(u => (typeof roleInOrg === "function") ? !!roleInOrg(u.id, S.biz) : true)
     .sort((a, b) => teamDisplayName(a).localeCompare(teamDisplayName(b)));
 }
-/* archive / reactivate a departed helper. Owner/manager only. Pure account-status flip on the member's own
-   record (like the profile edit path) — no other records touched; they stay in every job crew + payout. */
+/* archive / reactivate a departed helper. OWNER ONLY — `archived` is an owner-only field server-side (a verified
+   owner bypasses sanitizeUserWrites; a manager's write would silently revert, the June-incident class), so the
+   client gate matches. Archiving also SIGNS THEM OUT everywhere (logoutAt) and the server blocks their login,
+   so a departed helper can't open the app — but they stay in every job crew + payout. */
+function teamCanArchive() { return (typeof isOwner === "function") ? isOwner() : (typeof canManageMembers === "function" && canManageMembers()); }
 window.teamArchive = function (id) {
-  if (!(typeof canManageMembers === "function" && canManageMembers())) return;
+  if (!teamCanArchive()) return;
   const u = (S.users || []).find(x => x && x.id === id && !x.kind && !x.deleted); if (!u) return;
-  if (!confirm("Archive " + teamDisplayName(u) + "? They stay in past jobs + payouts, but drop off the active crew, schedule, timeclock and pickers. Reactivate anytime.")) return;
-  u.archived = true; u.updatedAt = now(); if (typeof touch === "function") touch(u);
+  if (!confirm("Archive " + teamDisplayName(u) + "? They drop off the active crew, schedule, timeclock and pickers, and are SIGNED OUT / can no longer log in — but they stay in past jobs + payouts. Reactivate anytime.")) return;
+  u.archived = true; u.logoutAt = now(); u.updatedAt = now(); if (typeof touch === "function") touch(u);   // logoutAt kills their sessions; server also rejects an archived login
   if (typeof logChange === "function") logChange("update", "account", id, "Archived " + teamDisplayName(u));
   save(); if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   window.TEAM_OPEN = null; render();
 };
 window.teamReactivate = function (id) {
-  if (!(typeof canManageMembers === "function" && canManageMembers())) return;
+  if (!teamCanArchive()) return;
   const u = (S.users || []).find(x => x && x.id === id && !x.kind && !x.deleted); if (!u) return;
   u.archived = false; u.updatedAt = now(); if (typeof touch === "function") touch(u);
   if (typeof logChange === "function") logChange("update", "account", id, "Reactivated " + teamDisplayName(u));
@@ -153,7 +156,7 @@ function teamRenderDirectory() {
   });
   h += `</div>`;
   // Archived helpers — departed crew kept for pay + history. Owner/manager only; collapsed so it stays out of the way.
-  const arch = (typeof canManageMembers === "function" && canManageMembers()) ? teamArchivedMembers() : [];
+  const arch = teamCanArchive() ? teamArchivedMembers() : [];
   if (arch.length) {
     h += `<details style="margin-top:16px"><summary style="cursor:pointer;font-weight:700;padding:6px 4px">🗄 Archived (${arch.length}) <span class="sub" style="font-weight:400">· kept for pay + history, off the active crew</span></summary>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">`
@@ -176,7 +179,7 @@ function teamRenderProfile(u) {
       <button class="btn ghost sm" onclick="teamBack()">← Team</button>
       <div class="grow"></div>
       ${teamCanEdit(u.id) ? `<button class="btn ghost sm" onclick="teamEditProfile('${esc(u.id)}')">✏️ Edit</button>` : ""}
-      ${(!me_is(u) && typeof canManageMembers === "function" && canManageMembers()) ? (u.archived ? `<button class="btn ghost sm" onclick="teamReactivate('${esc(u.id)}')">↩ Reactivate</button>` : `<button class="btn ghost sm" onclick="teamArchive('${esc(u.id)}')" title="Archive a departed helper">🗄 Archive</button>`) : ""}
+      ${(!me_is(u) && teamCanArchive()) ? (u.archived ? `<button class="btn ghost sm" onclick="teamReactivate('${esc(u.id)}')">↩ Reactivate</button>` : `<button class="btn ghost sm" onclick="teamArchive('${esc(u.id)}')" title="Archive a departed helper">🗄 Archive</button>`) : ""}
     </div>`;
   h += `<div class="card" style="text-align:center;padding:22px 16px">
       <div style="display:flex;justify-content:center;margin-bottom:12px">${teamAvatar(u, 112)}</div>

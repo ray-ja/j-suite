@@ -111,7 +111,8 @@ function rToday(){
     try{
       const ym=(typeof finMonth==="function")?finMonth():t.slice(0,7);
       const b=(typeof monthBounds==="function")?monthBounds(ym):{from:ym+"-01",to:ym+"-31"};
-      const roll=finRollup((typeof actIncome==="function"?actIncome():[]),{adminMemberId:(typeof finAdminMember==="function"?finAdminMember():""),from:b.from,to:b.to});
+      const _inc=(typeof actIncome==="function"?actIncome():[]);const _incW=(typeof incomeWithWeights==="function")?incomeWithWeights(_inc):_inc;   // honor per-job crew share weights (matches Payouts)
+      const roll=finRollup(_incW,{adminMemberId:(typeof finAdminMember==="function"?finAdminMember():""),from:b.from,to:b.to});
       const mil=(typeof finMileage==="function")?finMileage(D().timeclock||[],{from:b.from,to:b.to,confirmedOnly:true}):{perMember:{}};
       const pay=finPayouts(roll,mil);
       const rows=owner?mem:mem.filter(u=>me&&u.id===me.id);

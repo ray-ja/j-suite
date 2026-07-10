@@ -1052,7 +1052,13 @@ function dedupNested(store) {
       let bumped = false;
       const m = dedupJobArr(j.materials); if (m.changed) { j.materials = m.arr; bumped = true; }
       const e = dedupJobArr(j.expenses); if (e.changed) { j.expenses = e.arr; bumped = true; }
-      if (bumped) j.updatedAt = Date.now();                            // healed job = strictly newest → propagates
+      // bump JUST past the job's own newest timestamp (never a server-invented "now") so the healed copy wins the
+      // dup-carrying versions WITHOUT clobbering another device's genuinely-newer unsynced edit to this job.
+      if (bumped) {
+        let newest = +j.updatedAt || 0;
+        (j.materials || []).concat(j.expenses || []).forEach(r => { if (r && (+r.updatedAt || 0) > newest) newest = +r.updatedAt; });
+        j.updatedAt = newest + 1;
+      }
     }
   }
   return store;
@@ -1066,8 +1072,8 @@ function hashPwFallback(pw) { let h = 5381; const s = String(pw) + "::jsuite"; f
 function accountByName(store, username) {
   const us = (store && store.users) || [];
   const lc = String(username || "").trim().toLowerCase();   // case-insensitive + whitespace-tolerant (no lockouts)
-  // skip soft-deleted, deactivated (active:false), and non-account records (e.g. the roles config)
-  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && String(u.username || "").trim().toLowerCase() === lc) || null;
+  // skip soft-deleted, deactivated (active:false), ARCHIVED (departed helper — no login), and non-account records
+  return us.find(u => u && !u.deleted && !u.kind && u.active !== false && !u.archived && String(u.username || "").trim().toLowerCase() === lc) || null;
 }
 /* ----- password hashing: scrypt (slow, salted, built-in — no deps) is the at-rest format. Legacy
    SHA-256/djb2 hashes still verify and are transparently re-hashed to scrypt on the next successful

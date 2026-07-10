@@ -141,14 +141,22 @@ function rcptNeedsTax(r) { return rcptTaxable(r) && !r.taxEvaluated; }
 function rcptNeedsTaxCount() { return rcptAllRows().filter(rcptNeedsTax).length; }
 /* tax-INCLUSIVE back-out: the tax already embedded in a total that includes it ($106.75 → $6.75) */
 function rcptTaxBackout(amount, rate) { rate = rate || rcptTaxRate(); return Math.round((+amount || 0) * (rate / (1 + rate)) * 100) / 100; }
-/* evaluate + STAMP the live record. Returns true if stamped. */
+/* touch the record's SYNC HOME: for jobmat/jobexp the record is nested inside the job, so LWW is keyed on
+   job.updatedAt — bump the PARENT job (mirrors rcptTouchHome), else touch the per-record collection (review/biz). */
+function rcptTouchRow(store, jobId, rec) {
+  if (typeof rcptTouchHome === "function") { rcptTouchHome({ store: store, jobId: jobId }, rec); return; }
+  if ((store === "jobmat" || store === "jobexp") && jobId) { const j = (D().jobs || []).find(x => x && x.id === jobId); if (j && typeof touch === "function") touch(j); }
+  else if (typeof touch === "function") touch(rec);
+}
+/* evaluate + STAMP the live record (does NOT touch — caller touches the sync home). Returns true if stamped.
+   An explicit tax that exceeds the receipt total is a misread → ignore it and fall back to the 6.75% back-out. */
 function rcptEvalTaxRecord(rec) {
   if (!rcptTaxable(rec)) return false;
   const rate = rcptTaxRate();
-  const explicit = (rec.capRead && rec.capRead.tax != null && +rec.capRead.tax > 0) ? Math.round(+rec.capRead.tax * 100) / 100 : null;
+  let explicit = (rec.capRead && rec.capRead.tax != null && +rec.capRead.tax > 0) ? Math.round(+rec.capRead.tax * 100) / 100 : null;
+  if (explicit != null && explicit >= (+rec.amount || 0)) explicit = null;   // tax ≥ total → misread, use the assumption
   rec.taxAmount = (explicit != null) ? explicit : rcptTaxBackout(rec.amount, rate);
   rec.taxRate = rate; rec.taxAssumed = (explicit == null); rec.taxEvaluated = true;
-  if (typeof touch === "function") touch(rec);
   return true;
 }
 window.rcptEvalTaxAll = function () {
@@ -157,7 +165,7 @@ window.rcptEvalTaxAll = function () {
   if (!flagged.length) { alert("Every receipt already has its sales tax evaluated. 🎉"); return; }
   if (!confirm("Evaluate sales tax on " + flagged.length + " receipt" + (flagged.length > 1 ? "s" : "") + "?\n\nFills each receipt's tax (6.75% OBX, or the printed amount where Cap read one) as an itemized sub-line. It does NOT change any amounts, buckets, or jobs — fully reversible.")) return;
   let n = 0;
-  flagged.forEach(row => { const rec = rcptFindRecord(row.store, row.jobId, row.recId); if (rec && rcptEvalTaxRecord(rec)) n++; });
+  flagged.forEach(row => { const rec = rcptFindRecord(row.store, row.jobId, row.recId); if (rec && rcptEvalTaxRecord(rec)) { rcptTouchRow(row.store, row.jobId, rec); n++; } });
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   if (typeof logChange === "function") logChange("update", "receipts", "*", "Evaluated sales tax on " + n + " receipt" + (n > 1 ? "s" : "") + " (6.75% OBX)");
@@ -166,6 +174,7 @@ window.rcptEvalTaxAll = function () {
 window.rcptEvalTaxOne = function (store, jobId, recId) {
   if (!rcptFinFull()) return;
   const rec = rcptFindRecord(store, jobId || "", recId); if (!rec || !rcptEvalTaxRecord(rec)) return;
+  rcptTouchRow(store, jobId, rec);
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   render();
@@ -174,7 +183,7 @@ window.rcptClearTax = function (store, jobId, recId) {   // undo — the reversi
   if (!rcptFinFull()) return;
   const rec = rcptFindRecord(store, jobId || "", recId); if (!rec) return;
   delete rec.taxAmount; delete rec.taxRate; delete rec.taxAssumed; delete rec.taxEvaluated;
-  if (typeof touch === "function") touch(rec);
+  rcptTouchRow(store, jobId, rec);
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   render();

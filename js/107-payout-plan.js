@@ -82,7 +82,7 @@ function popTaxReserveHTML(m, taxRaid) {
       <button class="btn sm" style="margin-top:8px;background:var(--danger);border-color:var(--danger);color:#fff" onclick="popBorrowOpen('borrow','${(taxRaid / 100).toFixed(2)}')">🏦 Record borrow ${fm(taxRaid)}</button>`;
   }
   if (bal > 0) {
-    const pct = s.borrowed > 0 ? Math.round(s.repaid / s.borrowed * 100) : 0;
+    const pct = s.borrowed > 0 ? Math.min(100, Math.round(s.repaid / s.borrowed * 100)) : 0;
     h += `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
       <div class="row" style="align-items:center"><div class="grow"><div class="nm">Owed back to tax reserve</div><div class="sub">${fm(s.repaid)} repaid of ${fm(s.borrowed)} borrowed</div></div><b style="color:var(--danger)">${fm(bal)}</b></div>
       <div style="height:7px;border-radius:4px;background:var(--soft);margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#1e9e5a"></div></div>
@@ -144,7 +144,11 @@ function popPool() {
   let collected = 0, ar = 0, backlog = 0;
   (D().quotes || []).filter(q => q && !q.deleted && q.accepted).forEach(q => {
     const amt = finCents(q.finalPrice || q.total || 0);
-    if (q.paid) collected += amt; else if (q.invoiced) ar += amt; else backlog += amt;
+    // count ACTUAL payments/deposits received (partial too), not just the fully-paid flag
+    const paid = (typeof quotePaidAmt === "function") ? Math.min(finCents(quotePaidAmt(q)), amt) : (q.paid ? amt : 0);
+    collected += paid;
+    const rest = amt - paid;
+    if (rest > 0) { if (q.invoiced) ar += rest; else backlog += rest; }   // the still-uncollected remainder
   });
   return { collected: collected, ar: ar, backlog: backlog, expected: collected + ar + backlog };
 }
@@ -156,17 +160,23 @@ function popModel() {
   const mil = finMileage(D().timeclock || [], { confirmedOnly: true });          // gas reimbursement, per member cents
   const roll = finRollup(popAcceptedIncome(), { adminMemberId: adminId });
   const pay = finPayouts(roll, { perMember: {} }, { perMember: {} });            // distribution only (mileage handled separately)
+  const paidByMember = (typeof payPaidByMember === "function") ? payPaidByMember() : {};   // payouts already disbursed (cents)
+  const faultD = (typeof finFaultDeductions === "function") ? finFaultDeductions(D().jobs || []) : { perMember: {} };
   const pool = popPool();
 
-  // per-member rows: reimburse (out-of-pocket) + mileage (gas) = "pay back"; wages = distribution
+  // per-member rows: reimburse (out-of-pocket) + mileage (gas) = "pay back"; wages = distribution EARNED, minus
+  // the member's own fault deductions and any payout already disbursed to them (floored at 0), so the plan stops
+  // recommending money you've already paid.
   const ids = {};
   Object.keys(reimbD).forEach(id => { if (finCents(reimbD[id]) > 0) ids[id] = 1; });
   Object.keys(mil.perMember).forEach(id => { if (mil.perMember[id] > 0) ids[id] = 1; });
   Object.keys(pay).forEach(id => { if (pay[id].distribution > 0) ids[id] = 1; });
   const member = {};
   Object.keys(ids).forEach(id => {
-    const reimb = finCents(reimbD[id] || 0), gas = mil.perMember[id] || 0, wage = (pay[id] && pay[id].distribution) || 0;
-    member[id] = { reimb: reimb, gas: gas, back: reimb + gas, wage: wage, owed: reimb + gas + wage };
+    const reimb = finCents(reimbD[id] || 0), gas = mil.perMember[id] || 0;
+    const wageEarned = (pay[id] && pay[id].distribution) || 0;
+    const wage = Math.max(0, wageEarned - ((faultD.perMember && faultD.perMember[id]) || 0) - (paidByMember[id] || 0));
+    member[id] = { reimb: reimb, gas: gas, back: reimb + gas, wage: wage, wageEarned: wageEarned, paid: (paidByMember[id] || 0), owed: reimb + gas + wage };
   });
   const reimbTotal = Object.keys(member).reduce((s, id) => s + member[id].reimb, 0);
   const gasTotal = Object.keys(member).reduce((s, id) => s + member[id].gas, 0);
