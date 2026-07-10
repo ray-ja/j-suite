@@ -121,6 +121,15 @@ window.rcptSplitStart = function () {
   rcptSplitRender();
 };
 
+/* one-tap from the receipts TABLE: open the receipt's editor then jump straight into the split editor, so
+   splitting is discoverable without hunting for the control inside the modal (e.g. a piecemeal patio receipt
+   that files to several job sections). Only wired on rows with a positive amount. */
+window.rcptRowSplit = function (store, jobId, recId) {
+  if (typeof rcptFinFull === "function" && !rcptFinFull()) return;
+  if (typeof rcptEditOpen === "function") rcptEditOpen(store, jobId || "", recId);   // builds the modal + #rcpt_split_slot
+  if (typeof rcptSplitStart === "function") rcptSplitStart();                        // expands the allocation editor
+};
+
 /* CAP SPLIT SUGGESTION (called by js/87 rcptApplySuggestion when Cap saw a MIXED receipt) — expand the allocation
    editor PRE-FILLED from Cap's `splits` [{amount,type,category,note}, …]. Cap proposes, the owner confirms: this
    only opens + fills the editor (balanced "$X of $Y"); nothing is committed until the owner taps "Save splits".
