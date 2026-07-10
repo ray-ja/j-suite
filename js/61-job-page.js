@@ -1030,7 +1030,8 @@ window.jobPageToggleCrew = function (jobId, userId) {
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
   if (!Array.isArray(j.crew)) j.crew = [];
   const i = j.crew.indexOf(userId);
-  if (i >= 0) j.crew.splice(i, 1); else j.crew.push(userId);
+  if (i >= 0) j.crew.splice(i, 1);
+  else { j.crew.push(userId); if (typeof jobAutoAssignVehicle === "function") jobAutoAssignVehicle(j, userId); }   // adding crew → auto-assign their personal vehicle (js/110)
   if (typeof touch === "function") touch(j);
   if (typeof logChange === "function") logChange("update", "job", j.id, "Crew → " + j.crew.length + " · " + (j.title || "job"));
   if (typeof save === "function") save(); if (typeof render === "function") render();

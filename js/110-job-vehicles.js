@@ -94,6 +94,73 @@ window.jobVehStopDel = function (jobId, vehId, idx) {
   jobVehRecalc(j, vehId);
   if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
 };
+/* V2 — reorder a vehicle's route (mirror jobPageRouteMove): swap adjacent items in the combined [stops + site]
+   sequence, then rebuild vr.stops + vr.sitePos (site at the very end → sitePos null = sticky-last). */
+window.jobVehRouteMove = function (jobId, vehId, comboIndex, dir) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const vr = jobVehRouteEnsure(j, vehId);
+  const tokens = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(jobVehShim(j, vr)) : [];
+  const k = comboIndex + dir;
+  if (comboIndex < 0 || comboIndex >= tokens.length || k < 0 || k >= tokens.length) return;
+  const t = tokens[comboIndex]; tokens[comboIndex] = tokens[k]; tokens[k] = t;
+  const newStops = tokens.filter(x => x.kind === "stop").map(x => x.stop);
+  const siteAt = tokens.findIndex(x => x.kind === "site");
+  vr.stops = newStops; vr.sitePos = (siteAt === newStops.length) ? null : siteAt;
+  jobVehRecalc(j, vehId);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
+/* V2 — editable custom START/END per vehicle (mirror jobPageSetEndpoint): vr.routeStart / vr.routeEnd = {address,
+   lat,lng}|null. null/same-as-base = home base (default). A picked suggestion reuses coords; else best-effort geocode. */
+function jobVehSetEndpoint(jobId, vehId, key, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const vr = jobVehRouteEnsure(j, vehId);
+  const addr = (v || "").trim();
+  const hb = (typeof homeBase === "function") ? homeBase() : null; const baseAddr = (hb && hb.address) ? hb.address.trim() : "";
+  if (!addr || (baseAddr && addr.toLowerCase() === baseAddr.toLowerCase())) { vr[key] = null; }
+  else {
+    const ep = { address: addr, lat: null, lng: null };
+    const _ei = (typeof document !== "undefined") ? document.getElementById((key === "routeStart" ? "jvrs_start_" : "jvrs_end_") + vehId) : null;
+    if (_ei && _ei.dataset && _ei.dataset.pickLat) {
+      ep.lat = +_ei.dataset.pickLat; ep.lng = +_ei.dataset.pickLng; if (_ei.dataset.pickPlaceId) ep.placeId = _ei.dataset.pickPlaceId;
+      delete _ei.dataset.pickLat; delete _ei.dataset.pickLng; delete _ei.dataset.pickPlaceId; delete _ei.dataset.pickManualMiles; vr[key] = ep;
+    } else { vr[key] = ep; if (typeof jobStopGeocode === "function") jobStopGeocode(vr[key], function () { jobVehRecalc(j, vehId); if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render(); }); }
+  }
+  jobVehRecalc(j, vehId);
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+}
+window.jobVehSetStart = function (jobId, vehId, v) { jobVehSetEndpoint(jobId, vehId, "routeStart", v); };
+window.jobVehSetEnd = function (jobId, vehId, v) { jobVehSetEndpoint(jobId, vehId, "routeEnd", v); };
+window.jobVehResetStart = function (jobId, vehId) { jobVehSetEndpoint(jobId, vehId, "routeStart", ""); };
+window.jobVehResetEnd = function (jobId, vehId) { jobVehSetEndpoint(jobId, vehId, "routeEnd", ""); };
+/* V2 — the mileage estimate for a clock-out ENTRY's driver: prefer THAT driver's assigned-vehicle route estimate
+   (job.vehicleRoutes[vehId].estMiles) over the whole-job estimate. Used by the clock-out odometer cross-check
+   (js/38). Read-only, never throws. Falls back to j.estRouteMiles when the driver has no per-vehicle route. */
+function jobEntryVehMiles(job, entry) {
+  try {
+    if (!job || !entry) return (job && job.estRouteMiles > 0) ? job.estRouteMiles : null;
+    const vid = entry.invVehicleId || entry.vehicleId;
+    const vr = (vid && job.vehicleRoutes) ? job.vehicleRoutes[vid] : null;
+    if (vr && vr.estMiles > 0) return vr.estMiles;
+    return (job.estRouteMiles > 0) ? job.estRouteMiles : null;
+  } catch (e) { return (job && job.estRouteMiles > 0) ? job.estRouteMiles : null; }
+}
+window.jobEntryVehMiles = jobEntryVehMiles;
+/* V2 — auto-assign a crew member's PERSONAL vehicle when they're added to a job (called from jobPageToggleCrew).
+   Only for a personal inventory vehicle they own that isn't already on the job; never removes/overrides. */
+function jobAutoAssignVehicle(j, userId) {
+  try {
+    if (!j || !userId) return false;
+    const mine = jobVehList().find(v => v.kind === "personal" && v.ownerId === userId);
+    if (!mine) return false;
+    if (!Array.isArray(j.vehicleIds)) j.vehicleIds = [];
+    if (j.vehicleIds.indexOf(mine.id) >= 0) return false;
+    j.vehicleIds.push(mine.id); jobVehRouteEnsure(j, mine.id); jobVehRecalc(j, mine.id);
+    return true;
+  } catch (e) { return false; }
+}
+window.jobAutoAssignVehicle = jobAutoAssignVehicle;
 
 /* ---------- the job-page card ---------- */
 function jobPageVehiclesCard(j) {
@@ -112,16 +179,30 @@ function jobPageVehiclesCard(j) {
     const who = owner ? `reimburses <b>${esc(owner)}</b>${reimb ? ` ~${m(reimb)}` : ""}` : `<span class="muted">company truck — reimburses whoever drives it${reimb ? ` (~${m(reimb)})` : ""}</span>`;
     h += `<div class="card" style="background:var(--soft);padding:8px 10px;margin-bottom:8px"><div class="row" style="align-items:baseline"><div class="grow nm" style="font-size:15px">🚚 ${esc(nm)}${v && v.plate ? ` <span class="sub" style="font-weight:400">${esc(v.plate)}</span>` : ""}</div>${canEdit ? `<button class="btn ghost sm" onclick="jobToggleVehicle('${j.id}','${esc(vehId)}')" title="Remove from job">✕</button>` : ""}</div>`;
     h += `<div class="sub" style="white-space:normal;margin-top:2px">${est} · ${who}</div>`;
-    // the vehicle's route: home base → job site → [its extra stops] → home base
+    // the vehicle's ORDERED route: Start → [stops/site, reorderable ▲▼] → End. Start/End default to home base but
+    // are editable (a crew member who drives from home). Reuses jobRouteOrdered on the shim so ordering matches.
     const siteAddr = (typeof jobAddr === "function") ? jobAddr(j) : (j.address || "");
-    let steps = [`🏁 Home base`, siteAddr ? `📍 Job site` : `📍 Job site (set location)`];
-    (vr.stops || []).forEach((s, i) => steps.push(`${esc(s.label || s.address || "Stop")}${canEdit ? ` <a onclick="jobVehStopDel('${j.id}','${esc(vehId)}',${i})" style="cursor:pointer;color:var(--danger)" title="Remove stop">✕</a>` : ""}`));
-    steps.push(`🏁 Home base`);
-    h += `<div class="sub" style="white-space:normal;margin-top:4px">${steps.join(" → ")}</div>`;
-    // a Google Maps link for the whole loop (read the round-trip miles) — reuse js/61 gmapsRouteUrl
+    const hb = (typeof homeBase === "function") ? homeBase() : null; const baseAddr = (hb && hb.address) ? hb.address : "";
+    const startCustom = !!(vr.routeStart && vr.routeStart.address), endCustom = !!(vr.routeEnd && vr.routeEnd.address);
+    const startVal = startCustom ? vr.routeStart.address : baseAddr, endVal = endCustom ? vr.routeEnd.address : baseAddr;
+    const combo = (typeof jobRouteOrdered === "function") ? jobRouteOrdered(jobVehShim(j, vr)) : [];
+    const ep = (side, id, value, custom, resetFn) => `<div class="sub" style="margin-top:4px"><span class="muted">${side}</span>${custom ? ` <a onclick="${resetFn}('${j.id}','${esc(vehId)}')" style="cursor:pointer;color:var(--brand-text)">↺ base</a>` : ` <span class="sub">· home base</span>`}</div><div class="acwrap"><input id="${id}_${esc(vehId)}" value="${esc(value)}" placeholder="${baseAddr ? "Address (home base by default)" : "Set the home base in Settings"}" autocomplete="off" onfocus="addrSuggest('${id}_${esc(vehId)}','${id}_${esc(vehId)}_ac')" oninput="addrSuggest('${id}_${esc(vehId)}','${id}_${esc(vehId)}_ac')" onchange="${side === "Start" ? "jobVehSetStart" : "jobVehSetEnd"}('${j.id}','${esc(vehId)}',this.value)" style="width:100%"><div class="acbox" id="${id}_${esc(vehId)}_ac"></div></div>`;
+    if (canEdit) {
+      h += ep("Start", "jvrs_start", startVal, startCustom, "jobVehResetStart");
+      h += combo.map((t, ci) => {
+        const up = ci === 0 ? "disabled" : "", dn = ci === combo.length - 1 ? "disabled" : "";
+        const lbl = t.kind === "site" ? `🏁 Job site${siteAddr ? "" : " <span class='muted'>(set location)</span>"}` : esc(t.stop.label || t.stop.address || "Stop");
+        const del = t.kind === "stop" ? `<button class="btn ghost sm" onclick="jobVehStopDel('${j.id}','${esc(vehId)}',${t.raw})" title="Remove">✕</button>` : "";
+        return `<div class="row" style="align-items:center;gap:3px;padding:3px 0"><div class="grow nm" style="font-size:13px;white-space:normal">${ci + 1}. ${lbl}</div><button class="btn ghost sm" ${up} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},-1)" title="Up">▲</button><button class="btn ghost sm" ${dn} onclick="jobVehRouteMove('${j.id}','${esc(vehId)}',${ci},1)" title="Down">▼</button>${del}</div>`;
+      }).join("");
+      h += ep("End", "jvrs_end", endVal, endCustom, "jobVehResetEnd");
+    } else {
+      const seqTxt = [startCustom ? esc(startVal) : "🏁 base"].concat(combo.map(t => t.kind === "site" ? "📍 site" : esc(t.stop.label || t.stop.address || "stop"))).concat([endCustom ? esc(endVal) : "🏁 base"]);
+      h += `<div class="sub" style="white-space:normal;margin-top:4px">${seqTxt.join(" → ")}</div>`;
+    }
+    // a Google Maps link for the whole loop (read the round-trip miles) — Start → site/stops (in order) → End
     if (typeof gmapsRouteUrl === "function") {
-      const hb = (typeof homeBase === "function") ? homeBase() : null; const baseAddr = (hb && hb.address) ? hb.address : "";
-      const loop = [baseAddr, siteAddr].concat((vr.stops || []).map(s => s.address)).concat([baseAddr]);
+      const loop = [startVal].concat(combo.map(t => t.kind === "site" ? siteAddr : (t.stop && t.stop.address))).concat([endVal]);
       const url = gmapsRouteUrl(loop);
       if (url) h += `<a class="btn ghost sm" style="margin-top:6px;display:flex;align-items:center;justify-content:center;gap:6px" href="${url}" target="_blank" rel="noopener">🗺 Open this vehicle's route in Google Maps</a>`;
     }

@@ -487,14 +487,14 @@ window.tcSaveEndOdo = function (id) {
    route estimate and, once an end reading is typed, a live odometer-delta vs estimate soft-flag (>20% off). This
    NEVER overrides the odometer of record (tcFinalizeSegment) — it's a sanity check the crew sees while entering. */
 function tcClockOutEstLine(e) {
-  const j = tcJob(e.jobId), est = (j && j.estRouteMiles > 0) ? j.estRouteMiles : null;
+  const j = tcJob(e.jobId), est = (typeof jobEntryVehMiles === "function") ? jobEntryVehMiles(j, e) : ((j && j.estRouteMiles > 0) ? j.estRouteMiles : null);   // V2: this driver's assigned-vehicle route (js/110), else the whole-job estimate
   if (est == null) return "";
   return `<div class="sub" id="tc_odo_est" style="margin-top:6px;white-space:normal;color:var(--brand-text)">🧭 Route estimate ~<b>${est} mi</b> <span class="muted">· informational — the odometer you enter is the billed number</span></div>`;
 }
 window.tcOdoCheck = function (id) {
   const box = document.getElementById("tc_odo_est"); if (!box) return;
   const e = tcoll().find(x => x.id === id); if (!e) return;
-  const j = tcJob(e.jobId), est = (j && j.estRouteMiles > 0) ? j.estRouteMiles : null; if (est == null) return;
+  const j = tcJob(e.jobId), est = (typeof jobEntryVehMiles === "function") ? jobEntryVehMiles(j, e) : ((j && j.estRouteMiles > 0) ? j.estRouteMiles : null);   // V2: this driver's assigned-vehicle route (js/110), else the whole-job estimate if (est == null) return;
   const end = parseFloat(val("tc_odo_end"));
   if (!(end >= 0) || e.odoStart == null) { box.innerHTML = `🧭 Route estimate ~<b>${est} mi</b> <span class="muted">· informational — the odometer you enter is the billed number</span>`; return; }
   const delta = Math.max(0, end - e.odoStart), off = Math.round(Math.abs(delta - est) / est * 100), flag = off > 20;
