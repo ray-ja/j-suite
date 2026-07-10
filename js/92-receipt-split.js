@@ -20,60 +20,10 @@
 /* money with cents (the app's money() rounds to whole dollars — splits need the pennies to reconcile) */
 function rcptSplitMoney(n) { return "$" + (Math.round((+n || 0) * 100) / 100).toFixed(2); }
 
-/* ---------- SALES-TAX APPORTIONMENT ----------
-   The customer should only reimburse the sales tax on THEIR pass-through materials — not the tax on tools we
-   keep. So when a mixed receipt is split, the receipt's ACTUAL tax is apportioned across the buckets by each
-   bucket's pre-tax subtotal, and each bucket gets its OWN "Sales tax" line (Ray's call: keep tax visible).
-   The OBX rate (Dare + Currituck County NC are both 6.75%) is used only to SANITY-CHECK the printed tax, never
-   to override it — we always split the real number Lowe's charged. */
-var RCPT_OBX_TAX_RATE = 0.0675;   // 4.75% NC state + 2.00% county — Dare AND Currituck are identical
-function rcptTaxExpected(subtotalCents, rate) { return Math.round((subtotalCents || 0) * (rate || RCPT_OBX_TAX_RATE)); }
-/* is the printed tax within tolerance of rate × subtotal? tolerance = max(2¢, 1% of expected) to absorb rounding
-   and per-line tax quirks without false alarms. Returns {expected, ok, rate}. */
-function rcptTaxCheck(subtotalCents, taxCents, rate) {
-  rate = rate || RCPT_OBX_TAX_RATE;
-  var expected = rcptTaxExpected(subtotalCents, rate);
-  var tol = Math.max(2, Math.round(expected * 0.01));
-  return { expected: expected, ok: Math.abs((taxCents || 0) - expected) <= tol, rate: rate };
-}
-/* distribute `taxCents` across weight-keyed groups (weights = {key: preTaxCents}) proportional to weight; the
-   largest fractional remainders take the leftover cents (deterministic, ties → lowest key). Sums to taxCents
-   EXACTLY. If no weight, returns {} (caller keeps the tax as-is). */
-function rcptApportionTax(taxCents, weights) {
-  taxCents = Math.max(0, Math.round(taxCents || 0));
-  var keys = Object.keys(weights || {}).filter(function (k) { return (weights[k] || 0) > 0; });
-  var total = keys.reduce(function (s, k) { return s + weights[k]; }, 0);
-  var out = {};
-  if (!(total > 0) || taxCents === 0) { keys.forEach(function (k) { out[k] = 0; }); return out; }
-  var assigned = 0, frac = [];
-  keys.forEach(function (k) { var exact = taxCents * (weights[k] / total); var base = Math.floor(exact); out[k] = base; assigned += base; frac.push({ k: k, f: exact - base }); });
-  var rem = taxCents - assigned;
-  frac.sort(function (a, b) { return (b.f - a.f) || (a.k < b.k ? -1 : 1); });
-  for (var i = 0; i < rem; i++) out[frac[i % frac.length].k] += 1;
-  return out;
-}
-/* PURE: given the pre-tax bucket rows [{bucket,jobId,amount,note}] + a tax amount (dollars), return the rows
-   PLUS one apportioned "Sales tax" row per distinct (bucket,jobId) group (isTax:true). Existing isTax rows are
-   dropped first so re-spreading is idempotent. Groups with no pre-tax weight get no tax row. */
-function rcptSpreadTaxRows(rows, taxDollars) {
-  var base = (rows || []).filter(function (r) { return r && !r.isTax; });
-  var taxCents = Math.round((+taxDollars || 0) * 100);
-  if (!(taxCents > 0) || !base.length) return base.slice();
-  var groups = {}, order = [];
-  base.forEach(function (r) {
-    var key = (r.bucket || "pass-through") + "|" + (r.jobId || "");
-    if (!groups[key]) { groups[key] = { bucket: r.bucket || "pass-through", jobId: r.jobId || "", cents: 0 }; order.push(key); }
-    groups[key].cents += Math.round((parseFloat(r.amount) || 0) * 100);
-  });
-  var weights = {}; order.forEach(function (k) { weights[k] = groups[k].cents; });
-  var per = rcptApportionTax(taxCents, weights);
-  var taxRows = order.filter(function (k) { return (per[k] || 0) > 0; }).map(function (k) {
-    var b = groups[k].bucket;
-    var label = b === "pass-through" ? "Sales tax (materials)" : b === "business" ? "Sales tax (tools/overhead)" : "Sales tax (job)";
-    return { bucket: b, jobId: groups[k].jobId, amount: (per[k] / 100).toFixed(2), note: label, isTax: true };
-  });
-  return base.concat(taxRows);
-}
+/* OBX sales-tax rate — Dare + Currituck County NC are both 6.75% (4.75% state + 2.00% county). Sales tax is
+   NEVER its own record/split; it's shown as an "incl. $X sales tax" SUB-LINE on each receipt (js/72 backfill).
+   This constant is the single source of that rate. */
+var RCPT_OBX_TAX_RATE = 0.0675;
 
 /* build the fields object a slice routes with — shared receipt fields + this allocation's amount/type/job/note,
    plus splitGroup when the receipt is genuinely split (N>1). Same field shape rcptSaveEdit builds, so slice[0]
@@ -176,15 +126,6 @@ window.rcptSplitStart = function () {
   rcptSplitRender();
 };
 
-/* one-tap from the receipts TABLE: open the receipt's editor then jump straight into the split editor, so
-   splitting is discoverable without hunting for the control inside the modal (e.g. a piecemeal patio receipt
-   that files to several job sections). Only wired on rows with a positive amount. */
-window.rcptRowSplit = function (store, jobId, recId) {
-  if (typeof rcptFinFull === "function" && !rcptFinFull()) return;
-  if (typeof rcptEditOpen === "function") rcptEditOpen(store, jobId || "", recId);   // builds the modal + #rcpt_split_slot
-  if (typeof rcptSplitStart === "function") rcptSplitStart();                        // expands the allocation editor
-};
-
 /* CAP SPLIT SUGGESTION (called by js/87 rcptApplySuggestion when Cap saw a MIXED receipt) — expand the allocation
    editor PRE-FILLED from Cap's `splits` [{amount,type,category,note}, …]. Cap proposes, the owner confirms: this
    only opens + fills the editor (balanced "$X of $Y"); nothing is committed until the owner taps "Save splits".
@@ -198,20 +139,12 @@ window.rcptSplitStartFromSuggestion = function (splits, fallbackJobId) {
   const total = amtRaw === "" ? 0 : (parseFloat(amtRaw) || 0);
   const jobEl = document.getElementById("rcpt_job");
   const curJob = (jobEl ? jobEl.value : "") || fallbackJobId || "";
-  // Cap tags a receipt's sales tax as its own split (category "sales tax"). We DON'T keep it as a lone bucket —
-  // we re-apportion it across the real buckets by their pre-tax subtotal, so the customer only pays tax on their
-  // materials. A split with no tax tag is unchanged (backward-compatible with older Cap output).
-  const isTaxSplit = sp => { const c = String((sp && sp.category) || "").toLowerCase().trim(); const n = String((sp && sp.note) || "").toLowerCase(); return c === "sales tax" || c === "tax" || /\bsales tax\b/.test(n); };
-  let taxDollars = 0;
-  const baseRows = [];
-  splits.forEach(sp => {
-    const amt = (sp && sp.amount != null && !isNaN(+sp.amount)) ? Math.round(+sp.amount * 100) / 100 : 0;
-    if (isTaxSplit(sp)) { taxDollars += amt; return; }
+  const rows = splits.map(sp => {
     const bucket = (sp && (sp.type === "business" || sp.type === "job-expense" || sp.type === "pass-through")) ? sp.type : "pass-through";
     const needsJob = (bucket === "pass-through" || bucket === "job-expense");
-    baseRows.push({ bucket: bucket, jobId: needsJob ? curJob : "", amount: (amt ? String(amt) : ""), note: (sp && sp.note != null) ? String(sp.note) : "" });
+    const amt = (sp && sp.amount != null && !isNaN(+sp.amount)) ? Math.round(+sp.amount * 100) / 100 : "";
+    return { bucket: bucket, jobId: needsJob ? curJob : "", amount: (amt === "" ? "" : String(amt)), note: (sp && sp.note != null) ? String(sp.note) : "" };
   });
-  const rows = (taxDollars > 0 && baseRows.length) ? rcptSpreadTaxRows(baseRows, taxDollars) : baseRows;
   RCPT_SPLIT = {
     loc: (typeof RCPT_EDIT !== "undefined" && RCPT_EDIT) ? RCPT_EDIT.loc : null,
     total: total,
@@ -256,9 +189,7 @@ function rcptSplitRender() {
     </div>`;
   });
   h += `<div id="rcpt_split_ind" class="sub" style="margin-top:8px;text-align:center;font-weight:700"></div>
-    <div id="rcpt_split_taxhint" class="sub" style="margin-top:4px;text-align:center;white-space:normal"></div>
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="rcptSplitSpreadTax()" title="Split the leftover sales tax across the parts, so the customer only pays tax on their materials">🧾 Spread sales tax</button><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add split</button></div>
-    <button class="btn acc" style="width:100%;margin-top:8px" onclick="rcptSaveEditSplit()">✓ Save splits</button></div>`;
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add split</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">✓ Save splits</button></div></div>`;
   slot.innerHTML = h;
   rcptSplitRecalc();
 }
@@ -267,43 +198,14 @@ function rcptSplitRender() {
    (reads the amount inputs directly) so typing never loses focus. */
 window.rcptSplitRecalc = function () {
   const ind = document.getElementById("rcpt_split_ind"); if (!ind || !RCPT_SPLIT) return;
-  let sum = 0, baseCents = 0, taxCents = 0;
-  document.querySelectorAll(".rcpt_split_amt").forEach(el => {
-    const v = parseFloat(el.value) || 0; sum += v;
-    const i = +el.getAttribute("data-i"); const row = RCPT_SPLIT.rows[i];
-    if (row && row.isTax) taxCents += Math.round(v * 100); else baseCents += Math.round(v * 100);
-  });
+  let sum = 0; document.querySelectorAll(".rcpt_split_amt").forEach(el => { sum += (parseFloat(el.value) || 0); });
   sum = Math.round(sum * 100) / 100;
   const total = RCPT_SPLIT.total, left = Math.round((total - sum) * 100) / 100;
   if (Math.abs(left) <= 0.01) { ind.style.color = "var(--accent)"; ind.textContent = "✓ Allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total) + " — balanced"; }
   else if (left > 0) { ind.style.color = "#e0a800"; ind.textContent = "Allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total) + " · " + rcptSplitMoney(left) + " left"; }
   else { ind.style.color = "var(--danger)"; ind.textContent = "Over by " + rcptSplitMoney(-left) + " — allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total); }
-  // sales-tax hint: the pre-tax subtotal is the non-tax rows; check the tax (spread rows, or the leftover) vs 6.75%
-  const hint = document.getElementById("rcpt_split_taxhint"); if (!hint) return;
-  const leftCents = Math.round(left * 100);
-  if (taxCents > 0) {
-    const chk = rcptTaxCheck(baseCents, taxCents);
-    hint.style.color = chk.ok ? "var(--accent)" : "var(--danger)";
-    hint.textContent = (chk.ok ? "✓ " : "⚠ ") + "Sales tax " + rcptSplitMoney(taxCents / 100) + " on " + rcptSplitMoney(baseCents / 100) + " of goods" + (chk.ok ? " (matches 6.75% OBX)" : " — expected " + rcptSplitMoney(chk.expected / 100) + " at 6.75%; double-check");
-  } else if (leftCents > 0 && baseCents > 0) {
-    const chk = rcptTaxCheck(baseCents, leftCents);
-    hint.style.color = "var(--muted)";
-    hint.innerHTML = "Leftover " + rcptSplitMoney(leftCents / 100) + " looks like sales tax" + (chk.ok ? "" : " (heads-up: 6.75% would be " + rcptSplitMoney(chk.expected / 100) + ")") + " — tap <b>🧾 Spread sales tax</b> to bill the customer tax only on their materials.";
-  } else { hint.textContent = ""; }
 };
 
-/* spread the LEFTOVER (receipt total − the pre-tax rows) across the buckets as per-bucket "Sales tax" rows, so
-   the customer only reimburses the tax on their materials. Idempotent (drops old tax rows first). */
-window.rcptSplitSpreadTax = function () {
-  if (!RCPT_SPLIT) return;
-  rcptSplitCapture();
-  const base = RCPT_SPLIT.rows.filter(r => !r.isTax);
-  const baseSum = base.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  const tax = Math.round((RCPT_SPLIT.total - baseSum) * 100) / 100;
-  if (!(tax > 0)) { alert("Nothing left over to spread as tax.\n\nAllocate the pre-tax items into their buckets first (materials → pass-through, tools → business) — whatever's left over is the sales tax, then tap 🧾 Spread sales tax."); return; }
-  RCPT_SPLIT.rows = rcptSpreadTaxRows(base, tax);
-  rcptSplitRender();
-};
 window.rcptSplitAdd = function () { if (!RCPT_SPLIT) return; rcptSplitCapture(); RCPT_SPLIT.rows.push({ bucket: "business", jobId: "", amount: "", note: "" }); rcptSplitRender(); };
 window.rcptSplitRemove = function (i) { if (!RCPT_SPLIT) return; rcptSplitCapture(); RCPT_SPLIT.rows.splice(i, 1); if (!RCPT_SPLIT.rows.length) RCPT_SPLIT.rows.push({ bucket: "pass-through", jobId: "", amount: "", note: "" }); rcptSplitRender(); };
 window.rcptSplitSetBucket = function (i, v) { if (!RCPT_SPLIT) return; rcptSplitCapture(); if (RCPT_SPLIT.rows[i]) RCPT_SPLIT.rows[i].bucket = v; rcptSplitRender(); };
