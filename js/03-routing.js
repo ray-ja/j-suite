@@ -134,6 +134,7 @@ const NAV_GROUPS = [
   { key:"team",      label:"People & Places", icon:"🧑‍🤝‍🧑", tabs:["team","accounts"] },
   { key:"booking",   label:"Booking",   icon:"🎟️", tabs:["booking"] },
   { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
+  { key:"time",      label:"Time",      icon:"⏱️", tabs:["time"] },   // clock-in/out + owner hours/miles report — was orphaned (a real page with no nav group), so it never showed even when enabled
   { key:"receipts",  label:"Receipts",  icon:"📸", tabs:["receipts"] },   // OWN top-level tab (crew-visible entry point to snap/upload receipts; page self-gates finance to owner/admin)
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
