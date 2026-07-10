@@ -184,6 +184,24 @@ const tbRT = t.mergeState({ obx: { docs: [{ id: "taxBorrow", entries: [{ id: "b1
 const tbDoc = (((tbRT.obx) || {}).docs || []).find(d => d && d.id === "taxBorrow");
 ok("tax-borrow ledger doc survives a sync round-trip with borrow + repay entries intact", !!tbDoc && Array.isArray(tbDoc.entries) && tbDoc.entries.length === 2 && tbDoc.entries[0].amount === 500 && tbDoc.entries[1].type === "repay");
 
+// NESTED DUP HEAL — job.materials/expenses ride inside the job record, so mergeColl can't dedupe them. A bulk
+// restore can leave two entries with the SAME id in one array (the "duplicate that won't delete"). mergeState
+// must collapse them to the NEWEST and bump the job so the clean version propagates to every device.
+const dupStored = { obx: { jobs: [
+  { id: "jDup", updatedAt: 100, materials: [
+    { id: "m1", amount: 34.39, updatedAt: 200, splitGroup: "sg1" },   // the real split slice
+    { id: "m1", amount: 114.57 },                                     // the orphan (no updatedAt) — same id
+    { id: "m2", amount: 9.99, updatedAt: 150 }                        // a distinct, legit record
+  ], expenses: [] },
+  { id: "jClean", updatedAt: 300, materials: [{ id: "x1", amount: 5, updatedAt: 50 }], expenses: [] }
+] } };
+const dupOut = t.mergeState(dupStored, {});
+const jd = dupOut.obx.jobs.find(j => j.id === "jDup"), jc = dupOut.obx.jobs.find(j => j.id === "jClean");
+const m1s = jd.materials.filter(r => r.id === "m1");
+ok("nested dup HEAL: two same-id materials collapse to ONE (the newer $34.39, orphan dropped)", m1s.length === 1 && m1s[0].amount === 34.39, jd.materials);
+ok("nested dup HEAL: distinct records are preserved (m2 survives)", jd.materials.some(r => r.id === "m2" && r.amount === 9.99), jd.materials);
+ok("nested dup HEAL: the healed job's updatedAt is bumped (propagates to every device)", jd.updatedAt > 100, jd.updatedAt);
+ok("nested dup HEAL: a CLEAN job is untouched (no needless updatedAt bump)", jc.updatedAt === 300 && jc.materials.length === 1, jc);
 // CLIENT load() defaults (mirror js/02): legacy timeclock entries get stops:[]/nullable odo/derived milesSource,
 // + the RIDER-ROLE redesign fields (riderRole/trailerId/rodeWith). We replicate the exact derivation here so the
 // server suite proves the client migration is loss-free + sane.

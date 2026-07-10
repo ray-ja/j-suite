@@ -1023,6 +1023,40 @@ function mergeColl(a = [], b = []) {
   }
   return [...map.values()];
 }
+
+/* Nested per-job receipt arrays (job.materials / job.expenses) ride INSIDE the job record, so mergeColl
+   (collection-level, id-keyed) never dedupes THEM. A bulk restore/import can leave two entries with the SAME id
+   in one array — the "duplicate that won't delete", because find-by-id always hits the first and the second is
+   untouchable. This heals it: within each job, collapse same-id entries to the newest (updatedAt||0, so a real
+   record beats a no-timestamp orphan), NEVER dropping a record that has no id. If anything changed, the job's
+   updatedAt is bumped so the CLEAN version strictly wins the next LWW merge and propagates to every device. */
+function dedupJobArr(arr) {
+  if (!Array.isArray(arr)) return { arr: arr, changed: false };
+  const best = new Map(); let changed = false;
+  for (const r of arr) {
+    if (!r || !r.id) continue;
+    const cur = best.get(r.id);
+    if (!cur) { best.set(r.id, r); continue; }
+    changed = true;                                                     // a same-id duplicate exists
+    if ((r.updatedAt || 0) >= (cur.updatedAt || 0)) best.set(r.id, r);  // keep the newest (defined beats undefined)
+  }
+  if (!changed) return { arr: arr, changed: false };
+  const noId = arr.filter(r => r && !r.id);                             // preserve id-less records verbatim (never drop)
+  return { arr: [...best.values(), ...noId], changed: true };
+}
+function dedupNested(store) {
+  for (const oid of orgIdsOf(store)) {
+    const jobs = (store[oid] && store[oid].jobs) || [];
+    for (const j of jobs) {
+      if (!j) continue;
+      let bumped = false;
+      const m = dedupJobArr(j.materials); if (m.changed) { j.materials = m.arr; bumped = true; }
+      const e = dedupJobArr(j.expenses); if (e.changed) { j.expenses = e.arr; bumped = true; }
+      if (bumped) j.updatedAt = Date.now();                            // healed job = strictly newest → propagates
+    }
+  }
+  return store;
+}
 /* ----- auth: verify a login against the SHA-256 account records the app already syncs here -----
    Records look like { id, username, passhash, settings, deleted, updatedAt }. The app hashes with
    WebCrypto SHA-256 in secure contexts and a djb2 fallback when crypto.subtle is unavailable
@@ -1202,7 +1236,7 @@ function mergeState(stored, incoming) {
   }
   out.users = mergeColl(stored.users || [], incoming.users || []);
   out.registry = mergeColl(stored.registry || [], incoming.registry || []);   // org metadata, LWW like users
-  return out;
+  return dedupNested(out);   // heal any same-id duplicates in nested job.materials/expenses (mergeColl can't reach them)
 }
 
 /* ---------- CEO read path: a READ-ONLY, whitelisted projection of operational state ----------
