@@ -206,6 +206,43 @@ window.rcptClearTax = function (store, jobId, recId) {   // undo — the reversi
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   render();
 };
+/* V3 AUTO-ASSESS — called by rcptApplyEdit right after a receipt is filed/saved, so a receipt's sales tax is
+   evaluated AUTOMATICALLY (no "Assess for taxes" tap needed): a taxable receipt not yet evaluated gets stamped now
+   (exempt→$0, else printed/6.75% back-out). Never throws; additive metadata; caller already touches the sync home. */
+function rcptAutoTax(rec) { try { if (rec && !rec.taxEvaluated && typeof rcptTaxable === "function" && rcptTaxable(rec)) rcptEvalTaxRecord(rec); } catch (e) { } }
+window.rcptAutoTax = rcptAutoTax;
+/* RETROACTIVE RE-ASSESS — re-run the (now smart) tax rules over EVERY receipt, correcting anything assessed under
+   older rules (e.g. a SaaS receipt that got 6.75% before the exemption existed). Owner/admin; additive + reversible. */
+window.rcptReassessAllTax = function () {
+  if (!rcptFinFull()) return;
+  const rows = rcptAllRows().filter(rcptTaxable);
+  if (!rows.length) { alert("No receipts to assess yet."); return; }
+  if (!confirm("Re-assess sales tax on ALL " + rows.length + " receipt" + (rows.length > 1 ? "s" : "") + " with the current rules?\n\nTaxable → 6.75% (Dare/Currituck NC) or the printed amount; SaaS / hosting / software / insurance → non-taxable. Corrects anything assessed under older rules. Additive sub-line only — fully reversible.")) return;
+  let n = 0, exempt = 0, changed = 0;
+  rows.forEach(row => {
+    const rec = rcptFindRecord(row.store, row.jobId, row.recId); if (!rec) return;
+    const before = rec.taxEvaluated ? (rec.taxExempt ? "x" : String(rec.taxAmount)) : "";
+    rec.taxEvaluated = false;
+    if (rcptEvalTaxRecord(rec)) { const after = rec.taxExempt ? "x" : String(rec.taxAmount); if (after !== before) changed++; rcptTouchRow(row.store, row.jobId, rec); n++; if (rec.taxExempt) exempt++; }
+  });
+  if (typeof save === "function") save();
+  if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
+  if (typeof logChange === "function") logChange("update", "receipts", "*", "Re-assessed sales tax on " + n + " receipts (" + changed + " changed, " + exempt + " non-taxable)");
+  if (typeof render === "function") render();
+  alert("Re-assessed " + n + " receipt" + (n > 1 ? "s" : "") + " — " + changed + " updated, " + exempt + " non-taxable.");
+};
+/* the tax "set aside" roll-up shown on the Receipts page: total sales tax assessed across all receipts + how many
+   are non-taxable / still unevaluated. Pure — reads the live rows, no side effects. */
+function rcptTaxSummary() {
+  const rows = rcptAllRows();
+  let taxTotal = 0, taxedN = 0, exemptN = 0, unevalN = 0;
+  rows.forEach(r => {
+    if (r && r.taxEvaluated) { if (r.taxExempt) exemptN++; else if (+r.taxAmount > 0) { taxTotal += +r.taxAmount; taxedN++; } }
+    else if (rcptNeedsTax(r)) unevalN++;
+  });
+  return { taxTotal: Math.round(taxTotal * 100) / 100, taxedN: taxedN, exemptN: exemptN, unevalN: unevalN };
+}
+window.rcptTaxSummary = rcptTaxSummary;
 function rcptThumb(id) {
   const up = (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
   if (!id) return `<div style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px dashed var(--line);background:var(--soft);flex:0 0 auto;font-size:22px">📷</div>`;
@@ -1045,7 +1082,16 @@ function rReceipts() {
   if (capReviewN) h += `<div class="card" style="border-left:4px solid ${RCPT_CAP_PURPLE};cursor:pointer" onclick="rcptSetFilter('capreview')"><b style="color:${RCPT_CAP_PURPLE}">🤖 ${capReviewN} receipt${capReviewN > 1 ? "s" : ""} Cap auto-filed — needs your review</b> — Cap was confident and filed ${capReviewN > 1 ? "these" : "this"} for you (purple <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff">🤖 review</span> rows). Tap to jump to them, glance each is right, then tap <b>✓ Reviewed</b> (any edit also clears the mark). →</div>`;
   const suggCount = rows.filter(r => r && r.suggested && r.store === "review").length;   // same gate as the row 🤖 Cap badge: only a REVIEW-queue row is an unresolved "Cap read this, review it" to-do (a filed receipt keeps `suggested` for provenance but was already reviewed when filed)
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", review, then ✓ File it.</div>`;
-  if (needTaxN) h += `<div class="card" style="border-left:4px solid #e0a800"><b>🧾 ${needTaxN} receipt${needTaxN > 1 ? "s" : ""} need sales tax evaluated</b> — fill in each receipt's tax (6.75% OBX, or the printed amount where Cap read one) as an itemized sub-line. It doesn't change any amounts, buckets, or jobs — additive &amp; reversible. <button class="btn sm" style="background:#e0a800;border-color:#e0a800;color:#fff;margin-top:6px" onclick="rcptEvalTaxAll()">🧾 Evaluate all ${needTaxN}</button></div>`;
+  if (typeof rcptTaxSummary === "function" && typeof rcptFinFull === "function" && rcptFinFull()) {
+    const _ts = rcptTaxSummary();
+    if (_ts.taxedN || _ts.exemptN || needTaxN) {
+      h += `<div class="card" style="border-left:4px solid ${needTaxN ? "#e0a800" : "var(--accent)"}"><b>🧾 Sales tax set aside: ${money2(_ts.taxTotal)}</b> <span class="sub">across ${_ts.taxedN} taxable receipt${_ts.taxedN === 1 ? "" : "s"}${_ts.exemptN ? ` · ${_ts.exemptN} non-taxable (SaaS/insurance)` : ""}${needTaxN ? ` · <span style="color:#e0a800">${needTaxN} not yet assessed</span>` : ""}</span>`
+        + `<div class="sub" style="white-space:normal;margin-top:4px">The sales-tax portion of each total (printed where Cap read it, else 6.75% Dare/Currituck backed out). SaaS / hosting / insurance are non-taxable in NC. New receipts auto-assess on file; additive &amp; reversible.</div>`
+        + `<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">`
+        + (needTaxN ? `<button class="btn sm" style="background:#e0a800;border-color:#e0a800;color:#fff" onclick="rcptEvalTaxAll()">🧾 Assess ${needTaxN} unassessed</button>` : "")
+        + `<button class="btn ghost sm" onclick="rcptReassessAllTax()">↻ Re-assess all</button></div></div>`;
+    }
+  }
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
 
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund

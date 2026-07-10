@@ -282,6 +282,25 @@ async function main() {
   rcptEvalTaxRecord(jmat); rcptTouchRow("jobmat", "j1", jmat);
   ok("evaluating tax on a job material bumps the PARENT job's updatedAt (nested → syncs)", STORE.jobs[0].updatedAt > 111, STORE.jobs[0].updatedAt);
 
+  console.log("\n— V3 TAX: rcptTaxSummary roll-up + rcptReassessAllTax retroactive fix —");
+  resetStore(); global.finCanView = function () { return true; };
+  const bizA = { id: "bA", receiptId: "rA", vendor: "Home Depot", amount: 106.75, category: "materials", type: "business" };
+  const bizB = { id: "bB", receiptId: "rB", vendor: "Cloudflare", amount: 25, category: "subscription/software", type: "business" };
+  const bizC = { id: "bC", receiptId: "rC", vendor: "Vulcan", amount: 53.36, category: "materials", type: "business" };   // left unevaluated
+  STORE.expenses = [bizA, bizB, bizC];
+  rcptEvalTaxRecord(bizA); rcptEvalTaxRecord(bizB);   // A taxable, B exempt; C not yet
+  const ts = rcptTaxSummary();
+  ok("rcptTaxSummary: tax total = the one taxable receipt's tax (6.75)", Math.abs(ts.taxTotal - 6.75) < 0.01, ts);
+  ok("rcptTaxSummary: 1 taxable, 1 non-taxable, 1 unevaluated", ts.taxedN === 1 && ts.exemptN === 1 && ts.unevalN === 1, ts);
+  // RETROACTIVE: a receipt mis-assessed under the OLD rules (Cloudflare charged 6.75%) → re-assess corrects it to exempt
+  const stale = { id: "stale", receiptId: "rStale", vendor: "Cloudflare hosting", amount: 100, category: "subscription/software", type: "business", taxEvaluated: true, taxAmount: 6.32, taxRate: 0.0675, taxAssumed: true };
+  STORE.expenses.push(stale);
+  window.confirm = function () { return true; }; window.alert = function () { };
+  rcptReassessAllTax();
+  const staleAfter = STORE.expenses.find(x => x.id === "stale");
+  ok("retroactive re-assess CORRECTS a stale SaaS receipt (6.75% → non-taxable $0)", staleAfter.taxExempt === true && staleAfter.taxAmount === 0, staleAfter);
+  ok("retroactive re-assess also evaluates the previously-unassessed one", STORE.expenses.find(x => x.id === "bC").taxEvaluated === true, null);
+
   // ========================= UNIFIED JOB RECEIPT (js/100) → rcptApplySplit =========================
   console.log("\n— JOB RECEIPT: jobRcptSeed builds rows from Cap lineItems (+ whole-receipt client fallback) —");
   const seedFull = jobRcptSeed({ amount: 200, lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] });
@@ -799,6 +818,7 @@ async function main() {
   const filed = rcptFindRecord(rFile.newLoc.store, rFile.newLoc.jobId, rFile.newLoc.recId);
   ok("cardLast4 filed onto the job-expense record", filed && filed.cardLast4 === "4242", filed && filed.cardLast4);
   ok("manual paidBy WINS on save — record.paidBy is the chosen payer (money path unchanged)", filed && filed.paidBy === "u_chase", filed && filed.paidBy);
+  ok("V3 auto-assess: filing a taxable receipt auto-stamps sales tax (no button)", filed && filed.taxEvaluated === true && !filed.taxExempt && Math.abs(filed.taxAmount - 5.69) < 0.02, filed && filed.taxAmount);
   // re-bucket (type change) with fields OMITTING cardLast4 → the carry preserves it (like capRead)
   const rMove = rcptApplyEdit({ store: rFile.newLoc.store, jobId: rFile.newLoc.jobId, recId: rFile.newLoc.recId }, { type: "business", jobId: null, amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bCard" });
   const moved = rcptFindRecord(rMove.newLoc.store, rMove.newLoc.jobId, rMove.newLoc.recId);

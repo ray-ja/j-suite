@@ -112,11 +112,13 @@ function rcptApplyEdit(loc, fields, opts) {
     if ((fields.cardLast4 != null) && !("cardLast4" in rebuilt) && ("cardLast4" in cur)) delete cur.cardLast4;   // the form explicitly cleared the card last-4 → drop the stale value (Object.assign wouldn't remove it)
     if ((fields.refNo != null) && !("refNo" in rebuilt) && ("refNo" in cur)) delete cur.refNo;   // the form explicitly cleared the ref/order # → drop the stale value
     ["isDeposit", "depositSettled", "refundOfId", "kind"].forEach(function (k) { if ((k in fields) && !fields[k] && !(k in rebuilt) && (k in cur)) delete cur[k]; });   // an explicit false/"" in the form clears a stale deposit/refund flag
+    if (typeof rcptAutoTax === "function") rcptAutoTax(cur);   // V3: auto-assess sales tax on the filed/saved expense (no button)
     rcptTouchHome(home, cur);
     return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: cur.id } };
   }
   cur.deleted = true; rcptTouchHome(loc, cur);   // tombstone in the OLD array (syncs the removal)
   const rec = rcptBuildRecord(home, loc.recId || cur.id, fields, carry);
+  if (typeof rcptAutoTax === "function") rcptAutoTax(rec);   // V3: auto-assess sales tax on the new filed expense
   rcptPushHome(home, rec);
   return { ok: true, newLoc: { store: home.store, jobId: home.jobId, recId: rec.id } };
 }
