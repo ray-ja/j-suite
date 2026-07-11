@@ -31,13 +31,13 @@ function jobOnlyStage(q){ const j=(typeof actJ==="function")&&actJ().find(x=>x&&
 function qWorkStage(q){ return (q&&q._jobOnly)?jobOnlyStage(q):((typeof workStage==="function")?workStage(q):quoteStage(q)); }
 function qStageRank(q){ const st=qWorkStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
 /* "Finished" = nothing left to do on this job, so it auto-hides from the Jobs list by default: it's PAID
-   (done+invoiced+paid), the P&L is REVIEWED (plReviewed), and — if it has a live job — its receipts/expenses are
-   all accounted for (job.rcptReviewedAt). The "Show finished" toggle brings them back. */
+   (done+invoiced+paid), the P&L is REVIEWED (plReviewed), and — if it has a live job — its receipts are all
+   accounted for (every crew member has checked off close-out; jobReceiptsAccountedFor). "Show finished" reveals them. */
 function qIsFinished(q){
   if(qWorkStage(q)!=="paid")return false;
   if(!(typeof plReviewed==="function"&&plReviewed(q)))return false;
   const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted);
-  if(j&&!j.rcptReviewedAt)return false;   // has a job whose receipts aren't all reviewed yet → still needs attention
+  if(j){ const acc=(typeof jobReceiptsAccountedFor==="function")?jobReceiptsAccountedFor(j):!!j.rcptReviewedAt; if(!acc)return false; }   // crew still owe receipts → still needs attention
   return true;
 }
 /* count of finished jobs across the SAME base list the Jobs page shows (real quotes + quote-less orphan jobs) —

@@ -18,7 +18,6 @@
 const RCPT_CATS = ["materials", "tools/equipment", "disposal", "fuel", "rentals", "subscription/software", "marketing/ads", "uniforms", "meals", "crew supplies", "office/admin", "other"];
 let RCPT_SORT = { col: "date", dir: "desc" };   // survives re-render; header taps toggle
 let RCPT_FILTER = "all";                          // all | review | filed | owed | paidback (status pills)
-let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: needs | ready | all
 // DISPLAY-ONLY search + filters (mirror the Jobs list js/08). Survive re-render so they persist across sort/
 // status-pill taps. Applied in rcptSortedRows() AFTER the status pill, BEFORE sort. NO data/schema/billing
 // effect — they only narrow which existing rows the table shows (fingerprints unchanged).
@@ -1698,11 +1697,9 @@ function rcptTableHTML(rows, dups) {
   return h;
 }
 
-/* ============================== OWNER: PER-JOB CLOSE-OUT ROLL-UP ==============================
-   Ray scans this to know when a job is safe to invoice accurately. Each active job with assigned crew shows
-   N/M crew closed + who's still out ("waiting on Pierce"), or a clear ✓ ready-to-invoice badge when every
-   crew member has closed. Filter: needs close-out (the queue) / ready to invoice / all. */
-window.rcptSetJobFilter = function (f) { RCPT_JOBFILTER = f; render(); };
+/* ============================== OWNER: PER-JOB CLOSE-OUT REMINDER ==============================
+   A plain reminder list: jobs whose crew still owe receipts. Once every crew member has checked off, the job drops
+   off (it's ready to invoice) — no "ready" tab, no totals, no clutter. See rcptJobCloseoutHTML below. */
 function rcptCloseoutJobs() { return rcptJobs().filter(j => jobCrewActiveIds(j).length > 0); }   // only jobs with active assigned crew to gate on
 /* current expense total logged against a job = pass-through materials + job expenses (non-deleted).
    Shown in the close-out roll-up so the owner sees "how much is on this job" at a glance before invoicing. */
@@ -1751,62 +1748,41 @@ window.rcptToggleJobReviewed = function (jobId) {
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   render();
 };
+/* "receipts accounted for" for a job = nothing left to submit: every active assigned crew member has checked off,
+   OR the job has no active crew to wait on, OR the owner used the legacy "reviewed" flag. Drives the Jobs-list
+   "hide finished" (js/08 qIsFinished) now that crew close-out replaces the old per-job Review button. */
+function jobReceiptsAccountedFor(j) {
+  if (!j) return false;
+  if (j.rcptReviewedAt) return true;              // legacy owner "reviewed" flag still counts
+  if (!jobCrewActiveIds(j).length) return true;   // no crew assigned → nothing to submit
+  return jobReceiptsFullyClosed(j);               // every crew member has checked off
+}
+/* Job close-out = a simple REMINDER list: for each job whose crew still owe receipts, show who hasn't checked off
+   yet. A crew member checks off their OWN (from their crew view / job page); the owner/admin can check off for
+   anyone (no-login helpers included) or all at once. Once everyone's checked off the job DROPS OFF this list — if
+   it's still here, it's not ready to invoice, so there's no "ready" tab and no other clutter. */
 function rcptJobCloseoutHTML() {
-  const jobs = rcptCloseoutJobs();
-  const ready = jobs.filter(jobReceiptsFullyClosed);
-  const needs = jobs.filter(j => !jobReceiptsFullyClosed(j));
-  let shown = RCPT_JOBFILTER === "ready" ? ready : RCPT_JOBFILTER === "all" ? jobs : needs;
-  let h = `<div class="secthd" style="margin-top:14px"><h2>📋 Job close-out</h2><span class="ct">${ready.length} ready</span></div>`;
-  h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 6px">
-    <button class="btn ${RCPT_JOBFILTER === "needs" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('needs')">⏳ Needs close-out ${needs.length}</button>
-    <button class="btn ${RCPT_JOBFILTER === "ready" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('ready')">✓ Ready to invoice ${ready.length}</button>
-    <button class="btn ${RCPT_JOBFILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetJobFilter('all')">All ${jobs.length}</button></div>`;
-  if (!jobs.length) return h + `<div class="card"><div class="muted">No active jobs with assigned crew yet. Once a job has crew, its receipt close-out status shows here.</div></div>`;
-  if (!shown.length) return h + `<div class="card"><div class="muted">${RCPT_JOBFILTER === "ready" ? "No jobs are fully closed out yet — waiting on crew." : RCPT_JOBFILTER === "needs" ? "✓ Every job with crew is closed out — all clear to invoice." : "Nothing here."}</div></div>`;
+  const needs = rcptCloseoutJobs().filter(j => !jobReceiptsFullyClosed(j));
+  let h = `<div class="secthd" style="margin-top:14px"><h2>📋 Waiting on receipts</h2>${needs.length ? `<span class="ct">${needs.length}</span>` : ""}</div>`;
+  if (!needs.length) return h + `<div class="card"><div class="muted">✓ All caught up — every job's crew has submitted their receipts. Nothing waiting to invoice.</div></div>`;
+  h += `<div class="sub muted" style="white-space:normal;margin:0 2px 8px">Each crew member checks off when they've handed in all their receipts for a job. Tap a name to check it off for them (they email you theirs). When everyone's done, the job clears from this list — good to invoice.</div>`;
   h += `<div class="card">`;
-  shown.forEach(j => {
-    const crew = jobCrewActiveIds(j), open = jobReceiptsOpenCrew(j), closedN = crew.length - open.length;
+  needs.forEach(j => {
+    const crew = jobCrewActiveIds(j), open = jobReceiptsOpenCrew(j);
     const cust = (j.customerId && typeof custName === "function") ? custName(j.customerId) : "";
-    const full = jobReceiptsFullyClosed(j);
-    const badge = full
-      ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Receipts closed — ready to invoice</span>`
-      : `<span class="badge" style="background:#e0a800;color:#fff">${closedN}/${crew.length} crew closed</span>`;
-    const expTot = jobExpenseTotal(j);   // pass-through materials + job expenses logged so far
-    // MILEAGE is a SEPARATE hard cost (confirmed time-clock miles, else the route estimate — jobMilesCostEst, ×IRS
-    // rate) that jobExpenseTotal doesn't include. Surface it so a job with a logged drive but no receipts doesn't
-    // read "$0". Displayed total = expenses + mileage (no double-count — the two are disjoint), mileage sub-labeled.
-    const mil = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
-    const dispTot = expTot + mil;
-    // PER-PERSON breakdown — who put which expenses on the job, and each person's mileage payback. Right there
-    // in the bar so the owner can review + check off without opening the job page.
-    const _nm = id => id ? ((typeof userName === "function" && userName(id)) || "?") : "business";
-    const expBy = jobExpenseByPerson(j), milBy = jobMileageByPerson(j);
-    const expParts = Object.keys(expBy).filter(id => expBy[id] > 0.005).sort((a, b) => expBy[b] - expBy[a]).map(id => `${esc(_nm(id))} ${money2(expBy[id])}`);
-    const milParts = Object.keys(milBy).filter(id => milBy[id] > 0.005).sort((a, b) => milBy[b] - milBy[a]).map(id => `${esc(_nm(id))} ${money2(milBy[id])}`);
-    const reviewed = !!j.rcptReviewedAt;
-    const accent = reviewed ? "#1e9e5a" : (full ? "" : "#e0a800");
-    // left/title taps to the job page; the RIGHT-side review button checks it off in place (stopPropagation).
-    // ADMIN close-out control — a chip per assigned crew member: OPEN → a "✓ name" button that signs off on their
-    // behalf (essential for no-login helpers who can't self-close); CLOSED → a ✓ badge with a ↩ to reopen. Plus a
-    // "✓ Sign off all" when >1 are still open. Whole roll-up is owner/admin-only, so these are inherently admin-gated.
-    const closeoutCtrl = crew.map(id => {
+    // one chip per crew member: OPEN → a "✓ name" button that checks them off (works for no-login helpers); CLOSED →
+    // a ✓ badge with a ↩ to reopen. Plus "✓ All" when >1 are still open. Admin-gated (this whole roll-up is owner-only).
+    const chips = crew.map(id => {
       const nm = (typeof userName === "function" ? userName(id) : "") || "?";
       return open.indexOf(id) < 0
         ? `<span class="badge" style="background:var(--soft);color:var(--muted);border:1px solid var(--line);white-space:nowrap">${esc(nm)} ✓ <a onclick="event.stopPropagation();jobReopenReceiptsFor('${esc(j.id)}','${esc(id)}')" style="cursor:pointer;color:var(--brand-text);font-weight:700" title="Reopen — they still have receipts to add">↩</a></span>`
-        : `<button class="btn ghost sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsFor('${esc(j.id)}','${esc(id)}')" title="Sign off receipts for ${esc(nm)} (they've handed theirs in)">✓ ${esc(nm)}</button>`;
+        : `<button class="btn ghost sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsFor('${esc(j.id)}','${esc(id)}')" title="Check off ${esc(nm)} — they've handed in all their receipts">☐ ${esc(nm)}</button>`;
     }).join("");
-    const closeoutRow = `<div style="flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px">`
-      + `<span class="sub" style="color:var(--muted)">Close-out:</span>${closeoutCtrl}`
-      + (open.length > 1 ? `<button class="btn acc sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsAll('${esc(j.id)}')">✓ Sign off all (${open.length})</button>` : "")
-      + `</div>`;
-    h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px${accent ? `;border-left:3px solid ${accent};padding-left:8px` : ""}${reviewed ? ";opacity:.72" : ""}">
+    h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px;border-left:3px solid #e0a800;padding-left:8px">
       <div class="grow" style="min-width:160px;cursor:pointer" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')">
         <div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div>
-        <div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> total</div>
-        ${expParts.length ? `<div class="sub" style="white-space:normal">👤 expenses: ${expParts.join(" · ")}</div>` : ""}
-        ${milParts.length ? `<div class="sub" style="white-space:normal">🚗 mileage back: ${milParts.join(" · ")}</div>` : ""}</div>
-      <div style="flex:0 0 auto;text-align:right"><button class="btn ${reviewed ? "acc" : "ghost"} sm" style="white-space:nowrap" onclick="event.stopPropagation();rcptToggleJobReviewed('${esc(j.id)}')" title="${reviewed ? "Reviewed — tap to undo" : "I've checked this job's receipts — good to go"}">${reviewed ? "✓ Reviewed" : "☐ Review"}</button><div style="margin-top:5px">${badge}</div></div>
-      ${closeoutRow}</div>`;
+        <div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <span style="color:#b8860b">${open.length} of ${crew.length} still to check off</span></div></div>
+      <div style="flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:2px">${chips}${open.length > 1 ? `<button class="btn acc sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsAll('${esc(j.id)}')">✓ All (${open.length})</button>` : ""}</div></div>`;
   });
   h += `</div>`;
   return h;
