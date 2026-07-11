@@ -463,7 +463,7 @@ function rAdmin() {
   if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
   if (typeof workshopCard === "function") h += workshopCard();   // WORKSHOP: user-defined scheduled AI tasks — owner/admin (self-gates finance/broadcast/propose to owner)
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
-  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></div>`;
+  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;
   else {
     h += `<div class="row" style="gap:8px;margin:0 2px 8px">
@@ -700,6 +700,44 @@ window.adminInviteMember = async function () {
       <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal()">Done</button>`);
     render();
   } catch (e) { setMsg("Network error — try again."); }
+};
+// A NAME-ONLY helper (no login) — for a one-off worker (dad, a day-labourer) who won't use the app but still needs
+// to show up in a job's crew and get paid mileage. No email, no password. Owner/admin-gated; server-authoritative
+// (POST /helper) so it isn't dropped like a client-crafted account. Add several at once, one name per line.
+window.adminAddHelperOpen = function () {
+  if (!canInviteMembers()) { alert("You don't have permission to add members."); return; }
+  modal("Add a helper (no login)", `
+    <p class="muted" style="white-space:normal;margin-bottom:10px">For a one-off helper who <b>won't use the app</b> — no email or password. They just show up in a job's crew and get paid mileage, and you can archive them when they're done. One name per line.</p>
+    <textarea id="ah_names" rows="4" placeholder="Dad&#10;Chaz&#10;Vlad" style="width:100%"></textarea>
+    <div class="sub" id="ah_msg" style="margin-top:6px;white-space:normal;color:var(--muted)"></div>
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="adminAddHelperSubmit()">Add helper(s)</button>
+    <button class="btn ghost" style="margin-top:8px;width:100%" onclick="closeModal()">Cancel</button>`);
+};
+window.adminAddHelperSubmit = async function () {
+  const msg = document.getElementById("ah_msg"), setMsg = t => { if (msg) msg.textContent = t || ""; };
+  const names = (val("ah_names") || "").split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  if (!names.length) { setMsg("Enter at least one name."); return; }
+  if (!canInviteMembers()) { setMsg("You don't have permission to add members."); return; }
+  const base = ((S.sync && S.sync.url) || (typeof defaultServerUrl === "function" ? defaultServerUrl() : "") || "").replace(/\/+$/, "");
+  const tok = (S.sync && S.sync.token) || "";
+  if (!base) { setMsg("No server connection — connect to sync first (Data tab)."); return; }
+  setMsg("Adding…");
+  let added = 0; const fail = [];
+  for (const name of names) {
+    try {
+      const r = await fetch(base + "/helper", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + tok }, body: JSON.stringify({ token: tok, org: S.biz, name: name }) });
+      let d = {}; try { d = await r.json(); } catch (e) {}
+      if (r.status === 401 && d && d.relogin) { setMsg("Sign in again with your own password first (Data tab), then add helpers."); return; }
+      if (r.status === 403) { setMsg("You don't have permission to add helpers to this organization."); return; }
+      if (!r.ok || !d || !d.ok) { fail.push(name + ((d && d.error) ? " — " + d.error : "")); continue; }
+      added++;
+      if (typeof logChange === "function") logChange("create", "account", (d.user && d.user.id) || name, "Added helper " + name + " (no login) to " + (typeof orgName === "function" ? orgName(S.biz) : S.biz));
+    } catch (e) { fail.push(name + " — network error"); }
+  }
+  if (typeof syncRun === "function") { try { await syncRun("pull"); } catch (e) {} }   // pull the new helper accounts onto this device
+  closeModal();
+  alert("Added " + added + " helper" + (added === 1 ? "" : "s") + (fail.length ? "\nCouldn't add: " + fail.join(", ") : "") + ".\nThey're now assignable in each job's Crew.");
+  if (typeof render === "function") render();
 };
 window.adminSetName = function (id) {
   const u = (S.users || []).find(x => x.id === id); if (!u) return;

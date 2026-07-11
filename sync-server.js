@@ -2248,6 +2248,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ADD A HELPER (no login) — POST /helper. A NAME-ONLY crew member for a one-off helper (dad, a day-labourer):
+  // shows in job crew + payouts + is archivable, but has NO email and CANNOT sign in (random passhash, status
+  // "helper"). Same owner-auth as /invite; server-authoritative so it isn't dropped like a client-crafted account.
+  if (req.method === "POST" && req.url === "/helper") {
+    const ip = req.socket && req.socket.remoteAddress || "?";
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
+    readBodyUtf8(req, 1e5, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      if (!p || typeof p !== "object") p = {};
+      const bearer = (String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i) || [])[1] || (typeof p.token === "string" ? p.token : "") || "";
+      const tokRec = userTokenRec(bearer);
+      const puid = tokRec && tokRec.userId;
+      if (!puid) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"sign in again to add helpers","relogin":true}'); }
+      const store = loadStore();
+      const meRaw = (store.users || []).find(u => u && u.id === puid);
+      if (meRaw && meRaw.logoutAt && (+tokRec.issued || 0) < meRaw.logoutAt) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"session ended — sign in again","relogin":true}'); }
+      const superA = !!(meRaw && meRaw.superAdmin);
+      const org = String(p.org || p.orgId || "").trim();
+      if (!org || !(superA || writerOwnsOrg(store, puid, org))) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"you must own this organization to add helpers"}'); }
+      const name = String(p.name || "").trim();
+      if (!name) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"a name is required"}'); }
+      // username from the name, deduped
+      let uname = name.replace(/[^a-zA-Z0-9._ -]/g, "").trim().replace(/\s+/g, "").slice(0, 24) || "helper";
+      const taken = new Set((store.users || []).filter(u => u && !u.deleted && !u.kind).map(u => String(u.username || "").toLowerCase()));
+      if (taken.has(uname.toLowerCase())) { const base = uname; let n = 2; while (taken.has((base + n).toLowerCase())) n++; uname = base + n; }
+      const id = "u_" + crypto.randomBytes(9).toString("hex");
+      // login-less: random unguessable passhash + no email + status "helper" → can't password-login or email-reset.
+      const acct = { id: id, username: uname, name: name, email: "", role: "crew", helper: true, active: true, status: "helper", passhash: scryptHash(crypto.randomBytes(24).toString("hex")), invitedBy: puid, updatedAt: Date.now() };
+      const mem = { id: "mem_" + org + "_" + id, kind: "membership", orgId: org, accountId: id, role: "crew", active: true, updatedAt: Date.now() };
+      store.users.push(acct); store.users.push(mem);
+      try { saveStore(store); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not save"}'); }
+      try { const a = loadAudit(); a.push({ t: Date.now(), u: puid, b: org, c: "account", id: id, act: "helper-added", label: name.slice(0, 60) }); saveAudit(a.length > AUDIT_CAP ? a.slice(a.length - AUDIT_CAP) : a); } catch (e) {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, user: { id: id, username: uname, name: name, role: "crew", helper: true } }));
+    });
+    return;
+  }
+
   // SSO — GET /login/access. Cloudflare Access already verified the user; we verify its SIGNED JWT and
   // issue the same sync token by matching the email to an account. No password. Falls through (401/403)
   // on local/file:// (no Access header) or unmatched email, so the password login still works everywhere.
