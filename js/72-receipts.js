@@ -28,12 +28,14 @@ let RCPT_JOBFILTER = "needs";                      // owner close-out roll-up: n
 let RCPT_SEARCH = "";       // free-text substring over vendor/desc/amount/category/card/job/customer/person
 let RCPT_TYPEFS = [];       // [] | selected of review|business|job-expense|pass-through  (via rcptRowMeta().type)
 let RCPT_CATFS = [];        // [] | selected categories (r.category)
-let RCPT_PERSONFS = [];     // [] | selected userIds — a row matches if uploadedBy OR attributedTo is any selected
-let RCPT_JOBFS = [];        // [] | selected jobIds (r.jobId)
+let RCPT_PERSONFS = [];     // [] | "PAID TO": selected paidBy userIds (who the receipt reimburses) + the __biz__ sentinel for business-paid rows
+let RCPT_JOBFS = [];        // [] | selected jobIds (r.jobId) — kept in the filter engine (search covers job by name; no UI dropdown)
+let RCPT_VENDORFS = [];     // [] | selected vendor names (r.vendor)
 let RCPT_CARDFS = [];       // [] | selected card last-4s (rcptCard4(r.cardLast4))
 let RCPT_DFROM = "";        // "" | YYYY-MM-DD (rcptDate(r) >= from)
 let RCPT_DTO = "";          // "" | YYYY-MM-DD (rcptDate(r) <= to)
-let RCPT_COMBO_OPTS = {};   // per-render {key:[{v,label}]} for the searchable filter dropdowns (Type/Category/Person/Card)
+let RCPT_COMBO_OPTS = {};   // per-render {key:[{v,label}]} for the searchable filter dropdowns (Type/Category/Paid-to/Vendor/Card)
+const RCPT_PAIDTO_BIZ = "__biz__";   // "Paid to" sentinel: a business-paid row (no personal paidBy → nothing reimbursed)
 let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
@@ -962,7 +964,7 @@ function rcptRowSearchText(r) {
 }
 /* is ANY display-only search/filter set? (drives the "showing N of M" line + the Clear-filters button).
    A multi-select filter is "active" when its array is non-empty. */
-function rcptAnyFilterActive() { return !!(RCPT_SEARCH || RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_JOBFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO); }
+function rcptAnyFilterActive() { return !!(RCPT_SEARCH || RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_JOBFS.length || RCPT_VENDORFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO); }
 function rcptSortedRows() {
   let rows = rcptAllRows();
   if (RCPT_FILTER === "review") rows = rows.filter(r => r.store === "review");                    // uploaded, Cap-filled, not yet filed
@@ -977,8 +979,11 @@ function rcptSortedRows() {
   if (RCPT_SEARCH) { const q = RCPT_SEARCH.toLowerCase(); rows = rows.filter(r => rcptRowSearchText(r).includes(q)); }
   if (RCPT_TYPEFS.length) rows = rows.filter(r => RCPT_TYPEFS.indexOf(rcptRowMeta(r).type) >= 0);
   if (RCPT_CATFS.length) rows = rows.filter(r => RCPT_CATFS.indexOf(r.category || "") >= 0);
-  if (RCPT_PERSONFS.length) rows = rows.filter(r => RCPT_PERSONFS.indexOf(r.uploadedBy) >= 0 || RCPT_PERSONFS.indexOf(r.attributedTo) >= 0);
+  // "Paid to" = who the receipt reimburses (r.paidBy, which follows the CARD owner); the __biz__ sentinel matches a
+  // business-paid row (no personal paidBy). NOT the uploader/attributed — that was ambiguous (Ray: make it who it's paid to).
+  if (RCPT_PERSONFS.length) rows = rows.filter(r => RCPT_PERSONFS.some(sel => sel === RCPT_PAIDTO_BIZ ? !r.paidBy : r.paidBy === sel));
   if (RCPT_JOBFS.length) rows = rows.filter(r => RCPT_JOBFS.indexOf(r.jobId) >= 0);
+  if (RCPT_VENDORFS.length) rows = rows.filter(r => RCPT_VENDORFS.indexOf((r.vendor || "").trim()) >= 0);
   if (RCPT_CARDFS.length) rows = rows.filter(r => RCPT_CARDFS.indexOf(rcptCard4(r.cardLast4)) >= 0);
   if (RCPT_DFROM) rows = rows.filter(r => rcptDate(r) >= RCPT_DFROM);
   if (RCPT_DTO) rows = rows.filter(r => rcptDate(r) <= RCPT_DTO);
@@ -1014,13 +1019,14 @@ window.rcptSetSearch = function (v) { RCPT_SEARCH = v; rcptRepaintList(); };
 function rcptToggleF(arr, v) { const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); }
 window.rcptToggleTypeF = function (v) { rcptToggleF(RCPT_TYPEFS, v); rcptRepaintList(); };
 window.rcptToggleCatF = function (v) { rcptToggleF(RCPT_CATFS, v); rcptRepaintList(); };
-window.rcptTogglePersonF = function (v) { rcptToggleF(RCPT_PERSONFS, v); rcptRepaintList(); };
+window.rcptTogglePersonF = function (v) { rcptToggleF(RCPT_PERSONFS, v); rcptRepaintList(); };   // "Paid to" (paidBy / __biz__)
 window.rcptToggleJobF = function (v) { rcptToggleF(RCPT_JOBFS, v); rcptRepaintList(); };
+window.rcptToggleVendorF = function (v) { rcptToggleF(RCPT_VENDORFS, v); rcptRepaintList(); };
 window.rcptToggleCardF = function (v) { rcptToggleF(RCPT_CARDFS, v); rcptRepaintList(); };
 window.rcptSetDateF = function (which, v) { if (which === "from") RCPT_DFROM = v; else RCPT_DTO = v; rcptRepaintList(); };
 /* Clear ALL display-only search + filters (leave the status pill as-is, like js/08 which keeps the stage chip).
    Empties every multi-select set. Full render so the panel checkboxes + summary reset to empty too. */
-window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEFS = []; RCPT_CATFS = []; RCPT_PERSONFS = []; RCPT_JOBFS = []; RCPT_CARDFS = []; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
+window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEFS = []; RCPT_CATFS = []; RCPT_PERSONFS = []; RCPT_JOBFS = []; RCPT_VENDORFS = []; RCPT_CARDFS = []; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
 function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === "asc" ? " ▲" : " ▼") : ""; }
 
 /* SEARCHABLE MULTI-SELECT filter (replaces the old checkbox walls per Ray: "why so many checkboxes… all need to be
@@ -1029,8 +1035,8 @@ function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === 
    presented as one compact searchable box. `key` maps to the filter array + its (tested) toggle fn; `opts`=[{v,label}]
    from the actual rows, stashed in RCPT_COMBO_OPTS[key] so the picker can resolve a tapped option by index (no JS
    string-escaping of arbitrary values). Returns "" when there are no options, so an empty filter hides itself. */
-function rcptComboArr(key) { return key === "type" ? RCPT_TYPEFS : key === "cat" ? RCPT_CATFS : key === "person" ? RCPT_PERSONFS : key === "card" ? RCPT_CARDFS : []; }
-const RCPT_COMBO_TOGGLE = { type: "rcptToggleTypeF", cat: "rcptToggleCatF", person: "rcptTogglePersonF", card: "rcptToggleCardF" };
+function rcptComboArr(key) { return key === "type" ? RCPT_TYPEFS : key === "cat" ? RCPT_CATFS : key === "person" ? RCPT_PERSONFS : key === "vendor" ? RCPT_VENDORFS : key === "card" ? RCPT_CARDFS : []; }
+const RCPT_COMBO_TOGGLE = { type: "rcptToggleTypeF", cat: "rcptToggleCatF", person: "rcptTogglePersonF", vendor: "rcptToggleVendorF", card: "rcptToggleCardF" };
 function rcptComboLabel(key, v) { const o = (RCPT_COMBO_OPTS[key] || []).find(x => x.v === v); return o ? o.label : v; }
 function rcptComboChipsHTML(key) {
   return rcptComboArr(key).map((v, i) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:16px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13px;white-space:nowrap">${esc(rcptComboLabel(key, v))}<a onclick="rcptComboRemove('${key}',${i})" style="cursor:pointer;font-weight:800;opacity:.9" title="Remove">✕</a></span>`).join("");
@@ -1133,42 +1139,41 @@ function rReceipts() {
   // SEARCH box (scoped re-render — mirrors the Jobs list). Lives OUTSIDE #rcptlist so its focus/caret survive.
   h += `<input class="search" id="rcptsearch" placeholder="Search receipts — vendor, amount, category, card…" value="${esc(RCPT_SEARCH)}" oninput="rcptSetSearch(this.value)">`;
 
-  // STATUS pills — the pipeline: 📥 Needs review → 💸 Owed → ✓ Paid back → ✓ Filed (+ All). Owed/Paid-back/Filed
-  // count only FILED records (a review record may already carry paidBy). Cap-review + Needs-tax are secondary,
-  // shown only when non-empty (Cap no longer auto-files, so 🤖 To review is normally 0).
-  const _owedN = rcptAllRows().filter(r => r.store !== "review" && r.paidBy && !r.reimbursedAt).length;
-  const _paidN = rcptAllRows().filter(r => r.store !== "review" && r.paidBy && r.reimbursedAt).length;
-  const _filedN = rcptAllRows().filter(r => r.store !== "review" && !r.paidBy).length;
-  h += `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin:8px 0 6px">
-    <button class="btn ${RCPT_FILTER === "review" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('review')">📥 Needs review ${reviewCount}</button>
-    <button class="btn ${RCPT_FILTER === "owed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('owed')">💸 Owed ${_owedN}</button>
-    <button class="btn ${RCPT_FILTER === "paidback" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('paidback')">✓ Paid back ${_paidN}</button>
-    <button class="btn ${RCPT_FILTER === "filed" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('filed')">🗂 Filed ${_filedN}</button>
-    <button class="btn ${RCPT_FILTER === "all" ? "acc" : "ghost"} sm" onclick="rcptSetFilter('all')">All ${rcptAllRows().length}</button>
-    ${(capReviewN || RCPT_FILTER === "capreview") ? `<button class="btn ${RCPT_FILTER === "capreview" ? "acc" : "ghost"} sm" style="${RCPT_FILTER === "capreview" ? "" : "border-color:" + RCPT_CAP_PURPLE + ";color:" + RCPT_CAP_PURPLE}" onclick="rcptSetFilter('capreview')">🤖 To review ${capReviewN}</button>` : ""}
-    ${(needTaxN || RCPT_FILTER === "needtax") ? `<button class="btn ${RCPT_FILTER === "needtax" ? "acc" : "ghost"} sm" style="${RCPT_FILTER === "needtax" ? "" : "border-color:#e0a800;color:#e0a800"}" onclick="rcptSetFilter('needtax')">🧾 Needs tax ${needTaxN}</button>` : ""}
-    <span class="grow"></span>
-    <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
+  // EXPORT row (the status pipeline moved INTO the Filters panel below, per Ray — status is a real filter, so it
+  // lives with the others). Owed/Paid-back/Filed count only FILED records; Cap-review + Needs-tax are secondary.
+  h += `<div class="row" style="gap:6px;align-items:center;margin:8px 0 6px"><span class="grow"></span><button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
-  // COLLAPSIBLE ⚙️ Filters — SEARCHABLE dropdowns (Type / Category / Person / 💳 Card), one compact search box each
-  // instead of a wall of checkboxes, populated from the ACTUAL rows so only real values show. Multi-select is kept
-  // (each picked value becomes a removable chip). The old "Job" filter is dropped — it was just job titles and made
-  // no sense (search the job/customer by name in the search box instead). Dates stay. The panel lives OUTSIDE
-  // #rcptlist so the scoped repaint never destroys the inputs; picking a value repaints its chips + the list.
+  // COLLAPSIBLE ⚙️ Filters — Status (dropdown, moved down from the top pills) + SEARCHABLE dropdowns (Type / Category
+  // / Paid to / Vendor / 💳 Card), one compact search box each instead of checkbox walls, populated from the ACTUAL
+  // rows. Multi-select is kept for the searchable ones (each pick = a removable chip). "Paid to" = who the receipt
+  // reimburses (paidBy / 🏢 Business), NOT the uploader. The old "Job" filter is dropped (search job/customer by name
+  // instead). Dates stay. The panel lives OUTSIDE #rcptlist so scoped repaints never destroy the inputs.
   {
     const allRows = rcptAllRows();
+    const _owedN = allRows.filter(r => r.store !== "review" && r.paidBy && !r.reimbursedAt).length;
+    const _paidN = allRows.filter(r => r.store !== "review" && r.paidBy && r.reimbursedAt).length;
+    const _filedN = allRows.filter(r => r.store !== "review" && !r.paidBy).length;
+    const statusOpts = [["all", "All", allRows.length], ["review", "📥 Needs review", reviewCount], ["owed", "💸 Owed", _owedN], ["paidback", "✓ Paid back", _paidN], ["filed", "🗂 Filed", _filedN]];
+    if (capReviewN || RCPT_FILTER === "capreview") statusOpts.push(["capreview", "🤖 Cap to review", capReviewN]);
+    if (needTaxN || RCPT_FILTER === "needtax") statusOpts.push(["needtax", "🧾 Needs tax", needTaxN]);
+    const statusSel = `<div><label>Status</label><select onchange="rcptSetFilter(this.value)" style="width:100%;font-size:14px">${statusOpts.map(o => `<option value="${o[0]}"${RCPT_FILTER === o[0] ? " selected" : ""}>${o[1]} (${o[2]})</option>`).join("")}</select></div>`;
     const typeOrder = ["review", "business", "job-expense", "pass-through"];
     const typesPresent = typeOrder.filter(t => allRows.some(r => rcptRowMeta(r).type === t));
     const catExtra = Array.from(new Set(allRows.map(r => r.category).filter(Boolean))).filter(c => RCPT_CATS.indexOf(c) < 0).sort();
     const catOpts = RCPT_CATS.concat(catExtra);
-    const personIds = Array.from(new Set([].concat(allRows.map(r => r.uploadedBy), allRows.map(r => r.attributedTo)).filter(Boolean)));
-    const persons = personIds.map(id => ({ id: id, name: ((typeof userName === "function" && userName(id)) || id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    // "Paid to": distinct personal payers (r.paidBy) + a 🏢 Business option when any row is business-paid (no paidBy).
+    const paidByIds = Array.from(new Set(allRows.map(r => r.paidBy).filter(Boolean)));
+    const paidTo = paidByIds.map(id => ({ v: id, label: ((typeof userName === "function" && userName(id)) || id) })).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    const paidToOpts = (allRows.some(r => !r.paidBy) ? [{ v: RCPT_PAIDTO_BIZ, label: "🏢 Business" }] : []).concat(paidTo);
+    const vendors = Array.from(new Set(allRows.map(r => (r.vendor || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)).map(v => ({ v: v, label: v }));
     const cards = Array.from(new Set(allRows.map(r => rcptCard4(r.cardLast4)).filter(Boolean))).sort();
-    const anyExtra = !!(RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO);
+    const anyExtra = !!(RCPT_FILTER !== "all" || RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_VENDORFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO);
     h += `<details class="card" style="margin-bottom:10px"${anyExtra ? " open" : ""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyExtra ? " · on" : ""}</summary>`
+      + statusSel
       + rcptFilterCombo("type", "Type", typesPresent.map(t => ({ v: t, label: RCPT_TYPE_LABEL[t] || t })), "Search type…")
       + rcptFilterCombo("cat", "Category", catOpts.map(c => ({ v: c, label: c })), "Search category…")
-      + rcptFilterCombo("person", "Person", persons.map(p => ({ v: p.id, label: p.name })), "Search person…")
+      + rcptFilterCombo("person", "Paid to", paidToOpts, "Search who it's paid to…")
+      + rcptFilterCombo("vendor", "Vendor", vendors, "Search vendor…")
       + rcptFilterCombo("card", "💳 Card", cards.map(c => ({ v: c, label: "••••" + c })), "Search card…")
       + `<div class="row" style="gap:8px;margin-top:10px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
       + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:10px" onclick="rcptClearFilters()">Clear filters</button>` : "")

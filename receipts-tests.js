@@ -1653,9 +1653,9 @@ async function main() {
   rcptSetFilter("all");
   rcptClearFilters();   // start from a clean filter state
   // j1 = "Paver patio" (customer Smith) · j2 = "Junk haul" (customer Jones)
-  seedReview({ receiptId: "s1", vendor: "Home Depot", amount: 120.5, category: "materials", cardLast4: "1234", jobId: "j1", type: "pass-through", uploadedBy: "u_ray", attributedTo: "u_chase", date: "2026-06-01", ts: 100 });
-  seedReview({ receiptId: "s2", vendor: "Lowes", amount: 75, category: "tools/equipment", cardLast4: "9999", jobId: "j2", type: "business", uploadedBy: "u_chase", attributedTo: "u_chase", date: "2026-06-10", ts: 200 });
-  seedReview({ receiptId: "s3", vendor: "Shell Gas", amount: 40, category: "fuel", cardLast4: "1234", jobId: null, type: "job-expense", uploadedBy: "u_pierce", attributedTo: "u_pierce", date: "2026-06-20", ts: 300 });
+  seedReview({ receiptId: "s1", vendor: "Home Depot", amount: 120.5, category: "materials", cardLast4: "1234", jobId: "j1", type: "pass-through", uploadedBy: "u_ray", attributedTo: "u_chase", paidBy: "u_ray", date: "2026-06-01", ts: 100 });
+  seedReview({ receiptId: "s2", vendor: "Lowes", amount: 75, category: "tools/equipment", cardLast4: "9999", jobId: "j2", type: "business", uploadedBy: "u_chase", attributedTo: "u_chase", paidBy: "", date: "2026-06-10", ts: 200 });
+  seedReview({ receiptId: "s3", vendor: "Shell Gas", amount: 40, category: "fuel", cardLast4: "1234", jobId: null, type: "job-expense", uploadedBy: "u_pierce", attributedTo: "u_pierce", paidBy: "u_pierce", date: "2026-06-20", ts: 300 });
   const totalRcptRows = rcptAllRows().length;   // 3
   const rcptSnapBefore = JSON.stringify(STORE);
   const ids = () => rcptSortedRows().map(r => r.receiptId).sort().join(",");
@@ -1692,18 +1692,27 @@ async function main() {
   ok("category filter → s2", ids() === "s2", ids());
   rcptClearFilters(); rcptToggleCatF("materials"); rcptToggleCatF("fuel");
   ok("MULTI category materials OR fuel → union s1,s3", ids() === "s1,s3", ids());
-  // PERSON (uploader OR attributedTo) — single + MULTI (union)
-  rcptClearFilters(); rcptTogglePersonF("u_chase");
-  ok("person filter matches uploader OR attributedTo (s1,s2)", ids() === "s1,s2", ids());
+  // PAID TO (r.paidBy — who the receipt reimburses; __biz__ = business-paid) — single + MULTI + Business
+  rcptClearFilters(); rcptTogglePersonF("u_ray");
+  ok("paid-to filter → s1 (paidBy u_ray)", ids() === "s1", ids());
   rcptClearFilters(); rcptTogglePersonF("u_pierce");
-  ok("person filter (s3)", ids() === "s3", ids());
-  rcptClearFilters(); rcptTogglePersonF("u_pierce"); rcptTogglePersonF("u_ray");
-  ok("MULTI person u_pierce OR u_ray → union s1,s3 (s1 uploaded by u_ray)", ids() === "s1,s3", ids());
-  // JOB — single + MULTI (union)
+  ok("paid-to filter → s3 (paidBy u_pierce)", ids() === "s3", ids());
+  rcptClearFilters(); rcptTogglePersonF("__biz__");
+  ok("paid-to Business → business-paid row s2 (no personal paidBy)", ids() === "s2", ids());
+  rcptClearFilters(); rcptTogglePersonF("u_ray"); rcptTogglePersonF("__biz__");
+  ok("MULTI paid-to u_ray OR Business → union s1,s2", ids() === "s1,s2", ids());
+  rcptClearFilters(); rcptTogglePersonF("u_chase");
+  ok("paid-to filter ignores uploader/attributedTo (u_chase paid nothing → 0)", rcptSortedRows().length === 0, ids());
+  // JOB — single + MULTI (union) — filter engine kept (no UI dropdown, but search covers job by name)
   rcptClearFilters(); rcptToggleJobF("j2");
   ok("job filter → s2", ids() === "s2", ids());
   rcptClearFilters(); rcptToggleJobF("j1"); rcptToggleJobF("j2");
   ok("MULTI job j1 OR j2 → union s1,s2", ids() === "s1,s2", ids());
+  // VENDOR — single + MULTI (union)
+  rcptClearFilters(); rcptToggleVendorF("Home Depot");
+  ok("vendor filter → s1", ids() === "s1", ids());
+  rcptClearFilters(); rcptToggleVendorF("Home Depot"); rcptToggleVendorF("Shell Gas");
+  ok("MULTI vendor Home Depot OR Shell Gas → union s1,s3", ids() === "s1,s3", ids());
   // CARD — single + MULTI (union)
   rcptClearFilters(); rcptToggleCardF("1234");
   ok("card filter → s1,s3", ids() === "s1,s3", ids());
@@ -1736,14 +1745,14 @@ async function main() {
   ok("empty set (toggled on then off) = no filter → full list", rcptSortedRows().length === totalRcptRows && rcptAnyFilterActive() === false, ids());
 
   // CLEAR resets every filter + restores the full list (verified via behavior + rcptAnyFilterActive())
-  rcptSetSearch("home"); rcptToggleTypeF("business"); rcptToggleTypeF("pass-through"); rcptToggleCatF("fuel"); rcptTogglePersonF("u_chase"); rcptToggleJobF("j1"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-01-01"); rcptSetDateF("to", "2026-12-31");
+  rcptSetSearch("home"); rcptToggleTypeF("business"); rcptToggleTypeF("pass-through"); rcptToggleCatF("fuel"); rcptTogglePersonF("u_ray"); rcptToggleJobF("j1"); rcptToggleVendorF("Home Depot"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-01-01"); rcptSetDateF("to", "2026-12-31");
   ok("rcptAnyFilterActive() true while filters are set", rcptAnyFilterActive() === true);
   rcptClearFilters();
   ok("rcptClearFilters clears everything (rcptAnyFilterActive() false)", rcptAnyFilterActive() === false);
   ok("after clear, the full list shows again", rcptSortedRows().length === totalRcptRows, rcptSortedRows().length);
 
   // NO MUTATION — running every filter (multi-select + the pure list renderer) must never change the underlying data
-  rcptSetSearch("home"); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleCatF("materials"); rcptTogglePersonF("u_chase"); rcptToggleJobF("j1"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-06-01"); rcptSetDateF("to", "2026-06-30");
+  rcptSetSearch("home"); rcptToggleTypeF("pass-through"); rcptToggleTypeF("job-expense"); rcptToggleCatF("materials"); rcptTogglePersonF("u_ray"); rcptToggleJobF("j1"); rcptToggleVendorF("Home Depot"); rcptToggleCardF("1234"); rcptSetDateF("from", "2026-06-01"); rcptSetDateF("to", "2026-06-30");
   rcptSortedRows(); rcptListInner(); rcptSortedRows();
   rcptClearFilters();
   ok("filters + rcptListInner NEVER mutate data (STORE byte-identical)", JSON.stringify(STORE) === rcptSnapBefore);
