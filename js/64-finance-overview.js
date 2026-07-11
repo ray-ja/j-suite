@@ -13,12 +13,19 @@ function finPeriodPL(ym){
   // direct job costs — per-job expenses on jobs dated in the period. A reusable TOOL/equipment item logged on a
   // job is CAPITAL/overhead, not that job's cost → pulled OUT of jobCosts and rolled into opEx below, so the
   // income-statement TOTAL (net/margin) is UNCHANGED (it only moves the tool from job costs to overhead).
-  let jobCosts = 0, jobToolOverhead = 0;
+  // PASS-THROUGH MATERIALS (job.materials) are a real hard cost — the company bought them, then billed them into the
+  // customer's price (which is in `revenue` above). Omitting them overstated Net profit (taxable income) by every
+  // material dollar. Billed at cost they're net-neutral to profit; any markup correctly shows as margin.
+  let jobCosts = 0, jobToolOverhead = 0, materialsCost = 0;
   (D().jobs || []).filter(j => j && !j.deleted && inPeriod(j.date)).forEach(j => {
     (j.expenses || []).filter(x => x && !x.deleted).forEach(e => {
       if (typeof depositHeld === "function" && depositHeld(e)) return;   // HOLD-OUT (js/96): an unsettled rental-deposit group is $0 to the P&L until settled at net
       if (typeof expenseIsTool === "function" && expenseIsTool(e)) jobToolOverhead += finCents(e.amount);
       else jobCosts += finCents(e.amount);
+    });
+    (j.materials || []).filter(x => x && !x.deleted).forEach(m => {
+      if (typeof depositHeld === "function" && depositHeld(m)) return;
+      materialsCost += finCents(m.amount);
     });
   });
 
@@ -31,10 +38,10 @@ function finPeriodPL(ym){
   // tool/equipment logged inside a job rolls into overhead (same TOTAL — moved out of jobCosts, into opEx)
   if (jobToolOverhead > 0) { opExBy["tools/equipment (job-logged)"] = (opExBy["tools/equipment (job-logged)"] || 0) + jobToolOverhead; opEx += jobToolOverhead; }
 
-  const totalCosts = jobCosts + mil.total + opEx;
+  const totalCosts = jobCosts + materialsCost + mil.total + opEx;
   const net = revenue - totalCosts;
   const margin = revenue > 0 ? Math.round((net / revenue) * 1000) / 10 : 0;
-  return { ym, revenue, jobCosts, mileage: mil.total, opEx, opExBy, totalCosts, net, margin, incCount: inc.length };
+  return { ym, revenue, jobCosts, materials: materialsCost, mileage: mil.total, opEx, opExBy, totalCosts, net, margin, incCount: inc.length };
 }
 
 function finPLLine(label, cents, opt){ opt = opt || {};
@@ -57,9 +64,10 @@ function rFinOverview(){
   h += finPLLine("Revenue", pl.revenue, { bold: true, good: pl.revenue > 0 });
   h += `<div class="sub" style="margin:10px 0 2px;font-weight:700">Costs</div>`;
   h += finPLLine("🚚 Job expenses (disposal, supplies…)", -pl.jobCosts, { indent: true });
+  if (pl.materials) h += finPLLine("🧱 Pass-through materials (billed at cost)", -pl.materials, { indent: true });
   h += finPLLine("Mileage", -pl.mileage, { indent: true });
   Object.keys(pl.opExBy).sort().forEach(c => { h += finPLLine(c, -pl.opExBy[c], { indent: true }); });
-  if (!pl.jobCosts && !pl.mileage && !pl.opEx) h += `<div class="muted" style="padding:4px 0">No costs logged this period.</div>`;
+  if (!pl.jobCosts && !pl.materials && !pl.mileage && !pl.opEx) h += `<div class="muted" style="padding:4px 0">No costs logged this period.</div>`;
   h += `<div style="border-top:1px solid var(--line);margin:6px 0;padding-top:6px"></div>`;
   h += finPLLine("Total costs", -pl.totalCosts);
   h += `<div style="border-top:2px solid var(--line);margin:8px 0 0;padding-top:8px"></div>`;
@@ -96,6 +104,7 @@ window.finExportCSV = function(ym){
     ["INCOME STATEMENT"],
     ["Revenue", d2(pl.revenue)],
     ["Job costs", d2(-pl.jobCosts)],
+    ["Pass-through materials", d2(-pl.materials)],
     ["Mileage", d2(-pl.mileage)]
   ];
   Object.keys(pl.opExBy).sort().forEach(c => rows.push([c, d2(-pl.opExBy[c])]));
