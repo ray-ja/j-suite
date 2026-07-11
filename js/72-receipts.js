@@ -159,9 +159,12 @@ window.jobCloseReceiptsAll = function (jobId) {
   if (typeof render === "function") render();
 };
 
-/* per-member personal-card spend (paidBy set) across job expenses, pass-through materials, and business expenses */
+/* per-member personal-card spend (paidBy set) across job expenses, pass-through materials, and business expenses.
+   FUEL is excluded: the $0.725/mi mileage rate already covers fuel, so gas is never a separate reimbursement (Ray's
+   policy — personal gas isn't reimbursed, mileage covers it). This closes the double-dip where someone gassed their
+   own truck on a personal card and got the fuel reimbursed AND full mileage as the vehicle owner. */
 function rcptReimbOwed() {
-  const per = {}; const add = e => { if (e && !e.deleted && e.paidBy && !e.reimbursedAt) per[e.paidBy] = (per[e.paidBy] || 0) + (+e.amount || 0); };
+  const per = {}; const add = e => { if (e && !e.deleted && e.paidBy && !e.reimbursedAt && (e.category || "") !== "fuel") per[e.paidBy] = (per[e.paidBy] || 0) + (+e.amount || 0); };
   (D().jobs || []).forEach(j => { if (j && !j.deleted) { (j.expenses || []).forEach(add); (j.materials || []).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;

@@ -24,3 +24,13 @@ var after=finPeriodPL("2026-06").net;
 T("#2 pass-through at cost is net-neutral to profit (net unchanged by +$200 rev / +$200 material)", after===before);
 
 diag("review-fixes: #2 done");
+
+// ================= #3 — personal-card fuel is NOT reimbursed (mileage covers it; no double-dip) =================
+["income","jobs","expenses","timeclock","quotes","customers"].forEach(k=>d[k]=[]);
+d.expenses.push({id:"x1",amount:50,category:"fuel",paidBy:"u_rj",date:"2026-06-10"});        // personal-card gas
+d.expenses.push({id:"x2",amount:30,category:"materials",paidBy:"u_rj",date:"2026-06-10"});   // personal-card materials
+d.jobs.push({id:"jf",materials:[{id:"jm1",amount:20,paidBy:"u_rj"}],expenses:[{id:"je1",amount:40,category:"fuel",paidBy:"u_rj"}]}); // job fuel + material
+var owed=rcptReimbOwed();
+T("#3 personal-card FUEL not reimbursed (excluded)", (owed["u_rj"]||0)===50);  // only the $30 materials + $20 job material = 50; the $50 + $40 fuel excluded
+T("#3 non-fuel personal spend still reimbursed", (owed["u_rj"]||0)===50);
+diag("review-fixes: #3 done");
