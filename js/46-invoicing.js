@@ -86,6 +86,7 @@ window.openInvoice = function (quoteId) {
         <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
+      ${q.paymentLink ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money(invAmountDue(q))}</a>` : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet — add a Stripe Payment Link on the quote so this invoice can be paid by card.</div>`}
     </div>${invReceiptsNote(q)}
     <div class="row" style="gap:8px;margin-top:12px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
@@ -160,10 +161,52 @@ window.invPrint = function (quoteId) {
     <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
     <tbody>${invRowsHTML(q)}</tbody>
     <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,true)}</tfoot></table>
-    ${invCashNote(q)?`<p style="margin-top:10px;font-weight:600">${invCashNote(q)}</p>`:""}<p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
+    ${q.paymentLink?`<p style="margin-top:12px"><a href="${esc(q.paymentLink)}" style="font-weight:700">💳 Pay online: ${esc(q.paymentLink)}</a></p>`:""}${invCashNote(q)?`<p style="margin-top:10px;font-weight:600">${invCashNote(q)}</p>`:""}<p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
     <button onclick="window.print()" style="margin-top:16px;padding:10px 16px">Print / Save as PDF</button>
     </body></html>`;
   const w = window.open("", "_blank");
   if (!w) { alert("Pop-up blocked — allow pop-ups to print, or use Copy."); return; }
   w.document.open(); w.document.write(html); w.document.close();
 };
+
+/* ---------- INVOICES TAB (Money → Invoices) ----------
+   One place for the billing pipeline: jobs that are DONE + not yet invoiced surface as "Ready to invoice",
+   then "Awaiting payment" (invoiced, unpaid, with A/R + days outstanding), then recently "Paid". Read-only over
+   the quotes/jobs collections — a quote IS the invoice (invoiced/paid flags live on it). Owner/admin. */
+function invJobFor(q) { const d = D(); return (d.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) || null; }
+function invReadyState(q) { const j = invJobFor(q); return j && j.done ? "done" : (q.accepted || j ? "inprogress" : "quote"); }
+function invAgeDays(q) { const dt = q.invoicedDate || q.date; if (!dt) return null; const t = new Date(dt + "T00:00:00"); if (isNaN(t)) return null; return Math.max(0, Math.floor((Date.now() - t) / 86400000)); }
+function rInvoices() {
+  if (typeof finCanView === "function" && !finCanView()) return `<div class="secthd"><h2>Invoices</h2></div><div class="card"><div class="muted">Owner / Admin only.</div></div>`;
+  const d = D();
+  const qs = (d.quotes || []).filter(q => q && !q.deleted && (q.accepted || q.invoiced || q.paid || q.jobId));
+  const cust = q => esc((q.cust || (q.customerId && typeof custName === "function" ? custName(q.customerId) : "") || "—"));
+  const type = q => esc((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job");
+  const amt = q => money(invAmountDue(q));
+  // buckets, most-actionable first: DONE jobs not invoiced, then other accepted-not-invoiced, then awaiting pay, then paid
+  const notBilled = qs.filter(q => !q.invoiced && !q.paid);
+  const ready = notBilled.filter(q => invReadyState(q) === "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const inprog = notBilled.filter(q => invReadyState(q) !== "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const awaiting = qs.filter(q => q.invoiced && !q.paid).sort((a, b) => (invAgeDays(b) || 0) - (invAgeDays(a) || 0));
+  const paid = qs.filter(q => q.paid).sort((a, b) => String(b.paidDate || b.date || "").localeCompare(String(a.paidDate || a.date || ""))).slice(0, 20);
+  const arTotal = awaiting.reduce((s, q) => s + invAmountDue(q), 0);
+
+  const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${q.paymentLink ? " · 💳 pay link" : ""}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
+
+  let h = `<div class="secthd"><h2>🧾 Invoices</h2>${arTotal ? `<span class="ct">${money(arTotal)} owed</span>` : ""}</div>`;
+
+  h += `<div class="secthd" style="margin-top:8px"><h2 style="font-size:15px">✅ Ready to invoice</h2><span class="ct">${ready.length}</span></div>`;
+  if (!ready.length) h += `<div class="card"><div class="muted">No completed jobs waiting to be invoiced. A job shows here once it's marked done.</div></div>`;
+  else h += `<div class="card">` + ready.map(q => row(q, `<b>${amt(q)}</b><div class="sub"><button class="btn acc sm" style="margin-top:4px" onclick="event.stopPropagation();invMark('${q.id}')">Create invoice</button></div>`)).join("") + `</div>`;
+
+  if (inprog.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">🛠 In progress</h2><span class="ct">${inprog.length}</span></div><div class="card">` + inprog.map(q => row(q, `<b>${amt(q)}</b><div class="sub">not done yet</div>`)).join("") + `</div>`;
+
+  h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">📤 Awaiting payment</h2><span class="ct">${money(arTotal)}</span></div>`;
+  if (!awaiting.length) h += `<div class="card"><div class="muted">Nothing outstanding. 🎉</div></div>`;
+  else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); return row(q, `<b style="color:var(--danger)">${amt(q)}</b><div class="sub">${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
+
+  if (paid.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">✓ Paid</h2><span class="ct">${paid.length}</span></div><div class="card">` + paid.map(q => row(q, `<b style="color:var(--accent)">${amt(q)}</b><div class="sub">${q.paidDate ? "paid " + fmtDate(q.paidDate) : "paid"}</div>`)).join("") + `</div>`;
+
+  view.innerHTML = h;   // top-level screen renderer sets #view itself (render() only calls it)
+}
+window.rInvoices = rInvoices;

@@ -21,7 +21,7 @@ const ADMIN_PAGES = [
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
   { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
   { tab: "playbook", label: "Playbook" }, { tab: "research", label: "Research" },
-  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "routes", label: "Routes" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
+  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "invoices", label: "Invoices" }, { tab: "routes", label: "Routes" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew see "pay" (their OWN earnings only — js/86 rPay hard-gates a non-owner/admin to their own userId) but

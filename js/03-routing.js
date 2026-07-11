@@ -28,7 +28,7 @@ window.navReturn = function(host, fallback){
 // Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
 // notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
 // to the dispatch so the two can't drift.
-const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
+const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","invoices","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
 /* Is `t` a real, currently-accessible screen? Used to sanitize tabs that arrive from OUTSIDE the app (a ?tab=
    deep link, or the SW's {type:"navigate"} postMessage on a notification click). A notification sent on an OLD
    build can carry a tab that no longer exists — routing to it must never blank the app. Returns true only when
@@ -84,7 +84,7 @@ function render(){
   // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
-  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
   try{ _screen(); }
   catch(_e1){
     try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
@@ -143,7 +143,7 @@ const NAV_GROUPS = [
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
-  { key:"money",     label:"Money",     icon:"💰", tabs:["pay","finance","routes"] },
+  { key:"money",     label:"Money",     icon:"💰", tabs:["invoices","finance","pay","routes"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","route"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
@@ -166,7 +166,7 @@ const ORG_CORE_TABS = ["today","admin","data","team"];   // team directory is al
 const ORG_OPTIN_TABS = ["escape","booking","life","budget"];
 const ORG_TEMPLATES = {
   full: null,                                                                 // field services (OBX / Jamieson) — every standard tool (not the opt-in niche ones)
-  bookings: ["escape","booking","messages","schedule","accounts","finance","receipts","time","playbook"],   // e.g. an escape room — the room board + booking page + customers, calendar, money, comms
+  bookings: ["escape","booking","messages","schedule","accounts","finance","invoices","receipts","time","playbook"],   // e.g. an escape room — the room board + booking page + customers, calendar, money, comms
   personal: ["life","budget","todo","plan","finance","playbook"]              // e.g. a personal area — life tracker (notes/journal + habits), budget (income/spend + monthly plan), planning (+ Cap via the org AI)
 };
 function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
