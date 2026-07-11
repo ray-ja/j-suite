@@ -190,3 +190,22 @@ T("#12 unpaid bill hits Accounts payable, not Cash credit for it", gl.trialBalan
 T("#12 service revenue = pre-tax 1000", gl.trialBalance["Service revenue"].cr===100000);
 T("#12 owner draw booked to equity account", gl.trialBalance["Owner draw"] && gl.trialBalance["Owner draw"].dr===10000);
 diag("review-fixes: #12 done");
+
+// ================= B — standard mileage: fuel excluded from job cost (no double-count with mileage) =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+d.quotes.push({id:"qb",jobId:"jb",total:1000,paid:true});
+d.jobs.push({id:"jb",quoteId:"qb",crew:["u_rj"],expenses:[{id:"ef",amount:50,category:"fuel"},{id:"ed",amount:100,category:"disposal"}]});
+d.timeclock.push({id:"tcb",userId:"u_rj",vehicleOwnerId:"u_rj",miles:100,rate:0.725,clockIn:"2026-06-10T08:00:00",clockOut:"2026-06-10T16:00:00",milesConfirmed:true,jobId:"jb"});
+var bd=jobCostBreakdown(d.jobs[0]);
+T("B jobCostBreakdown jobExp excludes the $50 fuel (only $100 disposal)", bd.jobExp===100);
+var pf=jobProfit(d.jobs[0]);
+// cost = disposal $100 + full mileage $72.50 (100mi*0.725); fuel NOT double-counted
+T("B jobProfit expCost excludes fuel ($100 disposal only)", pf.expCost===100);
+T("B jobProfit cost = disposal + full mileage, NOT + fuel", Math.abs(pf.cost - (100 + 100*0.725)) < 0.01);
+diag("review-fixes: B done");
+
+// ================= A — cash discount (3%) =================
+T("A cash discount on $1000 = $30", quoteCashDiscount(1000)===30);
+T("A cash price = $970", quoteCashPrice(1000)===970);
+T("A invoice cash note shows 3% + cash price", invCashNote({items:[{name:"x",price:1000,qty:1}],total:1000}).indexOf("Save 3%")>=0 && invCashNote({items:[{name:"x",price:1000,qty:1}],total:1000}).indexOf("$970")>=0);
+diag("review-fixes: A done");

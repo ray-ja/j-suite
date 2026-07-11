@@ -22,7 +22,14 @@ const SALES_TAX_RATE = 0.0675;
 function quoteTaxable(q) { return !!(q && q.taxable); }
 function quoteSalesTax(q) { return quoteTaxable(q) ? Math.round(quoteEffectiveTotal(q) * SALES_TAX_RATE * 100) / 100 : 0; }
 function quoteTotalWithTax(q) { return Math.round((quoteEffectiveTotal(q) + quoteSalesTax(q)) * 100) / 100; }
-if (typeof window !== "undefined") { window.SALES_TAX_RATE = SALES_TAX_RATE; window.quoteTaxable = quoteTaxable; window.quoteSalesTax = quoteSalesTax; window.quoteTotalWithTax = quoteTotalWithTax; }
+/* CASH DISCOUNT — a card payment costs ~3% in Square/Stripe fees, so a cash/check payment genuinely saves that.
+   Shown on the invoice as a cash discount ("save 3% paying cash") off the amount due — cleaner (and safer under
+   card-network/NC rules) than surcharging cards. Purely presentational: the recorded amount is still the card price
+   unless the owner sets the final price to the cash amount when they collect it. */
+const CASH_DISCOUNT_RATE = 0.03;
+function quoteCashDiscount(due) { return Math.round((+due || 0) * CASH_DISCOUNT_RATE * 100) / 100; }
+function quoteCashPrice(due) { return Math.round(((+due || 0) - quoteCashDiscount(due)) * 100) / 100; }
+if (typeof window !== "undefined") { window.SALES_TAX_RATE = SALES_TAX_RATE; window.quoteTaxable = quoteTaxable; window.quoteSalesTax = quoteSalesTax; window.quoteTotalWithTax = quoteTotalWithTax; window.CASH_DISCOUNT_RATE = CASH_DISCOUNT_RATE; window.quoteCashDiscount = quoteCashDiscount; window.quoteCashPrice = quoteCashPrice; }
 
 /* billable-shape equality of two line-item arrays — compares only the fields that affect what's charged, so a
    re-save that reorders internal metadata (but bills the identical lines) is NOT logged as a spurious version. */

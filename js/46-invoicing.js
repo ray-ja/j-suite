@@ -32,6 +32,13 @@ function invAdjRows(q) {
 }
 /* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
 function invAmountDue(q) { return (typeof quoteTotalWithTax === "function") ? quoteTotalWithTax(q) : invEffectiveTotal(q); }
+/* cash-discount line — "pay cash/check and save 3%". Presentational; shown on every invoice. */
+function invCashNote(q) {
+  if (typeof quoteCashPrice !== "function") return "";
+  const due = invAmountDue(q), disc = quoteCashDiscount(due), cash = quoteCashPrice(due);
+  if (!(disc >= 0.5)) return "";
+  return `💵 Paying cash or check? Save ${Math.round((typeof CASH_DISCOUNT_RATE !== "undefined" ? CASH_DISCOUNT_RATE : 0.03) * 100)}% — ${money(cash)} (you save ${money(disc)})`;
+}
 /* invoice tax rows — a "Sales tax (6.75%)" line + a "Total due" line, only when the quote is a taxable service */
 function invTaxRows(q, totCls) {
   if (!(typeof quoteTaxable === "function" && quoteTaxable(q))) return "";
@@ -78,7 +85,7 @@ window.openInvoice = function (quoteId) {
         <tbody>${invRowsHTML(q)}</tbody>
         <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
-      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>
+      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
     </div>${invReceiptsNote(q)}
     <div class="row" style="gap:8px;margin-top:12px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
@@ -99,6 +106,7 @@ function invText(q, cust, biz, no) {
     "", ...lines, "",
     "TOTAL: " + money(invEffectiveTotal(q)),
     ...(typeof quoteTaxable==="function"&&quoteTaxable(q) ? ["Sales tax (6.75%): "+money(quoteSalesTax(q)), "TOTAL DUE: "+money(invAmountDue(q))] : []),
+    ...(invCashNote(q) ? [invCashNote(q)] : []),
     "Due on receipt", "",
     "Thank you for your business!"
   ].join("\n");
@@ -152,7 +160,7 @@ window.invPrint = function (quoteId) {
     <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
     <tbody>${invRowsHTML(q)}</tbody>
     <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,true)}</tfoot></table>
-    <p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
+    ${invCashNote(q)?`<p style="margin-top:10px;font-weight:600">${invCashNote(q)}</p>`:""}<p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
     <button onclick="window.print()" style="margin-top:16px;padding:10px 16px">Print / Save as PDF</button>
     </body></html>`;
   const w = window.open("", "_blank");

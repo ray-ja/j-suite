@@ -54,6 +54,10 @@ function jobMilesCostEst(j) { if (!j) return 0; const rate = (typeof FIN !== "un
    tool stays in job.expenses[] and is only EXCLUDED from the cost at display time (fingerprint-safe;
    the raw Σ job.expenses the fingerprints recompute is category-agnostic, so it stays byte-identical). */
 function expenseIsTool(e) { return !!(e && e.category === "tools/equipment"); }
+// STANDARD-MILEAGE method (Ray's choice): the $0.725/mi rate already covers fuel, so a fuel receipt is NEVER a
+// separate job cost — the job carries full mileage (jobMileageCost) as its whole vehicle cost. Excluding fuel here
+// removes the fuel-AND-mileage double-count in per-job profit/cost. (Fuel stays a real record + cash outflow.)
+function expenseIsFuel(e) { return !!(e && e.category === "fuel"); }
 /* HOLD-OUT (js/96 depositHeld): an unsettled rental deposit + its linked refunds are HELD OUT of job cost (Ray's
    model — the true NET only, never an inflated cost) exactly like a tool is, until the owner SETTLES it at net.
    Guarded so js/52 still works when js/96 isn't loaded (node unit context) → nothing held → today's behavior. */
@@ -64,7 +68,7 @@ function plDepHeld(e) { return typeof depositHeld === "function" && depositHeld(
 function jobCostBreakdown(j) {
   if (!j) return { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
   const live = plExpenses(j).filter(x => x && !x.deleted && !plDepHeld(x));   // held deposits contribute $0 to every bucket
-  const jobExp = live.filter(e => !expenseIsTool(e)).reduce((s, e) => s + (+e.amount || 0), 0);
+  const jobExp = live.filter(e => !expenseIsTool(e) && !expenseIsFuel(e)).reduce((s, e) => s + (+e.amount || 0), 0);
   const tool = live.filter(expenseIsTool).reduce((s, e) => s + (+e.amount || 0), 0);
   const materials = plMaterials(j).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
   const mileage = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
@@ -102,11 +106,11 @@ window.finPassThroughForIncome = finPassThroughForIncome;
 function jobProfit(j) {
   const q = plQuoteFor(j);
   const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
-  let expCost = plExpenses(j).filter(x => x && !x.deleted && !expenseIsTool(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
+  let expCost = plExpenses(j).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
   let matCost = plMaterials(j).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
   let milCost = jobMileageCost(j);
   // a stop-job linked to N jobs contributes 1/N of its cost to each — a 1-element split (today's sub-jobs) is a no-op divide
-  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += plExpenses(sj).filter(x => x && !x.deleted && !expenseIsTool(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; matCost += plMaterials(sj).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; milCost += jobMileageCost(sj) / n; });
+  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += plExpenses(sj).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; matCost += plMaterials(sj).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; milCost += jobMileageCost(sj) / n; });
   const cost = expCost + matCost + milCost, profit = price - cost;
   const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
   const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");
