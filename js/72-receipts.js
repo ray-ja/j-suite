@@ -1071,11 +1071,26 @@ function rcptFilterCombo(key, label, opts, placeholder) {
   const n = rcptComboArr(key).length, id = "rcptcombo_" + key;
   return `<div style="margin-top:10px"><label>${esc(label)}${n ? ` <span class="badge" style="background:var(--accent);color:#fff">${n}</span>` : ""}</label>`
     + `<div id="rcptchips_${key}" style="display:flex;flex-wrap:wrap;gap:6px;${n ? "margin:5px 0" : ""}">${rcptComboChipsHTML(key)}</div>`
-    + `<div class="acwrap"><input id="${id}" placeholder="${esc(placeholder || ("Search " + label + "…"))}" autocomplete="off" onfocus="rcptComboSuggest('${key}')" oninput="rcptComboSuggest('${key}')" onblur="rcptComboBlur('${key}')" style="width:100%"><div class="acbox" id="${id}_ac" style="display:none"></div></div></div>`;
+    + `<div class="acwrap"><input id="${id}" placeholder="${esc(placeholder || ("Search " + label + "…"))}" autocomplete="off" onfocus="rcptComboSuggest('${key}')" onclick="rcptComboSuggest('${key}')" oninput="rcptComboSuggest('${key}')" style="width:100%"><div class="acbox" id="${id}_ac" style="display:none"></div></div></div>`;
 }
-/* The dropdown stays OPEN while you tick several values (each shows a ✓ when selected + highlights); a tap TOGGLES it
-   in/out and refreshes the marks, so you can "click the dropdown, select all the ones you want" in one go. Selected
-   values also appear as removable chips above. Tapping outside (blur) closes it. */
+/* Multi-select dropdown that STAYS OPEN (mobile-safe). It does NOT depend on input focus/blur — that was the bug:
+   on a phone, tapping an option blurred the input and the blur-timer hid the menu before you could pick another.
+   Instead the box is shown explicitly and closed only by a tap OUTSIDE the combo (a single document listener). Each
+   option shows a ✓ + highlight when selected; a tap TOGGLES it and re-renders the marks in place, so you can select
+   AND unselect several in one pass. Selected values also appear as removable ✕ chips above. */
+function rcptComboCloseAll(exceptKey) {
+  document.querySelectorAll('[id^="rcptcombo_"][id$="_ac"]').forEach(function (b) { if (exceptKey && b.id === "rcptcombo_" + exceptKey + "_ac") return; b.style.display = "none"; });
+}
+function rcptComboInstallOutside() {
+  if (window.__rcptComboOutside) return; window.__rcptComboOutside = true;
+  document.addEventListener("click", function (e) {
+    // An option tap rebuilds the list (detaching the tapped node), so by the time this bubbles up closest('.acwrap')
+    // is null and it looks "outside" — the one-shot keep flag (set in rcptComboPick) tells us to leave it open.
+    if (window.__rcptComboKeep) { window.__rcptComboKeep = false; return; }
+    const t = e.target; if (t && t.closest && t.closest(".acwrap")) return;   // tap inside a combo (input) → leave it open
+    rcptComboCloseAll();
+  }, false);
+}
 window.rcptComboSuggest = function (key) {
   const inp = document.getElementById("rcptcombo_" + key), box = document.getElementById("rcptcombo_" + key + "_ac");
   if (!inp || !box) return;
@@ -1085,15 +1100,16 @@ window.rcptComboSuggest = function (key) {
     const on = arr.indexOf(x.o.v) >= 0;
     return `<div class="acitem${on ? " saved" : ""}" onmousedown="event.preventDefault()" onclick="rcptComboPick('${key}',${x.i})"><span style="display:inline-block;width:18px;color:var(--accent)">${on ? "✓" : ""}</span>${esc(x.o.label)}</div>`;
   }).join("") : `<div class="acitem" style="opacity:.6">No matches</div>`;
+  rcptComboCloseAll(key);   // one combo open at a time
   box.style.display = "block";
+  rcptComboInstallOutside();
 };
-window.rcptComboBlur = function (key) { setTimeout(function () { const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none"; }, 180); };
 window.rcptComboPick = function (key, optIdx) {
+  window.__rcptComboKeep = true;   // this click will bubble to the outside-handler after the rebuild below — keep the menu open
   const opt = (RCPT_COMBO_OPTS[key] || [])[optIdx]; if (!opt) return;
   const fn = window[RCPT_COMBO_TOGGLE[key]]; if (typeof fn === "function") fn(opt.v);   // TOGGLES the value in/out + repaints #rcptlist (the tested path)
   rcptComboRepaintChips(key);
-  rcptComboSuggest(key);   // KEEP the dropdown open + refresh the ✓ marks so several can be picked in one pass
-  const inp = document.getElementById("rcptcombo_" + key); if (inp) inp.focus();
+  rcptComboSuggest(key);   // re-render the ✓ marks in place; the box stays open (no focus dependency)
 };
 window.rcptComboRemove = function (key, arrIdx) {
   const arr = rcptComboArr(key), v = arr[arrIdx]; if (v == null) return;
