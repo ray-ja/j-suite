@@ -17,7 +17,7 @@ const JOB_VEH_RATE = (typeof TC_RATE !== "undefined") ? TC_RATE : ((typeof FIN !
 function jobVehList() {
   const out = [];
   ((typeof tcInvVehicles === "function") ? tcInvVehicles() : []).forEach(v => { if (v && v.id) out.push({ id: v.id, name: v.name || "Vehicle", ownerId: v.ownerId || null, kind: "personal", plate: v.plate || "" }); });
-  ((typeof orgVehicles === "function") ? orgVehicles() : []).forEach(v => { if (v && v.id && !v.deleted && v.active !== false && v.kind !== "trailer") out.push({ id: v.id, name: v.name || "Truck", ownerId: null, kind: "truck", plate: v.plate || "" }); });
+  ((typeof orgVehicles === "function") ? orgVehicles() : []).forEach(v => { if (v && v.id && !v.deleted && v.active !== false && v.kind !== "trailer") out.push({ id: v.id, name: v.name || "Truck", ownerId: v.ownerId || null, kind: "truck", plate: v.plate || "" }); });   // a truck can be OWNED by a person (e.g. Rj's F-150) → mileage credits them; unowned = a real company truck
   return out;
 }
 function jobVehById(id) { return jobVehList().find(v => v.id === id) || null; }
@@ -167,7 +167,7 @@ window.jobEntryVehMiles = jobEntryVehMiles;
 function jobAutoAssignVehicle(j, userId) {
   try {
     if (!j || !userId) return false;
-    const mine = jobVehList().find(v => v.kind === "personal" && v.ownerId === userId);
+    const mine = jobVehList().find(v => v.ownerId === userId);   // any vehicle they OWN (personal, or an owned truck like Rj's F-150)
     if (!mine) return false;
     if (!Array.isArray(j.vehicleIds)) j.vehicleIds = [];
     if (j.vehicleIds.indexOf(mine.id) >= 0) return false;

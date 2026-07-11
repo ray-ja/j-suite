@@ -785,7 +785,7 @@ function tcVehicleOptions(selVal, driverId) {
    identical to before. invVehicleId is a purely additive provenance link back to the inventory record. */
 function tcResolveVehicle(encVal, driverId) {
   if (!encVal) return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null };           // No vehicle
-  if (encVal.indexOf("truck:") === 0) { const v = tcTruckById(encVal.slice(6)); return { vehicleId: v ? v.id : null, vehicleOwnerId: null, vehicle: v ? tcTruckLabel(v) : "Truck", invVehicleId: null }; }
+  if (encVal.indexOf("truck:") === 0) { const v = tcTruckById(encVal.slice(6)); return { vehicleId: v ? v.id : null, vehicleOwnerId: (v && v.ownerId) || null, vehicle: v ? tcTruckLabel(v) : "Truck", invVehicleId: null }; }   // a truck WITH an ownerId (e.g. Rj's F-150) reimburses the OWNER; a plain company truck (no owner) still pays the driver
   if (encVal.indexOf("inv:") === 0) { const i = tcInvVehById(encVal.slice(4)); if (i) return { vehicleId: null, vehicleOwnerId: i.ownerId || null, vehicle: i.name || tcInvVehLabel(i), invVehicleId: i.id }; return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null }; }
   if (encVal.indexOf("owner:") === 0) { const oid = encVal.slice(6); return { vehicleId: null, vehicleOwnerId: oid, vehicle: tcVehOwnerName(oid) + "'s vehicle", invVehicleId: null }; }
   return { vehicleId: null, vehicleOwnerId: null, vehicle: "", invVehicleId: null };

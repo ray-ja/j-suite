@@ -21,7 +21,17 @@ function load(){
   (S.registry||[]).forEach(r=>{if(r&&!Array.isArray(r.vehicles))r.vehicles=[];if(r&&Array.isArray(r.vehicles))r.vehicles.forEach(v=>{if(v&&!v.kind)v.kind="vehicle";});});
   {const obxReg=(S.registry||[]).find(r=>r&&r.id==="obx");
    if(obxReg){if(!Array.isArray(obxReg.vehicles))obxReg.vehicles=[];
-     if(!obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150"))obxReg.vehicles.push({id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true,kind:"vehicle"});}}
+     // The F-150 (LCW-4430) is Rj's PERSONAL truck — OBX has no company vehicle. Own it by Rj (mq5bu9z3vc4ey) so its
+     // mileage (actual + estimated) credits Rj, not "whoever drives it". Idempotent: seed with ownerId, backfill if missing.
+     let _f150=obxReg.vehicles.find(v=>v&&v.id==="veh_obx_f150");
+     if(!_f150){_f150={id:"veh_obx_f150",name:"F-150",plate:"LCW-4430",active:true,kind:"vehicle",ownerId:"mq5bu9z3vc4ey"};obxReg.vehicles.push(_f150);}
+     if(_f150&&!_f150.ownerId)_f150.ownerId="mq5bu9z3vc4ey";
+     // Rj's real truck IS the F-150 → retire the auto-seeded generic "Rj's vehicle" placeholder (once) so the picker
+     // shows one vehicle for him, not two. Safe: not re-seeded (stable id stays), Chase's/Pierce's untouched.
+     const _rjInv=(S.obx&&Array.isArray(S.obx.inventory))?S.obx.inventory:null;
+     const _rjPlace=_rjInv?_rjInv.find(v=>v&&v.id==="inv-veh-personal-mq5bu9z3vc4ey"):null;
+     if(_rjPlace&&!_rjPlace._retiredForF150){_rjPlace.active=false;_rjPlace.clockIn=false;_rjPlace._retiredForF150=true;}
+   }}
   // TAB VISIBILITY: an org with an explicit tools allowlist (registry.tabs) HIDES any tab not in the list, so a
   // tab missing from that (stale, snapshot-era) list stays invisible — the reason People & Places showed only
   // "People" (accounts/Customers/Properties/Places was missing), "View route" bounced to Today (routes), etc.
