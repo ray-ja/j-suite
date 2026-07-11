@@ -33,6 +33,7 @@ let RCPT_JOBFS = [];        // [] | selected jobIds (r.jobId)
 let RCPT_CARDFS = [];       // [] | selected card last-4s (rcptCard4(r.cardLast4))
 let RCPT_DFROM = "";        // "" | YYYY-MM-DD (rcptDate(r) >= from)
 let RCPT_DTO = "";          // "" | YYYY-MM-DD (rcptDate(r) <= to)
+let RCPT_COMBO_OPTS = {};   // per-render {key:[{v,label}]} for the searchable filter dropdowns (Type/Category/Person/Card)
 let _rcptBulkBusy = false;                          // Phase B: guard the bulk "file all confident" so a double-tap can't double-file
 
 function rcptColl() { const d = D(); if (!Array.isArray(d.receipts)) d.receipts = []; return d.receipts; }
@@ -1022,26 +1023,49 @@ window.rcptSetDateF = function (which, v) { if (which === "from") RCPT_DFROM = v
 window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEFS = []; RCPT_CATFS = []; RCPT_PERSONFS = []; RCPT_JOBFS = []; RCPT_CARDFS = []; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
 function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === "asc" ? " ▲" : " ▼") : ""; }
 
-/* MULTI-SELECT checkbox group (mobile-first) — one wrapping row of tappable checkbox "chips", one per real value.
-   `opts` = [{v,label}] (populated from the actual rows, exactly like the old dropdown options); `selected` = the
-   filter's current array; `handler` = the window toggle fn name (called with this.value, so no JS-string escaping
-   of values — the value rides the checkbox's own `value` attr, HTML-escaped). A checked chip = value in the set.
-   The header shows a "(N)" count when any are checked. `scroll` caps tall groups (Job) at a scrollable height.
-   Returns "" when there are no options, so an empty group hides itself. */
-function rcptChkGroup(label, selected, opts, handler, scroll) {
-  if (!opts || !opts.length) return "";
-  const n = selected.length;
-  const chips = opts.map(function (o) {
-    const on = selected.indexOf(o.v) >= 0;
-    return `<label style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:16px;`
-      + `border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent)" : "var(--soft)"};`
-      + `color:${on ? "#fff" : "inherit"};font-size:13px;cursor:pointer;white-space:nowrap;user-select:none">`
-      + `<input type="checkbox" value="${esc(o.v)}"${on ? " checked" : ""} onchange="${handler}(this.value)" style="margin:0;accent-color:var(--accent)">`
-      + `${esc(o.label)}</label>`;
-  }).join("");
-  return `<div style="margin-top:10px"><label>${esc(label)}${n ? ` <span class="badge" style="background:var(--accent);color:#fff">${n}</span>` : ""}</label>`
-    + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:5px${scroll ? ";max-height:168px;overflow-y:auto;padding:2px" : ""}">${chips}</div></div>`;
+/* SEARCHABLE MULTI-SELECT filter (replaces the old checkbox walls per Ray: "why so many checkboxes… all need to be
+   dropdowns and searchable"). Renders the currently-selected values as removable chips + ONE autocomplete input:
+   focus/type to search this filter's real values, tap one to add it. Multi-select is preserved (stack several) but
+   presented as one compact searchable box. `key` maps to the filter array + its (tested) toggle fn; `opts`=[{v,label}]
+   from the actual rows, stashed in RCPT_COMBO_OPTS[key] so the picker can resolve a tapped option by index (no JS
+   string-escaping of arbitrary values). Returns "" when there are no options, so an empty filter hides itself. */
+function rcptComboArr(key) { return key === "type" ? RCPT_TYPEFS : key === "cat" ? RCPT_CATFS : key === "person" ? RCPT_PERSONFS : key === "card" ? RCPT_CARDFS : []; }
+const RCPT_COMBO_TOGGLE = { type: "rcptToggleTypeF", cat: "rcptToggleCatF", person: "rcptTogglePersonF", card: "rcptToggleCardF" };
+function rcptComboLabel(key, v) { const o = (RCPT_COMBO_OPTS[key] || []).find(x => x.v === v); return o ? o.label : v; }
+function rcptComboChipsHTML(key) {
+  return rcptComboArr(key).map((v, i) => `<span style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:16px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:13px;white-space:nowrap">${esc(rcptComboLabel(key, v))}<a onclick="rcptComboRemove('${key}',${i})" style="cursor:pointer;font-weight:800;opacity:.9" title="Remove">✕</a></span>`).join("");
 }
+function rcptComboRepaintChips(key) { const c = document.getElementById("rcptchips_" + key); if (c) { c.innerHTML = rcptComboChipsHTML(key); c.style.margin = rcptComboArr(key).length ? "5px 0" : ""; } }
+function rcptFilterCombo(key, label, opts, placeholder) {
+  if (!opts || !opts.length) return "";
+  RCPT_COMBO_OPTS[key] = opts;
+  const n = rcptComboArr(key).length, id = "rcptcombo_" + key;
+  return `<div style="margin-top:10px"><label>${esc(label)}${n ? ` <span class="badge" style="background:var(--accent);color:#fff">${n}</span>` : ""}</label>`
+    + `<div id="rcptchips_${key}" style="display:flex;flex-wrap:wrap;gap:6px;${n ? "margin:5px 0" : ""}">${rcptComboChipsHTML(key)}</div>`
+    + `<div class="acwrap"><input id="${id}" placeholder="${esc(placeholder || ("Search " + label + "…"))}" autocomplete="off" onfocus="rcptComboSuggest('${key}')" oninput="rcptComboSuggest('${key}')" onblur="rcptComboBlur('${key}')" style="width:100%"><div class="acbox" id="${id}_ac" style="display:none"></div></div></div>`;
+}
+window.rcptComboSuggest = function (key) {
+  const inp = document.getElementById("rcptcombo_" + key), box = document.getElementById("rcptcombo_" + key + "_ac");
+  if (!inp || !box) return;
+  const q = (inp.value || "").toLowerCase().trim(), arr = rcptComboArr(key);
+  const matches = (RCPT_COMBO_OPTS[key] || []).map((o, i) => ({ o, i })).filter(x => arr.indexOf(x.o.v) < 0 && (!q || String(x.o.label).toLowerCase().indexOf(q) >= 0)).slice(0, 60);
+  box.innerHTML = matches.length ? matches.map(x => `<div class="acitem" onmousedown="event.preventDefault()" onclick="rcptComboPick('${key}',${x.i})">${esc(x.o.label)}</div>`).join("") : `<div class="acitem" style="opacity:.6">No matches</div>`;
+  box.style.display = "block";
+};
+window.rcptComboBlur = function (key) { setTimeout(function () { const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none"; }, 150); };
+window.rcptComboPick = function (key, optIdx) {
+  const opt = (RCPT_COMBO_OPTS[key] || [])[optIdx]; if (!opt) return;
+  const fn = window[RCPT_COMBO_TOGGLE[key]]; if (typeof fn === "function") fn(opt.v);   // toggles the filter array + repaints #rcptlist (the tested path)
+  const inp = document.getElementById("rcptcombo_" + key); if (inp) inp.value = "";
+  rcptComboRepaintChips(key);
+  const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none";
+  if (inp) inp.focus();
+};
+window.rcptComboRemove = function (key, arrIdx) {
+  const arr = rcptComboArr(key), v = arr[arrIdx]; if (v == null) return;
+  const fn = window[RCPT_COMBO_TOGGLE[key]]; if (typeof fn === "function") fn(v);   // toggle OFF (it's selected) + repaint list
+  rcptComboRepaintChips(key);
+};
 
 /* ============================== PAGE ============================== */
 function rReceipts() {
@@ -1126,9 +1150,11 @@ function rReceipts() {
     <span class="grow"></span>
     <button class="btn ghost sm" onclick="rcptExportCSV()">📤 CSV</button><button class="btn ghost sm" onclick="rcptExportZip()">📦 ZIP</button></div>`;
 
-  // COLLAPSIBLE ⚙️ Filters — MULTI-SELECT checkbox groups populated from the ACTUAL rows so only real values show
-  // (mobile-first: chips wrap; the Job group scrolls). OR within a group, AND across groups. Lives OUTSIDE #rcptlist
-  // so the scoped repaint never destroys the checkboxes; the panel's "(N)" counts + summary refresh on full render.
+  // COLLAPSIBLE ⚙️ Filters — SEARCHABLE dropdowns (Type / Category / Person / 💳 Card), one compact search box each
+  // instead of a wall of checkboxes, populated from the ACTUAL rows so only real values show. Multi-select is kept
+  // (each picked value becomes a removable chip). The old "Job" filter is dropped — it was just job titles and made
+  // no sense (search the job/customer by name in the search box instead). Dates stay. The panel lives OUTSIDE
+  // #rcptlist so the scoped repaint never destroys the inputs; picking a value repaints its chips + the list.
   {
     const allRows = rcptAllRows();
     const typeOrder = ["review", "business", "job-expense", "pass-through"];
@@ -1137,17 +1163,13 @@ function rReceipts() {
     const catOpts = RCPT_CATS.concat(catExtra);
     const personIds = Array.from(new Set([].concat(allRows.map(r => r.uploadedBy), allRows.map(r => r.attributedTo)).filter(Boolean)));
     const persons = personIds.map(id => ({ id: id, name: ((typeof userName === "function" && userName(id)) || id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    const jobsF = Array.from(new Set(allRows.map(r => r.jobId).filter(Boolean)))
-      .map(id => { const j = (D().jobs || []).find(x => x && x.id === id); return { id: id, label: j ? ((j.title || "Job") + ((j.customerId && typeof custName === "function") ? " · " + custName(j.customerId) : "")) : id }; })
-      .sort((a, b) => String(a.label).localeCompare(String(b.label)));
     const cards = Array.from(new Set(allRows.map(r => rcptCard4(r.cardLast4)).filter(Boolean))).sort();
-    const anyExtra = !!(RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_JOBFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO);
+    const anyExtra = !!(RCPT_TYPEFS.length || RCPT_CATFS.length || RCPT_PERSONFS.length || RCPT_CARDFS.length || RCPT_DFROM || RCPT_DTO);
     h += `<details class="card" style="margin-bottom:10px"${anyExtra ? " open" : ""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyExtra ? " · on" : ""}</summary>`
-      + rcptChkGroup("Type", RCPT_TYPEFS, typesPresent.map(t => ({ v: t, label: RCPT_TYPE_LABEL[t] || t })), "rcptToggleTypeF")
-      + rcptChkGroup("Category", RCPT_CATFS, catOpts.map(c => ({ v: c, label: c })), "rcptToggleCatF")
-      + rcptChkGroup("Person", RCPT_PERSONFS, persons.map(p => ({ v: p.id, label: p.name })), "rcptTogglePersonF")
-      + rcptChkGroup("Job", RCPT_JOBFS, jobsF.map(j => ({ v: j.id, label: j.label })), "rcptToggleJobF", true)
-      + rcptChkGroup("💳 Card", RCPT_CARDFS, cards.map(c => ({ v: c, label: "••••" + c })), "rcptToggleCardF")
+      + rcptFilterCombo("type", "Type", typesPresent.map(t => ({ v: t, label: RCPT_TYPE_LABEL[t] || t })), "Search type…")
+      + rcptFilterCombo("cat", "Category", catOpts.map(c => ({ v: c, label: c })), "Search category…")
+      + rcptFilterCombo("person", "Person", persons.map(p => ({ v: p.id, label: p.name })), "Search person…")
+      + rcptFilterCombo("card", "💳 Card", cards.map(c => ({ v: c, label: "••••" + c })), "Search card…")
       + `<div class="row" style="gap:8px;margin-top:10px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
       + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:10px" onclick="rcptClearFilters()">Clear filters</button>` : "")
       + `</details>`;
