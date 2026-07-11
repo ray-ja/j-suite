@@ -74,9 +74,9 @@ function jobCostBreakdown(j) {
    cost and go 100% back to whoever paid (business account, or the person reimbursed) — they are NOT revenue to
    split. finJobSplit nets this off the top so only the labor VALUE runs through 25/15/60. Mirrors jobProfit's
    matCost (job.materials + each linked stop-job's share, held deposits excluded). 0 when there's no live job. */
-function finPassThroughForIncome(income) {
-  if (!income || !income.jobId || typeof D !== "function") return 0;
-  var j = (D().jobs || []).find(function (x) { return x && x.id === income.jobId && !x.deleted; });
+function finPassThroughForJob(jobId) {
+  if (!jobId || typeof D !== "function") return 0;
+  var j = (D().jobs || []).find(function (x) { return x && x.id === jobId && !x.deleted; });
   if (!j) return 0;
   var held = (typeof plDepHeld === "function") ? plDepHeld : function () { return false; };
   var matOf = function (job) {
@@ -87,6 +87,14 @@ function finPassThroughForIncome(income) {
   if (typeof subJobsOf === "function") subJobsOf(j.id).forEach(function (sj) { var n = (typeof stopSplitN === "function") ? stopSplitN(sj) : 1; mat += matOf(sj) / (n || 1); });
   return Math.round(mat * 100);
 }
+// Sums across ALL backing jobs — one for a normal quote-paid income (income.jobId), or several for a Square invoice
+// that reconciles multiple quotes (income.jobIds). Cents.
+function finPassThroughForIncome(income) {
+  if (!income) return 0;
+  var ids = (Array.isArray(income.jobIds) && income.jobIds.length) ? income.jobIds : (income.jobId ? [income.jobId] : []);
+  return ids.reduce(function (s, id) { return s + finPassThroughForJob(id); }, 0);
+}
+window.finPassThroughForJob = finPassThroughForJob;
 window.finPassThroughForIncome = finPassThroughForIncome;
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line.
    TOOL/equipment job.expenses are EXCLUDED from the cost (they're capital/overhead, re-attributed to the

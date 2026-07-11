@@ -195,7 +195,11 @@ window.sqInvApplyCustomer = function (custId) {
     const jobs = (iv.quoteIds || []).map(qid => { const q = (d.quotes || []).find(x => x.id === qid); return q && q.jobId ? (d.jobs || []).find(j => j && j.id === q.jobId) : null; }).filter(Boolean);
     const crew = []; jobs.forEach(j => (j.crew || []).forEach(m => { if (crew.indexOf(m) < 0) crew.push(m); }));
     let e = d.income.find(x => x && x.id === incId);
-    const fields = { invoiceId: iv.id, fromInvoice: true, source: "square", amount: iv.amountPaid, date: iv.lastPaymentDate || iv.invoiceDate || (typeof today === "function" ? today() : ""), crew: crew, originator: cust.soldBy || "", bookedAt: iv.invoiceDate || "", houseAccount: false, deleted: false };
+    // jobId + jobIds carry the backing job(s) onto the income-of-record so the pass-through-materials net-out
+    // (finPassThroughForIncome) and per-job crew-share weights (incomeWithWeights) apply to Square-reconciled money
+    // exactly like a normal quote-paid job. Without this, reconciling silently re-splits materials into the labor pool.
+    const jobIds = jobs.map(j => j.id);
+    const fields = { invoiceId: iv.id, fromInvoice: true, source: "square", amount: iv.amountPaid, date: iv.lastPaymentDate || iv.invoiceDate || (typeof today === "function" ? today() : ""), jobId: jobIds[0] || "", jobIds: jobIds, crew: crew, originator: cust.soldBy || "", bookedAt: iv.invoiceDate || "", houseAccount: false, deleted: false };
     if (e) Object.assign(e, fields); else { e = Object.assign({ id: incId }, fields); d.income.push(e); }
     if (typeof touch === "function") touch(e);
     iv.reconciled = true; if (typeof touch === "function") touch(iv);

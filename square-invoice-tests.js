@@ -9,7 +9,7 @@ function ok(n, c) { if (!c) fails.push(n); }
 ["customers", "quotes", "invoices", "income", "jobs"].forEach(function (k) { d[k] = []; });
 d.customers.push({ id: "cM", name: "Michelle Brown", phone: "+12524239195" });
 d.customers.push({ id: "cV", name: "Virginia Tucker", phone: "+13042613711" });
-d.jobs.push({ id: "jM1", crew: ["u1", "u2"] });
+d.jobs.push({ id: "jM1", crew: ["u1", "u2"], materials: [{ id: "mM1", amount: 400 }] });   // $400 pass-through on Michelle's $960 job
 d.quotes.push({ id: "qM1", customerId: "cM", total: 960, paid: true, jobId: "jM1", items: [{ name: "Junk" }] });
 d.quotes.push({ id: "qM2", customerId: "cM", total: 720, paid: true, items: [{ name: "Custom price" }], title: "Moving Labor" });
 d.quotes.push({ id: "qV1", customerId: "cV", total: 192, paid: true, items: [{ name: "J" }] });
@@ -33,5 +33,20 @@ sqInvApplyCustomer("cM"); ok("apply Michelle: 2157 -> 1437 (books 960, drops 168
 ok("apply: orphan qM2 flagged duplicate + inc_sq booked", D().quotes.find(function (q) { return q.id === "qM2"; }).reconciledDuplicate === true && !!D().income.find(function (x) { return x.id === "inc_sq_a2" && x.amount === 960; }));
 sqInvApplyCustomer("cV"); ok("apply Virginia: unchanged 1437", inc() === 1437);
 sqInvUnapplyCustomer("cM"); ok("undo Michelle: back to 2157", inc() === 2157);
+
+// ---- #1 FIX: Square-reconciled income carries jobId/jobIds so pass-through materials net off the split base ----
+sqInvApplyCustomer("cM");
+var sqInc = D().income.find(function (x) { return x.id === "inc_sq_a2" && !x.deleted; });
+ok("inc_sq_a2 carries jobId of its backing job (jM1)", sqInc && sqInc.jobId === "jM1");
+ok("inc_sq_a2 carries jobIds array", sqInc && Array.isArray(sqInc.jobIds) && sqInc.jobIds.indexOf("jM1") >= 0);
+ok("finPassThroughForIncome(sq income) = $400 (40000c) via jobId", finPassThroughForIncome(sqInc) === 40000);
+var sqSplit = finJobSplit(sqInc);
+ok("Square split base nets the $400 materials: gross 96000 - 40000 = 56000", sqSplit.gross === 96000 && sqSplit.passThrough === 40000 && sqSplit.amount === 56000);
+ok("Square labor pool now on labor value only (60% of 56000 = 33600)", sqSplit.labor === 33600);
+// combo (multi-job) income: jobIds sums pass-through across jobs
+d.jobs.push({ id: "jX", materials: [{ id: "mx", amount: 100 }] });
+ok("jobIds combo sums pass-through across jobs ($400 + $100)", finPassThroughForIncome({ jobIds: ["jM1", "jX"] }) === 50000);
+sqInvUnapplyCustomer("cM");
+
 if (fails.length) console.error("SQINV-FAIL: " + fails.join(" | "));
-else console.error("SQINV-OK: parse, reconcile(over720), commit+dedupe, apply/undo income math");
+else diag("SQINV-OK: parse, reconcile, commit+dedupe, apply/undo, + #1 jobId pass-through netting");
