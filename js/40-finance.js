@@ -40,7 +40,10 @@ window.syncQuoteIncome = function (q) {
   // reconciled quote must NOT book its own income — otherwise the same money counts twice (e.g. Michelle's $960
   // junk + $720 move both marked paid vs the ONE $960 Square invoice). Tombstone any inc_q_* it left. This makes
   // taxable income = what Square actually collected. Un-reconciling (clear reconciledInvoiceId) re-books it.
-  if (q.reconciledInvoiceId) { if (e && !e.deleted) { e.deleted = true; if (typeof touch === "function") touch(e); } return; }
+  // A DELETED quote (archived) or one RECONCILED to a Square invoice must NOT keep its own income record — else a
+  // deleted paid quote counts revenue for a job that no longer exists (the Square reconcile UI even tells the owner
+  // to "archive the duplicate"). Tombstone its inc_q_*; restoring the quote re-books it (archRestore re-syncs).
+  if (q.deleted || q.reconciledInvoiceId) { if (e && !e.deleted) { e.deleted = true; if (typeof touch === "function") touch(e); } return; }
   if (q.paid) {
     const job = q.jobId ? (d.jobs || []).find(j => j && j.id === q.jobId && !j.deleted) : null;
     const cust = q.customerId ? (d.customers || []).find(c => c && c.id === q.customerId) : null;
@@ -58,6 +61,41 @@ window.syncQuoteIncome = function (q) {
   } else if (e && !e.deleted) {
     e.deleted = true; if (typeof touch === "function") touch(e);
   }
+};
+
+/* INCOME AUDIT — the invariant that keeps "booked exactly once" honest. Every live inc_q_* must map to a live,
+   paid, un-reconciled quote; every live inc_sq_* to a live reconciled invoice; and no single job may carry two live
+   income records. Returns the list of violations (empty = clean). Cheap; run behind a Finance button / at a glance. */
+function finIncomeAudit() {
+  const d = D(); const issues = [];
+  const income = (d.income || []).filter(x => x && !x.deleted);
+  const qById = {}; (d.quotes || []).forEach(q => { if (q) qById[q.id] = q; });
+  const ivById = {}; (d.invoices || []).forEach(iv => { if (iv) ivById[iv.id] = iv; });
+  income.forEach(e => {
+    if (typeof e.id === "string" && e.id.indexOf("inc_q_") === 0) {
+      const q = qById[e.quoteId || e.id.slice(6)];
+      if (!q || q.deleted) issues.push({ id: e.id, amount: e.amount, msg: "income for a deleted / missing quote", fixable: true });
+      else if (!q.paid) issues.push({ id: e.id, amount: e.amount, msg: "income for a quote no longer marked paid", fixable: true });
+      else if (q.reconciledInvoiceId) issues.push({ id: e.id, amount: e.amount, msg: "quote income AND a Square reconcile — double-counted", fixable: true });
+    } else if (typeof e.id === "string" && e.id.indexOf("inc_sq_") === 0) {
+      const iv = ivById[e.invoiceId];
+      if (!iv || iv.deleted) issues.push({ id: e.id, amount: e.amount, msg: "Square income for a missing invoice", fixable: false });
+      else if (!iv.reconciled) issues.push({ id: e.id, amount: e.amount, msg: "Square income but its invoice isn't reconciled", fixable: false });
+    }
+  });
+  const byJob = {}; income.forEach(e => { if (e.jobId) (byJob[e.jobId] = byJob[e.jobId] || []).push(e); });
+  Object.keys(byJob).forEach(jid => { if (byJob[jid].length > 1) issues.push({ id: jid, amount: byJob[jid].reduce((s, e) => s + (+e.amount || 0), 0), msg: byJob[jid].length + " income records for one job", fixable: false }); });
+  return issues;
+}
+window.finIncomeAudit = finIncomeAudit;
+/* self-heal: re-sync every quote's income to its CURRENT state (tombstones deleted/unpaid/reconciled, re-books paid,
+   refreshes stale change-order amounts). Fixes the quote-side issues finIncomeAudit reports. */
+window.finRunIncomeSync = function () {
+  (D().quotes || []).forEach(q => { if (q && typeof syncQuoteIncome === "function") syncQuoteIncome(q); });
+  if (typeof save === "function") save();
+  const left = finIncomeAudit().filter(i => i.fixable).length;
+  if (typeof render === "function") render();
+  if (typeof alert === "function") alert(left ? ("Re-synced income. " + left + " issue(s) still need a look (Square-side).") : "Income re-synced — all quote income reconciles. ✓");
 };
 
 /* ---- period (a chosen month; aligns with the monthly admin cap) ---- */

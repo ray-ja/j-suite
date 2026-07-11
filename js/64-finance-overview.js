@@ -59,6 +59,16 @@ function rFinOverview(){
       <div class="grow" style="text-align:center"><b>${esc(finMonthLabel(ym))}</b><div class="sub">income statement · ${pl.incCount} income entr${pl.incCount === 1 ? "y" : "ies"}</div></div>
       <button class="btn ghost sm" onclick="finMonthShift(1)">›</button></div></div>`;
 
+  // INCOME AUDIT — flag any income record that no longer maps to a live paid/reconciled quote-or-invoice (or a job
+  // with two). One tap re-syncs the quote-side ones. Keeps "booked exactly once" self-diagnosing.
+  const _audit = (typeof finIncomeAudit === "function") ? finIncomeAudit() : [];
+  if (_audit.length) {
+    h += `<div class="card" style="border-left:4px solid var(--danger)"><div class="nm" style="white-space:normal">⚠ ${_audit.length} income record${_audit.length === 1 ? "" : "s"} to review</div>`
+      + _audit.slice(0, 6).map(i => `<div class="sub" style="white-space:normal">• ${fm(Math.round((+i.amount || 0) * 100))} — ${esc(i.msg)}</div>`).join("")
+      + (_audit.some(i => i.fixable) ? `<button class="btn acc sm" style="margin-top:8px" onclick="finRunIncomeSync()">↻ Re-sync income</button>` : "")
+      + `</div>`;
+  }
+
   // income statement
   h += `<div class="card">`;
   h += finPLLine("Revenue", pl.revenue, { bold: true, good: pl.revenue > 0 });

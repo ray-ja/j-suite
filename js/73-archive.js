@@ -12,14 +12,16 @@ function _purge(r){ if (r){ r.purged = true; r.purgedAt = now(); if (typeof touc
 function _subJobs(d, jobId){ return (d.jobs||[]).filter(x => x && (x.parentJobId === jobId || (Array.isArray(x.sharedJobIds) && x.sharedJobIds.indexOf(jobId) >= 0))); }
 
 // CASCADE soft-delete — job + its sub-jobs + its originating quote, or quote + its job + sub-jobs.
+// deleting a quote must also tombstone the income it booked (else a deleted PAID quote counts revenue forever)
+function _syncQInc(q){ if (q && typeof syncQuoteIncome === "function") syncQuoteIncome(q); }
 function archiveDeleteJob(jobId){
   const d = D(), j = (d.jobs||[]).find(x => x && x.id === jobId); if (!j) return;
   _softDel(j); _subJobs(d, jobId).forEach(_softDel);
-  if (j.quoteId) _softDel((d.quotes||[]).find(x => x && x.id === j.quoteId));
+  if (j.quoteId){ const q = (d.quotes||[]).find(x => x && x.id === j.quoteId); _softDel(q); _syncQInc(q); }
 }
 function archiveDeleteQuote(quoteId){
   const d = D(), q = (d.quotes||[]).find(x => x && x.id === quoteId); if (!q) return;
-  _softDel(q);
+  _softDel(q); _syncQInc(q);
   if (q.jobId){ const j = (d.jobs||[]).find(x => x && x.id === q.jobId); if (j){ _softDel(j); _subJobs(d, j.id).forEach(_softDel); } }
 }
 
@@ -57,6 +59,9 @@ function _archEach(type, id, fn){
 }
 window.archRestore = function(type, id){
   _archEach(type, id, _unDel);
+  // re-book income for a restored quote (it was tombstoned on delete) — symmetric with archiveDelete*
+  const d = D(); const q = type === "quote" ? (d.quotes||[]).find(x => x.id === id) : (function(){ const j = (d.jobs||[]).find(x => x.id === id); return j && j.quoteId ? (d.quotes||[]).find(x => x.id === j.quoteId) : null; })();
+  _syncQInc(q);
   if (typeof logChange==="function") logChange("update", type, id, "Restored from archive");
   save(); openArchive(); if (typeof render==="function") render();
 };

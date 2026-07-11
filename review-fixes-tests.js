@@ -54,3 +54,31 @@ d.expenses.push({id:"h2",amount:40,category:"disposal",paidBy:"u_rj",date:"2026-
 var owed=rcptReimbOwed();
 T("#6 legacy memberId-only expense is now owed back", (owed["u_rj"]||0)===115);   // 75 (memberId) + 40 (paidBy)
 diag("review-fixes: #6 done");
+
+// ================= #4 — income booked exactly once: delete/restore + audit invariant =================
+["income","jobs","expenses","timeclock","quotes","customers"].forEach(k=>d[k]=[]);
+d.customers.push({id:"c4",name:"Test"});
+d.quotes.push({id:"q4",customerId:"c4",total:1000,paid:true,jobId:"j4"});
+d.jobs.push({id:"j4",customerId:"c4",crew:["u_rj"]});
+syncQuoteIncome(d.quotes[0]);
+T("#4 paid quote books income", D().income.some(x=>x.id==="inc_q_q4"&&!x.deleted&&x.amount===1000));
+// delete the paid quote → income must tombstone (A1)
+archiveDeleteQuote("q4");
+T("#4 deleting a paid quote tombstones its income", !D().income.some(x=>x.id==="inc_q_q4"&&!x.deleted));
+T("#4 audit is clean after delete (no orphan income)", finIncomeAudit().length===0);
+// restore → income re-books
+archRestore("quote","q4");
+T("#4 restoring the quote re-books its income", D().income.some(x=>x.id==="inc_q_q4"&&!x.deleted&&x.amount===1000));
+// audit catches a manually-orphaned income (quote deleted out from under it, no re-sync)
+d.quotes[0].deleted=true;
+var iss=finIncomeAudit();
+T("#4 audit flags income whose quote is now deleted", iss.some(i=>i.id==="inc_q_q4"&&i.fixable));
+// self-heal re-syncs
+(D().quotes||[]).forEach(syncQuoteIncome);
+T("#4 re-sync tombstones the orphaned income", !D().income.some(x=>x.id==="inc_q_q4"&&!x.deleted) && finIncomeAudit().length===0);
+// audit catches two income records for one job (double-book)
+d.quotes[0].deleted=false; d.income.length=0;
+d.income.push({id:"inc_q_q4",quoteId:"q4",jobId:"j4",amount:1000});
+d.income.push({id:"inc_manual_x",jobId:"j4",amount:1000});
+T("#4 audit flags two income records for one job", finIncomeAudit().some(i=>i.msg.indexOf("2 income records for one job")>=0));
+diag("review-fixes: #4 done");
