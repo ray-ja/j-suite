@@ -138,6 +138,44 @@ window.finExportCSV = function(ym){
    Each income splits 25/15/60 into the accounts (inflows). Outflows: expenses + mileage (business fund),
    and recorded DISBURSEMENTS (payouts paid / tax payments / owner draws). Balance = inflow − outflow.
    Cash on hand = sum of the three accounts = total income − expenses − all disbursements. */
+/* DOUBLE-ENTRY GENERAL LEDGER (#12) — a real, balanced set of journal entries DERIVED from the existing records
+   (cash basis). Every entry has equal debits + credits by construction, so the trial balance always balances. Gives
+   a CPA a proper GL / trial balance to work from without re-architecting storage. Cents. */
+function finGeneralLedger(){
+  const E = [];
+  const push = (date, memo, lines) => { if (lines.some(l => l.dr || l.cr)) E.push({ date: date || "", memo: memo || "", lines: lines }); };
+  actIncome().forEach(e => {
+    const amt = finCents(e.amount); if (!amt) return;
+    const q = e.quoteId ? (D().quotes || []).find(x => x && x.id === e.quoteId) : null;
+    const tax = (q && typeof quoteSalesTax === "function") ? Math.round(quoteSalesTax(q) * 100) : 0;
+    const lines = [{ acct: "Cash", dr: amt + tax, cr: 0 }, { acct: "Service revenue", dr: 0, cr: amt }];
+    if (tax) lines.push({ acct: "Sales tax payable", dr: 0, cr: tax });
+    push(e.date, "Income" + (e.invoiceNo ? " · " + e.invoiceNo : ""), lines);
+  });
+  actExpenses().forEach(e => {
+    const amt = finCents(e.amount); if (!amt) return; const acct = "Expense: " + (e.category || "other");
+    push(e.date, (e.unpaid ? "Bill (A/P) · " : "Expense · ") + (e.vendor || ""), e.unpaid ? [{ acct: acct, dr: amt, cr: 0 }, { acct: "Accounts payable", dr: 0, cr: amt }] : [{ acct: acct, dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]);
+  });
+  (D().jobs || []).forEach(j => { if (!j || j.deleted) return; (j.expenses || []).forEach(e => { if (!e || e.deleted || e.unpaid) return; const amt = finCents(e.amount); if (!amt) return; push(e.date || j.date, "Job cost · " + (j.title || ""), [{ acct: "Expense: " + (e.category || "job"), dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]); }); });
+  (typeof actDisb === "function" ? actDisb() : []).forEach(x => {
+    const amt = finCents(x.amount); if (!amt) return;
+    const map = { payout: "Wages / labor", tax: "Income tax paid", draw: "Owner draw", salestax: "Sales tax payable" };
+    push(x.date, map[x.type] || x.type || "Disbursement", [{ acct: map[x.type] || "Other", dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]);
+  });
+  const tb = {}; let dr = 0, cr = 0;
+  E.forEach(en => en.lines.forEach(l => { const a = (tb[l.acct] = tb[l.acct] || { dr: 0, cr: 0 }); a.dr += l.dr; a.cr += l.cr; dr += l.dr; cr += l.cr; }));
+  return { entries: E.sort((a, b) => (a.date < b.date ? -1 : 1)), trialBalance: tb, totalDr: dr, totalCr: cr, balanced: dr === cr };
+}
+window.finGeneralLedger = finGeneralLedger;
+window.finExportLedger = function(){
+  const gl = finGeneralLedger(), d2 = c => ((+c || 0) / 100).toFixed(2), rows = [["Date", "Memo", "Account", "Debit", "Credit"]];
+  gl.entries.forEach(en => en.lines.forEach(l => rows.push([en.date, en.memo, l.acct, l.dr ? d2(l.dr) : "", l.cr ? d2(l.cr) : ""])));
+  rows.push([], ["TRIAL BALANCE"]);
+  Object.keys(gl.trialBalance).sort().forEach(a => rows.push(["", "", a, gl.trialBalance[a].dr ? d2(gl.trialBalance[a].dr) : "", gl.trialBalance[a].cr ? d2(gl.trialBalance[a].cr) : ""]));
+  rows.push(["", "", "TOTAL", d2(gl.totalDr), d2(gl.totalCr)]);
+  const csv = rows.map(r => r.map(c => { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(",")).join("\n");
+  try { const blob = new Blob([csv], { type: "text/csv;charset=utf-8" }), a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "jsuite-ledger.csv"; a.click(); } catch (e) { if (typeof alert === "function") alert("Ledger:\n\n" + csv.slice(0, 2000)); }
+};
 function finAvgMonthlyBurn(){
   const t = today(); let y = +t.slice(0, 4), m = +t.slice(5, 7), total = 0;
   for (let i = 0; i < 3; i++) { m--; if (m < 1) { m = 12; y--; } const ym = y + "-" + String(m).padStart(2, "0"), b = monthBounds(ym);
@@ -157,13 +195,28 @@ function finJobExpenseOut(opts) {
   return (D().jobs || []).reduce((s, j) => {
     if (!j || j.deleted) return s;
     if (opts.from && !(j.date && j.date >= opts.from && j.date <= opts.to)) return s;
-    return s + (j.expenses || []).filter(e => e && !e.deleted && !(typeof depositHeld === "function" && depositHeld(e))).reduce((a, e) => a + finCents(e.amount), 0);
+    return s + (j.expenses || []).filter(e => e && !e.deleted && !e.unpaid && !(typeof depositHeld === "function" && depositHeld(e))).reduce((a, e) => a + finCents(e.amount), 0);
   }, 0);
 }
+/* ACCOUNTS PAYABLE (#11) — bills logged as unpaid (e.unpaid): a liability owed to vendors, NOT yet cash out.
+   Excluded from the cash accounts (finAccountBalances) until marked paid; surfaced as its own A/P total by due date. */
+function finAccountsPayable(){
+  const bills = actExpenses().filter(e => e && e.unpaid).map(e => ({ id: e.id, cents: finCents(e.amount), vendor: e.vendor || e.note || "Bill", due: e.dueDate || "", cat: e.category || "" }))
+    .sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
+  return { bills: bills, total: bills.reduce((s, b) => s + b.cents, 0) };
+}
+window.finAccountsPayable = finAccountsPayable;
+window.finPayBill = function(id){
+  const e = (D().expenses || []).find(x => x && x.id === id); if (!e) return;
+  e.unpaid = false; e.dueDate = ""; e.date = (typeof today === "function") ? today() : e.date;   // paid now → date = payment date, enters cash
+  if (typeof touch === "function") touch(e);
+  if (typeof logChange === "function") logChange("update", "expense", id, "Paid bill " + money(e.amount || 0) + (e.vendor ? " · " + e.vendor : ""));
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};
 function finAccountBalances(){
   const roll = finRollup(actIncome(), { adminMemberId: (typeof finAdminMember === "function" ? finAdminMember() : "") });
   const mil = finMileage(D().timeclock || [], { confirmedOnly: true });
-  const expCents = actExpenses().reduce((s, e) => s + finCents(e.amount), 0) + finJobExpenseOut();
+  const expCents = actExpenses().filter(e => !(e && e.unpaid)).reduce((s, e) => s + finCents(e.amount), 0) + finJobExpenseOut();
   const disb = (typeof actDisb === "function") ? actDisb() : [];
   const byType = tp => disb.filter(d => d.type === tp).reduce((s, d) => s + finCents(d.amount), 0);
   const taxPaid = byType("tax"), payoutPaid = byType("payout"), drawPaid = byType("draw");
@@ -196,6 +249,14 @@ function rFinCash(){
     <div class="li"><div class="grow"><div class="nm">🏦 Tax reserve</div><div class="sub" style="white-space:normal">25% set aside ${fm(a.taxIn)} − paid ${fm(a.taxPaid)}</div></div><b style="${a.taxBal < 0 ? "color:var(--danger)" : ""}">${fm(a.taxBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">🏢 Business fund</div><div class="sub" style="white-space:normal">15% ${fm(a.businessIn)}${a.unalloc ? " + unassigned " + fm(a.unalloc) : ""} − expenses ${fm(a.expCents)} − mileage ${fm(a.mileage)}${a.drawPaid ? " − draws " + fm(a.drawPaid) : ""}</div></div><b style="${a.businessBal < 0 ? "color:var(--danger)" : ""}">${fm(a.businessBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
+
+  // ACCOUNTS PAYABLE — unpaid vendor bills (a liability; excluded from cash above until paid)
+  const ap = (typeof finAccountsPayable === "function") ? finAccountsPayable() : { bills: [], total: 0 };
+  if (ap.bills.length) {
+    h += `<div class="secthd" style="margin-top:14px"><h2>🧾 Accounts payable</h2><span class="ct" style="color:var(--danger)">${fm(ap.total)}</span></div><div class="card">`
+      + ap.bills.map(b => `<div class="li"><div class="grow"><div class="nm">${esc(b.vendor)}</div><div class="sub">${b.due ? "due " + fmtDate(b.due) : "no due date"}${b.cat ? " · " + esc(b.cat) : ""}</div></div><div class="row" style="gap:8px;align-items:center"><b>${fm(b.cents)}</b><button class="btn ghost sm" onclick="finPayBill('${b.id}')">Mark paid</button></div></div>`).join("")
+      + `<div class="sub" style="margin-top:6px;white-space:normal">Bills you owe but haven't paid — not counted in cash on hand until you mark them paid.</div></div>`;
+  }
 
   // NC SALES TAX collected on taxable jobs — a liability held for NCDOR, separate from cash/income
   if (stax.collected > 0 || stax.remitted > 0) {

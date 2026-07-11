@@ -146,3 +146,47 @@ T("#9 owner excluded from 1099 report", !owner);
 S.users.find(u=>u.id==="u_chaz").taxId="123-45-6789";
 T("#9 W-9 on file reflected", fin1099Report("2026").rows.find(x=>x.id==="u_chaz").hasW9===true);
 diag("review-fixes: #9 done");
+
+// ================= #10 — fixed-asset depreciation =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+d.expenses.push({id:"a1",amount:5000,category:"tools/equipment",vendor:"Big Tex Trailer",date:"2025-06-01"});  // capital ($5000 >= $2500)
+d.expenses.push({id:"a2",amount:120,category:"tools/equipment",vendor:"Hand tools",date:"2026-01-01"});         // below de-minimis → expensed, not capitalized
+d.expenses.push({id:"a3",amount:3000,category:"disposal",vendor:"Dump",date:"2026-01-01"});                      // not a tool → not an asset
+var fa=finFixedAssets({years:5});
+T("#10 only capital tools >= $2500 are assets (1)", fa.length===1 && fa[0].name==="Big Tex Trailer");
+T("#10 straight-line annual = cost/5 ($1000/yr = 100000c)", fa[0].annual===100000);
+T("#10 book value = cost - accumulated (2025 buy, ~2yr elapsed by 2026)", fa[0].bookValue < fa[0].cents && fa[0].bookValue >= 0);
+diag("review-fixes: #10 done");
+
+// ================= #11 — accounts payable (unpaid bills excluded from cash) =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+d.income.push({id:"i11",amount:1000,date:"2026-06-01",jobId:"j11",crew:["u_rj"]});
+d.jobs.push({id:"j11",date:"2026-06-01",crew:["u_rj"]});
+var cashPaid=finAccountBalances().cash;
+// add an UNPAID bill → cash must NOT drop; A/P total rises
+d.expenses.push({id:"b1",amount:300,category:"materials",vendor:"Vulcan",unpaid:true,dueDate:"2026-07-01",date:"2026-06-15"});
+T("#11 unpaid bill does NOT reduce cash", finAccountBalances().cash===cashPaid);
+var ap=finAccountsPayable();
+T("#11 A/P total = $300 (30000c)", ap.total===30000 && ap.bills.length===1 && ap.bills[0].vendor==="Vulcan");
+// mark paid → now it reduces cash + leaves A/P
+finPayBill("b1");
+T("#11 after paying, bill leaves A/P", finAccountsPayable().total===0);
+T("#11 after paying, cash drops by $300", finAccountBalances().cash===cashPaid-30000);
+diag("review-fixes: #11 done");
+
+// ================= #12 — double-entry general ledger (always balances) =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+d.income.push({id:"i12",amount:1000,date:"2026-06-01",quoteId:"q12"});
+d.quotes.push({id:"q12",total:1000,taxable:true,paid:true});   // taxable → sales tax payable leg
+d.expenses.push({id:"e12",amount:200,category:"disposal",vendor:"Dump",date:"2026-06-02"});
+d.expenses.push({id:"b12",amount:150,category:"materials",vendor:"Vulcan",unpaid:true,date:"2026-06-03"});
+d.disbursements.push({id:"d12",type:"payout",memberId:"u_rj",amount:300,date:"2026-06-04"});
+d.disbursements.push({id:"t12",type:"draw",amount:100,date:"2026-06-05"});
+var gl=finGeneralLedger();
+T("#12 ledger BALANCES (debits === credits)", gl.balanced===true && gl.totalDr===gl.totalCr && gl.totalDr>0);
+T("#12 taxable income books sales tax payable", gl.trialBalance["Sales tax payable"] && gl.trialBalance["Sales tax payable"].cr===Math.round(1000*0.0675*100));
+T("#12 Cash debit from income = 1000 + 67.50 tax", gl.trialBalance["Cash"].dr===Math.round(1067.5*100));
+T("#12 unpaid bill hits Accounts payable, not Cash credit for it", gl.trialBalance["Accounts payable"] && gl.trialBalance["Accounts payable"].cr===15000);
+T("#12 service revenue = pre-tax 1000", gl.trialBalance["Service revenue"].cr===100000);
+T("#12 owner draw booked to equity account", gl.trialBalance["Owner draw"] && gl.trialBalance["Owner draw"].dr===10000);
+diag("review-fixes: #12 done");

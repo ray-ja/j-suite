@@ -299,6 +299,8 @@ window.openExpense = function (id) {
     <label>Note</label><input id="ex_note" value="${esc(e.note || "")}" placeholder="what / why">
     <label>Vendor (optional)</label><input id="ex_vendor" value="${esc(e.vendor || "")}">
     <label>Paid by / reimburse (optional)</label><select id="ex_member"><option value="">— business —</option>${members.map(u => `<option value="${u.id}" ${((e.memberId || e.paidBy) === u.id) ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>
+    <label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" id="ex_unpaid" ${e.unpaid ? "checked" : ""} onchange="document.getElementById('ex_duewrap').style.display=this.checked?'block':'none'" style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">🧾 Unpaid bill (A/P)</div><div class="sub" style="white-space:normal">A bill you owe but haven't paid yet — it won't reduce cash until you mark it paid.</div></div></label>
+    <div id="ex_duewrap" style="display:${e.unpaid ? "block" : "none"}"><label>Due date (optional)</label><input id="ex_due" type="date" value="${esc(e.dueDate || "")}"></div>
     <button class="btn acc" style="margin-top:12px" onclick="saveExpense('${e.id}',${isNew})">Save</button>
     ${isNew ? "" : `<button class="btn danger" style="margin-top:10px" onclick="delExpense('${e.id}')">Delete</button>`}`);
 };
@@ -312,6 +314,9 @@ window.saveExpense = function (id, isNew) {
   // (rcptReimbOwed / the payout waterfall tier 1). The hand-add modal historically wrote only memberId, so those
   // expenses were never owed back — mirror it onto paidBy so a personal-card expense logged here reimburses correctly.
   e.paidBy = e.memberId || null;
+  // A/P: an unpaid bill is a liability, not cash-out yet (excluded from cash in finAccountBalances). dueDate optional.
+  e.unpaid = !!(document.getElementById("ex_unpaid") || {}).checked;
+  e.dueDate = e.unpaid ? (val("ex_due") || "") : "";
   touch(e); if (isNew) d.expenses.push(e);
   if (typeof logChange === "function") logChange(isNew ? "create" : "update", "expense", e.id, (isNew ? "Logged " : "Updated ") + (e.category || "expense") + " " + money(amt));
   save(); closeModal(); render();
