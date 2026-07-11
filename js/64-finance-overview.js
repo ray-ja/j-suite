@@ -142,14 +142,28 @@ function finAvgMonthlyBurn(){
   const t = today(); let y = +t.slice(0, 4), m = +t.slice(5, 7), total = 0;
   for (let i = 0; i < 3; i++) { m--; if (m < 1) { m = 12; y--; } const ym = y + "-" + String(m).padStart(2, "0"), b = monthBounds(ym);
     total += actExpenses().filter(e => e.date >= b.from && e.date <= b.to).reduce((s, e) => s + finCents(e.amount), 0);
+    total += finJobExpenseOut({ from: b.from, to: b.to });   // job hard costs count toward burn too
     total += finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true }).total;
   }
   return Math.round(total / 3);
 }
+/* all JOB expenses (job.expenses — disposal, supplies, tools) as cash out. These are hard costs the business eats
+   (not billed to the customer), so they debit the business fund just like the business-expenses collection. They
+   were previously counted by NO account, so cash-on-hand was overstated by every job expense ever logged.
+   MATERIALS (job.materials) are deliberately NOT included: they're pass-through — their revenue is already netted
+   out of the split base (fix #1) so their cost is net-neutral to cash; subtracting them would double-hit. */
+function finJobExpenseOut(opts) {
+  opts = opts || {};
+  return (D().jobs || []).reduce((s, j) => {
+    if (!j || j.deleted) return s;
+    if (opts.from && !(j.date && j.date >= opts.from && j.date <= opts.to)) return s;
+    return s + (j.expenses || []).filter(e => e && !e.deleted && !(typeof depositHeld === "function" && depositHeld(e))).reduce((a, e) => a + finCents(e.amount), 0);
+  }, 0);
+}
 function finAccountBalances(){
   const roll = finRollup(actIncome(), { adminMemberId: (typeof finAdminMember === "function" ? finAdminMember() : "") });
   const mil = finMileage(D().timeclock || [], { confirmedOnly: true });
-  const expCents = actExpenses().reduce((s, e) => s + finCents(e.amount), 0);
+  const expCents = actExpenses().reduce((s, e) => s + finCents(e.amount), 0) + finJobExpenseOut();
   const disb = (typeof actDisb === "function") ? actDisb() : [];
   const byType = tp => disb.filter(d => d.type === tp).reduce((s, d) => s + finCents(d.amount), 0);
   const taxPaid = byType("tax"), payoutPaid = byType("payout"), drawPaid = byType("draw");

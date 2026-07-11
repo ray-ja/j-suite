@@ -82,3 +82,23 @@ d.income.push({id:"inc_q_q4",quoteId:"q4",jobId:"j4",amount:1000});
 d.income.push({id:"inc_manual_x",jobId:"j4",amount:1000});
 T("#4 audit flags two income records for one job", finIncomeAudit().some(i=>i.msg.indexOf("2 income records for one job")>=0));
 diag("review-fixes: #4 done");
+
+// ================= #5 — cash on hand debits job expenses (was overstated); materials stay net-neutral =================
+["income","jobs","expenses","timeclock","quotes","customers"].forEach(k=>d[k]=[]);
+d.income.push({id:"i5",amount:1000,date:"2026-06-15",jobId:"j5",crew:["u_rj"]});
+d.jobs.push({id:"j5",date:"2026-06-15",crew:["u_rj"],expenses:[{id:"e5",amount:100,category:"disposal"}],materials:[{id:"m5",amount:200}]});
+var a1=finAccountBalances();
+// business-fund outflow now includes the $100 job disposal expense
+T("#5 finJobExpenseOut counts job disposal ($100 = 10000c)", finJobExpenseOut()===10000);
+// remove the job expense → cash goes UP by exactly $100 (proves it's debiting cash now)
+var cashWith=a1.cash;
+d.jobs[0].expenses[0].deleted=true;
+var cashWithout=finAccountBalances().cash;
+T("#5 job expense reduces cash by exactly its amount ($100)", cashWithout - cashWith === 10000);
+// materials are NOT a separate cash outflow — finJobExpenseOut counts ONLY job.expenses, never job.materials
+// (materials are pass-through: their cost is offset by their billed revenue, so subtracting them would double-hit)
+d.jobs[0].expenses[0].deleted=false;   // restore the $100 expense
+var expOnly=finJobExpenseOut();
+d.jobs[0].materials.push({id:"m5b",amount:500});
+T("#5 finJobExpenseOut ignores materials (still $100, not $600)", finJobExpenseOut()===expOnly && expOnly===10000);
+diag("review-fixes: #5 done");
