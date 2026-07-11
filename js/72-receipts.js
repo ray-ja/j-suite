@@ -1027,6 +1027,29 @@ window.rcptSetDateF = function (which, v) { if (which === "from") RCPT_DFROM = v
 /* Clear ALL display-only search + filters (leave the status pill as-is, like js/08 which keeps the stage chip).
    Empties every multi-select set. Full render so the panel checkboxes + summary reset to empty too. */
 window.rcptClearFilters = function () { RCPT_SEARCH = ""; RCPT_TYPEFS = []; RCPT_CATFS = []; RCPT_PERSONFS = []; RCPT_JOBFS = []; RCPT_VENDORFS = []; RCPT_CARDFS = []; RCPT_DFROM = ""; RCPT_DTO = ""; if (typeof render === "function") render(); };
+
+/* SAVE-AS-DEFAULT-VIEW — persist the current status + filter selection to this device (localStorage, a display-only
+   preference — no synced data). Applied ONCE the first time Receipts opens each session (rcptApplyDefaultView, guarded
+   by RCPT_VIEW_LOADED), so a saved default loads on open but the user's in-session tweaks are never clobbered. */
+const RCPT_VIEW_KEY = "jra_rcpt_default_view";
+let RCPT_VIEW_LOADED = false;
+function rcptCurrentView() { return { f: RCPT_FILTER, type: RCPT_TYPEFS.slice(), cat: RCPT_CATFS.slice(), person: RCPT_PERSONFS.slice(), vendor: RCPT_VENDORFS.slice(), card: RCPT_CARDFS.slice(), dfrom: RCPT_DFROM, dto: RCPT_DTO }; }
+function rcptSavedView() { try { return JSON.parse(localStorage.getItem(RCPT_VIEW_KEY) || "null"); } catch (e) { return null; } }
+function rcptHasDefaultView() { return !!rcptSavedView(); }
+function rcptViewIsCurrent() { const v = rcptSavedView(); return !!v && JSON.stringify(v) === JSON.stringify(rcptCurrentView()); }
+function rcptApplyView(v) {
+  if (!v) return;
+  RCPT_FILTER = v.f || "all";
+  RCPT_TYPEFS = Array.isArray(v.type) ? v.type.slice() : [];
+  RCPT_CATFS = Array.isArray(v.cat) ? v.cat.slice() : [];
+  RCPT_PERSONFS = Array.isArray(v.person) ? v.person.slice() : [];
+  RCPT_VENDORFS = Array.isArray(v.vendor) ? v.vendor.slice() : [];
+  RCPT_CARDFS = Array.isArray(v.card) ? v.card.slice() : [];
+  RCPT_DFROM = v.dfrom || ""; RCPT_DTO = v.dto || "";
+}
+function rcptApplyDefaultView() { rcptApplyView(rcptSavedView()); }   // called once on first open (below)
+window.rcptSaveDefaultView = function () { try { localStorage.setItem(RCPT_VIEW_KEY, JSON.stringify(rcptCurrentView())); } catch (e) {} if (typeof render === "function") render(); };
+window.rcptClearDefaultView = function () { try { localStorage.removeItem(RCPT_VIEW_KEY); } catch (e) {} if (typeof render === "function") render(); };
 function rcptSortArrow(col) { return RCPT_SORT.col === col ? (RCPT_SORT.dir === "asc" ? " ▲" : " ▼") : ""; }
 
 /* SEARCHABLE MULTI-SELECT filter (replaces the old checkbox walls per Ray: "why so many checkboxes… all need to be
@@ -1050,22 +1073,27 @@ function rcptFilterCombo(key, label, opts, placeholder) {
     + `<div id="rcptchips_${key}" style="display:flex;flex-wrap:wrap;gap:6px;${n ? "margin:5px 0" : ""}">${rcptComboChipsHTML(key)}</div>`
     + `<div class="acwrap"><input id="${id}" placeholder="${esc(placeholder || ("Search " + label + "…"))}" autocomplete="off" onfocus="rcptComboSuggest('${key}')" oninput="rcptComboSuggest('${key}')" onblur="rcptComboBlur('${key}')" style="width:100%"><div class="acbox" id="${id}_ac" style="display:none"></div></div></div>`;
 }
+/* The dropdown stays OPEN while you tick several values (each shows a ✓ when selected + highlights); a tap TOGGLES it
+   in/out and refreshes the marks, so you can "click the dropdown, select all the ones you want" in one go. Selected
+   values also appear as removable chips above. Tapping outside (blur) closes it. */
 window.rcptComboSuggest = function (key) {
   const inp = document.getElementById("rcptcombo_" + key), box = document.getElementById("rcptcombo_" + key + "_ac");
   if (!inp || !box) return;
   const q = (inp.value || "").toLowerCase().trim(), arr = rcptComboArr(key);
-  const matches = (RCPT_COMBO_OPTS[key] || []).map((o, i) => ({ o, i })).filter(x => arr.indexOf(x.o.v) < 0 && (!q || String(x.o.label).toLowerCase().indexOf(q) >= 0)).slice(0, 60);
-  box.innerHTML = matches.length ? matches.map(x => `<div class="acitem" onmousedown="event.preventDefault()" onclick="rcptComboPick('${key}',${x.i})">${esc(x.o.label)}</div>`).join("") : `<div class="acitem" style="opacity:.6">No matches</div>`;
+  const matches = (RCPT_COMBO_OPTS[key] || []).map((o, i) => ({ o, i })).filter(x => (!q || String(x.o.label).toLowerCase().indexOf(q) >= 0)).slice(0, 60);
+  box.innerHTML = matches.length ? matches.map(x => {
+    const on = arr.indexOf(x.o.v) >= 0;
+    return `<div class="acitem${on ? " saved" : ""}" onmousedown="event.preventDefault()" onclick="rcptComboPick('${key}',${x.i})"><span style="display:inline-block;width:18px;color:var(--accent)">${on ? "✓" : ""}</span>${esc(x.o.label)}</div>`;
+  }).join("") : `<div class="acitem" style="opacity:.6">No matches</div>`;
   box.style.display = "block";
 };
-window.rcptComboBlur = function (key) { setTimeout(function () { const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none"; }, 150); };
+window.rcptComboBlur = function (key) { setTimeout(function () { const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none"; }, 180); };
 window.rcptComboPick = function (key, optIdx) {
   const opt = (RCPT_COMBO_OPTS[key] || [])[optIdx]; if (!opt) return;
-  const fn = window[RCPT_COMBO_TOGGLE[key]]; if (typeof fn === "function") fn(opt.v);   // toggles the filter array + repaints #rcptlist (the tested path)
-  const inp = document.getElementById("rcptcombo_" + key); if (inp) inp.value = "";
+  const fn = window[RCPT_COMBO_TOGGLE[key]]; if (typeof fn === "function") fn(opt.v);   // TOGGLES the value in/out + repaints #rcptlist (the tested path)
   rcptComboRepaintChips(key);
-  const box = document.getElementById("rcptcombo_" + key + "_ac"); if (box) box.style.display = "none";
-  if (inp) inp.focus();
+  rcptComboSuggest(key);   // KEEP the dropdown open + refresh the ✓ marks so several can be picked in one pass
+  const inp = document.getElementById("rcptcombo_" + key); if (inp) inp.focus();
 };
 window.rcptComboRemove = function (key, arrIdx) {
   const arr = rcptComboArr(key), v = arr[arrIdx]; if (v == null) return;
@@ -1077,6 +1105,7 @@ window.rcptComboRemove = function (key, arrIdx) {
 function rReceipts() {
   if (typeof canSee === "function" && !canSee("receipts")) { view.innerHTML = `<div class="secthd"><h2>Receipts</h2></div><div class="card"><div class="muted">Not available for your role.</div></div>`; return; }
   if (!rcptFinFull()) { view.innerHTML = rcptCrewView(); return; }   // crew: upload + own review queue only (no finance data)
+  if (!RCPT_VIEW_LOADED) { RCPT_VIEW_LOADED = true; rcptApplyDefaultView(); }   // apply the saved default view once per session, before first paint
 
   const rows = rcptSortedRows();
   const reviewCount = rcptReview().length;
@@ -1176,7 +1205,15 @@ function rReceipts() {
       + rcptFilterCombo("vendor", "Vendor", vendors, "Search vendor…")
       + rcptFilterCombo("card", "💳 Card", cards.map(c => ({ v: c, label: "••••" + c })), "Search card…")
       + `<div class="row" style="gap:8px;margin-top:10px"><div class="grow"><label>From</label><input type="date" value="${esc(RCPT_DFROM)}" onchange="rcptSetDateF('from',this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(RCPT_DTO)}" onchange="rcptSetDateF('to',this.value)" style="width:100%"></div></div>`
-      + (rcptAnyFilterActive() ? `<button class="btn ghost sm" style="margin-top:10px" onclick="rcptClearFilters()">Clear filters</button>` : "")
+      // Save the current status + filters as this device's DEFAULT view (loads on open). Label reflects state:
+      // already-saved-and-current → a muted confirmation; otherwise → offer to save/update. Clear-default removes it.
+      + `<div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">`
+      + (rcptViewIsCurrent()
+          ? `<span class="btn ghost sm" style="pointer-events:none;opacity:.8">⭐ Default view (saved)</span>`
+          : `<button class="btn acc sm" onclick="rcptSaveDefaultView()">⭐ ${rcptHasDefaultView() ? "Update" : "Save as"} default view</button>`)
+      + (rcptHasDefaultView() ? `<button class="btn ghost sm" onclick="rcptClearDefaultView()">✕ Clear default</button>` : "")
+      + (rcptAnyFilterActive() ? `<button class="btn ghost sm" onclick="rcptClearFilters()">Clear filters</button>` : "")
+      + `</div>`
       + `</details>`;
   }
 
