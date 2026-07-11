@@ -18,6 +18,18 @@ function invRowsHTML(q) {
     `<tr><td>${esc(it.name || "Item")}</td><td style="text-align:center">${it.qty || 1}</td><td style="text-align:right">${money((it.price || 0) * (it.qty || 1))}</td></tr>`
   ).join("") || `<tr><td colspan="3" style="color:#888">No line items on this quote.</td></tr>`;
 }
+/* The invoice must charge the FINAL price (finalPrice override), not the raw line-item subtotal — A/R collects
+   against quoteEffectiveTotal, so a divergent invoice document meant the customer's bill and what we chased didn't
+   match (a set-final-price job would show the old number, then sit "awaiting payment" forever). When the final price
+   differs from the line-item subtotal, show a Subtotal + Adjustment pair so the document still reconciles. */
+function invEffectiveTotal(q) { return (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0); }
+function invAdjRows(q) {
+  const sub = invItems(q).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
+  const adj = Math.round((invEffectiveTotal(q) - sub) * 100) / 100;
+  if (Math.abs(adj) < 0.005) return "";
+  return `<tr><td colspan="2" style="text-align:right;padding-top:6px">Subtotal</td><td style="text-align:right;padding-top:6px">${money(sub)}</td></tr>`
+    + `<tr><td colspan="2" style="text-align:right">Adjustment</td><td style="text-align:right">${adj < 0 ? "−" : "+"}${money(Math.abs(adj))}</td></tr>`;
+}
 
 /* Receipt close-out signal for the owner — informational only, never blocks invoicing. If the job linked to
    this quote has crew who haven't closed out their receipts, more expenses may still land, so the invoice
@@ -55,7 +67,7 @@ window.openInvoice = function (quoteId) {
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
         <thead><tr><th style="text-align:left">Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${invRowsHTML(q)}</tbody>
-        <tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(q.total || 0)}</td></tr></tfoot>
+        <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr></tfoot>
       </table>
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>
     </div>${invReceiptsNote(q)}
@@ -65,7 +77,7 @@ window.openInvoice = function (quoteId) {
     </div>
     <div class="row" style="gap:8px;margin-top:8px">
       <button class="btn ghost sm grow" onclick="invCopy('${q.id}')">Copy</button>
-      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money(q.total||0)}'})">Send reminder</button>` : ``}
+      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money(invEffectiveTotal(q))}'})">Send reminder</button>` : ``}
     </div>`);
 };
 
@@ -76,7 +88,7 @@ function invText(q, cust, biz, no) {
     "INVOICE " + no, fmtDate(q.invoicedDate || q.date || today()), "",
     "Bill to: " + ((cust && (cust.name || cust.company)) || "—"),
     "", ...lines, "",
-    "TOTAL: " + money(q.total || 0), "Due on receipt", "",
+    "TOTAL: " + money(invEffectiveTotal(q)), "Due on receipt", "",
     "Thank you for your business!"
   ].join("\n");
 }
@@ -87,7 +99,7 @@ window.invMark = function (quoteId) {
   if (!q.invoiceNo) q.invoiceNo = invNo(q);
   q.invoicedDate = (typeof today === "function") ? today() : "";
   touch(q);
-  if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money(q.total || 0));
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money(invEffectiveTotal(q)));
   save(); openInvoice(quoteId);
   var _rj = q.jobId || ((D().jobs || []).find(function (x) { return x && x.quoteId === q.id && !x.deleted; }) || {}).id;
   if (_rj && typeof reviewPrompt === "function") reviewPrompt(_rj);   /* review prompt at the INVOICED moment (moved off job-done per Ray) */
@@ -97,7 +109,7 @@ window.invMarkPaid = function (quoteId) {
   const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
   q.paid = true; q.paidDate = (typeof today === "function") ? today() : "";
   touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);
-  if (typeof logChange === "function") logChange("update", "quote", q.id, "Marked paid · " + money(q.total || 0));
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Marked paid · " + money(invEffectiveTotal(q)));
   save(); openInvoice(quoteId);
 };
 window.invCopy = function (quoteId) {
@@ -128,7 +140,7 @@ window.invPrint = function (quoteId) {
     <div style="margin-top:14px"><div class="muted" style="font-weight:700">Bill to</div>${billTo.map(l => `<div class="muted">${esc(l)}</div>`).join("")}</div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
     <tbody>${invRowsHTML(q)}</tbody>
-    <tfoot><tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(q.total || 0)}</td></tr></tfoot></table>
+    <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr></tfoot></table>
     <p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
     <button onclick="window.print()" style="margin-top:16px;padding:10px 16px">Print / Save as PDF</button>
     </body></html>`;

@@ -260,7 +260,7 @@ window.openExpense = function (id) {
     <label>Category</label><select id="ex_cat">${EXP_CATS.map(c => `<option ${e.category === c ? "selected" : ""}>${c}</option>`).join("")}</select>
     <label>Note</label><input id="ex_note" value="${esc(e.note || "")}" placeholder="what / why">
     <label>Vendor (optional)</label><input id="ex_vendor" value="${esc(e.vendor || "")}">
-    <label>Paid by / reimburse (optional)</label><select id="ex_member"><option value="">— business —</option>${members.map(u => `<option value="${u.id}" ${e.memberId === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>
+    <label>Paid by / reimburse (optional)</label><select id="ex_member"><option value="">— business —</option>${members.map(u => `<option value="${u.id}" ${((e.memberId || e.paidBy) === u.id) ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>
     <button class="btn acc" style="margin-top:12px" onclick="saveExpense('${e.id}',${isNew})">Save</button>
     ${isNew ? "" : `<button class="btn danger" style="margin-top:10px" onclick="delExpense('${e.id}')">Delete</button>`}`);
 };
@@ -270,6 +270,10 @@ window.saveExpense = function (id, isNew) {
   if (amt <= 0) { alert("Enter an amount."); return; }
   if (typeof submitGuard === "function" && !submitGuard("saveExpense:" + id)) return;   // rapid-tap dupe guard
   e.amount = amt; e.date = val("ex_date") || today(); e.category = val("ex_cat") || "other"; e.note = val("ex_note"); e.vendor = val("ex_vendor"); e.memberId = val("ex_member");
+  // paidBy is the canonical "who fronted this → reimburse them" field the whole reimbursement pipeline reads
+  // (rcptReimbOwed / the payout waterfall tier 1). The hand-add modal historically wrote only memberId, so those
+  // expenses were never owed back — mirror it onto paidBy so a personal-card expense logged here reimburses correctly.
+  e.paidBy = e.memberId || null;
   touch(e); if (isNew) d.expenses.push(e);
   if (typeof logChange === "function") logChange(isNew ? "create" : "update", "expense", e.id, (isNew ? "Logged " : "Updated ") + (e.category || "expense") + " " + money(amt));
   save(); closeModal(); render();

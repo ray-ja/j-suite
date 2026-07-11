@@ -164,7 +164,7 @@ window.jobCloseReceiptsAll = function (jobId) {
    policy — personal gas isn't reimbursed, mileage covers it). This closes the double-dip where someone gassed their
    own truck on a personal card and got the fuel reimbursed AND full mileage as the vehicle owner. */
 function rcptReimbOwed() {
-  const per = {}; const add = e => { if (e && !e.deleted && e.paidBy && !e.reimbursedAt && (e.category || "") !== "fuel") per[e.paidBy] = (per[e.paidBy] || 0) + (+e.amount || 0); };
+  const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || (e.category || "") === "fuel") return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
   (D().jobs || []).forEach(j => { if (j && !j.deleted) { (j.expenses || []).forEach(add); (j.materials || []).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;

@@ -34,3 +34,23 @@ var owed=rcptReimbOwed();
 T("#3 personal-card FUEL not reimbursed (excluded)", (owed["u_rj"]||0)===50);  // only the $30 materials + $20 job material = 50; the $50 + $40 fuel excluded
 T("#3 non-fuel personal spend still reimbursed", (owed["u_rj"]||0)===50);
 diag("review-fixes: #3 done");
+
+// ================= #7 — invoice charges the FINAL price (not the raw line-item subtotal) =================
+var q1={id:"q7",items:[{name:"Patio",price:1000,qty:1}],total:1000,finalPrice:1100};
+T("#7 invEffectiveTotal uses finalPrice ($1100)", invEffectiveTotal(q1)===1100);
+var adj=invAdjRows(q1);
+T("#7 adjustment rows appear when final != subtotal", adj.indexOf("Subtotal")>=0 && adj.indexOf("Adjustment")>=0 && adj.indexOf("+$100")>=0);
+var q2={id:"q7b",items:[{name:"Patio",price:1000,qty:1}],total:1000};   // no finalPrice
+T("#7 no finalPrice → effective = total ($1000)", invEffectiveTotal(q2)===1000);
+T("#7 no adjustment rows when final == subtotal (byte-identical to before)", invAdjRows(q2)==="");
+var q3={id:"q7c",items:[{name:"Junk",price:900,qty:1}],total:900,finalPrice:800};  // discount
+T("#7 downward adjustment shows minus", invAdjRows(q3).indexOf("−$100")>=0 && invEffectiveTotal(q3)===800);
+diag("review-fixes: #7 done");
+
+// ================= #6 — hand-logged Finance→Expenses reimburse field actually owes back =================
+["income","jobs","expenses","timeclock","quotes","customers"].forEach(k=>d[k]=[]);
+d.expenses.push({id:"h1",amount:75,category:"materials",memberId:"u_rj",date:"2026-06-10"});   // legacy: memberId only, no paidBy
+d.expenses.push({id:"h2",amount:40,category:"disposal",paidBy:"u_rj",date:"2026-06-10"});       // receipt-style: paidBy
+var owed=rcptReimbOwed();
+T("#6 legacy memberId-only expense is now owed back", (owed["u_rj"]||0)===115);   // 75 (memberId) + 40 (paidBy)
+diag("review-fixes: #6 done");
