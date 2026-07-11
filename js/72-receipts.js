@@ -1736,6 +1736,30 @@ function jobMileageByPerson(j) {
   });
   return per;
 }
+/* BUSINESS-CARD FUEL OFFSET — gas bought on the BUSINESS card for an OWNED vehicle is an advance against that
+   vehicle's owner's mileage payout (the $0.725/mi rate already covers fuel, so you can't also get free gas + full
+   mileage). Returns {ownerId: cents} of such fuel within opts.from/to. ONLY counts fuel that is (a) category "fuel",
+   (b) tagged to a vehicle that HAS an owner, and (c) BUSINESS-paid (no personal payer — personal gas isn't
+   reimbursed, so there's nothing to offset). finMileage nets these out of the owner's mileage (floor at 0). */
+function rcptFuelOffsetByOwner(opts) {
+  opts = opts || {};
+  const vmap = {};   // vehicleId -> ownerId (owned vehicles only)
+  ((typeof jobVehList === "function") ? jobVehList() : []).forEach(v => { if (v && v.id && v.ownerId) vmap[v.id] = v.ownerId; });
+  const out = {};
+  ((typeof rcptAllRows === "function") ? rcptAllRows() : []).forEach(r => {
+    if (!r || r.deleted) return;
+    if ((r.category || "") !== "fuel" || !r.vehicleId || !vmap[r.vehicleId]) return;
+    if (r.paidBy || r.memberId) return;   // BUSINESS-paid only (a personal payer on any store = not offset)
+    const day = (typeof rcptDate === "function") ? (rcptDate(r) || "") : "";
+    if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) return;
+    const cents = Math.round((+r.amount || 0) * 100);
+    if (cents <= 0) return;   // ignore refunds / zero
+    const owner = vmap[r.vehicleId];
+    out[owner] = (out[owner] || 0) + cents;
+  });
+  return out;
+}
+window.rcptFuelOffsetByOwner = rcptFuelOffsetByOwner;
 /* owner "I've reviewed this job's receipts — all in, looks good to invoice" flag. Additive (job.rcptReviewedAt);
    a plain toggle on the job record, reversible. Owner/admin only. Separate from the crew's per-person close-out. */
 window.rcptToggleJobReviewed = function (jobId) {

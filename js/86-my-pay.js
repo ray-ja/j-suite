@@ -41,7 +41,7 @@ function payPerPerson(opts) {
   const hoursByJob = finHoursByJob(D().timeclock || [], opts.from || opts.to ? { from: opts.from, to: opts.to } : {});
   const payouts = payPaidByMember(opts);
   const pp = finPerPerson(roll, mil, hoursByJob, payouts);
-  return Object.assign(pp, { roll: roll, hoursByJob: hoursByJob, adminId: adminId });
+  return Object.assign(pp, { roll: roll, hoursByJob: hoursByJob, adminId: adminId, fuelOffset: mil.fuelOffset || {} });
 }
 
 /* per-person, per-job breakdown for ONE member: which jobs they earned a field share on + how much.
@@ -120,7 +120,7 @@ function rPay() {
     <div class="li"><div class="grow"><div class="nm">👷 Field work</div><div class="sub">your equal share of each job you worked (split evenly among that job's crew)</div></div><b>${fm(m.field)}</b></div>
     ${m.sales ? `<div class="li"><div class="grow"><div class="nm">🤝 Sales credit</div><div class="sub">15% on jobs you booked (3-month window)</div></div><b>${fm(m.sales)}</b></div>` : ""}
     ${m.admin ? `<div class="li"><div class="grow"><div class="nm">🗂️ Admin</div><div class="sub">5% admin share (capped $500/mo)</div></div><b>${fm(m.admin)}</b></div>` : ""}
-    <div class="li"><div class="grow"><div class="nm">⛽ Gas reimbursement</div><div class="sub">your vehicle's confirmed miles @ $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi — covers fuel, not earnings</div></div><b>${fm(m.mileage)}</b></div>
+    <div class="li"><div class="grow"><div class="nm">⛽ Gas reimbursement</div><div class="sub">your vehicle's confirmed miles @ $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi — covers fuel, not earnings${(pp.fuelOffset && pp.fuelOffset[targetId] > 0) ? ` · <span style="color:#b8860b">already netted −${fm(pp.fuelOffset[targetId])} gas you put on the business card</span>` : ""}</div></div><b>${fm(m.mileage)}</b></div>
     <div style="border-top:2px solid var(--line);margin:6px 0 0;padding-top:6px"></div>
     <div class="li"><div class="grow"><div class="nm" style="font-weight:800">Total to date</div></div><b>${fm(m.earned + m.mileage)}</b></div>
     <div class="li"><div class="grow"><div class="nm">Already paid</div></div><b>−${fm(m.paid)}</b></div>

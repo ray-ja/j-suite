@@ -215,7 +215,20 @@ function finMileage(entries, opts) {
     var owner = e.vehicleOwnerId || e.userId;   // mileage reimburses the VEHICLE OWNER, not the driver
     per[owner] = (per[owner] || 0) + cents; total += cents; miles += mi;
   });
-  return { perMember: per, total: total, miles: Math.round(miles * 10) / 10 };
+  // NET OUT business-card fuel bought for each owner's vehicle — it's an advance against their mileage ($0.725/mi
+  // already covers fuel). Floor at 0 per owner; excess (fuel > mileage in scope) is dropped (owner never owes back).
+  // Guarded: the offset helper lives in the receipts layer (js/72); in isolated core tests it's absent → no offset,
+  // so raw mileage stays byte-identical. Pass opts.fuelOffset===false to force raw. `applied` is returned for display.
+  var applied = {};
+  if (opts.fuelOffset !== false && typeof rcptFuelOffsetByOwner === "function") {
+    var off = rcptFuelOffsetByOwner({ from: opts.from, to: opts.to }) || {};
+    Object.keys(off).forEach(function (owner) {
+      var cur = per[owner] || 0; if (cur <= 0) return;
+      var d = Math.min(cur, off[owner] || 0); if (d <= 0) return;
+      per[owner] = cur - d; total -= d; applied[owner] = (applied[owner] || 0) + d;
+    });
+  }
+  return { perMember: per, total: total, miles: Math.round(miles * 10) / 10, fuelOffset: applied };
 }
 
 /* account-funding view — how much to move to each account this period */

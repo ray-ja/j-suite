@@ -66,6 +66,9 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (card4) base.cardLast4 = card4;
   if (refNo) base.refNo = refNo;
   if (refType) base.refType = refType;
+  // VEHICLE tag (fuel receipts): which truck this gas filled. Business-paid fuel for a vehicle is an advance against
+  // that vehicle owner's mileage payout (finMileage nets it out). Additive; form-wins-else-carry (like cardLast4).
+  if (fields.vehicleId != null) { if (fields.vehicleId) base.vehicleId = fields.vehicleId; } else if (carry.vehicleId) base.vehicleId = carry.vehicleId;
   // SPLIT: when one receipt is split into N flat-dollar slices, every slice carries the same splitGroup id (uid,
   // set only when N>1 by js/92 rcptApplySplit) so the table can group them back under one receipt. Purely
   // additive on ALL homes — old records lack it, no migration, no fingerprint reads it. (js/92-receipt-split.js)
@@ -90,6 +93,7 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (card4) rev.cardLast4 = card4;
   if (refNo) rev.refNo = refNo;
   if (refType) rev.refType = refType;
+  if (fields.vehicleId != null) { if (fields.vehicleId) rev.vehicleId = fields.vehicleId; } else if (carry.vehicleId) rev.vehicleId = carry.vehicleId;
   Object.assign(rev, dep);
   return rev;
 }
@@ -224,6 +228,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const preVendor = (rec.vendor && String(rec.vendor).trim()) ? rec.vendor : (sg.vendor || "");
   const preDesc = (rec.desc || rec.note) ? (rec.desc || rec.note) : (sg.desc || "");
   const preCat = rec.category ? rec.category : (sg.category || "");
+  const preVeh = rec.vehicleId || "";
   const preDate = _iso(rec.date) || _iso((rec.capRead || {}).date) || _iso(sg.date) || rcptDate(rec);   // real ISO wins; a Cap "unknown" can't win (guarded), else the existing ts fallback
   const preCard4 = (/^\d{4}$/.test(String(rec.cardLast4 || ""))) ? rec.cardLast4 : ((/^\d{4}$/.test(String(sg.last4 || ""))) ? sg.last4 : (rec.cardLast4 || ""));
   // REF / ORDER # — the record's own ref wins; a blank record inherits Cap's read (sg.refNo) so opening + Save keeps it.
@@ -241,6 +246,9 @@ window.rcptEditOpen = function (store, jobId, recId) {
     .map(([v, l]) => `<option value="${v}" ${preType === (v || "review") ? "selected" : ""}>${l}</option>`).join("");
   const jobOpts = `<option value="">— pick a job —</option>` + jobs.map(j => `<option value="${esc(j.id)}" ${preJob === j.id ? "selected" : ""}>${(typeof jobPO === "function" && jobPO(j)) ? esc(jobPO(j)) + " · " : ""}${esc(j.title || "Job")}${j.customerId && typeof custName === "function" ? " · " + esc(custName(j.customerId)) : ""}${j.date ? " · " + fmtDate(j.date) : ""}</option>`).join("");
   const catOpts = `<option value="">— category —</option>` + RCPT_CATS.map(c => `<option ${preCat === c ? "selected" : ""}>${c}</option>`).join("");
+  // Vehicle picker options (for fuel receipts) — owned vehicles pay their owner's mileage, so those are what an offset targets.
+  const _vehList = (typeof jobVehList === "function") ? jobVehList() : [];
+  const vehOpts = `<option value="">— which vehicle? —</option>` + _vehList.map(v => `<option value="${esc(v.id)}" ${preVeh === v.id ? "selected" : ""}>${esc(v.name || "Vehicle")}${v.plate ? " · " + esc(v.plate) : ""}${(v.ownerId && typeof userName === "function") ? " · " + esc(userName(v.ownerId) || "") : ""}</option>`).join("");
   const paidOpts = `<option value="">💳 Business card (no reimburse)</option>` + members.map(u => `<option value="${esc(u.id)}" ${rec.paidBy === u.id ? "selected" : ""}>${esc(u.username)} — personal card (reimburse)</option>`).join("");
   // "For" default: the PERSONAL-card payer wins (they get reimbursed → the receipt is theirs), so opening + Save
   // aligns attributedTo to paidBy. Only when nobody paid personally (business card) do we fall back to the record's
@@ -284,7 +292,8 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <label>Date</label><input id="rcpt_date" type="date" value="${esc(preDate)}">
     <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
-    <label>Category</label><select id="rcpt_cat">${catOpts}</select>
+    <label>Category</label><select id="rcpt_cat" onchange="rcptCatChange()">${catOpts}</select>
+    <div id="rcpt_vehwrap" style="display:${preCat === "fuel" ? "block" : "none"}"><label>⛽ Which vehicle <span class="sub">(gas on the business card comes off this vehicle owner's mileage)</span></label><select id="rcpt_veh">${vehOpts}</select></div>
     <label>Who paid?</label><select id="rcpt_paidby" onchange="rcptPaidByCouple()">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(preCard4)}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>
@@ -332,6 +341,11 @@ window.rcptEditOpen = function (store, jobId, recId) {
 window.rcptEditTypeChange = function () {
   const t = val("rcpt_type"); const wrap = document.getElementById("rcpt_jobwrap");
   if (wrap) wrap.style.display = (t === "job-expense" || t === "pass-through") ? "block" : "none";
+};
+/* Show the ⛽ vehicle picker only for fuel receipts (that's the only category the mileage offset applies to). */
+window.rcptCatChange = function () {
+  const wrap = document.getElementById("rcpt_vehwrap");
+  if (wrap) wrap.style.display = (val("rcpt_cat") === "fuel") ? "block" : "none";
 };
 /* "For" FOLLOWS "Who paid?" — whoever paid with their PERSONAL card IS who the receipt is for (they get
    reimbursed). When "Who paid?" is set to a PERSON, push that person into the "For" (attributedTo) select so the
@@ -472,7 +486,8 @@ function rcptReadEditForm() {
   let amt = amount;
   if (isRefund && amt != null) amt = -Math.abs(amt);   // refund = negative + kind:"refund"
   const cat = (isDeposit && !category) ? "rentals" : category;
-  const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, refNo: refNo, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
+  const vehicleId = (cat === "fuel") ? (val("rcpt_veh") || "") : "";   // vehicle tag only meaningful for fuel; clears if category changed away
+  const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, refNo: refNo, vehicleId: vehicleId, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
   return { fields: fields, type: type, jobId: jobId, amt: amt, vendor: vendor, isDeposit: isDeposit, isRefund: isRefund };
 }
 /* completeness gate — only needed to FILE a receipt (a draft Save may be incomplete). "" = OK, else the message. */

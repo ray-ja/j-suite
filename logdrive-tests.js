@@ -68,14 +68,11 @@ var driverCents = mil.perMember["u_ld_driver"] || 0;
 diag("finMileage perMember[driver] cents = " + driverCents + " (expect " + Math.round(170 * RATE * 100) + ")");
 ldAssert(driverCents === Math.round(170 * RATE * 100), "driver must be reimbursed 170×0.725 in the mileage roll-up (got " + driverCents + " cents)");
 
-// ---- 2) close-out summary now shows mileage, not $0 ----
-if (typeof RCPT_JOBFILTER !== "undefined") RCPT_JOBFILTER = "all";
-var summaryHTML = (typeof rcptJobCloseoutHTML === "function") ? rcptJobCloseoutHTML() : "";
-var shows = summaryHTML.indexOf("Chaz &amp; Vlad fly in (test)") >= 0 || summaryHTML.indexOf("Chaz & Vlad fly in (test)") >= 0;
-var showsMileage = summaryHTML.indexOf("🚗 mileage") >= 0;
-diag("close-out summary contains job=" + shows + " · contains '🚗 mileage'=" + showsMileage);
-ldAssert(showsMileage, "the job close-out summary must surface the mileage cost ('🚗 mileage') for a drive with no receipts");
-ldAssert(jobMilesCostEst(job) > 0, "the summary mileage value (jobMilesCostEst) must be > $0 for a logged drive");
+// ---- 2) a logged drive with NO receipts still has a real mileage cost (not $0) ----
+// (The close-out roll-up was simplified to a plain "waiting on receipts" reminder — it no longer prints a mileage
+//  breakdown; the mileage cost now surfaces on the job page + finance. The real invariant is the value itself.)
+ldAssert(jobMilesCostEst(job) > 0, "a logged drive must give the job a mileage cost > $0 (got " + jobMilesCostEst(job) + ")");
+ldAssert(approx(jobMilesCostEst(job), 170 * RATE), "the job's mileage cost must equal the confirmed drive " + (170 * RATE) + " (got " + jobMilesCostEst(job) + ")");
 
 // ---- 3) hours not meaningfully inflated ----
 var hrsAfter = jobClockedHrs(job);
