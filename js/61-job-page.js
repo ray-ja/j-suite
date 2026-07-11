@@ -537,6 +537,8 @@ function rJobPage(j) {
       h += s.html || "";
     }
   });
+  // Bottom back button — so after scrolling down to check the job you can go back without scrolling all the way up.
+  h += `<button class="btn ghost" style="width:100%;margin:14px 0 24px" onclick="jobPageBack()">← Back</button>`;
   return h;
 }
 

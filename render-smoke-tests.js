@@ -69,19 +69,33 @@ SCREENS.forEach(function (tab) {
   if (!coerced && empty && !threw) __errs.push("BLANK SCREEN [" + tab + "]: render() produced (near-)empty #view content (" + html.length + " chars) — screen may be dead");
 });
 
-// ---- JOB PAGE + movable-route card (js/61): open a job with a planned stop + a site-first sitePos, render, and
-//      assert the reorderable route card renders with the ▲▼ handler (jobPageRouteMove) + the movable 🏁 site row. ----
+// ---- JOB PAGE + movable-route card (js/61 + js/110): open a job with a planned stop + a site-first sitePos, render,
+//      and assert the reorderable route renders. The route reorder now lives in the per-vehicle "Vehicles & routes"
+//      card (js/110), which shows its ▲▼ handler (jobVehRouteMove) + movable 🏁 site row only when a vehicle is
+//      ASSIGNED — so ensure one exists + assign it. Also guards the top+bottom Back buttons (jobPageBack). ----
 (function () {
   var jr = D().jobs.find(function (x) { return x.id === "j_rs"; });
   if (jr) { jr.address = "1 Job Site Rd"; jr.plannedStops = [{ id: "s_rs", label: "Supplier", address: "2 Supply Ave", lat: null, lng: null }]; jr.sitePos = 0; }
+  var vl = (typeof jobVehList === "function") ? jobVehList() : [];
+  if (!vl.length) {   // inject a company truck into the current org's registry so the vehicle card has something to assign
+    var reg = (S.registry || []).find(function (x) { return x && x.id === S.biz; });
+    if (!reg) { reg = { id: S.biz, vehicles: [] }; (S.registry = S.registry || []).push(reg); }
+    if (!Array.isArray(reg.vehicles)) reg.vehicles = [];
+    reg.vehicles.push({ id: "veh_smoke", name: "Smoke Truck", active: true });
+    vl = (typeof jobVehList === "function") ? jobVehList() : [];
+  }
+  var vid = vl[0] && vl[0].id;
+  if (jr && vid) jr.vehicleIds = [vid];
   TAB = "schedule"; window.JOB_OPEN = "j_rs";
   var threw = null;
   try { render(); } catch (e) { threw = (e && (e.stack || e.message)) || String(e); }
   var html = (document.getElementById("view") || {}).innerHTML || "";
   if (threw) __errs.push("JOB PAGE RENDER THREW: " + threw);
-  if (html.indexOf("jobPageRouteMove") < 0) __errs.push("JOB PAGE: route card missing the ▲▼ reorder handler (jobPageRouteMove)");
-  if (html.indexOf("🏁 Job site") < 0) __errs.push("JOB PAGE: movable job-site row (🏁 Job site) not rendered");
-  diag("job page: threw=" + (threw ? "YES" : "no") + " | hasRouteMove=" + (html.indexOf("jobPageRouteMove") >= 0) + " | hasSiteRow=" + (html.indexOf("🏁 Job site") >= 0) + " | len=" + html.length);
+  if (vid && html.indexOf("jobVehRouteMove") < 0) __errs.push("JOB PAGE: vehicle route card missing the ▲▼ reorder handler (jobVehRouteMove)");
+  if (vid && html.indexOf("🏁 Job site") < 0) __errs.push("JOB PAGE: movable job-site row (🏁 Job site) not rendered");
+  // top + bottom Back both call jobPageBack — assert it appears at least twice (added a bottom Back so you don't scroll up)
+  if ((html.split("jobPageBack()").length - 1) < 2) __errs.push("JOB PAGE: expected top AND bottom Back buttons (jobPageBack)");
+  diag("job page: threw=" + (threw ? "YES" : "no") + " | hasRouteMove=" + (html.indexOf("jobVehRouteMove") >= 0) + " | hasSiteRow=" + (html.indexOf("🏁 Job site") >= 0) + " | backBtns=" + (html.split("jobPageBack()").length - 1) + " | len=" + html.length);
   window.JOB_OPEN = null;
 })();
 
