@@ -204,10 +204,9 @@ window.sqInvApplyCustomer = function (custId) {
     if (typeof touch === "function") touch(e);
     iv.reconciled = true; if (typeof touch === "function") touch(iv);
   });
-  // (2) suppress every one of this customer's paid quotes' own income — invoice wins (no double count)
-  (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && q.paid).forEach(q => {
-    q.reconciledInvoiceId = claimByQuote[q.id] || invs[0].id;   // its claiming invoice, or (orphan) the first invoice
-    q.reconciledDuplicate = !claimByQuote[q.id];                // orphan paid quote = a duplicate / over-booking
+  // (2) suppress only the CLAIMED quotes (matched to a Square invoice) — invoice wins, no double count
+  (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && q.paid && claimByQuote[q.id]).forEach(q => {
+    q.reconciledInvoiceId = claimByQuote[q.id]; q.reconciledDuplicate = false; q.reconcileKept = false;
     if (typeof touch === "function") touch(q);
     if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);   // tombstones inc_q_<id>
   });
@@ -215,12 +214,38 @@ window.sqInvApplyCustomer = function (custId) {
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();
   if (typeof render === "function") render();
+  // (3) ORPHAN paid quotes (paid but matched to NO Square invoice) could be a duplicate/over-book OR a job paid
+  // separately in cash. Ray's call: ASK per quote instead of auto-suppressing (which silently dropped cash income).
+  if (typeof sqInvOrphanChoice === "function") sqInvOrphanChoice(custId);
+};
+/* Per-quote choice for a customer's unresolved orphan paid quotes (paid, not claimed by a Square invoice, not yet
+   decided). "Duplicate" suppresses its income (Square counts it); "Kept" leaves it (paid separately, e.g. cash). */
+window.sqInvOrphanChoice = function (custId) {
+  const d = D();
+  const orphans = (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && q.paid && !q.reconciledInvoiceId && !q.reconcileKept);
+  if (!orphans.length) { if (typeof closeModal === "function") closeModal(); if (typeof render === "function") render(); return; }
+  const nm = q => esc((q.cust || (typeof custName === "function" ? custName(q.customerId) : "") || ""));
+  modal("Paid jobs not on Square", `
+    <div class="sub" style="white-space:normal;margin-bottom:8px">These paid jobs weren't matched to a Square invoice. For each — was it a <b>duplicate / over-book</b> (Square already has it → suppress its income) or <b>paid separately</b> (cash / check → keep the income)?</div>
+    ${orphans.map(q => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${money(q.finalPrice || q.total || 0)} · ${nm(q)}</div><div class="sub">${esc((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "")}${q.date ? " · " + fmtDate(q.date) : ""}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn ghost sm" onclick="sqInvOrphanResolve('${q.id}','keep','${custId}')">💵 Kept</button><button class="btn ghost sm" style="color:var(--danger)" onclick="sqInvOrphanResolve('${q.id}','dup','${custId}')">Duplicate</button></div></div>`).join("")}
+    <button class="btn acc" style="margin-top:12px;width:100%" onclick="sqInvOrphanChoice('${custId}')">Done</button>`);
+};
+window.sqInvOrphanResolve = function (quoteId, choice, custId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  if (choice === "dup") {
+    const inv = ((typeof actInvoices === "function" ? actInvoices() : []).find(iv => iv.customerId === (custId || q.customerId)) || {});
+    q.reconciledInvoiceId = inv.id || "manual"; q.reconciledDuplicate = true; q.reconcileKept = false;
+  } else { q.reconciledInvoiceId = null; q.reconciledDuplicate = false; q.reconcileKept = true; }   // paid separately → keep income
+  if (typeof touch === "function") touch(q);
+  if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);   // dup → tombstone; keep → (re)book
+  if (typeof save === "function") save();
+  sqInvOrphanChoice(custId);   // re-render with the remaining undecided orphans (closes when none left)
 };
 window.sqInvUnapplyCustomer = function (custId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner/admin only."); return; }
   const d = D();
   actInvoices().filter(iv => iv.customerId === custId).forEach(iv => { const e = (d.income || []).find(x => x && x.id === "inc_sq_" + iv.id); if (e && !e.deleted) { e.deleted = true; if (typeof touch === "function") touch(e); } iv.reconciled = false; if (typeof touch === "function") touch(iv); });
-  (d.quotes || []).filter(q => q && q.customerId === custId && q.reconciledInvoiceId).forEach(q => { delete q.reconciledInvoiceId; delete q.reconciledDuplicate; if (typeof touch === "function") touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q); });
+  (d.quotes || []).filter(q => q && q.customerId === custId && (q.reconciledInvoiceId || q.reconcileKept)).forEach(q => { delete q.reconciledInvoiceId; delete q.reconciledDuplicate; delete q.reconcileKept; if (typeof touch === "function") touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q); });
   if (typeof logChange === "function") logChange("update", "invoices", custId, "Un-reconciled from Square");
   if (typeof save === "function") save();
   if (S.sync && S.sync.url && S.sync.token && S.sync.auto && typeof syncNow === "function") syncNow();

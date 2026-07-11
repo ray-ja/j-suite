@@ -221,12 +221,17 @@ function finAccountBalances(){
   const byType = tp => disb.filter(d => d.type === tp).reduce((s, d) => s + finCents(d.amount), 0);
   const taxPaid = byType("tax"), payoutPaid = byType("payout"), drawPaid = byType("draw");
   const t = roll.totals, allocatedLabor = t.field + t.sales + t.admin;
+  // (#D) money someone fronted on their OWN card that isn't reimbursed yet is a LIABILITY the business owes, not cash
+  // it has spent — the business fund is committed to it (it's in expCents above), but the cash is still in the bank
+  // earmarked to that person. Adding it to "owed to members" recognizes the liability AND the cash that backs it.
+  const _ro = (typeof rcptReimbOwed === "function") ? rcptReimbOwed() : {};
+  const reimbOwed = Object.keys(_ro).reduce((s, id) => s + Math.round((_ro[id] || 0) * 100), 0);
   const taxBal = t.tax - taxPaid;
   const businessBal = t.business + t.unallocatedField - expCents - mil.total - drawPaid;
-  const owedBal = allocatedLabor + mil.total - payoutPaid;
+  const owedBal = allocatedLabor + mil.total + reimbOwed - payoutPaid;
   const cash = taxBal + businessBal + owedBal;
   const burn = finAvgMonthlyBurn();
-  return { taxBal, businessBal, owedBal, cash, taxIn: t.tax, taxPaid, businessIn: t.business, unalloc: t.unallocatedField, expCents, mileage: mil.total, drawPaid, allocatedLabor, payoutPaid, burn, runwayMonths: burn > 0 ? Math.round((cash / burn) * 10) / 10 : null };
+  return { taxBal, businessBal, owedBal, cash, reimbOwed, taxIn: t.tax, taxPaid, businessIn: t.business, unalloc: t.unallocatedField, expCents, mileage: mil.total, drawPaid, allocatedLabor, payoutPaid, burn, runwayMonths: burn > 0 ? Math.round((cash / burn) * 10) / 10 : null };
 }
 
 /* NC sales tax the business has COLLECTED from customers on taxable (RMI) jobs, held as a LIABILITY for NCDOR.
@@ -248,7 +253,7 @@ function rFinCash(){
   h += `<div class="secthd"><h2>Accounts</h2></div><div class="card">
     <div class="li"><div class="grow"><div class="nm">🏦 Tax reserve</div><div class="sub" style="white-space:normal">25% set aside ${fm(a.taxIn)} − paid ${fm(a.taxPaid)}</div></div><b style="${a.taxBal < 0 ? "color:var(--danger)" : ""}">${fm(a.taxBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">🏢 Business fund</div><div class="sub" style="white-space:normal">15% ${fm(a.businessIn)}${a.unalloc ? " + unassigned " + fm(a.unalloc) : ""} − expenses ${fm(a.expCents)} − mileage ${fm(a.mileage)}${a.drawPaid ? " − draws " + fm(a.drawPaid) : ""}</div></div><b style="${a.businessBal < 0 ? "color:var(--danger)" : ""}">${fm(a.businessBal)}</b></div>
-    <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
+    <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)}${a.reimbOwed ? " + reimbursements owed " + fm(a.reimbOwed) : ""} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
 
   // ACCOUNTS PAYABLE — unpaid vendor bills (a liability; excluded from cash above until paid)
   const ap = (typeof finAccountsPayable === "function") ? finAccountsPayable() : { bills: [], total: 0 };

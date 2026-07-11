@@ -29,10 +29,11 @@ SQIMP = { all: parsed, list: paid }; sqInvCommit(); ok("commit: dedupe still 3",
 d.quotes.forEach(function (q) { syncQuoteIncome(q); });
 var inc = function () { return D().income.filter(function (x) { return x && !x.deleted; }).reduce(function (a, e) { return a + (+e.amount || 0); }, 0); };
 ok("income before apply = 2157", inc() === 2157);
-sqInvApplyCustomer("cM"); ok("apply Michelle: 2157 -> 1437 (books 960, drops 1680)", inc() === 1437);
-ok("apply: orphan qM2 flagged duplicate + inc_sq booked", D().quotes.find(function (q) { return q.id === "qM2"; }).reconciledDuplicate === true && !!D().income.find(function (x) { return x.id === "inc_sq_a2" && x.amount === 960; }));
-sqInvApplyCustomer("cV"); ok("apply Virginia: unchanged 1437", inc() === 1437);
-sqInvUnapplyCustomer("cM"); ok("undo Michelle: back to 2157", inc() === 2157);
+sqInvApplyCustomer("cM");
+ok("apply Michelle: books inc_sq 960, claims qM1, orphan qM2 KEPT pending choice (still 2157)", inc() === 2157 && !!D().income.find(function (x) { return x.id === "inc_sq_a2" && x.amount === 960; }) && !!D().quotes.find(function (q) { return q.id === "qM1"; }).reconciledInvoiceId);
+sqInvOrphanResolve("qM2", "dup", "cM"); ok("resolve orphan qM2 as DUPLICATE → drops 720 → 1437", inc() === 1437 && D().quotes.find(function (q) { return q.id === "qM2"; }).reconciledDuplicate === true);
+sqInvApplyCustomer("cV"); ok("apply Virginia (both claimed, no orphan): unchanged 1437", inc() === 1437);
+sqInvUnapplyCustomer("cM"); ok("undo Michelle: back to 2157 (qM2 kept-flag cleared, re-booked)", inc() === 2157);
 
 // ---- #1 FIX: Square-reconciled income carries jobId/jobIds so pass-through materials net off the split base ----
 sqInvApplyCustomer("cM");

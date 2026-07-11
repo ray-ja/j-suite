@@ -209,3 +209,18 @@ T("A cash discount on $1000 = $30", quoteCashDiscount(1000)===30);
 T("A cash price = $970", quoteCashPrice(1000)===970);
 T("A invoice cash note shows 3% + cash price", invCashNote({items:[{name:"x",price:1000,qty:1}],total:1000}).indexOf("Save 3%")>=0 && invCashNote({items:[{name:"x",price:1000,qty:1}],total:1000}).indexOf("$970")>=0);
 diag("review-fixes: A done");
+
+// ================= C — reconcile per-quote choice; D — reimbursement liability in owed =================
+// D: unreimbursed personal-card spend shows in "owed to members" (and cash reflects it's still in the bank)
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+d.income.push({id:"iD",amount:1000,date:"2026-06-01",jobId:"jD",crew:["u_rj"]});
+d.jobs.push({id:"jD",date:"2026-06-01",crew:["u_rj"]});
+var owedNoReimb=finAccountBalances().owedBal, cashNoReimb=finAccountBalances().cash;
+d.expenses.push({id:"pe",amount:80,category:"materials",paidBy:"u_rj",date:"2026-06-02"});  // personal-card, unreimbursed
+var a=finAccountBalances();
+T("D reimbOwed = $80 (8000c) surfaces in owed", a.reimbOwed===8000 && a.owedBal===owedNoReimb+8000);
+T("D cash reflects the money is still in the bank (owed, not spent)", a.cash===cashNoReimb);  // business -80 (expCents) + owed +80 = net 0 change to cash
+// reimbursed → drops out of owed
+d.expenses[0].reimbursedAt=Date.now();
+T("D reimbursed spend leaves the owed liability", finAccountBalances().reimbOwed===0);
+diag("review-fixes: C+D done");
