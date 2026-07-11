@@ -120,6 +120,45 @@ window.jobReopenReceipts = function (jobId) {
   if (typeof save === "function") save();
   if (typeof render === "function") render();
 };
+/* ADMIN sign-off ON BEHALF OF a crew member — for no-login helpers (Chaz/Vlad, who can never self-close) and
+   for teammates who just hand the owner their receipts. Owner/admin only (rcptFinFull gates the whole roll-up too);
+   records `by` = the admin who signed off, for the audit trail. Reversible via jobReopenReceiptsFor. */
+function rcptCanCloseForOthers() { return (typeof rcptFinFull === "function") ? rcptFinFull() : (typeof isOwner === "function" ? isOwner() : false); }
+window.jobCloseReceiptsFor = function (jobId, userId) {
+  if (!rcptCanCloseForOthers() || !userId) return;
+  const me = rcptMe(), byId = me ? me.id : "";
+  const j = (D().jobs || []).find(x => x && x.id === jobId && !x.deleted); if (!j) return;
+  if (!Array.isArray(j.receiptsClosedBy)) j.receiptsClosedBy = [];
+  if (j.receiptsClosedBy.some(x => x && x.userId === userId)) return;   // already closed — idempotent
+  j.receiptsClosedBy.push({ userId: userId, ts: now(), by: byId });   // `by` = admin who signed off on their behalf
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Admin signed off receipts for " + ((typeof userName === "function" ? userName(userId) : "") || "crew") + " on “" + (j.title || "job") + "”");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
+window.jobReopenReceiptsFor = function (jobId, userId) {
+  if (!rcptCanCloseForOthers() || !userId) return;
+  const j = (D().jobs || []).find(x => x && x.id === jobId && !x.deleted); if (!j || !Array.isArray(j.receiptsClosedBy)) return;
+  const before = j.receiptsClosedBy.length;
+  j.receiptsClosedBy = j.receiptsClosedBy.filter(x => !(x && x.userId === userId));
+  if (j.receiptsClosedBy.length === before) return;
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Admin reopened receipts for " + ((typeof userName === "function" ? userName(userId) : "") || "crew") + " on “" + (j.title || "job") + "”");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
+window.jobCloseReceiptsAll = function (jobId) {
+  if (!rcptCanCloseForOthers()) return;
+  const me = rcptMe(), byId = me ? me.id : "";
+  const j = (D().jobs || []).find(x => x && x.id === jobId && !x.deleted); if (!j) return;
+  const open = jobReceiptsOpenCrew(j); if (!open.length) return;
+  if (!Array.isArray(j.receiptsClosedBy)) j.receiptsClosedBy = [];
+  open.forEach(uid => { if (!j.receiptsClosedBy.some(x => x && x.userId === uid)) j.receiptsClosedBy.push({ userId: uid, ts: now(), by: byId }); });
+  if (typeof touch === "function") touch(j);
+  if (typeof logChange === "function") logChange("update", "job", j.id, "Admin signed off receipts for all remaining crew (" + open.length + ") on “" + (j.title || "job") + "”");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
 
 /* per-member personal-card spend (paidBy set) across job expenses, pass-through materials, and business expenses */
 function rcptReimbOwed() {
@@ -1732,7 +1771,6 @@ function rcptJobCloseoutHTML() {
     const badge = full
       ? `<span class="badge" style="background:var(--accent);color:#fff">✓ Receipts closed — ready to invoice</span>`
       : `<span class="badge" style="background:#e0a800;color:#fff">${closedN}/${crew.length} crew closed</span>`;
-    const waiting = open.map(id => (typeof userName === "function" ? userName(id) : "") || "?").filter(Boolean).join(", ");
     const expTot = jobExpenseTotal(j);   // pass-through materials + job expenses logged so far
     // MILEAGE is a SEPARATE hard cost (confirmed time-clock miles, else the route estimate — jobMilesCostEst, ×IRS
     // rate) that jobExpenseTotal doesn't include. Surface it so a job with a logged drive but no receipts doesn't
@@ -1748,13 +1786,27 @@ function rcptJobCloseoutHTML() {
     const reviewed = !!j.rcptReviewedAt;
     const accent = reviewed ? "#1e9e5a" : (full ? "" : "#e0a800");
     // left/title taps to the job page; the RIGHT-side review button checks it off in place (stopPropagation).
+    // ADMIN close-out control — a chip per assigned crew member: OPEN → a "✓ name" button that signs off on their
+    // behalf (essential for no-login helpers who can't self-close); CLOSED → a ✓ badge with a ↩ to reopen. Plus a
+    // "✓ Sign off all" when >1 are still open. Whole roll-up is owner/admin-only, so these are inherently admin-gated.
+    const closeoutCtrl = crew.map(id => {
+      const nm = (typeof userName === "function" ? userName(id) : "") || "?";
+      return open.indexOf(id) < 0
+        ? `<span class="badge" style="background:var(--soft);color:var(--muted);border:1px solid var(--line);white-space:nowrap">${esc(nm)} ✓ <a onclick="event.stopPropagation();jobReopenReceiptsFor('${esc(j.id)}','${esc(id)}')" style="cursor:pointer;color:var(--brand-text);font-weight:700" title="Reopen — they still have receipts to add">↩</a></span>`
+        : `<button class="btn ghost sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsFor('${esc(j.id)}','${esc(id)}')" title="Sign off receipts for ${esc(nm)} (they've handed theirs in)">✓ ${esc(nm)}</button>`;
+    }).join("");
+    const closeoutRow = `<div style="flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px">`
+      + `<span class="sub" style="color:var(--muted)">Close-out:</span>${closeoutCtrl}`
+      + (open.length > 1 ? `<button class="btn acc sm" style="white-space:nowrap" onclick="event.stopPropagation();jobCloseReceiptsAll('${esc(j.id)}')">✓ Sign off all (${open.length})</button>` : "")
+      + `</div>`;
     h += `<div class="li" style="align-items:flex-start;flex-wrap:wrap;gap:6px${accent ? `;border-left:3px solid ${accent};padding-left:8px` : ""}${reviewed ? ";opacity:.72" : ""}">
       <div class="grow" style="min-width:160px;cursor:pointer" onclick="if(typeof openJobPage==='function')openJobPage('${esc(j.id)}')">
         <div class="nm">${esc(j.title || "Job")} <span class="sub" style="color:var(--muted)">›</span></div>
-        <div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> total${!full && waiting ? ` · <span style="color:#b8860b">waiting on ${esc(waiting)}</span>` : ""}</div>
+        <div class="sub">${cust ? esc(cust) + " · " : ""}${j.date ? esc(fmtDate(j.date)) : "no date"} · <b>${money2(dispTot)}</b> total</div>
         ${expParts.length ? `<div class="sub" style="white-space:normal">👤 expenses: ${expParts.join(" · ")}</div>` : ""}
         ${milParts.length ? `<div class="sub" style="white-space:normal">🚗 mileage back: ${milParts.join(" · ")}</div>` : ""}</div>
-      <div style="flex:0 0 auto;text-align:right"><button class="btn ${reviewed ? "acc" : "ghost"} sm" style="white-space:nowrap" onclick="event.stopPropagation();rcptToggleJobReviewed('${esc(j.id)}')" title="${reviewed ? "Reviewed — tap to undo" : "I've checked this job's receipts — good to go"}">${reviewed ? "✓ Reviewed" : "☐ Review"}</button><div style="margin-top:5px">${badge}</div></div></div>`;
+      <div style="flex:0 0 auto;text-align:right"><button class="btn ${reviewed ? "acc" : "ghost"} sm" style="white-space:nowrap" onclick="event.stopPropagation();rcptToggleJobReviewed('${esc(j.id)}')" title="${reviewed ? "Reviewed — tap to undo" : "I've checked this job's receipts — good to go"}">${reviewed ? "✓ Reviewed" : "☐ Review"}</button><div style="margin-top:5px">${badge}</div></div>
+      ${closeoutRow}</div>`;
   });
   h += `</div>`;
   return h;
