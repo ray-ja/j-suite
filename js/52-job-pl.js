@@ -70,6 +70,24 @@ function jobCostBreakdown(j) {
   const mileage = (typeof jobMilesCostEst === "function") ? jobMilesCostEst(j) : 0;
   return { mileage: mileage, jobExp: jobExp, materials: materials, tool: tool };
 }
+/* PASS-THROUGH MATERIALS billed on the job this income entry is for (cents). These are billed to the customer at
+   cost and go 100% back to whoever paid (business account, or the person reimbursed) — they are NOT revenue to
+   split. finJobSplit nets this off the top so only the labor VALUE runs through 25/15/60. Mirrors jobProfit's
+   matCost (job.materials + each linked stop-job's share, held deposits excluded). 0 when there's no live job. */
+function finPassThroughForIncome(income) {
+  if (!income || !income.jobId || typeof D !== "function") return 0;
+  var j = (D().jobs || []).find(function (x) { return x && x.id === income.jobId && !x.deleted; });
+  if (!j) return 0;
+  var held = (typeof plDepHeld === "function") ? plDepHeld : function () { return false; };
+  var matOf = function (job) {
+    var arr = (typeof plMaterials === "function") ? plMaterials(job) : ((job && job.materials) || []);
+    return arr.filter(function (x) { return x && !x.deleted && !held(x); }).reduce(function (s, e) { return s + (+e.amount || 0); }, 0);
+  };
+  var mat = matOf(j);
+  if (typeof subJobsOf === "function") subJobsOf(j.id).forEach(function (sj) { var n = (typeof stopSplitN === "function") ? stopSplitN(sj) : 1; mat += matOf(sj) / (n || 1); });
+  return Math.round(mat * 100);
+}
+window.finPassThroughForIncome = finPassThroughForIncome;
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line.
    TOOL/equipment job.expenses are EXCLUDED from the cost (they're capital/overhead, re-attributed to the
    business, not this job) — display-only; the record stays put in job.expenses[]. */

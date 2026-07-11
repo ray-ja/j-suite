@@ -154,13 +154,20 @@ function finPerPerson(rollup, mileage, hoursByJob, payouts) {
 /* per-job split with the Sales redirect resolved. Admin is returned raw — its monthly cap is a
    period-level constraint, so it is applied in finRollup (overflow → that job's field pool). */
 function finJobSplit(income) {
-  var s = finSplitAmount(finCents(income.amount));
+  var gross = finCents(income.amount);
+  // PASS-THROUGH MATERIALS are billed to the customer at cost and go 100% back to whoever paid (business account, or
+  // the person reimbursed) — NOT revenue to split. Net the pass-through cost off the top so only the LABOR VALUE runs
+  // through 25/15/60. Guarded: the helper lives in the P&L layer (js/52); absent (isolated core tests) → 0, so the
+  // split stays byte-identical until a PAID job actually carries pass-through. income._noPT forces the gross split.
+  var pt = (income && !income._noPT && typeof finPassThroughForIncome === "function") ? Math.max(0, finPassThroughForIncome(income) || 0) : 0;
+  if (pt > gross) pt = gross;   // never a negative base
+  var s = finSplitAmount(gross - pt);
   var crew = (income.crew || []).filter(Boolean);
   var salesOK = !!(income.originator && !income.houseAccount && finWithinSalesWindow(income.bookedAt, income.date));
   var fieldBeforeAdmin = s.field, salesToOriginator = 0;
   if (salesOK) salesToOriginator = s.sales; else fieldBeforeAdmin += s.sales;   // house/out-of-window → Field Work
   return {
-    amount: s.amount, tax: s.tax, business: s.business, labor: s.labor,
+    amount: s.amount, gross: gross, passThrough: pt, tax: s.tax, business: s.business, labor: s.labor,
     field: s.field, sales: s.sales, admin: s.admin,
     crew: crew, salesOK: salesOK, originator: income.originator || "",
     salesToOriginator: salesToOriginator, fieldBeforeAdmin: fieldBeforeAdmin, rawAdmin: s.admin
@@ -175,11 +182,14 @@ function finRollup(incomes, opts) {
     return x && !x.deleted && (!opts.from || x.date >= opts.from) && (!opts.to || x.date <= opts.to);
   }).slice().sort(function (a, b) { return (a.date + "|" + a.id) < (b.date + "|" + b.id) ? -1 : 1; });
   var member = {}, adminByMonth = {}, perJob = [];
-  var totals = { amount: 0, tax: 0, business: 0, labor: 0, field: 0, sales: 0, admin: 0, adminOverflow: 0, unallocatedField: 0 };
+  var totals = { amount: 0, gross: 0, passThrough: 0, tax: 0, business: 0, labor: 0, field: 0, sales: 0, admin: 0, adminOverflow: 0, unallocatedField: 0 };
   function M(id) { return member[id] || (member[id] = { field: 0, sales: 0, admin: 0 }); }
   list.forEach(function (inc) {
     var js = finJobSplit(inc);
-    totals.amount += js.amount; totals.tax += js.tax; totals.business += js.business; totals.labor += js.labor;
+    // totals.amount = the SPLIT base (net of pass-through) so tax+business+labor still reconciles to it exactly.
+    // totals.gross = what customers actually paid; totals.passThrough = material money routed back to payers (not split).
+    totals.amount += js.amount; totals.gross += js.gross; totals.passThrough += js.passThrough;
+    totals.tax += js.tax; totals.business += js.business; totals.labor += js.labor;
     if (js.salesToOriginator > 0) { M(js.originator).sales += js.salesToOriginator; totals.sales += js.salesToOriginator; }
     var mo = String(inc.date || "").slice(0, 7), paid = adminByMonth[mo] || 0, adminToMember = 0, overflow = js.rawAdmin;
     if (opts.adminMemberId && js.rawAdmin > 0) {
@@ -194,7 +204,7 @@ function finRollup(incomes, opts) {
     var fs = finFieldSplit(fieldPool, js.crew, inc.weights);
     Object.keys(fs.perMember).forEach(function (id) { M(id).field += fs.perMember[id]; });
     totals.field += fieldPool - fs.unallocated; totals.unallocatedField += fs.unallocated;
-    perJob.push({ id: inc.id, jobId: inc.jobId, date: inc.date, amount: js.amount, split: js, adminToMember: adminToMember, adminOverflow: overflow, fieldPool: fieldPool, field: fs.perMember, unallocated: fs.unallocated, weights: inc.weights || null });
+    perJob.push({ id: inc.id, jobId: inc.jobId, date: inc.date, amount: js.amount, gross: js.gross, passThrough: js.passThrough, split: js, adminToMember: adminToMember, adminOverflow: overflow, fieldPool: fieldPool, field: fs.perMember, unallocated: fs.unallocated, weights: inc.weights || null });
   });
   return { totals: totals, member: member, perJob: perJob };
 }

@@ -107,7 +107,7 @@ function rFinPayouts() {
 
   let h = `<div class="card"><div class="row" style="align-items:center">
       <button class="btn ghost sm" onclick="finMonthShift(-1)">‹</button>
-      <div class="grow" style="text-align:center"><b>${esc(finMonthLabel(ym))}</b><div class="sub">${roll.perJob.length} income entr${roll.perJob.length === 1 ? "y" : "ies"} · ${fm(roll.totals.amount)} revenue</div></div>
+      <div class="grow" style="text-align:center"><b>${esc(finMonthLabel(ym))}</b><div class="sub">${roll.perJob.length} income entr${roll.perJob.length === 1 ? "y" : "ies"} · ${fm(roll.totals.amount)} revenue${roll.totals.passThrough > 0 ? ` <span style="color:var(--muted)">(${fm(roll.totals.gross)} billed − ${fm(roll.totals.passThrough)} materials pass-through)</span>` : ""}</div></div>
       <button class="btn ghost sm" onclick="finMonthShift(1)">›</button></div>
     <label style="margin-top:10px">Admin Member — 5% of labor, capped $500/mo</label>
     <select onchange="finSetAdmin(this.value)"><option value="">— none (admin share → field work) —</option>${members.map(u => `<option value="${u.id}" ${adminId === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select></div>`;
@@ -146,9 +146,9 @@ function finJobBreakdownHTML(pj, adminId) {
   const fieldLines = Object.keys(pj.field).map(id => `${esc(finName(id))} ${fm(pj.field[id])}`).join(" · ") || (pj.unallocated ? `unassigned ${fm(pj.unallocated)}` : "—");
   const salesLine = s.salesToOriginator > 0 ? `${esc(finName(s.originator))} ${fm(s.salesToOriginator)}` : `→ field work (${s.originator ? "out of window / house" : "no originator"})`;
   const adminLine = pj.adminToMember > 0 ? `${esc(finName(adminId))} ${fm(pj.adminToMember)}` : (pj.adminOverflow > 0 ? `→ field work (${adminId ? "over $500/mo cap" : "no admin member"})` : "—");
-  return `<details style="border-bottom:1px solid var(--line);padding:7px 0"><summary style="cursor:pointer;font-weight:700">${esc(title)} · ${fmtDate(pj.date)} — ${fm(pj.amount)}</summary>
+  return `<details style="border-bottom:1px solid var(--line);padding:7px 0"><summary style="cursor:pointer;font-weight:700">${esc(title)} · ${fmtDate(pj.date)} — ${fm(pj.amount)}${pj.passThrough > 0 ? ` <span class="sub" style="font-weight:400">of ${fm(pj.gross)}</span>` : ""}</summary>
     <div class="sub" style="white-space:normal;margin-top:6px;line-height:1.7">
-      Tax (25%) ${fm(s.tax)} · Business (15%) ${fm(s.business)} · Labor (60%) ${fm(s.labor)}<br>
+      ${pj.passThrough > 0 ? `↩ Materials pass-through ${fm(pj.passThrough)} → back to whoever paid (not split)<br>Split base ${fm(pj.amount)} = ${fm(pj.gross)} billed − ${fm(pj.passThrough)} materials<br>` : ""}Tax (25%) ${fm(s.tax)} · Business (15%) ${fm(s.business)} · Labor (60%) ${fm(s.labor)}<br>
       <b>Field</b> ${fm(pj.fieldPool)} → ${fieldLines}<br>
       <b>Sales</b> ${fm(s.sales)} → ${salesLine}<br>
       <b>Admin</b> ${fm(s.admin)} → ${adminLine}
