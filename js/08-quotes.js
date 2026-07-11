@@ -1,8 +1,8 @@
 /* ---------- QUOTES ---------- */
-let QSEARCH="",QSTAGE_FILTER="all";
+let QSEARCH="",QSTAGE_SET={};   // status filter is now MULTI-select: keys of QSTAGE_SET that are true are shown; {} = All
 // Jobs-list sort (survives re-render; the ⇅ Sort control toggles). DEFAULT date-desc is byte-identical to the
-// old list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Type + Date-range filters.
-let QSORT="date",QSORTDIR="desc",QTYPE_FILTER="",QDATE_FROM="",QDATE_TO="";
+// old list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Date-range filter + hide-finished toggle.
+let QSORT="date",QSORTDIR="desc",QDATE_FROM="",QDATE_TO="",QHIDE_DONE=true;   // hide fully-finished jobs by DEFAULT
 const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
@@ -16,7 +16,9 @@ function nextQuoteNum(){ return (D().quotes||[]).reduce((m,q)=>Math.max(m,+q.num
 function quoteNum(q){ return (q&&q.num)?("#"+String(q.num).padStart(4,"0")):""; }
 /* "today" / "yesterday" / "3 days ago" / "in 2 days" for a YYYY-MM-DD date */
 function agoStr(dateStr){ if(!dateStr)return ""; const d=new Date(dateStr+"T00:00:00"); if(isNaN(d))return ""; const t=new Date(); t.setHours(0,0,0,0); const days=Math.round((t-d)/86400000); if(days===0)return "today"; if(days===1)return "yesterday"; if(days===-1)return "tomorrow"; return days>1?(days+" days ago"):("in "+(-days)+" days"); }
-window.quoteFilter=function(k){ QSHOWN=150; QSTAGE_FILTER=k; rQuotes(); };   // reset cap on filter change
+// MULTI-select status filter: "all" clears the set; any stage key toggles in/out. Empty set = show every status.
+window.quoteFilter=function(k){ QSHOWN=150; if(k==="all"){QSTAGE_SET={};} else if(QSTAGE_SET[k]){delete QSTAGE_SET[k];} else {QSTAGE_SET[k]=true;} rQuotes(); };   // reset cap on filter change
+window.qToggleHideDone=function(){ QSHOWN=150; QHIDE_DONE=!QHIDE_DONE; rQuotes(); };   // show/hide fully-finished jobs
 let QCREW_FILTER="";
 function quoteCrew(q){ if(!q||!q.jobId)return []; const j=(typeof actJ==="function")?actJ().find(x=>x.id===q.jobId&&!x.deleted):null; return (j&&j.crew)||[]; }
 window.quoteCrewFilter=function(id){ QSHOWN=150; QCREW_FILTER=id; rQuotes(); };   // reset cap on filter change
@@ -28,6 +30,24 @@ function jobOnlyStage(q){ const j=(typeof actJ==="function")&&actJ().find(x=>x&&
 /* stage for ANY Jobs-list row: a _jobOnly pseudo-quote uses jobOnlyStage; a REAL quote is byte-identical (workStage/quoteStage). */
 function qWorkStage(q){ return (q&&q._jobOnly)?jobOnlyStage(q):((typeof workStage==="function")?workStage(q):quoteStage(q)); }
 function qStageRank(q){ const st=qWorkStage(q); return (QSTAGE_ORDER[st]!=null)?QSTAGE_ORDER[st]:1; }
+/* "Finished" = nothing left to do on this job, so it auto-hides from the Jobs list by default: it's PAID
+   (done+invoiced+paid), the P&L is REVIEWED (plReviewed), and — if it has a live job — its receipts/expenses are
+   all accounted for (job.rcptReviewedAt). The "Show finished" toggle brings them back. */
+function qIsFinished(q){
+  if(qWorkStage(q)!=="paid")return false;
+  if(!(typeof plReviewed==="function"&&plReviewed(q)))return false;
+  const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted);
+  if(j&&!j.rcptReviewedAt)return false;   // has a job whose receipts aren't all reviewed yet → still needs attention
+  return true;
+}
+/* count of finished jobs across the SAME base list the Jobs page shows (real quotes + quote-less orphan jobs) —
+   drives the hide-toggle's "N finished" label. Mirrors quotesListHTML's orphan build; minimal shape is enough. */
+function qFinishedCount(){
+  const all=(typeof actQ==="function")?actQ():[];
+  const _covered=new Set(all.filter(q=>q&&q.jobId).map(q=>q.jobId));
+  const _orphans=(typeof actJ==="function"?actJ():[]).filter(j=>j&&!j.deleted&&!Array.isArray(j.sharedJobIds)&&!_covered.has(j.id)).map(j=>({jobId:j.id,_jobOnly:true}));
+  return all.concat(_orphans).filter(qIsFinished).length;
+}
 /* the linked job's total cost for this quote's row: logged receipts (materials + expenses) PLUS the mileage
    payout (confirmed odometer, else the maps-route estimate — jobMilesCostEst). 0 when no live job. */
 function qExpTotal(q){ const j=q&&q.jobId&&(typeof actJ==="function")&&actJ().find(x=>x&&x.id===q.jobId&&!x.deleted); if(!j)return 0; const rec=(typeof jobExpenseTotal==="function")?jobExpenseTotal(j):0; const mil=(typeof jobMilesCostEst==="function")?jobMilesCostEst(j):0; return rec+mil; }
@@ -65,17 +85,22 @@ function quotesListHTML(){
     .map(j=>({id:"vq_"+j.id,jobId:j.id,_jobOnly:true,cust:(custName(j.customerId)||""),customerId:j.customerId,date:j.date||"",title:j.title,total:0,accepted:true}));
   let list=all.concat(_orphans);
   if(QSEARCH){const qq=QSEARCH.toLowerCase();list=list.filter(q=>((q.cust||custName(q.customerId)||"")+" "+quoteType(q)+" "+(q.date||"")+" "+(q.invoiceNo||"")+" "+String(q.total||"")+" "+quoteStage(q)).toLowerCase().includes(qq));}
-  if(QSTAGE_FILTER!=="all")list=list.filter(q=>qWorkStage(q)===QSTAGE_FILTER);
+  const _stKeys=Object.keys(QSTAGE_SET).filter(k=>QSTAGE_SET[k]);
+  if(_stKeys.length)list=list.filter(q=>_stKeys.indexOf(qWorkStage(q))>=0);   // MULTI-select: show any selected status
+  if(QHIDE_DONE)list=list.filter(q=>!qIsFinished(q));   // default: hide fully-finished jobs (done+paid+reviewed+expensed)
   if(QCREW_FILTER){   // index active jobs by id ONCE (was actJ().find() per quote via quoteCrew → O(quotes×jobs))
     const _jm=new Map();(typeof actJ==="function"?actJ():[]).forEach(j=>{if(j&&j.id!=null&&!_jm.has(j.id))_jm.set(j.id,j);});
     list=list.filter(q=>{const j=q&&q.jobId?_jm.get(q.jobId):null;return ((j&&j.crew)||[]).indexOf(QCREW_FILTER)>=0;});
   }
-  if(QTYPE_FILTER)list=list.filter(q=>quoteType(q)===QTYPE_FILTER);
   if(QDATE_FROM)list=list.filter(q=>(q.date||"")>=QDATE_FROM);
   if(QDATE_TO)list=list.filter(q=>(q.date||"")<=QDATE_TO);
   list.sort(qSortCmp);
   if(!all.length&&!_orphans.length)return `<div class="empty"><div class="big">🧾</div>No jobs yet.<br>Use Guided Quote above, or tap + for the quick builder.</div>`;
-  if(!list.length)return `<div class="empty">No matches.</div>`;
+  if(!list.length){
+    // If everything left is a finished job we're hiding, say so + offer to show them (rather than a bare "No matches").
+    if(QHIDE_DONE&&!QSEARCH&&!QDATE_FROM&&!QDATE_TO&&qFinishedCount()>0)return `<div class="empty">✅ All caught up — every job here is done, paid &amp; reviewed.<br><button class="btn ghost sm" style="margin-top:8px" onclick="qToggleHideDone()">👁 Show finished jobs</button></div>`;
+    return `<div class="empty">No matches.</div>`;
+  }
   /* Load-more cap: filter/sort ABOVE run on the FULL list; we slice ONLY the final display array so search/sort
      always cover everything (a match beyond #150 is found, then shown when you load more). */
   const more=list.length>QSHOWN?`<button class="btn ghost" onclick="qLoadMore()">Load more (${Math.min(150,list.length-QSHOWN)} of ${list.length-QSHOWN} left)</button>`:"";
@@ -134,13 +159,12 @@ window.qLoadMore=function(){ QSHOWN+=150; const c=document.getElementById("qlist
    survive with NO setSelectionRange refocus hack (mirrors adminFilterAccounts in js/32).
    RESET the cap first so a new filtered result set re-caps from the top. */
 window.qSearchOn=function(v){ QSHOWN=150; QSEARCH=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
-// Type + Date-range filters (collapsed behind the Filters panel). Each runs on the full list above the slice
-// and repaints ONLY #qlist (their inputs live in the panel OUTSIDE #qlist, so they're never destroyed).
-window.qTypeFilter=function(v){ QSHOWN=150; QTYPE_FILTER=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
+// Date-range filter (collapsed behind the Filters panel). Runs on the full list above the slice and repaints ONLY
+// #qlist (the inputs live in the panel OUTSIDE #qlist, so they're never destroyed).
 window.qDateFrom=function(v){ QSHOWN=150; QDATE_FROM=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
 window.qDateTo=function(v){ QSHOWN=150; QDATE_TO=v; const c=document.getElementById("qlist"); if(c)c.innerHTML=quotesListHTML(); };
-// Clear all extra filters (type/date + status chip) → full re-render so the panel inputs reset to empty too.
-window.qClearFilters=function(){ QSHOWN=150; QTYPE_FILTER=""; QDATE_FROM=""; QDATE_TO=""; QSTAGE_FILTER="all"; rQuotes(); };
+// Clear the date-range filter → full re-render so the panel inputs reset to empty too.
+window.qClearFilters=function(){ QSHOWN=150; QDATE_FROM=""; QDATE_TO=""; rQuotes(); };
 function rQuotes(){
   if(WZON)return wizRender();
   const dm=(typeof wzDraftMeta==="function")?wzDraftMeta():null;
@@ -150,18 +174,24 @@ function rQuotes(){
   const all=actQ();
   if(all.length){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}" oninput="qSearchOn(this.value)">`;
-    const stages=[["all","All"],["quote","Quote"],["job","Job"],["expense","Expense"],["invoice","Invoice"],["paid","Paid"]];
-    h+=`<div class="subnav" style="margin:8px 0">`+stages.map(s=>`<button class="subbtn ${QSTAGE_FILTER===s[0]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+    // Status filter — MULTI-select. "All" clears the selection (shows every status); each chip toggles that status
+    // in/out, so you can watch e.g. Job + Expense + Invoice at once but not Paid. "on" chip = currently selected.
+    const stages=[["quote","Quote"],["job","Job"],["expense","Expense"],["invoice","Invoice"],["paid","Paid"]];
+    const stKeys=Object.keys(QSTAGE_SET).filter(k=>QSTAGE_SET[k]);
+    h+=`<div class="subnav" style="margin:8px 0"><button class="subbtn ${stKeys.length===0?"on":""}" onclick="quoteFilter('all')">All</button>`
+      +stages.map(s=>`<button class="subbtn ${QSTAGE_SET[s[0]]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
+    // Hide-finished toggle — ON by default so the list only shows jobs that still need something. A job is "finished"
+    // when it's done + paid + P&L-reviewed + all its receipts accounted for; those drop off until you tap Show.
+    const finN=qFinishedCount();
+    h+=`<button class="btn ${QHIDE_DONE?"acc":"ghost"} sm" style="margin-bottom:10px" onclick="qToggleHideDone()">${QHIDE_DONE?`✅ Hiding ${finN} finished`:`👁 Showing all${finN?` (${finN} finished)`:""}`}</button>`;
     const crewM=(typeof realAccounts==="function"?realAccounts():[]);
     if(crewM.length)h+=`<select onchange="quoteCrewFilter(this.value)" style="font-size:13px;margin-bottom:10px">${[["","👥 All crew"]].concat(crewM.map(u=>[u.id,u.username])).map(o=>`<option value="${esc(o[0])}" ${QCREW_FILTER===o[0]?"selected":""}>${esc(o[1])}</option>`).join("")}</select>`;
-    // Collapsible Type + Date-range filters — kept behind a "Filters" toggle to stay mobile-clean. The panel
-    // lives OUTSIDE #qlist so its inputs survive the scoped repaint. Open by default only when a filter is set.
-    const types=Array.from(new Set(all.map(quoteType).filter(Boolean))).sort();
-    const anyFilt=!!(QTYPE_FILTER||QDATE_FROM||QDATE_TO);
-    h+=`<details class="card" style="margin-bottom:10px"${anyFilt?" open":""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Filters${anyFilt?" · on":""}</summary>`
-      +`<label style="margin-top:8px">Type</label><select onchange="qTypeFilter(this.value)" style="font-size:13px"><option value="">All types</option>${types.map(t=>`<option value="${esc(t)}"${QTYPE_FILTER===t?" selected":""}>${esc(t)}</option>`).join("")}</select>`
-      +`<div class="row" style="gap:8px"><div class="grow"><label>From</label><input type="date" value="${esc(QDATE_FROM)}" onchange="qDateFrom(this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(QDATE_TO)}" onchange="qDateTo(this.value)" style="width:100%"></div></div>`
-      +(anyFilt?`<button class="btn ghost sm" style="margin-top:8px" onclick="qClearFilters()">Clear filters</button>`:"")
+    // Collapsible Date-range filter — kept behind a "Filters" toggle to stay mobile-clean. The panel lives OUTSIDE
+    // #qlist so its inputs survive the scoped repaint. Open by default only when a date filter is set.
+    const anyFilt=!!(QDATE_FROM||QDATE_TO);
+    h+=`<details class="card" style="margin-bottom:10px"${anyFilt?" open":""}><summary style="cursor:pointer;font-weight:700;user-select:none">⚙️ Date range${anyFilt?" · on":""}</summary>`
+      +`<div class="row" style="gap:8px;margin-top:8px"><div class="grow"><label>From</label><input type="date" value="${esc(QDATE_FROM)}" onchange="qDateFrom(this.value)" style="width:100%"></div><div class="grow"><label>To</label><input type="date" value="${esc(QDATE_TO)}" onchange="qDateTo(this.value)" style="width:100%"></div></div>`
+      +(anyFilt?`<button class="btn ghost sm" style="margin-top:8px" onclick="qClearFilters()">Clear dates</button>`:"")
       +`</details>`;
   }
   h+=`<div id="qlist">${quotesListHTML()}</div>`;
