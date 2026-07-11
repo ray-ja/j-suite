@@ -30,6 +30,15 @@ function invAdjRows(q) {
   return `<tr><td colspan="2" style="text-align:right;padding-top:6px">Subtotal</td><td style="text-align:right;padding-top:6px">${money(sub)}</td></tr>`
     + `<tr><td colspan="2" style="text-align:right">Adjustment</td><td style="text-align:right">${adj < 0 ? "−" : "+"}${money(Math.abs(adj))}</td></tr>`;
 }
+/* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
+function invAmountDue(q) { return (typeof quoteTotalWithTax === "function") ? quoteTotalWithTax(q) : invEffectiveTotal(q); }
+/* invoice tax rows — a "Sales tax (6.75%)" line + a "Total due" line, only when the quote is a taxable service */
+function invTaxRows(q, totCls) {
+  if (!(typeof quoteTaxable === "function" && quoteTaxable(q))) return "";
+  const tax = (typeof quoteSalesTax === "function") ? quoteSalesTax(q) : 0;
+  return `<tr><td colspan="2" style="text-align:right">Sales tax (6.75%)</td><td style="text-align:right">${money(tax)}</td></tr>`
+    + `<tr><td colspan="2" style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>Total due</td><td style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>${money(invAmountDue(q))}</td></tr>`;
+}
 
 /* Receipt close-out signal for the owner — informational only, never blocks invoicing. If the job linked to
    this quote has crew who haven't closed out their receipts, more expenses may still land, so the invoice
@@ -67,7 +76,7 @@ window.openInvoice = function (quoteId) {
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
         <thead><tr><th style="text-align:left">Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${invRowsHTML(q)}</tbody>
-        <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr></tfoot>
+        <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>
     </div>${invReceiptsNote(q)}
@@ -77,7 +86,7 @@ window.openInvoice = function (quoteId) {
     </div>
     <div class="row" style="gap:8px;margin-top:8px">
       <button class="btn ghost sm grow" onclick="invCopy('${q.id}')">Copy</button>
-      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money(invEffectiveTotal(q))}'})">Send reminder</button>` : ``}
+      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money(invAmountDue(q))}'})">Send reminder</button>` : ``}
     </div>`);
 };
 
@@ -88,7 +97,9 @@ function invText(q, cust, biz, no) {
     "INVOICE " + no, fmtDate(q.invoicedDate || q.date || today()), "",
     "Bill to: " + ((cust && (cust.name || cust.company)) || "—"),
     "", ...lines, "",
-    "TOTAL: " + money(invEffectiveTotal(q)), "Due on receipt", "",
+    "TOTAL: " + money(invEffectiveTotal(q)),
+    ...(typeof quoteTaxable==="function"&&quoteTaxable(q) ? ["Sales tax (6.75%): "+money(quoteSalesTax(q)), "TOTAL DUE: "+money(invAmountDue(q))] : []),
+    "Due on receipt", "",
     "Thank you for your business!"
   ].join("\n");
 }
@@ -140,7 +151,7 @@ window.invPrint = function (quoteId) {
     <div style="margin-top:14px"><div class="muted" style="font-weight:700">Bill to</div>${billTo.map(l => `<div class="muted">${esc(l)}</div>`).join("")}</div>
     <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
     <tbody>${invRowsHTML(q)}</tbody>
-    <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr></tfoot></table>
+    <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,true)}</tfoot></table>
     <p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
     <button onclick="window.print()" style="margin-top:16px;padding:10px 16px">Print / Save as PDF</button>
     </body></html>`;

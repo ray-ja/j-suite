@@ -37,7 +37,7 @@ window.openQuote=function(id,customerId,preset){
     if(WZ.items.length===1&&WZ.items[0]&&(WZ.items[0]._flat||WZ.items[0].name==="Custom price")){WZ.items[0]._flat=true;if(WZ.title&&(!WZ.items[0].name||WZ.items[0].name==="Custom price"))WZ.items[0].name=WZ.title;}
     WZ.recurring=!!q.recurring;WZ.miles=q.miles||0;WZ.days=q.estDays||1;WZ.hours=q.hours||0;WZ.crewN=q.crewN||1;WZ.disposalTrip=!!q.disposalTrip;WZ.haul=q.haul||"pickup";
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
-    WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";
+    WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";WZ.taxable=!!q.taxable;
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
     if(q.pv){WZ.pv=JSON.parse(JSON.stringify(q.pv));WZ._pvFromSave=true;}else{WZ._pvFromSave=false;}   // builder inputs for change-order editing
     if(q.fd){WZ.fd=JSON.parse(JSON.stringify(q.fd));WZ._fdFromSave=true;}else{WZ._fdFromSave=false;}   // french-drain builder inputs (change-order editing)
@@ -341,6 +341,9 @@ function wizReview(){
         <div class="row" style="gap:8px"><input type="number" id="wz_final" inputmode="decimal" placeholder="${_qtot}" value="${WZ.finalPrice||''}" style="flex:1"><button class="btn ghost sm" onclick="wizSetFinal()">Save</button></div>
         <input id="wz_adjnote" placeholder="Reason (e.g. added interior door, gave a discount)" value="${esc(WZ.adjNote||'')}" style="margin-top:6px">
         ${WZ.finalPrice?`<div class="note" style="margin-top:6px">Charging <b>${money(WZ.finalPrice)}</b> (quote was ${money(_qtot)})${WZ.adjNote?" · "+esc(WZ.adjNote):""}</div>`:""}`;
+      const _eff=WZ.finalPrice||_qtot, _stax=Math.round(_eff*0.0675*100)/100;
+      h+=`<label class="li" style="cursor:pointer;margin-top:10px"><input type="checkbox" ${WZ.taxable?"checked":""} onchange="wizToggleTaxable()" style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">🧾 Charge NC sales tax (6.75%)</div><div class="sub" style="white-space:normal">ON for a taxable RMI service — recurring maintenance, cleanups. OFF for a capital improvement (a NEW patio/walkway): you pay tax on the materials instead, not the customer. Confirm the service type with NCDOR if unsure.</div></div></label>`;
+      if(WZ.taxable)h+=`<div class="note" style="margin-top:6px">+ ${money(_stax)} sales tax → customer pays <b>${money(Math.round((_eff+_stax)*100)/100)}</b>. The tax is held for NC (not income, not split).</div>`;
       if(WZ.paymentLink)h+=`<a class="btn acc" style="margin-top:8px" href="${esc(WZ.paymentLink)}" target="_blank" rel="noopener">💳 Pay now</a><button class="btn ghost sm" style="margin-top:6px" onclick="WZ.paymentLink='';wizPersist();render()">Remove link</button>`;
       else h+=`<div class="note" style="margin-top:8px">Add a Stripe Payment Link (no monthly fee, ~2.9%+30¢, one link per amount).</div><input id="wz_paylink" style="margin-top:6px" placeholder="https://buy.stripe.com/..." value=""><button class="btn ghost sm" style="margin-top:6px" onclick="wizSetPayLink()">Save link</button>`;
       h+=`</div>`;
@@ -415,7 +418,7 @@ window.wizPersist=function(){
     fd:(WZ.fd&&WZ.items[0]&&(WZ.items[0].bandKey==="frenchdrain"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="frenchdrain")))?JSON.parse(JSON.stringify(WZ.fd)):undefined,
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),estDays:Math.max(1,+WZ.days||1),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles)+wizExtraDaysCost(),
-    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
+    paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",taxable:!!WZ.taxable,hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
   if(!q.num){ const _ex=WZ.id?d.quotes.find(x=>x.id===WZ.id):null; q.num=(_ex&&_ex.num)||(typeof nextQuoteNum==="function"?nextQuoteNum():0); }
@@ -432,7 +435,8 @@ window.wizPersist=function(){
   WZ._verSource=null;
   save();return q;
 };
-window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
+window.wizFinish=function(){if(wizLockedAlert())return;const q=wizPersist();if(q.paid&&typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}/* A8: a change order on a PAID quote re-syncs its income to the new amount */CURQ=q;QITEMS=q.items;WZ.savedTotal=q.total;if(typeof lockReleaseCurrent==="function")lockReleaseCurrent();wizClearDraft();WZ.step="done";render();};
+window.wizToggleTaxable=function(){if(wizLockedAlert())return;WZ.taxable=!WZ.taxable;const q=wizPersist();if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.taxable?"Marked taxable (6.75% sales tax)":"Marked non-taxable")+(q.cust?" · "+q.cust:""));render();};
 window.wizToggleRecurring=function(){if(wizLockedAlert&&wizLockedAlert())return;WZ.recurring=!WZ.recurring;if(typeof wizPersist==="function")wizPersist();render();};   /* recurring-contract toggle: flips q.recurring (20%-off pricing + label); the standing PLAN is the separate opt-in (js/103 recurPlanFromQuote) */
 window.wizToggleInvoiced=function(){if(wizLockedAlert())return;WZ.invoiced=!WZ.invoiced;wizPersist();render();if(WZ.invoiced&&WZ.jobId&&typeof reviewPrompt==="function")reviewPrompt(WZ.jobId);};   /* ask for the review at the INVOICED moment, not at job-done (Ray) */
 window.wizTogglePaid=function(){if(wizLockedAlert())return;WZ.paid=!WZ.paid;if(WZ.paid)WZ.invoiced=true;const q=wizPersist();if(typeof syncQuoteIncome==="function"){syncQuoteIncome(q);save();}if(typeof logChange==="function")logChange("update","quote",q.id,(WZ.paid?"Marked paid ":"Unmarked paid ")+money(q.finalPrice||q.total)+(q.cust?" · "+q.cust:""));render();};

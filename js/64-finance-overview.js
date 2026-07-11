@@ -176,8 +176,18 @@ function finAccountBalances(){
   return { taxBal, businessBal, owedBal, cash, taxIn: t.tax, taxPaid, businessIn: t.business, unalloc: t.unallocatedField, expCents, mileage: mil.total, drawPaid, allocatedLabor, payoutPaid, burn, runwayMonths: burn > 0 ? Math.round((cash / burn) * 10) / 10 : null };
 }
 
+/* NC sales tax the business has COLLECTED from customers on taxable (RMI) jobs, held as a LIABILITY for NCDOR.
+   collected = 6.75% on every PAID taxable quote; remitted = "salestax" disbursements; owed = what to file/pay.
+   Kept OUT of income/cash accounts (it was never the business's money). */
+function finSalesTaxCollected(){
+  const collected = (D().quotes || []).filter(q => q && !q.deleted && q.paid && (typeof quoteTaxable === "function" && quoteTaxable(q))).reduce((s, q) => s + Math.round((typeof quoteSalesTax === "function" ? quoteSalesTax(q) : 0) * 100), 0);
+  const remitted = (typeof actDisb === "function" ? actDisb() : []).filter(x => x && x.type === "salestax").reduce((s, x) => s + finCents(x.amount), 0);
+  return { collected, remitted, owed: collected - remitted };
+}
+window.finSalesTaxCollected = finSalesTaxCollected;
 function rFinCash(){
   const a = finAccountBalances();
+  const stax = finSalesTaxCollected();
   let h = `<div class="card" style="text-align:center"><div class="sub">Cash on hand</div>
     <div style="font-size:30px;font-weight:800;color:${a.cash < 0 ? "var(--danger)" : "var(--accent)"}">${fm(a.cash)}</div>
     <div class="sub">${a.runwayMonths != null ? `~${a.runwayMonths} months runway · ${fm(a.burn)}/mo overhead` : "runway needs a few months of history"}</div></div>`;
@@ -186,6 +196,13 @@ function rFinCash(){
     <div class="li"><div class="grow"><div class="nm">🏦 Tax reserve</div><div class="sub" style="white-space:normal">25% set aside ${fm(a.taxIn)} − paid ${fm(a.taxPaid)}</div></div><b style="${a.taxBal < 0 ? "color:var(--danger)" : ""}">${fm(a.taxBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">🏢 Business fund</div><div class="sub" style="white-space:normal">15% ${fm(a.businessIn)}${a.unalloc ? " + unassigned " + fm(a.unalloc) : ""} − expenses ${fm(a.expCents)} − mileage ${fm(a.mileage)}${a.drawPaid ? " − draws " + fm(a.drawPaid) : ""}</div></div><b style="${a.businessBal < 0 ? "color:var(--danger)" : ""}">${fm(a.businessBal)}</b></div>
     <div class="li"><div class="grow"><div class="nm">👷 Owed to members</div><div class="sub" style="white-space:normal">labor ${fm(a.allocatedLabor)} + mileage ${fm(a.mileage)} − paid ${fm(a.payoutPaid)}</div></div><b style="${a.owedBal < 0 ? "color:var(--danger)" : ""}">${fm(a.owedBal)}</b></div></div>`;
+
+  // NC SALES TAX collected on taxable jobs — a liability held for NCDOR, separate from cash/income
+  if (stax.collected > 0 || stax.remitted > 0) {
+    h += `<div class="secthd" style="margin-top:14px"><h2>🧾 Sales tax (NC)</h2><span class="ct" style="${stax.owed > 0 ? "color:var(--danger)" : ""}">${fm(stax.owed)} owed</span></div>
+      <div class="card"><div class="li"><div class="grow"><div class="nm">Collected on taxable jobs</div><div class="sub" style="white-space:normal">6.75% charged on paid RMI/taxable invoices − remitted ${fm(stax.remitted)}. Held for NCDOR — not income, not in cash above.</div></div><b style="${stax.owed > 0 ? "color:var(--danger)" : ""}">${fm(stax.owed)}</b></div>
+      ${stax.owed > 0 ? `<button class="btn ghost sm" style="margin-top:8px" onclick="recordDisbursement('salestax')">Record a remittance to NC</button>` : ""}</div>`;
+  }
 
   // per-person breakdown of the pooled "Owed to members" — each tappable to record a payout to that member
   if (typeof finOwedPerPersonHTML === "function") {
@@ -199,7 +216,7 @@ function rFinCash(){
 
   const disb = (typeof actDisb === "function" ? actDisb() : []).slice().sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 12);
   if (disb.length) h += `<div class="secthd"><h2>Recent</h2></div><div class="card">` + disb.map(d => {
-    const lbl = d.type === "tax" ? "🏦 Tax payment" : d.type === "payout" ? ("👷 Payout" + (d.memberId ? " · " + finName(d.memberId) : "")) : "🏢 Owner draw";
+    const lbl = d.type === "tax" ? "🏦 Tax payment" : d.type === "salestax" ? "🧾 Sales tax remittance" : d.type === "payout" ? ("👷 Payout" + (d.memberId ? " · " + finName(d.memberId) : "")) : "🏢 Owner draw";
     return `<div class="li" onclick="recordDisbursement('${d.type}','${d.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${money(d.amount)} <span class="sub" style="font-weight:400">${esc(lbl)}</span></div><div class="sub">${fmtDate(d.date)}${d.note ? " · " + esc(d.note) : ""}</div></div></div>`;
   }).join("") + `</div>`;
   return h;
@@ -209,12 +226,12 @@ window.recordDisbursement = function(type, id, presetMember){
   const d = D(); const ex = id ? (d.disbursements || []).find(x => x && x.id === id) : null;
   const t0 = ex ? ex.type : type, members = finMembers();
   const selMember = ex ? ex.memberId : (presetMember || "");   // per-person breakdown can preselect the member to pay
-  const title = t0 === "tax" ? "Tax payment" : t0 === "payout" ? "Payout paid" : "Owner draw";
+  const title = t0 === "tax" ? "Tax payment" : t0 === "salestax" ? "Sales tax remittance" : t0 === "payout" ? "Payout paid" : "Owner draw";
   modal((ex ? "Edit " : "Record ") + title, `
     <div class="row" style="gap:8px"><div class="grow"><label>Amount ($)</label><input id="db_amt" type="number" inputmode="decimal" value="${ex ? ex.amount : ""}"></div>
       <div class="grow"><label>Date</label><input id="db_date" type="date" value="${ex ? ex.date : today()}"></div></div>
     ${t0 === "payout" ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${selMember === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
-    <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "payout" ? "e.g. June payout" : "what for"}">
+    <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "salestax" ? "e.g. NCDOR E-500 filing" : t0 === "payout" ? "e.g. June payout" : "what for"}">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveDisbursement('${t0}','${ex ? ex.id : ""}')">Save</button>
     ${ex ? `<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delDisbursement('${ex.id}')">Delete</button>` : ""}`);
 };
@@ -226,7 +243,7 @@ window.saveDisbursement = function(type, id){
   if (!e) { e = { id: uid() }; d.disbursements.push(e); }
   e.type = type; e.amount = amt; e.date = val("db_date") || today(); e.memberId = (document.getElementById("db_member") ? val("db_member") : e.memberId) || ""; e.note = val("db_note") || ""; e.deleted = false; e.updatedAt = now();
   if (typeof touch === "function") touch(e);
-  if (typeof logChange === "function") logChange(id ? "update" : "create", "disbursement", e.id, (type === "tax" ? "Tax payment " : type === "payout" ? "Payout " : "Draw ") + money(amt));
+  if (typeof logChange === "function") logChange(id ? "update" : "create", "disbursement", e.id, (type === "tax" ? "Tax payment " : type === "salestax" ? "Sales tax remittance " : type === "payout" ? "Payout " : "Draw ") + money(amt));
   save(); closeModal(); render();
 };
 window.delDisbursement = function(id){

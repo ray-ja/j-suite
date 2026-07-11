@@ -102,3 +102,26 @@ var expOnly=finJobExpenseOut();
 d.jobs[0].materials.push({id:"m5b",amount:500});
 T("#5 finJobExpenseOut ignores materials (still $100, not $600)", finJobExpenseOut()===expOnly && expOnly===10000);
 diag("review-fixes: #5 done");
+
+// ================= #8 — NC sales tax collection on taxable jobs =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+var qt={id:"q8",customerId:"c8",items:[{name:"Lawn maintenance",price:1000,qty:1}],total:1000,taxable:true,paid:true,jobId:"j8"};
+var qn={id:"q8b",items:[{name:"New patio",price:2000,qty:1}],total:2000,taxable:false};
+T("#8 quoteSalesTax on taxable $1000 = $67.50", quoteSalesTax(qt)===67.5);
+T("#8 quoteSalesTax on non-taxable = $0", quoteSalesTax(qn)===0);
+T("#8 quoteTotalWithTax = $1067.50", quoteTotalWithTax(qt)===1067.5);
+T("#8 invoice tax rows appear for taxable (Sales tax + Total due + $67.50)", invTaxRows(qt,false).indexOf("Sales tax (6.75%)")>=0 && invTaxRows(qt,false).indexOf("Total due")>=0);
+T("#8 no tax rows for non-taxable", invTaxRows(qn,false)==="");
+T("#8 invAmountDue includes tax for taxable ($1067.50)", invAmountDue(qt)===1067.5);
+T("#8 invAmountDue = service total for non-taxable ($2000)", invAmountDue(qn)===2000);
+// income stays PRE-TAX (tax is a liability, not revenue/split)
+d.quotes.push(qt); d.jobs.push({id:"j8",crew:["u_rj"]});
+syncQuoteIncome(qt);
+T("#8 income booked at PRE-TAX service total ($1000, not $1067.50)", D().income.some(x=>x.id==="inc_q_q8"&&x.amount===1000));
+// collected-tax liability
+var st=finSalesTaxCollected();
+T("#8 finSalesTaxCollected: $67.50 collected/owed (6750c)", st.collected===6750 && st.owed===6750);
+// record a remittance → owed drops
+d.disbursements.push({id:"r8",type:"salestax",amount:50,date:"2026-06-20"});
+T("#8 remittance reduces owed (6750 - 5000 = 1750c)", finSalesTaxCollected().owed===1750);
+diag("review-fixes: #8 done");

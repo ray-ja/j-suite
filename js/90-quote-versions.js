@@ -13,6 +13,16 @@
 function quoteIsCommitted(q) { return !!(q && (q.accepted || q.invoiced || q.paid)); }
 /* the number the money side bills — mirrors js/50 quoteTotalAmt / js/40 syncQuoteIncome / js/52 jobProfit */
 function quoteEffectiveTotal(q) { return q ? (+(q.finalPrice || q.total) || 0) : 0; }
+/* NC SALES TAX the business COLLECTS. Off by default (most OBX work is capital-improvement paver installs — the
+   contractor pays tax on materials, doesn't charge the customer; see the Playbook "Which of our services are
+   taxable"). Mark a quote taxable (q.taxable) for RMI services — recurring maintenance/cleanups — and 6.75%
+   (Dare/Currituck) rides on the invoice as a SEPARATE line. Collected tax is a LIABILITY held for NCDOR, NOT
+   revenue: income/payout stay on the pre-tax service total, and the collected tax is tracked for remittance (js/64). */
+const SALES_TAX_RATE = 0.0675;
+function quoteTaxable(q) { return !!(q && q.taxable); }
+function quoteSalesTax(q) { return quoteTaxable(q) ? Math.round(quoteEffectiveTotal(q) * SALES_TAX_RATE * 100) / 100 : 0; }
+function quoteTotalWithTax(q) { return Math.round((quoteEffectiveTotal(q) + quoteSalesTax(q)) * 100) / 100; }
+if (typeof window !== "undefined") { window.SALES_TAX_RATE = SALES_TAX_RATE; window.quoteTaxable = quoteTaxable; window.quoteSalesTax = quoteSalesTax; window.quoteTotalWithTax = quoteTotalWithTax; }
 
 /* billable-shape equality of two line-item arrays — compares only the fields that affect what's charged, so a
    re-save that reorders internal metadata (but bills the identical lines) is NOT logged as a spurious version. */
