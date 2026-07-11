@@ -125,3 +125,24 @@ T("#8 finSalesTaxCollected: $67.50 collected/owed (6750c)", st.collected===6750 
 d.disbursements.push({id:"r8",type:"salestax",amount:50,date:"2026-06-20"});
 T("#8 remittance reduces owed (6750 - 5000 = 1750c)", finSalesTaxCollected().owed===1750);
 diag("review-fixes: #8 done");
+
+// ================= #9 — 1099-NEC per-payee report =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements"].forEach(k=>d[k]=[]);
+S.users=S.users||[];
+[["u_chaz","Chaz"],["u_vlad","Vlad"],["u_owner","Owner"]].forEach(([id,nm])=>{ if(!S.users.some(u=>u&&u.id===id))S.users.push({id,username:nm,name:nm,active:true}); });
+if(typeof orgSetRole==="function"){orgSetRole("u_owner","obx","owner");orgSetRole("u_chaz","obx","crew");orgSetRole("u_vlad","obx","crew");}
+d.disbursements.push({id:"p1",type:"payout",memberId:"u_chaz",amount:800,date:"2026-03-01"});   // Chaz $800 → 1099
+d.disbursements.push({id:"p2",type:"payout",memberId:"u_chaz",amount:100,date:"2026-05-01"});   // + $100 = $900
+d.disbursements.push({id:"p3",type:"payout",memberId:"u_vlad",amount:300,date:"2026-04-01"});   // Vlad $300 → under $600
+d.disbursements.push({id:"p4",type:"payout",memberId:"u_owner",amount:5000,date:"2026-04-01"}); // owner → excluded
+d.disbursements.push({id:"p5",type:"draw",memberId:"u_chaz",amount:999,date:"2026-04-01"});      // draw → not 1099
+var r=fin1099Report("2026");
+var chaz=r.rows.find(x=>x.id==="u_chaz"), vlad=r.rows.find(x=>x.id==="u_vlad"), owner=r.rows.find(x=>x.id==="u_owner");
+T("#9 Chaz total = $900 (90000c), only payouts (not the draw)", chaz && chaz.cents===90000);
+T("#9 Chaz flagged needs-1099 (>= $600)", chaz && chaz.needs===true);
+T("#9 Vlad = $300, NOT flagged (under $600)", vlad && vlad.cents===30000 && vlad.needs===false);
+T("#9 owner excluded from 1099 report", !owner);
+// W-9 capture
+S.users.find(u=>u.id==="u_chaz").taxId="123-45-6789";
+T("#9 W-9 on file reflected", fin1099Report("2026").rows.find(x=>x.id==="u_chaz").hasW9===true);
+diag("review-fixes: #9 done");

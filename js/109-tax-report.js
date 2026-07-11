@@ -6,8 +6,63 @@
    NOTE: this is sales/use tax we PAID on purchases. It is SEPARATE from (a) the income-tax RESERVE (the 25% set
    aside from revenue — see Payouts) and (b) any sales tax we COLLECT on taxable jobs. The taxability rules live
    in Cap's Playbook → Tax. */
+/* 1099-NEC roll-up: total PAYOUTS (nonemployee comp — field/sales/admin pay, NOT reimbursements or owner draws)
+   paid to each non-owner member in a calendar year, from the payout disbursements. Flags the $600 IRS threshold
+   and whether a W-9 (tax id) is on file. Owners take distributions, not 1099s → excluded. */
+function fin1099Report(year) {
+  year = year || ((typeof today === "function") ? today().slice(0, 4) : "");
+  const byMember = {};
+  (typeof actDisb === "function" ? actDisb() : []).forEach(x => {
+    if (!x || x.type !== "payout" || !x.memberId || String(x.date || "").slice(0, 4) !== year) return;
+    byMember[x.memberId] = (byMember[x.memberId] || 0) + Math.round((+x.amount || 0) * 100);
+  });
+  const rows = Object.keys(byMember).map(id => {
+    const owner = !!(typeof roleInOrg === "function" && roleInOrg(id, S.biz) === "owner");
+    const u = (S.users || []).find(x => x && x.id === id);
+    return { id: id, name: (typeof finName === "function" ? finName(id) : id), cents: byMember[id], owner: owner, hasW9: !!(u && u.taxId), needs: byMember[id] >= 60000 && !owner };
+  }).filter(r => !r.owner).sort((a, b) => b.cents - a.cents);
+  return { year: year, rows: rows };
+}
+window.fin1099Report = fin1099Report;
+/* capture a member's W-9 tax id + address (owner/admin) — needed to file their 1099. Stored on the account record
+   (rides the existing per-record sync; an owner write isn't reverted by the server sanitizer). */
+window.fin1099SetW9 = function (id) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const u = (S.users || []).find(x => x && x.id === id); if (!u) return;
+  const nm = (typeof finName === "function" ? finName(id) : id);
+  const tin = prompt("W-9 tax ID (SSN or EIN) for " + nm + " — kept on file for their 1099:", u.taxId || "");
+  if (tin === null) return;
+  u.taxId = String(tin).trim();
+  const addr = prompt("Mailing address for the 1099 (optional):", u.taxAddress || "");
+  if (addr !== null) u.taxAddress = String(addr).trim();
+  if (typeof touch === "function") touch(u);
+  if (typeof save === "function") save();
+  if (typeof logChange === "function") logChange("update", "account", id, "Set W-9 tax info for " + nm);
+  if (typeof render === "function") render();
+};
 function rFinTax() {
   if (typeof finCanView === "function" && !finCanView()) return `<div class="card"><div class="nm">Owner / Admin only</div><div class="sub">The Tax report is restricted to Owner and Admin.</div></div>`;
+  const _m2 = (typeof money2 === "function") ? money2 : (n => "$" + (Math.round((+n || 0) * 100) / 100).toFixed(2));
+  const _fmc = c => _m2((+c || 0) / 100);
+  let hTop = "";
+  // sales tax COLLECTED (the liability from taxable jobs — from js/64)
+  if (typeof finSalesTaxCollected === "function") {
+    const st = finSalesTaxCollected();
+    if (st.collected > 0 || st.remitted > 0) hTop += `<div class="card" style="border-left:5px solid #e0a800"><div style="font-weight:800;margin-bottom:6px">🧾 Sales tax COLLECTED (owed to NC)</div>
+      <div class="row" style="justify-content:space-between"><span class="sub">Collected on taxable jobs − remitted ${_fmc(st.remitted)}</span><b style="${st.owed > 0 ? "color:var(--danger)" : ""}">${_fmc(st.owed)}</b></div>
+      <div class="sub" style="white-space:normal;margin-top:4px">6.75% charged to customers on paid taxable (RMI) invoices, held for NCDOR. Record remittances on Finance → Cash. Separate from the tax you PAID on purchases below.</div></div>`;
+  }
+  // 1099-NEC per payee
+  if (typeof fin1099Report === "function") {
+    const r = fin1099Report();
+    hTop += `<div class="card"><div style="font-weight:800;margin-bottom:4px">🧾 1099-NEC · ${esc(r.year)}</div>`;
+    if (!r.rows.length) hTop += `<div class="muted">No crew/helper payouts recorded in ${esc(r.year)} yet.</div>`;
+    else {
+      hTop += `<div class="sub" style="white-space:normal;margin-bottom:6px">Total payouts (nonemployee comp) per person this year. Anyone at <b>$600+</b> gets a 1099-NEC — capture their W-9. Excludes owner draws + reimbursements.</div>`;
+      hTop += r.rows.map(row => `<div class="li"><div class="grow"><div class="nm">${esc(row.name)}${row.needs ? ` <span class="badge" style="background:#e0a800;color:#fff">1099</span>` : ""}</div><div class="sub">${_fmc(row.cents)} paid${row.needs ? (row.hasW9 ? " · W-9 on file ✓" : " · <span style='color:var(--danger)'>needs W-9</span>") : ""}</div></div>${row.needs ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="fin1099SetW9('${row.id}')">${row.hasW9 ? "Edit W-9" : "Add W-9"}</button>` : ""}</div>`).join("");
+    }
+    hTop += `</div>`;
+  }
   const rows = (typeof rcptAllRows === "function") ? rcptAllRows() : [];
   const m2 = (typeof money2 === "function") ? money2 : (n => "$" + (Math.round((+n || 0) * 100) / 100).toFixed(2));
   const e = (typeof esc === "function") ? esc : (s => String(s == null ? "" : s));
@@ -26,7 +81,7 @@ function rFinTax() {
       else if (+r.taxAmount > 0) { tax += +r.taxAmount; taxedN++; byCat[cat].tax += +r.taxAmount; byMonth[mo].tax += +r.taxAmount; }
     } else if (typeof rcptNeedsTax === "function" && rcptNeedsTax(r)) unevalN++;
   });
-  let h = `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">🧾 Sales tax paid on purchases</div>`;
+  let h = hTop + `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">🧾 Sales tax paid on purchases</div>`;
   h += `<div class="row" style="justify-content:space-between"><span class="sub">Sales tax set aside (paid)</span><b>${m2(tax)}</b></div>`;
   h += `<div class="row" style="justify-content:space-between"><span class="sub">Business spend (net of refunds)</span><b>${m2(net)}</b></div>`;
   h += `<div class="row" style="justify-content:space-between"><span class="sub">Non-taxable (SaaS / insurance)</span><b>${m2(exemptTotal)}</b></div>`;
