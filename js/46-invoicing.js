@@ -208,22 +208,57 @@ window.invPrint = function (quoteId) {
   const cust = (d.customers || []).find(x => x.id === q.customerId), biz = BIZ[S.biz] || {};
   const no = invNo(q);
   const billTo = cust ? [cust.name || cust.company, cust.company && cust.name ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer)"];
+  const dateStr = fmtDate(q.invoicedDate || q.date || today());
+  const amountDue = money(invAmountDue(q));
+  let logoUrl = ""; try { if (biz.logo) logoUrl = new URL(biz.logo, location.href).href; } catch (e) {}
+  const AC = "#0a7d4b";   // OBX green accent
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Invoice ${esc(no)}</title><style>
-    body{font:14px/1.5 system-ui,sans-serif;color:#111;margin:24px;max-width:640px}
-    h1{font-size:18px;margin:0} .r{display:flex;justify-content:space-between;align-items:flex-start}
-    .muted{color:#666;font-size:13px} table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{padding:6px 4px;border-bottom:1px solid #ddd} th{text-align:left;font-size:12px;text-transform:uppercase;color:#666}
-    .tot{font-weight:800;font-size:16px;border-top:2px solid #111;border-bottom:none}
-    @media print{button{display:none}}</style></head><body>
-    <div class="r"><div><h1>${esc(biz.name || "")}</h1><div class="muted">${esc(biz.phone || "")}</div></div>
-    <div style="text-align:right"><h1>INVOICE</h1><div class="muted">${esc(no)}</div><div class="muted">${esc(fmtDate(q.invoicedDate || q.date || today()))}</div></div></div>
-    <div style="margin-top:14px"><div class="muted" style="font-weight:700">Bill to</div>${billTo.map(l => `<div class="muted">${esc(l)}</div>`).join("")}</div>
-    <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
-    <tbody>${invRowsHTML(q)}</tbody>
-    <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right" class="tot">Total</td><td style="text-align:right" class="tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,true)}</tfoot></table>
-    ${q.paymentLink?`<p style="margin-top:12px"><a href="${esc(q.paymentLink)}" style="font-weight:700">💳 Pay online: ${esc(q.paymentLink)}</a></p>`:""}${invCashNote(q)?`<p style="margin-top:10px;font-weight:600">${invCashNote(q)}</p>`:""}<p class="muted" style="margin-top:14px">Due on receipt. Thank you for your business!</p>
-    <button onclick="window.print()" style="margin-top:16px;padding:10px 16px">Print / Save as PDF</button>
+    *{box-sizing:border-box} html,body{margin:0}
+    body{font:14px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;padding:24px}
+    .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
+    .bar{height:6px;background:linear-gradient(90deg,${AC},#12b877)}
+    .pad{padding:34px 40px}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
+    .biz{display:flex;align-items:center;gap:12px}
+    .biz img{height:44px;width:auto;border-radius:8px}
+    .bizname{font-size:20px;font-weight:800;letter-spacing:-.2px}
+    .muted{color:#6b7280;font-size:13px}
+    .badge{text-align:right}
+    .badge .lbl{font-size:24px;font-weight:800;color:${AC};letter-spacing:2px}
+    .billrow{display:flex;justify-content:space-between;gap:24px;margin-top:30px;flex-wrap:wrap}
+    .lbl2{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;font-weight:700;margin-bottom:5px}
+    .due{font-size:24px;font-weight:800}
+    table{width:100%;border-collapse:collapse;margin-top:30px}
+    th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;padding:0 0 10px;border-bottom:2px solid #e5e7eb}
+    td{padding:13px 0;border-bottom:1px solid #f1f2f4}
+    th.n,td.n{text-align:right;font-variant-numeric:tabular-nums} th.c,td.c{text-align:center}
+    tfoot td{border-bottom:none;padding:5px 0} tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
+    .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:15px;border-radius:10px;margin-top:28px;font-size:15px}
+    .payurl{text-align:center;font-size:11px;color:#9ca3af;margin-top:7px;word-break:break-all}
+    .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
+    .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg);font-size:14px}
+    .foot{margin-top:26px;color:#6b7280;font-size:13px;text-align:center;border-top:1px solid #f1f2f4;padding-top:18px}
+    .printbtn{display:block;margin:22px auto 0;padding:11px 22px;border:1px solid #d1d5db;background:#fff;border-radius:8px;font:inherit;cursor:pointer}
+    @media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0;max-width:none}.printbtn{display:none}}
+    </style></head><body>
+    <div class="sheet"><div class="bar"></div><div class="pad">
+      <div class="top">
+        <div class="biz">${logoUrl ? `<img src="${esc(logoUrl)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${esc(biz.name || "")}</div><div class="muted">${esc(biz.phone || "")}</div></div></div>
+        <div class="badge"><div class="lbl">INVOICE</div><div class="muted">${esc(no)}</div><div class="muted">${esc(dateStr)}</div></div>
+      </div>
+      <div class="billrow">
+        <div><div class="lbl2">Bill to</div>${billTo.map(l => `<div${l === billTo[0] ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${esc(l)}</div>`).join("")}</div>
+        <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${amountDue}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}</div>
+      </div>
+      <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
+      <tbody>${invRowsHTML(q)}</tbody>
+      <tfoot>${invAdjRows(q)}<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q, true)}</tfoot></table>
+      ${q.paymentLink && !q.paid ? `<a class="pay" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${amountDue}</a><div class="payurl">${esc(q.paymentLink)}</div>` : ""}
+      ${!q.paid && invCashNote(q) ? `<div class="cash">${invCashNote(q)}</div>` : ""}
+      <div class="foot">Thank you for your business! &nbsp;·&nbsp; ${esc(biz.name || "")}${biz.phone ? " &nbsp;·&nbsp; " + esc(biz.phone) : ""}</div>
+      <button class="printbtn" onclick="window.print()">Print / Save as PDF</button>
+    </div></div>
     </body></html>`;
   const w = window.open("", "_blank");
   if (!w) { alert("Pop-up blocked — allow pop-ups to print, or use Copy."); return; }
