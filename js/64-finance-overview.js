@@ -126,7 +126,7 @@ window.finExportCSV = function(ym){
   });
   rows.push([], ["EXPENSES (detail)"], ["Date", "Amount", "Category", "Note", "Vendor"]);
   actExpenses().filter(e => e.date >= b.from && e.date <= b.to).sort((a, c) => a.date < c.date ? -1 : 1).forEach(e => rows.push([e.date, (+e.amount || 0).toFixed(2), e.category || "", e.note || "", e.vendor || ""]));
-  const csv = rows.map(r => r.map(c => { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(",")).join("\n");
+  const csv = rows.map(r => r.map(csvCell).join(",")).join("\n");
   try {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" }), a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "jsuite-finance-" + ym + ".csv";
@@ -182,7 +182,7 @@ window.finExportLedger = function(){
   rows.push([], ["TRIAL BALANCE"]);
   Object.keys(gl.trialBalance).sort().forEach(a => rows.push(["", "", a, gl.trialBalance[a].dr ? d2(gl.trialBalance[a].dr) : "", gl.trialBalance[a].cr ? d2(gl.trialBalance[a].cr) : ""]));
   rows.push(["", "", "TOTAL", d2(gl.totalDr), d2(gl.totalCr)]);
-  const csv = rows.map(r => r.map(c => { c = String(c == null ? "" : c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(",")).join("\n");
+  const csv = rows.map(r => r.map(csvCell).join(",")).join("\n");
   try { const blob = new Blob([csv], { type: "text/csv;charset=utf-8" }), a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "jsuite-ledger.csv"; a.click(); } catch (e) { if (typeof alert === "function") alert("Ledger:\n\n" + csv.slice(0, 2000)); }
 };
 function finAvgMonthlyBurn(){

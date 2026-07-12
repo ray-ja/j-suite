@@ -1,6 +1,11 @@
 /* ---------- helpers ---------- */
 function val(id){const e=document.getElementById(id);return e?e.value.trim():""}
-function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]))}
+function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+/* CSV cell for EXPORT: quotes when needed AND neutralizes spreadsheet formula injection — a cell a user opens in
+   Excel/Sheets that starts with = + - @ (or tab/CR) would otherwise execute as a formula (data-exfil / RCE-ish).
+   We prefix such a cell with a leading ' so the sheet treats it as text. Plain negative numbers (-45.00) are left
+   numeric so finance/budget totals still sum. Shared by every .csv exporter (finance, ledger, receipts, budget). */
+function csvCell(v){var s=(v==null?"":String(v));if(/^[=+\-@\t\r]/.test(s)&&!/^-?\d+(?:\.\d+)?$/.test(s))s="'"+s;return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
 /* Per-record audit line — "✎ edited by Ray · 2h ago" from the editedBy/editedAt stamp touch() writes. */
 function editedByLine(r){try{if(!r||!r.editedBy)return "";const u=((typeof S!=="undefined"&&S.users)||[]).find(x=>x&&x.id===r.editedBy);const nm=u?(u.name||u.username):"someone";const ago=(typeof agoTxt==="function"&&r.editedAt)?(" · "+agoTxt(r.editedAt)):"";return `<div class="sub" style="opacity:.6;margin-top:4px">✎ edited by ${esc(nm)}${ago}</div>`;}catch(e){return "";}}
 let _acT=null;

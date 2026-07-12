@@ -276,4 +276,14 @@ sqInvApplyCustomer("c1");
 T("F1 claimed-but-unpaid quote gets reconciledInvoiceId (blocks later double-book)", !!d.quotes[0].reconciledInvoiceId);
 d.quotes[0].paid=true; syncQuoteIncome(d.quotes[0]);
 T("F1 marking it paid later does NOT book inc_q (no double)", !d.income.some(x=>x.id==="inc_q_q1"&&!x.deleted));
-diag("review-fixes: F1-F7 done");
+// ================= SECURITY (2026-07-12 Fable-review batch) — client-side hardening =================
+// S8 — esc() must neutralize the single-quote so a value dropped into a single-quoted HTML attribute can't break out.
+T("S8 esc() escapes single-quote to &#39;", esc("O'Neil") === "O&#39;Neil");
+T("S8 esc() still escapes &<>\"", esc('<a b="c">&') === "&lt;a b=&quot;c&quot;&gt;&amp;");
+// S7 — csvCell() neutralizes spreadsheet formula injection on export while keeping real data intact.
+T("S7 csvCell prefixes a leading = formula with '", csvCell("=1+1") === "'=1+1");
+T("S7 csvCell prefixes leading + @ - -when-not-a-number", csvCell("+cmd")==="'+cmd" && csvCell("@SUM")==="'@SUM" && csvCell("-2+3")==="'-2+3");
+T("S7 csvCell leaves a plain negative number numeric (finance totals still sum)", csvCell("-45.00") === "-45.00" && csvCell("-45")==="-45");
+T("S7 csvCell still quotes a cell with a comma/quote", csvCell('a,b') === '"a,b"' && csvCell('he said "hi"') === '"he said ""hi"""');
+T("S7 csvCell quotes AND prefixes a formula that also has a comma", csvCell("=A1,B1") === '"\'=A1,B1"');
+diag("review-fixes: F1-F7 + security(S7/S8) done");

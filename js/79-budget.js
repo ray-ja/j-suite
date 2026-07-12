@@ -1551,8 +1551,7 @@ window.budgetExport=function(fmt){
   if(fmt==="csv"){
     var head="date,book,direction,amount,category,note,transfer\n";
     var lines=tx.map(function(t){
-      var cell=function(s){ s=(s==null?"":String(s)); return /[",\n]/.test(s)?('"'+s.replace(/"/g,'""')+'"'):s; };
-      return [t.date,bookName(t.bookId),t.dir,(+t.amount||0).toFixed(2),t.isTransfer?"(transfer)":catNm(t.catId),t.note||"",t.isTransfer?"yes":""].map(cell).join(",");
+      return [t.date,bookName(t.bookId),t.dir,(+t.amount||0).toFixed(2),t.isTransfer?"(transfer)":catNm(t.catId),t.note||"",t.isTransfer?"yes":""].map(csvCell).join(",");
     }).join("\n");
     budgetDownload("budget-"+stamp+".csv",head+lines,"text/csv");
   }else{

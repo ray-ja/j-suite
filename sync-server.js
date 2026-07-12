@@ -86,7 +86,7 @@ function auditDiff(userId, pre, incoming) {
 // PHASE 4 authz — when the syncing user is NOT a verified owner, neutralize account/role/password writes:
 // drop new accounts + role-config sentinels, and force role/passhash/active back to the stored values.
 // NEVER drops a stored user (worst case a change just doesn't apply). Bootstrap-exempt while no real account exists.
-function sanitizeUserWrites(incoming, pre, selfId) {
+function sanitizeUserWrites(incoming, pre, selfId, verifiedId) {   // selfId = claimed writer (per-user token OR shared-token client-claim; drives non-sensitive self-writes like availability). verifiedId = cryptographically-verified writer (per-user token only; null on shared token) — gates identity fields that enable takeover.
   if (!incoming || !Array.isArray(incoming.users)) return incoming;
   const stored = (pre && pre.users) || [];
   if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
@@ -120,6 +120,7 @@ function sanitizeUserWrites(incoming, pre, selfId) {
     if (u.id !== selfId) { safe.push(old); continue; }   // not my account → no changes from a non-owner
     const m = Object.assign({}, u);
     SENSITIVE.forEach(f => { if (f === "adminPin") return; if (f in old) m[f] = old[f]; else delete m[f]; });   // self-write: you may set your OWN admin PIN; role/passhash/active/logoutAt stay owner-only even on your own record
+    if (verifiedId !== u.id) { if ("email" in old) m.email = old.email; else delete m.email; }   // TAKEOVER GUARD: email is the password-reset anchor — only the CRYPTOGRAPHICALLY-verified account owner (per-user token) may change it. A shared-token device (verifiedId=null) that claims this id can still edit availability/phone/title, but NOT the email — closing the "claim victim id → change email → reset password" path.
     safe.push(m);
   }
   return Object.assign({}, incoming, { users: safe });
@@ -415,6 +416,12 @@ function loadStore() {
 function accountById(store, id) { return ((store && store.users) || []).find(u => u && u.id === id && !u.kind) || null; }
 function membershipsOfStore(store, accountId) { return ((store && store.users) || []).filter(m => m && m.kind === "membership" && m.accountId === accountId && m.active !== false); }
 function orgsForUser(store, account) { if (account && account.superAdmin) return orgIdsOf(store); return account ? membershipsOfStore(store, account.id).map(m => m.orgId) : []; }
+function tokenScope(tok) {   // resolve an API bearer to the caller: per-user token → {account, orgs, superAdmin}; legacy shared TOKEN → {shared:true} (no identity, no orgs); unknown token → null
+  const rec = userTokenRec(tok);
+  if (rec && rec.userId) { const store = loadStore(); const acct = accountById(store, rec.userId); return { account: acct, orgs: acct ? orgsForUser(store, acct) : [], superAdmin: !!(acct && acct.superAdmin), shared: false }; }
+  if (TOKEN && tok === TOKEN) return { account: null, orgs: [], superAdmin: false, shared: true };
+  return null;
+}
 function writerOwnsOrg(store, selfId, orgId) {   // may selfId write MEMBERSHIP records for orgId? super-admin → any; else only an org they OWN (per the STORED state, never the claimed incoming). The org-admin tier.
   const me = accountById(store, selfId); if (!me) return false; if (me.superAdmin) return true;
   return ((store && store.users) || []).some(m => m && m.kind === "membership" && m.accountId === selfId && m.orgId === orgId && m.role === "owner" && m.active !== false);
@@ -996,12 +1003,18 @@ function scopedIncoming(incoming, myOrgs) {   // WRITE: keep ONLY the caller's o
   Object.keys(incoming || {}).forEach(k => { if (set.has(k) && incoming[k] && typeof incoming[k] === "object" && !Array.isArray(incoming[k])) out[k] = incoming[k]; });
   return out;
 }
+function stripSecrets(u, me) {   // READ hygiene: another account's calendar-feed token is a bearer secret — never ship it to a co-member's device. Self keeps it (own feed URL). passhash is deliberately NOT stripped: a shared field device still needs a teammate's hash for offline login.
+  if (!u || u.kind) return u;                      // memberships / other kinds unchanged
+  if (me && u.id === me.id) return u;              // caller's own record: untouched
+  if (u.calToken == null) return u;
+  const c = Object.assign({}, u); delete c.calToken; return c;
+}
 function projectUsers(users, myOrgs, me) {   // READ: a caller sees only memberships for their orgs + accounts that co-member those orgs
-  if (me && me.superAdmin) return users || [];
+  if (me && me.superAdmin) return (users || []).map(u => stripSecrets(u, me));
   const set = new Set(myOrgs), memberIds = new Set();
   (users || []).forEach(u => { if (u && u.kind === "membership" && set.has(u.orgId)) memberIds.add(u.accountId); });
   if (me) memberIds.add(me.id);
-  return (users || []).filter(u => u && (u.kind === "membership" ? set.has(u.orgId) : (u.kind ? true : memberIds.has(u.id))));
+  return (users || []).filter(u => u && (u.kind === "membership" ? set.has(u.orgId) : (u.kind ? true : memberIds.has(u.id)))).map(u => stripSecrets(u, me));
 }
 function projectForUser(store, myOrgs, me) {   // the ONLY thing /sync returns — strictly the caller's orgs
   const out = { users: projectUsers(store.users, myOrgs, me), registry: [] };
@@ -2064,7 +2077,8 @@ const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }   // platform-global secrets (email key, Access audience) — superAdmin only, never a plain authenticated token
     readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const ALLOW = ["resendKey", "accessAud"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination)
@@ -2087,17 +2101,24 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url.split("?")[0] === "/api/presence") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const sc = tokenScope(tok);
+    if (!sc) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify(lastActive));
+    if (sc.superAdmin || sc.shared) return res.end(JSON.stringify(lastActive));   // super-admin (all) / legacy shared-token device (single-org deployments) → unfiltered
+    const store = loadStore(), myOrgs = new Set(sc.orgs), coMembers = new Set();   // per-user token → only co-members of the caller's orgs
+    ((store && store.users) || []).forEach(m => { if (m && m.kind === "membership" && myOrgs.has(m.orgId)) coMembers.add(m.accountId); });
+    const out = {}; for (const uid in lastActive) if (coMembers.has(uid)) out[uid] = lastActive[uid];
+    return res.end(JSON.stringify(out));
   }
 
   // AUDIT — GET /api/audit (token-gated). Most-recent-first paper trail for the owner Activity view.
   if (req.method === "GET" && req.url.split("?")[0] === "/api/audit") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
-    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
-    const a = loadAudit();
+    const sc = tokenScope(tok);
+    if (!sc) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    let a = loadAudit();
+    if (!(sc.superAdmin || sc.shared)) { const myOrgs = new Set(sc.orgs); a = a.filter(e => e && myOrgs.has(e.b)); }   // per-user token → only the caller's orgs. Account-level entries (b:"*") stay superAdmin-only — they carry cross-org identity changes
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     return res.end(JSON.stringify(a.slice(-300).reverse()));
   }
@@ -2324,7 +2345,7 @@ const server = http.createServer((req, res) => {
       const myOrgs = me ? orgsForUser(pre, me) : ["obx", "jam"].filter(o => pre[o]);   // ISOLATION: identified user → their member orgs; legacy shared token → original orgs only (new orgs stay isolated from it)
       const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
       const scoped = (me && me.superAdmin) ? (payload.state || {}) : scopedIncoming(payload.state || {}, myOrgs);   // WRITE isolation: a SUPER-ADMIN may write ANY org (incl. creating a brand-new one — its slab must persist); everyone else is scoped to their member orgs
-      const afterUsers = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId);
+      const afterUsers = verifiedOwner ? scoped : sanitizeUserWrites(scoped, pre, syncUserId, puid);
       const afterReg = (me && me.superAdmin) ? afterUsers : sanitizeRegistryWrites(afterUsers, pre, syncUserId);   // a non-admin can never set an org's navOrder/tabs (super-admin bypasses)
       const afterMsg = sanitizeMessageDeletes(afterReg, pre, syncUserId);   // a non-admin can never tombstone another user's message/thread (owner/admin/super-admin may delete any)
       const incomingState = (me && me.superAdmin) ? afterMsg : sanitizeCustomJobWrites(afterMsg, pre, syncUserId);   // WORKSHOP: only owner/admin may write customJobs; finance/broadcast/propose jobs require owner (super-admin bypasses)

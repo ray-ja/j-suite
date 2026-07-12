@@ -178,6 +178,30 @@ const archRT = t.mergeState({ users: [{ id: "own", username: "ray", role: "owner
 const goneRT = archRT.users.find(u => u.id === "gone");
 ok("archive: an archived account SURVIVES a sync round-trip with the flag intact (kept for pay + history, never dropped)", !!goneRT && goneRT.archived === true && goneRT.username === "vlad");
 
+// ── SECURITY: identity-field takeover guard + read-side secret stripping (2026-07-12 Fable-review batch) ──
+// EMAIL is the password-reset anchor. A shared-token device (verifiedId=null) claiming a victim's id must NOT be
+// able to change that account's email (→ reset → takeover), while a per-user token (verifiedId===self) still can.
+const emPre = { users: [{ id: "own", username: "ray", role: "owner", passhash: "x", updatedAt: 1 }, { id: "crw3", username: "joe", role: "crew", email: "joe@real.com", passhash: "y", updatedAt: 1 }] };
+const emShared = t.sanitizeUserWrites({ users: [{ id: "crw3", username: "joe", role: "crew", email: "attacker@evil.com", updatedAt: 50 }] }, emPre, "crw3", null);   // claimed self, but verifiedId=null (shared token)
+const emSharedOut = emShared.users.find(u => u.id === "crw3");
+ok("email GUARD: a SHARED-token write (verifiedId=null) CANNOT change the account email (reverted — closes reset-takeover)", !!emSharedOut && emSharedOut.email === "joe@real.com");
+const emVerified = t.sanitizeUserWrites({ users: [{ id: "crw3", username: "joe", role: "crew", email: "joe@new.com", updatedAt: 51 }] }, emPre, "crw3", "crw3");   // per-user token: verifiedId === self
+const emVerOut = emVerified.users.find(u => u.id === "crw3");
+ok("email GUARD: a VERIFIED per-user write (verifiedId===self) CAN change its own email (self-service preserved)", !!emVerOut && emVerOut.email === "joe@new.com");
+const emCross = t.sanitizeUserWrites({ users: [{ id: "own", username: "ray", role: "owner", email: "hax@evil.com", updatedAt: 60 }] }, emPre, "crw3", "crw3");   // verified as crw3, but writing OWN(er)'s record
+const emCrossOut = emCross.users.find(u => u.id === "own");
+ok("email GUARD: a verified user CANNOT change ANOTHER account's email (cross-account write reverted to stored)", !!emCrossOut && emCrossOut.email !== "hax@evil.com");
+// Non-sensitive self-writes (availability/phone/title) must still ride the shared-token path (the availability incident).
+const emAvail = t.sanitizeUserWrites({ users: [{ id: "crw3", username: "joe", role: "crew", email: "joe@real.com", phone: "252-555-0100", updatedAt: 52 }] }, emPre, "crw3", null);
+const emAvailOut = emAvail.users.find(u => u.id === "crw3");
+ok("email GUARD is SURGICAL: a shared-token self-write still saves non-identity fields (phone) — availability path intact", !!emAvailOut && emAvailOut.phone === "252-555-0100");
+// READ strip: another account's calToken (calendar-feed bearer) must never be projected to a co-member; self keeps it.
+const projPre = { users: [{ id: "own", username: "ray", role: "owner", calToken: "OWN-secret", updatedAt: 1 }, { id: "crw3", username: "joe", role: "crew", calToken: "JOE-secret", updatedAt: 1 }, { id: "m1", kind: "membership", accountId: "own", orgId: "obx", role: "owner", active: true }, { id: "m2", kind: "membership", accountId: "crw3", orgId: "obx", role: "crew", active: true }] };
+const projected = t.projectUsers(projPre.users, ["obx"], { id: "crw3" });
+const projSelf = projected.find(u => u.id === "crw3"), projOther = projected.find(u => u.id === "own");
+ok("calToken STRIP: a co-member's calendar-feed token is NOT projected to another user", !!projOther && !Object.prototype.hasOwnProperty.call(projOther, "calToken"));
+ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still works)", !!projSelf && projSelf.calToken === "JOE-secret");
+
 // TAX-BORROW LEDGER — a per-org docs sentinel (id "taxBorrow", like financeConfig). Must survive a round-trip
 // with its borrow/repay entries intact so the running balance is never lost.
 const tbRT = t.mergeState({ obx: { docs: [{ id: "taxBorrow", entries: [{ id: "b1", type: "borrow", amount: 500, date: "2026-07-10" }, { id: "r1", type: "repay", amount: 200, date: "2026-07-11" }], updatedAt: 5 }] } }, { obx: { docs: [] } });
