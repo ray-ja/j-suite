@@ -96,7 +96,7 @@ const CATALOG = {
     {id:"lab2",cat:"Labor",name:"Site assessment / consult",price:75,unit:"flat"}
   ]
 };
-const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 564-8717"},
+const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 207-5985"},
            jam:{name:"Jamieson Automation",logo:"assets/logo-jam.png",recurring:false,phone:""}};
 const STATUSES=["Lead","Contacted","Quoted","Won","Lost"];
 const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscaper (partner)","Other"];

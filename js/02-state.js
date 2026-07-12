@@ -208,7 +208,7 @@ function load(){
   if(typeof adminMigrate==="function")adminMigrate();
   if(typeof teamProfileMigrate==="function")teamProfileMigrate();   // TEAM PROFILES: backfill additive contact fields (phone/email/avatarId/title) on every account (loss-free, no updatedAt bump)
   if(typeof membershipMigrate==="function")membershipMigrate();   // MULTI-ORG: existing crew → obx/jam memberships, owner → super-admin (one-time)
-  if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 564-8717 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
+  if(!S.todoGbp){if(!(S.obx.todos||[]).some(t=>!t.deleted&&(t.title||"").indexOf("Google Business Profile")>=0))S.obx.todos.push({id:uid(),title:"Set up Google Business Profile (free, ~30 min)",priority:"High",due:today(),done:false,notes:"Name: OBX Lot Solutions · Category: Pressure washing service (+ Cleaning, Junk removal) · Phone (252) 207-5985 · Site obxlotsolutions.com · Area Corolla–Manteo. Then request verification.",updatedAt:now()});S.todoGbp=true;save();}
   // 3-WAY EXPENSE CATEGORY (additive) — backfill a `category` string on every existing job.expenses[] item.
   // AUTO-RECLASSIFY (Ray): resolve each item's category FROM its source RECEIPT — the review record it was filed
   // from is kept (tombstoned) in receipts[] and retains its category, matched by the shared record id (a filed

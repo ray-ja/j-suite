@@ -1224,7 +1224,7 @@ function consumeInviteToken(tok) {
 // minimal HTML escape for values interpolated into an outgoing email body (name/username are user-supplied)
 function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 /* ---- HOSTED PUBLIC INVOICE (GET /i/<token>) — server-rendered so a customer can open + pay from any browser ---- */
-const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 564-8717", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "", logo: "/assets/logo-jam.png" } };
+const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "", logo: "/assets/logo-jam.png" } };
 function invMoney(n) { n = Math.round(+n || 0); return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US"); }
 function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.name || it.serviceId)); }
 function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
