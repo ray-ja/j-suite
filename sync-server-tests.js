@@ -202,6 +202,19 @@ const projSelf = projected.find(u => u.id === "crw3"), projOther = projected.fin
 ok("calToken STRIP: a co-member's calendar-feed token is NOT projected to another user", !!projOther && !Object.prototype.hasOwnProperty.call(projOther, "calToken"));
 ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still works)", !!projSelf && projSelf.calToken === "JOE-secret");
 
+// ── Stripe webhook signature verification (the paid-webhook's ONLY auth) ──
+(function () {
+  const crypto = require("crypto");
+  const secret = "whsec_test_123", raw = '{"type":"checkout.session.completed"}';
+  const ts = Math.floor(Date.now() / 1000);
+  const sig = crypto.createHmac("sha256", secret).update(ts + "." + raw).digest("hex");
+  ok("verifyStripeSig: a genuine fresh signature VERIFIES", t.verifyStripeSig(raw, "t=" + ts + ",v1=" + sig, secret) === true);
+  ok("verifyStripeSig: a wrong secret is REJECTED", t.verifyStripeSig(raw, "t=" + ts + ",v1=" + sig, "whsec_wrong") === false);
+  ok("verifyStripeSig: a tampered body is REJECTED", t.verifyStripeSig(raw + " ", "t=" + ts + ",v1=" + sig, secret) === false);
+  ok("verifyStripeSig: an OLD timestamp (replay) is REJECTED", t.verifyStripeSig(raw, "t=" + (ts - 100000) + ",v1=" + crypto.createHmac("sha256", secret).update((ts - 100000) + "." + raw).digest("hex"), secret) === false);
+  ok("verifyStripeSig: a missing header/secret is REJECTED", t.verifyStripeSig(raw, "", secret) === false && t.verifyStripeSig(raw, "t=" + ts + ",v1=" + sig, "") === false);
+})();
+
 // ── Stripe pay-link: form-encoding of the price + payment-link params ──
 ok("stripeForm: encodes flat bracketed keys as x-www-form-urlencoded", t.stripeForm({ currency: "usd", unit_amount: "12500", "product_data[name]": "INV-1 · Mike" }) === "currency=usd&unit_amount=12500&product_data%5Bname%5D=INV-1%20%C2%B7%20Mike");
 ok("stripeForm: encodes payment-link line items", t.stripeForm({ "line_items[0][price]": "price_abc", "line_items[0][quantity]": "1" }) === "line_items%5B0%5D%5Bprice%5D=price_abc&line_items%5B0%5D%5Bquantity%5D=1");

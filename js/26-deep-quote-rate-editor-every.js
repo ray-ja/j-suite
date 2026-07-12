@@ -109,6 +109,10 @@ function rData(){
       <div class="sub" style="margin:2px 0 4px;white-space:normal">A <b>restricted</b> key (<code>rk_live_…</code>) with <b>Prices</b>, <b>Products</b>, and <b>Payment Links</b> set to Write. Lets the app auto-make a card-payment link at the exact amount for each invoice.</div>
       <input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeKey','in_stripeKey')">Save Stripe key</button>
+      <label style="margin:16px 0 0">Stripe webhook secret <span id="sec_stripeWebhookSecret" class="sub"></span></label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">The <code>whsec_…</code> from a Stripe webhook pointed at <code>/api/stripe/webhook</code> (event <b>checkout.session.completed</b>). Lets the app auto-mark an invoice PAID the moment the customer pays.</div>
+      <input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save webhook secret</button>
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
@@ -264,7 +268,7 @@ window.loadSecStatus=function(){
   const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
   fetch(base+"/api/config/status",{headers:tok?{Authorization:"Bearer "+tok}:{}})
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(d=>{ const mark=(id,set)=>{const e=document.getElementById(id); if(e)e.innerHTML=set?"— <b style='color:#1a9a5a'>set ✓</b>":"— <span style='color:#c0392b'>not set</span>";}; mark("sec_resendKey",d.resendKey); mark("sec_accessAud",d.accessAud); mark("sec_stripeKey",d.stripeKey); })
+    .then(d=>{ const mark=(id,set)=>{const e=document.getElementById(id); if(e)e.innerHTML=set?"— <b style='color:#1a9a5a'>set ✓</b>":"— <span style='color:#c0392b'>not set</span>";}; mark("sec_resendKey",d.resendKey); mark("sec_accessAud",d.accessAud); mark("sec_stripeKey",d.stripeKey); mark("sec_stripeWebhookSecret",d.stripeWebhookSecret); })
     .catch(()=>{});
 };
 window.saveSecret=function(key,inputId){

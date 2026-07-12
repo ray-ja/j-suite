@@ -1302,6 +1302,19 @@ function stripeCall(key, path2, form, cb) {
   r.setTimeout(15000, () => { try { r.destroy(); } catch (e) {} cb(0, { error: { message: "Stripe request timed out" } }); });
   r.write(body); r.end();
 }
+/* Verify a Stripe webhook signature (the "Stripe-Signature" header) against the raw body + the webhook signing
+   secret (whsec_…). HMAC-SHA256 of "t.rawBody", timing-safe compared to the v1 signatures, with a 15-min tolerance
+   (replay guard + clock skew). No Stripe SDK needed. Returns true only on a genuine, fresh Stripe event. */
+function verifyStripeSig(raw, header, secret) {
+  if (!raw || !header || !secret) return false;
+  let t = null; const v1 = [];
+  String(header).split(",").forEach((kv) => { const i = kv.indexOf("="); if (i < 0) return; const k = kv.slice(0, i).trim(), val = kv.slice(i + 1).trim(); if (k === "t") t = val; else if (k === "v1") v1.push(val); });
+  if (!t || !v1.length) return false;
+  const ts = parseInt(t, 10); if (!isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 900) return false;
+  const expected = crypto.createHmac("sha256", secret).update(t + "." + raw).digest("hex");
+  const eb = Buffer.from(expected);
+  return v1.some((v) => { try { const vb = Buffer.from(v); return vb.length === eb.length && crypto.timingSafeEqual(vb, eb); } catch (e) { return false; } });
+}
 function clientIp(req) {
   const h = (req && req.headers) || {};
   const cf = h["cf-connecting-ip"];
@@ -1975,7 +1988,7 @@ const server = http.createServer((req, res) => {
     if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     let c = {}; try { c = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken), stripeKey: !!c.stripeKey }));
+    return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken), stripeKey: !!c.stripeKey, stripeWebhookSecret: !!c.stripeWebhookSecret }));
   }
   // PER-ORG AI (Phase 4). status: any member. config: org-OWNER/super-admin only, one-way key. ask: any member, uses the org's OWN key + scoped data.
   if (req.method === "GET" && req.url.split("?")[0] === "/api/org-ai/status") {
@@ -2156,7 +2169,7 @@ const server = http.createServer((req, res) => {
     if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }   // platform-global secrets (email key, Access audience) — superAdmin only, never a plain authenticated token
     readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
-      const ALLOW = ["resendKey", "accessAud", "stripeKey"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination). stripeKey = a RESTRICTED Stripe key (rk_live_…, Prices/Products/PaymentLinks write) for auto-generating invoice pay links; stored server-side only, never synced/logged.
+      const ALLOW = ["resendKey", "accessAud", "stripeKey", "stripeWebhookSecret"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination). stripeKey = a RESTRICTED Stripe key (rk_live_…, Prices/Products/PaymentLinks write) for auto-generating invoice pay links; stripeWebhookSecret (whsec_…) verifies the paid-webhook. Stored server-side only, never synced/logged.
       const key = p && p.key, value = p && p.value;
       if (ALLOW.indexOf(key) < 0 || typeof value !== "string" || !value.trim() || value.length > 8192) {
         res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"not allowed"}');
@@ -2190,14 +2203,56 @@ const server = http.createServer((req, res) => {
       const cents = Math.round(+((p && p.amountCents)) || 0);
       if (!(cents >= 50) || cents > 99999999) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"amount must be between $0.50 and $999,999.99"}'); }   // Stripe min is $0.50
       const label = String((p && p.label) || "Invoice").replace(/[\r\n]+/g, " ").slice(0, 120) || "Invoice";
+      const quoteId = String((p && p.quoteId) || "").slice(0, 64), org = String((p && p.org) || "").slice(0, 64);
       stripeCall(skey, "/v1/prices", { currency: "usd", unit_amount: String(cents), "product_data[name]": label }, (st1, pr) => {
         if (st1 !== 200 || !pr || !pr.id) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Stripe (price): " + (((pr || {}).error || {}).message || ("HTTP " + st1)) })); }
-        stripeCall(skey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1" }, (st2, pl) => {
+        // metadata carries the invoice id + org so the paid-webhook can reconcile back to the exact quote
+        const linkForm = { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1" };
+        if (quoteId) linkForm["metadata[quoteId]"] = quoteId;
+        if (org) linkForm["metadata[org]"] = org;
+        stripeCall(skey, "/v1/payment_links", linkForm, (st2, pl) => {
           if (st2 !== 200 || !pl || !pl.url) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Stripe (link): " + (((pl || {}).error || {}).message || ("HTTP " + st2)) })); }
           res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-          res.end(JSON.stringify({ url: pl.url }));
+          res.end(JSON.stringify({ url: pl.url, id: pl.id }));   // id = the payment-link id → stored as q.stripeLinkId for webhook matching
         });
       });
+    });
+    return;
+  }
+
+  // STRIPE WEBHOOK — POST /api/stripe/webhook. Stripe calls this when a payment link is paid. No token auth: the
+  // Stripe SIGNATURE is the auth (verified against the whsec_ signing secret). On checkout.session.completed (paid),
+  // find the invoice by its stored stripeLinkId and mark it PAID + record the card payment. Idempotent (skips an
+  // already-paid quote). Always 200 so Stripe doesn't retry a handled event.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/stripe/webhook") {
+    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+    const wsecret = cfg.stripeWebhookSecret;
+    readBodyUtf8(req, 1e6, (raw) => {
+      if (!wsecret || !verifyStripeSig(raw, req.headers["stripe-signature"], wsecret)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad signature"}'); }
+      let ev = null; try { ev = JSON.parse(raw); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      try {
+        const obj = ev && ev.data && ev.data.object;
+        if (ev && ev.type === "checkout.session.completed" && obj && obj.payment_status === "paid") {
+          const linkId = obj.payment_link || null, metaQuote = (obj.metadata && obj.metadata.quoteId) || null;
+          const amount = Math.round(+obj.amount_total || 0) / 100;
+          const store = loadStore();
+          let matched = null, matchedOrg = null;
+          for (const oid of orgIdsOf(store)) {
+            const qs = (store[oid] && store[oid].quotes) || [];
+            const q = qs.find((x) => x && !x.deleted && ((linkId && x.stripeLinkId === linkId) || (metaQuote && x.id === metaQuote)));
+            if (q) { matched = q; matchedOrg = oid; break; }
+          }
+          if (matched && !matched.paid) {
+            const paidDate = new Date().toISOString().slice(0, 10);
+            const payments = Array.isArray(matched.payments) ? matched.payments.slice() : [];
+            if (!payments.some((p) => p && p.ref === obj.id)) payments.push({ id: "pay_stripe_" + String(obj.id).slice(-24), amount: amount, date: paidDate, method: "card", ref: obj.id, via: "stripe", createdAt: Date.now() });
+            const upd = Object.assign({}, matched, { paid: true, paidDate: matched.paidDate || paidDate, payments: payments, updatedAt: Date.now() });
+            saveStore(mergeState(store, { [matchedOrg]: { quotes: [upd] } }));   // per-record LWW merge → only this quote is asserted, everything else preserved
+          }
+        }
+      } catch (e) {}
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end('{"received":true}');
     });
     return;
   }
@@ -2554,4 +2609,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

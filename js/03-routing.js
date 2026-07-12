@@ -143,7 +143,8 @@ const NAV_GROUPS = [
   { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
-  { key:"money",     label:"Money",     icon:"💰", tabs:["invoices","finance","pay","routes"] },
+  { key:"invoices",  label:"Invoices",  icon:"💳", tabs:["invoices"] },   // OWN top-level menu (Ray: invoices is its own tab, not folded under Money)
+  { key:"money",     label:"Money",     icon:"💰", tabs:["finance","pay","routes"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","route"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },

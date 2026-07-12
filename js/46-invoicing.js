@@ -35,34 +35,59 @@ function invAmountDue(q) { return (typeof quoteTotalWithTax === "function") ? qu
 /* AUTO-GENERATE a Stripe card-payment link for THIS invoice's exact amount (server-side, using the restricted key
    saved in Settings — the key never touches the client). Saves the URL to q.paymentLink so the invoice shows the
    "Pay online" button. Owner/admin only. */
-window.invGenPayLink = async function (quoteId) {
-  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
-  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+// low-level: create + save a Stripe link for one quote. Returns {ok, url, error}. No alerts, no render (batch-safe).
+async function invMakePayLink(q) {
+  if (!q) return { ok: false, error: "no invoice" };
   const amt = invAmountDue(q);
-  if (!(amt >= 0.5)) { alert("The invoice amount must be at least $0.50 to create a card link."); return; }
+  if (!(amt >= 0.5)) return { ok: false, error: "amount under $0.50" };
   const cust = (typeof custName === "function" && q.customerId) ? custName(q.customerId) : (q.cust || "");
   const job = (typeof quoteType === "function" && quoteType(q)) || q.title || "Services";
   const label = ("OBX Lot Solutions · " + invNo(q) + (cust ? (" · " + cust) : "") + " · " + job).slice(0, 120);
   const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
-  if (!base) { alert("Sync isn't set up on this device, so I can't reach Stripe from here."); return; }
-  const btn = document.getElementById("inv_genlink_" + quoteId);
-  if (btn) { btn.disabled = true; btn.textContent = "Making link…"; }
+  if (!base) return { ok: false, error: "sync not set up on this device" };
   try {
-    const r = await fetch(base + "/api/stripe/paylink", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}), body: JSON.stringify({ amountCents: Math.round(amt * 100), label: label }) });
+    const r = await fetch(base + "/api/stripe/paylink", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}), body: JSON.stringify({ amountCents: Math.round(amt * 100), label: label, quoteId: q.id, org: (typeof S !== "undefined" ? S.biz : "") }) });
     const d = await r.json().catch(() => null);
     if (r.ok && d && d.url) {
       q.paymentLink = d.url;
+      if (d.id) q.stripeLinkId = d.id;   // the payment-link id → the paid-webhook matches on this to auto-mark the invoice paid
       if (typeof touch === "function") touch(q);
       if (typeof save === "function") save();
-      if (typeof render === "function") render();
-    } else {
-      alert("Couldn't create the link: " + ((d && d.error) || ("HTTP " + r.status)) + "\n\nCheck that your Stripe key is saved in Settings (and has Prices + Payment Links write access).");
-      if (btn) { btn.disabled = false; btn.textContent = "⚡ Generate card-payment link"; }
+      return { ok: true, url: d.url };
     }
-  } catch (e) {
-    alert("Couldn't reach Stripe — are you online? " + ((e && e.message) || ""));
+    return { ok: false, error: (d && d.error) || ("HTTP " + r.status) };
+  } catch (e) { return { ok: false, error: (e && e.message) || "offline" }; }
+}
+// single-button flow (alerts + re-render on the result)
+window.invGenPayLink = async function (quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  const btn = document.getElementById("inv_genlink_" + quoteId);
+  if (btn) { btn.disabled = true; btn.textContent = "Making link…"; }
+  const res = await invMakePayLink(q);
+  if (res.ok) { if (typeof render === "function") render(); }
+  else {
+    alert("Couldn't create the link: " + res.error + "\n\nCheck that your Stripe key is saved in Settings (Prices + Payment Links = Write).");
     if (btn) { btn.disabled = false; btn.textContent = "⚡ Generate card-payment link"; }
   }
+};
+// BATCH: generate a Stripe link for every current invoice that doesn't have one yet (Ray: "make Stripe links for
+// all current invoices to see them"). Serial (gentle on Stripe), reports a summary. Owner/admin only.
+window.invGenPayLinksAll = async function () {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const inv = (D().quotes || []).filter(q => q && !q.deleted && q.invoiced && !q.paymentLink && invAmountDue(q) >= 0.5);
+  if (!inv.length) { alert("Every current invoice already has a payment link (or there are none needing one)."); return; }
+  if (!confirm("Create a Stripe card-payment link for " + inv.length + " invoice" + (inv.length === 1 ? "" : "s") + "?\n\nThese are real Stripe links but nobody's charged until a customer actually pays one.")) return;
+  const btn = document.getElementById("inv_genall");
+  if (btn) { btn.disabled = true; }
+  let done = 0, failed = 0, firstErr = "";
+  for (const q of inv) {
+    if (btn) btn.textContent = "Making links… " + (done + failed + 1) + "/" + inv.length;
+    const res = await invMakePayLink(q);
+    if (res.ok) done++; else { failed++; if (!firstErr) firstErr = res.error; }
+  }
+  if (typeof render === "function") render();
+  alert("Done — " + done + " link" + (done === 1 ? "" : "s") + " created" + (failed ? (", " + failed + " failed (" + firstErr + ")") : "") + ".\n\nOpen any invoice and tap “Pay online” to see the Stripe page.");
 };
 /* cash-discount line — "pay cash/check and save 3%". Presentational; shown on every invoice. */
 function invCashNote(q) {
@@ -230,6 +255,9 @@ function rInvoices() {
   const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${q.paymentLink ? " · 💳 pay link" : ""}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
 
   let h = `<div class="secthd"><h2>🧾 Invoices</h2>${arTotal ? `<span class="ct">${money(arTotal)} owed</span>` : ""}</div>`;
+
+  const needLink = awaiting.filter(q => !q.paymentLink && invAmountDue(q) >= 0.5).length;
+  if (needLink) h += `<div class="card" style="border-left:4px solid var(--accent)"><button class="btn acc" id="inv_genall" style="width:100%" onclick="invGenPayLinksAll()">⚡ Generate Stripe pay links for ${needLink} invoice${needLink === 1 ? "" : "s"}</button><div class="sub" style="margin-top:6px;white-space:normal">Makes a card-payment link for each awaiting invoice that doesn't have one yet. Real links — but nobody's charged until a customer actually pays.</div></div>`;
 
   h += `<div class="secthd" style="margin-top:8px"><h2 style="font-size:15px">✅ Ready to invoice</h2><span class="ct">${ready.length}</span></div>`;
   if (!ready.length) h += `<div class="card"><div class="muted">No completed jobs waiting to be invoiced. A job shows here once it's marked done.</div></div>`;
