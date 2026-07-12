@@ -20,6 +20,7 @@ function finPeriodPL(ym){
   (D().jobs || []).filter(j => j && !j.deleted && inPeriod(j.date)).forEach(j => {
     (j.expenses || []).filter(x => x && !x.deleted).forEach(e => {
       if (typeof depositHeld === "function" && depositHeld(e)) return;   // HOLD-OUT (js/96): an unsettled rental-deposit group is $0 to the P&L until settled at net
+      if (typeof expenseIsFuel === "function" && expenseIsFuel(e)) return;   // STANDARD MILEAGE: fuel is covered by the mileage line below, never a separate cost
       if (typeof expenseIsTool === "function" && expenseIsTool(e)) jobToolOverhead += finCents(e.amount);
       else jobCosts += finCents(e.amount);
     });
@@ -29,10 +30,10 @@ function finPeriodPL(ym){
     });
   });
 
-  const mil = finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true });
+  const mil = finMileage(D().timeclock || [], { from: b.from, to: b.to, confirmedOnly: true, fuelOffset: false });   // FULL standard-mileage deduction (fuel is inside it, excluded from costs)
 
-  // operating / overhead expenses, by category
-  const exps = actExpenses().filter(e => inPeriod(e.date));
+  // operating / overhead expenses, by category (fuel excluded — standard mileage covers the vehicle)
+  const exps = actExpenses().filter(e => inPeriod(e.date) && !(typeof expenseIsFuel === "function" && expenseIsFuel(e)));
   const opExBy = {}; let opEx = 0;
   exps.forEach(e => { const c = e.category || "other", v = finCents(e.amount); opExBy[c] = (opExBy[c] || 0) + v; opEx += v; });
   // tool/equipment logged inside a job rolls into overhead (same TOTAL — moved out of jobCosts, into opEx)
@@ -152,11 +153,19 @@ function finGeneralLedger(){
     if (tax) lines.push({ acct: "Sales tax payable", dr: 0, cr: tax });
     push(e.date, "Income" + (e.invoiceNo ? " · " + e.invoiceNo : ""), lines);
   });
-  actExpenses().forEach(e => {
-    const amt = finCents(e.amount); if (!amt) return; const acct = "Expense: " + (e.category || "other");
-    push(e.date, (e.unpaid ? "Bill (A/P) · " : "Expense · ") + (e.vendor || ""), e.unpaid ? [{ acct: acct, dr: amt, cr: 0 }, { acct: "Accounts payable", dr: 0, cr: amt }] : [{ acct: acct, dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]);
+  // credit: business-paid or already-reimbursed → Cash; unreimbursed personal-card → Reimbursements payable (liability)
+  const creditFor = e => (!(e.paidBy || e.memberId) || e.reimbursedAt) ? "Cash" : "Reimbursements payable";
+  const costEntry = (e, memo, date, dfltCat) => {
+    const amt = finCents(e.amount); if (!amt) return;
+    const acct = "Expense: " + (e.category || dfltCat || "other");
+    if (e.unpaid) { push(date, "Bill (A/P) · " + (e.vendor || ""), [{ acct: acct, dr: amt, cr: 0 }, { acct: "Accounts payable", dr: 0, cr: amt }]); return; }
+    push(date, memo + (e.vendor ? " · " + e.vendor : ""), [{ acct: acct, dr: amt, cr: 0 }, { acct: creditFor(e), dr: 0, cr: amt }]);
+  };
+  actExpenses().forEach(e => costEntry(e, e.unpaid ? "Bill" : "Expense", e.date, "other"));
+  (D().jobs || []).forEach(j => { if (!j || j.deleted) return;
+    (j.expenses || []).forEach(e => { if (!e || e.deleted) return; costEntry(e, "Job cost · " + (j.title || ""), e.date || j.date, "job"); });
+    (j.materials || []).forEach(m => { if (!m || m.deleted) return; const amt = finCents(m.amount); if (!amt) return; push(m.date || j.date, "Materials · " + (j.title || ""), [{ acct: "Expense: materials (pass-through)", dr: amt, cr: 0 }, { acct: creditFor(m), dr: 0, cr: amt }]); });
   });
-  (D().jobs || []).forEach(j => { if (!j || j.deleted) return; (j.expenses || []).forEach(e => { if (!e || e.deleted || e.unpaid) return; const amt = finCents(e.amount); if (!amt) return; push(e.date || j.date, "Job cost · " + (j.title || ""), [{ acct: "Expense: " + (e.category || "job"), dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]); }); });
   (typeof actDisb === "function" ? actDisb() : []).forEach(x => {
     const amt = finCents(x.amount); if (!amt) return;
     const map = { payout: "Wages / labor", tax: "Income tax paid", draw: "Owner draw", salestax: "Sales tax payable" };

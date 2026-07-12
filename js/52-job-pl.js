@@ -57,7 +57,7 @@ function expenseIsTool(e) { return !!(e && e.category === "tools/equipment"); }
 // STANDARD-MILEAGE method (Ray's choice): the $0.725/mi rate already covers fuel, so a fuel receipt is NEVER a
 // separate job cost — the job carries full mileage (jobMileageCost) as its whole vehicle cost. Excluding fuel here
 // removes the fuel-AND-mileage double-count in per-job profit/cost. (Fuel stays a real record + cash outflow.)
-function expenseIsFuel(e) { return !!(e && e.category === "fuel"); }
+function expenseIsFuel(e) { return !!(e && (e.category === "fuel" || e.category === "fuel/mileage")); }
 /* HOLD-OUT (js/96 depositHeld): an unsettled rental deposit + its linked refunds are HELD OUT of job cost (Ray's
    model — the true NET only, never an inflated cost) exactly like a tool is, until the owner SETTLES it at net.
    Guarded so js/52 still works when js/96 isn't loaded (node unit context) → nothing held → today's behavior. */

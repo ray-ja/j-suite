@@ -205,7 +205,7 @@ window.sqInvApplyCustomer = function (custId) {
     iv.reconciled = true; if (typeof touch === "function") touch(iv);
   });
   // (2) suppress only the CLAIMED quotes (matched to a Square invoice) — invoice wins, no double count
-  (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && q.paid && claimByQuote[q.id]).forEach(q => {
+  (d.quotes || []).filter(q => q && !q.deleted && q.customerId === custId && claimByQuote[q.id]).forEach(q => {  // ALL claimed (paid or not) — reconciledInvoiceId then blocks a later inc_q double-book
     q.reconciledInvoiceId = claimByQuote[q.id]; q.reconciledDuplicate = false; q.reconcileKept = false;
     if (typeof touch === "function") touch(q);
     if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);   // tombstones inc_q_<id>

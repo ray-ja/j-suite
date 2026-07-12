@@ -131,7 +131,7 @@ function popAcceptedIncome() {
   const d = D();
   const jobById = {}; (d.jobs || []).forEach(j => { if (j) jobById[j.id] = j; });
   const custById = {}; (d.customers || []).forEach(c => { if (c) custById[c.id] = c; });
-  return (d.quotes || []).filter(q => q && !q.deleted && q.accepted).map(q => {
+  return (d.quotes || []).filter(q => q && !q.deleted && q.accepted && !q.reconciledDuplicate).map(q => {
     const job = q.jobId ? jobById[q.jobId] : null;
     const cust = q.customerId ? custById[q.customerId] : null;
     return {
@@ -149,7 +149,7 @@ function popAcceptedIncome() {
 /* the pool — accepted quotes bucketed by billing state (all cents) */
 function popPool() {
   let collected = 0, ar = 0, backlog = 0;
-  (D().quotes || []).filter(q => q && !q.deleted && q.accepted).forEach(q => {
+  (D().quotes || []).filter(q => q && !q.deleted && q.accepted && !q.reconciledDuplicate).forEach(q => {
     const amt = finCents(q.finalPrice || q.total || 0);
     // count ACTUAL payments/deposits received (partial too), not just the fully-paid flag
     const paid = (typeof quotePaidAmt === "function") ? Math.min(finCents(quotePaidAmt(q)), amt) : (q.paid ? amt : 0);

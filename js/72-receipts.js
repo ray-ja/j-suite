@@ -164,7 +164,7 @@ window.jobCloseReceiptsAll = function (jobId) {
    policy — personal gas isn't reimbursed, mileage covers it). This closes the double-dip where someone gassed their
    own truck on a personal card and got the fuel reimbursed AND full mileage as the vehicle owner. */
 function rcptReimbOwed() {
-  const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || (e.category || "") === "fuel") return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
+  const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || ["fuel", "fuel/mileage"].indexOf(e.category || "") >= 0) return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
   (D().jobs || []).forEach(j => { if (j && !j.deleted) { (j.expenses || []).forEach(add); (j.materials || []).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;
@@ -2063,7 +2063,7 @@ window.rcptSettle = function (memberId) {
   const owed = (rcptReimbOwed()[memberId] || 0), nm = (typeof userName === "function" ? userName(memberId) : "") || "this person";
   if (!confirm("Mark " + nm + " reimbursed for " + money(owed) + "? Clears their personal-card balance — do this once you've actually paid them back from the business funds.")) return;
   const t = now(), d = D();
-  const settle = function (e) { if (e && !e.deleted && e.paidBy === memberId && !e.reimbursedAt) { e.reimbursedAt = t; return true; } return false; };
+  const settle = function (e) { if (e && !e.deleted && (e.paidBy || e.memberId) === memberId && !e.reimbursedAt) { e.reimbursedAt = t; return true; } return false; };
   (d.jobs || []).forEach(function (j) { if (j && !j.deleted) { let ch = false; (j.expenses || []).forEach(function (e) { if (settle(e)) ch = true; }); (j.materials || []).forEach(function (e) { if (settle(e)) ch = true; }); if (ch && typeof touch === "function") touch(j); } });
   (d.expenses || []).forEach(function (e) { if (settle(e) && typeof touch === "function") touch(e); });
   if (typeof logChange === "function") logChange("update", "expense", memberId, "Reimbursed " + nm + " " + money(owed) + " (personal-card spend settled)");

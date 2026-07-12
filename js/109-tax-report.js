@@ -16,10 +16,13 @@ function fin1099Report(year) {
     if (!x || x.type !== "payout" || !x.memberId || String(x.date || "").slice(0, 4) !== year) return;
     byMember[x.memberId] = (byMember[x.memberId] || 0) + Math.round((+x.amount || 0) * 100);
   });
+  // mileage reimbursements are NOT nonemployee comp — subtract each member's confirmed mileage $ for the year
+  const mil = (typeof finMileage === "function") ? finMileage((D().timeclock) || [], { confirmedOnly: true, from: year + "-01-01", to: year + "-12-31" }).perMember || {} : {};
   const rows = Object.keys(byMember).map(id => {
     const owner = !!(typeof roleInOrg === "function" && roleInOrg(id, S.biz) === "owner");
     const u = (S.users || []).find(x => x && x.id === id);
-    return { id: id, name: (typeof finName === "function" ? finName(id) : id), cents: byMember[id], owner: owner, hasW9: !!(u && u.taxId), needs: byMember[id] >= 60000 && !owner };
+    const comp = Math.max(0, byMember[id] - (mil[id] || 0));   // 1099 comp = payouts − mileage reimbursement
+    return { id: id, name: (typeof finName === "function" ? finName(id) : id), cents: comp, paid: byMember[id], mileage: mil[id] || 0, owner: owner, hasW9: !!(u && u.taxId), needs: comp >= 60000 && !owner };
   }).filter(r => !r.owner).sort((a, b) => b.cents - a.cents);
   return { year: year, rows: rows };
 }

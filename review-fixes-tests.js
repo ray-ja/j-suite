@@ -224,3 +224,56 @@ T("D cash reflects the money is still in the bank (owed, not spent)", a.cash===c
 d.expenses[0].reimbursedAt=Date.now();
 T("D reimbursed spend leaves the owed liability", finAccountBalances().reimbOwed===0);
 diag("review-fixes: C+D done");
+
+// ================= Fable re-audit fixes F1-F7 =================
+["income","jobs","expenses","timeclock","quotes","customers","disbursements","invoices"].forEach(k=>d[k]=[]);
+S.users=S.users||[]; if(!S.users.some(u=>u&&u.id==="u_rj"))S.users.push({id:"u_rj",username:"Rj",name:"Rj",active:true});
+// F3 — rcptSettle clears a memberId-only (legacy) expense
+d.expenses.push({id:"lg",amount:60,category:"materials",memberId:"u_rj",date:"2026-06-01"});
+T("F3 legacy memberId expense is owed", (rcptReimbOwed()["u_rj"]||0)===60);
+rcptSettle("u_rj");
+T("F3 rcptSettle clears the memberId-only expense (now $0 owed)", (rcptReimbOwed()["u_rj"]||0)===0);
+// F4 — hand-logged "fuel/mileage" excluded from reimbursement AND job cost
+["expenses"].forEach(k=>d[k]=[]);
+d.expenses.push({id:"fm",amount:50,category:"fuel/mileage",paidBy:"u_rj",date:"2026-06-01"});
+T("F4 'fuel/mileage' NOT reimbursed (mileage covers it)", (rcptReimbOwed()["u_rj"]||0)===0);
+T("F4 expenseIsFuel matches legacy 'fuel/mileage'", expenseIsFuel({category:"fuel/mileage"})===true);
+d.jobs.push({id:"jf",crew:["u_rj"],expenses:[{id:"jf1",amount:40,category:"fuel/mileage"},{id:"jf2",amount:100,category:"disposal"}]});
+T("F4 jobCostBreakdown excludes 'fuel/mileage' from jobExp", jobCostBreakdown(d.jobs[0]).jobExp===100);
+// F5 — finPeriodPL: full mileage + fuel excluded
+["expenses","jobs","income","timeclock"].forEach(k=>d[k]=[]);
+d.income.push({id:"i5",amount:1000,date:"2026-06-15",jobId:"j5",crew:["u_rj"]});
+d.jobs.push({id:"j5",date:"2026-06-15",crew:["u_rj"],expenses:[{id:"f5",amount:80,category:"fuel"},{id:"d5",amount:100,category:"disposal"}]});
+d.timeclock.push({id:"t5",userId:"u_rj",vehicleOwnerId:"u_rj",miles:100,rate:0.725,clockIn:"2026-06-15T08:00:00",clockOut:"2026-06-15T16:00:00",milesConfirmed:true,jobId:"j5"});
+d.expenses.push({id:"bf5",amount:20,category:"fuel",date:"2026-06-16"});  // business fuel expense
+var pl=finPeriodPL("2026-06");
+T("F5 job fuel NOT in jobCosts (only $100 disposal)", pl.jobCosts===10000);
+T("F5 business fuel NOT in opEx", !pl.opExBy["fuel"]);
+T("F5 mileage is FULL $72.50 (not net of the $20 business fuel)", pl.mileage===7250);
+// F6 — 1099 subtracts mileage reimbursement
+["disbursements","timeclock"].forEach(k=>d[k]=[]);
+if(typeof orgSetRole==="function"){orgSetRole("u_rj","obx","crew");}
+d.disbursements.push({id:"p6",type:"payout",memberId:"u_rj",amount:1000,date:"2026-03-01"});  // $1000 payout (incl mileage)
+d.timeclock.push({id:"tc6",userId:"u_rj",vehicleOwnerId:"u_rj",miles:200,rate:0.725,clockIn:"2026-03-01T08:00:00",clockOut:"2026-03-01T16:00:00",milesConfirmed:true,jobId:"jx"});  // $145 mileage
+var r6=fin1099Report("2026").rows.find(x=>x.id==="u_rj");
+T("F6 1099 comp = payout $1000 - mileage $145 = $855 (85500c)", r6 && r6.cents===85500 && r6.mileage===14500);
+// F7 — GL: materials credit cash; unreimbursed personal → payable; balances
+["income","jobs","expenses","timeclock","quotes","disbursements"].forEach(k=>d[k]=[]);
+d.income.push({id:"g7",amount:1000,date:"2026-06-01"});
+d.jobs.push({id:"jg",materials:[{id:"mg",amount:200}],expenses:[{id:"eg",amount:50,category:"disposal",paidBy:"u_rj"}]});  // personal-card, unreimbursed
+var gl=finGeneralLedger();
+T("F7 GL still balances", gl.balanced && gl.totalDr===gl.totalCr);
+T("F7 materials credit Cash (Materials expense booked)", !!gl.trialBalance["Expense: materials (pass-through)"] && gl.trialBalance["Expense: materials (pass-through)"].dr===20000);
+T("F7 unreimbursed personal expense → Reimbursements payable (not Cash)", !!gl.trialBalance["Reimbursements payable"] && gl.trialBalance["Reimbursements payable"].cr===5000);
+// F1 — Square: claimed-but-unpaid quote stamped so a later paid can't double-book
+["income","quotes","invoices","customers"].forEach(k=>d[k]=[]);
+d.customers.push({id:"c1",name:"Cust"});
+d.quotes.push({id:"q1",customerId:"c1",total:500,accepted:true,jobId:"j1"});  // NOT paid yet
+d.jobs=[{id:"j1"}];
+d.invoices.push({id:"iv1",customerId:"c1",amountPaid:500,reconciled:false,quoteIds:["q1"]});
+window.finCanView=function(){return true;};
+sqInvApplyCustomer("c1");
+T("F1 claimed-but-unpaid quote gets reconciledInvoiceId (blocks later double-book)", !!d.quotes[0].reconciledInvoiceId);
+d.quotes[0].paid=true; syncQuoteIncome(d.quotes[0]);
+T("F1 marking it paid later does NOT book inc_q (no double)", !d.income.some(x=>x.id==="inc_q_q1"&&!x.deleted));
+diag("review-fixes: F1-F7 done");

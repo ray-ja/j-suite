@@ -268,7 +268,7 @@ window.saveIncome = function (id, isNew) {
 window.delIncome = function (id) { if (!confirm("Delete this income entry?")) return; const e = D().income.find(x => x.id === id); if (e) { e.deleted = true; touch(e); if (typeof logChange === "function") logChange("delete", "income", id, "Deleted income " + money(e.amount || 0)); } save(); closeModal(); render(); };
 
 /* ---------- EXPENSES ---------- */
-const EXP_CATS = ["disposal", "rentals", "fuel/mileage", "equipment", "software", "marketing", "meals", "crew supplies", "other"];
+const EXP_CATS = ["disposal", "rentals", "fuel", "tools/equipment", "subscription/software", "marketing/ads", "meals", "crew supplies", "other"];
 function rFinExpenses() {
   const exps = actExpenses().slice().sort((a, b) => (a.date + a.id) < (b.date + b.id) ? 1 : -1);
   const total = exps.reduce((s, e) => s + finCents(e.amount), 0);
