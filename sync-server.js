@@ -285,7 +285,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -359,6 +359,10 @@ function migrateStore(s) {
   // drive JOB generation (client-side engine js/102) but hold no money themselves → billing byte-identical.
   // Additive + idempotent; the array rides the standard per-record LWW via COLLECTIONS/mergeColl.
   for (const oid of orgIdsOf(s)) if (!Array.isArray(s[oid].recurringPlans)) s[oid].recurringPlans = [];
+  // LINE-ITEM COLLECTIONS (Phase 1): promote nested job.materials/expenses → jobMaterials/jobExpenses collections
+  // so concurrent same-job edits merge element-wise instead of clobbering via whole-record LWW. Idempotent + loss-free.
+  for (const oid of orgIdsOf(s)) { if (!Array.isArray(s[oid].jobExpenses)) s[oid].jobExpenses = []; if (!Array.isArray(s[oid].jobMaterials)) s[oid].jobMaterials = []; }
+  hoistJobLineItems(s);
   return s;
 }
 // WORKSHOP: ensure the per-org customJobs array exists, and seed the Sentinel EXAMPLE job into obx exactly once.
@@ -1076,6 +1080,46 @@ function dedupNested(store) {
   }
   return store;
 }
+/* HOIST — job.materials[] / job.expenses[] used to ride INSIDE the job record (nested), so two devices editing the
+   SAME job's money lines within one sync cycle clobbered each other via whole-record LWW (mergeColl). We promote
+   those two nested arrays to top-level id-keyed collections (jobMaterials / jobExpenses), each row stamped with its
+   jobId + a stable id + updatedAt + a `deleted` tombstone — so element-level LWW merges them losslessly like any
+   other collection. This runs on EVERY loadStore (migrateStore) AND on every merged result (mergeState tail), so no
+   matter which client wrote nested arrays, the server normalizes to collections. Idempotent + loss-free:
+   - hoist only element ids NOT already in the collection (dedupe by id → no double-count on re-run);
+   - id-less legacy rows get a DETERMINISTIC id (jm_/je_ + jobId + index) so re-runs are stable (no Math.random);
+   - clear the nested array once hoisted so old readers can't double-count (data now lives solely in the collection);
+   - NEVER bump job.updatedAt (no server-invented "now" — a real device edit must still win the next merge). */
+function hoistJobLineItems(store) {
+  if (!store) return store;
+  for (const oid of orgIdsOf(store)) {
+    const o = store[oid]; if (!o || typeof o !== "object") continue;
+    const jobs = Array.isArray(o.jobs) ? o.jobs : [];
+    const pairs = [["materials", "jobMaterials", "jm"], ["expenses", "jobExpenses", "je"]];
+    for (const [nestedKey, collKey, pfx] of pairs) {
+      if (!Array.isArray(o[collKey])) o[collKey] = [];
+      // id → row map seeded with the existing collection, then merged with every job's nested rows KEEPING THE
+      // NEWEST per id — same-id dups (the "duplicate that won't delete" records) collapse to the newest exactly
+      // like dedupNested, so the promoted billing matches what the live server already bills post-sync.
+      const byId = new Map(); for (const r of o[collKey]) if (r && r.id != null) { const c = byId.get(r.id); if (!c || (+r.updatedAt || 0) >= (+c.updatedAt || 0)) byId.set(r.id, r); }
+      for (const j of jobs) {
+        if (!j || !j.id || !Array.isArray(j[nestedKey]) || !j[nestedKey].length) continue;
+        j[nestedKey].forEach((el, idx) => {
+          if (!el || typeof el !== "object") return;
+          let id = (el.id != null && el.id !== "") ? el.id : (pfx + "_" + j.id + "_" + idx);
+          let cur = byId.get(id);
+          if (cur && cur.jobId !== j.id) { id = pfx + "_" + j.id + "_" + idx; cur = byId.get(id); }   // CROSS-JOB id collision → give this row a job-scoped id so BOTH survive (an id-keyed collection can't hold two rows with the same id). Within-job dups still collapse below.
+          const row = Object.assign({}, el, { id: id, jobId: j.id, updatedAt: (+el.updatedAt || 1) });
+          if (row.deleted == null) row.deleted = false;
+          if (!cur || (+row.updatedAt || 0) >= (+cur.updatedAt || 0)) byId.set(id, row);   // keep newest per id (same-job dup → newest)
+        });
+        j[nestedKey] = [];   // clear nested (data now lives in the collection); job.updatedAt untouched
+      }
+      o[collKey] = Array.from(byId.values());
+    }
+  }
+  return store;
+}
 /* ----- auth: verify a login against the SHA-256 account records the app already syncs here -----
    Records look like { id, username, passhash, settings, deleted, updatedAt }. The app hashes with
    WebCrypto SHA-256 in secure contexts and a djb2 fallback when crypto.subtle is unavailable
@@ -1255,7 +1299,7 @@ function mergeState(stored, incoming) {
   }
   out.users = mergeColl(stored.users || [], incoming.users || []);
   out.registry = mergeColl(stored.registry || [], incoming.registry || []);   // org metadata, LWW like users
-  return dedupNested(out);   // heal any same-id duplicates in nested job.materials/expenses (mergeColl can't reach them)
+  return hoistJobLineItems(dedupNested(out));   // heal same-id dups in any residual nested arrays, THEN promote nested job.materials/expenses into their id-keyed collections (element-level LWW — no whole-record clobber)
 }
 
 /* ---------- CEO read path: a READ-ONLY, whitelisted projection of operational state ----------
@@ -2449,4 +2493,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

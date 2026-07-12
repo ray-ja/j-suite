@@ -59,8 +59,9 @@ function census(store) {
   const c = {};
   const cols = ["customers", "properties", "quotes", "jobs", "income", "expenses", "inventory", "receipts"];
   cols.forEach(col => { const a = (store.obx && store.obx[col]) || []; c["obx." + col] = a.filter(r => r && !r.deleted).length; });
-  let jexp = 0, jmat = 0;
+  let jexp = 0, jmat = 0;   // union of any residual nested arrays + the promoted collections (raw = nested-only, migrated = collection-only)
   ((store.obx && store.obx.jobs) || []).forEach(j => { jexp += (j.expenses || []).length; jmat += (j.materials || []).length; });
+  jexp += ((store.obx && store.obx.jobExpenses) || []).length; jmat += ((store.obx && store.obx.jobMaterials) || []).length;
   c["obx.jobExpenses(all)"] = jexp; c["obx.jobMaterials(all)"] = jmat;
   c._accounts = (store.users || []).filter(u => u && !u.kind && !u.deleted).length;
   c._memberships = (store.users || []).filter(u => u && u.kind === "membership").length;
@@ -72,7 +73,10 @@ function fingerprint(store) {
   const fp = {};
   ["obx", "jam"].forEach(o => {
     const s = store[o]; if (!s) return;
-    let jc = 0; (s.jobs || []).forEach(j => { if (j && !j.deleted) (j.expenses || []).forEach(e => { if (e && !e.deleted) jc += f.finCents(e.amount); }); });
+    // Σ live job expenses across the UNION of nested + jobExpenses collection, deduped by (jobId,id), live jobs only
+    let jc = 0; const seen = {}, liveJ = {};
+    (s.jobs || []).forEach(j => { if (j && !j.deleted) { liveJ[j.id] = 1; (j.expenses || []).forEach((e, i) => { if (e && !e.deleted) { const k = j.id + "|" + (e.id != null ? e.id : i); if (!seen[k]) { seen[k] = 1; jc += f.finCents(e.amount); } } }); } });
+    (s.jobExpenses || []).forEach(e => { if (e && !e.deleted && liveJ[e.jobId]) { const k = e.jobId + "|" + e.id; if (!seen[k]) { seen[k] = 1; jc += f.finCents(e.amount); } } });
     fp[o + "|job_costs¢"] = jc;
     fp[o + "|mileage¢"] = f.finMileage(s.timeclock || [], { confirmedOnly: true }).total;
   });
@@ -87,8 +91,9 @@ function cardsOf(store) {
   const jamReg = (store.registry || []).find(r => r.id === "jam") || {};
   const rev = ((store.obx && store.obx.receipts) || []).find(r => r.id === "r_rev") || {};
   const jP = ((store.obx && store.obx.jobs) || []).find(j => j.id === "jP") || {};
-  const mat = (jP.materials || []).find(m => m.id === "m1") || {};
-  const exp = (jP.expenses || []).find(e => e.id === "e_dump") || {};
+  // materials/expenses were promoted to the jobMaterials/jobExpenses collections — look there, nested as fallback
+  const mat = ((store.obx && store.obx.jobMaterials) || []).find(m => m && m.jobId === "jP" && m.id === "m1") || (jP.materials || []).find(m => m.id === "m1") || {};
+  const exp = ((store.obx && store.obx.jobExpenses) || []).find(e => e && e.jobId === "jP" && e.id === "e_dump") || (jP.expenses || []).find(e => e.id === "e_dump") || {};
   return {
     rayCard: (ray.cards && ray.cards[0] && ray.cards[0].last4) || null,
     chaseCard: (chase.cards && chase.cards[0] && chase.cards[0].last4) || null,

@@ -221,12 +221,16 @@ const dupStored = { obx: { jobs: [
 ] } };
 const dupOut = t.mergeState(dupStored, {});
 const jd = dupOut.obx.jobs.find(j => j.id === "jDup"), jc = dupOut.obx.jobs.find(j => j.id === "jClean");
-const m1s = jd.materials.filter(r => r.id === "m1");
-ok("nested dup HEAL: two same-id materials collapse to ONE (the newer $34.39, orphan dropped)", m1s.length === 1 && m1s[0].amount === 34.39, jd.materials);
-ok("nested dup HEAL: distinct records are preserved (m2 survives)", jd.materials.some(r => r.id === "m2" && r.amount === 9.99), jd.materials);
+// dedupNested heals same-id nested dups (newest wins) BEFORE the hoist promotes them to the jobMaterials collection
+// and clears the nested arrays — so the healed records now live in dupOut.obx.jobMaterials, keyed by jobId.
+const jmColl = dupOut.obx.jobMaterials || [];
+const m1s = jmColl.filter(r => r.jobId === "jDup" && r.id === "m1");
+ok("nested dup HEAL: two same-id materials collapse to ONE (the newer $34.39, orphan dropped)", m1s.length === 1 && m1s[0].amount === 34.39, m1s);
+ok("nested dup HEAL: distinct records are preserved (m2 survives, hoisted)", jmColl.some(r => r.jobId === "jDup" && r.id === "m2" && r.amount === 9.99), jmColl);
 ok("nested dup HEAL: the healed job's updatedAt is bumped (propagates to every device)", jd.updatedAt > 100, jd.updatedAt);
-ok("nested dup HEAL: a CLEAN job is untouched (no needless updatedAt bump)", jc.updatedAt === 300 && jc.materials.length === 1, jc);
+ok("nested dup HEAL: a CLEAN job's material is hoisted intact + updatedAt not needlessly bumped", jc.updatedAt === 300 && jmColl.some(r => r.jobId === "jClean" && r.id === "x1"), jc);
 ok("nested dup HEAL: bump is max(nested)+1, NOT server-now (won't clobber a genuine unsynced edit)", jd.updatedAt === 201, jd.updatedAt);
+ok("nested dup HEAL: nested arrays cleared after hoist (data lives in the collection now)", (jd.materials || []).length === 0 && (jc.materials || []).length === 0, { jd: jd.materials, jc: jc.materials });
 
 // ARCHIVED accounts cannot log in — accountByName skips them (a departed helper stays in pay/history but no access).
 const alStore = { users: [{ id: "a1", username: "vlad", passhash: "x", archived: true }, { id: "a2", username: "chase", passhash: "y" }, { id: "a3", username: "gone", passhash: "z", active: false }] };
@@ -1275,11 +1279,19 @@ const exA = t.mergeState(
   { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], expenses: [{ id: "ex1", cat: "disposal", amount: 73.16, note: "C&D", addedAt: 5, addedBy: "u1" }], updatedAt: 5 }] } },
   { obx: { jobs: [{ id: "j1", title: "Wash", date: "2026-06-10", crew: ["u1"], expenses: [{ id: "ex1", cat: "disposal", amount: 73.16, note: "C&D", addedAt: 5, addedBy: "u1" }, { id: "ex2", cat: "mileage", amount: 14.5, miles: 20, addedAt: 9, addedBy: "u1" }], updatedAt: 9 }] } }
 );
-ok("job.expenses LWW-merges (newer record adds a line; title/crew intact)", (() => { const j = exA.obx.jobs.find(x => x.id === "j1") || {}; return (j.expenses || []).length === 2 && j.expenses.some(e => e.cat === "mileage" && e.miles === 20 && e.amount === 14.5) && j.title === "Wash" && (j.crew || []).length === 1; })(), exA.obx.jobs.find(x => x.id === "j1"));
+ok("job.expenses hoist to jobExpenses collection (both lines present; job title/crew intact; nested cleared)", (() => { const j = exA.obx.jobs.find(x => x.id === "j1") || {}; const je = (exA.obx.jobExpenses || []).filter(e => e.jobId === "j1" && !e.deleted); return je.length === 2 && je.some(e => e.cat === "mileage" && e.miles === 20 && e.amount === 14.5) && j.title === "Wash" && (j.crew || []).length === 1 && (j.expenses || []).length === 0; })(), exA.obx.jobExpenses);
 // (b) pre-expenses job (no expenses array) round-trips zero-loss — backward compatible
 ok("pre-expenses job (no expenses array) round-trips zero-loss (backward compatible)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j7", title: "Old", done: false, updatedAt: 5 }] } }, {}); const j = m.obx.jobs.find(x => x.id === "j7") || {}; return j.title === "Old" && !("expenses" in j); })(), null);
-// (c) deleting an expense line: newer shorter list wins, no resurrection of the removed line
-ok("deleting an expense line LWW-merges (newer wins, removed line does not resurrect)", (() => { const m = t.mergeState({ obx: { jobs: [{ id: "j8", expenses: [{ id: "e1", cat: "misc", amount: 5 }, { id: "e2", cat: "misc", amount: 9 }], updatedAt: 5 }] } }, { obx: { jobs: [{ id: "j8", expenses: [{ id: "e2", cat: "misc", amount: 9 }], updatedAt: 9 }] } }); const j = m.obx.jobs.find(x => x.id === "j8") || {}; return (j.expenses || []).length === 1 && j.expenses[0].id === "e2"; })(), null);
+// (c) deleting an expense line is now a TOMBSTONE (deleted:true) on the collection element — element-level LWW,
+// NOT delete-by-omission (which would resurrect the line off a stale device — the whole reason for the migration).
+ok("deleting an expense line = TOMBSTONE (deleted:true wins element-wise; the other line lives; no resurrect)", (() => {
+  const m = t.mergeState(
+    { obx: { jobs: [{ id: "j8", updatedAt: 5 }], jobExpenses: [{ id: "e1", jobId: "j8", cat: "misc", amount: 5, updatedAt: 5 }, { id: "e2", jobId: "j8", cat: "misc", amount: 9, updatedAt: 5 }] } },
+    { obx: { jobExpenses: [{ id: "e1", jobId: "j8", cat: "misc", amount: 5, deleted: true, updatedAt: 9 }] } });
+  const je = (m.obx.jobExpenses || []).filter(e => e.jobId === "j8");
+  const e1 = je.find(e => e.id === "e1"), e2 = je.find(e => e.id === "e2");
+  return e1 && e1.deleted === true && e2 && !e2.deleted && e2.amount === 9;
+})(), null);
 
 console.log("— resale tracker: first-class resale[] collection (Cap #5, LWW + zero-loss) —");
 // (a) scaffolds on both businesses; two devices union-merge resale items

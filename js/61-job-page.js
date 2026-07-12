@@ -242,7 +242,7 @@ function rJobPage(j) {
   const openThis = me ? tc.find(e => e.userId === me.userId && e.jobId === j.id && !e.clockOut) : null;
   const openOther = me ? tc.find(e => e.userId === me.userId && e.jobId !== j.id && !e.clockOut) : null;
   const onJob = tc.filter(e => e.jobId === j.id && !e.clockOut);
-  const exps = (j.expenses || []).filter(x => x && !x.deleted);
+  const exps = ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).filter(x => x && !x.deleted);
   const expTotal = exps.reduce((s, e) => s + ((typeof depositHeld === "function" && depositHeld(e)) ? 0 : (+e.amount || 0)), 0);   // signed Σ, minus HELD rental deposits (js/96 HOLD-OUT)
   const tel = ph => String(ph || "").replace(/[^0-9+]/g, "");
   // up-to-3 labeled numbers for the customer (falls back to the single number). PRIMARY (first number) is hoisted to
@@ -949,8 +949,8 @@ function jobFiledLineHTML(j, it, indented) {
 }
 function jobFiledCostsHTML(j) {
   const upUrl = id => (typeof jsUploadUrl === "function") ? jsUploadUrl(id) : "";
-  const exps = (j.expenses || []).filter(x => x && !x.deleted);
-  const mats = (j.materials || []).filter(x => x && !x.deleted);
+  const exps = ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).filter(x => x && !x.deleted);
+  const mats = ((typeof plMaterials === "function") ? plMaterials(j) : (j.materials || [])).filter(x => x && !x.deleted);
   const expTotal = exps.reduce((s, e) => s + ((typeof depositHeld === "function" && depositHeld(e)) ? 0 : (+e.amount || 0)), 0);
   const matTotal = mats.reduce((s, e) => s + (+e.amount || 0), 0);
   const _bd = (typeof jobCostBreakdown === "function") ? jobCostBreakdown(j) : { mileage: 0, jobExp: 0, materials: 0, tool: 0 };
@@ -980,17 +980,17 @@ function jobFiledCostsHTML(j) {
   return h;
 }
 window.jobDelExpense = function (jobId, expId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.expenses)) return;
-  const e = j.expenses.find(x => x && x.id === expId); if (!e) return;
-  e.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const e = (typeof jobLIFind === "function") ? jobLIFind(j, "jobexp", expId) : null; if (!e) return;
+  e.deleted = true; if (typeof touch === "function") touch(e); if (typeof save === "function") save(); if (typeof render === "function") render();   // tombstone the collection element (touch the ELEMENT so the delete syncs element-wise)
 };
 /* jobAddExpense / jobAddMaterial were RETIRED (Phase 3) — the two separate add-forms are replaced by the
    unified receipt card (js/100 jobRcptCardHTML → rcptApplySplit). jobDelExpense/jobDelMaterial stay: the filed
    list (jobFiledCostsHTML) still deletes per line. Their old dupe-guard coverage moved to js/100's busy flags. */
 window.jobDelMaterial = function (jobId, mId) {
-  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j || !Array.isArray(j.materials)) return;
-  const e = j.materials.find(x => x && x.id === mId); if (!e) return;
-  e.deleted = true; if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  const e = (typeof jobLIFind === "function") ? jobLIFind(j, "jobmat", mId) : null; if (!e) return;
+  e.deleted = true; if (typeof touch === "function") touch(e); if (typeof save === "function") save(); if (typeof render === "function") render();   // tombstone the collection element
 };
 
 /* CHANGE ORDERS are now quote VERSIONS (see js/23 wizPersist + js/90-quote-versions.js) — the old

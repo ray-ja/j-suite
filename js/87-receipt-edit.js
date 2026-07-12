@@ -19,8 +19,9 @@ function rcptFindRecord(store, jobId, id) {
   if (store === "review") return (d.receipts || []).find(x => x && x.id === id && !x.deleted) || null;
   if (store === "biz") return (d.expenses || []).find(x => x && x.id === id && !x.deleted) || null;
   const j = (d.jobs || []).find(x => x && x.id === jobId); if (!j) return null;
-  const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []);
-  return arr.find(x => x && x.id === id && !x.deleted) || null;
+  const r = (typeof jobLIFind === "function") ? jobLIFind(j, store, id)   // jobMaterials/jobExpenses collection (+ residual nested)
+    : ((store === "jobmat" ? (j.materials || []) : (j.expenses || [])).find(x => x && x.id === id) || null);
+  return (r && !r.deleted) ? r : null;
 }
 /* which array a receipt belongs in, given the desired type + job */
 function rcptTargetHome(fields) {
@@ -31,14 +32,13 @@ function rcptTargetHome(fields) {
   return { store: "review", jobId: fields.jobId || null };   // incomplete (no job for a job type, or explicitly unassigned) → stays in review
 }
 function rcptTouchHome(home, rec) {
-  if (home.store === "jobmat" || home.store === "jobexp") { const j = (D().jobs || []).find(x => x && x.id === home.jobId); if (j && typeof touch === "function") touch(j); }
-  else if (typeof touch === "function") touch(rec);   // review + biz are per-record synced collections
+  if (typeof touch === "function") touch(rec);   // every home (review / biz / jobmat / jobexp) is now a per-record synced collection element
 }
 function rcptPushHome(home, rec) {
   const d = D();
   if (home.store === "review") { if (!Array.isArray(d.receipts)) d.receipts = []; d.receipts.push(rec); if (typeof touch === "function") touch(rec); }
   else if (home.store === "biz") { if (!Array.isArray(d.expenses)) d.expenses = []; d.expenses.push(rec); if (typeof touch === "function") touch(rec); }
-  else { const j = (d.jobs || []).find(x => x && x.id === home.jobId); if (j) { const key = home.store === "jobmat" ? "materials" : "expenses"; if (!Array.isArray(j[key])) j[key] = []; j[key].push(rec); if (typeof touch === "function") touch(j); } }
+  else if (typeof jobLIAdd === "function") { jobLIAdd(home.store, home.jobId, rec); }   // → jobMaterials/jobExpenses collection (element-level LWW), NOT the nested job array
 }
 /* build the record in the SHAPE its home expects, preserving id + carried-over fields */
 function rcptBuildRecord(home, id, fields, carry) {

@@ -70,6 +70,7 @@ function census(store) {
   // per-job expense/material record counts (incl. tombstones — nothing may vanish)
   let jexp = 0, jmat = 0;
   ((store.obx && store.obx.jobs) || []).forEach(j => { jexp += (j.expenses || []).length; jmat += (j.materials || []).length; });
+  jexp += ((store.obx && store.obx.jobExpenses) || []).length; jmat += ((store.obx && store.obx.jobMaterials) || []).length;   // union: nested (raw) + promoted collection (migrated)
   c["obx.jobExpenses(all)"] = jexp; c["obx.jobMaterials(all)"] = jmat;
   c._accounts = (store.users || []).filter(u => u && !u.kind && !u.deleted).length;
   return c;
@@ -79,7 +80,9 @@ function fingerprint(store) {
   const fp = {};
   ["obx", "jam"].forEach(o => {
     const s = store[o]; if (!s) return;
-    let jc = 0; (s.jobs || []).forEach(j => { if (j && !j.deleted) (j.expenses || []).forEach(e => { if (e && !e.deleted) jc += f.finCents(e.amount); }); });
+    let jc = 0; const seen = {}, liveJ = {};   // union of nested + jobExpenses collection, deduped by (jobId,id), live jobs only
+    (s.jobs || []).forEach(j => { if (j && !j.deleted) { liveJ[j.id] = 1; (j.expenses || []).forEach((e, i) => { if (e && !e.deleted) { const k = j.id + "|" + (e.id != null ? e.id : i); if (!seen[k]) { seen[k] = 1; jc += f.finCents(e.amount); } } }); } });
+    (s.jobExpenses || []).forEach(e => { if (e && !e.deleted && liveJ[e.jobId]) { const k = e.jobId + "|" + e.id; if (!seen[k]) { seen[k] = 1; jc += f.finCents(e.amount); } } });
     fp[o + "|job_costs¢"] = jc;
     fp[o + "|mileage¢"] = f.finMileage(s.timeclock || [], { confirmedOnly: true }).total;
   });
@@ -124,11 +127,14 @@ Object.keys(clientCensusBefore).forEach(k => ok(clientCensusAfter[k] >= clientCe
 
 const jP = S_after.obx.jobs.find(j => j.id === "jP");
 const jH = S_after.obx.jobs.find(j => j.id === "jH");
-const eDump = jP.expenses.find(e => e.id === "e_dump");
-const eTool = jP.expenses.find(e => e.id === "e_tool");
-const e3 = jH.expenses.find(e => e.id === "e3");
-const e4 = jH.expenses.find(e => e.id === "e4");
-const e5 = jH.expenses.find(e => e.id === "e5");
+// after load() the expenses live in the jobExpenses collection (with the backfilled category) — search there
+const findExp = (store, jobId, id) => ((store.obx.jobExpenses || []).find(e => e && e.jobId === jobId && e.id === id))
+  || (((store.obx.jobs.find(j => j.id === jobId) || {}).expenses || []).find(e => e && e.id === id)) || null;
+const eDump = findExp(S_after, "jP", "e_dump");
+const eTool = findExp(S_after, "jP", "e_tool");
+const e3 = findExp(S_after, "jH", "e3");
+const e4 = findExp(S_after, "jH", "e4");
+const e5 = findExp(S_after, "jH", "e5");
 
 ok(eTool.category === "tools/equipment", "TOOL expense AUTO-RECLASSIFIED: e_tool.category === 'tools/equipment' (resolved from its tombstoned tools/equipment receipt via receiptId)");
 ok(eDump.category === "job", "plain dump-fee e_dump.category backfilled to 'job'");
@@ -137,7 +143,7 @@ ok(e5.category === "disposal", "already-categorized e5.category is UNCHANGED ('d
 ok(e4.deleted === true, "the deleted expense e4 stays a tombstone (not resurrected, not dropped)");
 
 // Σ job.expenses (live, non-deleted) UNCHANGED by the migration
-function sumJobExp(store) { let s = 0; (store.obx.jobs || []).forEach(j => (j.expenses || []).forEach(e => { if (e && !e.deleted) s += (+e.amount || 0); })); return s; }
+function sumJobExp(store) { let s = 0; const seen = {}, liveJ = {}; (store.obx.jobs || []).forEach(j => { if (j && !j.deleted) { liveJ[j.id] = 1; (j.expenses || []).forEach((e, i) => { if (e && !e.deleted) { const k = j.id + "|" + (e.id != null ? e.id : i); if (!seen[k]) { seen[k] = 1; s += (+e.amount || 0); } } }); } }); (store.obx.jobExpenses || []).forEach(e => { if (e && !e.deleted && liveJ[e.jobId]) { const k = e.jobId + "|" + e.id; if (!seen[k]) { seen[k] = 1; s += (+e.amount || 0); } } }); return s; }
 const sumBefore = sumJobExp(pre), sumAfter = sumJobExp(S_after);
 ok(Math.abs(sumBefore - sumAfter) < 0.0001, "Σ live job.expenses UNCHANGED after migration (" + sumBefore.toFixed(2) + " → " + sumAfter.toFixed(2) + ")");
 

@@ -115,7 +115,7 @@ ok(!!jP && jP.sharedJobIds === null, "the parent job jP itself gets sharedJobIds
 ok(!!jS && Array.isArray(jS.sharedJobIds) && jS.sharedJobIds.length === 1 && jS.sharedJobIds[0] === "jP", "existing sub-job jS.sharedJobIds === ['jP'] (promoted from parentJobId)");
 ok(!!jS && jS.parentJobId === "jP", "jS.parentJobId is UNCHANGED (untouched audit trail, unread by new code)");
 ok(!!jH && jH.sharedJobIds === null, "job jH (real materials/expenses history, never a sub-job) gets sharedJobIds=null");
-ok(!!jH && jH.expenses.filter(e => !e.deleted).length === 1 && jH.materials.length === 1, "jH's real materials/expenses history survives untouched (1 live expense — the deleted one stays a tombstone, 1 material)");
+ok(!!jH && (round.obx.jobExpenses || []).filter(e => e.jobId === "jH" && !e.deleted).length === 1 && (round.obx.jobMaterials || []).filter(m => m.jobId === "jH").length === 1, "jH's real materials/expenses history survives untouched (1 live expense — the deleted one stays a tombstone, 1 material)");
 
 /* ---- 3) THE CRITICAL ASSERTION — jobProfit(parent) is IDENTICAL to the pre-change (equality-match, no
    split) dollar total. Hand-computed OLD-semantics expected value: price 1000 − jP's own $50 expense −

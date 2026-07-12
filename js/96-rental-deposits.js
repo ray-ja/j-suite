@@ -21,7 +21,11 @@ function depositHeld(rec) {
 
 /* ---- store scan helpers (job.expenses[] + job.materials[] carry deposits/refunds; no new collection) ---- */
 function _depJobs() { return (typeof D === "function" && D() && Array.isArray(D().jobs)) ? D().jobs : []; }
-function _depRecs(j) { return [].concat((j && j.expenses) || [], (j && j.materials) || []); }
+function _depRecs(j) {   // deposits/refunds live in the jobExpenses/jobMaterials collections now — read via the accessors (fallback to nested for an un-migrated record / a test without js/52)
+  var e = (typeof plExpenses === "function") ? plExpenses(j) : ((j && j.expenses) || []);
+  var m = (typeof plMaterials === "function") ? plMaterials(j) : ((j && j.materials) || []);
+  return [].concat(e, m);
+}
 
 /* ---- every non-deleted refund pointed at a given deposit id (a refund is a negative record) ---- */
 function depositLinkedRefunds(depositId) {
@@ -83,15 +87,15 @@ function depositAddRefund(depositId, amount) {
   var dep = null, job = null;
   _depJobs().forEach(function (j) { if (!j || j.deleted) return; _depRecs(j).forEach(function (r) { if (r && !r.deleted && r.id === depositId && r.isDeposit) { dep = r; job = j; } }); });
   if (!dep || !job) return false;
-  if (!Array.isArray(job.expenses)) job.expenses = [];
   var t = (typeof now === "function") ? now() : Date.now();
-  job.expenses.push({
-    id: (typeof uid === "function") ? uid() : ("ref_" + t + "_" + Math.random().toString(36).slice(2)),
+  var refund = {
+    id: (typeof uid === "function") ? uid() : ("ref_" + t),
     amount: -amt, vendor: dep.vendor || "", desc: "Refund of rental deposit" + (dep.vendor ? " · " + dep.vendor : ""),
     category: dep.category || "rentals", kind: "refund", refundOfId: depositId,
     by: ((typeof curUser === "function" && curUser()) ? curUser().username : ""), ts: t, deleted: false, updatedAt: t
-  });
-  if (typeof touch === "function") touch(job);
+  };
+  if (typeof jobLIAdd === "function") jobLIAdd("jobexp", job.id, refund);   // → jobExpenses collection (files on the deposit's own job so the group nets there)
+  else { if (!Array.isArray(job.expenses)) job.expenses = []; job.expenses.push(refund); if (typeof touch === "function") touch(job); }
   return true;
 }
 

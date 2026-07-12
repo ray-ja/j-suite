@@ -17,7 +17,7 @@ function ok(n, c, got) { if (c) { pass++; console.log("  ✓ " + n); } else { fa
 global.window = global;
 global.document = { getElementById: function () { return null; } };
 let STORE;
-function resetStore() { STORE = { jobs: [{ id: "j1", title: "Paver patio", customerId: "c1", materials: [], expenses: [] }], expenses: [], receipts: [], inventory: [], customers: [{ id: "c1", name: "Smith" }] }; }
+function resetStore() { STORE = { jobs: [{ id: "j1", title: "Paver patio", customerId: "c1", materials: [], expenses: [] }], jobExpenses: [], jobMaterials: [], expenses: [], receipts: [], inventory: [], customers: [{ id: "c1", name: "Smith" }] }; }
 resetStore();
 global.D = function () { return STORE; };
 global.now = function () { return Date.now(); };
@@ -45,7 +45,7 @@ global.fmtDate = function (d) { return d; };
 global.jsUploadUrl = function (id) { return id ? "/uploads/" + id : ""; };
 global.S = { biz: "obx" };
 
-const code = fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8");
+const code = fs.readFileSync(__dirname + "/js/52-job-pl.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/72-receipts.js", "utf8") + "\n" + fs.readFileSync(__dirname + "/js/87-receipt-edit.js", "utf8");
 try { eval(code); } catch (e) { console.log("FATAL eval error: " + (e && e.stack || e)); process.exit(1); }
 
 function seedReview(fields) { const r = rcptNewReview(fields.receiptId || "blob"); Object.assign(r, fields); STORE.receipts.push(r); return r; }

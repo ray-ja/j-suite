@@ -69,7 +69,7 @@ function jobReceiptsOpenCrew(job) { const closed = jobReceiptsClosedBy(job).map(
 /* count of THIS person's receipts on a job (on-job billing arrays + any review upload tagged to the job) */
 function rcptMyCountOnJob(job, meId) {
   if (!job || !meId) return 0;
-  let n = (job.materials || []).concat(job.expenses || []).filter(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId)).length;
+  let n = plMaterials(job).concat(plExpenses(job)).filter(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId)).length;
   n += rcptReview().filter(r => r.jobId === job.id && rcptIsMine(r, meId)).length;
   return n;
 }
@@ -81,7 +81,7 @@ function rcptMyJobIds(meId) {
   (D().jobs || []).forEach(j => {
     if (!j || j.deleted || Array.isArray(j.sharedJobIds)) return;   // skip stop/overhead sub-jobs (match rcptJobs())
     if ((j.crew || []).indexOf(meId) >= 0) { set[j.id] = 1; return; }
-    if ((j.materials || []).concat(j.expenses || []).some(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId))) { set[j.id] = 1; return; }
+    if (plMaterials(j).concat(plExpenses(j)).some(e => e && !e.deleted && (e.uploadedBy === meId || e.attributedTo === meId || e.paidBy === meId))) { set[j.id] = 1; return; }
     if (rcptReview().some(r => r.jobId === j.id && rcptIsMine(r, meId))) set[j.id] = 1;
   });
   (D().timeclock || []).forEach(e => { if (e && !e.deleted && e.userId === meId && e.jobId) set[e.jobId] = 1; });
@@ -165,7 +165,7 @@ window.jobCloseReceiptsAll = function (jobId) {
    own truck on a personal card and got the fuel reimbursed AND full mileage as the vehicle owner. */
 function rcptReimbOwed() {
   const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || ["fuel", "fuel/mileage"].indexOf(e.category || "") >= 0) return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
-  (D().jobs || []).forEach(j => { if (j && !j.deleted) { (j.expenses || []).forEach(add); (j.materials || []).forEach(add); } });
+  (D().jobs || []).forEach(j => { if (j && !j.deleted) { plExpenses(j).forEach(add); plMaterials(j).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;
 }
@@ -300,8 +300,8 @@ function rcptThumb(id) {
 function rcptAllFiled() {
   const out = [];
   (D().jobs || []).forEach(function (j) { if (!j || j.deleted) return;
-    (j.expenses || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobexp", jobId: j.id, where: (j.title || "job") })); });
-    (j.materials || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobmat", jobId: j.id, where: (j.title || "job") + " · pass-through" })); });
+    plExpenses(j).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobexp", jobId: j.id, where: (j.title || "job") })); });
+    plMaterials(j).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "jobmat", jobId: j.id, where: (j.title || "job") + " · pass-through" })); });
   });
   (D().expenses || []).forEach(function (e) { if (e && !e.deleted && e.receiptId) out.push(Object.assign({}, e, { store: "biz", jobId: null, where: "business expense" })); });
   return out.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
@@ -1710,7 +1710,7 @@ function jobExpenseTotal(j) {
   if (!j) return 0;
   const held = x => typeof depositHeld === "function" && depositHeld(x);   // HOLD-OUT (js/96): an unsettled deposit group is $0 here until settled at net
   const sum = arr => (Array.isArray(arr) ? arr : []).filter(x => x && !x.deleted && !held(x)).reduce((s, x) => s + (+x.amount || 0), 0);
-  return sum(j.materials) + sum(j.expenses);
+  return sum(plMaterials(j)) + sum(plExpenses(j));
 }
 /* expenses on a job broken down BY PERSON (dollars) — who put each expense on the job. Keyed by the person the
    expense is attributed to (paidBy who fronted it → attributedTo → uploadedBy). Unattributed expenses group
@@ -1723,7 +1723,7 @@ function jobExpenseByPerson(j) {
     const who = x.paidBy || x.attributedTo || x.uploadedBy || "";
     per[who] = (per[who] || 0) + (+x.amount || 0);
   });
-  add(j && j.materials); add(j && j.expenses);
+  add(plMaterials(j)); add(plExpenses(j));
   return per;
 }
 /* mileage payback on a job BY PERSON (dollars) — confirmed time-clock miles × IRS rate, credited to the VEHICLE
@@ -1888,8 +1888,7 @@ function rcptTombstone(store, jobId, id) {
   if (store === "review") { const e = (d.receipts || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); return true; } return false; }
   if (store === "biz") { const e = (d.expenses || []).find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); return true; } return false; }
   const j = (d.jobs || []).find(x => x && x.id === jobId); if (!j) return false;
-  const arr = store === "jobmat" ? (j.materials || []) : (j.expenses || []);
-  const e = arr.find(x => x && x.id === id); if (e) { e.deleted = true; if (typeof touch === "function") touch(j); return true; }
+  const e = jobLIFind(j, store, id); if (e) { e.deleted = true; if (typeof touch === "function") touch(e); return true; }   // tombstone the collection element (touch the ELEMENT so the delete propagates element-wise)
   return false;
 }
 /* delete a receipt from wherever it lives (owner/admin only) */
@@ -2064,7 +2063,7 @@ window.rcptSettle = function (memberId) {
   if (!confirm("Mark " + nm + " reimbursed for " + money(owed) + "? Clears their personal-card balance — do this once you've actually paid them back from the business funds.")) return;
   const t = now(), d = D();
   const settle = function (e) { if (e && !e.deleted && (e.paidBy || e.memberId) === memberId && !e.reimbursedAt) { e.reimbursedAt = t; return true; } return false; };
-  (d.jobs || []).forEach(function (j) { if (j && !j.deleted) { let ch = false; (j.expenses || []).forEach(function (e) { if (settle(e)) ch = true; }); (j.materials || []).forEach(function (e) { if (settle(e)) ch = true; }); if (ch && typeof touch === "function") touch(j); } });
+  (d.jobs || []).forEach(function (j) { if (j && !j.deleted) { plExpenses(j).forEach(function (e) { if (settle(e) && typeof touch === "function") touch(e); }); plMaterials(j).forEach(function (e) { if (settle(e) && typeof touch === "function") touch(e); }); } });   // touch each SETTLED element (collection rows now sync element-wise, not via the job record)
   (d.expenses || []).forEach(function (e) { if (settle(e) && typeof touch === "function") touch(e); });
   if (typeof logChange === "function") logChange("update", "expense", memberId, "Reimbursed " + nm + " " + money(owed) + " (personal-card spend settled)");
   if (typeof save === "function") save(); render();

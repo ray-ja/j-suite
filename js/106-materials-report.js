@@ -23,10 +23,10 @@ function jmrBiz() {
 function jobPassThroughItems(j) {
   if (!j) return [];
   const out = [];
-  (j.materials || []).forEach(function (m) {
+  ((typeof plMaterials === "function") ? plMaterials(j) : (j.materials || [])).forEach(function (m) {
     if (m && !m.deleted && (!m.type || m.type === "pass-through")) out.push(m);   // materials default = pass-through
   });
-  (j.expenses || []).forEach(function (e) {
+  ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).forEach(function (e) {
     if (e && !e.deleted && e.type === "pass-through") out.push(e);                 // a pass-through-tagged expense (rare)
   });
   return out.sort(function (a, b) { return String(jmrItemDate(a)).localeCompare(String(jmrItemDate(b))); });

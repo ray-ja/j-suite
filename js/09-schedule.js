@@ -399,7 +399,7 @@ window.jobStartDateChanged=function(){
    NO labor line, ever. Mileage enters miles → auto-costed at the IRS rate. ---- */
 let JOBEXP_CAT="materials";
 const JOBEXP_CATS=[["disposal","🗑 Disposal"],["mileage","🚗 Mileage"],["materials","🧴 Materials"],["equipment","🔧 Equipment rental"],["misc","• Misc"]];
-function jobExpenses(j){return Array.isArray(j&&j.expenses)?j.expenses:[];}
+function jobExpenses(j){return (typeof plExpenses==="function")?plExpenses(j):(Array.isArray(j&&j.expenses)?j.expenses:[]);}
 function expCatLabel(k){const c=JOBEXP_CATS.find(x=>x[0]===k);return c?c[1]:(k||"Misc");}
 function expFmt(n){n=Math.round((+n||0)*100)/100;return "$"+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 function renderJobExpenses(jobId){
@@ -418,19 +418,19 @@ function renderJobExpenses(jobId){
 }
 window.expJobAdd=function(jobId){
   const j=D().jobs.find(x=>x.id===jobId);if(!j)return;
-  if(!Array.isArray(j.expenses))j.expenses=[];
   let amount=0,miles=null;
   if(JOBEXP_CAT==="mileage"){miles=Math.max(0,+val("exp_miles")||0);if(!miles){alert("Enter the miles driven.");return;}amount=Math.round(miles*MILEAGE_RATE*100)/100;}
   else{amount=Math.round((Math.max(0,+val("exp_amt")||0))*100)/100;if(!amount){alert("Enter an amount.");return;}}
   const e={id:"ex_"+uid(),cat:JOBEXP_CAT,amount:amount,note:val("exp_note")||"",addedAt:now(),addedBy:((typeof curUser==="function"&&curUser())?curUser().id:null)};
   if(miles!=null)e.miles=miles;
-  j.expenses.push(e);touch(j);
+  jobLIAdd("jobexp",jobId,e);   // → jobExpenses collection (element-level LWW), not the nested array
   if(typeof logChange==="function")logChange("update","job",jobId,"Expense +"+expFmt(amount)+" ("+JOBEXP_CAT+") · "+(j.title||"job"));
   save();renderJobExpenses(jobId);
 };
 window.expJobDel=function(jobId,exId){
   const j=D().jobs.find(x=>x.id===jobId);if(!j)return;
-  j.expenses=jobExpenses(j).filter(e=>e.id!==exId);touch(j);save();renderJobExpenses(jobId);
+  const e=jobLIFind(j,"jobexp",exId);if(e){e.deleted=true;if(typeof touch==="function")touch(e);}   // TOMBSTONE (was a hard array-filter that never propagated the delete via sync)
+  save();renderJobExpenses(jobId);
 };
 /* required-equipment picker — quantity-aware, with live conflict flags for the chosen date.
    Reads the master inventory (js/31) and the date the owner is placing the job against, then asks

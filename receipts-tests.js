@@ -15,7 +15,7 @@ function ok(n, c, got) { if (c) { pass++; console.log("  ✓ " + n); } else { fa
 global.window = global;
 global.document = { getElementById: function () { return null; } };
 let STORE;
-function resetStore() { STORE = { jobs: [{ id: "j1", title: "Paver patio", customerId: "c1", materials: [], expenses: [] }, { id: "j2", title: "Junk haul", customerId: "c2", materials: [], expenses: [] }], expenses: [], receipts: [], customers: [{ id: "c1", name: "Smith" }, { id: "c2", name: "Jones" }] }; }
+function resetStore() { STORE = { jobs: [{ id: "j1", title: "Paver patio", customerId: "c1", materials: [], expenses: [] }, { id: "j2", title: "Junk haul", customerId: "c2", materials: [], expenses: [] }], jobExpenses: [], jobMaterials: [], expenses: [], receipts: [], customers: [{ id: "c1", name: "Smith" }, { id: "c2", name: "Jones" }] }; }
 resetStore();
 global.D = function () { return STORE; };
 global.now = function () { return Date.now(); };
@@ -127,22 +127,22 @@ async function main() {
   const res2 = rcptApplyEdit({ store: "review", jobId: null, recId: e2.id }, { type: "pass-through", jobId: "j1", amount: 150, vendor: "Depot", desc: "pavers", receiptId: "b1" });
   ok("moved to job.materials, id preserved", res2.ok && res2.newLoc.store === "jobmat" && res2.newLoc.recId === e2.id, res2);
   ok("review queue emptied", rcptReview().length === 0);
-  const matTotal = STORE.jobs[0].materials.filter(m => !m.deleted).reduce((s, m) => s + (+m.amount || 0), 0);
+  const matTotal = plMaterials(STORE.jobs[0]).filter(m => !m.deleted).reduce((s, m) => s + (+m.amount || 0), 0);
   ok("pass-through appears in the job's billable total (job.materials sum = 150)", matTotal === 150, matTotal);
-  ok("landed on the RIGHT job (j1)", STORE.jobs[0].materials.length === 1 && STORE.jobs[1].materials.length === 0);
+  ok("landed on the RIGHT job (j1)", plMaterials(STORE.jobs[0]).length === 1 && plMaterials(STORE.jobs[1]).length === 0);
 
   console.log("— RE-BUCKET: pass-through(j1) → job-expense(j2) moves between arrays, id kept —");
-  const filedId = STORE.jobs[0].materials[0].id;
+  const filedId = plMaterials(STORE.jobs[0])[0].id;
   const res3 = rcptApplyEdit({ store: "jobmat", jobId: "j1", recId: filedId }, { type: "job-expense", jobId: "j2", amount: 150, vendor: "Depot", desc: "pavers", receiptId: "b1" });
   ok("moved j1.materials → j2.expenses, same id", res3.ok && res3.newLoc.store === "jobexp" && res3.newLoc.recId === filedId, res3);
-  ok("old j1.materials tombstoned (not double-counted)", STORE.jobs[0].materials.filter(m => !m.deleted).length === 0);
-  ok("now in j2.expenses", STORE.jobs[1].expenses.filter(x => !x.deleted).length === 1 && STORE.jobs[1].expenses[0].amount === 150);
+  ok("old j1.materials tombstoned (not double-counted)", plMaterials(STORE.jobs[0]).filter(m => !m.deleted).length === 0);
+  ok("now in j2.expenses", plExpenses(STORE.jobs[1]).filter(x => !x.deleted).length === 1 && plExpenses(STORE.jobs[1])[0].amount === 150);
 
   console.log("— RE-BUCKET: job-expense → business expense (org expenses[]) —");
   const res4 = rcptApplyEdit({ store: "jobexp", jobId: "j2", recId: filedId }, { type: "business", jobId: null, amount: 150, vendor: "Depot", desc: "pavers", category: "materials", receiptId: "b1" });
   ok("moved to org expenses[] as a business expense, id kept", res4.ok && res4.newLoc.store === "biz" && res4.newLoc.recId === filedId, res4);
   ok("business expense has a date (feeds Finance month buckets)", STORE.expenses[0].date && STORE.expenses[0].category === "materials");
-  ok("j2.expenses tombstoned", STORE.jobs[1].expenses.filter(x => !x.deleted).length === 0);
+  ok("j2.expenses tombstoned", plExpenses(STORE.jobs[1]).filter(x => !x.deleted).length === 0);
 
   console.log("— RE-BUCKET back to review (un-file) —");
   const res5 = rcptApplyEdit({ store: "biz", jobId: null, recId: filedId }, { type: null, jobId: null, amount: 150, vendor: "Depot", receiptId: "b1" });
@@ -185,7 +185,7 @@ async function main() {
     { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "", desc: "", receiptId: "bSplit" });
   ok("split ok → 2 new locations", spRes.ok && spRes.newLocs.length === 2, spRes);
   ok("original review record consumed (queue empty)", rcptReview().length === 0, rcptReview().length);
-  const spMat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const spMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   const spBiz = STORE.expenses.filter(e => !e.deleted);
   ok("🧱 $120 pass-through landed in j1.materials", spMat.length === 1 && spMat[0].amount === 120, spMat);
   ok("🔧 $80 tool landed in org expenses[] w/ category tools/equipment", spBiz.length === 1 && spBiz[0].amount === 80 && spBiz[0].category === "tools/equipment", spBiz);
@@ -199,7 +199,7 @@ async function main() {
   ok("🧱 material counted in j1 jobProfit cost ($120)", pj1.matCost === 120 && pj1.cost === 120 && pj1.expCost === 0, pj1);
   const pj2 = jobProfit(STORE.jobs[1]);
   ok("🔧 tool EXCLUDED from j2's P&L (off every job)", pj2.matCost === 0 && pj2.expCost === 0 && pj2.cost === 0, pj2);
-  ok("🔧 tool is in NO job.expenses/materials array (org overhead only)", STORE.jobs.every(j => (j.expenses || []).concat(j.materials || []).every(x => x.amount !== 80 || x.deleted)));
+  ok("🔧 tool is in NO job.expenses/materials array (org overhead only)", STORE.jobs.every(j => plExpenses(j).concat(plMaterials(j)).every(x => x.amount !== 80 || x.deleted)));
 
   console.log("— SPLIT: N==1 is byte-identical to a single route (no splitGroup, same record) —");
   resetStore();
@@ -208,13 +208,13 @@ async function main() {
   const one1ts = one1.ts;
   rcptApplySplit({ store: "review", jobId: null, recId: one1.id }, 50, [{ amount: 50, type: "pass-through", jobId: "j1", category: "", desc: "" }],
     { vendor: "Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "materials", desc: "sand", receiptId: "bOne" });
-  const viaSplit = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const viaSplit = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   resetStore();
   _n = nSave;   // reset the uid counter so the review record gets the SAME id → the final records are comparable
   const one2 = seedReview({ receiptId: "bOne", vendor: "Depot", amount: 50, uploadedBy: "u_ray", attributedTo: "u_ray" });
   one2.ts = one1ts;   // same carried ts so the built records match on every meaningful field
   rcptApplyEdit({ store: "review", jobId: null, recId: one2.id }, { type: "pass-through", jobId: "j1", amount: 50, vendor: "Depot", date: "2026-07-01", category: "materials", paidBy: null, attributedTo: "u_ray", desc: "sand", receiptId: "bOne" });
-  const viaRoute = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const viaRoute = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   const norm = a => { const c = Object.assign({}, a); delete c.updatedAt; return c; };
   ok("N==1 split writes ONE record with NO splitGroup field", viaSplit.length === 1 && !("splitGroup" in viaSplit[0]), viaSplit[0]);
   ok("N==1 split record == the single-route record (byte-identical)", JSON.stringify(norm(viaSplit[0])) === JSON.stringify(norm(viaRoute[0])), { split: norm(viaSplit[0]), route: norm(viaRoute[0]) });
@@ -276,11 +276,12 @@ async function main() {
   const host = { category: "other", vendor: "Namecheap", desc: "annual web hosting", amount: 120 }; rcptEvalTaxRecord(host);
   ok("web hosting (desc keyword) is exempt → $0", host.taxExempt === true, host);
   ok("rcptTaxExempt: materials/fuel NOT exempt (stay taxable)", !rcptTaxExempt({ category: "materials", vendor: "Home Depot" }) && !rcptTaxExempt({ category: "fuel", vendor: "BP" }), null);
-  // stamping tax on a NESTED job material must bump the PARENT job (sync home), not just the record
+  // stamping tax on a job material now bumps the RECORD ITSELF — it rides its own jobMaterials collection element
+  // LWW, so the element (not the parent job) is the sync home.
   resetStore();
-  const jmat = { id: "jm_tax", amount: 106.75, type: "pass-through" }; STORE.jobs[0].materials.push(jmat); STORE.jobs[0].updatedAt = 111;
+  const jmat = { id: "jm_tax", jobId: "j1", amount: 106.75, type: "pass-through", updatedAt: 50 }; STORE.jobMaterials.push(jmat); STORE.jobs[0].updatedAt = 111;
   rcptEvalTaxRecord(jmat); rcptTouchRow("jobmat", "j1", jmat);
-  ok("evaluating tax on a job material bumps the PARENT job's updatedAt (nested → syncs)", STORE.jobs[0].updatedAt > 111, STORE.jobs[0].updatedAt);
+  ok("evaluating tax on a job material bumps the RECORD's own updatedAt (element-level sync)", jmat.updatedAt > 50, jmat.updatedAt);
 
   console.log("\n— V3 TAX: rcptTaxSummary roll-up + rcptReassessAllTax retroactive fix —");
   resetStore(); global.finCanView = function () { return true; };
@@ -324,8 +325,8 @@ async function main() {
   ok("buildAllocations: 🔧 business → jobId null + cat tools/equipment; 🚚 → cat job; 🧱 → no cat", jr4alloc[3].jobId === null && jr4alloc[3].category === "tools/equipment" && jr4alloc[2].category === "job" && jr4alloc[0].category === "" && jr4alloc[0].jobId === "j1", jr4alloc);
   const jr4res = rcptApplySplit({ store: "review", jobId: null, recId: jr4.id }, 300, jr4alloc, { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bJR4", cardLast4: "" });
   ok("job receipt split ok → 4 new locations", jr4res.ok && jr4res.newLocs.length === 4, jr4res);
-  const jrMat = STORE.jobs[0].materials.filter(m => !m.deleted);
-  const jrExp = STORE.jobs[0].expenses.filter(e => !e.deleted);
+  const jrMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
+  const jrExp = plExpenses(STORE.jobs[0]).filter(e => !e.deleted);
   const jrBiz = STORE.expenses.filter(e => !e.deleted);
   ok("🧱 ×2 → j1.materials ($120 + $60)", jrMat.length === 2 && jrMat.reduce((s, m) => s + m.amount, 0) === 180, jrMat);
   ok("🚚 ×1 → j1.expenses cat 'job' ($40)", jrExp.length === 1 && jrExp[0].amount === 40 && jrExp[0].category === "job", jrExp);
@@ -341,19 +342,19 @@ async function main() {
   const jrShared = { vendor: "HD", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bJRid", cardLast4: "" };
   const jrAllocs = jobRcptBuildAllocations([{ desc: "rock", amount: "70", bucket: "pass-through" }, { desc: "saw", amount: "30", bucket: "business" }], "j1");
   rcptApplySplit({ store: "review", jobId: null, recId: jrA.id }, 100, jrAllocs, jrShared);
-  const viaJob = STORE.jobs[0].materials.filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
+  const viaJob = plMaterials(STORE.jobs[0]).filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
   resetStore(); _n = nSaveJR;
   const jrB = seedReview({ receiptId: "bJRid", vendor: "HD", amount: 100, uploadedBy: "u_ray", attributedTo: "u_ray" });
   jrB.ts = jrAts;
   rcptApplySplit({ store: "review", jobId: null, recId: jrB.id }, 100, [{ amount: 70, type: "pass-through", jobId: "j1", category: "", desc: "rock" }, { amount: 30, type: "business", jobId: null, category: "tools/equipment", desc: "saw" }], jrShared);
-  const viaHand = STORE.jobs[0].materials.filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
+  const viaHand = plMaterials(STORE.jobs[0]).filter(m => !m.deleted).concat(STORE.expenses.filter(e => !e.deleted)).map(r => { const c = Object.assign({}, r); delete c.updatedAt; return c; });
   ok("job-receipt records == a hand Receipts split (byte-identical)", JSON.stringify(viaJob) === JSON.stringify(viaHand), { viaJob, viaHand });
 
   console.log("— JOB RECEIPT: N==1 (one bucket, no split) = a single record —");
   resetStore();
   const jr1 = seedReview({ receiptId: "bJR1", vendor: "Lowes", amount: 45, uploadedBy: "u_ray", attributedTo: "u_ray" });
   const jr1res = rcptApplySplit({ store: "review", jobId: null, recId: jr1.id }, 45, jobRcptBuildAllocations([{ desc: "base rock", amount: "45", bucket: "pass-through" }], "j1"), { vendor: "Lowes", date: "", paidBy: null, attributedTo: "u_ray", receiptId: "bJR1", cardLast4: "" });
-  const jr1mat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const jr1mat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   ok("N==1 → ONE material record, no splitGroup", jr1res.ok && jr1mat.length === 1 && jr1mat[0].amount === 45 && !("splitGroup" in jr1mat[0]), jr1mat);
 
   console.log("— JOB RECEIPT: the balance guard blocks an unbalanced set (nothing filed) —");
@@ -367,8 +368,8 @@ async function main() {
   const jrF = seedReview({ receiptId: "bJRF", vendor: "HD", amount: 150, uploadedBy: "u_ray", attributedTo: "u_ray" });
   const jrFres = rcptApplySplit({ store: "review", jobId: null, recId: jrF.id }, 150, jobRcptBuildAllocations([{ desc: "rock", amount: "100", bucket: "pass-through" }, { desc: "re-dump (wrong load)", amount: "50", bucket: "job-expense" }], "j1"), { vendor: "HD", receiptId: "bJRF", attributedTo: "u_ray" });
   const stamped = jobRcptStampFault(jrFres.newLocs, "u_chase");
-  const jrFexp = STORE.jobs[0].expenses.filter(e => !e.deleted);
-  const jrFmat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const jrFexp = plExpenses(STORE.jobs[0]).filter(e => !e.deleted);
+  const jrFmat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   ok("fault-dock stamped exactly the ONE 🚚 slice", stamped === 1 && jrFexp.length === 1 && jrFexp[0].faultMemberId === "u_chase", { stamped, jrFexp });
   ok("fault-dock did NOT touch the 🧱 material slice", jrFmat.length === 1 && !jrFmat[0].faultMemberId, jrFmat);
   ok("fault-dock is a no-op with no member selected", jobRcptStampFault(jrFres.newLocs, "") === 0);
@@ -617,7 +618,7 @@ async function main() {
   global.confirm = function () { return true; };
   rcptFileAllReady();
   ok("File all ready → the 2 complete ones LEFT review; the 2 incomplete STAYED", rcptReview().length === 2 && rcptReview().every(r => r.id === rdyNoJob.id || r.id === rdyNoType.id), rcptReview().map(r => r.receiptId));
-  ok("File all ready → business one landed in expenses[], material in job.materials[]", (STORE.expenses || []).some(e => e.receiptId === "rdy1" && e.amount === 40) && STORE.jobs[0].materials.some(m => m.receiptId === "rdy2" && m.amount === 25), { biz: (STORE.expenses || []).map(e => e.receiptId), mat: STORE.jobs[0].materials.map(m => m.receiptId) });
+  ok("File all ready → business one landed in expenses[], material in job.materials[]", (STORE.expenses || []).some(e => e.receiptId === "rdy1" && e.amount === 40) && plMaterials(STORE.jobs[0]).some(m => m.receiptId === "rdy2" && m.amount === 25), { biz: (STORE.expenses || []).map(e => e.receiptId), mat: plMaterials(STORE.jobs[0]).map(m => m.receiptId) });
 
   // ========================= CAP SWEEP: re-file leftover CONFIDENT already-suggested review rows =========================
   console.log("— CAP SWEEP: re-applies a confident unapplied review receipt via rcptFileSuggestion; a no-job pass-through stays in review —");
@@ -720,8 +721,8 @@ async function main() {
 
   // ---- P&L INVARIANCE: snapshot every finance-relevant total BEFORE commit ----
   const plSnap = () => JSON.stringify({
-    mat: STORE.jobs.reduce((s, j) => s + (j.materials || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
-    exp: STORE.jobs.reduce((s, j) => s + (j.expenses || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
+    mat: STORE.jobs.reduce((s, j) => s + plMaterials(j).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
+    exp: STORE.jobs.reduce((s, j) => s + plExpenses(j).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0), 0),
     biz: (STORE.expenses || []).filter(x => !x.deleted).reduce((a, x) => a + (+x.amount || 0), 0),
     prof: STORE.jobs.map(j => jobProfit(j))
   });
@@ -739,7 +740,7 @@ async function main() {
 
   console.log("— P&L INVARIANCE: importing review records moves NOTHING into any billing array —");
   ok("job.materials / job.expenses / business expenses UNCHANGED after import", plSnap() === beforePL, { before: beforePL, after: plSnap() });
-  ok("imported rows are in NO job array (review only)", STORE.jobs.every(j => (j.materials || []).concat(j.expenses || []).every(x => (x.source !== "csv"))));
+  ok("imported rows are in NO job array (review only)", STORE.jobs.every(j => plMaterials(j).concat(plExpenses(j)).every(x => (x.source !== "csv"))));
 
   console.log("— CSV soft dedup: re-importing the SAME file pre-unchecks every row —");
   rcptCsvHandle({ name: "lowes-history.csv", __text: LOWES_CSV });   // build a fresh preview against the now-populated queue
@@ -834,7 +835,7 @@ async function main() {
   const csRes = rcptApplySplit({ store: "review", jobId: null, recId: cs.id }, 100,
     [{ amount: 60, type: "pass-through", jobId: "j1", category: "", desc: "pavers" }, { amount: 40, type: "business", category: "tools/equipment", desc: "saw" }],
     { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", category: "", desc: "", receiptId: "bCS", cardLast4: "1005" });
-  const csMat = STORE.jobs[0].materials.filter(m => !m.deleted);
+  const csMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
   const csBiz = STORE.expenses.filter(e => !e.deleted);
   ok("split: BOTH slices carry the shared card last-4", csRes.ok && csMat[0] && csMat[0].cardLast4 === "1005" && csBiz[0] && csBiz[0].cardLast4 === "1005", { mat: csMat[0] && csMat[0].cardLast4, biz: csBiz[0] && csBiz[0].cardLast4 });
 
@@ -922,7 +923,7 @@ async function main() {
   ok("committed records keep a 4-digit cardLast4 (card-attribution auto-matches paidBy later)", vImported.every(r => /^\d{4}$/.test(r.cardLast4)));
   ok("committed records keep the PO custHint suggestion (2 rows matched)", vImported.filter(r => r.custHint && r.custHint.customerId === "cMG").length === 2, vImported.filter(r => r.custHint).length);
   ok("P&L INVARIANCE: Σ job.materials/job.expenses/biz UNCHANGED after import (review-only)", plSnap() === beforeV, { before: beforeV, after: plSnap() });
-  ok("imported rows are in NO job/biz array (review only)", STORE.jobs.every(j => (j.materials || []).concat(j.expenses || []).every(x => x.source !== "csv")) && (STORE.expenses || []).every(x => x.source !== "csv"));
+  ok("imported rows are in NO job/biz array (review only)", STORE.jobs.every(j => plMaterials(j).concat(plExpenses(j)).every(x => x.source !== "csv")) && (STORE.expenses || []).every(x => x.source !== "csv"));
   const vWrapped = SS.migrateStore({ obx: { receipts: STORE.receipts.slice() } });
   const vRt = SS.mergeState(vWrapped, vWrapped);
   const vSurv = (vRt.obx.receipts || []).filter(r => r.source === "csv");
@@ -993,8 +994,8 @@ async function main() {
   ok("depositHeld(deposit) is TRUE while unsettled", depositHeld(depRec) === true, depositHeld(depRec));
   // link a refund to the deposit
   const jobJ1 = STORE.jobs.find(j => j.id === "j1");
-  jobJ1.expenses.push({ id: "ref1", amount: -90, vendor: "Sunbelt", desc: "partial refund", category: "rentals", kind: "refund", refundOfId: depRec.id, deleted: false });
-  const refRec = jobJ1.expenses.find(e => e.id === "ref1");
+  STORE.jobExpenses.push({ id: "ref1", jobId: "j1", amount: -90, vendor: "Sunbelt", desc: "partial refund", category: "rentals", kind: "refund", refundOfId: depRec.id, deleted: false });
+  const refRec = plExpenses(jobJ1).find(e => e.id === "ref1");
   ok("depositHeld(linked refund) is TRUE while unsettled", depositHeld(refRec) === true, depositHeld(refRec));
   ok("jobExpenseTotal EXCLUDES the held deposit group ($0 to the job)", jobExpenseTotal(jobJ1) === 0, jobExpenseTotal(jobJ1));
   ok("depositsAwaitingRefund() surfaces the open deposit with its net", (function () { const d = depositsAwaitingRefund(); return d.length === 1 && d[0].deposit.id === depRec.id && d[0].hasRefund === true && d[0].net === 210; })());
@@ -1246,7 +1247,7 @@ async function main() {
   resetStore(); global.finCanView = function () { return true; };
   const survRev = seedReview({ receiptId: "old.jpg", vendor: "Depot", amount: 90, date: "2026-07-01" });
   const fres = rcptApplyEdit({ store: "review", jobId: null, recId: survRev.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas station", receiptId: "old.jpg" });
-  ok("pre: the manual copy is FILED to j1.expenses (human categorized)", fres.ok && STORE.jobs[0].expenses.some(e => e.id === survRev.id && !e.deleted));
+  ok("pre: the manual copy is FILED to j1.expenses (human categorized)", fres.ok && plExpenses(STORE.jobs[0]).some(e => e.id === survRev.id && !e.deleted));
   const better = seedReview({ receiptId: "clear.jpg", vendor: "Depot", amount: 90, suggested: { lineItems: [1, 2, 3] } });
   const grp = rcptDupGroups()[0];
   ok("pre: the filed copy + the clearer review copy form ONE dup group of 2", grp && grp.length === 2);
@@ -1270,7 +1271,7 @@ async function main() {
   const grp2 = rcptDupGroups()[0];
   const mres2 = rcptMergeGroup(grp2, revJB.id);   // Ray picks copy B (j2) as survivor
   ok("merge lands on the CHOSEN survivor's job (j2), not the auto pick", mres2.ok && mres2.newLoc.jobId === "j2" && mres2.newLoc.recId === revJB.id);
-  ok("the other job's copy (j1) is soft-deleted", !STORE.jobs[0].materials.find(e => e.id === revA.id && !e.deleted) && STORE.jobs[1].materials.some(e => e.id === revJB.id && !e.deleted));
+  ok("the other job's copy (j1) is soft-deleted", !plMaterials(STORE.jobs[0]).find(e => e.id === revA.id && !e.deleted) && plMaterials(STORE.jobs[1]).some(e => e.id === revJB.id && !e.deleted));
 
   console.log("— MARK-AS-DUP: the edit-modal rcptEditMarkDup soft-deletes THIS receipt (existing path), keeps the other —");
   resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; };
@@ -1475,7 +1476,7 @@ async function main() {
   global.save = _origSave;
   ok("bulk → exactly ONE save() for the whole batch", bulkSaves === 1, bulkSaves);
   ok("bulk → c1 (business) filed into org expenses[]", (STORE.expenses || []).some(e => e && !e.deleted && e.receiptId === "blobC1"));
-  ok("bulk → c2 (job-expense) filed into job j1 expenses[]", ((STORE.jobs.find(j => j.id === "j1") || {}).expenses || []).some(e => e && !e.deleted && e.receiptId === "blobC2"));
+  ok("bulk → c2 (job-expense) filed into job j1 jobExpenses collection", plExpenses(STORE.jobs.find(j => j.id === "j1") || {}).some(e => e && !e.deleted && e.receiptId === "blobC2"));
   const stillReviewIds = rcptReview().map(r => r.receiptId);
   ok("bulk → LOW-confidence row stays in review", stillReviewIds.indexOf("blobLo") >= 0);
   ok("bulk → no-suggestion row stays in review", stillReviewIds.indexOf("blobNo") >= 0);
@@ -1613,7 +1614,7 @@ async function main() {
   ok("meals receipt files into org expenses[] (business)", mealRes.ok && mealRes.newLoc.store === "biz");
   const mealFiled = (STORE.expenses || []).find(e => e && !e.deleted && e.receiptId === "blobMeal");
   ok("filed meals record keeps category 'meals'", !!mealFiled && mealFiled.category === "meals", mealFiled && mealFiled.category);
-  ok("meals record lands in NO job's materials/expenses (not billed to a customer)", STORE.jobs.every(j => !(j.materials || []).concat(j.expenses || []).some(e => e && e.receiptId === "blobMeal")));
+  ok("meals record lands in NO job's materials/expenses (not billed to a customer)", STORE.jobs.every(j => !plMaterials(j).concat(plExpenses(j)).some(e => e && e.receiptId === "blobMeal")));
 
   console.log("— PASTE FROM CLIPBOARD: image clipboard → an uploadable File; non-image → nothing —");
   const pf = rcptImageBlobToFile({ type: "image/png" }, 1700000000000);
@@ -1770,34 +1771,34 @@ async function main() {
   // (A) CATEGORY change → same home (jobexp) + same id, only category changes, nothing else dropped
   const A = seedFiledJobExp();
   rcptInlineSet("jobexp", "j1", A.id, "category", "tools/equipment");
-  let aRec = STORE.jobs[0].expenses.find(x => x.id === A.id);
+  let aRec = plExpenses(STORE.jobs[0]).find(x => x.id === A.id);
   ok("category updated in place — same home + id", !!aRec && aRec.id === A.id && aRec.category === "tools/equipment" && !aRec.deleted, aRec);
-  ok("no id churn / one live record", STORE.jobs[0].expenses.filter(x => !x.deleted).length === 1);
+  ok("no id churn / one live record", plExpenses(STORE.jobs[0]).filter(x => !x.deleted).length === 1);
   ok("category change dropped nothing else", aRec.vendor === "Depot" && aRec.amount === 90 && aRec.desc === "gas" && aRec.cardLast4 === "4242" && aRec.attributedTo === "u_chase" && aRec.paidBy === "u_chase", aRec);
   const aInlineJson = JSON.stringify(inlNorm(aRec));
   // …byte-identical to the equivalent modal save (rcptApplyEdit with the fields rcptSaveEdit would gather)
   const A2 = seedFiledJobExp();
   rcptApplyEdit({ store: "jobexp", jobId: "j1", recId: A2.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-02", category: "tools/equipment", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bX", cardLast4: "4242", isDeposit: false, kind: "" });
-  const aModalJson = JSON.stringify(inlNorm(STORE.jobs[0].expenses.find(x => x.id === A2.id)));
+  const aModalJson = JSON.stringify(inlNorm(plExpenses(STORE.jobs[0]).find(x => x.id === A2.id)));
   ok("category inline edit is BYTE-IDENTICAL to the modal save", aInlineJson === aModalJson, { inline: aInlineJson, modal: aModalJson });
 
   // (B) CARD + (C) FOR change in place — same home + id
   const B = seedFiledJobExp();
   rcptInlineSet("jobexp", "j1", B.id, "cardLast4", "1357");
-  let bRec = STORE.jobs[0].expenses.find(x => x.id === B.id);
+  let bRec = plExpenses(STORE.jobs[0]).find(x => x.id === B.id);
   ok("card updated in place (same home+id)", bRec && bRec.cardLast4 === "1357" && bRec.category === "fuel", bRec);
   const C = seedFiledJobExp();
   rcptInlineSet("jobexp", "j1", C.id, "attributedTo", "u_pierce");
-  let cRec = STORE.jobs[0].expenses.find(x => x.id === C.id);
+  let cRec = plExpenses(STORE.jobs[0]).find(x => x.id === C.id);
   ok("For (attributedTo) updated in place (same home+id)", cRec && cRec.attributedTo === "u_pierce", cRec);
-  ok("clearing the card via '' drops it in place", (function () { const Z = seedFiledJobExp(); rcptInlineSet("jobexp", "j1", Z.id, "cardLast4", ""); const z = STORE.jobs[0].expenses.find(x => x.id === Z.id); return !z.cardLast4; })());
+  ok("clearing the card via '' drops it in place", (function () { const Z = seedFiledJobExp(); rcptInlineSet("jobexp", "j1", Z.id, "cardLast4", ""); const z = plExpenses(STORE.jobs[0]).find(x => x.id === Z.id); return !z.cardLast4; })());
 
   // (D) TYPE → job-type WITH a job re-buckets into job.materials, preserving id + photo
   resetStore();
   const rvMat = rcptNewReview("bMat"); Object.assign(rvMat, { amount: 150, vendor: "Depot", desc: "pavers", jobId: "j1", attributedTo: "u_ray" });
   STORE.receipts.push(rvMat);
   rcptInlineSet("review", "j1", rvMat.id, "type", "pass-through");
-  ok("Type→pass-through WITH job re-buckets into job.materials (id+photo preserved)", STORE.jobs[0].materials.some(x => x.id === rvMat.id && x.receiptId === "bMat" && !x.deleted) && !rcptReview().some(x => x.id === rvMat.id), { mat: STORE.jobs[0].materials, rev: rcptReview() });
+  ok("Type→pass-through WITH job re-buckets into job.materials (id+photo preserved)", plMaterials(STORE.jobs[0]).some(x => x.id === rvMat.id && x.receiptId === "bMat" && !x.deleted) && !rcptReview().some(x => x.id === rvMat.id), { mat: plMaterials(STORE.jobs[0]), rev: rcptReview() });
 
   // (E) TYPE → job-type with NO job stays in review (rcptTargetHome behavior preserved)
   resetStore();
@@ -1806,14 +1807,14 @@ async function main() {
   rcptInlineSet("review", "", rvNo.id, "type", "job-expense");
   const noRec = rcptColl().find(x => x.id === rvNo.id);
   ok("Type→job-expense with NO job stays in review store", !!noRec && !noRec.deleted && noRec.status === "review" && noRec.type === "job-expense", noRec);
-  ok("…and is in no job array", !STORE.jobs.some(j => (j.expenses || []).concat(j.materials || []).some(x => x.id === rvNo.id && !x.deleted)));
+  ok("…and is in no job array", !STORE.jobs.some(j => plExpenses(j).concat(plMaterials(j)).some(x => x.id === rvNo.id && !x.deleted)));
 
   // (F) JOB inline on a pass-through (review) row → re-buckets to job.materials
   resetStore();
   const rvPT = rcptNewReview("bPT"); Object.assign(rvPT, { amount: 75, vendor: "Depot", type: "pass-through" });   // pass-through, no job → lives in review
   STORE.receipts.push(rvPT);
   rcptInlineSet("review", "", rvPT.id, "jobId", "j2");
-  ok("Job inline on a pass-through review row → job.materials on j2 (id+photo kept)", STORE.jobs[1].materials.some(x => x.id === rvPT.id && x.receiptId === "bPT" && !x.deleted) && !rcptReview().some(x => x.id === rvPT.id), { mat: STORE.jobs[1].materials });
+  ok("Job inline on a pass-through review row → job.materials on j2 (id+photo kept)", plMaterials(STORE.jobs[1]).some(x => x.id === rvPT.id && x.receiptId === "bPT" && !x.deleted) && !rcptReview().some(x => x.id === rvPT.id), { mat: plMaterials(STORE.jobs[1]) });
 
   // ========================= REFUND / DEPOSIT ARE CONFIRMATION-ONLY (Cap may suggest, NEVER auto-applies) =========================
   // A wrong Cap "refund" read would auto-file the receipt with its amount flipped NEGATIVE; a wrong "deposit" would
@@ -1863,7 +1864,7 @@ async function main() {
   rcptSaveEdit();
   global.val = _valT;   // restore before File reads the record's own fields (not the form)
   rcptFileRow("review", "j1", tickRec.id);   // Save kept the refund flag on the review record; File routes it
-  const tickFiled = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickref");
+  const tickFiled = plExpenses(STORE.jobs[0]).find(e => e && !e.deleted && e.receiptId === "tickref");
   ok("explicit refund tick + Save + ✓ File → kind:'refund' + NEGATIVE amount (the ONE path that sets it)", tickFiled && tickFiled.kind === "refund" && tickFiled.amount === -90, tickFiled && [tickFiled.kind, tickFiled.amount]);
   resetStore();
   const dTick = seedReview({ receiptId: "tickdep", vendor: "Sunbelt", amount: 300 });
@@ -1873,7 +1874,7 @@ async function main() {
   rcptSaveEdit();
   global.val = _valT;
   rcptFileRow("review", "j1", dTick.id);
-  const depTick = STORE.jobs[0].expenses.find(e => e && !e.deleted && e.receiptId === "tickdep");
+  const depTick = plExpenses(STORE.jobs[0]).find(e => e && !e.deleted && e.receiptId === "tickdep");
   ok("explicit deposit tick + Save + ✓ File → isDeposit:true (the ONE path that sets it)", depTick && depTick.isDeposit === true, depTick && depTick.isDeposit);
   global.val = _valT; global.document.getElementById = _geiT;
 
@@ -2004,8 +2005,8 @@ async function main() {
   // Home Depot rental review receipt Cap read (net cost · rentals) → the same rental, currently double-countable.
   resetStore(); global.finCanView = function () { return true; };
   const dsPaver = STORE.jobs.find(j => j.id === "j1");
-  const dsDep = { id: "dep_hd", amount: 300, vendor: "The Home Depot", category: "rentals", isDeposit: true, depositSettled: false, desc: "Trailer rental deposit", deleted: false, updatedAt: Date.now() };
-  dsPaver.expenses.push(dsDep);
+  const dsDep = { id: "dep_hd", jobId: "j1", amount: 300, vendor: "The Home Depot", category: "rentals", isDeposit: true, depositSettled: false, desc: "Trailer rental deposit", deleted: false, updatedAt: Date.now() };
+  STORE.jobExpenses.push(dsDep);
   const dsRcpt = seedReview({ receiptId: "hd_contract.pdf", vendor: "The Home Depot", amount: null, category: "", jobId: "j1", suggested: { vendor: "The Home Depot", amount: 72.59, category: "rentals", confidence: 0.9 } });
 
   const dsM = rcptDepositMatch(dsRcpt);
@@ -2040,7 +2041,7 @@ async function main() {
   const dsRes = rcptSettleDepositFromReceipt({ store: "review", jobId: null, recId: dsRcpt.id }, "dep_hd");
   ok("rcptSettleDepositFromReceipt returns ok", !!dsRes && dsRes.ok === true, dsRes);
   ok("computed refund = 227.41", dsRes.refund === 227.41, dsRes.refund);
-  const dsRefunds = dsPaver.expenses.filter(e => e.refundOfId === "dep_hd");
+  const dsRefunds = plExpenses(dsPaver).filter(e => e.refundOfId === "dep_hd");
   ok("a −227.41 refund record was added against the deposit", dsRefunds.length === 1 && dsRefunds[0].amount === -227.41, dsRefunds.map(r => r.amount));
   ok("the deposit is now settled", dsDep.depositSettled === true && dsRefunds[0].depositSettled === true);
   ok("depositNetCost = 72.59 (the real rental cost)", depositNetCost(dsDep) === 72.59, depositNetCost(dsDep));
@@ -2097,7 +2098,7 @@ async function main() {
   //     attributedTo = the payer (Pierce). Amount is untouched (money-agnostic).
   const fpSave = seedReview({ receiptId: "bSave", vendor: "Sunbelt", amount: 72.59, status: "review" });
   const fpRes = rcptApplyEdit({ store: "review", jobId: null, recId: fpSave.id }, { type: "job-expense", jobId: "j1", amount: 72.59, vendor: "Sunbelt", date: "2026-07-01", category: "rentals", paidBy: "u_pierce", attributedTo: "u_pierce", desc: "rental", receiptId: "bSave" });
-  const fpRec = STORE.jobs[0].expenses.find(e => e.id === fpSave.id && !e.deleted);
+  const fpRec = plExpenses(STORE.jobs[0]).find(e => e.id === fpSave.id && !e.deleted);
   ok("save with paidBy=Pierce + coupled For → record.attributedTo = Pierce (aligned)", fpRec && fpRec.attributedTo === "u_pierce", fpRec && fpRec.attributedTo);
   ok("…and the amount is unchanged (no money-math change from the attribution fix)", fpRec && fpRec.amount === 72.59, fpRec && fpRec.amount);
   ok("…and the filed row's table 'For' shows Pierce", rcptRowMeta(Object.assign({}, fpRec, { store: "jobexp", jobId: "j1" })).forName === "Pierce");
@@ -2105,7 +2106,7 @@ async function main() {
   //     the uploader when a payer is set). Simulates the coupling not having fired but paidBy being set.
   const fpSave2 = seedReview({ receiptId: "bSave2", vendor: "Depot", amount: 40, uploadedBy: "u_ray", status: "review" });
   rcptApplyEdit({ store: "review", jobId: null, recId: fpSave2.id }, { type: "job-expense", jobId: "j1", amount: 40, vendor: "Depot", date: "2026-07-01", category: "fuel", paidBy: "u_chase", attributedTo: null, desc: "gas", receiptId: "bSave2" });
-  const fpRec2 = STORE.jobs[0].expenses.find(e => e.id === fpSave2.id && !e.deleted);
+  const fpRec2 = plExpenses(STORE.jobs[0]).find(e => e.id === fpSave2.id && !e.deleted);
   ok("blank fields.attributedTo + paidBy set → attributedTo falls to the payer (Chase), NOT the uploader", fpRec2 && fpRec2.attributedTo === "u_chase", fpRec2 && fpRec2.attributedTo);
   // (6) business-card save (paidBy empty) → attributedTo keeps the explicit choice, never forced blank
   const fpSave3 = seedReview({ receiptId: "bSave3", vendor: "Costco", amount: 25, uploadedBy: "u_ray", status: "review" });
@@ -2134,7 +2135,7 @@ async function main() {
   resetStore();
   const mc = seedReview({ receiptId: "bMC", vendor: "Depot", amount: 150, refNo: "ORD-77", status: "review" });
   rcptApplyEdit({ store: "review", jobId: null, recId: mc.id }, { type: "pass-through", jobId: "j1", amount: 150, vendor: "Depot", desc: "pavers", receiptId: "bMC" });
-  const mcMat = STORE.jobs[0].materials.find(e => e.id === mc.id && !e.deleted);
+  const mcMat = plMaterials(STORE.jobs[0]).find(e => e.id === mc.id && !e.deleted);
   ok("refNo preserved review→pass-through (no refNo in fields)", mcMat && mcMat.refNo === "ORD-77", mcMat && mcMat.refNo);
   rcptApplyEdit({ store: "jobmat", jobId: "j1", recId: mc.id }, { type: "business", jobId: null, amount: 150, vendor: "Depot", category: "materials", receiptId: "bMC" });
   const mcBiz = STORE.expenses.find(e => e.id === mc.id && !e.deleted);

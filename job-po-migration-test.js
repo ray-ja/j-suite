@@ -139,7 +139,9 @@ function financeFingerprint(store) {
     fp[o + "|ar¢"] = Math.round(ar * 100);
     let bal = 0; quotes.forEach(q => { if (qTotal(q) > 0 && !q.paid) bal += Math.max(0, qTotal(q) - qPaid(q)); });
     fp[o + "|quote_bal¢"] = Math.round(bal * 100);
-    let jc = 0; (s.jobs || []).forEach(j => { if (j && !j.deleted) (j.expenses || []).forEach(e => { if (e && !e.deleted) jc += F.finCents(e.amount); }); });
+    let jc = 0; const seen = {}, liveJ = {};   // union of nested + jobExpenses collection, deduped by (jobId,id), live jobs only
+    (s.jobs || []).forEach(j => { if (j && !j.deleted) { liveJ[j.id] = 1; (j.expenses || []).forEach((e, i) => { if (e && !e.deleted) { const k = j.id + "|" + (e.id != null ? e.id : i); if (!seen[k]) { seen[k] = 1; jc += F.finCents(e.amount); } } }); } });
+    (s.jobExpenses || []).forEach(e => { if (e && !e.deleted && liveJ[e.jobId]) { const k = e.jobId + "|" + e.id; if (!seen[k]) { seen[k] = 1; jc += F.finCents(e.amount); } } });
     fp[o + "|job_costs¢"] = jc;
     const mil = F.finMileage(s.timeclock || [], { confirmedOnly: true });
     fp[o + "|mileage¢"] = mil.total;

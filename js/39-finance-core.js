@@ -258,7 +258,7 @@ function finAccounts(totals, mileageTotal, expensesTotal) {
 function finFaultDeductions(jobs, opts) {
   opts = opts || {}; var per = {};
   (jobs || []).forEach(function (j) { if (!j || j.deleted) return;
-    (j.expenses || []).forEach(function (e) { if (!e || e.deleted || !e.faultMemberId) return;
+    ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).forEach(function (e) { if (!e || e.deleted || !e.faultMemberId) return;
       var day = (typeof e.ts === "number") ? finDayOf(e.ts) : String(e.ts || "").slice(0, 10);
       if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) return;
       per[e.faultMemberId] = (per[e.faultMemberId] || 0) + Math.round((+e.amount || 0) * 100);

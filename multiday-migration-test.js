@@ -60,7 +60,7 @@ ok(jA && jA.date === "2026-07-07", "legacy job jA keeps its date 2026-07-07");
 /* ---- 3) workDays rides the job LWW through a sync round-trip, intact ---- */
 const jB = round.obx.jobs.find(j => j.id === "jB");
 ok(jB && Array.isArray(jB.workDays) && jB.workDays.length === 2 && jB.workDays[0] === "2026-07-06" && jB.workDays[1] === "2026-07-08", "multi-day jB.workDays=[Mon,Wed] survives migrate + sync intact");
-ok(jB && (jB.expenses || []).length === 1, "jB per-job expense survives alongside workDays");
+ok(jB && (round.obx.jobExpenses || []).filter(e => e.jobId === "jB").length === 1, "jB per-job expense survives alongside workDays");
 
 /* ---- 4) client placement contract (jobWorkDays / jobOnDay) — load the helper block from js/09 ---- */
 const fs = require("fs");

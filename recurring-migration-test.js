@@ -26,13 +26,21 @@ function billingFingerprint(store) {
   const orgIds = Object.keys(store).filter(k => k !== "users" && k !== "registry" && store[k] && typeof store[k] === "object" && !Array.isArray(store[k]));
   const cents = n => Math.round((+n || 0) * 100);
   orgIds.forEach(o => {
-    let mat = 0, exp = 0, biz = 0;
+    let biz = 0;
+    // union of nested + jobMaterials/jobExpenses collections, deduped by (jobId,id) keep-newest, live jobs only
+    // (mirrors migration-proof's billingFingerprint after the line-item collection promotion).
+    const matM = {}, expM = {};
+    const liveJob = {}; (store[o].jobs || []).forEach(j => { if (j && j.id && !j.deleted) liveJob[j.id] = 1; });
+    const put = (m, key, row) => { const c = m[key]; if (!c || (+row.updatedAt || 0) >= (+c.updatedAt || 0)) m[key] = row; };
     (store[o].jobs || []).forEach(j => { if (!j || j.deleted) return;
-      (j.materials || []).forEach(m => { if (m && !m.deleted) mat += cents(m.amount); });
-      (j.expenses || []).forEach(e => { if (e && !e.deleted) exp += cents(e.amount); });
+      (j.materials || []).forEach((m, i) => { if (m && !m.deleted) put(matM, j.id + "|" + (m.id != null ? m.id : ("jm_" + j.id + "_" + i)), m); });
+      (j.expenses || []).forEach((e, i) => { if (e && !e.deleted) put(expM, j.id + "|" + (e.id != null ? e.id : ("je_" + j.id + "_" + i)), e); });
     });
+    (store[o].jobMaterials || []).forEach(m => { if (m && !m.deleted && m.id != null && liveJob[m.jobId]) put(matM, (m.jobId || "") + "|" + m.id, m); });
+    (store[o].jobExpenses || []).forEach(e => { if (e && !e.deleted && e.id != null && liveJob[e.jobId]) put(expM, (e.jobId || "") + "|" + e.id, e); });
     (store[o].expenses || []).forEach(e => { if (e && !e.deleted) biz += cents(e.amount); });
-    fp[o + ".job-materials¢"] = mat; fp[o + ".job-expenses¢"] = exp; fp[o + ".business-expenses¢"] = biz;
+    const sum = m => Object.keys(m).reduce((s, k) => s + cents(m[k].amount), 0);
+    fp[o + ".job-materials¢"] = sum(matM); fp[o + ".job-expenses¢"] = sum(expM); fp[o + ".business-expenses¢"] = biz;
   });
   return fp;
 }

@@ -56,7 +56,7 @@ function finFixedAssets(opts) {
     assets.push({ name: e.vendor || e.desc || e.note || "Equipment", cents: cents, date: (e.date || ((typeof rcptDate === "function") ? rcptDate(e) : "")) || "", where: where });
   };
   actExpenses().forEach(e => add(e, "business"));
-  (D().jobs || []).forEach(j => { if (j && !j.deleted) (j.expenses || []).forEach(e => add(e, j.title || "job")); });
+  (D().jobs || []).forEach(j => { if (j && !j.deleted) ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).forEach(e => add(e, j.title || "job")); });
   const yr = (typeof today === "function") ? +today().slice(0, 4) : new Date().getFullYear();
   return assets.map(a => {
     const buyYr = +String(a.date).slice(0, 4) || yr;

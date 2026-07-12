@@ -22,8 +22,49 @@ function plQuoteFor(j) {
   if (j.quoteId) { const q = (d.quotes || []).find(x => x.id === j.quoteId && !x.deleted); if (q) return q; }
   return (d.quotes || []).find(q => q && !q.deleted && q.jobId === j.id) || null;
 }
-function plExpenses(j) { return Array.isArray(j.expenses) ? j.expenses : []; }
-function plMaterials(j) { return Array.isArray(j.materials) ? j.materials : []; }   // pass-through materials (billed at cost) — a cost in the P&L since the quote price includes them
+/* JOB LINE-ITEM COLLECTIONS — job.materials[] / job.expenses[] were promoted OUT of the job record into the
+   id-keyed jobMaterials / jobExpenses collections, so two devices editing the SAME job's money lines merge
+   element-wise (per-element LWW) instead of clobbering via whole-record LWW. plExpenses/plMaterials are the ONLY
+   read choke point: they return a job's live rows as the UNION of the collection and any RESIDUAL nested array
+   (a not-yet-migrated record, or one an old cached client re-pushed), deduped by id (newer updatedAt wins), so
+   reads stay correct all through the transition. Callers still filter !deleted. NEVER mutate the returned array —
+   it's a fresh copy; every write goes through jobLIAdd / jobLIFind (+ touch). */
+function _jobLIColl(which) { return (typeof D === "function" && Array.isArray(D()[which])) ? D()[which] : []; }
+function _jobLI(j, coll, nestedKey) {
+  if (!j || j.id == null) return [];
+  var out = new Map();
+  _jobLIColl(coll).forEach(function (r) { if (r && r.jobId === j.id && r.id != null) out.set(r.id, r); });
+  (Array.isArray(j[nestedKey]) ? j[nestedKey] : []).forEach(function (r) {
+    if (!r) return; var id = r.id;
+    if (id == null) { out.set("_n" + out.size, r); return; }                       // id-less legacy row → keep verbatim
+    if (!out.has(id) || (+r.updatedAt || 0) > (+(out.get(id).updatedAt) || 0)) out.set(id, r);
+  });
+  return Array.from(out.values());
+}
+function plExpenses(j) { return _jobLI(j, "jobExpenses", "expenses"); }
+function plMaterials(j) { return _jobLI(j, "jobMaterials", "materials"); }   // pass-through materials (billed at cost) — a cost in the P&L since the quote price includes them
+/* the existing "jobmat"/"jobexp" store labels (js/72, js/87) → the collection key */
+function jobLICollKey(store) { return store === "jobmat" ? "jobMaterials" : "jobExpenses"; }
+/* ADD a line item to a job's collection. Stamps id/jobId/updatedAt/deleted. Caller still save()s. Returns the row. */
+function jobLIAdd(store, jobId, rec) {
+  var key = jobLICollKey(store), d = (typeof D === "function") ? D() : null; if (!d) return rec;
+  if (!Array.isArray(d[key])) d[key] = [];
+  var r = rec || {};                                   // stamp IN PLACE (preserve caller's object identity, like the review/biz pushes)
+  if (r.id == null) r.id = (typeof uid === "function" ? uid() : (key + "_" + d[key].length));
+  r.jobId = jobId; if (r.deleted == null) r.deleted = false;
+  if (typeof touch === "function") touch(r); else r.updatedAt = (typeof now === "function" ? now() : 1);
+  d[key].push(r); return r;
+}
+/* FIND a job's line item by id across the collection AND any residual nested array (for edit/tombstone). */
+function jobLIFind(job, store, id) {
+  if (!job) return null;
+  var key = jobLICollKey(store);
+  var r = _jobLIColl(key).find(function (x) { return x && x.jobId === job.id && x.id === id; });
+  if (r) return r;
+  var nested = store === "jobmat" ? job.materials : job.expenses;
+  return Array.isArray(nested) ? (nested.find(function (x) { return x && x.id === id; }) || null) : null;
+}
+if (typeof window !== "undefined") { window.plExpenses = plExpenses; window.plMaterials = plMaterials; window.jobLIAdd = jobLIAdd; window.jobLIFind = jobLIFind; window.jobLICollKey = jobLICollKey; }
 /* confirmed mileage cost attributed to this job (timeclock miles × IRS rate) */
 function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
 /* sub-jobs / STOPS (e.g. a dump run filed under a bigger job, or split across several) — their costs + hours

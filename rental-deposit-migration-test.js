@@ -65,6 +65,9 @@ function freshPre() {
 const arr = (s, k) => ((s.obx && s.obx[k]) || []).filter(x => x && !x.deleted);
 const jById = (s, id) => ((s.obx && s.obx.jobs) || []).find(j => j && j.id === id) || null;
 const eById = (j, id) => ((j && j.expenses) || []).find(e => e && e.id === id) || null;
+// after migration, job expenses live in the jobExpenses collection (keyed by jobId) — search there, with a nested fallback
+const eColl = (store, jobId, id) => (((store.obx && store.obx.jobExpenses) || []).find(e => e && e.jobId === jobId && e.id === id))
+  || (((jById(store, jobId) || {}).expenses || []).find(e => e && e.id === id)) || null;
 
 /* ============ 1) SERVER — migrateStore + a no-op round-trip: zero loss + deposit/refund preserved verbatim ============ */
 const pre = freshPre();
@@ -73,11 +76,11 @@ const migrated = SS.migrateStore(JSON.parse(JSON.stringify(pre)));
 const round = SS.mergeState(migrated, {});
 ["customers", "properties", "quotes", "jobs"].forEach(k => ok(arr(round, k).length === counts[k], "server round-trip: no " + k + " loss (" + counts[k] + ")"));
 ok((pre.users || []).every(u => (round.users || []).some(r => r && r.id === u.id)), "server round-trip: every original account survives (" + counts.users + ")");
-const rj1 = jById(round, "j1"), rDep = eById(rj1, "e_dep"), rRef = eById(rj1, "e_ref");
+const rDep = eColl(round, "j1", "e_dep"), rRef = eColl(round, "j1", "e_ref");
 ok(rDep && rDep.isDeposit === true && rDep.amount === 300 && rDep.category === "rentals", "server: the $300 deposit survives verbatim (isDeposit + amount + category)");
 ok(rRef && rRef.refundOfId === "e_dep" && rRef.kind === "refund" && rRef.amount === -90, "server: the −$90 refund survives verbatim (refundOfId + kind + NEGATIVE amount)");
-ok(eById(rj1, "e_dump") && !("isDeposit" in eById(rj1, "e_dump")), "server: a plain expense is NOT invented deposit fields");
-ok(!("isDeposit" in eById(jById(round, "j2"), "e3")), "server: j2's plain expense stays field-free");
+ok(eColl(round, "j1", "e_dump") && !("isDeposit" in eColl(round, "j1", "e_dump")), "server: a plain expense is NOT invented deposit fields");
+ok(!("isDeposit" in eColl(round, "j2", "e3")), "server: j2's plain expense stays field-free");
 
 /* ============ 2) CLIENT — the REAL js/02 load(): zero loss; absent stays falsy; money() sign-correct ============ */
 const localStorageStub = { _data: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; }, setItem(k, v) { this._data[k] = String(v); }, removeItem(k) { delete this._data[k]; } };
@@ -90,9 +93,8 @@ vm.runInContext(fs.readFileSync("js/02-state.js", "utf8"), ctx, { filename: "js/
 vm.runInContext("load();", ctx);
 const S_after = vm.runInContext("S", ctx);
 ["customers", "properties", "quotes", "jobs"].forEach(k => ok(arr(S_after, k).length === counts[k], "client load(): no " + k + " loss (" + counts[k] + ")"));
-const cj1 = jById(S_after, "j1");
-ok(eById(cj1, "e_dep").isDeposit === true && eById(cj1, "e_ref").amount === -90 && eById(cj1, "e_ref").refundOfId === "e_dep", "client: deposit+refund pair survives load() verbatim");
-ok(!eById(cj1, "e_dump").isDeposit, "client: a plain expense is falsy for isDeposit after load() (== today)");
+ok(eColl(S_after, "j1", "e_dep").isDeposit === true && eColl(S_after, "j1", "e_ref").amount === -90 && eColl(S_after, "j1", "e_ref").refundOfId === "e_dep", "client: deposit+refund pair survives load() verbatim");
+ok(!eColl(S_after, "j1", "e_dump").isDeposit, "client: a plain expense is falsy for isDeposit after load() (== today)");
 // money() is sign-correct in the loaded client context — byte-identical for every >= 0
 const cmoney = vm.runInContext("money", ctx);
 ok(cmoney(-90) === "-$90", "client money(-90) === '-$90' (sign-correct, not '$-90')");

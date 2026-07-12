@@ -87,7 +87,7 @@ ok(!!sAir && sAir.routeEnd && sAir.routeEnd.address === "Shop, KDH NC" && sAir.r
 const sN0 = round.obx.jobs.find(j => j.id === "jN");
 ok(!!sN0 && sN0.routeStart === undefined && sN0.routeEnd === undefined, "server: a legacy job has NO routeStart/routeEnd backfilled (stays absent = use base)");
 const sH = round.obx.jobs.find(j => j.id === "jH");
-ok(!!sH && sH.expenses.filter(e => !e.deleted).length === 1 && sH.materials.length === 1, "server: unrelated job's materials/expenses history untouched");
+ok(!!sH && (round.obx.jobExpenses || []).filter(e => e.jobId === "jH" && !e.deleted).length === 1 && (round.obx.jobMaterials || []).filter(m => m.jobId === "jH").length === 1, "server: unrelated job's materials/expenses history untouched");
 
 /* ============ 2) CLIENT — the REAL js/02 load(), then js/62 + js/61 on top ============ */
 const localStorageStub = { _data: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._data, k) ? this._data[k] : null; }, setItem(k, v) { this._data[k] = String(v); }, removeItem(k) { delete this._data[k]; } };

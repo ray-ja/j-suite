@@ -1,7 +1,34 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[],jobExpenses:[],jobMaterials:[]}}
+/* MIGRATE (client mirror of the server's hoistJobLineItems): promote a single org slab's nested job.materials/
+   expenses into its jobMaterials/jobExpenses collections. Idempotent (dedupe by element id), loss-free (id-less
+   rows get a deterministic id), clears the nested array once hoisted, NEVER bumps job.updatedAt. */
+function hoistJobLineItems(o){
+  if(!o||typeof o!=="object")return o;
+  var jobs=Array.isArray(o.jobs)?o.jobs:[];
+  [["materials","jobMaterials","jm"],["expenses","jobExpenses","je"]].forEach(function(p){
+    var nestedKey=p[0],collKey=p[1],pfx=p[2];
+    if(!Array.isArray(o[collKey]))o[collKey]=[];
+    var byId={}; o[collKey].forEach(function(r){ if(r&&r.id!=null){ var c=byId[r.id]; if(!c||(+r.updatedAt||0)>=(+c.updatedAt||0))byId[r.id]=r; } });
+    jobs.forEach(function(j){
+      if(!j||j.id==null||!Array.isArray(j[nestedKey])||!j[nestedKey].length)return;
+      j[nestedKey].forEach(function(el,idx){
+        if(!el||typeof el!=="object")return;
+        var id=(el.id!=null&&el.id!=="")?el.id:(pfx+"_"+j.id+"_"+idx);
+        var cur=byId[id];
+        if(cur&&cur.jobId!==j.id){ id=pfx+"_"+j.id+"_"+idx; cur=byId[id]; }   // cross-job id collision → job-scoped id so BOTH survive (mirrors server hoist)
+        var row=Object.assign({},el,{id:id,jobId:j.id,updatedAt:(+el.updatedAt||1)});
+        if(row.deleted==null)row.deleted=false;
+        if(!cur||(+row.updatedAt||0)>=(+cur.updatedAt||0))byId[id]=row;   // keep newest per id (mirrors dedupNested)
+      });
+      j[nestedKey]=[];
+    });
+    o[collKey]=Object.keys(byId).map(function(k){return byId[k];});
+  });
+  return o;
+}
 function now(){return Date.now()}
 function load(){
   try{S=JSON.parse(localStorage.getItem(KEY))||null}catch(e){S=null}
@@ -64,7 +91,9 @@ function load(){
     if(!S[b].disbursements)S[b].disbursements=[];   // money paid OUT of accounts (payouts/taxes/draws) → running balances
     if(!S[b].recurringPlans)S[b].recurringPlans=[];   // RECURRING SERVICE (Phase 1): synced plan contracts {id"rp_",customerId,propertyId,frequency,nextDue,generatedJobIds…}. The engine (js/102) materializes JOBS from these; the plan holds no money → finance byte-identical. Additive, empty by default.
     if(!S[b].invoices)S[b].invoices=[];   // SQUARE INVOICE RECONCILIATION (js/108): imported paid invoices {id:<Square token>,customerId,quoteIds,amountPaid…}, the paid-invoice source of truth. Additive, empty by default; Phase 1 doesn't touch income.
-    (S[b].jobs||[]).forEach(j=>{if(!Array.isArray(j.expenses))j.expenses=[];});   // per-job P&L: expenses[] additive on-job array (rides job LWW)
+    if(!Array.isArray(S[b].jobExpenses))S[b].jobExpenses=[];   // LINE-ITEM COLLECTIONS: job.expenses[] promoted out of the job record → element-level LWW (no whole-job clobber on concurrent edits)
+    if(!Array.isArray(S[b].jobMaterials))S[b].jobMaterials=[];   // job.materials[] promoted out of the job record (same reason)
+    hoistJobLineItems(S[b]);   // MIGRATE: move any nested job.materials/expenses into the collections (idempotent, loss-free, mirrors the server's hoist). Clears the nested arrays so no reader double-counts.
     // MULTI-JOB STOPS: job.sharedJobIds[] generalizes the old scalar job.parentJobId — []=generic/overhead
     // (charged to no job), [id]=today's 1:1 sub-job behavior (no-op divide), [id,id,...]=even split across N
     // jobs. null=not a stop-job at all (an ordinary job, never touched by the sub-job mechanism). READ-promotion
@@ -193,14 +222,11 @@ function load(){
       if(!S[b]||typeof S[b]!=="object"||Array.isArray(S[b]))return;
       const byId={},byRcpt={};   // receipt category source-of-truth (kept even when the review record is tombstoned)
       (S[b].receipts||[]).forEach(r=>{ if(!r||!r.category)return; if(r.id&&!byId[r.id])byId[r.id]=r.category; if(r.receiptId&&!byRcpt[r.receiptId])byRcpt[r.receiptId]=r.category; });
-      (S[b].jobs||[]).forEach(j=>{
-        if(!j||!Array.isArray(j.expenses))return;
-        j.expenses.forEach(e=>{
-          if(!e||typeof e!=="object"||e.category)return;   // already categorized → leave it (idempotent, never override/re-amount)
-          const src=(e.id&&byId[e.id])||(e.receiptId&&byRcpt[e.receiptId])||"";
-          e.category=src||"job";   // resolved receipt category (incl. tools/equipment auto-reclassify) else a plain job cost
-        });
-      });
+      // job expenses now live in the jobExpenses COLLECTION (hoisted earlier in load); categorize there. Also
+      // sweep any residual nested arrays (a job not yet hoisted this session) so nothing is missed.
+      const catExp=e=>{ if(!e||typeof e!=="object"||e.category)return; const src=(e.id&&byId[e.id])||(e.receiptId&&byRcpt[e.receiptId])||""; e.category=src||"job"; };
+      (S[b].jobExpenses||[]).forEach(catExp);
+      (S[b].jobs||[]).forEach(j=>{ if(j&&Array.isArray(j.expenses))j.expenses.forEach(catExp); });
     });
     S.expCatV1=true;save();
   }

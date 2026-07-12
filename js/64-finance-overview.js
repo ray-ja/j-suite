@@ -18,13 +18,13 @@ function finPeriodPL(ym){
   // material dollar. Billed at cost they're net-neutral to profit; any markup correctly shows as margin.
   let jobCosts = 0, jobToolOverhead = 0, materialsCost = 0;
   (D().jobs || []).filter(j => j && !j.deleted && inPeriod(j.date)).forEach(j => {
-    (j.expenses || []).filter(x => x && !x.deleted).forEach(e => {
+    ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).filter(x => x && !x.deleted).forEach(e => {
       if (typeof depositHeld === "function" && depositHeld(e)) return;   // HOLD-OUT (js/96): an unsettled rental-deposit group is $0 to the P&L until settled at net
       if (typeof expenseIsFuel === "function" && expenseIsFuel(e)) return;   // STANDARD MILEAGE: fuel is covered by the mileage line below, never a separate cost
       if (typeof expenseIsTool === "function" && expenseIsTool(e)) jobToolOverhead += finCents(e.amount);
       else jobCosts += finCents(e.amount);
     });
-    (j.materials || []).filter(x => x && !x.deleted).forEach(m => {
+    ((typeof plMaterials === "function") ? plMaterials(j) : (j.materials || [])).filter(x => x && !x.deleted).forEach(m => {
       if (typeof depositHeld === "function" && depositHeld(m)) return;
       materialsCost += finCents(m.amount);
     });
@@ -163,8 +163,8 @@ function finGeneralLedger(){
   };
   actExpenses().forEach(e => costEntry(e, e.unpaid ? "Bill" : "Expense", e.date, "other"));
   (D().jobs || []).forEach(j => { if (!j || j.deleted) return;
-    (j.expenses || []).forEach(e => { if (!e || e.deleted) return; costEntry(e, "Job cost · " + (j.title || ""), e.date || j.date, "job"); });
-    (j.materials || []).forEach(m => { if (!m || m.deleted) return; const amt = finCents(m.amount); if (!amt) return; push(m.date || j.date, "Materials · " + (j.title || ""), [{ acct: "Expense: materials (pass-through)", dr: amt, cr: 0 }, { acct: creditFor(m), dr: 0, cr: amt }]); });
+    ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).forEach(e => { if (!e || e.deleted) return; costEntry(e, "Job cost · " + (j.title || ""), e.date || j.date, "job"); });
+    ((typeof plMaterials === "function") ? plMaterials(j) : (j.materials || [])).forEach(m => { if (!m || m.deleted) return; const amt = finCents(m.amount); if (!amt) return; push(m.date || j.date, "Materials · " + (j.title || ""), [{ acct: "Expense: materials (pass-through)", dr: amt, cr: 0 }, { acct: creditFor(m), dr: 0, cr: amt }]); });
   });
   (typeof actDisb === "function" ? actDisb() : []).forEach(x => {
     const amt = finCents(x.amount); if (!amt) return;
@@ -204,7 +204,7 @@ function finJobExpenseOut(opts) {
   return (D().jobs || []).reduce((s, j) => {
     if (!j || j.deleted) return s;
     if (opts.from && !(j.date && j.date >= opts.from && j.date <= opts.to)) return s;
-    return s + (j.expenses || []).filter(e => e && !e.deleted && !e.unpaid && !(typeof depositHeld === "function" && depositHeld(e))).reduce((a, e) => a + finCents(e.amount), 0);
+    return s + ((typeof plExpenses === "function") ? plExpenses(j) : (j.expenses || [])).filter(e => e && !e.deleted && !e.unpaid && !(typeof depositHeld === "function" && depositHeld(e))).reduce((a, e) => a + finCents(e.amount), 0);
   }, 0);
 }
 /* ACCOUNTS PAYABLE (#11) — bills logged as unpaid (e.unpaid): a liability owed to vendors, NOT yet cash out.

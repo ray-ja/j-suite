@@ -73,7 +73,7 @@ if (typeof JOB_RCPT !== "undefined" && JOB_RCPT && JOB_RCPT.jobId === matTestJob
   await new Promise(function (resolve) { setTimeout(resolve, 200); });
 
   var _j = actJ().find(function (x) { return x.id === matTestJobId; });
-  var mats = ((_j && _j.materials) || []).filter(function (m) { return m && !m.deleted; });
+  var mats = ((typeof plMaterials === "function") ? plMaterials(_j) : ((_j && _j.materials) || [])).filter(function (m) { return m && !m.deleted; });   // materials live in the jobMaterials collection now
   diag("confirmTaps=20 materialsCreated=" + mats.length + " receiptId=" + (mats[0] && mats[0].receiptId));
   if (mats.length !== 1) __errs.push("DOUBLE-SUBMIT regression: 20 rapid Confirm taps created " + mats.length + " material record(s) — expected exactly 1");
   if (mats.length && mats[0].receiptId !== MOCK_RECEIPT_ID) __errs.push("MISSING-PHOTO regression: the filed material's receiptId is '" + (mats[0].receiptId) + "', expected '" + MOCK_RECEIPT_ID + "'");
