@@ -58,6 +58,28 @@ async function invMakePayLink(q) {
     return { ok: false, error: (d && d.error) || ("HTTP " + r.status) };
   } catch (e) { return { ok: false, error: (e && e.message) || "offline" }; }
 }
+// HOSTED INVOICE LINK — mint (once) an unguessable token, sync it up, and copy the public /i/<token> URL the
+// customer opens in any browser to view the invoice + pay. Owner/admin only.
+window.invShareLink = async function (quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  if (!q.invoiceToken) {
+    let tok = "";
+    try { tok = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, "0")).join(""); }
+    catch (e) { tok = "inv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+    q.invoiceToken = tok; if (typeof touch === "function") touch(q); if (typeof save === "function") save();
+  }
+  const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+  if (!origin) { alert("Sync isn't set up on this device, so there's no public address to share from."); return; }
+  const url = origin + "/i/" + q.invoiceToken;
+  const btn = document.getElementById("inv_share_" + quoteId);
+  if (btn) { btn.disabled = true; btn.textContent = "Publishing…"; }
+  try { if (typeof syncRun === "function") await syncRun("auto"); } catch (e) {}   // push the token so the link is live server-side
+  let copied = false;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(url); copied = true; } } catch (e) {}
+  if (btn) { btn.disabled = false; btn.textContent = "🔗 Copy invoice link"; }
+  alert((copied ? "Invoice link copied ✓\n\n" : "Invoice link:\n\n") + url + "\n\nText or email this to your customer — they can view the invoice and pay online from any browser.");
+};
 // single-button flow (alerts + re-render on the result)
 window.invGenPayLink = async function (quoteId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
@@ -149,7 +171,8 @@ window.openInvoice = function (quoteId) {
           ? `<button class="btn acc" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:8px" onclick="invGenPayLink('${q.id}')">⚡ Generate card-payment link</button>`
           : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
     </div>${invReceiptsNote(q)}
-    <div class="row" style="gap:8px;margin-top:12px">
+    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:10px" onclick="invShareLink('${q.id}')">🔗 Copy invoice link (customer views + pays online)</button>` : ""}
+    <div class="row" style="gap:8px;margin-top:8px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
       <button class="btn ghost grow" onclick="invPrint('${q.id}')">🖨️ Print / PDF</button>
     </div>

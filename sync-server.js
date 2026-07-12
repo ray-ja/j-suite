@@ -1223,6 +1223,67 @@ function consumeInviteToken(tok) {
 }
 // minimal HTML escape for values interpolated into an outgoing email body (name/username are user-supplied)
 function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+/* ---- HOSTED PUBLIC INVOICE (GET /i/<token>) — server-rendered so a customer can open + pay from any browser ---- */
+const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 564-8717", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "", logo: "/assets/logo-jam.png" } };
+function invMoney(n) { n = Math.round(+n || 0); return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US"); }
+function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.name || it.serviceId)); }
+function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
+function invNoOf(q) { if (q && q.invoiceNo) return q.invoiceNo; const ds = String((q && q.date) || "").replace(/-/g, ""); return "INV-" + (ds || "00000000") + "-" + String((q && q.id) || "").slice(-4).toUpperCase(); }
+function invDateOf(ds) { const m = String(ds || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[2] + "/" + m[3] + "/" + m[1].slice(2)) : String(ds || ""); }
+function renderInvoicePage(biz, cust, q) {
+  const AC = "#0a7d4b", no = invNoOf(q), dateStr = invDateOf(q.invoicedDate || q.date);
+  const items = invItemsOf(q), sub = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
+  const eff = invEff(q), adj = Math.round((eff - sub) * 100) / 100;
+  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((eff + tax) * 100) / 100;
+  const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
+  const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
+  const rows = items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
+    : `<tr><td colspan="3" style="color:#9ca3af">No line items on this invoice.</td></tr>`;
+  const adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
+  const taxRows = taxable ? `<tr><td colspan="2" class="n">Sales tax (6.75%)</td><td class="n">${invMoney(tax)}</td></tr><tr><td colspan="2" class="n tot">Total due</td><td class="n tot">${invMoney(due)}</td></tr>`
+    : `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
+  const dueStr = invMoney(due);
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Invoice ${htmlEsc(no)} · ${htmlEsc(biz.name || "")}</title><style>
+    *{box-sizing:border-box} html,body{margin:0}
+    body{font:15px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;padding:24px}
+    .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
+    .bar{height:6px;background:linear-gradient(90deg,${AC},#12b877)}
+    .pad{padding:34px 40px}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
+    .biz{display:flex;align-items:center;gap:12px}.biz img{height:46px;width:auto;border-radius:8px}
+    .bizname{font-size:21px;font-weight:800;letter-spacing:-.2px}.muted{color:#6b7280;font-size:13px}
+    .badge{text-align:right}.badge .lbl{font-size:25px;font-weight:800;color:${AC};letter-spacing:2px}
+    .billrow{display:flex;justify-content:space-between;gap:24px;margin-top:30px;flex-wrap:wrap}
+    .lbl2{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;font-weight:700;margin-bottom:5px}
+    .due{font-size:26px;font-weight:800}
+    table{width:100%;border-collapse:collapse;margin-top:30px}
+    th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;padding:0 0 10px;border-bottom:2px solid #e5e7eb}
+    td{padding:13px 0;border-bottom:1px solid #f1f2f4}
+    th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}th.c,td.c{text-align:center}
+    tfoot td{border-bottom:none;padding:5px 0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
+    .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
+    .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
+    .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg)}
+    .foot{margin-top:26px;color:#6b7280;font-size:13px;text-align:center;border-top:1px solid #f1f2f4;padding-top:18px}
+    @media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0;max-width:none}.pay{border:2px solid ${AC}}}
+    </style></head><body>
+    <div class="sheet"><div class="bar"></div><div class="pad">
+      <div class="top">
+        <div class="biz">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${htmlEsc(biz.name || "")}</div><div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
+        <div class="badge"><div class="lbl">INVOICE</div><div class="muted">${htmlEsc(no)}</div><div class="muted">${htmlEsc(dateStr)}</div></div>
+      </div>
+      <div class="billrow">
+        <div><div class="lbl2">Bill to</div>${billTo.map((l, i) => `<div${i === 0 ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${htmlEsc(l)}</div>`).join("")}</div>
+        <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}</div>
+      </div>
+      <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
+      <tbody>${rows}</tbody><tfoot>${adjRows}${taxRows}</tfoot></table>
+      ${(q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : ""}
+      <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
+    </div></div>
+    </body></html>`;
+}
 function emailCfg() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) { return {}; } }
 function sendEmail(to, subject, html) {
   return new Promise((resolve) => {
@@ -2293,6 +2354,23 @@ const server = http.createServer((req, res) => {
     return res.end(buildIcs(store, user));
   }
 
+  // HOSTED PUBLIC INVOICE — GET /i/<token> (no auth: the unguessable per-invoice token IS the capability). Renders
+  // the invoice a customer can open in any browser + pay online. 404s an unknown/stale token.
+  if (req.method === "GET" && req.url.split("?")[0].indexOf("/i/") === 0) {
+    const token = decodeURIComponent(req.url.split("?")[0].slice(3));
+    const notFound = () => { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Invoice not found</h2><p>This link may be incorrect or no longer active.</p></body>"); };
+    if (!token || token.length < 8) return notFound();
+    const store = loadStore();
+    let q = null, org = null, cust = null;
+    for (const oid of orgIdsOf(store)) {
+      const found = ((store[oid] && store[oid].quotes) || []).find(x => x && !x.deleted && x.invoiceToken === token);
+      if (found) { q = found; org = oid; cust = ((store[oid].customers) || []).find(c => c && c.id === q.customerId) || null; break; }
+    }
+    if (!q) return notFound();
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q));
+  }
+
   // login: verify credentials against the synced account records, hand back the sync token
   if (req.method === "POST" && req.url === "/login") {
     const ip = clientIp(req);
@@ -2609,4 +2687,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

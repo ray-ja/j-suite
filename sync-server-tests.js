@@ -202,6 +202,20 @@ const projSelf = projected.find(u => u.id === "crw3"), projOther = projected.fin
 ok("calToken STRIP: a co-member's calendar-feed token is NOT projected to another user", !!projOther && !Object.prototype.hasOwnProperty.call(projOther, "calToken"));
 ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still works)", !!projSelf && projSelf.calToken === "JOE-secret");
 
+// ── Hosted public invoice page (GET /i/<token> → renderInvoicePage) ──
+(function () {
+  const biz = { name: "OBX Lot Solutions", phone: "(252) 564-8717", logo: "/assets/logo-obx.png" };
+  const cust = { name: "Michelle Brown", company: "OBX Home Pros", email: "m@x.com" };
+  const q = { id: "q1", invoiceNo: "INV-1", date: "2026-06-23", invoiced: true, taxable: false, total: 380, items: [{ name: "Junk / move-out", qty: 1, price: 280 }, { name: "Travel", qty: 1, price: 100 }], paymentLink: "https://buy.stripe.com/abc" };
+  const html = t.renderInvoicePage(biz, cust, q);
+  ok("invoice page: renders the business + invoice no", html.indexOf("OBX Lot Solutions") >= 0 && html.indexOf("INV-1") >= 0);
+  ok("invoice page: shows the line items + total ($380)", html.indexOf("Junk / move-out") >= 0 && html.indexOf("$380") >= 0);
+  ok("invoice page: shows the Pay-online button when unpaid + linked", /class="pay"[^>]*href="https:\/\/buy\.stripe\.com\/abc"/.test(html) && html.indexOf("Pay online") >= 0);
+  ok("invoice page: a PAID invoice shows the PAID stamp, NO pay button", (() => { const h = t.renderInvoicePage(biz, cust, Object.assign({}, q, { paid: true })); return h.indexOf("PAID") >= 0 && h.indexOf('class="pay"') < 0; })());
+  ok("invoice page: taxable invoice adds 6.75% sales tax + total due", (() => { const h = t.renderInvoicePage(biz, cust, Object.assign({}, q, { taxable: true })); return h.indexOf("Sales tax (6.75%)") >= 0 && h.indexOf("Total due") >= 0; })());
+  ok("invoice page: escapes a customer name (no HTML injection)", t.renderInvoicePage(biz, { name: "<script>x</script>" }, q).indexOf("<script>x") < 0);
+})();
+
 // ── Stripe webhook signature verification (the paid-webhook's ONLY auth) ──
 (function () {
   const crypto = require("crypto");
