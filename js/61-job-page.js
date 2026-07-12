@@ -446,8 +446,9 @@ function rJobPage(j) {
       _secInvoice += `<label style="margin-top:10px">Final price charged <span class="sub">(if different from the ${money(_mq.total || 0)} quote)</span></label>`;
       _secInvoice += `<div class="row" style="gap:8px"><input id="job_final" type="number" inputmode="decimal" placeholder="${_mq.total || 0}" value="${_mq.finalPrice || ""}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSaveFinal('${j.id}')">Save</button></div>`;
       _secInvoice += `<input id="job_adjnote" placeholder="Reason (e.g. added a step, gave a discount)" value="${esc(_mq.adjNote || "")}" style="margin-top:6px">`;
-      _secInvoice += `<label style="margin-top:10px">Payment link <span class="sub">(Stripe / pay-now URL — shown to the customer)</span></label>`;
-      _secInvoice += `<div class="row" style="gap:8px"><input id="job_paylink" placeholder="https://…" value="${esc(_mq.paymentLink || "")}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSetPayLink('${j.id}')">Save</button></div>`;
+      _secInvoice += `<label style="margin-top:10px">Card-payment link <span class="sub">(Stripe — shown to the customer)</span></label>`;
+      _secInvoice += `<button class="btn acc sm" id="inv_genlink_${_mq.id}" style="width:100%" onclick="invGenPayLink('${_mq.id}')">${_mq.paymentLink ? "↻ Regenerate card-payment link" : "⚡ Generate card-payment link"}</button>`;
+      _secInvoice += `<div class="row" style="gap:8px;margin-top:6px"><input id="job_paylink" placeholder="…or paste a link manually" value="${esc(_mq.paymentLink || "")}" style="flex:1"><button class="btn ghost sm" onclick="jobPageSetPayLink('${j.id}')">Save</button></div>`;
       _secInvoice += `<div class="sub" style="margin-top:8px;white-space:normal">Item &amp; line-price change orders stay in the full quote (📜 version history) — this card only sets the final charge, invoice &amp; payment.</div>`;
     }
   } else {

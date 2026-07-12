@@ -202,6 +202,10 @@ const projSelf = projected.find(u => u.id === "crw3"), projOther = projected.fin
 ok("calToken STRIP: a co-member's calendar-feed token is NOT projected to another user", !!projOther && !Object.prototype.hasOwnProperty.call(projOther, "calToken"));
 ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still works)", !!projSelf && projSelf.calToken === "JOE-secret");
 
+// ── Stripe pay-link: form-encoding of the price + payment-link params ──
+ok("stripeForm: encodes flat bracketed keys as x-www-form-urlencoded", t.stripeForm({ currency: "usd", unit_amount: "12500", "product_data[name]": "INV-1 · Mike" }) === "currency=usd&unit_amount=12500&product_data%5Bname%5D=INV-1%20%C2%B7%20Mike");
+ok("stripeForm: encodes payment-link line items", t.stripeForm({ "line_items[0][price]": "price_abc", "line_items[0][quantity]": "1" }) === "line_items%5B0%5D%5Bprice%5D=price_abc&line_items%5B0%5D%5Bquantity%5D=1");
+
 // ── S6: bootstrap (zero accounts) strips a client-claimed superAdmin, but still creates the account ──
 const bootOut = t.sanitizeUserWrites({ users: [{ id: "first", username: "ray", role: "owner", superAdmin: true, updatedAt: 5 }] }, { users: [] }, null, null);
 const bootAcct = (bootOut.users || []).find(u => u.id === "first");

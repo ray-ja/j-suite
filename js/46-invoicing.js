@@ -32,6 +32,38 @@ function invAdjRows(q) {
 }
 /* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
 function invAmountDue(q) { return (typeof quoteTotalWithTax === "function") ? quoteTotalWithTax(q) : invEffectiveTotal(q); }
+/* AUTO-GENERATE a Stripe card-payment link for THIS invoice's exact amount (server-side, using the restricted key
+   saved in Settings — the key never touches the client). Saves the URL to q.paymentLink so the invoice shows the
+   "Pay online" button. Owner/admin only. */
+window.invGenPayLink = async function (quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  const amt = invAmountDue(q);
+  if (!(amt >= 0.5)) { alert("The invoice amount must be at least $0.50 to create a card link."); return; }
+  const cust = (typeof custName === "function" && q.customerId) ? custName(q.customerId) : (q.cust || "");
+  const job = (typeof quoteType === "function" && quoteType(q)) || q.title || "Services";
+  const label = ("OBX Lot Solutions · " + invNo(q) + (cust ? (" · " + cust) : "") + " · " + job).slice(0, 120);
+  const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
+  if (!base) { alert("Sync isn't set up on this device, so I can't reach Stripe from here."); return; }
+  const btn = document.getElementById("inv_genlink_" + quoteId);
+  if (btn) { btn.disabled = true; btn.textContent = "Making link…"; }
+  try {
+    const r = await fetch(base + "/api/stripe/paylink", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}), body: JSON.stringify({ amountCents: Math.round(amt * 100), label: label }) });
+    const d = await r.json().catch(() => null);
+    if (r.ok && d && d.url) {
+      q.paymentLink = d.url;
+      if (typeof touch === "function") touch(q);
+      if (typeof save === "function") save();
+      if (typeof render === "function") render();
+    } else {
+      alert("Couldn't create the link: " + ((d && d.error) || ("HTTP " + r.status)) + "\n\nCheck that your Stripe key is saved in Settings (and has Prices + Payment Links write access).");
+      if (btn) { btn.disabled = false; btn.textContent = "⚡ Generate card-payment link"; }
+    }
+  } catch (e) {
+    alert("Couldn't reach Stripe — are you online? " + ((e && e.message) || ""));
+    if (btn) { btn.disabled = false; btn.textContent = "⚡ Generate card-payment link"; }
+  }
+};
 /* cash-discount line — "pay cash/check and save 3%". Presentational; shown on every invoice. */
 function invCashNote(q) {
   if (typeof quoteCashPrice !== "function") return "";
@@ -86,7 +118,11 @@ window.openInvoice = function (quoteId) {
         <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
-      ${q.paymentLink ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money(invAmountDue(q))}</a>` : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet — add a Stripe Payment Link on the quote so this invoice can be paid by card.</div>`}
+      ${q.paymentLink
+        ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
+        : ((typeof finCanView !== "function" || finCanView())
+          ? `<button class="btn acc" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:8px" onclick="invGenPayLink('${q.id}')">⚡ Generate card-payment link</button>`
+          : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
     </div>${invReceiptsNote(q)}
     <div class="row" style="gap:8px;margin-top:12px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}

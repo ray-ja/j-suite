@@ -1289,6 +1289,19 @@ const loginHits = new Map();
    CF-Connecting-IP to the true client and strips any client-supplied copy on proxied requests, so it's trustworthy
    here (prod is only reachable via CF / Tailscale, never directly). Fall back to the first x-forwarded-for hop,
    then the socket. */
+/* Stripe REST call (form-encoded, like Stripe expects). form = a FLAT map of already-bracketed keys
+   ("product_data[name]", "line_items[0][price]") → string values. cb(statusCode, parsedJsonOrNull). Never logs
+   the key or the body. */
+function stripeForm(form) { return Object.keys(form).map(k => encodeURIComponent(k) + "=" + encodeURIComponent(form[k])).join("&"); }
+function stripeCall(key, path2, form, cb) {
+  const body = stripeForm(form);
+  const r = https.request("https://api.stripe.com" + path2, { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Content-Length": Buffer.byteLength(body) } }, (resp) => {
+    let s = ""; resp.on("data", (d) => s += d); resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} cb(resp.statusCode, j); });
+  });
+  r.on("error", (e) => cb(0, { error: { message: String((e && e.message) || e) } }));
+  r.setTimeout(15000, () => { try { r.destroy(); } catch (e) {} cb(0, { error: { message: "Stripe request timed out" } }); });
+  r.write(body); r.end();
+}
 function clientIp(req) {
   const h = (req && req.headers) || {};
   const cf = h["cf-connecting-ip"];
@@ -1962,7 +1975,7 @@ const server = http.createServer((req, res) => {
     if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
     let c = {}; try { c = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken) }));
+    return res.end(JSON.stringify({ resendKey: !!c.resendKey, accessAud: !!c.accessAud, accessTeamDomain: !!c.accessTeamDomain, ceoTokens: !!(c.token && c.writeToken), stripeKey: !!c.stripeKey }));
   }
   // PER-ORG AI (Phase 4). status: any member. config: org-OWNER/super-admin only, one-way key. ask: any member, uses the org's OWN key + scoped data.
   if (req.method === "GET" && req.url.split("?")[0] === "/api/org-ai/status") {
@@ -2143,7 +2156,7 @@ const server = http.createServer((req, res) => {
     if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }   // platform-global secrets (email key, Access audience) — superAdmin only, never a plain authenticated token
     readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
-      const ALLOW = ["resendKey", "accessAud"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination)
+      const ALLOW = ["resendKey", "accessAud", "stripeKey"];   // only these are GUI-settable; Cap tokens are rotated separately (Cap-side coordination). stripeKey = a RESTRICTED Stripe key (rk_live_…, Prices/Products/PaymentLinks write) for auto-generating invoice pay links; stored server-side only, never synced/logged.
       const key = p && p.key, value = p && p.value;
       if (ALLOW.indexOf(key) < 0 || typeof value !== "string" || !value.trim() || value.length > 8192) {
         res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"not allowed"}');
@@ -2155,6 +2168,36 @@ const server = http.createServer((req, res) => {
       catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end('{"ok":true}');
+    });
+    return;
+  }
+
+  // STRIPE PAY LINK — POST /api/stripe/paylink { amountCents, label }. Owner/admin only. Uses the server-side
+  // restricted key (never the client) to create a Price (with an inline product) then a Payment Link, and returns
+  // its hosted URL. The key is read fresh from ceo-config.json and NEVER logged or echoed.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/stripe/paylink") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    const store = sc && sc.account ? loadStore() : null;
+    const manages = sc && sc.account && (sc.superAdmin || (sc.orgs || []).some(o => ["owner", "admin"].indexOf(storedRoleInOrg(store, sc.account.id, o)) >= 0));
+    if (!manages) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"owner/admin only"}'); }
+    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+    const skey = cfg.stripeKey;
+    if (!skey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"Stripe is not set up — paste your restricted key in Settings first"}'); }
+    readBodyUtf8(req, 2e4, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const cents = Math.round(+((p && p.amountCents)) || 0);
+      if (!(cents >= 50) || cents > 99999999) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"amount must be between $0.50 and $999,999.99"}'); }   // Stripe min is $0.50
+      const label = String((p && p.label) || "Invoice").replace(/[\r\n]+/g, " ").slice(0, 120) || "Invoice";
+      stripeCall(skey, "/v1/prices", { currency: "usd", unit_amount: String(cents), "product_data[name]": label }, (st1, pr) => {
+        if (st1 !== 200 || !pr || !pr.id) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Stripe (price): " + (((pr || {}).error || {}).message || ("HTTP " + st1)) })); }
+        stripeCall(skey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1" }, (st2, pl) => {
+          if (st2 !== 200 || !pl || !pl.url) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Stripe (link): " + (((pl || {}).error || {}).message || ("HTTP " + st2)) })); }
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({ url: pl.url }));
+        });
+      });
     });
     return;
   }
@@ -2511,4 +2554,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
