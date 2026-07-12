@@ -286,4 +286,26 @@ T("S7 csvCell prefixes leading + @ - -when-not-a-number", csvCell("+cmd")==="'+c
 T("S7 csvCell leaves a plain negative number numeric (finance totals still sum)", csvCell("-45.00") === "-45.00" && csvCell("-45")==="-45");
 T("S7 csvCell still quotes a cell with a comma/quote", csvCell('a,b') === '"a,b"' && csvCell('he said "hi"') === '"he said ""hi"""');
 T("S7 csvCell quotes AND prefixes a formula that also has a comma", csvCell("=A1,B1") === '"\'=A1,B1"');
-diag("review-fixes: F1-F7 + security(S7/S8) done");
+// S9 — member lists scoped to the ACTIVE org (activeOrgMembers): a multi-org user no longer sees another org's crew.
+(function(){
+  const _users = S.users, _biz = S.biz;
+  S.users = [
+    {id:"a_obx", username:"ObxOnly", active:true},
+    {id:"a_jam", username:"JamOnly", active:true},
+    {id:"a_none", username:"HelperNoMem", active:true},   // no membership records → must show everywhere
+    {id:"m1", kind:"membership", accountId:"a_obx", orgId:"obx", role:"crew", active:true},
+    {id:"m2", kind:"membership", accountId:"a_jam", orgId:"jam", role:"crew", active:true},
+  ];
+  S.biz = "obx";
+  const obxIds = activeOrgMembers().map(u=>u.id);
+  T("S9 activeOrgMembers(obx) includes the obx member", obxIds.indexOf("a_obx")>=0);
+  T("S9 activeOrgMembers(obx) EXCLUDES the jam-only member (no cross-org leak)", obxIds.indexOf("a_jam")<0);
+  T("S9 activeOrgMembers(obx) still includes a membership-less helper (never vanishes)", obxIds.indexOf("a_none")>=0);
+  S.biz = "jam";
+  const jamIds = activeOrgMembers().map(u=>u.id);
+  T("S9 activeOrgMembers(jam) flips: jam member in, obx member out, helper still in", jamIds.indexOf("a_jam")>=0 && jamIds.indexOf("a_obx")<0 && jamIds.indexOf("a_none")>=0);
+  S.users = _users; S.biz = _biz;
+})();
+// S5 — finance action handlers are guarded client-side (defense-in-depth) by finCanView.
+T("S5 finPayBill/recordDisbursement/savePayment/openIncome all reference finCanView", [finPayBill,recordDisbursement,savePayment,openIncome].every(fn=>typeof fn==="function" && /finCanView/.test(fn.toString())));
+diag("review-fixes: F1-F7 + security(S7/S8/S9/S5) done");

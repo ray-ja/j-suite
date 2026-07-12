@@ -197,6 +197,13 @@ async function syncRun(mode){
     window.SHARED_TOKEN_MODE=!!data.shared;   // legacy shared-token device → non-locking "sign in again to add members" nudge (never logs out / clears the token)
     if(typeof renderSharedTokenNudge==="function")renderSharedTokenNudge();
     const changed=JSON.stringify(data.state)!==sentSig;
+    // IN-FLIGHT EDIT GUARD (fixes "odometer not saving"): this server response was computed from _pushState, the
+    // snapshot taken BEFORE the request. If the user saved an edit AFTER that snapshot (_editSeq advanced), applying
+    // the response would WHOLESALE-CLOBBER that edit (S[org]=response[org] overwrites the just-saved record). So do
+    // NOT apply a stale response over a fresh local edit — keep local, re-push immediately. The next round returns a
+    // merged response that INCLUDES the edit (server LWW resolves it); remote changes arrive one round later, never
+    // lost. (Local edits already carry a newer updatedAt via touch(), so the server keeps them.)
+    if(_editSeq!==seq){ _syncInflight=false; SYNC_DIRTY=true; setSyncState("synced"); scheduleAutoPush(); return; }
     window.__syncApplying=true;
     Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;   // apply every org slab the server returned
     var _keep=new Set((S.registry||[]).map(function(r){return r&&r.id;}));Object.keys(S).forEach(function(k){if(k!=="users"&&k!=="registry"&&k!=="sync"&&k!=="biz"&&S[k]&&typeof S[k]==="object"&&!Array.isArray(S[k])&&!_keep.has(k))delete S[k];});   // ISOLATION: drop org slabs we're not a member of (server preserves them → loss-free)

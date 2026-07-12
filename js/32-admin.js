@@ -227,6 +227,23 @@ function membershipsOf(accountId) { return (S.users || []).filter(m => m && m.ki
 function roleInOrg(accountId, orgId) { const m = (S.users || []).find(x => x && x.kind === "membership" && x.accountId === accountId && x.orgId === orgId && x.active !== false); return m ? m.role : null; }
 function membershipFor(accountId, orgId) { return (S.users || []).find(m => m && m.kind === "membership" && m.accountId === accountId && m.orgId === orgId); }
 function orgMembers(orgId) { return realAccounts().filter(u => !!roleInOrg(u.id, orgId)); }   // accounts with an ACTIVE membership in this org
+/* ISOLATION: the crew list for the ACTIVE org (S.biz) — used by schedule/pay/receipts member pickers so a user
+   who belongs to several orgs doesn't see another org's crew mixed in. An account with NO membership records at
+   all (a helper that slipped membership synthesis, or a not-yet-migrated account) is shown EVERYWHERE — the safe
+   fallback, so nobody vanishes from the schedule/pay (e.g. a name-only helper). No memberships anywhere at all =
+   legacy single-org → everyone. */
+function activeOrgMembers() {
+  const biz = (typeof S !== "undefined") ? S.biz : null;
+  const all = (typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted);
+  if (!biz) return all;
+  const hasAnyMem = (S.users || []).some(u => u && u.kind === "membership");
+  if (!hasAnyMem) return all;
+  return all.filter(u => {
+    const mem = (S.users || []).filter(m => m && m.kind === "membership" && m.accountId === u.id);
+    if (!mem.length) return true;                                              // membership-less account → visible everywhere (never vanish)
+    return mem.some(m => m.orgId === biz && m.active !== false);               // else must actively belong to the active org
+  });
+}
 function orgOwners(orgId) { return orgMembers(orgId).filter(u => roleInOrg(u.id, orgId) === "owner" && u.active !== false); }
 function orgSetRole(accountId, orgId, role) {   // add/update a member's per-org role (creates the membership if missing)
   let m = membershipFor(accountId, orgId);

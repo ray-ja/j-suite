@@ -202,6 +202,20 @@ const projSelf = projected.find(u => u.id === "crw3"), projOther = projected.fin
 ok("calToken STRIP: a co-member's calendar-feed token is NOT projected to another user", !!projOther && !Object.prototype.hasOwnProperty.call(projOther, "calToken"));
 ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still works)", !!projSelf && projSelf.calToken === "JOE-secret");
 
+// ── S6: bootstrap (zero accounts) strips a client-claimed superAdmin, but still creates the account ──
+const bootOut = t.sanitizeUserWrites({ users: [{ id: "first", username: "ray", role: "owner", superAdmin: true, updatedAt: 5 }] }, { users: [] }, null, null);
+const bootAcct = (bootOut.users || []).find(u => u.id === "first");
+ok("bootstrap: the first account is still CREATED (no lockout on first run)", !!bootAcct && bootAcct.username === "ray" && bootAcct.role === "owner");
+ok("bootstrap: a client-claimed superAdmin is STRIPPED (platform super-admin is server-assigned only)", !!bootAcct && !bootAcct.superAdmin);
+
+// ── S10: real client IP for rate-limiting (behind Cloudflare) + per-user token TTL ──
+ok("clientIp: prefers CF-Connecting-IP (real client behind Cloudflare, not the proxy socket)", t.clientIp({ headers: { "cf-connecting-ip": "203.0.113.9" }, socket: { remoteAddress: "10.0.0.1" } }) === "203.0.113.9");
+ok("clientIp: falls back to first x-forwarded-for hop", t.clientIp({ headers: { "x-forwarded-for": "198.51.100.7, 10.0.0.1" }, socket: { remoteAddress: "10.0.0.1" } }) === "198.51.100.7");
+ok("clientIp: falls back to the socket when no proxy headers", t.clientIp({ headers: {}, socket: { remoteAddress: "192.0.2.5" } }) === "192.0.2.5");
+ok("tokenExpired: a fresh token is NOT expired", t.tokenExpired({ issued: Date.now() }) === false);
+ok("tokenExpired: a token older than the TTL IS expired (→ 401 re-login)", t.tokenExpired({ issued: Date.now() - t.TOKEN_TTL_MS - 1000 }) === true);
+ok("tokenExpired: a record with no 'issued' is treated as live (legacy, never auto-expired)", t.tokenExpired({ userId: "u1" }) === false);
+
 // TAX-BORROW LEDGER — a per-org docs sentinel (id "taxBorrow", like financeConfig). Must survive a round-trip
 // with its borrow/repay entries intact so the running balance is never lost.
 const tbRT = t.mergeState({ obx: { docs: [{ id: "taxBorrow", entries: [{ id: "b1", type: "borrow", amount: 500, date: "2026-07-10" }, { id: "r1", type: "repay", amount: 200, date: "2026-07-11" }], updatedAt: 5 }] } }, { obx: { docs: [] } });

@@ -21,7 +21,7 @@ function incomeWithWeights(list) {
   });
 }
 function actExpenses() { return (D().expenses || []).filter(x => x && !x.deleted); }
-function finMembers() { return (typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted); }
+function finMembers() { return (typeof activeOrgMembers === "function") ? activeOrgMembers() : ((typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted)); }   // ACTIVE-org crew only (S9)
 function finName(id) { return (typeof userName === "function" && userName(id)) || id || "—"; }
 function finCanView() { return (typeof canSee === "function") ? canSee("finance") : true; }
 /* admin-member config rides the synced docs collection as a sentinel record (no new mechanism) */
@@ -206,6 +206,7 @@ function rFinIncome() {
   return h;
 }
 window.openIncome = function (id, jobId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }   // S5: defense-in-depth
   const d = D(); const isNew = !id;
   const e = id ? d.income.find(x => x.id === id) : { id: uid(), date: today(), crew: [], amount: 0, originator: "", bookedAt: "", houseAccount: false };
   if (isNew && jobId) { const job = d.jobs.find(x => x.id === jobId); if (job) {

@@ -216,6 +216,7 @@ function finAccountsPayable(){
 }
 window.finAccountsPayable = finAccountsPayable;
 window.finPayBill = function(id){
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }   // S5: defense-in-depth (page is already access-gated)
   const e = (D().expenses || []).find(x => x && x.id === id); if (!e) return;
   e.unpaid = false; e.dueDate = ""; e.date = (typeof today === "function") ? today() : e.date;   // paid now → date = payment date, enters cash
   if (typeof touch === "function") touch(e);
@@ -298,6 +299,7 @@ function rFinCash(){
 }
 
 window.recordDisbursement = function(type, id, presetMember){
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }   // S5: defense-in-depth
   const d = D(); const ex = id ? (d.disbursements || []).find(x => x && x.id === id) : null;
   const t0 = ex ? ex.type : type, members = finMembers();
   const selMember = ex ? ex.memberId : (presetMember || "");   // per-person breakdown can preselect the member to pay

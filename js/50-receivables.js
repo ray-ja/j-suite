@@ -98,6 +98,7 @@ window.recordPayment = function (quoteId) {
     ${pays.length ? `<div class="sub" style="font-weight:700;margin-top:14px">Payments so far</div>` + pays.map(p => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${money(p.amount)} <span class="sub" style="font-weight:400">${esc(p.method || "")}</span></div><div class="sub">${fmtDate(p.date)}${p.ref ? " · " + esc(p.ref) : ""}</div></div><button class="btn ghost sm" onclick="delPayment('${q.id}','${p.id}')">✕</button></div>`).join("") : ""}`);
 };
 window.savePayment = function (quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }   // S5: defense-in-depth
   const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
   const amt = parseFloat(val("pay_amt")) || 0; if (amt <= 0) { alert("Enter the payment amount."); return; }
   const date = val("pay_date") || today();

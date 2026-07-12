@@ -89,7 +89,10 @@ function auditDiff(userId, pre, incoming) {
 function sanitizeUserWrites(incoming, pre, selfId, verifiedId) {   // selfId = claimed writer (per-user token OR shared-token client-claim; drives non-sensitive self-writes like availability). verifiedId = cryptographically-verified writer (per-user token only; null on shared token) — gates identity fields that enable takeover.
   if (!incoming || !Array.isArray(incoming.users)) return incoming;
   const stored = (pre && pre.users) || [];
-  if (!stored.filter(u => u && !u.kind && !u.deleted).length) return incoming;   // bootstrap: no real accounts yet → allow
+  if (!stored.filter(u => u && !u.kind && !u.deleted).length) {   // BOOTSTRAP: no real accounts yet → allow account creation with no prior auth (trust-on-first-use; gated externally by the shared token + empty-store-pulls-first). Still STRIP the platform superAdmin flag — it's assigned server-side (migrateStore grants it to the owner role), never settable by a raw client write, so a bootstrap sync can't directly mint a platform super-admin.
+    const bootUsers = incoming.users.map(u => { if (u && !u.kind && u.superAdmin) { const c = Object.assign({}, u); delete c.superAdmin; return c; } return u; });
+    return Object.assign({}, incoming, { users: bootUsers });
+  }
   const storedMap = {}; stored.forEach(u => { if (u && u.id) storedMap[u.id] = u; });
   const SENSITIVE = ["role", "passhash", "active", "logoutAt", "adminPin", "superAdmin", "archived"];   // owner-only fields (superAdmin = platform owner — never settable by a non-owner sync); adminPin is also self-settable; archived = owner-only (a verified owner bypasses this whole fn, so owner archiving still persists — a crew member cannot archive anyone via a crafted sync)
   const safe = [];
@@ -247,11 +250,13 @@ function sanitizeCustomJobWrites(incoming, pre, selfId) {
 // token out of the dataset). Issued at login; maps token -> userId so the server knows exactly who is syncing
 // (the basis for presence + audit trail + per-user write authz). Falls back gracefully if the file is missing.
 const USER_TOKENS_FILE = path.join(__dirname, "user-tokens.json");
+const TOKEN_TTL_MS = (+process.env.TOKEN_TTL_DAYS || 365) * 24 * 60 * 60 * 1000;   // per-user tokens expire after this (default 1yr) → a leaked/forgotten token can't live forever; the crew re-logs in far more often, so no field disruption
 function loadUserTokens() { try { return JSON.parse(fs.readFileSync(USER_TOKENS_FILE, "utf8")); } catch (e) { return {}; } }
 function saveUserTokens(m) { const tmp = USER_TOKENS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, USER_TOKENS_FILE); }
 function issueUserToken(userId, label) { const m = loadUserTokens(); const tok = crypto.randomBytes(24).toString("hex"); m[tok] = { userId: userId, issued: Date.now(), label: (label || "").slice(0, 80) }; saveUserTokens(m); return tok; }
-function userForToken(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && r.userId) || null; }
-function userTokenRec(tok) { if (!tok || typeof tok !== "string") return null; return loadUserTokens()[tok] || null; }   // {userId, issued, label} — issued lets us honor "log out everywhere"
+function tokenExpired(r) { return !!(r && r.issued && (Date.now() - r.issued) > TOKEN_TTL_MS); }   // past the TTL → treated as no token (401 → sign in again)
+function userForToken(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && r.userId && !tokenExpired(r)) ? r.userId : null; }
+function userTokenRec(tok) { if (!tok || typeof tok !== "string") return null; const r = loadUserTokens()[tok]; return (r && !tokenExpired(r)) ? r : null; }   // {userId, issued, label} — issued lets us honor "log out everywhere" + enforce the TTL
 function tokOk(tok) { return (!!TOKEN && tok === TOKEN) || !!userForToken(tok); }   // shared (legacy) OR a per-user token — both authenticate to the API
 const FILE = path.join(__dirname, "data.json");
 const APP_FILE = path.join(__dirname, "Business App (v1).html");
@@ -1279,6 +1284,19 @@ function accountByEmail(store, email) {
 /* light per-IP rate limit on /login — a brute-force speed bump, not a fortress */
 const LOGIN_WINDOW_MS = 5 * 60 * 1000, LOGIN_MAX = 20;
 const loginHits = new Map();
+/* the REAL client IP for rate-limiting. Behind Cloudflare/Tailscale, req.socket.remoteAddress is the PROXY's IP
+   (shared across every user) → per-IP rate-limits are useless (one bucket for everyone). Cloudflare sets
+   CF-Connecting-IP to the true client and strips any client-supplied copy on proxied requests, so it's trustworthy
+   here (prod is only reachable via CF / Tailscale, never directly). Fall back to the first x-forwarded-for hop,
+   then the socket. */
+function clientIp(req) {
+  const h = (req && req.headers) || {};
+  const cf = h["cf-connecting-ip"];
+  if (cf && typeof cf === "string" && cf.trim()) return cf.trim();
+  const xff = h["x-forwarded-for"];
+  if (xff && typeof xff === "string" && xff.trim()) return xff.split(",")[0].trim();
+  return (req && req.socket && req.socket.remoteAddress) || "?";
+}
 function rateCheck(ip) {
   const t = Date.now();
   let h = loginHits.get(ip);
@@ -1914,7 +1932,7 @@ const server = http.createServer((req, res) => {
   // client-errors.log so the owner/builder can SEE field errors. Rate-limited + size-capped + field-clamped; not
   // token-gated (errors must log even when auth is broken) and NEVER touches data.json / the sync layer.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/clientlog") {
-    const ip = (req.socket && req.socket.remoteAddress) || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end('{"error":"rate"}'); }
     readBodyUtf8(req, 8000, (body) => {
@@ -2006,7 +2024,7 @@ const server = http.createServer((req, res) => {
   // and returns a proposed categorization ({suggested}) for the owner to approve in-app. Owner/admin-gated,
   // rate-limited. Writes NOTHING to the store — the client stamps `receipt.suggested` and the owner still Saves.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/read-receipt") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -2055,7 +2073,7 @@ const server = http.createServer((req, res) => {
   // is CLAMPED server-side (capParseAction) against THIS user's real data; the SERVER NEVER EXECUTES — the app reads
   // each action back as a confirm card and only runs the real client fn on a Confirm tap. Still writes NOTHING here.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/assistant") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -2092,7 +2110,7 @@ const server = http.createServer((req, res) => {
   // Rate-limited (per-IP rateCheck). Reads the store READ-ONLY → orgAiScopedContext (data-scope + cost cap) →
   // callAnthropicTask on the org's OWN key with the untrusted-data system prompt. The key never leaves the server.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/workshop/preview") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -2179,7 +2197,7 @@ const server = http.createServer((req, res) => {
 
   // login: verify credentials against the synced account records, hand back the sync token
   if (req.method === "POST" && req.url === "/login") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
     readBodyUtf8(req, 1e5, (body) => {
@@ -2202,7 +2220,7 @@ const server = http.createServer((req, res) => {
   // FORGOT PASSWORD — POST /forgot {username}. ALWAYS 200 (no account enumeration); if the account
   // exists and has an email, mail a one-time reset link. Rate-limited per IP.
   if (req.method === "POST" && req.url === "/forgot") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
     readBodyUtf8(req, 1e4, (body) => {
@@ -2225,7 +2243,7 @@ const server = http.createServer((req, res) => {
 
   // RESET PASSWORD — POST /reset {token,password}. Consumes a one-time token, sets a fresh scrypt hash.
   if (req.method === "POST" && req.url === "/reset") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
     readBodyUtf8(req, 1e4, (body) => {
@@ -2253,7 +2271,7 @@ const server = http.createServer((req, res) => {
   // emails a link. Auth is a PER-USER bearer token (a shared token → 401 relogin); the caller must super-admin
   // or OWN the target org (writerOwnsOrg). New members default to role=crew; only a super-admin may grant owner.
   if (req.method === "POST" && req.url === "/invite") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
     readBodyUtf8(req, 1e5, (body) => {
@@ -2317,7 +2335,7 @@ const server = http.createServer((req, res) => {
   // shows in job crew + payouts + is archivable, but has NO email and CANNOT sign in (random passhash, status
   // "helper"). Same owner-auth as /invite; server-authoritative so it isn't dropped like a client-crafted account.
   if (req.method === "POST" && req.url === "/helper") {
-    const ip = req.socket && req.socket.remoteAddress || "?";
+    const ip = clientIp(req);
     const rc = rateCheck(ip);
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json", "Retry-After": String(rc.retry) }); return res.end('{"error":"too many attempts"}'); }
     readBodyUtf8(req, 1e5, (body) => {
@@ -2493,4 +2511,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

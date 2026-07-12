@@ -9,7 +9,8 @@ const DEFAULT_AVAIL = { days: [false, true, true, true, true, true, false], star
 
 /* active, real team accounts (excludes the roles config record + deactivated/deleted) */
 function schedMembers() {
-  const list = (typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted);
+  const list = (typeof activeOrgMembers === "function") ? activeOrgMembers()   // scoped to the ACTIVE org (S9)
+    : ((typeof realAccounts === "function") ? realAccounts() : (S.users || []).filter(u => u && !u.kind && !u.deleted));
   return list.filter(u => u.active !== false);
 }
 function dowOf(ds) { return new Date(ds + "T00:00:00").getDay(); }
