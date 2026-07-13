@@ -93,7 +93,15 @@ const CATALOG = {
     {id:"lt3",cat:"Outdoor Lighting",name:"Permanent lighting — starter (up to 100 ft)",price:2200,unit:"flat"},
     {id:"lt4",cat:"Outdoor Lighting",name:"Holiday lighting (seasonal, quote)",price:0,unit:"quote"},
     {id:"lab1",cat:"Labor",name:"Tech labor (per hour)",price:125,unit:"each"},
-    {id:"lab2",cat:"Labor",name:"Site assessment / consult",price:75,unit:"flat"}
+    {id:"lab2",cat:"Labor",name:"Site assessment / consult",price:75,unit:"flat"},
+    // RENTAL-READY packages — the per-door PM bundle (the research's wedge). Quote-priced (varies by door).
+    {id:"pkg1",cat:"Rental-Ready packages",name:"Rental-Ready — smart lock + guest WiFi + PoE cameras + Starlink (per door)",price:0,unit:"quote"},
+    {id:"pkg2",cat:"Rental-Ready packages",name:"Rental-Ready — smart lock + guest WiFi + PoE cameras (no Starlink, per door)",price:0,unit:"quote"},
+    {id:"pkg3",cat:"Rental-Ready packages",name:"Rental-Ready — smart lock + guest WiFi (starter, per door)",price:0,unit:"quote"},
+    // RMR — monthly "keep-it-running" support plans (~50% margin, the #1 value lever). Bill via the recurring engine.
+    {id:"rmr1",cat:"Support plans (monthly)",name:"Keep-It-Running — Basic · remote monitoring + priority scheduling",price:29,unit:"month"},
+    {id:"rmr2",cat:"Support plans (monthly)",name:"Keep-It-Running — Plus · adds a seasonal on-site check + no callout fee",price:59,unit:"month"},
+    {id:"rmr3",cat:"Support plans (monthly)",name:"Keep-It-Running — Rental (per door) · monitoring + guest-code changes + turnover check",price:39,unit:"month"}
   ]
 };
 const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 207-5985"},
