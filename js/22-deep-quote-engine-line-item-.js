@@ -230,6 +230,22 @@ const DEEP={
   ]]],
   mods:[{k:"height",label:"Height / roof access",t:"sel",tip:"A 2-story or steep roof mount needs more setup and safety time.",opts:[["1","Single story / easy",{}],["2","2-story / steep roof (+20%)",{pct:0.20}]]},M_RUSH,M_AFTERHRS]},
 
+ rental:{label:"Rental-Ready (per door)",min:0,unc:{pct:0.05,reason:"door count and any per-door quirks confirmed on a walk-through"},
+  std:"The property-manager wedge — ONE price per door across a whole portfolio. Pick a package tier, then enter the number of doors (units); every door gets the same kit. Add Starlink per property or extra cameras per door. Attach a Keep-It-Running plan so each door also throws off monthly support revenue.",
+  how:"Pick ONE package tier and enter the door count — the total is that per-door price × the number of doors. Add Starlink per property and any extra cameras. The more doors, the bigger the install AND the bigger the recurring support book.",
+  script:["\"For your whole portfolio I do one price per door — same smart lock, guest wifi and cameras on every unit, installed and supported.\"","\"That's [N] doors at the [tier] package — <b>[the number]</b> installed — and I keep every one of them running for a small monthly plan per door.\""],
+  glossary:[["Per door","One price per rental unit. Ten doors = ten identical kits — fast to install, easy for a PM to budget."],["Package tier","Essential (lock + guest wifi), Standard (adds a PoE camera), or Premium (adds a 2nd camera + video doorbell)."],["Keep-It-Running","The monthly support plan that keeps every door's lock/wifi/cameras online — the recurring revenue behind the install."]],
+  groups:[["Per-door package — enter the number of doors",[
+   {k:"ess",label:"Essential — smart lock + guest WiFi",kind:"count",rate:599,unit:"door",in:"num",hint:"lock + mesh wifi at the door"},
+   {k:"std",label:"Standard — lock + WiFi + 1 PoE camera",kind:"count",rate:999,unit:"door",in:"num",hint:"adds a wired camera + recorder share"},
+   {k:"prem",label:"Premium — lock + WiFi + 2 cameras + doorbell",kind:"count",rate:1599,unit:"door",in:"num",hint:"full front-and-back coverage"}
+  ]],["Add-ons",[
+   {k:"star",label:"Starlink install (per property)",kind:"count",rate:349,unit:"property"},
+   {k:"cam",label:"Extra PoE camera (per door)",kind:"count",rate:300,unit:"each",in:"num"},
+   {k:"code",label:"Guest / PMS code setup (per door)",kind:"count",rate:39,unit:"each",in:"num"}
+  ]]],
+  mods:[M_REPEAT,M_RUSH,M_AFTERHRS]},
+
  labor:{label:"Tech labor",min:125,unc:{pct:0.10,reason:"actual hours confirmed as the job is scoped"},
   std:"Hourly for custom or uncatalogued work. Round to the nearest half hour. Add a trip fee for small jobs and pass through materials at cost.",
   how:"Enter tech hours (and helper hours if a second set of hands is needed). Add a trip fee for short visits and any materials cost. Flag rush or after-hours.",
@@ -261,6 +277,7 @@ const DEEP_SRC={
  camera:"PoE camera/NVR + cabling benchmarking (vendor pricing + Market tab, 2026).",
  network:"UniFi networking install benchmarking (vendor pricing + Market tab, 2026).",
  starlink:"Starlink install/mount benchmarking (Starlink + installer pricing, 2026).",
+ rental:"Per-door package pricing built from the component rates (lock + networking + camera) — edit any tier in the rate editor.",
  labor:"Low-voltage tech labor rate benchmarking (regional shop rates, 2026)."
 };
 // Editable-rate overlay: getDeepCfg merges the researched DEEP defaults with the operator's saved tweaks (doc id "deepover").
