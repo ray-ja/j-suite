@@ -1,6 +1,6 @@
 /* ---------- GUIDED QUOTE WIZARD ---------- */
 let WZON=false,WZ=null;
-const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["paver","🧱 Paver patio / pad"],["frenchdrain","💧 French drain"],["custom","✏️ Custom line"]],
+const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["paver","🧱 Paver patio / pad"],["frenchdrain","💧 French drain"],["steppath","🪨 Stepping-stone path"],["custom","✏️ Custom line"]],
   jam:[["rental","🏠 Rental-Ready (per door)"],["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]]};
 const WZ_FIELDS={
  softwash:[{k:"qty",t:"num",label:"Wall area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"],["3","3 stories"]]},{k:"heavy",t:"chk",label:"Heavy algae / soiling"}],
@@ -41,6 +41,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
     if(q.pv){WZ.pv=JSON.parse(JSON.stringify(q.pv));WZ._pvFromSave=true;}else{WZ._pvFromSave=false;}   // builder inputs for change-order editing
     if(q.fd){WZ.fd=JSON.parse(JSON.stringify(q.fd));WZ._fdFromSave=true;}else{WZ._fdFromSave=false;}   // french-drain builder inputs (change-order editing)
+    if(q.sp){WZ.sp=JSON.parse(JSON.stringify(q.sp));WZ._spFromSave=true;}else{WZ._spFromSave=false;}   // stepping-stone-path builder inputs (change-order editing)
     WZ.step="review";
   } else {
     if(preset)WZ.items=JSON.parse(JSON.stringify(preset));
@@ -117,7 +118,7 @@ function wizPick(){const list=WZ_SVC[S.biz];
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
     <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
-window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="frenchdrain"){openFrenchDrainEst();return;}if(k==="parking"){WZON=false;TAB="map";if(typeof render==="function")render();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
+window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="frenchdrain"){openFrenchDrainEst();return;}if(k==="steppath"){openStepPathEst();return;}if(k==="parking"){WZON=false;TAB="map";if(typeof render==="function")render();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 /* CHANGE SERVICE TYPE — from the review of an existing quote, clear the line item(s) and go back to the service
    picker to rebuild it as a real service (French drain, paver, junk…). Keeps the customer + quote id; receipts live
@@ -132,6 +133,7 @@ function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="junk")return wizJunkUI();
   if(k==="paver")return wizPaverUI();
   if(k==="frenchdrain")return wizFrenchDrainUI();
+  if(k==="steppath")return wizStepPathUI();
   if(k==="shrubrem")return wizBrushUI();
   if(DEEP[k])return wizDeepUI(k);
   const hint=(r&&r.hint)?`<p class="muted" style="margin-bottom:8px">${esc(r.hint)}</p>`:"";
@@ -195,7 +197,7 @@ window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(
 
 /* ---- the single editable review/edit screen ---- */
 /* infer a market-band key from the line-item name — fallback for legacy quotes saved before bandKey was persisted */
-function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/french ?drain|trench drain/.test(name))return "frenchdrain"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
+function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/stepping.?stone|stepping stone|stone path|rock path/.test(name))return "steppath"; if(/french ?drain|trench drain/.test(name))return "frenchdrain"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
 /* MARKET-VALUE band (paver): a multi-colored gradient = the NATIONAL market (red below → green good →
    yellow high → orange above); the OBX premium range is the outlined region between its two markers;
    ▲ = your price, ▼ = the price that clears Ray's $45/hr. The look Ray liked, with the market data. */
@@ -301,6 +303,8 @@ function wizReview(){
     h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizPaverEdit()">← Edit the paver build — size · materials · crew · pickup (change order)</button>`;
   if(editing && WZ.items[0] && (WZ.items[0].bandKey==="frenchdrain" || (typeof guessBandKey==="function" && guessBandKey(WZ.items[0].name)==="frenchdrain")) && typeof wizFrenchDrainEdit==="function")
     h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizFrenchDrainEdit()">← Edit the French drain build — trench · materials · spoil · crew (change order)</button>`;
+  if(editing && WZ.items[0] && (WZ.items[0].bandKey==="steppath" || (typeof guessBandKey==="function" && guessBandKey(WZ.items[0].name)==="steppath")) && typeof wizStepPathEdit==="function")
+    h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizStepPathEdit()">← Edit the stepping-stone path — path · stones · materials · crew (change order)</button>`;
   // CHANGE SERVICE TYPE — rebuild a quote as a different service (e.g. a custom/placeholder quote → a real French
   // drain / paver / junk build). Replaces the line items only; the customer, the quote, and any attached receipts
   // (which live on the JOB, not the quote line) all stay put.
@@ -445,6 +449,7 @@ window.wizPersist=function(){
     items:WZ.items.map(it=>({serviceId:it.serviceId||"",name:it.name||"",unit:it.unit||"quote",price:+it.price||0,qty:it.qty||1,cost:+it.cost||0,notes:(it.notes&&it.notes.length?it.notes:undefined),breakdown:it.breakdown,bandKey:it.bandKey||undefined,mkt:it.mkt||undefined,_flat:it._flat||undefined,_pickup:it._pickup||undefined,estHours:it._pickup?(+it.estHours||0):undefined,estCrew:it._pickup?(+it.estCrew||2):undefined})),
     pv:(WZ.pv&&WZ.items[0]&&(WZ.items[0].bandKey==="paver"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="paver")))?JSON.parse(JSON.stringify(WZ.pv)):undefined,
     fd:(WZ.fd&&WZ.items[0]&&(WZ.items[0].bandKey==="frenchdrain"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="frenchdrain")))?JSON.parse(JSON.stringify(WZ.fd)):undefined,
+    sp:(WZ.sp&&WZ.items[0]&&(WZ.items[0].bandKey==="steppath"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="steppath")))?JSON.parse(JSON.stringify(WZ.sp)):undefined,
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),estDays:Math.max(1,+WZ.days||1),disposalTrip:!!WZ.disposalTrip,total:total,
     cost:itemsCost(WZ.items)+mileageCost(WZ.miles)+wizExtraDaysCost(),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",taxable:!!WZ.taxable,hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
