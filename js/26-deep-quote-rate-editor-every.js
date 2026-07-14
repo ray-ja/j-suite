@@ -194,9 +194,16 @@ async function syncRun(mode){
   const seq=_editSeq;_syncInflight=true;setSyncState("syncing");
   const _pushState={users:S.users,registry:S.registry||[]};(typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(id=>{_pushState[id]=S[id];});   // push EVERY org slab (obx, jam, + any created org), not just obx/jam
   const sentSig=JSON.stringify(_pushState);
+  // WATCHDOG: a hung request (Cloudflare holding the connection, a stalled mobile/Firefox network) would otherwise
+  // leave _syncInflight=true and the badge stuck on "⟳ Syncing…" FOREVER — no error, no recovery. Abort after 20s so
+  // it falls into the catch → "offline" + exponential retry, exactly like any other network failure. (The version
+  // checker in js/83 already does this; the sync fetch was the one request with no timeout.)
+  var _syncAC=null,_syncTO=null;
+  try{if(typeof AbortController!=="undefined"){_syncAC=new AbortController();_syncTO=setTimeout(function(){try{_syncAC.abort();}catch(e){}},20000);}}catch(e){}
   try{
-    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},
+    const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},signal:_syncAC?_syncAC.signal:undefined,
       body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),state:_pushState})});
+    if(_syncTO){clearTimeout(_syncTO);_syncTO=null;}
     if(res.status===401){window.AUTH_401=true;S.sync.token="";save();_syncInflight=false;setSyncState("offline");syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
     const data=await res.json();
@@ -233,7 +240,7 @@ async function syncRun(mode){
     // gated, debounced, never-throws, no-op at 0 unread (js/88 capRcptSweep). Fire-and-forget.
     if(typeof capRcptSweep==="function"){try{capRcptSweep();}catch(e){}}
     if(changed||_recurCh)safeRender();
-  }catch(e){_syncInflight=false;setSyncState("offline");syMsg("Offline — changes saved, will sync.");scheduleRetry();}
+  }catch(e){if(_syncTO){clearTimeout(_syncTO);_syncTO=null;}_syncInflight=false;setSyncState("offline");syMsg("Offline — changes saved, will sync.");scheduleRetry();}
 }
 window.syncRun=syncRun;
 /* re-render without blowing away an open modal or the wizard mid-edit */

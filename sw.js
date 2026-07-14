@@ -12,6 +12,7 @@ self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE)
       .then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {}))))   // tolerant: one 404 won't fail install
+      .catch(() => {})   // caches.open itself can REJECT when the browser denies storage (Firefox ETP/private/corrupt site data). Don't fail the whole install — the app still runs network-only; failing install just spams a scary console error and blocks the SW.
       .then(() => self.skipWaiting())
   );
 });
