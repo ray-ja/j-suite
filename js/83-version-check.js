@@ -76,7 +76,7 @@
     document.body.appendChild(b);
   }
 
-  function check() {
+  function check(allowAuto) {
     if (reloading) return;
     var now = Date.now();
     if (now - lastCheck < 4000) return;   // collapse focus+visibility firing together
@@ -96,17 +96,20 @@
       .then(function (data) {
         if (!data || !data.build) return;                 // bad/missing response → ignore
         if (String(data.build) === String(MINE)) return;  // same build → nothing to do
-        /* a newer deploy is live */
-        if (safeToAutoReload()) doReload();
+        /* a newer deploy is live. Only the initial ON-LOAD check may auto-reload (self-heals a stale-cache load
+           BEFORE any work). Every later trigger — focus / visibility / the interval — is BANNER-ONLY, so a deploy
+           mid-session never yanks the page out from under someone who's typing/uploading. (Repeated deploys during
+           a work session were re-arming the reload even between field taps; banner-only removes that entirely.) */
+        if (allowAuto && safeToAutoReload()) doReload();
         else banner();
       })
       .catch(function () { /* offline / aborted / network blip → silently do nothing */ });
   }
 
   if (typeof window !== "undefined") {
-    window.addEventListener("focus", check);
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
-    setInterval(check, INTERVAL);
-    setTimeout(check, 2500);   // ON LOAD: if a stale page was served from cache (its __BUILD lags prod), self-heal immediately — the key fix for a resumed PWA that never re-navigates
+    window.addEventListener("focus", function () { check(false); });                                  // banner-only
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) check(false); }); // banner-only
+    setInterval(function () { check(false); }, INTERVAL);                                               // banner-only
+    setTimeout(function () { check(true); }, 2500);   // ON LOAD ONLY: may auto-reload to self-heal a stale-cache load (before any work); every later check is banner-only
   }
 })();
