@@ -119,6 +119,15 @@ function wizPick(){const list=WZ_SVC[S.biz];
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
 window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="frenchdrain"){openFrenchDrainEst();return;}if(k==="parking"){WZON=false;TAB="map";if(typeof render==="function")render();return;}WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
+/* CHANGE SERVICE TYPE — from the review of an existing quote, clear the line item(s) and go back to the service
+   picker to rebuild it as a real service (French drain, paver, junk…). Keeps the customer + quote id; receipts live
+   on the JOB, not the quote line, so they're untouched. */
+window.wizChangeServiceType=function(){
+  if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;
+  if(WZ.items&&WZ.items.length&&!confirm("Rebuild this quote as a different service?\n\nThe current line item(s) will be cleared and you'll pick a new service to build. The customer, the quote, and any attached receipts all stay (receipts live on the job, not the quote line)."))return;
+  WZ.items=[];WZ.svc=null;WZ.inp={};WZ.deep={};WZ.deepMods={};WZ.deepSearch="";WZ.disc=0;WZ.discPct=null;
+  WZ.step="pick";wizAutosave();render();
+};
 function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="junk")return wizJunkUI();
   if(k==="paver")return wizPaverUI();
@@ -292,6 +301,11 @@ function wizReview(){
     h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizPaverEdit()">← Edit the paver build — size · materials · crew · pickup (change order)</button>`;
   if(editing && WZ.items[0] && (WZ.items[0].bandKey==="frenchdrain" || (typeof guessBandKey==="function" && guessBandKey(WZ.items[0].name)==="frenchdrain")) && typeof wizFrenchDrainEdit==="function")
     h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizFrenchDrainEdit()">← Edit the French drain build — trench · materials · spoil · crew (change order)</button>`;
+  // CHANGE SERVICE TYPE — rebuild a quote as a different service (e.g. a custom/placeholder quote → a real French
+  // drain / paver / junk build). Replaces the line items only; the customer, the quote, and any attached receipts
+  // (which live on the JOB, not the quote line) all stay put.
+  if(editing)
+    h+=`<button class="btn ghost" style="width:100%;margin-bottom:8px;text-align:left" onclick="wizChangeServiceType()">🔄 Change service type — rebuild as French drain, paver, junk…</button>`;
   // customer mini-form (full single flow — no bounce required)
   h+=`<div class="card"><label style="margin-top:0">Customer / name</label>
     <input id="r_name" value="${esc(WZ.cust.name||"")}" placeholder="Customer or property name" onchange="WZ.cust.name=this.value;wizAutosave()">
