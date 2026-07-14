@@ -23,6 +23,7 @@
     try {
       var ae = document.activeElement;
       if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable)) return false;
+      if (typeof WZON !== "undefined" && WZON) return false;                    // the QUOTE WIZARD is open — a reload nukes the whole in-progress quote (even between field taps). Banner instead.
       var ov = document.getElementById("overlay");
       if (ov && ov.classList && ov.classList.contains("show")) return false;   // the app's modal
       if (typeof SYNC_DIRTY !== "undefined" && SYNC_DIRTY) return false;        // unflushed local changes
