@@ -249,12 +249,12 @@ async function landSurveyReadPhoto(photoId) {
     if (esc2 && esc2.suggested) res = esc2; else if (esc2 && (esc2.error === "offline" || (esc2.status === 400 && /not set up/i.test(esc2.error || "")))) res = esc2;
   }
   set("");
-  if (res && res.suggested) { const added = landStampSuggestion(photoId, res.suggested); if (!added) _landSkip[photoId] = 1; if (typeof render === "function") render(); return added > 0; }
-  if (res && res.status === 400 && /not set up/i.test(res.error || "")) { alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then read again."); return false; }
-  if (res && res.error === "offline") { return false; }
+  if (res && res.suggested) { const added = landStampSuggestion(photoId, res.suggested); if (!added) _landSkip[photoId] = 1; if (typeof render === "function") render(); return { added: added > 0, error: null }; }
+  if (res && res.status === 400 && /not set up/i.test(res.error || "")) { alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then read again."); return { added: false, error: "nokey", fatal: true }; }
+  if (res && res.error === "offline") { return { added: false, error: "offline" }; }
   _landSkip[photoId] = 1;   // unreadable this session — don't churn
   if (typeof render === "function") render();
-  return false;
+  return { added: false, error: (res && res.error) || "unreadable" };   // surface WHY (was silently swallowed — a 502 from an oversize image looked like "nothing happened")
 }
 
 /* DRAIN every still-unread photo, strictly ONE AT A TIME (mirror capRcptRun). Owner/admin + key gated. */
@@ -270,20 +270,30 @@ window.landSurveyReadAll = async function (opts) {
   if (!pending.length) { if (!opts.auto) alert("No un-read photos left for Cap."); return; }
   _landReadBusy = true;
   const set = (t) => { const el = document.getElementById("land_status"); if (el) el.textContent = t || ""; };
-  let done = 0, added = 0;
+  let done = 0, added = 0, errN = 0, lastErr = "";
   while (true) {
     pending = landUnreadPhotos(landCurrent());
     if (!pending.length || done >= 60) break;
     const pid = pending[0];
     set("🤖 Cap is reading photo " + (done + 1) + " of " + (done + pending.length) + "…");
-    if (await landSurveyReadPhoto(pid)) added++;
+    const r = await landSurveyReadPhoto(pid);
+    if (r && r.fatal) break;                                       // no API key — stop the whole drain
+    if (r && r.added) added++;
+    if (r && r.error && r.error !== "offline") { errN++; lastErr = r.error; }
     done++;
-    if (landUnreadPhotos(landCurrent()).length) await new Promise(r => setTimeout(r, 600));   // throttle between reads
+    if (landUnreadPhotos(landCurrent()).length) await new Promise(rs => setTimeout(rs, 600));   // throttle between reads
   }
   set("");
   _landReadBusy = false;
   if (typeof render === "function") render();
-  if (!opts.auto) alert("🤖 Cap read " + done + " photo" + (done === 1 ? "" : "s") + " · found " + added + " plant" + (added === 1 ? "" : "s") + ". Review each below, then assemble the approved ones into a quote.");
+  if (!opts.auto) {
+    if (added === 0 && errN > 0) {
+      const why = /too large|5\s?MB|request failed|502|413|payload/i.test(lastErr) ? "the photos may be too large, or the AI request failed" : ("Cap hit an error — " + lastErr);
+      alert("🤖 Cap couldn't read " + errN + " photo" + (errN === 1 ? "" : "s") + " — " + why + ".\n\nLarge photos are now shrunk automatically on upload; if these were added earlier, re-add them and try again.");
+    } else {
+      alert("🤖 Cap read " + done + " photo" + (done === 1 ? "" : "s") + " · found " + added + " plant" + (added === 1 ? "" : "s") + ". Review each below, then assemble the approved ones into a quote.");
+    }
+  }
 };
 
 /* ============================== PHOTO UPLOAD ============================== */

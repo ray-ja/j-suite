@@ -124,6 +124,35 @@ window.toggleTheme=function(){
    to a no-op, so every existing caller (jsUpload(file)) is byte-for-byte unchanged. We use XMLHttpRequest (not
    fetch) purely to get xhr.upload.onprogress — the request/response contract (same URL/headers/body, resolves the
    id, rejects on error) is identical. */
+/* Downscale big phone photos BEFORE upload. A full-res 8MB image blows past the vision API's ~5MB/image cap (Cap
+   silently fails to read it) AND crawls to upload on jobsite signal (choking sync). Shrink to a 2000px long edge
+   @ JPEG 0.82 — still sharp for plant ID / receipt OCR, but ~0.5MB. IMAGES ONLY; PDFs/CSVs pass through untouched.
+   Any failure (old browser, decode error, non-image) falls back to the ORIGINAL file, so upload never breaks. */
+window.jsDownscaleImage=function(file,maxEdge,quality){
+  maxEdge=maxEdge||2000; quality=quality||0.82;
+  return new Promise(function(resolve){
+    try{
+      if(!file||!/^image\//.test(file.type||"")||/^image\/(gif|svg)/.test(file.type||"")){resolve(file);return;}
+      if(file.size&&file.size<=1200000){resolve(file);return;}   // already small — leave it alone
+      if(typeof document==="undefined"||!document.createElement){resolve(file);return;}
+      var url=URL.createObjectURL(file),img=new Image();
+      img.onload=function(){
+        try{
+          var w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+          if(!w||!h){URL.revokeObjectURL(url);resolve(file);return;}
+          var scale=Math.min(1,maxEdge/Math.max(w,h)),nw=Math.max(1,Math.round(w*scale)),nh=Math.max(1,Math.round(h*scale));
+          var cv=document.createElement("canvas");cv.width=nw;cv.height=nh;
+          cv.getContext("2d").drawImage(img,0,0,nw,nh);
+          URL.revokeObjectURL(url);
+          if(!cv.toBlob){resolve(file);return;}
+          cv.toBlob(function(blob){resolve(blob&&blob.size<file.size?blob:file);},"image/jpeg",quality);
+        }catch(e){try{URL.revokeObjectURL(url);}catch(_e){}resolve(file);}
+      };
+      img.onerror=function(){try{URL.revokeObjectURL(url);}catch(_e){}resolve(file);};
+      img.src=url;
+    }catch(e){resolve(file);}
+  });
+};
 window.jsUpload=function(file,onProgress){
   onProgress=(typeof onProgress==="function")?onProgress:function(){};
   return new Promise(function(resolve,reject){
@@ -147,7 +176,7 @@ window.jsUpload=function(file,onProgress){
       }catch(_e){reject(new Error("upload failed"));}
     };
     fr.onerror=function(){reject(new Error("couldn't read the file"));};
-    fr.readAsDataURL(file);
+    window.jsDownscaleImage(file).then(function(src){fr.readAsDataURL(src||file);});   // shrink big photos first (images only; others pass through)
   });
 };
 window.jsUploadUrl=function(id){if(!id)return"";const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,"");return base+"/uploads/"+encodeURIComponent(id);};
