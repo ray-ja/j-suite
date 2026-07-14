@@ -87,6 +87,93 @@ function landAssembleItems(items) {
   return out;
 }
 
+/* ====================== RECURRING MAINTENANCE PLAN (Phase 2) ======================
+   Spin the survey's APPROVED + recurring-flagged tasks into ONE bundled recurringPlans record on js/102's engine.
+   MVP: a single plan per survey/property with a single frequency (no per-cadence splitting). The record is built
+   via js/103's PURE builder recurPlanFromFields() so it is byte-identical in shape to a hand-created plan (same id
+   scheme, defaults, nextDue computation, autoQuote default). Independent of the Phase-1 one-time quote — a survey
+   can produce BOTH. recurMaterialize() (js/102) auto-generates the visit jobs/quotes on its normal schedule. */
+
+/* the approved, recurring-flagged tasks on a survey */
+function landRecurItems(sv) { return ((sv && sv.items) || []).filter(function (it) { return it && it.status === "approved" && it.recurring === true; }); }
+
+/* a human label for the plan title: customer name → property label/address → survey address/title */
+function landPropLabel(sv) {
+  try {
+    var d = D();
+    var c = (d.customers || []).find(function (x) { return x && sv && x.id === sv.customerId; });
+    if (c && (c.name || c.company)) return c.name || c.company;
+    var p = (d.properties || []).find(function (x) { return x && sv && x.id === sv.propertyId; });
+    if (p && (p.label || p.address)) return p.label || p.address;
+    return (sv && (sv.address || sv.title)) || "property";
+  } catch (e) { return "property"; }
+}
+
+/* the maintenance-plan picker state (survives re-render; the survey view is rebuilt fresh each render()) */
+var _landRecur = null;
+function landRecurState() {
+  if (!_landRecur) {
+    var t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+    _landRecur = { freq: "monthly", start: (typeof recurAddDays === "function") ? recurAddDays(t, 7) : t, seasonStart: "06-01", seasonEnd: "08-31" };
+  }
+  return _landRecur;
+}
+window.landRecurFreq = function (v) { landRecurState().freq = v || "monthly"; if (typeof render === "function") render(); };
+window.landRecurStart = function (v) { landRecurState().start = v || ""; };
+window.landRecurSeasonStart = function (v) { landRecurState().seasonStart = v || ""; };
+window.landRecurSeasonEnd = function (v) { landRecurState().seasonEnd = v || ""; };
+
+/* the field object for js/103's recurPlanFromFields — used for BOTH the live readout and the create (so the
+   previewed MRR/per-visit number is exactly what gets saved). price = Σ approved recurring tasks' labor value
+   (GROSS; the engine applies discountPct at display/quote time). autoQuote omitted → builder defaults it ON. */
+function landRecurFields(sv) {
+  var st = landRecurState();
+  var recItems = landRecurItems(sv);
+  var price = 0; recItems.forEach(function (it) { price += Math.max(0, +it.price || 0); });
+  var start = st.start || ((typeof today === "function") ? today() : "");
+  var wd = 0, dom = 1;
+  try { wd = new Date(start + "T00:00:00").getDay(); } catch (e) {}
+  try { dom = +String(start).slice(8, 10) || 1; } catch (e) {}
+  var notes = "Bundled recurring tasks:\n" + recItems.map(function (it) { return "• " + (it.plant || "plant") + " · " + (it.service || "care"); }).join("\n");
+  return {
+    customerId: (sv && sv.customerId) || "", propertyId: (sv && sv.propertyId) || "", serviceId: "",
+    title: "Landscaping maintenance — " + landPropLabel(sv),
+    price: Math.round(price * 100) / 100, discountPct: 20,
+    frequency: st.freq || "monthly", weekday: wd, dayOfMonth: dom,
+    seasonStart: st.seasonStart || "06-01", seasonEnd: st.seasonEnd || "08-31", interval: 1,
+    time: "", estDays: 1, startDate: start, crew: [], endMode: "endless", notes: notes
+    // autoQuote intentionally omitted → recurPlanFromFields defaults it ON (matches js/103's form default)
+  };
+}
+
+/* build ONE bundled recurringPlans record from the survey's recurring tasks and remember it on the survey.
+   Mirrors recurSavePlan's save tail EXACTLY (recurPlanFromFields → recurFirstOccurrence nextDue → touch → push →
+   logChange → save → recurForceMaterialize). Owner/admin gated. Never disturbs the Phase-1 quote. */
+window.landCreateMaintenancePlan = function () {
+  if (typeof canSee === "function" && !canSee("recurring")) { if (typeof alert === "function") alert("Recurring plans are owner/admin only."); return; }
+  var sv = landCurrent(); if (!sv) return;
+  if (sv.recurringPlanId) { if (typeof alert === "function") alert("This survey already has a maintenance plan — manage it on the 🔁 Recurring tab."); return; }
+  var recItems = landRecurItems(sv);
+  if (!recItems.length) { if (typeof alert === "function") alert("Approve at least one recurring seasonal task first (tap ✓ on the ones with a 🔁 tag)."); return; }
+  if (typeof recurPlanFromFields !== "function") { if (typeof alert === "function") alert("The recurring engine isn't loaded."); return; }
+  var d = D(); if (!Array.isArray(d.recurringPlans)) d.recurringPlans = [];
+  var f = landRecurFields(sv);
+  if (!(+f.price > 0)) { if (typeof alert === "function") alert("The recurring tasks have no labor value — set a price on at least one first."); return; }
+  var p = recurPlanFromFields(f, {});                              // REUSE js/103's pure builder → byte-identical record
+  p.nextDue = (typeof recurFirstOccurrence === "function") ? recurFirstOccurrence(p, today()) : (p.startDate || today());
+  if (typeof touch === "function") touch(p);
+  d.recurringPlans.push(p);
+  if (typeof logChange === "function") logChange("create", "recurringPlan", p.id, "Recurring maintenance plan · " + (p.title || landPropLabel(sv)));
+  sv.recurringPlanId = p.id;
+  if (typeof touch === "function") touch(sv);
+  if (typeof save === "function") save();
+  if (typeof recurForceMaterialize === "function") recurForceMaterialize();   // generate the first visits inside the horizon now
+  else if (typeof recurMaterialize === "function") recurMaterialize();
+  if (typeof render === "function") render();
+  var net = Math.round((+p.price || 0) * (1 - (+p.discountPct || 0) / 100));
+  if (typeof alert === "function") alert("✅ Recurring maintenance plan created — " + ((typeof money === "function") ? money(net) : ("$" + net)) + "/visit. Cap will auto-schedule each visit. See the 🔁 Recurring tab.");
+};
+
 /* ============================== SURVEY LIFECYCLE ============================== */
 /* Open the landscaping site survey — called from wizSetSvc("landscape"). Requires WZ (the wizard already has the
    customer). Reuses WZ.surveyId if it still points at a live draft; else creates a fresh survey record from WZ.cust. */
@@ -200,31 +287,45 @@ window.landSurveyReadAll = async function (opts) {
 };
 
 /* ============================== PHOTO UPLOAD ============================== */
-window.landSurveyUpload = function (input) {
-  const file = input && input.files && input.files[0]; if (!file) return;
+/* MULTI-PHOTO upload: the input is `multiple`, so the owner can select a whole batch (or multi-select from the
+   camera roll on mobile) at once. Upload each file SEQUENTIALLY (one at a time keeps memory + the server calm),
+   pushing each returned blob id onto the survey + touch()+save()+render() as it lands so they appear progressively.
+   RESILIENT: a single failed file is counted and skipped — it never aborts the rest. After the batch, one Cap
+   drain (landSurveyReadAll) reads all the newly-unread photos, gated on owner/admin + an org key exactly as before. */
+window.landSurveyUpload = async function (input) {
+  const files = (input && input.files) ? Array.prototype.slice.call(input.files) : [];
+  if (!files.length) return;
   if (_landUpBusy) return;
-  const sv = landCurrent(); if (!sv) { alert("Start a survey first."); return; }
+  if (!landCurrent()) { alert("Start a survey first."); return; }
   if (typeof jsUpload !== "function") { alert("Photo upload needs the server."); return; }
   _landUpBusy = true;
-  if (typeof uploadStatus === "function") uploadStatus("uploading", 0);
-  jsUpload(file, function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct); }).then(function (photoId) {
-    const live = landCurrent(); if (!live) { _landUpBusy = false; return; }
-    if (!Array.isArray(live.photoIds)) live.photoIds = [];
-    live.photoIds.push(photoId); if (typeof touch === "function") touch(live);
-    if (typeof save === "function") save();
-    _landUpBusy = false;
-    if (typeof render === "function") render();
-    // auto-read (owner/admin + key) once the survey record has reached the server (guard passes). Crew / no-key → the
-    // photo just sits until an owner reads it (or they add items by hand via the item modal).
-    let canRead = false;
-    try { canRead = (typeof rcptFinFull === "function" && rcptFinFull()) && (typeof ORG_AI_ST !== "undefined" && ORG_AI_ST && ORG_AI_ST.enabled && ORG_AI_ST.hasKey); } catch (e) { canRead = false; }
-    const after = (typeof uploadTrackSync === "function") ? uploadTrackSync() : Promise.resolve();
-    Promise.resolve(after).then(function () { if (canRead && landCurrent()) landSurveyReadPhoto(photoId); });
-  }).catch(function (e) {
-    _landUpBusy = false;
-    if (typeof uploadStatus === "function") uploadStatus("error", null, (e && e.message) || e);
-    alert("Photo upload failed: " + ((e && e.message) || e));
-  });
+  const total = files.length;
+  let done = 0, failed = 0, added = 0;
+  for (let i = 0; i < files.length; i++) {
+    if (typeof uploadStatus === "function") uploadStatus("uploading", 0);
+    try {
+      const photoId = await jsUpload(files[i], function (pct) { if (typeof uploadStatus === "function") uploadStatus("uploading", pct); });
+      const live = landCurrent(); if (!live) break;                 // survey went away mid-batch → stop
+      if (!Array.isArray(live.photoIds)) live.photoIds = [];
+      live.photoIds.push(photoId); if (typeof touch === "function") touch(live);
+      if (typeof save === "function") save();
+      added++;
+      if (typeof render === "function") render();                   // show each photo as it lands
+    } catch (e) {
+      failed++;                                                      // one bad file never aborts the rest
+      if (typeof uploadStatus === "function") uploadStatus("error", null, (e && e.message) || e);
+    }
+    done++;
+  }
+  if (input) { try { input.value = ""; } catch (e) {} }              // allow re-picking the same files
+  _landUpBusy = false;
+  if (typeof render === "function") render();
+  if (failed) alert(failed + " of " + total + " photo" + (total === 1 ? "" : "s") + " failed to upload — the other " + added + " were added.");
+  // auto-read (owner/admin + key) all the newly-unread photos in ONE drain, once the survey has reached the server.
+  // Crew / no-key → the photos just sit until an owner reads them (or items are added by hand).
+  let canRead = false;
+  try { canRead = (typeof rcptFinFull === "function" && rcptFinFull()) && (typeof ORG_AI_ST !== "undefined" && ORG_AI_ST && ORG_AI_ST.enabled && ORG_AI_ST.hasKey); } catch (e) { canRead = false; }
+  if (canRead && added && landCurrent() && typeof landSurveyReadAll === "function") { try { landSurveyReadAll({ auto: true }); } catch (e) {} }
 };
 
 /* ============================== ITEM ACTIONS ============================== */
@@ -332,8 +433,8 @@ window.wizLandscapeUI = function () {
   h += `<div class="card" style="border-left:5px solid #1a7f37">`;
   h += `<div style="font-weight:800;margin-bottom:4px">📷 Photograph each plant / area</div>`;
   h += `<div class="sub" style="margin-bottom:8px;white-space:normal">Snap each shrub, tree, bed, or lawn area. Cap identifies the plant and drafts how &amp; when to handle it (coastal-NC correct). You review each one before it becomes a quote line.</div>`;
-  h += `<input type="file" id="land_file" accept="image/*" style="display:none" onchange="landSurveyUpload(this)">`;
-  h += `<button class="btn acc" style="width:100%" onclick="document.getElementById('land_file').click()">📷 Add a photo</button>`;
+  h += `<input type="file" id="land_file" accept="image/*" multiple style="display:none" onchange="landSurveyUpload(this)">`;
+  h += `<button class="btn acc" style="width:100%" onclick="document.getElementById('land_file').click()">📷 Add photos</button>`;
   const photos = (sv.photoIds || []);
   if (photos.length) {
     h += `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">` + photos.map(pid => `<img src="${esc(typeof jsUploadUrl === "function" ? jsUploadUrl(pid) : "")}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join("") + `</div>`;
@@ -355,6 +456,35 @@ window.wizLandscapeUI = function () {
     const lowN = items.filter(it => it && it.status !== "rejected" && it.confidence === "low").length;
     h += `<div class="card" style="background:var(--soft)"><div class="row" style="align-items:baseline"><div class="grow"><b>${items.length} detected</b> · ${approvedItems.length} approved${lowN ? ` · <span style="color:var(--danger)">${lowN} low-confidence to check</span>` : ""}</div><div class="nm" style="font-size:18px">${money(approvedTotal)}</div></div></div>`;
     items.forEach(it => { h += landItemRowHTML(it); });
+  }
+
+  // recurring maintenance plan — appears when ≥1 APPROVED task is recurring-flagged (owner/admin only)
+  const recItems = items.filter(it => it && it.status === "approved" && it.recurring === true);
+  const canRecur = (typeof canSee !== "function") || canSee("recurring");
+  if (recItems.length && canRecur) {
+    const st = landRecurState();
+    const pv = (typeof recurPlanFromFields === "function") ? recurPlanFromFields(landRecurFields(sv), {}) : null;
+    const net = pv ? Math.round((+pv.price || 0) * (1 - (+pv.discountPct || 0) / 100)) : 0;
+    const mrr = (pv && typeof recurMonthlyEquiv === "function") ? recurMonthlyEquiv(pv) : 0;
+    h += `<div class="card" style="border-left:5px solid #1a7f37;margin-top:12px">`;
+    h += `<div style="font-weight:800;margin-bottom:2px">🔁 Recurring maintenance plan</div>`;
+    h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Bundle the ${recItems.length} recurring seasonal task${recItems.length === 1 ? "" : "s"} into a standing maintenance plan — Cap auto-schedules each visit. You still keep the one-time quote above.</div>`;
+    h += recItems.map(it => `<div class="sub" style="margin:1px 0">• ${esc(it.plant || "plant")} · ${esc(it.service || "care")}</div>`).join("");
+    if (sv.recurringPlanId) {
+      h += `<div class="card" style="background:var(--soft);margin-top:8px"><b>✅ Plan created.</b> <span class="sub">Manage it on the 🔁 Recurring tab.</span></div>`;
+    } else {
+      const fopts = [["biweekly", "Every 2 weeks"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["seasonal", "Seasonal"]]
+        .map(o => `<option value="${o[0]}" ${st.freq === o[0] ? "selected" : ""}>${o[1]}</option>`).join("");
+      h += `<label style="margin-top:8px">Frequency</label><select onchange="landRecurFreq(this.value)">${fopts}</select>`;
+      if (st.freq === "seasonal") {
+        h += `<div class="row" style="gap:8px"><div class="grow"><label>Season start (MM-DD)</label><input value="${esc(st.seasonStart)}" placeholder="06-01" onchange="landRecurSeasonStart(this.value)"></div>`;
+        h += `<div class="grow"><label>Season end (MM-DD)</label><input value="${esc(st.seasonEnd)}" placeholder="08-31" onchange="landRecurSeasonEnd(this.value)"></div></div>`;
+      }
+      h += `<label>Start date</label><input type="date" value="${esc(st.start)}" onchange="landRecurStart(this.value)">`;
+      h += `<div class="card" style="background:var(--soft);margin-top:8px"><div class="row" style="align-items:baseline"><div class="grow"><b>${money(net)}/visit</b> <span class="sub">(−20% recurring)</span></div>${mrr > 0 ? `<div class="nm" style="font-size:16px">~${money(mrr)}/mo</div>` : ""}</div></div>`;
+      h += `<button class="btn acc" style="width:100%;margin-top:10px" onclick="landCreateMaintenancePlan()">Create maintenance plan</button>`;
+    }
+    h += `</div>`;
   }
 
   // assemble footer
