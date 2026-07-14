@@ -255,6 +255,19 @@ function reviewSummaryHTML(){
     else if(tier===1)h+=`<div class="note" style="margin-top:6px;white-space:normal;border-left-color:#b8860b">🟡 Below your <b>$${TGT}/hr</b>, but clears the <b>$${CF}/hr crew floor</b> — worth it for Chase/Pierce, not your own time. For you to clear $${TGT}/hr, price ~<b>${money(priceFor(TGT))}</b> (now ${money(total)}).</div>`;
     else h+=`<div class="note" style="margin-top:6px;white-space:normal">🔴 Below even the <b>$${CF}/hr crew floor</b> — pass, or price up: ~<b>${money(priceFor(CF))}</b> makes it worth the crew's time, ~${money(priceFor(TGT))} clears your $${TGT}/hr. ${(WZ.disc||0)>0?"Or ease off the discount.":""}</div>`;
   }
+  // OWNER-ONLY internal breakdown: material cost + the labor-payout split (never shown to the customer)
+  if(typeof finCanView!=="function"||finCanView()){
+    const lv=Math.max(0,profit), pool=lv*0.6, fld=lv*0.48, sal=lv*0.09, adm=lv*0.03, tax=lv*0.25, biz=lv*0.15;
+    h+=`<div style="border-top:2px solid var(--line);margin-top:10px;padding-top:8px" title="Owner-only — not on the customer's copy">
+      <div class="sub" style="font-weight:800;letter-spacing:.06em;color:var(--muted)">💰 INTERNAL · YOUR EYES ONLY</div>
+      <div class="row" style="justify-content:space-between;margin-top:3px"><span class="sub">Materials (cost)</span><b>${money(cost)}</b></div>
+      <div class="row" style="justify-content:space-between"><span class="sub">Labor value (revenue − materials)</span><b>${money(lv)}</b></div>
+      <div class="row" style="justify-content:space-between;margin-top:4px;border-top:1px dashed var(--line);padding-top:4px"><span class="sub"><b>Payout pool (60%)</b></span><b>${money(pool)}</b></div>
+      <div class="sub" style="margin-left:6px">· Field 48% → <b>${money(fld)}</b>${crewN>0?` (${money(fld/crewN)}/ea × ${crewN})`:""}</div>
+      <div class="sub" style="margin-left:6px">· Sales 9% → <b>${money(sal)}</b> · Admin 3% → <b>${money(adm)}</b></div>
+      <div class="sub" style="margin-top:3px;color:var(--muted)">Set aside — tax 25%: ${money(tax)} · business fund 15%: ${money(biz)}</div>
+    </div>`;
+  }
   h+=`</div></div>`;
   if(notes.length)h+=`<div class="muted" style="font-size:13px;margin-top:6px"><b>To confirm on site:</b><br>`+notes.map(n=>"• "+esc(n)).join("<br>")+`</div>`;
   return h;
