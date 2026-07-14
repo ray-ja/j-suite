@@ -14,6 +14,11 @@ function rPlaybook(){
   // of the starter facts are still missing. Owner/admin curate like any fact.
   const _taxMissing = (typeof taxSeedMissing === "function") ? taxSeedMissing() : 0;
   if(_taxMissing>0) h+=`<div class="card" style="border-left:4px solid var(--brand)"><div class="nm" style="font-size:14px">🧾 Tax guidance (NC · Dare County)</div><div class="sub" style="white-space:normal;margin:2px 0 8px">Load ${_taxMissing} starter fact${_taxMissing===1?"":"s"} on what's deductible + what NC sales tax applies to your work — grounded, but verify money-significant calls with NCDOR / your accountant.</div><button class="btn acc sm" onclick="pbSeedTax()">🧾 Load NC tax starter guidance</button></div>`;
+  // PLANT STARTER — one-tap load of the coastal-NC / OBX plant playbook (species IDs + how/when to prune-or-remove
+  // each) so Cap's landscaping site-survey (js/113) and any plant-care answer come from ground truth. Insert-if-absent
+  // (your edits stick). The SAME facts are mirrored server-side (LAND_PLAYBOOK) into the survey vision prompt.
+  const _plantMissing = (typeof plantSeedMissing === "function") ? plantSeedMissing() : 0;
+  if(_plantMissing>0) h+=`<div class="card" style="border-left:4px solid #1a7f37"><div class="nm" style="font-size:14px">🌿 Plant playbook (coastal NC · OBX)</div><div class="sub" style="white-space:normal;margin:2px 0 8px">Load ${_plantMissing} starter fact${_plantMissing===1?"":"s"} on the common OBX species — crape myrtle, live oak, wax myrtle, oleander, pampas, palms… — and how/when to prune or remove each in zone 8a. Feeds Cap's landscaping site-survey.</div><button class="btn acc sm" onclick="pbSeedPlants()">🌿 Load OBX plant playbook</button></div>`;
   h+=`<input class="search" id="pb_search" placeholder="Search the playbook…" value="${esc(PB_SEARCH)}" oninput="pbSearch(this.value)">`;
   h+= list.length
     ? `<div class="card">`+list.map(k=>`<div class="li" onclick="pbEdit('${k.id}')"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(k.topic||"(untitled)")}</div><div class="sub" style="white-space:normal">${esc(k.fact||"")}</div>${k.tags?`<div class="sub" style="color:var(--brand-text);white-space:normal">${esc(k.tags)}</div>`:""}</div></div>`).join("")+`</div>`
@@ -68,5 +73,39 @@ window.pbSeedTax=function(){
   if(typeof save==="function")save();
   if(S.sync&&S.sync.url&&S.sync.token&&S.sync.auto&&typeof syncNow==="function")syncNow();
   if(typeof toast==="function")toast(added?("Added "+added+" tax facts to the Playbook"):"Tax facts already loaded"); else alert(added?("Added "+added+" tax facts."):"Already loaded.");
+  if(typeof render==="function")render();
+};
+/* ---------- PLANT PLAYBOOK — coastal NC / OBX starter guidance ----------
+   Species IDs + how/when to prune-or-remove each in zone 8a (salt/wind/sand). Grounds Cap's landscaping site-survey
+   (js/113) AND is mirrored server-side (sync-server.js LAND_PLAYBOOK) into the survey vision prompt so IDs/timing are
+   regionally correct. Loaded on demand (stable plant_* ids), INSERT-IF-ABSENT so re-loading only fills gaps and never
+   clobbers an edit Ray made — same pattern as pbSeedTax. Owner/admin curate like any fact. NOT arborist advice: verify
+   removals against Dare/local tree ordinances + HOA, and flag protected dune grasses. */
+const PLANT_SEED = [
+  { id:"plant_zone", topic:"Plant · OBX growing zone (read first)", tags:"plant, landscape, zone, coastal, salt", fact:"OBX is USDA zone 8a, maritime — sandy fast-draining soil, salt spray, high wind, hot humid summers, mild winters. Favor salt-/wind-tolerant species; expect salt burn on tender growth. This is starter horticulture guidance, not arborist advice — verify removals against Dare/local tree ordinances + the HOA." },
+  { id:"plant_crape_myrtle", topic:"Plant · Crape myrtle (Lagerstroemia)", tags:"plant, prune, crape myrtle, late winter", fact:"Blooms on NEW wood. Prune LATE WINTER (Feb) before spring flush. DO NOT 'crape murder' (top to stubs) — thin to structure, remove crossing/inner twigs. Never hard-prune in fall. Very heat/salt tolerant." },
+  { id:"plant_live_oak", topic:"Plant · Live oak (Quercus virginiana)", tags:"plant, prune, oak, tree, ordinance", fact:"Slow, sprawling, wind-firm — the signature OBX shade tree. Prune only for deadwood/structure in late winter–early spring; avoid heavy cuts. Never remove without checking local tree ordinances. Oak-wilt risk: don't prune Apr–Jun (fresh-wound window)." },
+  { id:"plant_wax_myrtle", topic:"Plant · Wax myrtle / bayberry (Morella cerifera)", tags:"plant, hedge, screen, native, salt", fact:"Fast salt/wind-tolerant native screen. Trim any time; tolerates hard renovation. Great hedge; can get leggy — thin to shape." },
+  { id:"plant_yaupon_holly", topic:"Plant · Yaupon holly (Ilex vomitoria)", tags:"plant, hedge, holly, native, shear", fact:"Salt-tolerant native, common hedge/topiary. Shear spring–summer; berries on female plants. Prune late winter for size." },
+  { id:"plant_oleander", topic:"Plant · Oleander (Nerium oleander) — TOXIC", tags:"plant, oleander, toxic, caution, prune", fact:"Salt/heat tough, blooms on new + old wood; prune after bloom or late winter. CAUTION: ALL PARTS TOXIC — wear gloves/eye pro, bag clippings, never burn or chip near people. Flag it on the estimate." },
+  { id:"plant_pampas_grass", topic:"Plant · Pampas grass (Cortaderia)", tags:"plant, grass, cut back, late winter, caution", fact:"Cut back HARD to ~12in in LATE WINTER (Feb–Mar) before new growth. Wear long sleeves/gloves — blades cut skin. Dispose as green waste. Big clumps = real labor; can require a saw." },
+  { id:"plant_juniper", topic:"Plant · Juniper / red cedar (Juniperus)", tags:"plant, juniper, groundcover, shape", fact:"Salt/drought tolerant groundcover & trees. Do NOT cut into old bare wood — junipers don't regrow from bare wood. Light shaping only." },
+  { id:"plant_muhly_grass", topic:"Plant · Pink muhly / ornamental grasses", tags:"plant, grass, muhly, cut back, late winter", fact:"Cut back to a few inches in late winter before new growth; do NOT cut in fall (crown protection). Easy." },
+  { id:"plant_loropetalum", topic:"Plant · Loropetalum (Chinese fringe)", tags:"plant, prune, old wood, after bloom", fact:"Blooms on OLD wood — prune RIGHT AFTER spring bloom. Salt-moderate; can burn in exposed sites." },
+  { id:"plant_azalea_camellia", topic:"Plant · Azaleas & camellias", tags:"plant, azalea, camellia, prune, old wood", fact:"Bloom on OLD wood. Prune RIGHT AFTER flowering; hard-pruning now removes next year's blooms. Acid-loving; watch salt/wind burn on exposed OBX lots." },
+  { id:"plant_palm", topic:"Plant · Palms (windmill / sabal / pindo)", tags:"plant, palm, frond, prune", fact:"Cold-hardy palms. Remove only fully-brown fronds; do NOT over-prune green fronds ('hurricane cut' harms them). Watch for cold damage in a hard winter." },
+  { id:"plant_turf", topic:"Plant · Coastal turf (centipede / St. Augustine / bermuda)", tags:"plant, turf, lawn, mow, edge", fact:"Usually centipede/St. Augustine/bermuda on sand. Don't scalp; mow high in heat. Weedy sandy lots are common. Edging + bed definition is high-value low-cost curb appeal." },
+  { id:"plant_sea_oats", topic:"Plant · Sea oats / dune grasses (Uniola) — PROTECTED", tags:"plant, sea oats, dune, protected, legal, caution", fact:"Sea oats / dune grasses are PROTECTED on dunes in NC — do NOT cut or remove. Flag hard and refuse if a client asks; it's a legal issue." },
+  { id:"plant_removal_general", topic:"Plant · Tree/shrub removal (rules + safety)", tags:"plant, removal, ordinance, disposal, safety", fact:"Check Dare/local ordinances + the HOA before removing large trees. Haul-off = weight-based disposal (ties to the disposal cost model). Stump grinding is a separate line. Storm-damaged/leaning trees near structures = a safety flag; may need a pro/insurance." }
+];
+function plantSeedMissing(){ try{ const have={}; (D().knowledge||[]).forEach(k=>{ if(k&&!k.deleted)have[k.id]=1; }); return PLANT_SEED.filter(t=>!have[t.id]).length; }catch(e){ return 0; } }
+window.pbSeedPlants=function(){
+  const d=D(); if(!Array.isArray(d.knowledge))d.knowledge=[];
+  let added=0;
+  PLANT_SEED.forEach(t=>{ if(!d.knowledge.find(k=>k&&k.id===t.id)){ const k={ id:t.id, topic:t.topic, fact:t.fact, tags:t.tags, deleted:false, updatedAt:(typeof now==="function"?now():Date.now()) }; d.knowledge.push(k); if(typeof touch==="function")touch(k); added++; } });
+  if(typeof logChange==="function")logChange("create","knowledge","plants","Loaded "+added+" OBX plant playbook facts");
+  if(typeof save==="function")save();
+  if(S.sync&&S.sync.url&&S.sync.token&&S.sync.auto&&typeof syncNow==="function")syncNow();
+  if(typeof toast==="function")toast(added?("Added "+added+" plant facts to the Playbook"):"Plant facts already loaded"); else alert(added?("Added "+added+" plant facts."):"Already loaded.");
   if(typeof render==="function")render();
 };
