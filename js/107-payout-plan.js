@@ -140,7 +140,7 @@ function popAcceptedIncome() {
       date: (job && job.date) || q.acceptedDate || q.date || "",
       crew: (job && Array.isArray(job.crew)) ? job.crew.slice() : [],
       weights: (job && job.crewWeights) || null,
-      originator: (cust && cust.soldBy) || "",
+      originator: (q.noSalesCredit ? "" : (q.originator || (cust && cust.soldBy))) || "",   // per-job sales credit override + exclusion
       bookedAt: q.acceptedDate || q.date || "", houseAccount: false
     };
   });

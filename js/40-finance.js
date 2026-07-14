@@ -52,7 +52,7 @@ window.syncQuoteIncome = function (q) {
       amount: (q.finalPrice || q.total || 0),
       date: q.paidDate || (job && job.date) || q.acceptedDate || q.date || (typeof today === "function" ? today() : ""),
       crew: (job && Array.isArray(job.crew)) ? job.crew.slice() : [],
-      originator: (cust && cust.soldBy) || "",
+      originator: (q.noSalesCredit ? "" : (q.originator || (cust && cust.soldBy))) || "",   // PER-JOB sales credit: q.originator overrides the customer's soldBy; q.noSalesCredit excludes this job entirely
       bookedAt: q.acceptedDate || q.date || "",
       houseAccount: false, deleted: false
     };
@@ -212,7 +212,7 @@ window.openIncome = function (id, jobId) {
   if (isNew && jobId) { const job = d.jobs.find(x => x.id === jobId); if (job) {
     e.jobId = job.id; e.crew = (job.crew || []).slice(); e.date = job.date || today(); e.address = job.address || "";
     if (job.quoteId) { const q = d.quotes.find(x => x.id === job.quoteId); if (q) { e.amount = q.total || 0; e.quoteId = q.id; e.bookedAt = q.date || ""; } }
-    if (job.customerId) { const c = d.customers.find(x => x.id === job.customerId); if (c) { e.originator = c.soldBy || ""; } }
+    if (job.customerId) { const c = d.customers.find(x => x.id === job.customerId); const _q = job.quoteId ? d.quotes.find(x => x.id === job.quoteId) : null; e.originator = (_q && _q.noSalesCredit ? "" : ((_q && _q.originator) || (c && c.soldBy))) || ""; }
   } }
   FININCOME_CREW = new Set(e.crew || []);
   const members = finMembers();

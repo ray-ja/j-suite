@@ -308,4 +308,16 @@ T("S7 csvCell quotes AND prefixes a formula that also has a comma", csvCell("=A1
 })();
 // S5 — finance action handlers are guarded client-side (defense-in-depth) by finCanView.
 T("S5 finPayBill/recordDisbursement/savePayment/openIncome all reference finCanView", [finPayBill,recordDisbursement,savePayment,openIncome].every(fn=>typeof fn==="function" && /finCanView/.test(fn.toString())));
-diag("review-fixes: F1-F7 + security(S7/S8/S9/S5) done");
+// PER-JOB SALES CREDIT — q.originator overrides the customer's soldBy; q.noSalesCredit excludes a job entirely.
+(function(){
+  const dd=D(); dd.customers=dd.customers||[]; dd.quotes=dd.quotes||[]; dd.income=dd.income||[];
+  dd.customers.push({id:"c_sc",name:"SC Cust",soldBy:"u_rj"});
+  const book=q=>{dd.quotes.push(q);syncQuoteIncome(q);return dd.income.find(x=>x.id==="inc_q_"+q.id);};
+  const i1=book({id:"q_sc1",customerId:"c_sc",total:1000,accepted:true,paid:true,paidDate:"2026-07-01"});
+  T("sales credit inherits the customer's soldBy when no per-job override", i1 && i1.originator==="u_rj");
+  const i2=book({id:"q_sc2",customerId:"c_sc",total:500,accepted:true,paid:true,paidDate:"2026-07-01",noSalesCredit:true});
+  T("q.noSalesCredit excludes that job from sales credit (empty originator)", i2 && !i2.originator);
+  const i3=book({id:"q_sc3",customerId:"c_sc",total:800,accepted:true,paid:true,paidDate:"2026-07-01",originator:"u_other"});
+  T("q.originator overrides the customer soldBy for that one job", i3 && i3.originator==="u_other");
+})();
+diag("review-fixes: F1-F7 + security(S7/S8/S9/S5) + per-job-sales-credit done");
