@@ -23,8 +23,8 @@ const STEPPATH_MIN_PER_SQFT  = 2.5;  // + base prep & rock spreading per sq ft o
 /* Materials — each priced off a GEOMETRY basis (a field on spGeo). lbs = pounds PER basis unit. def = who provides. */
 const STEPPATH_MATS = [
   { key:"pavers", label:"Stepping-stone pavers",      unit:"each", cost:8.00,  lbs:90,   basis:"stoneCount", def:"us" },   // ~$8/stone; 24×24 concrete ≈ 90 lb each (pickup weight)
-  { key:"marble", label:"Marble rock (joints + border)", unit:"ton", cost:90.00, lbs:2000, basis:"marbleTon",  def:"us" },   // decorative marble, ~$90/ton at the yard (editable)
-  { key:"base",   label:"Base rock (crushed)",        unit:"ton",  cost:50.00, lbs:2000, basis:"baseTon",    def:"us" },   // compacted base, ~$50/ton
+  { key:"marble", label:"Marble rock (joints + border)", unit:"ton", cost:90.00, lbs:2000, basis:"marbleTon",  cf:"marbleCF", bag:true, def:"us" },   // decorative marble, ~$90/ton at the yard (editable); baggable for small jobs
+  { key:"base",   label:"Base rock (crushed)",        unit:"ton",  cost:50.00, lbs:2000, basis:"baseTon",    cf:"baseCF",   bag:true, def:"us" },   // compacted base, ~$50/ton; baggable
   { key:"fabric", label:"Underlayment fabric",        unit:"sqft", cost:0.20,  lbs:0.05, basis:"fabricSqft", def:"us" }    // weed/moisture barrier, ~$0.20/sq ft
 ];
 
@@ -40,7 +40,9 @@ function spGeo(sp){
   const stoneW  = Math.max(1, +sp.stoneW || 24);      // paver width  (in)
   const gap     = Math.max(0, +sp.gap || 0);          // marble gap between stones (in)
   const borderW = Math.max(0, +sp.borderW || 0);      // marble border width per side (in)
-  const rockDepth = Math.max(0, +sp.rockDepth || 0);  // marble depth in joints + border (in)
+  const rockDepth = Math.max(0, +sp.rockDepth || 0);  // legacy single marble depth (fallback for old quotes)
+  const jointDepth = Math.max(0, +(sp.jointDepth ?? sp.rockDepth ?? 2));   // marble depth in the joints (in)
+  const borderDepth = Math.max(0, +(sp.borderDepth ?? sp.rockDepth ?? 2)); // marble depth on the side borders (in)
   const baseDepth = Math.max(0, +sp.baseDepth || 0);  // compacted base depth (in)
   const baseUnder = sp.baseUnder === "stones" ? "stones" : "full";
   const density = +sp.density > 0 ? +sp.density : STEPPATH_DENSITY_DEF;
@@ -53,14 +55,18 @@ function spGeo(sp){
   const jointArea = Math.max(0, pathArea - stoneCoverSqft);
   const borderArea = 2 * (borderW/12) * runFt;
   const marbleArea = jointArea + borderArea;
-  const marbleTon = (marbleArea * (rockDepth/12) / 27) * density * (settle ? 1 + STEPPATH_SETTLE : 1);
+  const settleFactor = settle ? 1 + STEPPATH_SETTLE : 1;
+  // marble volume, joints + borders at their own depths (settle factor folded in so a bag count buys the overage too)
+  const marbleCF = (jointArea * (jointDepth/12) + borderArea * (borderDepth/12)) * settleFactor;
+  const marbleTon = (marbleCF / 27) * density;
   const baseArea = (baseUnder === "full") ? (pathArea + borderArea) : stoneCoverSqft;
-  const baseTon  = (baseArea * (baseDepth/12) / 27) * density;
+  const baseCF   = baseArea * (baseDepth/12);
+  const baseTon  = (baseCF / 27) * density;
   const fabricSqft = pathArea + borderArea;
   const spoilCY  = (baseArea * (baseDepth/12)) / 27;   // the dig for the base
   const spoilTon = spoilCY * DIRT;
   return { runFt, widthFt, pathArea, stonesLen, stoneCount, stonesAcross, stoneCoverSqft, jointArea, borderArea,
-    marbleArea, marbleTon, baseArea, baseTon, fabricSqft, spoilCY, spoilTon, density };
+    marbleArea, marbleCF, marbleTon, jointDepth, borderDepth, baseArea, baseCF, baseTon, fabricSqft, spoilCY, spoilTon, density };
 }
 
 /* ---- material helpers (parameterized by the sp state so they're node-testable) ---- */
@@ -69,6 +75,19 @@ function spMats(sp){ return (sp && sp.mats) || {}; }
 function spWeProvide(sp,key){ const v=spMats(sp)[key]; const m=STEPPATH_MATS.find(x=>x.key===key); return (v!=null?v:(m?m.def:"us")) === "us"; }
 function spMatCost(sp,key){ const o=(sp&&sp.matCosts)||{}; if(o[key]!=null) return o[key]; const m=STEPPATH_MATS.find(x=>x.key===key); return m?m.cost:0; }
 function spMatQty(m, geo){ return +geo[m.basis] || 0; }
+/* rock materials can be bought bulk (tonnage × $/ton) or in bags (ceil(volCF/bagSize) × $/bag) — small jobs bag better */
+function spMatSource(sp,key){ const o=(sp&&sp.matSource)||{}; return o[key]==="bags" ? "bags" : "bulk"; }
+function spBagSize(sp,key){ const o=(sp&&sp.bagSize)||{}; return o[key]>0 ? +o[key] : 0.5; }        // cu ft per bag
+function spBagPrice(sp,key){ const o=(sp&&sp.bagPrice)||{}; if(o[key]!=null) return +o[key]; return 8.00; }  // $ per bag
+/* the material's dollar cost by its chosen source — used in spCalc AND every per-material display so the two never diverge */
+function spMatLineCost(sp, key, geo){
+  const m = STEPPATH_MATS.find(x=>x.key===key); if(!m) return 0;
+  if (m.bag && spMatSource(sp,key)==="bags"){
+    const volCF = +geo[m.cf] || 0;
+    return Math.max(0, Math.ceil(volCF / spBagSize(sp,key))) * spBagPrice(sp,key);
+  }
+  return Math.round(spMatQty(m,geo) * spMatCost(sp,key));
+}
 
 /* pickup = its own weight-driven run (mirrors fdPickup). Reuses the paver constants + drive helpers. */
 function spPickup(geo, sp){
@@ -128,7 +147,7 @@ function spCalc(sp){
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
   const cplx = Math.max(1, sp.complexity || 1);   // 1 straight path · 1.25 curves/tie-ins · 1.5 hard access
   const laborPrice = Math.round(run*lft*cplx/25)*25;
-  const matCost = STEPPATH_MATS.reduce((s,m)=> s + (spWeProvide(sp,m.key) ? Math.round(spMatQty(m,geo)*spMatCost(sp,m.key)) : 0), 0);
+  const matCost = STEPPATH_MATS.reduce((s,m)=> s + (spWeProvide(sp,m.key) ? spMatLineCost(sp,m.key,geo) : 0), 0);
   const haul = sp.haulSpoil !== false;
   const spoilRate = sp.spoilType==="cd" ? CD : FILL;
   const spoilCost  = haul ? Math.round(geo.spoilTon*spoilRate) : 0;
@@ -181,8 +200,9 @@ function spPickupItem(pk){
 }
 
 function spDefaults(){
-  return { runFt:20, widthFt:3, stoneL:24, stoneW:24, gap:3, borderW:4, rockDepth:2, baseDepth:4, baseUnder:"full",
+  return { runFt:20, widthFt:3, stoneL:24, stoneW:24, gap:3, borderW:4, rockDepth:2, jointDepth:2, borderDepth:2, baseDepth:4, baseUnder:"full",
     density:STEPPATH_DENSITY_DEF, settle:true, stonesAcross:1, lft:STEPPATH_LABOR_DEF, crew:2, complexity:1, mats:{}, matCosts:{},
+    matSource:{}, bagSize:{}, bagPrice:{},
     haulSpoil:true, spoilType:"fill", pickupAddr:"", pickupLat:null, pickupLng:null,
     pickupRate:(typeof PAVER_PICKUP_RATE_DEF!=="undefined"?PAVER_PICKUP_RATE_DEF:30), pickupCrew:2, pickupMiles:0 };
 }
@@ -268,7 +288,9 @@ function wizStepPathUI(){
     <div class="grow"><label style="margin-top:0">Marble gap (in)</label><input type="number" inputmode="decimal" value="${sp.gap}" min="0" onchange="wizSpField('gap',this.value)"></div>
     <div class="grow"><label style="margin-top:0">Marble border / side (in)</label><input type="number" inputmode="decimal" value="${sp.borderW}" min="0" onchange="wizSpField('borderW',this.value)"></div></div>
     <div class="row" style="gap:8px;margin-top:6px">
-    <div class="grow"><label style="margin-top:0">Marble depth (in)</label><input type="number" inputmode="decimal" value="${sp.rockDepth}" min="0" onchange="wizSpField('rockDepth',this.value)"></div>
+    <div class="grow"><label style="margin-top:0">Marble depth · joints (in)</label><input type="number" inputmode="decimal" value="${geo.jointDepth}" min="0" onchange="wizSpField('jointDepth',this.value)"></div>
+    <div class="grow"><label style="margin-top:0">Marble depth · sides (in)</label><input type="number" inputmode="decimal" value="${geo.borderDepth}" min="0" onchange="wizSpField('borderDepth',this.value)"></div></div>
+    <div class="row" style="gap:8px;margin-top:6px">
     <div class="grow"><label style="margin-top:0">Base depth (in)</label><input type="number" inputmode="decimal" value="${sp.baseDepth}" min="0" onchange="wizSpField('baseDepth',this.value)"></div>
     <div class="grow"><label style="margin-top:0">Stones across</label><input type="number" inputmode="numeric" value="${sp.stonesAcross}" min="1" step="1" onchange="wizSpField('stonesAcross',this.value)"></div></div>
     <div class="row" style="gap:6px;margin-top:8px"><button class="btn ${sp.baseUnder!=='stones'?'acc':'ghost'} sm" style="flex:1 1 0;font-size:11.5px" onclick="wizSpBaseUnder('full')">Base under whole path</button><button class="btn ${sp.baseUnder==='stones'?'acc':'ghost'} sm" style="flex:1 1 0;font-size:11.5px" onclick="wizSpBaseUnder('stones')">Base under stones only</button></div>
@@ -280,7 +302,24 @@ function wizStepPathUI(){
   h += `<div class="card" style="padding:10px"><div class="grow" style="margin-bottom:6px"><b>Ground / access</b> <span class="sub">curves, tie-ins &amp; tight access = more layout + labor</span></div><div class="row" style="gap:6px">${spCplxBtns(c.complexity)}</div>${c.complexity>1?`<div class="sub" style="margin-top:6px;color:#b8860b">+${Math.round((c.complexity-1)*100)}% on labor time &amp; price.</div>`:""}</div>`;
   // materials
   h += `<div class="card"><div style="font-weight:800;margin-bottom:6px">🪨 Materials — who provides each? <span class="sub" style="font-weight:400">we = pass-through at cost</span></div>`;
-  h += STEPPATH_MATS.map(m=>{ const we = spWeProvide(sp,m.key), cost = spMatCost(sp,m.key), qty = spMatQty(m,geo), u = m.unit==="ton"?"ton":m.unit==="each"?"ea":"sq ft"; const step = m.unit==="sqft"?"0.05":m.unit==="ton"?"5":"0.5"; return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${we?`$<input type="number" inputmode="decimal" value="${cost}" step="${step}" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizSpMatCost('${m.key}',this.value)">/${u} <span class="sub">≈ ${Math.round(qty*100)/100} ${u} = ${money(Math.round(qty*cost))}</span>`:`<span class="sub">customer provides</span>`}</div>${[["us","We get it"],["them","They provide"]].map(o=>`<button class="btn ${spMats(sp)[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizSpMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`; }).join("");
+  h += STEPPATH_MATS.map(m=>{
+    const we = spWeProvide(sp,m.key), u = m.unit==="ton"?"ton":m.unit==="each"?"ea":"sq ft"; const step = m.unit==="sqft"?"0.05":m.unit==="ton"?"5":"0.5";
+    let inner;
+    if (!we) { inner = `<span class="sub">customer provides</span>`; }
+    else {
+      const cost = spMatCost(sp,m.key), qty = spMatQty(m,geo);
+      const bulkInput = `$<input type="number" inputmode="decimal" value="${cost}" step="${step}" min="0" style="width:58px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizSpMatCost('${m.key}',this.value)">/${u} <span class="sub">≈ ${Math.round(qty*100)/100} ${u} = ${money(spMatLineCost(sp,m.key,geo))}</span>`;
+      if (m.bag) {
+        const src = spMatSource(sp,m.key);
+        const toggle = `<div class="row" style="gap:4px;margin:3px 0">${[["bulk","Bulk"],["bags","Bags"]].map(o=>`<button class="btn ${src===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto;padding:2px 10px;font-size:11.5px" onclick="wizSpMatSource('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`;
+        if (src==="bags") {
+          const bs = spBagSize(sp,m.key), bp = spBagPrice(sp,m.key), volCF = +geo[m.cf] || 0, bags = Math.max(0, Math.ceil(volCF/bs));
+          inner = toggle + `<span class="sub">bag </span><input type="number" inputmode="decimal" value="${bs}" step="0.05" min="0.05" style="width:52px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizSpBagSize('${m.key}',this.value)"><span class="sub"> cu ft · $</span><input type="number" inputmode="decimal" value="${bp}" step="0.5" min="0" style="width:52px;display:inline-block;padding:2px 5px;font-size:13px" onchange="wizSpBagPrice('${m.key}',this.value)"><span class="sub">/bag · ≈ ${bags} bags = ${money(spMatLineCost(sp,m.key,geo))}</span>`;
+        } else { inner = toggle + bulkInput; }
+      } else { inner = bulkInput; }
+    }
+    return `<div class="row" style="gap:6px;align-items:center;margin-bottom:5px"><div class="grow"><b>${m.label}</b> ${inner}</div>${[["us","We get it"],["them","They provide"]].map(o=>`<button class="btn ${spMats(sp)[m.key]===o[0]?"acc":"ghost"} sm" style="flex:0 0 auto" onclick="wizSpMat('${m.key}','${o[0]}')">${o[1]}</button>`).join("")}</div>`;
+  }).join("");
   // spoil 3-way
   const _st = sp.spoilType==="cd"?"cd":"fill", _haul = sp.haulSpoil !== false;
   h += `<div style="border-top:1px solid var(--line);margin:8px 0 2px;padding-top:8px"><div class="grow" style="margin-bottom:4px"><b>🟫 Excavated spoil</b> <span class="sub">~${Math.round(geo.spoilTon*10)/10} ton dug out (base)</span></div><div class="row" style="gap:6px">
@@ -316,6 +355,9 @@ window.wizSpSettle = function (v) { if (!WZ.sp) return; WZ.sp.settle = !!v; rend
 window.wizSpBaseUnder = function (v) { if (!WZ.sp) return; WZ.sp.baseUnder = (v==="stones")?"stones":"full"; render(); };
 window.wizSpMat = function (key, v) { if (!WZ.sp) return; if (!WZ.sp.mats) WZ.sp.mats = {}; WZ.sp.mats[key] = v; render(); };
 window.wizSpMatCost = function (key, v) { if (!WZ.sp) return; if (!WZ.sp.matCosts) WZ.sp.matCosts = {}; WZ.sp.matCosts[key] = Math.max(0, parseFloat(v)||0); render(); };
+window.wizSpMatSource = function (key, v) { if (!WZ.sp) return; if (!WZ.sp.matSource) WZ.sp.matSource = {}; WZ.sp.matSource[key] = (v==="bags")?"bags":"bulk"; render(); };
+window.wizSpBagSize = function (key, v) { if (!WZ.sp) return; if (!WZ.sp.bagSize) WZ.sp.bagSize = {}; WZ.sp.bagSize[key] = Math.max(0.05, parseFloat(v)||0.5); render(); };
+window.wizSpBagPrice = function (key, v) { if (!WZ.sp) return; if (!WZ.sp.bagPrice) WZ.sp.bagPrice = {}; WZ.sp.bagPrice[key] = Math.max(0, parseFloat(v)||0); render(); };
 window.wizSpSpoil = function (mode) { if (!WZ.sp) return; if (mode==="leave") { WZ.sp.haulSpoil = false; } else { WZ.sp.haulSpoil = true; WZ.sp.spoilType = (mode==="cd")?"cd":"fill"; } render(); };
 window.wizSpCrew = function (n) { if (!WZ.sp) return; WZ.sp.crew = Math.max(1, n); render(); };
 window.wizSpComplexity = function (v) { if (!WZ.sp) return; WZ.sp.complexity = Math.max(1, +v || 1); render(); };
@@ -366,6 +408,6 @@ window.wizSpLft = function (v) {
 
 /* node export (tests) — browser ignores this; top-level touches no browser globals */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { spGeo, spCalc, spMarketBand, spPickup, spMatNorm, spWeProvide, spMatCost, STEPPATH_MATS,
-    STEPPATH_DENSITY_DEF, STEPPATH_SETTLE, STEPPATH_LABOR_DEF };
+  module.exports = { spGeo, spCalc, spMarketBand, spPickup, spMatNorm, spWeProvide, spMatCost, spMatLineCost,
+    spMatSource, spBagSize, spBagPrice, STEPPATH_MATS, STEPPATH_DENSITY_DEF, STEPPATH_SETTLE, STEPPATH_LABOR_DEF };
 }
