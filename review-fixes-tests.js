@@ -322,13 +322,13 @@ T("S5 finPayBill/recordDisbursement/savePayment/openIncome all reference finCanV
 })();
 // OWNER-ONLY internal quote breakdown (material cost + labor-payout split) on the review screen
 (function(){
-  const _wz=window.WZ;
-  window.WZ={svc:"paver",crewN:2,hours:8,disc:0,items:[{name:"Paver",price:1000,qty:1,cost:150,unit:"job"}]};
+  const _wz=(typeof WZ!=="undefined")?WZ:null;
+  WZ={svc:"paver",crewN:2,hours:8,disc:0,items:[{name:"Paver",price:1000,qty:1,cost:150,unit:"job"}]};
   const html=(typeof reviewSummaryHTML==="function")?reviewSummaryHTML():"";
   T("quote review shows the owner-only INTERNAL breakdown", html.indexOf("INTERNAL")>=0);
   T("internal: labor value $850 → field 48% = $408", html.indexOf("$408")>=0);
   T("internal: per-person field = $204/ea (÷2 crew)", html.indexOf("$204")>=0);
   T("internal: materials cost line shown", html.indexOf("Materials")>=0 && html.indexOf("$150")>=0);
-  window.WZ=_wz;
+  WZ=_wz;   // restore; the null-guard in reviewSummaryHTML keeps the final smoke render safe
 })();
 diag("review-fixes: F1-F7 + security(S7/S8/S9/S5) + per-job-sales-credit + internal-quote-breakdown done");

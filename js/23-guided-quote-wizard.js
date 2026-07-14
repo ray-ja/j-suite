@@ -208,6 +208,7 @@ function pvBandHTML(mkt, total){
 /* Recover the market band for paver quotes saved before mkt existed: parse the sq ft out of the line
    breakdown and recompute it (in-memory; persists if re-saved). Idempotent — skips if mkt is already set. */
 function pvEnsureMkt(){
+  if(typeof WZ==="undefined" || !WZ) return;   // null-safe: nothing to enrich without an active quote
   const it = WZ.items && WZ.items[0]; if(!it || it.mkt) return;
   if(!(it.bandKey==="paver" || (typeof guessBandKey==="function" && guessBandKey(it.name)==="paver"))) return;
   if(typeof pvMarketBand !== "function") return;
@@ -224,6 +225,7 @@ function pvEnsureMkt(){
 function wizExtraDaysCost(){const days=Math.max(1,+((typeof WZ!=="undefined"&&WZ&&WZ.days)||1));if(days<=1)return 0;const rt=(typeof wizSiteDriveRT==="function")?(wizSiteDriveRT().rt||0):0;const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725);return Math.round((days-1)*rt*MIL);}
 window.wizSetDays=function(v){if(wizLockedAlert&&wizLockedAlert())return;WZ.days=Math.max(1,parseInt(v,10)||1);wizAutosave();render();};
 function reviewSummaryHTML(){
+  if(typeof WZ==="undefined" || !WZ || !Array.isArray(WZ.items)) return "";   // null-safe: no active quote → nothing to summarize
   pvEnsureMkt();
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
