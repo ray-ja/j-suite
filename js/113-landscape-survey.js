@@ -803,12 +803,11 @@ function landCrewGuideHTML(sv) {
     '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
     '</body></html>';
 }
+function landGuideUrl(sv) { const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""); return base + "/guide/" + encodeURIComponent(S.biz) + "/" + encodeURIComponent(sv.id); }
 window.landOpenCrewGuide = function () {
   const sv = landCurrent(); if (!sv) { alert("Open a survey first."); return; }
   if (!landGuidePlants(sv).length) { alert("No plants identified yet — read the photos first."); return; }
-  const w = window.open("", "_blank");
-  if (!w) { alert("Allow pop-ups to open the guide (or use the AI brief's Print)."); return; }
-  w.document.open(); w.document.write(landCrewGuideHTML(sv)); w.document.close();
+  window.open(landGuideUrl(sv), "_blank");   // a REAL, shareable URL (not a document.write about:blank tab)
 };
 
 /* JOB-PAGE entry: the crew live on Today → the job, not in the quote wizard. Find the landscaping survey for a job
@@ -828,9 +827,7 @@ window.landOpenGuideForJob = function (jobId) {
   const j = (typeof actJ === "function") ? actJ().find(function (x) { return x && x.id === jobId; }) : null;
   const sv = landSurveyForJob(j);
   if (!sv) { alert("No landscaping guide for this job's customer yet."); return; }
-  const w = window.open("", "_blank");
-  if (!w) { alert("Allow pop-ups to open the guide."); return; }
-  w.document.open(); w.document.write(landCrewGuideHTML(sv)); w.document.close();
+  window.open(landGuideUrl(sv), "_blank");   // real shareable URL served by the server (/guide/<org>/<surveyId>)
 };
 
 /* the "🌿 Plants on this job" ID glossary — client-side (no AI call) from the approved items, so the crew LEARNS the

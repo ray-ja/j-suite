@@ -844,6 +844,72 @@ function landParseSurvey(text) {
   if (!items.length) return null;   // nothing detected → treat as a skip (client escalates)
   return { scene: clip(o.scene, 200), items: items, notes: clip(o.notes, 300) };
 }
+
+/* ---- CREW GUIDE public page (GET /guide/<org>/<surveyId>) — a real, shareable URL for the field guide so the crew
+   can open/share/print it (the in-app version was a document.write about:blank window with no shareable link). Mirrors
+   the client landCrewGuideHTML (js/113): curates the survey's plants, shows the outlined "which plant" image + the
+   "after", DO/DON'T/WHEN, safety. No auth — the survey id is the capability (a landscaping guide, low sensitivity). */
+const LAND_GUIDE_SKIP = /^unknown|weed|turf|lawn|mulch bed|gravel|ground.?cover|background|mixed/i;
+function landGuideCurate(sv) {
+  const items = ((sv && sv.items) || []).filter(function (it) { return it && it.status !== "rejected" && it.plant; });
+  const by = {};
+  items.forEach(function (it) {
+    const nm = String(it.plant || "").trim(); if (!nm || LAND_GUIDE_SKIP.test(nm)) return;
+    const key = nm.toLowerCase().replace(/\s*\/.*/, "").replace(/[^a-z ]/g, "").trim(); if (!key) return;
+    const score = (it.confidence === "high" ? 3 : it.confidence === "medium" ? 2 : 1) + (it.photoId ? 2 : 0) + (String(it.howTo || "").length > 20 ? 1 : 0);
+    if (!by[key] || score > by[key]._score) by[key] = Object.assign({}, it, { _score: score });
+  });
+  return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b._score - a._score; }).slice(0, 16);
+}
+function landGuideToxic(it) { return /toxic|poison|cycasin|glove|protected|irritant|sap|thorn/i.test(String((it && it.caution) || "") + String((it && it.howTo) || "")); }
+function landGuideRenderHTML(sv, biz) {
+  const E = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  const url = function (id) { return id ? ("/uploads/" + encodeURIComponent(id)) : ""; };
+  const plants = landGuideCurate(sv);
+  const pimg = (sv && sv.plantImages) || {}, afters = (sv && sv.afterPhotos) || {};
+  const TOOLS = ["Loppers", "Hand pruners", "Pole saw / pole pruner", "Hedge shears", "Pruning saw", "Thick gloves", "Eye protection", "Tarps", "Rake + blower", "Contractor bags", "Wheelbarrow"];
+  const tox = plants.filter(landGuideToxic), safety = [];
+  tox.forEach(function (p) { safety.push("<b>" + E(p.plant) + " is toxic</b> — gloves on, bag the clippings, never burn or chip it near people/pets."); });
+  safety.push("Eye protection around spiny plants (yucca, sago, palms).");
+  safety.push("Big tree cuts / removals: clear it with the owner + local (Dare County) tree rules first — when unsure, deadwood only.");
+  const cards = plants.map(function (p) {
+    const pim = pimg[p.id] || {}, bu = url(pim.outline || p.photoId), au = url(pim.after || afters[p.photoId]);
+    const bl = pim.outline ? "This plant ↴" : "Now";
+    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
+    const toxb = landGuideToxic(p) ? ' <span class="tx">⚠ TOXIC</span>' : "";
+    const where = p.location ? ' <span class="wh">📍 ' + E(p.location) + '</span>' : "";
+    let s = '<div class="pc">' + (imgs ? '<div class="imgs">' + imgs + '</div>' : "");
+    s += '<div class="nm">' + E(p.plant || "unknown") + toxb + where + '</div>';
+    if (p.latin) s += '<div class="lat">' + E(p.latin) + '</div>';
+    if (p.howTo) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(p.howTo) + '</div>';
+    if (p.caution) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(p.caution) + '</div>';
+    if (p.bestSeason) s += '<div class="ln wn"><b>WHEN:</b> ' + E(p.bestSeason) + '</div>';
+    return s + '</div>';
+  }).join("");
+  const phoneHref = (biz && biz.phone) ? biz.phone.replace(/[^0-9+]/g, "") : "";
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crew Guide — ' + E((sv && sv.title) || "Landscaping") + '</title><style>' +
+    '*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#15201a;margin:0 auto;padding:20px 16px 50px;max-width:760px;background:#f6f5ef}' +
+    '.hd{background:#1f5a23;color:#fff;margin:-20px -16px 16px;padding:20px 18px;border-radius:0 0 16px 16px}.hd h1{margin:0;font-size:22px}.hd .m{opacity:.9;font-size:13px;margin-top:5px}' +
+    '.call{display:inline-block;margin-top:10px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:6px 12px;border-radius:18px;font-weight:700;font-size:13px;text-decoration:none}' +
+    '.safe{background:#fbecea;border:1px solid #c0392b;border-radius:12px;padding:12px 14px;margin-bottom:14px}.safe h2{color:#c0392b;margin:0 0 6px;font-size:16px}.safe ul{margin:0;padding-left:18px}.safe li{margin:4px 0;font-size:14px}.safe b{color:#c0392b}' +
+    'h2.s{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:#5d6457;margin:22px 2px 10px;border-bottom:2px solid #e4e2d7;padding-bottom:6px}' +
+    '.tools{display:flex;flex-wrap:wrap;gap:7px}.tool{border:1px solid #d9d7cd;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:600;background:#fff}' +
+    '.pc{border:1px solid #e4e2d7;border-radius:12px;padding:12px;margin:10px 0;page-break-inside:avoid;background:#fff}' +
+    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}' +
+    '.nm{font-size:18px;font-weight:800}.tx{background:#c0392b;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;vertical-align:middle}.wh{font-size:12px;color:#a9760a;font-weight:600}.lat{font-style:italic;color:#5d6457;font-size:13px}' +
+    '.ln{margin-top:7px;font-size:14px;line-height:1.45}.ln.do b{color:#2f7d33}.ln.dt b{color:#c0392b}.ln.wn b{color:#a9760a}' +
+    '.ft{margin-top:26px;color:#5d6457;font-size:12px;border-top:1px solid #e4e2d7;padding-top:12px}' +
+    'button{margin-top:18px;padding:11px 18px;font-size:15px;border:0;border-radius:9px;background:#1f5a23;color:#fff;cursor:pointer}' +
+    '@page{margin:12mm}@media print{button,.call{display:none}body{padding:0;background:#fff}.hd{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
+    '</style></head><body>' +
+    '<div class="hd"><h1>Crew Guide — ' + E((sv && sv.title) || "Landscaping") + '</h1>' + (sv && sv.address ? '<div class="m">' + E(sv.address) + '</div>' : "") + '<div class="m">Owner not on site — text with any questions before you cut.</div>' + (phoneHref ? '<a class="call" href="sms:' + E(phoneHref) + '">💬 Text ' + E(biz.phone) + '</a>' : "") + '</div>' +
+    '<div class="safe"><h2>⚠️ Safety first</h2><ul>' + safety.map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul></div>' +
+    '<h2 class="s">🧰 Tools to bring</h2><div class="tools">' + TOOLS.map(function (t) { return '<span class="tool">' + E(t) + '</span>'; }).join("") + '</div>' +
+    '<h2 class="s">🌿 The plants — what to do with each</h2>' + (cards || '<p>No plants identified yet.</p>') +
+    '<div class="ft">' + E((biz && biz.name) || "OBX Lot Solutions") + ((biz && biz.phone) ? " · " + E(biz.phone) : "") + ' — plant IDs are AI-assisted; if a plant looks different than labeled, check with the owner before cutting.</div>' +
+    '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
+    '</body></html>';
+}
 // CAP CREW BRIEF (Phase 1) — from a landscaping survey's APPROVED tasks, DRAFT a crew-ready work order the owner
 // hands to a 2-person crew he won't be on-site with. The task text (plant/service/how-to/caution/timing/where) is
 // UNTRUSTED business content to turn into a brief, never instructions. Writes NOTHING; the client stamps the brief
@@ -2683,6 +2749,19 @@ const server = http.createServer((req, res) => {
     if (!q) return notFound();
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q));
+  }
+
+  // CREW GUIDE public page — GET /guide/<org>/<surveyId>. A real, shareable, no-login URL for the field guide so the
+  // crew can open / print / share it (the in-app document.write version was an about:blank tab with no link to share).
+  if (req.method === "GET" && req.url.split("?")[0].indexOf("/guide/") === 0) {
+    const parts = req.url.split("?")[0].split("/").filter(Boolean);   // ["guide", org, surveyId]
+    const org = parts[1] ? decodeURIComponent(parts[1]) : "", sid = parts[2] ? decodeURIComponent(parts[2]) : "";
+    const store = loadStore(), slab = store[org];
+    const sv = slab && (slab.siteSurveys || []).find(function (s) { return s && s.id === sid && !s.deleted; });
+    if (!sv) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Guide not found</h2><p>This link may be incorrect or no longer active.</p></body>"); }
+    const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    return res.end(landGuideRenderHTML(sv, biz));
   }
 
   // login: verify credentials against the synced account records, hand back the sync token
