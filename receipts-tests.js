@@ -1528,6 +1528,35 @@ async function main() {
   const eqAuto = autoThenFiled && manualFiled && JSON.stringify(stripCap(autoThenFiled)) === JSON.stringify(stripCap(manualFiled));
   ok("a Cap-filled-then-filed record is BYTE-IDENTICAL to the manual one-tap file (minus id/ts)", eqAuto, eqAuto ? undefined : { auto: stripCap(autoThenFiled), manual: stripCap(manualFiled) });
 
+  // ================= REGRESSION: the sweep re-apply must TERMINATE (the days-long sync/render loop) =================
+  // capRcptSweep runs on EVERY sync completion (js/26). Since keepReview ("Cap fills, you file", 86c3049) a
+  // re-applied row STAYS in review WITH its `suggested` — before the !r.type guard it matched
+  // capRcptReapplyPending() again on the very next sweep, so every sync re-applied + save()d (SYNC_DIRTY forever
+  // → the badge pinned on "⟳ Syncing…") + render()ed (kicking the user out of any focused text field, 24/7).
+  console.log("— CAP SWEEP RE-APPLY: idempotent — a FILLED review row is never re-applied (the infinite sync/render loop) —");
+  resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; CURUSER = { id: "u_ray", username: "Ray" };
+  global.finCanView = function () { return true; };
+  const loopRec = seedReview({ receiptId: "blobLoop", vendor: "", amount: null, type: null, jobId: null, category: "", suggested: { confidence: 0.9, amount: 42, type: "business", vendor: "LoopCo", date: "2026-07-10", category: "office/admin" } });
+  ok("a restored blank suggested row IS pending exactly one re-apply", capRcptReapplyPending().length === 1, capRcptReapplyPending().length);
+  let loopSaves = 0, loopRenders = 0;
+  const _saveL = global.save, _renderL = global.render;
+  global.save = function () { loopSaves++; };
+  global.render = function () { loopRenders++; };
+  capRcptSweep();   // sync-completion hook — pass 1: applies the fill (legit)
+  ok("first sweep filled the row from its suggestion (type + amount applied)", loopRec.type === "business" && loopRec.amount === 42, { t: loopRec.type, a: loopRec.amount });
+  ok("first sweep saved + re-rendered exactly once", loopSaves === 1 && loopRenders === 1, { saves: loopSaves, renders: loopRenders });
+  ok("the filled row STAYS in review with its suggestion (Cap fills, owner files)", rcptReview().some(r => r.id === loopRec.id) && !!loopRec.suggested);
+  ok("the filled row is NO LONGER pending (the loop's termination condition)", capRcptReapplyPending().length === 0, capRcptReapplyPending().length);
+  capRcptSweep(); capRcptSweep();   // two more sync completions
+  ok("subsequent sweeps: NO extra save() — sync can settle, the badge reaches ✓ Synced", loopSaves === 1, loopSaves);
+  ok("subsequent sweeps: NO extra render() — no focus-kick storm while typing", loopRenders === 1, loopRenders);
+  // an owner's manual partial edit (type set by a keepReview Save) is likewise never clobbered by a re-apply
+  const editedRec = seedReview({ receiptId: "blobEdited", vendor: "My own vendor", amount: 10, type: "business", jobId: null, category: "other", suggested: { confidence: 0.95, amount: 99, type: "business", vendor: "CapGuess", category: "fuel" } });
+  ok("a human-edited review row (type set) is NOT pending a re-apply (manual fields never overwritten)", capRcptReapplyPending().length === 0, capRcptReapplyPending().length);
+  capRcptSweep();
+  ok("sweep leaves the human-edited row untouched", editedRec.vendor === "My own vendor" && editedRec.amount === 10 && loopSaves === 1, { v: editedRec.vendor, a: editedRec.amount });
+  global.save = _saveL; global.render = _renderL;
+
   console.log("— CAP AUTO-APPLY: a LOW-confidence / incomplete guess is NOT auto-filed (stays suggested in review) —");
   resetStore(); _capRcptSkip = {}; _capSweepLast = 0; OPEN_SHIFT = null; delete CURUSER.cards; global.finCanView = function () { return true; };
   const lowRec = seedReview({ receiptId: "blobLowAuto" });

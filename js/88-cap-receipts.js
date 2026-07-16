@@ -109,11 +109,20 @@ function capRcptAutoFileOne(rec, opts) {
    in the queue forever. A pass-through/job-expense suggestion with NO resolvable job FAILS rcptSuggestionOneTapOk
    → stays in review for the owner to pick a job (the js/87 pre-fill makes that: open → pick job → Save). Pure/
    DOM-free + never-throws so the sweep can call it offline (files locally — rcptFileSuggestion makes NO network
-   call). */
+   call).
+     `!r.type` IS THE TERMINATION CONDITION — only rows whose fields are still BLANK (unapplied) qualify. Since
+   "Cap fills, you file" (86c3049), the auto-file runs keepReview:true: it applies Cap's fields but the row STAYS
+   in review WITH its `suggested`. Without the !r.type guard the row matched this filter again on the very next
+   sweep → re-applied → save() → sync push → sync-complete sweep → re-applied → … an INFINITE sync/render loop
+   (the badge pinned on "⟳ Syncing…" and a render() kicking the user out of text fields, 24/7, for days — Ray's
+   2026-07-13→16 field bug). A fill always sets r.type (oneTapOk guarantees a non-null suggested.type), so a
+   filled row drops out here and the sweep terminates; a genuinely blank restored row (type null) still re-fills
+   exactly once. This also stops the sweep from clobbering an owner's manual edits (typed fields ⇒ type set ⇒
+   never re-applied over them). */
 function capRcptReapplyPending() {
   try {
     if (typeof rcptReview !== "function" || typeof rcptSuggestionOneTapOk !== "function") return [];
-    return rcptReview().filter(function (r) { return r && !r.deleted && r.suggested && rcptSuggestionOneTapOk(r); });
+    return rcptReview().filter(function (r) { return r && !r.deleted && r.suggested && !r.type && rcptSuggestionOneTapOk(r); });
   } catch (e) { return []; }
 }
 /* RE-FILE those leftover confident rows through the EXACT auto-file spine (capRcptAutoFileOne → rcptFileSuggestion),
@@ -202,7 +211,9 @@ window.capRcptRun = async function (opts) {
   }
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
   else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · auto-filed " + autoFiled + " for review" : "") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". " + (autoFiled ? "The purple 🤖 review rows are Cap's — check them (use the “🤖 To review” filter)." : "Open a 🤖 row to review and approve its guess.")); }
-  if (typeof render === "function") render();
+  // safeRender (js/26) — the auto sweep path runs mid-session; a bare render() here would rebuild #view under a
+  // focused text field. Falls back to render() where safeRender isn't loaded (tests).
+  { const _rr = (typeof safeRender === "function") ? safeRender : (typeof render === "function" ? render : null); if (_rr) _rr(); }
 };
 
 /* RESUMABLE SWEEP — reads any unread receipts left by an interrupted batch / an app-close, OR ones that arrived
@@ -214,8 +225,10 @@ window.capRcptSweep = function () {
     if (!capRcptCanRun()) return;                       // owner/admin only (auto path is silent)
     if (_capRcptBusy) return;                            // a drain is already running
     // (A) RE-FILE leftover CONFIDENT already-suggested review rows FIRST — LOCAL (no server/key needed): these are
-    // restored/synced-back rows carrying `suggested` but blank fields that the drain never re-reads. Idempotent.
-    if (capRcptReapplyPending().length) { if (capRcptReapplyConfident() && typeof render === "function") render(); }
+    // restored/synced-back rows carrying `suggested` but BLANK fields (type null) that the drain never re-reads.
+    // Idempotent (the fill sets r.type → capRcptReapplyPending drops it). safeRender, never a bare render(): this
+    // runs on EVERY sync completion — a bare render() here rebuilt #view under the user's cursor mid-typing.
+    if (capRcptReapplyPending().length) { if (capRcptReapplyConfident()) { var _rr = (typeof safeRender === "function") ? safeRender : render; if (typeof _rr === "function") _rr(); } }
     // (B) VISION DRAIN of the still-UNREAD pile — needs the org AI server + key.
     if (!capRcptPending().length) return;               // nothing unread → no-op
     if (typeof orgAiBase === "function" && !orgAiBase()) return;   // offline / file:// → no server, no-op
