@@ -23,6 +23,7 @@ var _landUpBusy = false;        // one photo upload at a time (dupe-submit guard
 var _landReadBusy = false;      // one vision drain at a time
 var _landReadDone = 0, _landReadTotal = 0;   // drive a persistent progress bar (survives the per-photo re-renders)
 var _landSkip = {};             // in-session {photoId -> 1} of reads that produced nothing this session (don't churn)
+var _landBriefBusy = false;     // one crew-brief generation at a time (it's one slow call)
 
 /* the loaded crew rate the other estimators price labor at (TAKE_HOME / FIELD_SPLIT ≈ $93.75/hr) so a labor line's
    value covers the payout split. */
@@ -468,6 +469,212 @@ window.landViewPhoto = function (photoId, sx, sy) {
   else window.open(url, "_blank");
 };
 
+/* ============================== CREW BRIEF (Phase 1) ============================== */
+/* the APPROVED items on a survey (the brief's source rows) */
+function landApprovedItems(sv) { return ((sv && sv.items) || []).filter(function (it) { return it && it.status === "approved"; }); }
+/* match a brief task's `ref` (the plant name we sent) back to the approved item it came from → its source photoId.
+   First an exact plant match, then a case-insensitive one; null if none (a task with no photo just renders text). */
+function landBriefItemFor(sv, ref) {
+  const items = landApprovedItems(sv);
+  const r = String(ref || "").trim().toLowerCase();
+  if (!r) return null;
+  return items.find(function (it) { return String(it.plant || "").trim().toLowerCase() === r; })
+      || items.find(function (it) { const p = String(it.plant || "").trim().toLowerCase(); return p && (p.indexOf(r) >= 0 || r.indexOf(p) >= 0); })
+      || null;
+}
+
+/* Generate the crew brief from the survey's APPROVED tasks. Owner/admin gated (rcptFinFull). Posts the tasks + job
+   info to /api/org-ai/crew-brief, stamps the returned brief onto sv.crewBrief, touch()+save()+render(). One slow
+   call → a busy flag drives a spinner in the UI. Errors are surfaced (never fails silently). */
+window.landGenerateBrief = async function () {
+  const canRun = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
+  if (!canRun) { if (typeof alert === "function") alert("Only an owner or admin can generate the crew brief."); return; }
+  const sv = landCurrent(); if (!sv) return;
+  const approved = landApprovedItems(sv);
+  if (!approved.length) { if (typeof alert === "function") alert("Approve some tasks first."); return; }
+  if (_landBriefBusy) return;
+  const base = (typeof orgAiBase === "function") ? orgAiBase() : "";
+  if (!base) { if (typeof alert === "function") alert("Generating the crew brief needs the server (you appear to be offline)."); return; }
+  const d = D();
+  const cust = (d.customers || []).find(function (c) { return c && c.id === sv.customerId; });
+  const prop = (d.properties || []).find(function (pp) { return pp && pp.id === sv.propertyId; });
+  const job = {
+    title: sv.title || "Landscaping job",
+    address: sv.address || (prop && (prop.address || prop.label)) || "",
+    customer: (cust && (cust.name || cust.company)) || ""
+  };
+  const tasks = approved.map(function (it) {
+    return { plant: it.plant, service: it.service, howTo: it.howTo, caution: it.caution, bestSeason: it.bestSeason, timingWarnNow: it.timingWarnNow === true, location: it.location, approxSize: it.approxSize, condition: it.condition, count: it.count };
+  });
+  _landBriefBusy = true;
+  if (typeof render === "function") render();   // paint the busy state before the slow call
+  const set = function (t) { const el = document.getElementById("land_status"); if (el) el.textContent = t || ""; };
+  set("🤖 Cap is writing the crew brief…");
+  let resObj;
+  try {
+    const r = await fetch(base + "/api/org-ai/crew-brief", {
+      method: "POST",
+      headers: (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json" },
+      body: JSON.stringify({ org: S.biz, tasks: tasks, job: job })
+    });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) resObj = { error: (j && j.error) || ("HTTP " + r.status) };
+    else resObj = j || { error: "empty response" };
+  } catch (e) { resObj = { error: (e && e.message) || "request failed" }; }
+  _landBriefBusy = false;
+  set("");
+  if (resObj && resObj.brief) {
+    const me = (typeof curUser === "function" && curUser()) ? curUser().id : "";
+    const b = resObj.brief;
+    sv.crewBrief = { intro: b.intro || "", tools: b.tools || [], order: b.order || [], safety: b.safety || [], tasks: b.tasks || [], closing: b.closing || "", ts: (typeof now === "function" ? now() : Date.now()), by: me };
+    if (typeof touch === "function") touch(sv);
+    if (typeof save === "function") save();
+    if (typeof render === "function") render();
+  } else {
+    if (typeof render === "function") render();
+    if (typeof alert === "function") alert("🤖 Cap couldn't write the brief — " + ((resObj && resObj.error) || "try again") + ".");
+  }
+};
+
+/* a plain-text rendering of the whole brief (for Copy-as-text and as the print body source) */
+function landBriefText(sv) {
+  const b = (sv && sv.crewBrief) || {};
+  const L = [];
+  const title = (sv && sv.title) || "Landscaping job";
+  L.push("CREW BRIEF — " + title);
+  if (sv && sv.address) L.push(sv.address);
+  L.push("");
+  if (b.intro) { L.push(b.intro); L.push(""); }
+  if (b.tools && b.tools.length) { L.push("TOOLS & MATERIALS TO BRING:"); b.tools.forEach(function (x) { L.push("  - " + x); }); L.push(""); }
+  if (b.order && b.order.length) { L.push("ORDER OF OPERATIONS:"); b.order.forEach(function (x, i) { L.push("  " + (i + 1) + ". " + x); }); L.push(""); }
+  if (b.safety && b.safety.length) { L.push("SAFETY:"); b.safety.forEach(function (x) { L.push("  ! " + x); }); L.push(""); }
+  (b.tasks || []).forEach(function (tk) {
+    L.push("* " + (tk.ref || "Task") + (tk.where ? "  (" + tk.where + ")" : ""));
+    (tk.do || []).forEach(function (x) { L.push("    DO:   " + x); });
+    (tk.dont || []).forEach(function (x) { L.push("    DON'T: " + x); });
+    if (tk.note) L.push("    NOTE: " + tk.note);
+    L.push("");
+  });
+  if (b.closing) L.push(b.closing);
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+}
+
+/* Copy the whole brief as plain text so the owner can paste it to no-login helpers (SMS / chat). Clipboard API
+   with a legacy execCommand fallback for non-secure contexts. */
+window.landCopyBrief = async function () {
+  const sv = landCurrent(); if (!sv || !sv.crewBrief) return;
+  const text = landBriefText(sv);
+  let done = false;
+  try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); done = true; } } catch (e) {}
+  if (!done) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      done = document.execCommand("copy"); document.body.removeChild(ta);
+    } catch (e) { done = false; }
+  }
+  if (typeof alert === "function") alert(done ? "Copied — paste it to the crew." : "Couldn't copy automatically. Long-press to select the brief text and copy it manually.");
+};
+
+/* Print the brief in a clean standalone window (invPrint / materials-report pattern) so the owner can print or
+   Save-as-PDF and hand it over. Falls back to window.print() if a pop-up is blocked. */
+function landBriefPrintHTML(sv) {
+  const b = (sv && sv.crewBrief) || {};
+  const biz = (function () { try { return (typeof BIZ === "object" && BIZ && (BIZ[S.biz] || BIZ.obx)) || { name: "OBX Lot Solutions", phone: "" }; } catch (e) { return { name: "OBX Lot Solutions", phone: "" }; } })();
+  const E = (typeof esc === "function") ? esc : function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  const title = (sv && sv.title) || "Landscaping job";
+  const ul = function (items, cls) { return "<ul" + (cls ? ' class="' + cls + '"' : "") + ">" + (items || []).map(function (x) { return "<li>" + E(x) + "</li>"; }).join("") + "</ul>"; };
+  const tasksHtml = (b.tasks || []).map(function (tk) {
+    const item = landBriefItemFor(sv, tk.ref);
+    const url = (item && item.photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(item.photoId) : "";
+    const thumb = url ? '<img src="' + E(url) + '" alt="" onerror="this.style.display=\'none\'">' : "";
+    let inner = '<div class="tk-head"><b>' + E(tk.ref || "Task") + "</b>" + (tk.where ? ' <span class="muted">' + E(tk.where) + "</span>" : "") + "</div>";
+    if (tk.do && tk.do.length) inner += '<div class="lbl do">DO</div>' + ul(tk.do);
+    if (tk.dont && tk.dont.length) inner += '<div class="lbl dont">DON\'T</div>' + ul(tk.dont);
+    if (tk.note) inner += '<div class="note">' + E(tk.note) + "</div>";
+    return '<div class="task">' + thumb + "<div>" + inner + "</div></div>";
+  }).join("");
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    "<title>Crew Brief — " + E(title) + "</title><style>" +
+    "*{box-sizing:border-box}" +
+    "body{font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#111;margin:0 auto;padding:24px;max-width:720px}" +
+    ".head{border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:14px}.head h1{font-size:19px;margin:0 0 2px}.muted{color:#666;font-size:13px}" +
+    ".intro{margin:0 0 16px}" +
+    "h2{font-size:13px;text-transform:uppercase;color:#666;margin:20px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}" +
+    "ul{margin:4px 0;padding-left:20px}li{margin:2px 0}" +
+    ".safety li{color:#8a1f00}" +
+    ".task{display:flex;gap:12px;align-items:flex-start;border:1px solid #ddd;border-radius:8px;padding:10px;margin:10px 0;page-break-inside:avoid}" +
+    ".task img{width:88px;height:88px;object-fit:cover;border-radius:6px;flex:0 0 auto;border:1px solid #ccc}" +
+    ".tk-head{font-size:15px;margin-bottom:4px}" +
+    ".lbl{font-size:11px;font-weight:800;text-transform:uppercase;margin-top:6px}.lbl.do{color:#1a7f37}.lbl.dont{color:#b00020}" +
+    ".note{font-size:13px;color:#555;margin-top:6px;font-style:italic}" +
+    ".closing{margin-top:18px;border-top:1px solid #ddd;padding-top:12px;font-weight:600}" +
+    ".foot{margin-top:22px;color:#666;font-size:12px}" +
+    "button{margin-top:20px;padding:11px 18px;font-size:15px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer}" +
+    "@page{margin:14mm}@media print{button{display:none}body{padding:0}}" +
+    "</style></head><body>" +
+    '<div class="head"><h1>Crew Brief — ' + E(title) + "</h1>" + (sv && sv.address ? '<div class="muted">' + E(sv.address) + "</div>" : "") + "</div>" +
+    (b.intro ? '<p class="intro">' + E(b.intro) + "</p>" : "") +
+    (b.tools && b.tools.length ? "<h2>🧰 Tools &amp; materials to bring</h2>" + ul(b.tools) : "") +
+    (b.order && b.order.length ? "<h2>📋 Order of operations</h2><ol>" + b.order.map(function (x) { return "<li>" + E(x) + "</li>"; }).join("") + "</ol>" : "") +
+    (b.safety && b.safety.length ? "<h2>⚠️ Safety</h2>" + ul(b.safety, "safety") : "") +
+    (b.tasks && b.tasks.length ? "<h2>Per-plant work</h2>" + tasksHtml : "") +
+    (b.closing ? '<div class="closing">' + E(b.closing) + "</div>" : "") +
+    '<div class="foot">' + E(biz.name || "") + (biz.phone ? " · " + E(biz.phone) : "") + " — text the owner with any questions.</div>" +
+    '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
+    "</body></html>";
+}
+window.landPrintBrief = function () {
+  const sv = landCurrent(); if (!sv || !sv.crewBrief) return;
+  const html = landBriefPrintHTML(sv);
+  const w = window.open("", "_blank");
+  if (!w) { if (typeof window.print === "function") window.print(); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  try { w.onload = function () { try { w.focus(); w.print(); } catch (e) {} }; } catch (e) {}
+};
+
+/* render the crew-brief section: the busy spinner, the Generate/Regenerate buttons, and (when present) the printable
+   brief card — intro, tools, order, safety, then each task with its SOURCE PHOTO thumbnail, DO / DON'T, and note. */
+function landBriefSectionHTML(sv, approvedN) {
+  const b = sv.crewBrief;
+  let h = `<div class="card" style="border-left:5px solid #6b4bd6;margin-top:12px">`;
+  h += `<div class="row" style="align-items:baseline"><div class="grow" style="font-weight:800">🧾 Cap crew brief</div>`;
+  if (b && !_landBriefBusy) h += `<div class="row" style="gap:6px"><button class="btn ghost sm" onclick="landPrintBrief()">🖨 Print</button><button class="btn ghost sm" onclick="landCopyBrief()">📋 Copy as text</button></div>`;
+  h += `</div>`;
+  h += `<div class="sub" style="white-space:normal;margin:4px 0 8px">A crew-ready work order — what to do per plant, what NOT to do, tools, order of operations, and safety — to print or text to the crew when you're not on site.</div>`;
+  if (_landBriefBusy) {
+    h += `<div class="card" style="background:var(--soft);padding:14px;text-align:center"><b>🤖 Cap is writing the crew brief…</b><div class="sub" style="margin-top:4px">One slow call — a few seconds.</div></div>`;
+    h += `</div>`; return h;
+  }
+  if (!b) {
+    h += `<button class="btn acc" style="width:100%" ${approvedN ? "" : "disabled"} onclick="landGenerateBrief()">🧾 Generate crew brief</button>`;
+    h += `</div>`; return h;
+  }
+  // stored brief → the printable card
+  if (b.intro) h += `<div style="white-space:normal;margin-bottom:8px">${esc(b.intro)}</div>`;
+  const list = (arr, style) => `<ul style="margin:4px 0 0;padding-left:20px${style ? ";" + style : ""}">` + (arr || []).map(x => `<li style="margin:2px 0;white-space:normal">${esc(x)}</li>`).join("") + `</ul>`;
+  if (b.tools && b.tools.length) h += `<div style="margin-top:10px"><div style="font-weight:700">🧰 Tools &amp; materials to bring</div>${list(b.tools)}</div>`;
+  if (b.order && b.order.length) h += `<div style="margin-top:10px"><div style="font-weight:700">📋 Order of operations</div><ol style="margin:4px 0 0;padding-left:20px">` + b.order.map(x => `<li style="margin:2px 0;white-space:normal">${esc(x)}</li>`).join("") + `</ol></div>`;
+  if (b.safety && b.safety.length) h += `<div style="margin-top:10px"><div style="font-weight:700;color:var(--danger)">⚠️ Safety</div>${list(b.safety, "color:var(--danger)")}</div>`;
+  (b.tasks || []).forEach(function (tk) {
+    const item = landBriefItemFor(sv, tk.ref);
+    const pu = (item && item.photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(item.photoId) : "";
+    const sx = (item && item.spot && isFinite(+item.spot.x)) ? +item.spot.x : "null", sy = (item && item.spot && isFinite(+item.spot.y)) ? +item.spot.y : "null";
+    const thumb = pu ? `<img src="${esc(pu)}" onclick="landViewPhoto('${esc(item.photoId)}',${sx},${sy})" title="Tap to see this plant in the photo" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:0 0 auto">` : "";
+    h += `<div class="card" style="padding:10px;margin-top:8px">`;
+    h += `<div class="row" style="gap:8px;align-items:flex-start">${thumb}<div class="grow"><b style="font-size:15px">${esc(tk.ref || "Task")}</b>${tk.where ? `<div class="sub" style="white-space:normal">📍 ${esc(tk.where)}</div>` : ""}</div></div>`;
+    if (tk.do && tk.do.length) h += `<div style="margin-top:6px"><span style="font-size:11px;font-weight:800;color:#1a7f37">DO</span>${list(tk.do)}</div>`;
+    if (tk.dont && tk.dont.length) h += `<div style="margin-top:6px"><span style="font-size:11px;font-weight:800;color:var(--danger)">DON'T</span>${list(tk.dont, "color:var(--danger)")}</div>`;
+    if (tk.note) h += `<div class="sub" style="white-space:normal;margin-top:6px;font-style:italic">💡 ${esc(tk.note)}</div>`;
+    h += `</div>`;
+  });
+  if (b.closing) h += `<div style="margin-top:10px;font-weight:600;white-space:normal">${esc(b.closing)}</div>`;
+  h += `<button class="btn ghost sm" style="width:100%;margin-top:10px" onclick="landGenerateBrief()">↻ Regenerate</button>`;
+  h += `</div>`;
+  return h;
+}
+
 window.wizLandscapeUI = function () {
   const sv = landCurrent();
   let h = `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">🌿 Landscaping site survey</div><div class="nm" style="font-size:18px">Walk the property → photos → a quote</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;
@@ -512,6 +719,14 @@ window.wizLandscapeUI = function () {
     const lowN = items.filter(it => it && it.status !== "rejected" && it.confidence === "low").length;
     h += `<div class="card" style="background:var(--soft)"><div class="row" style="align-items:baseline"><div class="grow"><b>${items.length} detected</b> · ${approvedItems.length} approved${lowN ? ` · <span style="color:var(--danger)">${lowN} low-confidence to check</span>` : ""}</div><div class="nm" style="font-size:18px">${money(approvedTotal)}</div></div></div>`;
     items.forEach(it => { h += landItemRowHTML(it); });
+  }
+
+  // crew brief — a crew-ready work order the owner prints/shares to hand to a crew he won't be on-site with.
+  // Owner/admin only; appears once there's ≥1 approved task (Generate) or a stored brief (view + Regenerate).
+  const approvedForBrief = items.filter(it => it && it.status === "approved");
+  const canBrief = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
+  if (canBrief && (sv.crewBrief || approvedForBrief.length)) {
+    h += landBriefSectionHTML(sv, approvedForBrief.length);
   }
 
   // recurring maintenance plan — appears when ≥1 APPROVED task is recurring-flagged (owner/admin only)

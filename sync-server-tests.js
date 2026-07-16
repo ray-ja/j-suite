@@ -1955,6 +1955,35 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("logExpense no cats in ctx → any category clears to \"\" (safe default)",
     (function () { const a = t.capParseAction("logExpense", { amount: 20, vendor: "X", type: "business", jobId: null, category: "materials", paidBy: null, note: null, refund: false, deposit: false }, { jobIds: [], todayIso: "2026-07-06" }); return a && a.category === ""; })());
 
+  // ===== Cap Crew Brief — crewBriefParse (AI output untrusted; clamp + null-on-garbage) =====
+  console.log("\n— Cap Crew Brief (crewBriefParse) —");
+  const cbGood = JSON.stringify({
+    intro: "Two-plant job at 123 Sound Rd — text Ray with questions.",
+    tools: ["bypass pruners", "loppers", "gloves", "tarp"],
+    order: ["Prune the crape myrtle", "Cut back the pampas grass", "Haul off clippings"],
+    safety: ["Oleander is toxic — wear gloves", "Do not touch protected dune sea oats"],
+    tasks: [
+      { ref: "Crape myrtle", where: "front bed", do: ["Thin crossing branches"], dont: ["Do not top it (no crape murder)"], note: "Best in late winter" },
+      { ref: "Pampas grass", where: "back corner", do: ["Cut to ~12in"], dont: ["Don't burn clippings"], note: "" }
+    ],
+    closing: "Clean up all debris and take after photos."
+  });
+  const cbP = t.crewBriefParse("Here you go:\n" + cbGood + "\nThanks");
+  ok("crewBriefParse parses a realistic brief (intro/tools/order/safety/tasks/closing all present)",
+    !!cbP && cbP.intro.indexOf("123 Sound Rd") >= 0 && cbP.tools.length === 4 && cbP.order.length === 3 && cbP.safety.length === 2 && cbP.tasks.length === 2 && cbP.tasks[0].ref === "Crape myrtle" && cbP.tasks[0].do.length === 1 && cbP.tasks[0].dont.length === 1 && cbP.closing.indexOf("after photos") >= 0, cbP);
+  const cbClamp = t.crewBriefParse(JSON.stringify({
+    intro: "x".repeat(1000),
+    tools: Array.from({ length: 40 }, (_, i) => "tool" + i),
+    order: Array.from({ length: 40 }, (_, i) => "step" + i),
+    safety: Array.from({ length: 40 }, (_, i) => "safe" + i),
+    tasks: Array.from({ length: 60 }, (_, i) => ({ ref: "p" + i, do: Array.from({ length: 20 }, (_, k) => "d" + k), dont: Array.from({ length: 20 }, (_, k) => "n" + k) }))
+  }));
+  ok("crewBriefParse clamps every array/string (tools≤25 order≤20 safety≤15 tasks≤40 do/dont≤12 intro≤400)",
+    !!cbClamp && cbClamp.intro.length === 400 && cbClamp.tools.length === 25 && cbClamp.order.length === 20 && cbClamp.safety.length === 15 && cbClamp.tasks.length === 40 && cbClamp.tasks[0].do.length === 12 && cbClamp.tasks[0].dont.length === 12, cbClamp && { intro: cbClamp.intro.length, tools: cbClamp.tools.length, order: cbClamp.order.length, safety: cbClamp.safety.length, tasks: cbClamp.tasks.length });
+  ok("crewBriefParse drops empty strings inside arrays", (function () { const r = t.crewBriefParse(JSON.stringify({ intro: "hi", tools: ["a", "", "  ", "b"], tasks: [] })); return r && r.tools.length === 2; })());
+  ok("crewBriefParse returns null on garbage / non-JSON", t.crewBriefParse("not json at all, no braces") === null && t.crewBriefParse("") === null && t.crewBriefParse(null) === null);
+  ok("crewBriefParse returns null on an empty object (no usable content)", t.crewBriefParse("{}") === null);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

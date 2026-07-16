@@ -810,6 +810,48 @@ function landParseSurvey(text) {
   if (!items.length) return null;   // nothing detected → treat as a skip (client escalates)
   return { scene: clip(o.scene, 200), items: items, notes: clip(o.notes, 300) };
 }
+// CAP CREW BRIEF (Phase 1) — from a landscaping survey's APPROVED tasks, DRAFT a crew-ready work order the owner
+// hands to a 2-person crew he won't be on-site with. The task text (plant/service/how-to/caution/timing/where) is
+// UNTRUSTED business content to turn into a brief, never instructions. Writes NOTHING; the client stamps the brief
+// onto its survey record. Returns JSON ONLY. (A dedicated system prompt — callAnthropicTask hardcodes the WORKSHOP
+// "plain-text report" system, which fights JSON, so we use the system-explicit sibling caller below, mirroring how
+// callAnthropicVisionSys relates to callAnthropicVision.)
+const CREW_BRIEF_SYSTEM = "You are a landscaping crew lead writing a clear, practical work order for a 2-person crew whose owner will NOT be on site. You are given the approved tasks for a job (each with a plant, the service to do, how-to notes, cautions, timing, and where it is in the yard). Write a crew-ready brief. Be concrete and blunt, not flowery. Coastal NC (zone 8a). Return ONLY valid JSON, no prose/fences, shape: {\"intro\":\"<1-2 sentences: the job + address + that they should text the owner with questions>\",\"tools\":[\"<tool/material to bring>\", ...],\"order\":[\"<step in the recommended order of operations>\", ...],\"safety\":[\"<safety / legal callout, e.g. oleander is toxic-wear gloves, don't touch protected dune sea oats>\", ...],\"tasks\":[{\"ref\":\"<the plant name given>\",\"where\":\"<where in the yard>\",\"do\":[\"<step>\", ...],\"dont\":[\"<what NOT to do>\", ...],\"note\":\"<timing / heads-up or empty>\"}], \"closing\":\"<1 line: cleanup/haul-off + take after photos>\"}. Base tasks ONLY on what you're given; infer the tools from the services. Keep each string short.";
+// System-explicit sibling of callAnthropicTask (like callAnthropicVisionSys is to callAnthropicVision): same HTTPS
+// shape, but the caller supplies the SYSTEM prompt and a roomier token budget (a multi-task brief runs long). No
+// tools, no actions — one shot of text back. Runs on the org's OWN key.
+function callAnthropicBrief(apiKey, model, systemPrompt, taskPrompt, cb) {
+  const payload = JSON.stringify({ model: model || "claude-sonnet-4-6", max_tokens: 2000,
+    system: String(systemPrompt || ""),
+    messages: [{ role: "user", content: String(taskPrompt || "").slice(0, 8000) }] });
+  const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
+  r.on("error", e => cb(e)); r.write(payload); r.end();
+}
+// Parse the crew-brief model text → a clamped {intro,tools,order,safety,tasks,closing}, or null if unusable.
+// Mirrors landParseSurvey: extract the JSON object, clip every string, cap every array. A bad read can never reach
+// the client raw. Pure + exported → unit-tested.
+function crewBriefParse(text) {
+  if (!text || typeof text !== "string") return null;
+  const m = text.match(/\{[\s\S]*\}/); if (!m) return null;
+  let o; try { o = JSON.parse(m[0]); } catch (e) { return null; }
+  if (!o || typeof o !== "object") return null;
+  const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").slice(0, n);
+  const arr = (v, cap, n) => { const out = []; (Array.isArray(v) ? v : []).forEach(x => { if (out.length >= cap) return; const s = clip(x, n).trim(); if (s) out.push(s); }); return out; };
+  const tools = arr(o.tools, 25, 120);
+  const order = arr(o.order, 20, 200);
+  const safety = arr(o.safety, 15, 200);
+  const rawTasks = Array.isArray(o.tasks) ? o.tasks : [];
+  const tasks = [];
+  for (const it of rawTasks) {
+    if (tasks.length >= 40) break;
+    if (!it || typeof it !== "object") continue;
+    tasks.push({ ref: clip(it.ref, 80), where: clip(it.where, 120), do: arr(it.do, 12, 200), dont: arr(it.dont, 12, 200), note: clip(it.note, 200) });
+  }
+  const intro = clip(o.intro, 400), closing = clip(o.closing, 200);
+  if (!intro && !tasks.length && !order.length && !tools.length) return null;   // no usable content
+  return { intro: intro, tools: tools, order: order, safety: safety, tasks: tasks, closing: closing };
+}
 // CAP TODAY (Phase 1, read-only) — the conversational "secretary" at the top of the Today page. Builds a PURE,
 // USER-SCOPED context (ONE org, ONE user — no finance, no other crew's pay, no cross-org data — same isolation
 // discipline as orgAiContext) that goes in the SYSTEM prompt (trusted); the client's conversation goes in the
@@ -2288,6 +2330,59 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // CAP CREW BRIEF — POST /api/org-ai/crew-brief. From a survey's APPROVED tasks + the job info, DRAFT a crew-ready
+  // work order (intro/tools/order/safety/per-task do+don't/closing) for the owner to hand to a 2-person crew he
+  // won't be on-site with. Owner/admin-gated + rate-limited, on the org's OWN key. Writes NOTHING to the store —
+  // the client stamps the returned brief onto its survey record. Input: {org, tasks:[...], job:{title,address,customer}}.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/crew-brief") {
+    const ip = clientIp(req);
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const acct = apiAccount(tok);
+    readBodyUtf8(req, 6e4, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const store = loadStore(), org = p && p.org;
+      if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can generate a crew brief"}'); }
+      const tasks = Array.isArray(p && p.tasks) ? p.tasks.slice(0, 60) : [];
+      if (!tasks.length) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"no tasks to brief"}'); }
+      const cfg = loadOrgAi()[org];
+      if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
+      const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").slice(0, n);
+      const job = (p && p.job && typeof p.job === "object") ? p.job : {};
+      const jl = [];
+      jl.push("JOB: " + (clip(job.title, 120) || "Landscaping job"));
+      if (job.customer) jl.push("Customer: " + clip(job.customer, 80));
+      if (job.address) jl.push("Address: " + clip(job.address, 160));
+      jl.push("");
+      jl.push("APPROVED TASKS (" + tasks.length + "):");
+      tasks.forEach((it, i) => {
+        it = it || {};
+        const cnt = Math.max(1, Math.round(+it.count || 1));
+        const bits = [(i + 1) + ". " + clip(it.plant || "plant", 80) + (cnt > 1 ? " ×" + cnt : "")];
+        if (it.service && it.service !== "none") bits.push("service: " + clip(it.service, 40));
+        if (it.approxSize) bits.push("size: " + clip(it.approxSize, 60));
+        if (it.condition) bits.push("condition: " + clip(it.condition, 60));
+        if (it.location) bits.push("where: " + clip(it.location, 80));
+        if (it.howTo) bits.push("how-to: " + clip(it.howTo, 300));
+        if (it.caution) bits.push("caution: " + clip(it.caution, 300));
+        if (it.bestSeason) bits.push("best season: " + clip(it.bestSeason, 80));
+        if (it.timingWarnNow === true) bits.push("TIMING WARNING: doing this service now can harm the plant");
+        jl.push(bits.join(" · "));
+      });
+      jl.push("");
+      jl.push("Write the crew brief JSON now. Give ONE task entry per approved task above, using its plant name as ref. JSON only.");
+      callAnthropicBrief(cfg.apiKey, RCPT_VISION_MODEL, CREW_BRIEF_SYSTEM, jl.join("\n"), (err, text) => {
+        if (err) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"AI request failed"}'); }
+        const brief = crewBriefParse(text);
+        if (!brief) { res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end('{"error":"Cap couldn\'t format the brief — try again"}'); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ brief: brief }));
+      });
+    });
+    return;
+  }
   // CAP TODAY (Phase 2, confirm-before-act) — POST /api/org-ai/assistant. The conversational "secretary" at the top
   // of the Today page: {org, messages:[{role,content}]}, member-gated + rate-limited, runs ONE Anthropic call on the
   // org's OWN key (Sonnet 4.6 by default; per-org assistantModel override) with a USER-SCOPED context in the SYSTEM
@@ -2822,4 +2917,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
