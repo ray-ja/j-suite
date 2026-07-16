@@ -805,6 +805,36 @@ function landCrewGuideHTML(sv) {
 }
 function landGuideUrl(sv) { const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""); return base + "/guide/" + encodeURIComponent(S.biz) + "/" + encodeURIComponent(sv.id); }
 window.openPathGuide = function (quoteId) { const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""); window.open(base + "/guide/path/" + encodeURIComponent(S.biz) + "/" + encodeURIComponent(quoteId), "_blank"); };
+/* PATH PREVIEW — the crew photographs the bare site; Gemini renders the stepping-stone path (from the quote's specs)
+   into it so they see the finished result in place. Take/upload a photo → /api/org-ai/path-preview → stamp the
+   render onto the quote (q.pathPreviews) so it shows on the job + the shareable path guide. */
+var _pathPrevBusy = false;
+window.pathPrevBusy = function () { return _pathPrevBusy; };
+window.pathPreviewStart = function (quoteId) {
+  if (_pathPrevBusy) return;
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*"; inp.style.display = "none";
+  document.body.appendChild(inp);
+  inp.onchange = function () {
+    const f = inp.files && inp.files[0]; try { document.body.removeChild(inp); } catch (e) {}
+    if (!f) return;
+    _pathPrevBusy = true; if (typeof render === "function") render();
+    (async function () {
+      try {
+        const srcId = await jsUpload(f);
+        const base = (typeof orgAiBase === "function" && orgAiBase()) || ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, "");
+        const r = await fetch(base + "/api/org-ai/path-preview", { method: "POST", headers: (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json" }, body: JSON.stringify({ org: S.biz, photoId: srcId, quoteId: quoteId }) });
+        let j = null; try { j = await r.json(); } catch (e) {}
+        _pathPrevBusy = false;
+        if (!r.ok || !j || !j.id) { if (typeof render === "function") render(); alert("Path preview failed — " + ((j && j.error) || ("HTTP " + r.status))); return; }
+        const q = D().quotes.find(function (x) { return x && x.id === quoteId; });
+        if (q) { if (!Array.isArray(q.pathPreviews)) q.pathPreviews = []; q.pathPreviews.push({ src: srcId, render: j.id, ts: (typeof now === "function" ? now() : Date.now()) }); if (typeof touch === "function") touch(q); if (typeof save === "function") save(); }
+        if (typeof render === "function") render();
+        window.open((typeof jsUploadUrl === "function") ? jsUploadUrl(j.id) : (base + "/uploads/" + j.id), "_blank");
+      } catch (e) { _pathPrevBusy = false; if (typeof render === "function") render(); alert("Path preview error — " + ((e && e.message) || "try again")); }
+    })();
+  };
+  inp.click();
+};
 window.landOpenCrewGuide = function () {
   const sv = landCurrent(); if (!sv) { alert("Open a survey first."); return; }
   if (!landGuidePlants(sv).length) { alert("No plants identified yet — read the photos first."); return; }

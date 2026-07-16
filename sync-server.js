@@ -952,6 +952,8 @@ function pathGuideRenderHTML(q, cust, biz) {
     "<b>Level &amp; clean.</b> Rake/screed the marble smooth and even, then sweep all chips off the paver tops.",
     "<b>Final walk-through.</b> Re-check every stone is level and the spacing looks even, top off any low marble, blow off the walk, and take <b>after photos</b>."
   ];
+  const previews = (q && Array.isArray(q.pathPreviews)) ? q.pathPreviews.slice(-6) : [];
+  const prevHtml = previews.length ? ('<h2 class="s">🎨 What it\'ll look like here</h2><div class="card">' + previews.map(function (pv) { return '<img src="/uploads/' + E(pv.render) + '" style="width:100%;border-radius:10px;margin-bottom:8px;display:block">'; }).join("") + '<div class="note">AI previews rendered onto photos of the actual site — a visual target, not exact.</div></div>') : "";
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Path Build Guide — ' + E(nm) + '</title><style>' +
     '*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#15201a;margin:0 auto;padding:20px 16px 50px;max-width:760px;background:#f6f5ef}' +
     '.hd{background:#1f5a23;color:#fff;margin:-20px -16px 16px;padding:20px 18px;border-radius:0 0 16px 16px}.hd h1{margin:0;font-size:22px}.hd .m{opacity:.9;font-size:13px;margin-top:5px}' +
@@ -977,6 +979,7 @@ function pathGuideRenderHTML(q, cust, biz) {
     '<h2 class="s">🧰 Tools to load</h2><div class="card"><div class="tools">' + TOOLS.map(function (t) { return '<span class="tool">' + E(t) + '</span>'; }).join("") + '</div></div>' +
     '<h2 class="s">🔨 Step by step</h2><div class="card"><ol class="steps">' + STEPS.map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ol>' +
     '<div class="note"><b>Keys to a clean job:</b> every stone dead level, the ' + s.gap + ' in spacing consistent, and the marble swept fully off the paver tops. Consistency is what makes it look pro.</div></div>' +
+    prevHtml +
     '<div class="ft">' + E((biz && biz.name) || "OBX Lot Solutions") + ((biz && biz.phone) ? " · " + E(biz.phone) : "") + ' — text the owner with any questions.</div>' +
     '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
     '</body></html>';
@@ -2544,6 +2547,50 @@ const server = http.createServer((req, res) => {
       callGeminiImage(cfg.imageKey, "gemini-3.1-flash-image", mediaType, imgB64, SHOW_AFTER_PROMPT, (err, img) => {
         if (!err) return saveImg(img);
         callGeminiImage(cfg.imageKey, "gemini-2.5-flash-image", mediaType, imgB64, SHOW_AFTER_PROMPT, (err2, img2) => {
+          if (err2) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: (err2 && err2.message) || "the image generation failed — try again" })); }
+          saveImg(img2);
+        });
+      });
+    });
+    return;
+  }
+
+  // PATH PREVIEW — POST /api/org-ai/path-preview {org, photoId, quoteId}. The crew photographs the bare site on-location
+  // and Gemini renders the stepping-stone path (from the quote's sp specs) INTO it so they see the finished result in
+  // place. MEMBER-gated (any logged-in crew member — they do this on site), rate-limited. The photo is a fresh upload.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/path-preview") {
+    const rc = rateCheck(clientIp(req));
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    readBodyUtf8(req, 2e4, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const store = loadStore(), org = p && p.org, photoId = (p && typeof p.photoId === "string") ? p.photoId : "", quoteId = (p && typeof p.quoteId === "string") ? p.quoteId : "";
+      if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp)$/i.test(photoId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad photoId"}'); }
+      const cfg = loadOrgAi()[org];
+      if (!cfg || !cfg.imageKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"set the Gemini image key in the Assistant card first"}'); }
+      const slab = store[org] || {}, q = (slab.quotes || []).find(function (x) { return x && x.id === quoteId && !x.deleted; });
+      const s = pathSpecs((q && q.sp) || {});
+      const full = path.join(__dirname, "uploads", photoId);
+      if (!full.startsWith(path.join(__dirname, "uploads") + path.sep) || !fs.existsSync(full)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"image file missing"}'); }
+      const ext = (/\.([A-Za-z0-9]+)$/.exec(photoId) || [, "jpg"])[1].toLowerCase();
+      let bytes; try { bytes = fs.readFileSync(full); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not read image"}'); }
+      const imgB64 = bytes.toString("base64");
+      const mediaType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      const prompt = "Add a NEW stepping-stone walkway to this yard/site, rendered photorealistically into the existing scene. The walkway is a single row of large rectangular pavers (about " + Math.round(s.stoneW || 24) + "×" + Math.round(s.stoneL || 24) + " inch, natural concrete/stone color) running across the open ground, with about a " + (s.gap || 3) + "-inch gap of bright WHITE MARBLE CHIPS between each paver, and a ~" + (s.borderW || 4) + "-inch white marble chip border down BOTH sides of the pavers, following a gentle natural curve. Make it look like a real finished professional installation that sits flush with the ground, matching the existing grass, soil, light and shadows. Keep the house, plants, fence, sky and everything else exactly the same — only ADD the path.";
+      const saveImg = (img) => {
+        let outBuf; try { outBuf = Buffer.from(String(img.data || ""), "base64"); } catch (e) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"the generated image was unreadable"}'); }
+        if (!outBuf.length) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"the generated image was empty"}'); }
+        const outExt = (img.mimeType === "image/jpeg" || img.mimeType === "image/jpg") ? "jpg" : (img.mimeType === "image/webp" ? "webp" : "png");
+        const dir = path.join(__dirname, "uploads"); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+        const id = crypto.randomBytes(12).toString("hex") + "." + outExt;
+        try { fs.writeFileSync(path.join(dir, id), outBuf); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not save the generated image"}'); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ id: id, url: "/uploads/" + id }));
+      };
+      callGeminiImage(cfg.imageKey, "gemini-3.1-flash-image", mediaType, imgB64, prompt, (err, img) => {
+        if (!err) return saveImg(img);
+        callGeminiImage(cfg.imageKey, "gemini-2.5-flash-image", mediaType, imgB64, prompt, (err2, img2) => {
           if (err2) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: (err2 && err2.message) || "the image generation failed — try again" })); }
           saveImg(img2);
         });

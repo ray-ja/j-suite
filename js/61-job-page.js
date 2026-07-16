@@ -272,7 +272,13 @@ function rJobPage(j) {
   // PATH BUILD GUIDE — if this customer has a stepping-stone quote, surface its build guide (specs + steps) too.
   if (typeof D === "function" && j.customerId) {
     const _pq = (D().quotes || []).filter(function (x) { return x && !x.deleted && x.customerId === j.customerId && x.sp && (x.items || []).some(function (i) { return i && i.bandKey === "steppath"; }); }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
-    if (_pq) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="openPathGuide('${_pq.id}')">🪨 Path Build Guide — specs &amp; steps</button>`;
+    if (_pq) {
+      h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="openPathGuide('${_pq.id}')">🪨 Path Build Guide — specs &amp; steps</button>`;
+      const _busy = (typeof pathPrevBusy === "function" && pathPrevBusy());
+      h += `<button class="btn ghost" style="width:100%;margin:8px 0 0" ${_busy ? "disabled" : ""} onclick="pathPreviewStart('${_pq.id}')">${_busy ? "🎨 Rendering the path on your photo…" : "📸 Preview the finished path on this spot"}</button>`;
+      const _prevs = (_pq.pathPreviews || []).slice(-4).reverse();
+      if (_prevs.length && typeof jsUploadUrl === "function") h += `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">` + _prevs.map(pv => `<img src="${esc(jsUploadUrl(pv.render))}" onclick="window.open('${esc(jsUploadUrl(pv.render))}','_blank')" style="width:74px;height:74px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer" title="Path preview — tap to view">`).join("") + `</div>`;
+    }
   }
   h += `<div style="height:8px"></div>`;
 
