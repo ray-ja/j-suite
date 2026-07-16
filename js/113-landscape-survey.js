@@ -182,6 +182,16 @@ window.openLandscapeSurvey = function () {
   if (typeof WZ === "undefined" || !WZ) return;
   let sv = landCurrent();
   if (!sv) {
+    // RESUME an in-progress (draft) survey for this customer instead of stranding it — the wizard's WZ.surveyId link
+    // is lost on a reload / a different quote, which orphaned photos with no way back. Match by customerId, else
+    // propertyId, else address; newest draft first. (A survey that already became a quote is left alone.)
+    const cc = WZ.cust || {};
+    const draft = landColl().filter(s => s && !s.deleted && s.status !== "quoted"
+        && ((cc.id && s.customerId === cc.id) || (!cc.id && cc.propertyId && s.propertyId === cc.propertyId) || (!cc.id && !cc.propertyId && cc.address && s.address === cc.address)))
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+    if (draft) { sv = draft; WZ.surveyId = sv.id; if (typeof save === "function") save(); }
+  }
+  if (!sv) {
     const c = WZ.cust || {};
     const me = (typeof curUser === "function" && curUser()) ? curUser().id : "";
     sv = { id: "srv_" + (typeof uid === "function" ? uid() : String(Date.now())), customerId: c.id || null, propertyId: c.propertyId || null, address: c.address || "", title: (c.name ? c.name + " — site survey" : "Site survey"), photoIds: [], items: [], status: "draft", quoteId: null, createdBy: me, ts: (typeof now === "function" ? now() : Date.now()), deleted: false };

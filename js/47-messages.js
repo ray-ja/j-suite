@@ -149,25 +149,54 @@ function renderThread(tid) {
   const _prev = document.getElementById("msg_reply");   // preserve an in-progress reply across sync re-renders
   const _draft = _prev ? _prev.value : "", _focused = !!_prev && document.activeElement === _prev;
   const _selS = _prev ? _prev.selectionStart : 0, _selE = _prev ? _prev.selectionEnd : 0;
+  // preserve the message-list scroll across sync re-renders: stay pinned to newest ONLY if already near the bottom
+  const _oldList = document.getElementById("msglist");
+  const _wasNearBottom = _oldList ? (_oldList.scrollHeight - _oldList.scrollTop - _oldList.clientHeight < 80) : true;
+  const _oldTop = _oldList ? _oldList.scrollTop : null;
   markRead(tid); save();
   const list = threadMsgs(tid).map(m => {
     const mineMsg = m.senderId === uid2;
     const _att = (m.attachments || []).filter(a => a && a.id && !a.deleted);
-    const _attHtml = _att.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">` + _att.map(a => `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" target="_blank" rel="noopener"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""}" style="max-width:180px;max-height:180px;border-radius:8px;border:1px solid var(--line)" loading="lazy"></a>`).join("") + `</div>` : "";
-    // delete control: your OWN message always; any message for owner/admin. Soft-delete only (tombstone).
-    const canDel = mineMsg || msgCanBroadcast();
-    const delBtn = canDel ? `<button class="btn ghost sm" title="Delete message" onclick="msgDelete('${tid}','${m.id}')" style="color:var(--danger);align-self:flex-start">🗑</button>` : ``;
-    return `<div class="li" title="${esc(msgReadersTip(tid, m))}" style="${mineMsg ? "background:var(--soft)" : ""}"><div class="grow"><div class="sub" style="font-weight:700">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} <span style="font-weight:400">· ${relTime(m.ts)}</span>${m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : ""}</div><div style="white-space:pre-wrap">${esc(m.body)}</div>${_attHtml}</div>${delBtn}</div>`;
-  }).join("") || `<div class="muted">No messages yet.</div>`;
-  let h = `<div class="secthd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>${list}`;
-  if (t.availAsk) h += msgAvailChips(tid);
-  h += `<div class="row" style="gap:8px;margin-top:12px"><textarea id="msg_reply" placeholder="Write a reply…" style="min-height:60px"></textarea></div>`;
-  if (MSG_PENDING) h += `<div class="row" style="gap:8px;margin-top:6px;align-items:center"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(MSG_PENDING) : ""}" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="sub">photo attached</span><button class="btn ghost sm" onclick="msgClearPhoto()">✕</button></div>`;
-  h += `<input type="file" id="msg_photo" accept="image/*" style="display:none" onchange="msgAddPhoto(this)">
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="document.getElementById('msg_photo').click()">📷 Photo</button><button class="btn acc grow" onclick="msgSendReply('${tid}')">Send</button></div>`;
-  view.innerHTML = h;
+    const _attHtml = _att.length ? `<div class="msg-atts">` + _att.map(a => { const u = (typeof jsUploadUrl === "function") ? jsUploadUrl(a.id) : ""; return `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" loading="lazy"></a>`; }).join("") + `</div>` : "";
+    const canDel = mineMsg || msgCanBroadcast();   // your OWN message always; any message for owner/admin (soft-delete/tombstone)
+    const delBtn = canDel ? `<button class="msg-del" title="Delete message" onclick="msgDelete('${tid}','${m.id}')">🗑</button>` : ``;
+    const ticks = m.capRead ? ` <span title="Cap read it" style="color:var(--accent);font-weight:800">✓✓</span>` : m.capReceived ? ` <span title="Cap received it" style="color:var(--muted);font-weight:800">✓</span>` : "";
+    return `<div class="msgrow ${mineMsg ? "me" : "them"}" title="${esc(msgReadersTip(tid, m))}"><div class="bubble"><div class="msg-meta">${esc(m.senderLabel || "—")}${mineMsg ? " · you" : ""} · ${relTime(m.ts)}${ticks}</div><div class="msg-text">${esc(m.body)}</div>${_attHtml}</div>${delBtn}</div>`;
+  }).join("") || `<div class="muted" style="text-align:center;padding:24px 8px">No messages yet — say hi.</div>`;
+  const availHtml = t.availAsk ? msgAvailChips(tid) : "";
+  const pendHtml = MSG_PENDING ? `<div class="row" style="gap:8px;margin-bottom:6px;align-items:center"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(MSG_PENDING) : ""}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="sub">photo attached</span><button class="btn ghost sm" onclick="msgClearPhoto()">✕</button></div>` : "";
+  view.innerHTML = `<div class="msgpane" id="msgpane">`
+    + `<div class="secthd msgpane-hd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>`
+    + `<div class="msglist" id="msglist">${list}</div>`
+    + `<div class="msgcompose">${availHtml}${pendHtml}`
+    + `<div class="row" style="gap:8px;align-items:flex-end"><textarea id="msg_reply" placeholder="Write a reply…" rows="1"></textarea>`
+    + `<input type="file" id="msg_photo" accept="image/*" style="display:none" onchange="msgAddPhoto(this)">`
+    + `<button class="btn ghost sm" title="Add photo" onclick="document.getElementById('msg_photo').click()">📷</button>`
+    + `<button class="btn acc" onclick="msgSendReply('${tid}')">Send</button></div></div></div>`;
   const _ta = document.getElementById("msg_reply");
   if (_ta) { if (_draft) _ta.value = _draft; if (_focused) { _ta.focus(); try { _ta.setSelectionRange(_selS, _selE); } catch (e) {} } }
+  msgFitPane(_wasNearBottom, _oldTop);
+}
+/* size the chat pane to fill the space between the header and the fixed bottom nav so the MESSAGE LIST scrolls
+   internally (not the page) and opens pinned to the newest message. Re-fits on resize (keyboard open / rotate). */
+function msgFitPane(toBottom, restoreTop) {
+  const pane = document.getElementById("msgpane"); if (!pane) return;
+  let reserve = 0;
+  try {
+    const navEl = document.querySelector("nav");
+    const navH = (navEl && getComputedStyle(navEl).position === "fixed") ? navEl.offsetHeight : 0;
+    const padB = parseInt(getComputedStyle(document.body).paddingBottom) || 0;
+    reserve = Math.max(navH, padB);
+  } catch (e) {}
+  const top = pane.getBoundingClientRect().top;
+  pane.style.height = Math.max(240, window.innerHeight - top - reserve - 4) + "px";
+  const ml = document.getElementById("msglist"); if (!ml) return;
+  if (toBottom) ml.scrollTop = ml.scrollHeight;
+  else if (restoreTop != null) ml.scrollTop = restoreTop;
+  if (!window._msgFitBound) {
+    window._msgFitBound = true;
+    window.addEventListener("resize", function () { if (MSG_OPEN && document.getElementById("msgpane")) msgFitPane(true, null); });
+  }
 }
 window.msgOpen = function (tid) {
   if (!msgEnabled()) return;
@@ -177,7 +206,7 @@ window.msgOpen = function (tid) {
   renderThread(tid);
 };
 window.msgBack = function () { MSG_OPEN = null; render(); };
-window.msgSendReply = function (tid) { const b = val("msg_reply"); const atts = MSG_PENDING ? [{ id: MSG_PENDING, ts: now() }] : []; if (!b && !atts.length) return; msgPost(tid, b, null, atts); MSG_PENDING = null; render(); };
+window.msgSendReply = function (tid) { const b = val("msg_reply"); const atts = MSG_PENDING ? [{ id: MSG_PENDING, ts: now() }] : []; if (!b && !atts.length) return; msgPost(tid, b, null, atts); MSG_PENDING = null; const _ta = document.getElementById("msg_reply"); if (_ta) _ta.value = ""; render(); };
 window.msgAddPhoto = function (input) { const file = input && input.files && input.files[0]; if (!file) return; if (typeof jsUpload !== "function") { alert("Photo needs a connection."); return; } jsUpload(file).then(function (id) { MSG_PENDING = id; render(); }).catch(function (e) { alert("Upload failed: " + (e.message || e)); }); };
 window.msgClearPhoto = function () { MSG_PENDING = null; render(); };
 
