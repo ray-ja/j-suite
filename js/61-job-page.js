@@ -266,6 +266,9 @@ function rJobPage(j) {
   }
   h += `<button class="btn ghost sm" style="margin-left:auto" onclick="jobPageBack()">← Back</button></div>`;
   h += editedByLine(j);
+  // CREW GUIDE — the crew open the job (from Today) to do the work; if this customer has a landscaping survey with
+  // identified plants, surface the print/share field guide right here at the top (js/113). One button, crew-visible.
+  if (typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
 
   // 1) Where & when — CONTACT header (name · address · tap-to-call) then where you're going  [reorderable: key "data"]
   let _secData = `<div class="card"><div class="nm" style="font-size:18px">${esc(cust || "—")}</div>`;

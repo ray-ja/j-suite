@@ -808,6 +808,28 @@ window.landOpenCrewGuide = function () {
   w.document.open(); w.document.write(landCrewGuideHTML(sv)); w.document.close();
 };
 
+/* JOB-PAGE entry: the crew live on Today → the job, not in the quote wizard. Find the landscaping survey for a job
+   (match by customer, else property) that actually has identified plants, and open its crew guide. Lets the job page
+   show ONE "Crew Guide" button that opens the same self-contained print/share guide. */
+function landSurveyForJob(j) {
+  if (!j || typeof D !== "function") return null;
+  const svs = ((D().siteSurveys) || []).filter(function (s) {
+    return s && !s.deleted && landGuidePlants(s).length &&
+      ((j.customerId && s.customerId === j.customerId) || (j.propertyId && s.propertyId === j.propertyId));
+  });
+  svs.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  return svs[0] || null;
+}
+window.landJobHasGuide = function (j) { return !!landSurveyForJob(j); };
+window.landOpenGuideForJob = function (jobId) {
+  const j = (typeof actJ === "function") ? actJ().find(function (x) { return x && x.id === jobId; }) : null;
+  const sv = landSurveyForJob(j);
+  if (!sv) { alert("No landscaping guide for this job's customer yet."); return; }
+  const w = window.open("", "_blank");
+  if (!w) { alert("Allow pop-ups to open the guide."); return; }
+  w.document.open(); w.document.write(landCrewGuideHTML(sv)); w.document.close();
+};
+
 /* the "🌿 Plants on this job" ID glossary — client-side (no AI call) from the approved items, so the crew LEARNS the
    names. Each unique plant: source-photo thumb (tap → landViewPhoto), name (bold) + latin (italic), category, a
    "what it is / how to spot it" line, and a prominent ⚠️ toxic/handling flag when landToxicFlag fires. */
