@@ -244,7 +244,20 @@ async function syncRun(mode){
 }
 window.syncRun=syncRun;
 /* re-render without blowing away an open modal or the wizard mid-edit */
-function safeRender(){if(typeof WZON!=="undefined"&&WZON)return;const ov=document.getElementById("overlay");if(ov&&ov.classList.contains("show"))return;render();}
+/* THE "kicked out of a text field" FIX: the 60s sync pull (js/29) calls safeRender() whenever server data changed
+   — and while clocked in (GPS ping every 2min) or editing (lock heartbeat every 30s) that's almost every pull, all
+   day. It guarded the wizard + modals but NOT a focused input, so it rebuilt the DOM under the cursor and wiped
+   what you were typing (admin PIN, address, key entry...). Now: if ANY text field is focused, defer — never
+   re-render mid-type — and flush the moment focus leaves. */
+var _renderPending=false;
+function _editingField(){try{var ae=document.activeElement;return !!(ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA"||ae.tagName==="SELECT"||ae.isContentEditable));}catch(e){return false;}}
+function safeRender(){
+  if(typeof WZON!=="undefined"&&WZON)return;
+  const ov=document.getElementById("overlay");if(ov&&ov.classList.contains("show"))return;
+  if(_editingField()){_renderPending=true;return;}
+  _renderPending=false;render();
+}
+try{ if(typeof window!=="undefined"&&window.addEventListener){ window.addEventListener("focusout",function(){ if(_renderPending) setTimeout(function(){ if(_renderPending&&!_editingField()) safeRender(); },150); },true); } }catch(e){}
 /* manual sync — Advanced only */
 window.syncNow=function(){if(!S.sync||!S.sync.url){if(TAB==="data")syMsg("Set a server URL first.");else{TAB="data";render();}return;}syncRun("manual");};
 window.exportData=function(){
