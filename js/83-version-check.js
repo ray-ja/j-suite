@@ -110,6 +110,6 @@
     window.addEventListener("focus", function () { check(false); });                                  // banner-only
     document.addEventListener("visibilitychange", function () { if (!document.hidden) check(false); }); // banner-only
     setInterval(function () { check(false); }, INTERVAL);                                               // banner-only
-    setTimeout(function () { check(true); }, 2500);   // ON LOAD ONLY: may auto-reload to self-heal a stale-cache load (before any work); every later check is banner-only
+    setTimeout(function () { check(false); }, 2500);   // FULLY BANNER-ONLY now: never auto-reload (not even on load) — it kept yanking the page mid-typing (admin PIN, address fields) because deploys land within 2.5s of a load. The user taps the banner when THEY choose.
   }
 })();
