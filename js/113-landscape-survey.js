@@ -21,6 +21,7 @@
 
 var _landUpBusy = false;        // one photo upload at a time (dupe-submit guard)
 var _landReadBusy = false;      // one vision drain at a time
+var _landReadDone = 0, _landReadTotal = 0;   // drive a persistent progress bar (survives the per-photo re-renders)
 var _landSkip = {};             // in-session {photoId -> 1} of reads that produced nothing this session (don't churn)
 
 /* the loaded crew rate the other estimators price labor at (TAKE_HOME / FIELD_SPLIT ≈ $93.75/hr) so a labor line's
@@ -252,12 +253,8 @@ function landStampSuggestion(photoId, suggested) {
    Returns true iff it added ≥1 item. Never throws. */
 async function landSurveyReadPhoto(photoId) {
   const set = (t) => { const el = document.getElementById("land_status"); if (el) el.textContent = t || ""; };
-  set("🤖 Cap is identifying the plants…");
-  let res = await landReadPhotoPost(photoId);
-  if (!(res && res.suggested) && !(res && res.error === "offline") && !(res && res.status === 400 && /not set up/i.test(res.error || ""))) {
-    const esc2 = await landReadPhotoPost(photoId, { escalate: true });   // escalate to Opus on a miss (same as receipts)
-    if (esc2 && esc2.suggested) res = esc2; else if (esc2 && (esc2.error === "offline" || (esc2.status === 400 && /not set up/i.test(esc2.error || "")))) res = esc2;
-  }
+  set("🤖 Cap is identifying the plants (Opus)…");
+  let res = await landReadPhotoPost(photoId, { escalate: true });   // Opus from the START — plant ID from a photo is the hard case, worth the smartest model every time
   set("");
   if (res && res.suggested) { const added = landStampSuggestion(photoId, res.suggested); if (!added) _landSkip[photoId] = 1; if (typeof render === "function") render(); return { added: added > 0, error: null }; }
   if (res && res.status === 400 && /not set up/i.test(res.error || "")) { alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then read again."); return { added: false, error: "nokey", fatal: true }; }
@@ -279,22 +276,29 @@ window.landSurveyReadAll = async function (opts) {
   let pending = landUnreadPhotos(sv);
   if (!pending.length) { if (!opts.auto) alert("No un-read photos left for Cap."); return; }
   _landReadBusy = true;
+  _landReadTotal = pending.length;   // fixed batch size → drives the progress bar
+  _landReadDone = 0;
+  if (typeof render === "function") render();   // paint the progress bar immediately, before the first (slow) call
   const set = (t) => { const el = document.getElementById("land_status"); if (el) el.textContent = t || ""; };
   let done = 0, added = 0, errN = 0, lastErr = "";
   while (true) {
     pending = landUnreadPhotos(landCurrent());
     if (!pending.length || done >= 60) break;
     const pid = pending[0];
-    set("🤖 Cap is reading photo " + (done + 1) + " of " + (done + pending.length) + "…");
+    _landReadDone = done;
+    set("🤖 Reading with Opus — photo " + (done + 1) + " of " + _landReadTotal + "…");
     const r = await landSurveyReadPhoto(pid);
     if (r && r.fatal) break;                                       // no API key — stop the whole drain
     if (r && r.added) added++;
     if (r && r.error && r.error !== "offline") { errN++; lastErr = r.error; }
     done++;
+    _landReadDone = done;
+    if (typeof render === "function") render();                    // advance the bar + show the newly-detected plants as they land
     if (landUnreadPhotos(landCurrent()).length) await new Promise(rs => setTimeout(rs, 600));   // throttle between reads
   }
   set("");
   _landReadBusy = false;
+  _landReadTotal = 0; _landReadDone = 0;
   if (typeof render === "function") render();
   if (!opts.auto) {
     if (added === 0 && errN > 0) {
@@ -460,7 +464,18 @@ window.wizLandscapeUI = function () {
     h += `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">` + photos.map(pid => `<img src="${esc(typeof jsUploadUrl === "function" ? jsUploadUrl(pid) : "")}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join("") + `</div>`;
     const unread = landUnreadPhotos(sv).length;
     const canRun = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
-    if (unread && canRun) h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="landSurveyReadAll()">🤖 Read ${unread} un-read photo${unread === 1 ? "" : "s"}</button>`;
+    if (_landReadBusy) {
+      const tot = _landReadTotal || (unread + _landReadDone) || 1;
+      const dn = Math.min(_landReadDone, tot);
+      const pct = Math.max(3, Math.round(dn / tot * 100));
+      h += `<div class="card" style="margin-top:8px;background:var(--soft);padding:12px">`
+        + `<div class="row" style="align-items:baseline;margin-bottom:7px"><div class="grow" style="font-weight:700">🤖 Cap is reading with Opus…</div><div class="sub" style="font-variant-numeric:tabular-nums">${dn} / ${tot}</div></div>`
+        + `<div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .35s ease"></div></div>`
+        + `<div class="sub" style="margin-top:6px;text-align:center;white-space:normal">Reading photo ${Math.min(dn + 1, tot)} of ${tot} — a few seconds each. Plants appear below as they're found; you can start reviewing.</div>`
+        + `</div>`;
+    } else if (unread && canRun) {
+      h += `<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="landSurveyReadAll()">🤖 Read ${unread} un-read photo${unread === 1 ? "" : "s"} with Opus</button>`;
+    }
   }
   h += `<div id="land_status" class="sub" style="text-align:center;color:#1a7f37;min-height:16px;margin-top:6px"></div>`;
   h += `<button class="btn ghost sm" style="width:100%;margin-top:4px" onclick="landAddManual()">✚ Add a plant / task by hand</button>`;
