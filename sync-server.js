@@ -767,6 +767,40 @@ function callAnthropicVisionSys(apiKey, model, mediaType, imgB64, systemPrompt, 
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
   r.on("error", e => cb(e)); r.write(payload); r.end();
 }
+// SHOW THE AFTER (Feature 1) — the exact prompt that produced a good result against the real Gemini key. A server
+// constant so the client can never tamper with it (cost/quality control). Coastal-NC specific; plants change only.
+const SHOW_AFTER_PROMPT = "This is a photo of a residential property on the Outer Banks of North Carolina. Show how this exact scene will look AFTER a professional landscaping crew finishes: neatly trim, prune and shape the overgrown shrubs, hedges and trees; cut back scraggly/dead growth; tidy and edge the beds and lawn. Keep the house, driveway, fence, walkways, sky, ground and the camera angle the same — only the plants change, and keep them as the SAME plants, just cleanly maintained. You may remove people and clutter for a clean result. Photorealistic, same lighting.";
+// Google Gemini image-EDITING call (a DIFFERENT provider from Anthropic): raw https.request to generateContent, the
+// key rides in the URL query (NOT a header), the body carries the source image inlineData + the text prompt, and
+// responseModalities:["IMAGE"] asks for an image back. cb(err) on failure (429 quota / 402 billing surfaced with a
+// clear message), cb(null,{mimeType,data}) with the returned inline image on success. Mirrors callAnthropicVisionSys'
+// structure. Runs on the org's OWN Gemini key — never billed to j-Suite.
+function callGeminiImage(imageKey, model, mimeType, imgB64, prompt, cb) {
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + (model || "gemini-3.1-flash-image") + ":generateContent?key=" + encodeURIComponent(imageKey);
+  const payload = JSON.stringify({
+    contents: [{ parts: [ { inlineData: { mimeType: mimeType || "image/jpeg", data: imgB64 } }, { text: String(prompt || "") } ] }],
+    generationConfig: { responseModalities: ["IMAGE"] }
+  });
+  const r = https.request(url, { method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
+    resp => {
+      let d = ""; resp.on("data", c => d += c);
+      resp.on("end", () => {
+        let jj = null; try { jj = JSON.parse(d); } catch (e) { return cb(new Error("Gemini returned an unreadable response")); }
+        const sc = resp.statusCode || 0;
+        const emsg = (jj && jj.error && (jj.error.message || jj.error.status)) || "";
+        if (sc === 429) return cb(new Error(emsg || "Gemini quota exceeded (429) — check your Google API quota."));
+        if (sc === 402) return cb(new Error(emsg || "Gemini billing required (402) — enable billing on your Google Cloud project for image generation."));
+        if (jj && jj.error) return cb(new Error("Gemini error: " + (emsg || ("HTTP " + sc))));
+        // the image comes back as an inlineData part on candidates[0].content.parts
+        const parts = (jj && jj.candidates && jj.candidates[0] && jj.candidates[0].content && jj.candidates[0].content.parts) || [];
+        let img = null;
+        for (const pt of parts) { const inl = pt && (pt.inlineData || pt.inline_data); if (inl && inl.data) { img = { mimeType: inl.mimeType || inl.mime_type || "image/png", data: inl.data }; break; } }
+        if (!img) return cb(new Error("Gemini didn't return an image — try again."));
+        cb(null, img);
+      });
+    });
+  r.on("error", e => cb(e)); r.write(payload); r.end();
+}
 // Parse the landscape-survey model text → a clamped {scene, items:[...], notes} suggestion, or null if unusable.
 // Every field is defensively clamped so a bad read can never reach the client raw. Mirrors rcptParseSuggestion.
 const LAND_CATS = ["tree", "shrub", "perennial", "grass", "turf", "bed", "vine", "hedge", "other"];
@@ -2331,6 +2365,55 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // SHOW THE AFTER — POST /api/org-ai/show-after. Generate a "here's how it looks after a professional trim" image
+  // from a survey photo using the org's OWN Gemini image key. Gated EXACTLY like read-survey (rate → account →
+  // member → owner/admin → the SOURCE photo must belong to a survey in this org), plus it requires the Gemini image
+  // key. Reads the source blob, base64s it, calls Gemini with SHOW_AFTER_PROMPT, and SAVES the returned image as a
+  // NEW blob in uploads/ (same id scheme as /api/upload). Returns {id, url}. Writes a FILE (the generated image) but
+  // NOTHING to the data store — the client stamps sv.afterPhotos[photoId] = id onto its survey record. Input {org, photoId}.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/show-after") {
+    const ip = clientIp(req);
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const acct = apiAccount(tok);
+    readBodyUtf8(req, 2e4, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const store = loadStore(), org = p && p.org, photoId = (p && typeof p.photoId === "string") ? p.photoId : "";
+      if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run this"}'); }
+      if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp)$/i.test(photoId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad photoId"}'); }
+      if (!landPhotoOwnedByOrg(store, org, photoId)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"photo not found in this org"}'); }
+      const cfg = loadOrgAi()[org];
+      if (!cfg || !cfg.imageKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"set the Gemini image key in the Assistant card first"}'); }
+      const full = path.join(__dirname, "uploads", photoId);
+      if (!full.startsWith(path.join(__dirname, "uploads") + path.sep) || !fs.existsSync(full)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"image file missing"}'); }
+      const ext = (/\.([A-Za-z0-9]+)$/.exec(photoId) || [, "jpg"])[1].toLowerCase();
+      let bytes; try { bytes = fs.readFileSync(full); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not read image"}'); }
+      const imgB64 = bytes.toString("base64");
+      const mediaType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      // SAVE the returned image as a fresh blob, id scheme identical to /api/upload (crypto.randomBytes(12).hex + ext)
+      const saveImg = (img) => {
+        let outBuf; try { outBuf = Buffer.from(String(img.data || ""), "base64"); } catch (e) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"the generated image was unreadable"}'); }
+        if (!outBuf.length) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"the generated image was empty"}'); }
+        const outExt = (img.mimeType === "image/jpeg" || img.mimeType === "image/jpg") ? "jpg" : (img.mimeType === "image/webp" ? "webp" : "png");
+        const dir = path.join(__dirname, "uploads"); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+        const id = crypto.randomBytes(12).toString("hex") + "." + outExt;
+        try { fs.writeFileSync(path.join(dir, id), outBuf); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"could not save the generated image"}'); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ id: id, url: "/uploads/" + id }));
+      };
+      // primary model, fall back to gemini-2.5-flash-image once on failure (e.g. the newer model unavailable)
+      callGeminiImage(cfg.imageKey, "gemini-3.1-flash-image", mediaType, imgB64, SHOW_AFTER_PROMPT, (err, img) => {
+        if (!err) return saveImg(img);
+        callGeminiImage(cfg.imageKey, "gemini-2.5-flash-image", mediaType, imgB64, SHOW_AFTER_PROMPT, (err2, img2) => {
+          if (err2) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: (err2 && err2.message) || "the image generation failed — try again" })); }
+          saveImg(img2);
+        });
+      });
+    });
+    return;
+  }
   // CAP CREW BRIEF — POST /api/org-ai/crew-brief. From a survey's APPROVED tasks + the job info, DRAFT a crew-ready
   // work order (intro/tools/order/safety/per-task do+don't/closing) for the owner to hand to a 2-person crew he
   // won't be on-site with. Owner/admin-gated + rate-limited, on the org's OWN key. Writes NOTHING to the store —
@@ -2918,4 +3001,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

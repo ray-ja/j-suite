@@ -1984,6 +1984,22 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("crewBriefParse returns null on garbage / non-JSON", t.crewBriefParse("not json at all, no braces") === null && t.crewBriefParse("") === null && t.crewBriefParse(null) === null);
   ok("crewBriefParse returns null on an empty object (no usable content)", t.crewBriefParse("{}") === null);
 
+  // ===== Show-the-after (Gemini image) — callGeminiImage + /api/org-ai/show-after gating (no live Gemini calls) =====
+  console.log("\n— Show the after (Gemini image gen) —");
+  ok("callGeminiImage is exported as a function", typeof t.callGeminiImage === "function");
+  ok("SHOW_AFTER_PROMPT is the verified coastal-NC after-trim prompt", typeof t.SHOW_AFTER_PROMPT === "string" && /Outer Banks of North Carolina/.test(t.SHOW_AFTER_PROMPT) && /AFTER a professional landscaping crew/.test(t.SHOW_AFTER_PROMPT) && /same lighting/.test(t.SHOW_AFTER_PROMPT));
+  // response-parse: callGeminiImage must pull inlineData.data from candidates[0].content.parts (source-level assert;
+  // a real call needs a live key, which we never make in tests). Also assert the endpoint's gating chain is present.
+  const _srv = require("fs").readFileSync(require("path").join(__dirname, "sync-server.js"), "utf8");
+  const _cgi = _srv.slice(_srv.indexOf("function callGeminiImage"), _srv.indexOf("function callGeminiImage") + 2600);
+  ok("callGeminiImage builds the generateContent endpoint with the key in the URL query", /generativelanguage\.googleapis\.com\/v1beta\/models\/.*:generateContent\?key=/.test(_cgi));
+  ok("callGeminiImage request body sends inlineData image + text + responseModalities:[IMAGE]", /inlineData/.test(_cgi) && /responseModalities/.test(_cgi));
+  ok("callGeminiImage parses the image from candidates[0].content.parts inlineData.data", /candidates\[0\]\.content\.parts/.test(_cgi) && /inlineData\b/.test(_cgi) && /\.data/.test(_cgi));
+  ok("callGeminiImage surfaces 429 quota / 402 billing errors", /429/.test(_cgi) && /402/.test(_cgi));
+  const _ep = _srv.slice(_srv.indexOf('"/api/org-ai/show-after"'), _srv.indexOf('"/api/org-ai/show-after"') + 3600);
+  ok("show-after endpoint gates rate → account → member(orgsForUser) → owner/admin(writerManagesOrg) → photo-owned(landPhotoOwnedByOrg)", /rateCheck/.test(_ep) && /apiAccount/.test(_srv.slice(_srv.indexOf('"/api/org-ai/show-after"') - 400, _srv.indexOf('"/api/org-ai/show-after"') + 2600)) && /orgsForUser/.test(_ep) && /writerManagesOrg/.test(_ep) && /landPhotoOwnedByOrg/.test(_ep));
+  ok("show-after requires the Gemini image key and saves a new blob via crypto.randomBytes(12)", /set the Gemini image key/.test(_ep) && /randomBytes\(12\)/.test(_ep) && /fs\.writeFileSync/.test(_ep));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

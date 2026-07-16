@@ -24,6 +24,7 @@ var _landReadBusy = false;      // one vision drain at a time
 var _landReadDone = 0, _landReadTotal = 0;   // drive a persistent progress bar (survives the per-photo re-renders)
 var _landSkip = {};             // in-session {photoId -> 1} of reads that produced nothing this session (don't churn)
 var _landBriefBusy = false;     // one crew-brief generation at a time (it's one slow call)
+var _landAfterBusy = {};        // {photoId -> 1} of "show the after" image generations in flight (slow Gemini call, per-photo spinner)
 
 /* the loaded crew rate the other estimators price labor at (TAKE_HOME / FIELD_SPLIT ≈ $93.75/hr) so a labor line's
    value covers the payout split. */
@@ -313,6 +314,48 @@ window.landSurveyReadAll = async function (opts) {
   }
 };
 
+/* ============================== SHOW THE AFTER (Feature 1) ============================== */
+/* Generate a "here's how it'll look after a professional trim" image from ONE survey photo via Gemini (server
+   /api/org-ai/show-after → the org's own Gemini image key). Owner/admin gated. Slow (~5-15s) → a per-photo busy
+   flag drives a spinner. On success the server saved a NEW blob and returns its id; we stamp it on the survey as
+   sv.afterPhotos[srcPhotoId] = returnedId (a NEW field on the existing record — no schema/collection change) and
+   touch()+save()+render(). Billing/quota errors from Gemini are surfaced verbatim. Never auto-runs — tap only. */
+window.landShowAfter = async function (photoId) {
+  const canRun = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
+  if (!canRun) { if (typeof alert === "function") alert("Only an owner or admin can generate the 'after' image."); return; }
+  const sv = landCurrent(); if (!sv || !photoId) return;
+  if (_landAfterBusy[photoId]) return;
+  const base = (typeof orgAiBase === "function") ? orgAiBase() : "";
+  if (!base) { if (typeof alert === "function") alert("The 'after' image needs the server (you appear to be offline)."); return; }
+  // make sure the survey (with its photoIds) has reached the server, so the request passes the ownership guard
+  if (typeof uploadTrackSync === "function") { try { await uploadTrackSync(); } catch (e) {} }
+  _landAfterBusy[photoId] = 1;
+  if (typeof render === "function") render();   // paint the spinner before the slow call
+  let resObj;
+  try {
+    const r = await fetch(base + "/api/org-ai/show-after", {
+      method: "POST",
+      headers: (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json" },
+      body: JSON.stringify({ org: S.biz, photoId: photoId })
+    });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) resObj = { error: (j && j.error) || ("HTTP " + r.status) };
+    else resObj = j || { error: "empty response" };
+  } catch (e) { resObj = { error: (e && e.message) || "request failed" }; }
+  delete _landAfterBusy[photoId];
+  const live = landCurrent();
+  if (resObj && resObj.id && live) {
+    live.afterPhotos = live.afterPhotos || {};
+    live.afterPhotos[photoId] = resObj.id;
+    if (typeof touch === "function") touch(live);
+    if (typeof save === "function") save();
+    if (typeof render === "function") render();
+  } else {
+    if (typeof render === "function") render();
+    if (typeof alert === "function") alert("✨ Couldn't generate the 'after' — " + ((resObj && resObj.error) || "try again") + ".");
+  }
+};
+
 /* ============================== PHOTO UPLOAD ============================== */
 /* MULTI-PHOTO upload: the input is `multiple`, so the owner can select a whole batch (or multi-select from the
    camera roll on mobile) at once. Upload each file SEQUENTIALLY (one at a time keeps memory + the server calm),
@@ -472,6 +515,33 @@ window.landViewPhoto = function (photoId, sx, sy) {
 /* ============================== CREW BRIEF (Phase 1) ============================== */
 /* the APPROVED items on a survey (the brief's source rows) */
 function landApprovedItems(sv) { return ((sv && sv.items) || []).filter(function (it) { return it && it.status === "approved"; }); }
+
+/* ---- Plant-ID glossary (Feature 2): dedupe the approved items by plant name (case-insensitive) into a "learn the
+   plants" list. Prefer a copy that carries a source photo so the crew always gets a picture when one exists. Pure. */
+function landPlantGlossary(sv) {
+  const approved = landApprovedItems(sv);
+  const by = {}, order = [];
+  approved.forEach(function (it) {
+    const key = String(it.plant || "").trim().toLowerCase();
+    if (!key) return;
+    if (!by[key]) { by[key] = it; order.push(key); }
+    else if (!by[key].photoId && it.photoId) by[key] = it;   // upgrade to a copy that has a source photo
+  });
+  return order.map(function (k) { return by[k]; });
+}
+/* known coastal-NC toxic / handle-with-care plants (the crew must be warned even if Cap's caution field was terse) */
+var LAND_TOXIC_PLANTS = /oleander|poison\s*(ivy|oak|sumac)|nandina|sago\s*palm|foxglove|castor\s*bean|azalea|rhododendron|daffodil|lantana|\byew\b|hemlock|nightshade|pokeweed|angel'?s?\s*trumpet|brugmansia|datura|manchineel|sea\s*oats/i;
+/* returns a short toxic/handling warning string for an item (to render in a warning color), or "" if none applies.
+   Fires when the caution text mentions toxic/poison/gloves/protected (etc.) OR the plant is a known-toxic species. */
+function landToxicFlag(it) {
+  if (!it) return "";
+  const caution = String(it.caution || "");
+  const cautionHit = /toxic|poison|glove|protected|irritant|\bsap\b|thorn|allerg/i.test(caution);
+  const plantHit = LAND_TOXIC_PLANTS.test(String(it.plant || "") + " " + String(it.latin || ""));
+  if (!cautionHit && !plantHit) return "";
+  if (cautionHit && caution.trim()) return caution.trim().slice(0, 180);
+  return "Known toxic / skin-irritant plant — wear gloves and keep clippings away from skin, pets and burn piles.";
+}
 /* match a brief task's `ref` (the plant name we sent) back to the approved item it came from → its source photoId.
    First an exact plant match, then a case-insensitive one; null if none (a task with no photo just renders text). */
 function landBriefItemFor(sv, ref) {
@@ -545,6 +615,22 @@ function landBriefText(sv) {
   if (sv && sv.address) L.push(sv.address);
   L.push("");
   if (b.intro) { L.push(b.intro); L.push(""); }
+  // PLANTS ON THIS JOB — the ID glossary (names + latin + toxic flags), so the crew has the names on paper too.
+  const plants = landPlantGlossary(sv);
+  if (plants.length) {
+    L.push("PLANTS ON THIS JOB (learn these):");
+    plants.forEach(function (it) {
+      let line = "  - " + (it.plant || "unknown");
+      if (it.latin) line += " (" + it.latin + ")";
+      if (it.category) line += " [" + it.category + "]";
+      L.push(line);
+      const spot = [it.howTo, it.condition].filter(Boolean).join(" · ");
+      if (spot) L.push("      " + spot);
+      const tox = landToxicFlag(it);
+      if (tox) L.push("      !! TOXIC / HANDLE WITH CARE: " + tox);
+    });
+    L.push("");
+  }
   if (b.tools && b.tools.length) { L.push("TOOLS & MATERIALS TO BRING:"); b.tools.forEach(function (x) { L.push("  - " + x); }); L.push(""); }
   if (b.order && b.order.length) { L.push("ORDER OF OPERATIONS:"); b.order.forEach(function (x, i) { L.push("  " + (i + 1) + ". " + x); }); L.push(""); }
   if (b.safety && b.safety.length) { L.push("SAFETY:"); b.safety.forEach(function (x) { L.push("  ! " + x); }); L.push(""); }
@@ -595,6 +681,18 @@ function landBriefPrintHTML(sv) {
     if (tk.note) inner += '<div class="note">' + E(tk.note) + "</div>";
     return '<div class="task">' + thumb + "<div>" + inner + "</div></div>";
   }).join("");
+  // 🌿 Plants on this job — the ID glossary (names + latin + toxic flags) so the crew has the names on paper too.
+  const plants = landPlantGlossary(sv);
+  const glossaryHtml = plants.map(function (it) {
+    const url = (it.photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(it.photoId) : "";
+    const thumb = url ? '<img src="' + E(url) + '" alt="" onerror="this.style.display=\'none\'">' : "";
+    const spot = [it.howTo, it.condition, it.approxSize].filter(Boolean).join(" · ");
+    const tox = landToxicFlag(it);
+    let inner = '<div class="tk-head"><b>' + E(it.plant || "unknown") + "</b>" + (it.latin ? ' <span class="latin">' + E(it.latin) + "</span>" : "") + (it.category ? ' <span class="muted">' + E(it.category) + "</span>" : "") + "</div>";
+    if (spot) inner += '<div class="gloss">' + E(spot) + "</div>";
+    if (tox) inner += '<div class="tox">⚠️ ' + E(tox) + "</div>";
+    return '<div class="task">' + thumb + "<div>" + inner + "</div></div>";
+  }).join("");
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     "<title>Crew Brief — " + E(title) + "</title><style>" +
     "*{box-sizing:border-box}" +
@@ -609,6 +707,7 @@ function landBriefPrintHTML(sv) {
     ".tk-head{font-size:15px;margin-bottom:4px}" +
     ".lbl{font-size:11px;font-weight:800;text-transform:uppercase;margin-top:6px}.lbl.do{color:#1a7f37}.lbl.dont{color:#b00020}" +
     ".note{font-size:13px;color:#555;margin-top:6px;font-style:italic}" +
+    ".latin{font-style:italic;color:#555;font-size:13px}.gloss{font-size:13px;color:#444;margin-top:3px}.tox{color:#b00020;font-weight:700;font-size:13px;margin-top:5px}" +
     ".closing{margin-top:18px;border-top:1px solid #ddd;padding-top:12px;font-weight:600}" +
     ".foot{margin-top:22px;color:#666;font-size:12px}" +
     "button{margin-top:20px;padding:11px 18px;font-size:15px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer}" +
@@ -616,6 +715,7 @@ function landBriefPrintHTML(sv) {
     "</style></head><body>" +
     '<div class="head"><h1>Crew Brief — ' + E(title) + "</h1>" + (sv && sv.address ? '<div class="muted">' + E(sv.address) + "</div>" : "") + "</div>" +
     (b.intro ? '<p class="intro">' + E(b.intro) + "</p>" : "") +
+    (glossaryHtml ? "<h2>🌿 Plants on this job — learn these</h2>" + glossaryHtml : "") +
     (b.tools && b.tools.length ? "<h2>🧰 Tools &amp; materials to bring</h2>" + ul(b.tools) : "") +
     (b.order && b.order.length ? "<h2>📋 Order of operations</h2><ol>" + b.order.map(function (x) { return "<li>" + E(x) + "</li>"; }).join("") + "</ol>" : "") +
     (b.safety && b.safety.length ? "<h2>⚠️ Safety</h2>" + ul(b.safety, "safety") : "") +
@@ -634,6 +734,50 @@ window.landPrintBrief = function () {
   try { w.onload = function () { try { w.focus(); w.print(); } catch (e) {} }; } catch (e) {}
 };
 
+/* the "🌿 Plants on this job" ID glossary — client-side (no AI call) from the approved items, so the crew LEARNS the
+   names. Each unique plant: source-photo thumb (tap → landViewPhoto), name (bold) + latin (italic), category, a
+   "what it is / how to spot it" line, and a prominent ⚠️ toxic/handling flag when landToxicFlag fires. */
+function landGlossaryHTML(sv) {
+  const plants = landPlantGlossary(sv);
+  if (!plants.length) return "";
+  let h = `<div class="card" style="background:var(--soft);padding:10px;margin-top:4px">`;
+  h += `<div style="font-weight:800;margin-bottom:2px">🌿 Plants on this job</div>`;
+  h += `<div class="sub" style="white-space:normal;margin-bottom:4px">Learn these before you start — the names, how to spot them, and anything to handle with care.</div>`;
+  plants.forEach(function (it) {
+    const pu = (it.photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(it.photoId) : "";
+    const sx = (it.spot && isFinite(+it.spot.x)) ? +it.spot.x : "null", sy = (it.spot && isFinite(+it.spot.y)) ? +it.spot.y : "null";
+    const thumb = pu
+      ? `<img src="${esc(pu)}" onclick="landViewPhoto('${esc(it.photoId)}',${sx},${sy})" title="Tap to see it in the photo" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:0 0 auto">`
+      : `<div style="width:52px;height:52px;border-radius:8px;border:1px dashed var(--line);flex:0 0 auto"></div>`;
+    const spot = [it.howTo, it.condition, it.approxSize].filter(Boolean).join(" · ");
+    const tox = landToxicFlag(it);
+    h += `<div class="row" style="gap:8px;align-items:flex-start;margin-top:7px">${thumb}<div class="grow">`;
+    h += `<div style="white-space:normal"><b style="font-size:15px">${esc(it.plant || "unknown")}</b>${it.latin ? ` <span class="sub" style="font-style:italic">${esc(it.latin)}</span>` : ""}${it.category ? ` <span class="sub">· ${esc(it.category)}</span>` : ""}</div>`;
+    if (spot) h += `<div class="sub" style="white-space:normal;margin-top:1px">${esc(spot)}</div>`;
+    if (tox) h += `<div style="white-space:normal;margin-top:3px;color:var(--danger);font-weight:700;font-size:12px">⚠️ ${esc(tox)}</div>`;
+    h += `</div></div>`;
+  });
+  h += `</div>`;
+  return h;
+}
+/* the "🎯 Target look" strip — any AI-generated "after" images on this survey, so the crew can trim against them. */
+function landTargetLookHTML(sv) {
+  const ap = (sv && sv.afterPhotos) || {};
+  const ids = Object.keys(ap).filter(function (k) { return ap[k]; });
+  if (!ids.length) return "";
+  let h = `<div class="card" style="background:var(--soft);padding:10px;margin-top:8px">`;
+  h += `<div style="font-weight:800;margin-bottom:2px">🎯 Target look (after trimming)</div>`;
+  h += `<div class="sub" style="white-space:normal;margin-bottom:6px">Trim toward these — roughly how each area should look when you're done.</div>`;
+  h += `<div class="row" style="gap:8px;flex-wrap:wrap">`;
+  ids.forEach(function (srcId) {
+    const aId = ap[srcId];
+    const aUrl = (typeof jsUploadUrl === "function") ? jsUploadUrl(aId) : "";
+    h += `<img src="${esc(aUrl)}" onclick="landViewPhoto('${esc(aId)}')" title="Tap to view the target look" style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:2px solid var(--accent);cursor:pointer">`;
+  });
+  h += `</div></div>`;
+  return h;
+}
+
 /* render the crew-brief section: the busy spinner, the Generate/Regenerate buttons, and (when present) the printable
    brief card — intro, tools, order, safety, then each task with its SOURCE PHOTO thumbnail, DO / DON'T, and note. */
 function landBriefSectionHTML(sv, approvedN) {
@@ -651,8 +795,10 @@ function landBriefSectionHTML(sv, approvedN) {
     h += `<button class="btn acc" style="width:100%" ${approvedN ? "" : "disabled"} onclick="landGenerateBrief()">🧾 Generate crew brief</button>`;
     h += `</div>`; return h;
   }
-  // stored brief → the printable card
-  if (b.intro) h += `<div style="white-space:normal;margin-bottom:8px">${esc(b.intro)}</div>`;
+  // stored brief → the printable card. Plants FIRST (learn the names), THEN the steps.
+  h += landGlossaryHTML(sv);
+  h += landTargetLookHTML(sv);
+  if (b.intro) h += `<div style="white-space:normal;margin:8px 0 8px">${esc(b.intro)}</div>`;
   const list = (arr, style) => `<ul style="margin:4px 0 0;padding-left:20px${style ? ";" + style : ""}">` + (arr || []).map(x => `<li style="margin:2px 0;white-space:normal">${esc(x)}</li>`).join("") + `</ul>`;
   if (b.tools && b.tools.length) h += `<div style="margin-top:10px"><div style="font-weight:700">🧰 Tools &amp; materials to bring</div>${list(b.tools)}</div>`;
   if (b.order && b.order.length) h += `<div style="margin-top:10px"><div style="font-weight:700">📋 Order of operations</div><ol style="margin:4px 0 0;padding-left:20px">` + b.order.map(x => `<li style="margin:2px 0;white-space:normal">${esc(x)}</li>`).join("") + `</ol></div>`;
@@ -675,6 +821,34 @@ function landBriefSectionHTML(sv, approvedN) {
   return h;
 }
 
+/* one photo tile in the capture card: the BEFORE thumb (tap → view), an owner/admin "✨ Show after" button, and —
+   once generated — the AFTER thumb next to it with an "after" label (both tappable; the after has no spot marker).
+   While that photo is generating, its slot shows a spinner. */
+function landPhotoTileHTML(sv, pid, canAfter) {
+  const url = (typeof jsUploadUrl === "function") ? jsUploadUrl(pid) : "";
+  const afterId = (sv.afterPhotos && sv.afterPhotos[pid]) || "";
+  const afterUrl = (afterId && typeof jsUploadUrl === "function") ? jsUploadUrl(afterId) : "";
+  const busy = !!_landAfterBusy[pid];
+  let t = `<div style="display:flex;flex-direction:column;gap:4px;align-items:center">`;
+  t += `<div class="row" style="gap:5px;align-items:flex-start">`;
+  t += `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">`
+    + `<img src="${esc(url)}" onclick="landViewPhoto('${esc(pid)}')" title="Tap to view" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer">`
+    + `<span class="sub" style="font-size:10px">before</span></div>`;
+  if (busy) {
+    t += `<div style="width:64px;height:64px;border-radius:8px;border:1px dashed var(--accent);display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:var(--accent);padding:2px;line-height:1.2">✨ generating the after…</div>`;
+  } else if (afterUrl) {
+    t += `<div style="display:flex;flex-direction:column;align-items:center;gap:1px">`
+      + `<img src="${esc(afterUrl)}" onclick="landViewPhoto('${esc(afterId)}')" title="Tap to view the after" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:2px solid var(--accent);cursor:pointer">`
+      + `<span class="sub" style="font-size:10px;color:var(--accent)">✨ after</span></div>`;
+  }
+  t += `</div>`;
+  if (canAfter && !busy) {
+    t += `<button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="landShowAfter('${esc(pid)}')">✨ ${afterUrl ? "Redo after" : "Show after"}</button>`;
+  }
+  t += `</div>`;
+  return t;
+}
+
 window.wizLandscapeUI = function () {
   const sv = landCurrent();
   let h = `<div class="row" style="margin:0 2px 10px"><div class="grow"><div class="sub">🌿 Landscaping site survey</div><div class="nm" style="font-size:18px">Walk the property → photos → a quote</div></div><button class="btn ghost sm" onclick="exitWizard()">Cancel</button></div>`;
@@ -689,7 +863,9 @@ window.wizLandscapeUI = function () {
   h += `<button class="btn acc" style="width:100%" onclick="document.getElementById('land_file').click()">📷 Add photos</button>`;
   const photos = (sv.photoIds || []);
   if (photos.length) {
-    h += `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">` + photos.map(pid => `<img src="${esc(typeof jsUploadUrl === "function" ? jsUploadUrl(pid) : "")}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">`).join("") + `</div>`;
+    const canAfter = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
+    h += `<div class="row" style="gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-start">` + photos.map(pid => landPhotoTileHTML(sv, pid, canAfter)).join("") + `</div>`;
+    if (canAfter) h += `<div class="sub" style="white-space:normal;margin-top:5px;font-size:11px">✨ "Show after" previews a clean professional trim with Gemini — each 'after' costs a few cents on your Gemini key.</div>`;
     const unread = landUnreadPhotos(sv).length;
     const canRun = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
     if (_landReadBusy) {
