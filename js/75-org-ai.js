@@ -22,6 +22,10 @@ function orgAiCardInner() {
       <button class="btn ghost sm" onclick="orgAiSetModel()">Model: ${esc((st.model || "").replace("claude-", "") || "default")}</button>
       ${st.enabled && st.hasKey ? `<button class="btn acc sm" onclick="orgAiAsk()">💬 Ask a question</button>` : ""}
     </div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">
+      <button class="btn ghost sm" onclick="orgAiSetImageKey()">${st.hasImageKey ? "🖼 Replace image key (Gemini)" : "🖼 Set image key (Gemini)"}</button>
+      <span class="sub" style="align-self:center">${st.hasImageKey ? "✓ image key set — powers the 'show the after' photo tool" : "for before/after landscaping mockups"}</span>
+    </div>
     <div class="sub" style="white-space:normal;margin-top:8px;font-size:12px;line-height:1.4">
       Needs an <b>Anthropic API key</b> (powers this assistant + its Sentinel daily brief).
       Get one at <b>console.anthropic.com → Settings → API Keys → Create Key</b> — a standard key works, no special scopes.
@@ -76,6 +80,7 @@ async function orgAiPost(bodyObj) {
 }
 window.orgAiToggle = function (on) { orgAiPost({ enabled: !!on }); };
 window.orgAiSetKey = function () { const k = prompt("Paste this organization's Anthropic API key (sk-ant-…).\n\nGet one at console.anthropic.com → Settings → API Keys → Create Key. A standard key works — no special scopes needed. Billing is on your own Anthropic account.\n\nIt is stored on the server only and never shown again."); if (k == null || !k.trim()) return; orgAiPost({ apiKey: k.trim(), enabled: true }).then(() => alert("Key saved. The assistant is ready.")); };
+window.orgAiSetImageKey = function () { const k = prompt("Paste this organization's Google Gemini API key (AIza…) — this powers the before/after landscaping image tool.\n\nGet one FREE at aistudio.google.com → Get API key → Create API key. Image generation may need billing enabled on the Google project (a few cents per image).\n\nStored on the server only and never shown again."); if (k == null || !k.trim()) return; orgAiPost({ imageKey: k.trim() }).then(() => alert("Gemini image key saved. Tell me and I'll test one photo.")); };
 window.orgAiSetModel = function () { const m = prompt("Model id:\n• claude-haiku-4-5-20251001 — cheapest, fast\n• claude-sonnet-4-6 — smarter", (ORG_AI_ST && ORG_AI_ST.model) || "claude-haiku-4-5-20251001"); if (m == null || !m.trim()) return; orgAiPost({ model: m.trim() }); };
 window.orgAiAsk = function () {
   modal("Ask the " + ((typeof orgName === "function") ? orgName(S.biz) : S.biz) + " assistant", `

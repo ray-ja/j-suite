@@ -471,7 +471,7 @@ function orgAiStatus(orgId) {   // NEVER includes the key. `models` = the org's 
   const c = loadOrgAi()[orgId] || {};
   const models = {};
   if (c.models && typeof c.models === "object") for (const k of AI_FN_KEYS) if (typeof c.models[k] === "string" && AI_MODELS_SET.has(c.models[k])) models[k] = c.models[k];
-  return { enabled: !!c.enabled, hasKey: !!c.apiKey, model: c.model || "claude-haiku-4-5-20251001", models: models };
+  return { enabled: !!c.enabled, hasKey: !!c.apiKey, hasImageKey: !!c.imageKey, model: c.model || "claude-haiku-4-5-20251001", models: models };
 }
 function apiAccount(tok) { const uid = userForToken(tok); return uid ? accountById(loadStore(), uid) : null; }   // resolve the per-user account behind a bearer token
 function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary handed to that org's assistant (its data only)
@@ -2223,6 +2223,7 @@ const server = http.createServer((req, res) => {
         c.models = cur;
       }
       if (typeof p.apiKey === "string" && p.apiKey.trim()) { if (p.apiKey.length > 8192) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"key too long"}'); } c.apiKey = p.apiKey.trim(); }   // one-way, never echoed
+      if (typeof p.imageKey === "string" && p.imageKey.trim()) { if (p.imageKey.length > 8192) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image key too long"}'); } c.imageKey = p.imageKey.trim(); }   // Gemini image-gen key (separate provider) — one-way, never echoed
       c.updatedAt = Date.now(); cfg[org] = c;
       try { saveOrgAi(cfg); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
