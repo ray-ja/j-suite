@@ -763,9 +763,12 @@ function landCrewGuideHTML(sv) {
   tox.forEach(function (p) { safety.push("<b>" + E(p.plant) + " is toxic</b> — gloves on, bag the clippings, never burn or chip it near people/pets."); });
   safety.push("Eye protection around spiny plants (yucca, sago, palms).");
   safety.push("Big tree cuts / removals: clear it with the owner + local (Dare County) tree rules first — when unsure, deadwood only.");
+  const pimg = (sv && sv.plantImages) || {};
   const cards = plants.map(function (p) {
-    const bu = url(p.photoId), au = url(afters[p.photoId]);
-    const imgs = (bu ? ('<div class="ib"><span class="l b">Now</span><img src="' + E(bu) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
+    const pim = pimg[p.id] || {};   // {outline, after} — outline highlights WHICH plant in a multi-plant photo
+    const bu = url(pim.outline || p.photoId), au = url(pim.after || afters[p.photoId]);
+    const bl = pim.outline ? "This plant ↴" : "Now";
+    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
     const toxb = landToxicFlag(p) ? ' <span class="tx">⚠ TOXIC</span>' : "";
     const where = p.location ? ' <span class="wh">📍 ' + E(p.location) + '</span>' : "";
     let s = '<div class="pc">' + (imgs ? '<div class="imgs">' + imgs + '</div>' : "");
