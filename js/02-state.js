@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[],jobExpenses:[],jobMaterials:[],siteSurveys:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[],jobExpenses:[],jobMaterials:[],siteSurveys:[],playbookLib:[]}}
 /* MIGRATE (client mirror of the server's hoistJobLineItems): promote a single org slab's nested job.materials/
    expenses into its jobMaterials/jobExpenses collections. Idempotent (dedupe by element id), loss-free (id-less
    rows get a deterministic id), clears the nested array once hoisted, NEVER bumps job.updatedAt. */
@@ -94,6 +94,7 @@ function load(){
     if(!Array.isArray(S[b].jobExpenses))S[b].jobExpenses=[];   // LINE-ITEM COLLECTIONS: job.expenses[] promoted out of the job record → element-level LWW (no whole-job clobber on concurrent edits)
     if(!Array.isArray(S[b].jobMaterials))S[b].jobMaterials=[];   // job.materials[] promoted out of the job record (same reason)
     if(!Array.isArray(S[b].siteSurveys))S[b].siteSurveys=[];   // LANDSCAPE SITE SURVEY (Phase 1): synced survey records {id"srv_",customerId,propertyId,photoIds,items,status…}. A survey assembles into a normal quote → holds no money → finance byte-identical. Additive, empty by default.
+    if(!Array.isArray(S[b].playbookLib))S[b].playbookLib=[];   // PLAYBOOK LIBRARY (Phase 1): synced reusable plant/process guide entries {id"pl_"+key,kind,name,latin,identify,do[],dont[],when,tools[],safety[],refImage,aliases[]}. The crew guides PULL from these (js/114); holds no money → finance byte-identical. Additive, empty by default.
     hoistJobLineItems(S[b]);   // MIGRATE: move any nested job.materials/expenses into the collections (idempotent, loss-free, mirrors the server's hoist). Clears the nested arrays so no reader double-counts.
     // MULTI-JOB STOPS: job.sharedJobIds[] generalizes the old scalar job.parentJobId — []=generic/overhead
     // (charged to no job), [id]=today's 1:1 sub-job behavior (no-op divide), [id,id,...]=even split across N
@@ -179,6 +180,7 @@ function load(){
     if(!S[b].customJobs)S[b].customJobs=[];          // WORKSHOP: user-defined scheduled AI tasks (custom cron jobs) — per-org, synced
     if(!S[b].recurringPlans)S[b].recurringPlans=[];  // RECURRING SERVICE (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/102 engine always find the array
     if(!Array.isArray(S[b].siteSurveys))S[b].siteSurveys=[];  // LANDSCAPE SITE SURVEY (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/113 always find the array
+    if(!Array.isArray(S[b].playbookLib))S[b].playbookLib=[];  // PLAYBOOK LIBRARY (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/114 always find the array
     seedCustomJobsExample(S[b],b);                   // seed the Sentinel EXAMPLE job into obx once (inactive, clonable; runner skips it)
     migrateBudgetBooks(S[b],b);});            // ensure a default Personal book + tag untagged cats/tx (loss-free, idempotent)
   // RESEARCH library (Data → Research): backfill the synced `research` array on EVERY org slab (obx/jam + any
@@ -257,6 +259,10 @@ function load(){
     });
     S.quoteVersionsV1=true;save();
   }
+  // PLAYBOOK LIBRARY (js/114): insert-if-absent seed the 16 reusable plant/process guide entries into the current
+  // org's playbookLib (stable pl_<key> ids; never clobbers an edit; no-op once seeded). Runs at boot after all
+  // modules parse (js/114 loads before js/29-boot which calls load). Holds no money → finance byte-identical.
+  if(typeof pbLibSeed==="function")pbLibSeed();
 }
 // WORKSHOP — seed the Sentinel EXAMPLE custom-job into obx exactly once (idempotent on a deterministic id).
 // active:false + example:true so the future ~/sentinel runner SKIPS it (no double-run with the real Sentinel

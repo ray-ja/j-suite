@@ -290,7 +290,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -368,6 +368,10 @@ function migrateStore(s) {
   // detected plants/tasks + drafted line items but NO money of its own (it assembles into a normal quote) → billing
   // byte-identical. Additive + idempotent; rides the standard per-record LWW via COLLECTIONS/mergeColl.
   for (const oid of orgIdsOf(s)) if (!Array.isArray(s[oid].siteSurveys)) s[oid].siteSurveys = [];
+  // PLAYBOOK LIBRARY (Phase 1): every org slab gets a playbookLib array (mirror siteSurveys). Reusable plant/process
+  // guide entries the crew guides PULL from; holds NO money → billing byte-identical. Additive + idempotent; rides
+  // the standard per-record LWW via COLLECTIONS/mergeColl.
+  for (const oid of orgIdsOf(s)) if (!Array.isArray(s[oid].playbookLib)) s[oid].playbookLib = [];
   // LINE-ITEM COLLECTIONS (Phase 1): promote nested job.materials/expenses → jobMaterials/jobExpenses collections
   // so concurrent same-job edits merge element-wise instead of clobbering via whole-record LWW. Idempotent + loss-free.
   for (const oid of orgIdsOf(s)) { if (!Array.isArray(s[oid].jobExpenses)) s[oid].jobExpenses = []; if (!Array.isArray(s[oid].jobMaterials)) s[oid].jobMaterials = []; }
@@ -862,7 +866,23 @@ function landGuideCurate(sv) {
   return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b._score - a._score; }).slice(0, 16);
 }
 function landGuideToxic(it) { return /toxic|poison|cycasin|glove|protected|irritant|sap|thorn/i.test(String((it && it.caution) || "") + String((it && it.howTo) || "")); }
-function landGuideRenderHTML(sv, biz) {
+/* PLAYBOOK LIBRARY (Phase 1) — server-side pull helpers, ported from js/114 so the shareable crew guide reuses the
+   canonical reference image + identify + care of a KNOWN species/process instead of the regenerated survey data. */
+function pbLibNormS(name) { return String(name == null ? "" : name).toLowerCase().replace(/\s*\/.*/, "").replace(/[^a-z ]/g, "").trim(); }
+function pbLibMatchS(lib, name) {
+  const q = pbLibNormS(name); if (!q || !Array.isArray(lib)) return null;
+  for (let i = 0; i < lib.length; i++) { const e = lib[i]; if (!e || e.deleted || e.kind !== "plant") continue;
+    if (pbLibNormS(e.name) === q) return e;
+    if (pbLibNormS(String(e.key || "").replace(/_/g, " ")) === q) return e;
+    if (Array.isArray(e.aliases) && e.aliases.some(function (a) { return pbLibNormS(a) === q; })) return e; }
+  return null;
+}
+function pbLibProcessS(lib, key) {
+  if (!Array.isArray(lib)) return null; const k = String(key == null ? "" : key);
+  for (let i = 0; i < lib.length; i++) { const e = lib[i]; if (e && !e.deleted && e.kind === "process" && String(e.key) === k) return e; }
+  return null;
+}
+function landGuideRenderHTML(sv, biz, lib) {
   const E = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
   const url = function (id) { return id ? ("/uploads/" + encodeURIComponent(id)) : ""; };
   const plants = landGuideCurate(sv);
@@ -873,17 +893,29 @@ function landGuideRenderHTML(sv, biz) {
   safety.push("Eye protection around spiny plants (yucca, sago, palms).");
   safety.push("Big tree cuts / removals: clear it with the owner + local (Dare County) tree rules first — when unsure, deadwood only.");
   const cards = plants.map(function (p) {
+    // PLAYBOOK LIBRARY pull: a KNOWN species reuses the library's canonical reference image + identify + care. No
+    // match → render exactly as before (survey data only).
+    const ent = pbLibMatchS(lib, p.plant);
     const pim = pimg[p.id] || {}, bu = url(pim.outline || p.photoId), au = url(pim.after || afters[p.photoId]);
+    const ru = ent ? url(ent.refImage) : "";
     const bl = pim.outline ? "This plant ↴" : "Now";
-    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
+    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '"></div>') : "") +
+      (ru ? ('<div class="ib"><span class="l r">Reference</span><img src="' + E(ru) + '"></div>') : "") +
+      (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
     const toxb = landGuideToxic(p) ? ' <span class="tx">⚠ TOXIC</span>' : "";
     const where = p.location ? ' <span class="wh">📍 ' + E(p.location) + '</span>' : "";
+    const doTxt = (ent && Array.isArray(ent.do) && ent.do.length) ? ent.do.join(" · ") : (p.howTo || "");
+    const dontTxt = (ent && Array.isArray(ent.dont) && ent.dont.length) ? ent.dont.join(" · ") : (p.caution || "");
+    const whenTxt = (ent && ent.when) ? ent.when : (p.bestSeason || "");
+    const safeTxt = (ent && Array.isArray(ent.safety) && ent.safety.length) ? ent.safety.join(" · ") : "";
     let s = '<div class="pc">' + (imgs ? '<div class="imgs">' + imgs + '</div>' : "");
     s += '<div class="nm">' + E(p.plant || "unknown") + toxb + where + '</div>';
-    if (p.latin) s += '<div class="lat">' + E(p.latin) + '</div>';
-    if (p.howTo) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(p.howTo) + '</div>';
-    if (p.caution) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(p.caution) + '</div>';
-    if (p.bestSeason) s += '<div class="ln wn"><b>WHEN:</b> ' + E(p.bestSeason) + '</div>';
+    if (p.latin || (ent && ent.latin)) s += '<div class="lat">' + E(p.latin || ent.latin) + '</div>';
+    if (ent && ent.identify) s += '<div class="ln" style="color:#5d6457"><b>How to spot it:</b> ' + E(ent.identify) + '</div>';
+    if (doTxt) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(doTxt) + '</div>';
+    if (dontTxt) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(dontTxt) + '</div>';
+    if (whenTxt) s += '<div class="ln wn"><b>WHEN:</b> ' + E(whenTxt) + '</div>';
+    if (safeTxt) s += '<div class="ln dt"><b>⚠ SAFETY:</b> ' + E(safeTxt) + '</div>';
     return s + '</div>';
   }).join("");
   const phoneHref = (biz && biz.phone) ? biz.phone.replace(/[^0-9+]/g, "") : "";
@@ -895,7 +927,7 @@ function landGuideRenderHTML(sv, biz) {
     'h2.s{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:#5d6457;margin:22px 2px 10px;border-bottom:2px solid #e4e2d7;padding-bottom:6px}' +
     '.tools{display:flex;flex-wrap:wrap;gap:7px}.tool{border:1px solid #d9d7cd;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:600;background:#fff}' +
     '.pc{border:1px solid #e4e2d7;border-radius:12px;padding:12px;margin:10px 0;page-break-inside:avoid;background:#fff}' +
-    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}' +
+    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}.l.r{background:#2e6b8f}' +
     '.nm{font-size:18px;font-weight:800}.tx{background:#c0392b;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;vertical-align:middle}.wh{font-size:12px;color:#a9760a;font-weight:600}.lat{font-style:italic;color:#5d6457;font-size:13px}' +
     '.ln{margin-top:7px;font-size:14px;line-height:1.45}.ln.do b{color:#2f7d33}.ln.dt b{color:#c0392b}.ln.wn b{color:#a9760a}' +
     '.ft{margin-top:26px;color:#5d6457;font-size:12px;border-top:1px solid #e4e2d7;padding-top:12px}' +
@@ -934,9 +966,12 @@ function pathSpecs(sp) {
   const baseBags = Math.ceil((baseArea * (baseDepth / 12)) / 0.5);
   return { runFt, widthFt, stoneL, stoneW, gap, borderW, jointDepth, borderDepth, baseDepth, baseUnder, stonesAcross, stoneCount, marbleBags, baseBags };
 }
-function pathGuideRenderHTML(q, cust, biz) {
+function pathGuideRenderHTML(q, cust, biz, lib) {
   const E = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
   const s = pathSpecs(q && q.sp);
+  // PLAYBOOK LIBRARY pull: the stepping-stone PROCESS entry — its reference photo (what a finished one looks like)
+  // shows at the top; its `do` steps are a fallback only (the sp-computed specs below stay the primary source).
+  const proc = pbLibProcessS(lib, "path_steppingstone");
   const addr = (q && q.address) || (cust && cust.address) || "";
   const nm = (cust && (cust.name || cust.company)) || "Stepping-stone path";
   const phoneHref = (biz && biz.phone) ? biz.phone.replace(/[^0-9+]/g, "") : "";
@@ -954,6 +989,10 @@ function pathGuideRenderHTML(q, cust, biz) {
   ];
   const previews = (q && Array.isArray(q.pathPreviews)) ? q.pathPreviews.slice(-6) : [];
   const prevHtml = previews.length ? ('<h2 class="s">🎨 What it\'ll look like here</h2><div class="card">' + previews.map(function (pv) { return '<img src="/uploads/' + E(pv.render) + '" style="width:100%;border-radius:10px;margin-bottom:8px;display:block">'; }).join("") + '<div class="note">AI previews rendered onto photos of the actual site — a visual target, not exact.</div></div>') : "";
+  // PLAYBOOK LIBRARY: the canonical "finished one" reference photo for a stepping-stone path (shown at the top).
+  const refHtml = (proc && proc.refImage) ? ('<h2 class="s">📸 What a finished one looks like</h2><div class="card"><img src="/uploads/' + E(proc.refImage) + '" style="width:100%;border-radius:10px;display:block"><div class="note">Reference — the standard we\'re matching. Your site\'s exact specs are below.</div></div>') : "";
+  // Fallback method (only if the quote has no real specs): the library process `do` steps as a plain checklist.
+  const fbHtml = ((s.runFt <= 0 || s.stoneCount <= 0) && proc && Array.isArray(proc.do) && proc.do.length) ? ('<h2 class="s">🔧 General method</h2><div class="card"><ol class="steps">' + proc.do.map(function (x) { return '<li>' + E(x) + '</li>'; }).join("") + '</ol></div>') : "";
   return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Path Build Guide — ' + E(nm) + '</title><style>' +
     '*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#15201a;margin:0 auto;padding:20px 16px 50px;max-width:760px;background:#f6f5ef}' +
     '.hd{background:#1f5a23;color:#fff;margin:-20px -16px 16px;padding:20px 18px;border-radius:0 0 16px 16px}.hd h1{margin:0;font-size:22px}.hd .m{opacity:.9;font-size:13px;margin-top:5px}' +
@@ -968,6 +1007,7 @@ function pathGuideRenderHTML(q, cust, biz) {
     '@page{margin:12mm}@media print{button,.call{display:none}body{padding:0;background:#fff}.hd{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
     '</style></head><body>' +
     '<div class="hd"><h1>🪨 Path Build Guide — ' + E(nm) + '</h1>' + (addr ? '<div class="m">' + E(addr) + '</div>' : "") + '<div class="m">Owner not on site — text with any questions.</div>' + (phoneHref ? '<a class="call" href="sms:' + E(phoneHref) + '">💬 Text ' + E(biz.phone) + '</a>' : "") + '</div>' +
+    refHtml +
     '<h2 class="s">📐 The build at a glance</h2><div class="card"><table>' +
     row("Path", "~" + s.runFt + " ft, gently curved, one stone wide") +
     row("Pavers", "<b>" + s.stoneCount + "</b> pavers (" + s.stoneL + " × " + s.stoneW + " in), short side across the walk") +
@@ -979,6 +1019,7 @@ function pathGuideRenderHTML(q, cust, biz) {
     '<h2 class="s">🧰 Tools to load</h2><div class="card"><div class="tools">' + TOOLS.map(function (t) { return '<span class="tool">' + E(t) + '</span>'; }).join("") + '</div></div>' +
     '<h2 class="s">🔨 Step by step</h2><div class="card"><ol class="steps">' + STEPS.map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ol>' +
     '<div class="note"><b>Keys to a clean job:</b> every stone dead level, the ' + s.gap + ' in spacing consistent, and the marble swept fully off the paver tops. Consistency is what makes it look pro.</div></div>' +
+    fbHtml +
     prevHtml +
     '<div class="ft">' + E((biz && biz.name) || "OBX Lot Solutions") + ((biz && biz.phone) ? " · " + E(biz.phone) : "") + ' — text the owner with any questions.</div>' +
     '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
@@ -2880,7 +2921,7 @@ const server = http.createServer((req, res) => {
     const cust = slab && (slab.customers || []).find(function (c) { return c && c.id === q.customerId; });
     const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
-    return res.end(pathGuideRenderHTML(q, cust, biz));
+    return res.end(pathGuideRenderHTML(q, cust, biz, (slab && slab.playbookLib) || []));
   }
 
   // CREW GUIDE public page — GET /guide/<org>/<surveyId>. A real, shareable, no-login URL for the field guide so the
@@ -2893,7 +2934,7 @@ const server = http.createServer((req, res) => {
     if (!sv) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Guide not found</h2><p>This link may be incorrect or no longer active.</p></body>"); }
     const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
-    return res.end(landGuideRenderHTML(sv, biz));
+    return res.end(landGuideRenderHTML(sv, biz, (slab && slab.playbookLib) || []));
   }
 
   // login: verify credentials against the synced account records, hand back the sync token

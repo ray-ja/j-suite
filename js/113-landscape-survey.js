@@ -765,18 +765,31 @@ function landCrewGuideHTML(sv) {
   safety.push("Big tree cuts / removals: clear it with the owner + local (Dare County) tree rules first — when unsure, deadwood only.");
   const pimg = (sv && sv.plantImages) || {};
   const cards = plants.map(function (p) {
+    // PLAYBOOK LIBRARY pull (js/114): a KNOWN species reuses the library's canonical reference image + identify +
+    // care instead of regenerating per plant. No match → render exactly as before (survey data only).
+    const lib = (typeof pbLibMatch === "function") ? pbLibMatch(p.plant) : null;
     const pim = pimg[p.id] || {};   // {outline, after} — outline highlights WHICH plant in a multi-plant photo
     const bu = url(pim.outline || p.photoId), au = url(pim.after || afters[p.photoId]);
+    const ru = lib ? url(lib.refImage) : "";   // library canonical reference — "what it should look like"
     const bl = pim.outline ? "This plant ↴" : "Now";
-    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
+    const imgs = (bu ? ('<div class="ib"><span class="l b">' + bl + '</span><img src="' + E(bu) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") +
+      (ru ? ('<div class="ib"><span class="l r">Reference</span><img src="' + E(ru) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") +
+      (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
     const toxb = landToxicFlag(p) ? ' <span class="tx">⚠ TOXIC</span>' : "";
     const where = p.location ? ' <span class="wh">📍 ' + E(p.location) + '</span>' : "";
+    // prefer the library's care (curated) and fall back to the survey item when the library lacks a field
+    const doTxt = (lib && Array.isArray(lib.do) && lib.do.length) ? lib.do.join(" · ") : (p.howTo || "");
+    const dontTxt = (lib && Array.isArray(lib.dont) && lib.dont.length) ? lib.dont.join(" · ") : (p.caution || "");
+    const whenTxt = (lib && lib.when) ? lib.when : (p.bestSeason || "");
+    const safeTxt = (lib && Array.isArray(lib.safety) && lib.safety.length) ? lib.safety.join(" · ") : "";
     let s = '<div class="pc">' + (imgs ? '<div class="imgs">' + imgs + '</div>' : "");
     s += '<div class="nm">' + E(p.plant || "unknown") + toxb + where + '</div>';
-    if (p.latin) s += '<div class="lat">' + E(p.latin) + '</div>';
-    if (p.howTo) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(p.howTo) + '</div>';
-    if (p.caution) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(p.caution) + '</div>';
-    if (p.bestSeason) s += '<div class="ln wn"><b>WHEN:</b> ' + E(p.bestSeason) + '</div>';
+    if (p.latin || (lib && lib.latin)) s += '<div class="lat">' + E(p.latin || lib.latin) + '</div>';
+    if (lib && lib.identify) s += '<div class="ln" style="color:#5d6457"><b>How to spot it:</b> ' + E(lib.identify) + '</div>';
+    if (doTxt) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(doTxt) + '</div>';
+    if (dontTxt) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(dontTxt) + '</div>';
+    if (whenTxt) s += '<div class="ln wn"><b>WHEN:</b> ' + E(whenTxt) + '</div>';
+    if (safeTxt) s += '<div class="ln dt"><b>⚠ SAFETY:</b> ' + E(safeTxt) + '</div>';
     return s + '</div>';
   }).join("");
   const phoneHref = biz.phone ? biz.phone.replace(/[^0-9+]/g, "") : "";
@@ -788,7 +801,7 @@ function landCrewGuideHTML(sv) {
     'h2.s{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:#5d6457;margin:22px 2px 10px;border-bottom:2px solid #e4e2d7;padding-bottom:6px}' +
     '.tools{display:flex;flex-wrap:wrap;gap:7px}.tool{border:1px solid #d9d7cd;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:600}' +
     '.pc{border:1px solid #e4e2d7;border-radius:12px;padding:12px;margin:10px 0;page-break-inside:avoid}' +
-    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}' +
+    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}.l.r{background:#2e6b8f}' +
     '.nm{font-size:18px;font-weight:800}.tx{background:#c0392b;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;vertical-align:middle}.wh{font-size:12px;color:#a9760a;font-weight:600}.lat{font-style:italic;color:#5d6457;font-size:13px}' +
     '.ln{margin-top:7px;font-size:14px;line-height:1.45}.ln.do b{color:#2f7d33}.ln.dt b{color:#c0392b}.ln.wn b{color:#a9760a}' +
     '.ft{margin-top:26px;color:#5d6457;font-size:12px;border-top:1px solid #e4e2d7;padding-top:12px}' +

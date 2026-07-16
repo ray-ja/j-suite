@@ -7,7 +7,7 @@ function rPlaybook(){
   let list = (typeof actKnow === "function") ? actKnow() : [];
   if(PB_SEARCH){ const q=PB_SEARCH.toLowerCase(); list=list.filter(k=>(((k.topic||"")+" "+(k.fact||"")+" "+(k.tags||"")).toLowerCase().indexOf(q)>=0)); }
   list.sort((a,b)=>((a.topic||"")+"").localeCompare((b.topic||"")+""));
-  let h=`<div class="secthd"><h2>📒 Cap's Playbook</h2><button class="btn acc sm" style="margin-left:auto" onclick="pbAdd()">+ Fact</button></div>`;
+  let h=`<div class="secthd"><h2>📒 Cap's Playbook</h2>${(typeof pbLibView==="function")?`<button class="btn ghost sm" style="margin-left:auto" onclick="pbLibView()">🌿 Guide library</button><button class="btn acc sm" onclick="pbAdd()">+ Fact</button>`:`<button class="btn acc sm" style="margin-left:auto" onclick="pbAdd()">+ Fact</button>`}</div>`;
   h+=`<div class="card" style="background:var(--soft)"><div class="sub">Facts Cap treats as ground truth when he answers — transfer stations, dump rules, vendors, how we price. Add what you know so he stops guessing (and escalates when it's not in here).</div></div>`;
   // TAX STARTER — one-tap load of grounded NC / Dare-County tax guidance (what's deductible + sales-taxable), so
   // Cap can answer "is Cloudflare taxable?" from ground truth. Insert-if-absent (your edits stick); shows how many
