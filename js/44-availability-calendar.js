@@ -18,13 +18,19 @@ function avTargetUser(){
   }
   return me;
 }
-function avSetDay(u, ds, val){
+function avValLabel(val){ if (val && typeof val === "object") return (val.s || "partial") + (val.start ? " " + val.start + "-" + (val.end || "") : ""); return String(val || "default"); }
+/* opts.silent skips the per-day audit line — used by the bulk ops, which emit ONE summary line instead of N. Every
+   availability override change is now logged (who/when/what); previously these calendar writes weren't audited, so a
+   member's schedule could change with no record (the "can't prove Pierce changed it" gap). */
+function avSetDay(u, ds, val, opts){
   if (!u) return;
   if (!u.avail) u.avail = { overrides: {} };
   if (!u.avail.overrides) u.avail.overrides = {};
-  if (!val || val === "default") delete u.avail.overrides[ds];
+  const cleared = (!val || val === "default");
+  if (cleared) delete u.avail.overrides[ds];
   else u.avail.overrides[ds] = val;
   if (typeof touch === "function") touch(u);
+  if (!(opts && opts.silent) && typeof logChange === "function") logChange("update", "account", u.id, "Availability " + ds + " → " + (cleared ? "default" : avValLabel(val)));
 }
 function avCommit(){ if (typeof save === "function") save(); if (typeof render === "function") render(); }
 function avClearTimer(){ if (_avLongTimer){ clearTimeout(_avLongTimer); _avLongTimer = null; } }
@@ -35,7 +41,7 @@ window.avMonthToday  = function(){ const d = new Date(); AVCAL_Y = d.getFullYear
 window.avEnterMulti  = function(ds){ AVCAL_MULTI = true; if (!AVCAL_SEL) AVCAL_SEL = new Set(); if (ds) AVCAL_SEL.add(ds); if (typeof render === "function") render(); };
 window.avCancelMulti = function(){ AVCAL_MULTI = false; if (AVCAL_SEL) AVCAL_SEL.clear(); if (typeof render === "function") render(); };
 window.avToggleSel   = function(ds){ if (!AVCAL_SEL) AVCAL_SEL = new Set(); if (AVCAL_SEL.has(ds)) AVCAL_SEL.delete(ds); else AVCAL_SEL.add(ds); if (typeof render === "function") render(); };
-window.avApplyBulk   = function(val){ const u = avTargetUser(); if (!u || !AVCAL_SEL) return; AVCAL_SEL.forEach(ds => avSetDay(u, ds, val)); AVCAL_SEL.clear(); AVCAL_MULTI = false; avCommit(); };
+window.avApplyBulk   = function(val){ const u = avTargetUser(); if (!u || !AVCAL_SEL || !AVCAL_SEL.size) return; const days = Array.from(AVCAL_SEL).sort(); days.forEach(ds => avSetDay(u, ds, val, { silent: true })); if (typeof logChange === "function") logChange("update", "account", u.id, "Availability — " + days.length + " day" + (days.length === 1 ? "" : "s") + " → " + avValLabel(val) + " (" + days[0] + (days.length > 1 ? "…" + days[days.length - 1] : "") + ")"); AVCAL_SEL.clear(); AVCAL_MULTI = false; avCommit(); };
 window.avTodayFull   = function(){ const u = avTargetUser(); if (!u){ alert("Sign in to set your availability."); return; } avSetDay(u, today(), "full"); avCommit(); };
 
 /* tap vs long-press: a long-press fires the timer (enters/extends multi-select) and suppresses the
@@ -125,7 +131,9 @@ window.avBulkPartial = function(){
 window.avApplyBulkPartial = function(){
   const u = avTargetUser(); if (!u || !AVCAL_SEL) return;
   const s = val("av_start") || "08:00", e = val("av_end") || "12:00";
-  AVCAL_SEL.forEach(ds => avSetDay(u, ds, { s: "partial", start: s, end: e }));
+  const days = Array.from(AVCAL_SEL).sort();
+  days.forEach(ds => avSetDay(u, ds, { s: "partial", start: s, end: e }, { silent: true }));
+  if (typeof logChange === "function" && days.length) logChange("update", "account", u.id, "Availability — " + days.length + " day" + (days.length === 1 ? "" : "s") + " → partial " + s + "-" + e + " (" + days[0] + (days.length > 1 ? "…" + days[days.length - 1] : "") + ")");
   if (!u.avail) u.avail = {}; u.avail.lastPartial = { start: s, end: e }; if (typeof touch === "function") touch(u);
   AVCAL_SEL.clear(); AVCAL_MULTI = false;
   if (typeof closeModal === "function") closeModal(); avCommit();

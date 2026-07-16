@@ -537,31 +537,43 @@ window.loadPresenceUI = function () {
     .then(p => { (S.users || []).forEach(u => { const el = document.getElementById("pres_" + u.id); if (el) { const t = p[u.id]; el.textContent = "· " + agoTxt(t); el.style.color = (t && Date.now() - t < 90000) ? "var(--ok,#1a9a5a)" : "var(--muted)"; } }); })
     .catch(() => {});
 };
+/* Activity log — rendered from the local, synced `changelog` (rich who/what/when summaries, incl. every availability
+   change now that js/44 logs them). FILTERABLE by person, type, and free text — the log gets long, so filters matter.
+   The search box updates ONLY the list (#auditlist), never the whole panel, so typing never loses focus. */
+var _auditFilt = { user: "", type: "", q: "" };
+function auditEntries() {
+  const log = (typeof D === "function" && D() && Array.isArray(D().changelog)) ? D().changelog : [];
+  return log.filter(e => e && !e.deleted).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+}
+window.auditSetFilt = function (k, v) { _auditFilt[k] = v; auditRenderList(); };
+function auditRenderList() {
+  const el = document.getElementById("auditlist"); if (!el) return;
+  const f = _auditFilt, all = auditEntries();
+  const filtered = all.filter(e => {
+    if (f.user && (e.userName || e.user) !== f.user) return false;
+    if (f.type && e.entity !== f.type) return false;
+    if (f.q) { const s = (String(e.summary || "") + " " + String(e.userName || "") + " " + String(e.entity || "")).toLowerCase(); if (s.indexOf(f.q.toLowerCase()) < 0) return false; }
+    return true;
+  });
+  const dt = ms => { try { const d = new Date(ms); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch (x) { return ""; } };
+  const LIMIT = 300;
+  const count = `<div class="sub" style="margin-bottom:6px">${filtered.length} change${filtered.length === 1 ? "" : "s"}${(f.user || f.type || f.q) ? ` (filtered from ${all.length})` : ""}${filtered.length > LIMIT ? ` · showing the latest ${LIMIT}` : ""}</div>`;
+  const rows = filtered.slice(0, LIMIT).map(e => `<div style="padding:7px 0;border-bottom:1px solid var(--line)"><div><b>${esc(e.userName || e.user || "someone")}</b> <span class="sub">${esc(e.entity || "")}</span></div><div style="white-space:normal">${esc(e.summary || ((e.action || "changed") + " " + (e.entity || "")))}</div><span class="sub">${dt(e.ts)}</span></div>`).join("");
+  el.innerHTML = count + (rows || `<div class="muted">No matching activity.</div>`);
+}
 window.loadAuditUI = function () {
   const el = document.getElementById("auditlog"); if (!el) return;
-  const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
-  fetch(base + "/api/audit", { headers: tok ? { Authorization: "Bearer " + tok } : {} })
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(list => {
-      if (!list || !list.length) { el.textContent = "No changes recorded yet."; return; }
-      const nm = id => { const u = (S.users || []).find(x => x && x.id === id); return u ? (u.name || u.username) : "someone"; };
-      const dt = ms => { try { const d = new Date(ms); return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); } catch (x) { return ""; } };
-      const recOf = e => { try { const biz = (e.b === "obx" || e.b === "jam") ? S[e.b] : null; return biz && Array.isArray(biz[e.c]) ? biz[e.c].find(r => r && r.id === e.id) : null; } catch (x) { return null; } };
-      const custOf = rec => rec.cust || (rec.customerId && typeof custName === "function" ? custName(rec.customerId) : "") || "";
-      // build a readable descriptor live from the store: quotes get #num + customer + type; everything else its name/title
-      const desc = e => {
-        const coll = String(e.c).replace(/s$/, ""), rec = recOf(e);
-        if (e.c === "quotes" && rec) {
-          const num = (typeof quoteNum === "function" ? quoteNum(rec) : "") || ("#" + String(e.id).slice(-5));
-          const type = (rec.items && rec.items[0] && rec.items[0].name) || "";
-          return `quote <b>${esc(num)}</b> for ${esc(custOf(rec) || "a customer")}${type ? " · " + esc(type) : ""}`;
-        }
-        if (rec) return `${coll} ${esc(rec.name || rec.title || custOf(rec) || rec.label || rec.desc || rec.what || rec.vendor || e.label || e.id)}`;
-        return `${coll} ${esc(e.label || e.id)}`;
-      };
-      el.innerHTML = list.slice(0, 100).map(e => `<div style="padding:7px 0;border-bottom:1px solid var(--line)"><b>${esc(nm(e.u))}</b> ${esc(e.act)} ${desc(e)} <span class="sub">· ${dt(e.t)}</span></div>`).join("");
-    })
-    .catch(() => { el.textContent = "Activity unavailable (offline?)."; });
+  const all = auditEntries();
+  if (!all.length) { el.textContent = "No changes recorded yet."; return; }
+  const users = Array.from(new Set(all.map(e => e.userName || e.user).filter(Boolean))).sort();
+  const types = Array.from(new Set(all.map(e => e.entity).filter(Boolean))).sort();
+  const opt = (v, cur) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(v || "")}</option>`;
+  el.innerHTML = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:10px">`
+    + `<select onchange="auditSetFilt('user',this.value)" style="flex:1 1 110px"><option value="">👤 Everyone</option>${users.map(u => opt(u, _auditFilt.user)).join("")}</select>`
+    + `<select onchange="auditSetFilt('type',this.value)" style="flex:1 1 110px"><option value="">All types</option>${types.map(t => opt(t, _auditFilt.type)).join("")}</select>`
+    + `<input placeholder="🔍 Search (e.g. availability)…" value="${esc(_auditFilt.q)}" oninput="auditSetFilt('q',this.value)" style="flex:1 1 140px">`
+    + `</div><div id="auditlist"></div>`;
+  auditRenderList();
 };
 window.adminLogoutEverywhere = function (id) {
   const u = (S.users || []).find(x => x && x.id === id); if (!u) return;
