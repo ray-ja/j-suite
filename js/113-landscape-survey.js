@@ -59,6 +59,8 @@ function landItemFromSuggested(photoId, it) {
     laborMin: laborMin,
     materials: String(it.materials || "").slice(0, 120),
     recurring: it.recurring === true,
+    location: String(it.location || "").slice(0, 80),   // WHERE in the photo (a photo usually has several plants)
+    spot: (it.spot && isFinite(+it.spot.x) && isFinite(+it.spot.y)) ? { x: Math.min(1, Math.max(0, +it.spot.x)), y: Math.min(1, Math.max(0, +it.spot.y)) } : null,
     price: landLaborPrice(laborMin),
     matCost: 0,
     status: "review",
@@ -429,7 +431,14 @@ function landItemRowHTML(it) {
   const rejected = it.status === "rejected", approved = it.status === "approved";
   const border = approved ? "var(--accent)" : rejected ? "var(--danger)" : (it.confidence === "low" ? "var(--danger)" : "var(--line)");
   let h = `<div class="card" style="padding:10px;margin-top:8px;border-left:4px solid ${border}${rejected ? ";opacity:.5" : ""}">`;
-  h += `<div class="row" style="align-items:baseline;gap:8px"><div class="grow"><b style="font-size:15px">${esc(it.plant || "unknown")}</b>${it.count > 1 ? ` <span class="sub">×${it.count}</span>` : ""} ${landConfBadge(it.confidence)}</div><div class="sub">${esc(it.category || "")}</div></div>`;
+  const _pu = (it.photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(it.photoId) : "";
+  const _sx = (it.spot && isFinite(+it.spot.x)) ? +it.spot.x : "null", _sy = (it.spot && isFinite(+it.spot.y)) ? +it.spot.y : "null";
+  const _view = _pu ? `landViewPhoto('${esc(it.photoId)}',${_sx},${_sy})` : "";
+  const _thumb = _pu ? `<img src="${esc(_pu)}" onclick="${_view}" title="Tap to see this plant in the photo" style="width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;flex:0 0 auto">` : "";
+  const _loc = it.location ? `📍 ${esc(it.location)}` : "";
+  const _viewLink = _pu ? `<a onclick="${_view}" style="color:var(--accent);cursor:pointer;text-decoration:underline">${_loc ? "view photo" : "🔍 view source photo"}</a>` : "";
+  const _locLine = (_loc || _viewLink) ? `<div class="sub" style="white-space:normal;margin-top:1px">${_loc}${_loc && _viewLink ? " · " : ""}${_viewLink}</div>` : "";
+  h += `<div class="row" style="align-items:center;gap:8px">${_thumb}<div class="grow"><b style="font-size:15px">${esc(it.plant || "unknown")}</b>${it.count > 1 ? ` <span class="sub">×${it.count}</span>` : ""} ${landConfBadge(it.confidence)}${_locLine}</div><div class="sub">${esc(it.category || "")}</div></div>`;
   const sub = [it.service && it.service !== "none" ? "🔧 " + it.service : "", it.approxSize, it.condition].filter(Boolean).join(" · ");
   if (sub) h += `<div class="sub" style="white-space:normal;margin-top:2px">${esc(sub)}</div>`;
   if (it.howTo) h += `<div class="sub" style="white-space:normal;margin-top:3px">${esc(it.howTo)}</div>`;
@@ -446,6 +455,18 @@ function landItemRowHTML(it) {
   h += `</div>`;
   return h;
 }
+/* show an item's SOURCE photo full-size, with Cap's best-guess marker circled if it gave a spot. Since a photo
+   usually holds several plants, this is how the owner verifies WHICH plant an item refers to. */
+window.landViewPhoto = function (photoId, sx, sy) {
+  const url = (photoId && typeof jsUploadUrl === "function") ? jsUploadUrl(photoId) : "";
+  if (!url) { alert("Photo not available."); return; }
+  const hasSpot = (typeof sx === "number" && typeof sy === "number" && sx >= 0 && sx <= 1 && sy >= 0 && sy <= 1);
+  const marker = hasSpot ? `<div style="position:absolute;left:${(sx * 100).toFixed(1)}%;top:${(sy * 100).toFixed(1)}%;width:64px;height:64px;transform:translate(-50%,-50%);border:3px solid #ffd400;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.55),inset 0 0 0 2px rgba(0,0,0,.4);pointer-events:none"></div>` : "";
+  const html = `<div style="position:relative;width:100%;max-width:520px;margin:0 auto"><img src="${esc(url)}" style="width:100%;height:auto;border-radius:10px;display:block;background:#000">${marker}</div>`
+    + `<div class="sub" style="text-align:center;margin-top:8px;white-space:normal">${hasSpot ? "🟡 Cap's best guess at which plant — it's an estimate, so verify against the photo." : "Source photo for this item."} <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--accent)">open full size ↗</a></div>`;
+  if (typeof modal === "function") modal("Source photo", html);
+  else window.open(url, "_blank");
+};
 
 window.wizLandscapeUI = function () {
   const sv = landCurrent();
