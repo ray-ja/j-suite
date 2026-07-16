@@ -910,6 +910,77 @@ function landGuideRenderHTML(sv, biz) {
     '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
     '</body></html>';
 }
+
+/* ---- PATH BUILD GUIDE (GET /guide/path/<org>/<quoteId>) — the crew build guide for a stepping-stone path, rendered
+   from the stepping-stone quote's sp data (paver count, marble bags, depths) + the standard build steps. Same
+   shareable/no-login pattern as the landscaping guide. ---- */
+function pathSpecs(sp) {
+  sp = sp || {};
+  const runFt = +sp.runFt || 0, widthFt = +sp.widthFt || 0, stoneL = +sp.stoneL || 24, stoneW = +sp.stoneW || 24;
+  const gap = +sp.gap || 0, borderW = +sp.borderW || 0;
+  const jointDepth = (sp.jointDepth != null ? +sp.jointDepth : (+sp.rockDepth || 2));
+  const borderDepth = (sp.borderDepth != null ? +sp.borderDepth : (+sp.rockDepth || 2));
+  const baseDepth = +sp.baseDepth || 0, baseUnder = sp.baseUnder === "stones" ? "stones" : "full";
+  const settle = !!sp.settle, stonesAcross = Math.max(1, +sp.stonesAcross || 1);
+  const pathArea = runFt * widthFt;
+  const stonesLen = Math.max(1, Math.floor((runFt * 12 + gap) / (stoneL + gap)));
+  const stoneCount = stonesLen * stonesAcross;
+  const stoneCover = stoneCount * (stoneL * stoneW) / 144;
+  const jointArea = Math.max(0, pathArea - stoneCover);
+  const borderArea = 2 * (borderW / 12) * runFt;
+  const marbleCF = (jointArea * (jointDepth / 12) + borderArea * (borderDepth / 12)) * (settle ? 1.1 : 1);
+  const marbleBags = Math.ceil(marbleCF / 0.5);
+  const baseArea = baseUnder === "full" ? (pathArea + borderArea) : stoneCover;
+  const baseBags = Math.ceil((baseArea * (baseDepth / 12)) / 0.5);
+  return { runFt, widthFt, stoneL, stoneW, gap, borderW, jointDepth, borderDepth, baseDepth, baseUnder, stonesAcross, stoneCount, marbleBags, baseBags };
+}
+function pathGuideRenderHTML(q, cust, biz) {
+  const E = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  const s = pathSpecs(q && q.sp);
+  const addr = (q && q.address) || (cust && cust.address) || "";
+  const nm = (cust && (cust.name || cust.company)) || "Stepping-stone path";
+  const phoneHref = (biz && biz.phone) ? biz.phone.replace(/[^0-9+]/g, "") : "";
+  const row = function (k, v) { return '<tr><td>' + E(k) + '</td><td>' + v + '</td></tr>'; };
+  const TOOLS = ["Marking paint / string line", "Spade + flat shovel", "Mattock / pick", "Hand tamper (or plate compactor)", "4-ft level", "Rubber mallet", "Wheelbarrow", "Utility knife", "Gloves + knee pads", "Push broom"];
+  const STEPS = [
+    "<b>Mark the path.</b> Lay out the " + s.runFt + " ft centerline with paint or a string line, following the gentle curve. One stone wide (~" + s.widthFt + " ft).",
+    "<b>Excavate.</b> Dig the path ~" + (s.baseDepth + 2) + " in deep and a little wider than the stones — room for base under the pavers and the " + s.borderW + " in marble border each side.",
+    "<b>Lay fabric.</b> Roll landscape fabric down the whole trench and up the sides; trim with the knife.",
+    "<b>Base.</b> Add ~" + (s.baseDepth || 2) + " in of base " + (s.baseUnder === "full" ? "across the path" : "where each stone sits") + ", rake level, and tamp firm.",
+    "<b>Set the " + s.stoneCount + " pavers.</b> Short (" + s.stoneL + " in) side across the walk, with a <b>" + s.gap + " in gap of marble between each</b>. Tap level with the mallet, check every stone with the level. On the curve, fan the spacing slightly wider on the outside edge.",
+    "<b>Fill the marble.</b> Fill the " + s.gap + " in joints (~" + s.jointDepth + " in deep) and the " + s.borderW + " in side borders (~" + s.borderDepth + " in deep) with the marble chips.",
+    "<b>Level &amp; clean.</b> Rake/screed the marble smooth and even, then sweep all chips off the paver tops.",
+    "<b>Final walk-through.</b> Re-check every stone is level and the spacing looks even, top off any low marble, blow off the walk, and take <b>after photos</b>."
+  ];
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Path Build Guide — ' + E(nm) + '</title><style>' +
+    '*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#15201a;margin:0 auto;padding:20px 16px 50px;max-width:760px;background:#f6f5ef}' +
+    '.hd{background:#1f5a23;color:#fff;margin:-20px -16px 16px;padding:20px 18px;border-radius:0 0 16px 16px}.hd h1{margin:0;font-size:22px}.hd .m{opacity:.9;font-size:13px;margin-top:5px}' +
+    '.call{display:inline-block;margin-top:10px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:6px 12px;border-radius:18px;font-weight:700;font-size:13px;text-decoration:none}' +
+    'h2.s{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:#5d6457;margin:22px 2px 10px;border-bottom:2px solid #e4e2d7;padding-bottom:6px}' +
+    '.card{background:#fff;border:1px solid #e4e2d7;border-radius:12px;padding:14px;margin:10px 0}' +
+    'table{width:100%;border-collapse:collapse;font-size:14.5px}td{padding:7px 4px;border-bottom:1px solid #eee;vertical-align:top}td:first-child{color:#5d6457;width:46%}td:last-child{font-weight:700;text-align:right}' +
+    '.tools{display:flex;flex-wrap:wrap;gap:7px}.tool{border:1px solid #d9d7cd;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:600;background:#fff}' +
+    '.steps{counter-reset:st;list-style:none;margin:0;padding:0}.steps li{position:relative;padding:2px 0 15px 44px;font-size:15px;line-height:1.5}.steps li::before{counter-increment:st;content:counter(st);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:#1f5a23;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}.steps li:not(:last-child)::after{content:"";position:absolute;left:15px;top:32px;bottom:2px;width:2px;background:#e4e2d7}' +
+    '.note{font-size:13.5px;color:#5d6457;margin-top:10px}.ft{margin-top:26px;color:#5d6457;font-size:12px;border-top:1px solid #e4e2d7;padding-top:12px}' +
+    'button{margin-top:18px;padding:11px 18px;font-size:15px;border:0;border-radius:9px;background:#1f5a23;color:#fff;cursor:pointer}' +
+    '@page{margin:12mm}@media print{button,.call{display:none}body{padding:0;background:#fff}.hd{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
+    '</style></head><body>' +
+    '<div class="hd"><h1>🪨 Path Build Guide — ' + E(nm) + '</h1>' + (addr ? '<div class="m">' + E(addr) + '</div>' : "") + '<div class="m">Owner not on site — text with any questions.</div>' + (phoneHref ? '<a class="call" href="sms:' + E(phoneHref) + '">💬 Text ' + E(biz.phone) + '</a>' : "") + '</div>' +
+    '<h2 class="s">📐 The build at a glance</h2><div class="card"><table>' +
+    row("Path", "~" + s.runFt + " ft, gently curved, one stone wide") +
+    row("Pavers", "<b>" + s.stoneCount + "</b> pavers (" + s.stoneL + " × " + s.stoneW + " in), short side across the walk") +
+    row("Between stones", s.gap + " in marble gap · ~" + s.jointDepth + " in deep") +
+    row("Side borders", s.borderW + " in marble each side · ~" + s.borderDepth + " in deep") +
+    row("Base", "~" + s.baseDepth + " in tamped base " + (s.baseUnder === "full" ? "across the path" : "under the stones")) +
+    row("Marble to bring", "~<b>" + s.marbleBags + "</b> bags marble chips (0.5 cu ft)") +
+    '</table></div>' +
+    '<h2 class="s">🧰 Tools to load</h2><div class="card"><div class="tools">' + TOOLS.map(function (t) { return '<span class="tool">' + E(t) + '</span>'; }).join("") + '</div></div>' +
+    '<h2 class="s">🔨 Step by step</h2><div class="card"><ol class="steps">' + STEPS.map(function (x) { return '<li>' + x + '</li>'; }).join("") + '</ol>' +
+    '<div class="note"><b>Keys to a clean job:</b> every stone dead level, the ' + s.gap + ' in spacing consistent, and the marble swept fully off the paver tops. Consistency is what makes it look pro.</div></div>' +
+    '<div class="ft">' + E((biz && biz.name) || "OBX Lot Solutions") + ((biz && biz.phone) ? " · " + E(biz.phone) : "") + ' — text the owner with any questions.</div>' +
+    '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
+    '</body></html>';
+}
 // CAP CREW BRIEF (Phase 1) — from a landscaping survey's APPROVED tasks, DRAFT a crew-ready work order the owner
 // hands to a 2-person crew he won't be on-site with. The task text (plant/service/how-to/caution/timing/where) is
 // UNTRUSTED business content to turn into a brief, never instructions. Writes NOTHING; the client stamps the brief
@@ -2749,6 +2820,20 @@ const server = http.createServer((req, res) => {
     if (!q) return notFound();
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q));
+  }
+
+  // PATH BUILD GUIDE public page — GET /guide/path/<org>/<quoteId> (must be checked BEFORE /guide/ below since it also
+  // matches). Renders the stepping-stone build guide from the quote's sp data. Shareable, no-login.
+  if (req.method === "GET" && req.url.split("?")[0].indexOf("/guide/path/") === 0) {
+    const parts = req.url.split("?")[0].split("/").filter(Boolean);   // ["guide","path",org,quoteId]
+    const org = parts[2] ? decodeURIComponent(parts[2]) : "", qid = parts[3] ? decodeURIComponent(parts[3]) : "";
+    const store = loadStore(), slab = store[org];
+    const q = slab && (slab.quotes || []).find(function (x) { return x && x.id === qid && !x.deleted; });
+    if (!q || !q.sp) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Path guide not found</h2></body>"); }
+    const cust = slab && (slab.customers || []).find(function (c) { return c && c.id === q.customerId; });
+    const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    return res.end(pathGuideRenderHTML(q, cust, biz));
   }
 
   // CREW GUIDE public page — GET /guide/<org>/<surveyId>. A real, shareable, no-login URL for the field guide so the

@@ -804,6 +804,7 @@ function landCrewGuideHTML(sv) {
     '</body></html>';
 }
 function landGuideUrl(sv) { const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""); return base + "/guide/" + encodeURIComponent(S.biz) + "/" + encodeURIComponent(sv.id); }
+window.openPathGuide = function (quoteId) { const base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""); window.open(base + "/guide/path/" + encodeURIComponent(S.biz) + "/" + encodeURIComponent(quoteId), "_blank"); };
 window.landOpenCrewGuide = function () {
   const sv = landCurrent(); if (!sv) { alert("Open a survey first."); return; }
   if (!landGuidePlants(sv).length) { alert("No plants identified yet — read the photos first."); return; }
