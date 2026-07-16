@@ -734,6 +734,80 @@ window.landPrintBrief = function () {
   try { w.onload = function () { try { w.focus(); w.print(); } catch (e) {} }; } catch (e) {}
 };
 
+/* ---------- CREW GUIDE (print / share) — a self-contained field guide built STRAIGHT from the survey's plant data.
+   No AI call and no approval step needed (works even when the AI brief fails or nothing's approved yet): it curates
+   the detected plants (dedupes, drops weed/turf/unknown noise), shows the "now" photo (+ the generated "after" if
+   there is one), and each plant's DO / DON'T / WHEN + toxic flags. Opens in its OWN window, so it can never touch
+   the app's state/sync — safe. This is the reliable path when Cap's brief is unavailable. ---------- */
+function landGuidePlants(sv) {
+  const items = ((sv && sv.items) || []).filter(function (it) { return it && it.status !== "rejected" && it.plant; });
+  const skip = /^unknown|weed|turf|lawn|mulch bed|gravel|ground.?cover|background|mixed/i;
+  const by = {};
+  items.forEach(function (it) {
+    const nm = String(it.plant || "").trim(); if (!nm || skip.test(nm)) return;
+    const key = nm.toLowerCase().replace(/\s*\/.*/, "").replace(/[^a-z ]/g, "").trim(); if (!key) return;
+    const score = (it.confidence === "high" ? 3 : it.confidence === "medium" ? 2 : 1) + (it.photoId ? 2 : 0) + (String(it.howTo || "").length > 20 ? 1 : 0);
+    if (!by[key] || score > by[key]._score) by[key] = Object.assign({}, it, { _score: score });
+  });
+  return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b._score - a._score; }).slice(0, 16);
+}
+function landCrewGuideHTML(sv) {
+  const E = (typeof esc === "function") ? esc : function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  const biz = (function () { try { return (typeof BIZ === "object" && BIZ && (BIZ[S.biz] || BIZ.obx)) || { name: "OBX Lot Solutions", phone: "" }; } catch (e) { return { name: "OBX Lot Solutions", phone: "" }; } })();
+  const url = function (id) { return (id && typeof jsUploadUrl === "function") ? jsUploadUrl(id) : ""; };
+  const plants = landGuidePlants(sv);
+  const afters = (sv && sv.afterPhotos) || {};
+  const TOOLS = ["Loppers", "Hand pruners", "Pole saw / pole pruner", "Hedge shears", "Pruning saw", "Thick gloves", "Eye protection", "Tarps", "Rake + blower", "Contractor bags", "Wheelbarrow"];
+  const tox = plants.filter(function (p) { return landToxicFlag(p); });
+  const safety = [];
+  tox.forEach(function (p) { safety.push("<b>" + E(p.plant) + " is toxic</b> — gloves on, bag the clippings, never burn or chip it near people/pets."); });
+  safety.push("Eye protection around spiny plants (yucca, sago, palms).");
+  safety.push("Big tree cuts / removals: clear it with the owner + local (Dare County) tree rules first — when unsure, deadwood only.");
+  const cards = plants.map(function (p) {
+    const bu = url(p.photoId), au = url(afters[p.photoId]);
+    const imgs = (bu ? ('<div class="ib"><span class="l b">Now</span><img src="' + E(bu) + '" onerror="this.parentNode.style.display=\'none\'"></div>') : "") + (au ? ('<div class="ib"><span class="l a">Target look</span><img src="' + E(au) + '"></div>') : "");
+    const toxb = landToxicFlag(p) ? ' <span class="tx">⚠ TOXIC</span>' : "";
+    const where = p.location ? ' <span class="wh">📍 ' + E(p.location) + '</span>' : "";
+    let s = '<div class="pc">' + (imgs ? '<div class="imgs">' + imgs + '</div>' : "");
+    s += '<div class="nm">' + E(p.plant || "unknown") + toxb + where + '</div>';
+    if (p.latin) s += '<div class="lat">' + E(p.latin) + '</div>';
+    if (p.howTo) s += '<div class="ln do"><b>DO — ' + E(p.service || "tend") + ':</b> ' + E(p.howTo) + '</div>';
+    if (p.caution) s += '<div class="ln dt"><b>DON\'T:</b> ' + E(p.caution) + '</div>';
+    if (p.bestSeason) s += '<div class="ln wn"><b>WHEN:</b> ' + E(p.bestSeason) + '</div>';
+    return s + '</div>';
+  }).join("");
+  const phoneHref = biz.phone ? biz.phone.replace(/[^0-9+]/g, "") : "";
+  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Crew Guide — ' + E((sv && sv.title) || "Landscaping") + '</title><style>' +
+    '*{box-sizing:border-box}body{font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif;color:#15201a;margin:0 auto;padding:20px 16px 50px;max-width:760px;background:#fff}' +
+    '.hd{background:#1f5a23;color:#fff;margin:-20px -16px 16px;padding:20px 18px;border-radius:0 0 16px 16px}.hd h1{margin:0;font-size:22px}.hd .m{opacity:.9;font-size:13px;margin-top:5px}' +
+    '.call{display:inline-block;margin-top:10px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;padding:6px 12px;border-radius:18px;font-weight:700;font-size:13px;text-decoration:none}' +
+    '.safe{background:#fbecea;border:1px solid #c0392b;border-radius:12px;padding:12px 14px;margin-bottom:14px}.safe h2{color:#c0392b;margin:0 0 6px;font-size:16px}.safe ul{margin:0;padding-left:18px}.safe li{margin:4px 0;font-size:14px}.safe b{color:#c0392b}' +
+    'h2.s{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:#5d6457;margin:22px 2px 10px;border-bottom:2px solid #e4e2d7;padding-bottom:6px}' +
+    '.tools{display:flex;flex-wrap:wrap;gap:7px}.tool{border:1px solid #d9d7cd;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:600}' +
+    '.pc{border:1px solid #e4e2d7;border-radius:12px;padding:12px;margin:10px 0;page-break-inside:avoid}' +
+    '.imgs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px}.ib{position:relative;border-radius:9px;overflow:hidden;border:1px solid #ddd}.ib img{display:block;width:100%;height:100%;object-fit:cover;aspect-ratio:4/3}.ib .l{position:absolute;left:7px;top:7px;font-size:10px;font-weight:800;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff}.l.b{background:rgba(20,25,20,.7)}.l.a{background:#2f7d33}' +
+    '.nm{font-size:18px;font-weight:800}.tx{background:#c0392b;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:12px;vertical-align:middle}.wh{font-size:12px;color:#a9760a;font-weight:600}.lat{font-style:italic;color:#5d6457;font-size:13px}' +
+    '.ln{margin-top:7px;font-size:14px;line-height:1.45}.ln.do b{color:#2f7d33}.ln.dt b{color:#c0392b}.ln.wn b{color:#a9760a}' +
+    '.ft{margin-top:26px;color:#5d6457;font-size:12px;border-top:1px solid #e4e2d7;padding-top:12px}' +
+    'button{margin-top:18px;padding:11px 18px;font-size:15px;border:0;border-radius:9px;background:#1f5a23;color:#fff;cursor:pointer}' +
+    '@page{margin:12mm}@media print{button,.call{display:none}body{padding:0}.hd{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
+    '</style></head><body>' +
+    '<div class="hd"><h1>Crew Guide — ' + E((sv && sv.title) || "Landscaping") + '</h1>' + (sv && sv.address ? '<div class="m">' + E(sv.address) + '</div>' : "") + '<div class="m">Owner not on site — text with any questions before you cut.</div>' + (phoneHref ? '<a class="call" href="sms:' + E(phoneHref) + '">💬 Text ' + E(biz.phone) + '</a>' : "") + '</div>' +
+    '<div class="safe"><h2>⚠️ Safety first</h2><ul>' + safety.map(function (x) { return "<li>" + x + "</li>"; }).join("") + '</ul></div>' +
+    '<h2 class="s">🧰 Tools to bring</h2><div class="tools">' + TOOLS.map(function (t) { return '<span class="tool">' + E(t) + '</span>'; }).join("") + '</div>' +
+    '<h2 class="s">🌿 The plants — what to do with each</h2>' + (cards || '<p>No plants identified yet.</p>') +
+    '<div class="ft">' + E(biz.name || "") + (biz.phone ? " · " + E(biz.phone) : "") + ' — plant IDs are AI-assisted; if a plant looks different than labeled, check with the owner before cutting.</div>' +
+    '<button onclick="window.print()">🖨 Print / Save as PDF</button>' +
+    '</body></html>';
+}
+window.landOpenCrewGuide = function () {
+  const sv = landCurrent(); if (!sv) { alert("Open a survey first."); return; }
+  if (!landGuidePlants(sv).length) { alert("No plants identified yet — read the photos first."); return; }
+  const w = window.open("", "_blank");
+  if (!w) { alert("Allow pop-ups to open the guide (or use the AI brief's Print)."); return; }
+  w.document.open(); w.document.write(landCrewGuideHTML(sv)); w.document.close();
+};
+
 /* the "🌿 Plants on this job" ID glossary — client-side (no AI call) from the approved items, so the crew LEARNS the
    names. Each unique plant: source-photo thumb (tap → landViewPhoto), name (bold) + latin (italic), category, a
    "what it is / how to spot it" line, and a prominent ⚠️ toxic/handling flag when landToxicFlag fires. */
@@ -787,6 +861,7 @@ function landBriefSectionHTML(sv, approvedN) {
   if (b && !_landBriefBusy) h += `<div class="row" style="gap:6px"><button class="btn ghost sm" onclick="landPrintBrief()">🖨 Print</button><button class="btn ghost sm" onclick="landCopyBrief()">📋 Copy as text</button></div>`;
   h += `</div>`;
   h += `<div class="sub" style="white-space:normal;margin:4px 0 8px">A crew-ready work order — what to do per plant, what NOT to do, tools, order of operations, and safety — to print or text to the crew when you're not on site.</div>`;
+  if (landGuidePlants(sv).length) h += `<button class="btn acc" style="width:100%;margin-bottom:8px" onclick="landOpenCrewGuide()">📋 Open crew guide — print / share (works now)</button>`;
   if (_landBriefBusy) {
     h += `<div class="card" style="background:var(--soft);padding:14px;text-align:center"><b>🤖 Cap is writing the crew brief…</b><div class="sub" style="margin-top:4px">One slow call — a few seconds.</div></div>`;
     h += `</div>`; return h;
