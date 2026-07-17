@@ -198,9 +198,9 @@ const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "
 /* WORKFLOW TABS — the job page was one endless scroll of 16 look-alike cards. Group them into 4 tabs by what you're
    doing (arriving → working → money → wrapping up) so you tap instead of scroll-hunting. Each key belongs to one tab. */
 const JOB_TABS = [
-  { key: "overview", label: "📋 Overview", secs: ["data", "crew", "vehicles", "partof"] },
+  { key: "overview", label: "📋 Overview", secs: ["data", "change", "crew", "vehicles", "partof"] },
   { key: "work", label: "🔨 On the job", secs: ["askcap", "clock", "load", "notes", "photos"] },
-  { key: "money", label: "💰 Money", secs: ["costs", "matreport", "change", "invoice"] },
+  { key: "money", label: "💰 Money", secs: ["costs", "matreport", "invoice"] },
   { key: "wrap", label: "✓ Close out", secs: ["closeout", "workdays", "done"] }
 ];
 window.JOB_TAB = window.JOB_TAB || "overview";
