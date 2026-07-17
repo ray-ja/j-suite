@@ -82,7 +82,7 @@ function capBubble(kind, html) {
 function capThreadInner() {
   const op = capOpening();
   let h = capBubble("cap", (op.digest ? "📣 " : "") + esc(op.text).replace(/\n/g, "<br>"));
-  h += capPinnedStrip();
+  // (removed the 📌 Pinned / CEO's-desk strip — Ray: just Sentinel on top, then the Cap chat)
   CAP_THREAD.forEach(m => {
     if (m.role === "action") { h += capActionCard(m); return; }
     h += capBubble(m.role === "user" ? "me" : "cap", esc(m.content).replace(/\n/g, "<br>"));
