@@ -2546,6 +2546,41 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // FOCUSED SINGLE-PLANT READ — POST /api/org-ai/read-plant. The owner draws a circle around ONE plant on a survey
+  // photo (js/115); the client crops that region and posts it INLINE (data URL). We run the same LAND_VISION_SYSTEM
+  // prompt but in FOCUS mode — identify the one dominant plant filling the crop — and return a {suggested} with that
+  // single item. Gated EXACTLY like read-survey (rate → account → org member → owner/admin → org AI key). Because the
+  // image is inline (not a stored blob), there is no photo-ownership check and nothing is written to disk or the store.
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/read-plant") {
+    const ip = clientIp(req);
+    const rc = rateCheck(ip);
+    if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const acct = apiAccount(tok);
+    readBodyUtf8(req, 4e6, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const store = loadStore(), org = p && p.org;
+      if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+      if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run Cap"}'); }
+      const cfg = loadOrgAi()[org];
+      if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
+      const img = String((p && p.image) || "");
+      const m = /^data:(image\/(?:jpe?g|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(img);
+      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad image"}'); }
+      const mediaType = m[1] === "image/jpg" ? "image/jpeg" : m[1], imgB64 = m[2];
+      if (imgB64.length > 8e6) { res.writeHead(413, { "Content-Type": "application/json" }); return res.end('{"error":"image too large"}'); }
+      const task = LAND_PLAYBOOK + "\n\nFOCUS MODE: this is a close-up crop the user drew a circle around to isolate ONE plant. Identify the ONE dominant plant filling the center of the frame and return items[] with EXACTLY that single plant — ignore any background or edge greenery. Its spot is the center (x:0.5, y:0.5). Return the JSON object described in the system prompt. JSON only.";
+      const landModel = landVisionModel(cfg, true);   // a single-plant ID is the hard case → always the smart model
+      callAnthropicVisionSys(cfg.apiKey, landModel, mediaType, imgB64, LAND_VISION_SYSTEM, task, (err, text) => {
+        if (err) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"AI request failed"}'); }
+        const suggested = landParseSurvey(text);
+        if (!suggested) { res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ skip: true, reason: "unparseable" })); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ suggested: suggested }));
+      }, 1200);
+    });
+    return;
+  }
   // SHOW THE AFTER — POST /api/org-ai/show-after. Generate a "here's how it looks after a professional trim" image
   // from a survey photo using the org's OWN Gemini image key. Gated EXACTLY like read-survey (rate → account →
   // member → owner/admin → the SOURCE photo must belong to a survey in this org), plus it requires the Gemini image

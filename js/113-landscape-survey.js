@@ -984,6 +984,9 @@ function landPhotoTileHTML(sv, pid, canAfter) {
   }
   t += `</div>`;
   if (canAfter && !busy) {
+    // ✏️ Circle a plant (js/115) — owner-scoped marking: draw a ring around ONE plant → one clean line item, instead
+    // of auto-reading the whole photo (which over-counts the same plant seen from many angles). Same owner/admin gate.
+    t += `<button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="landMarkOpen('${esc(pid)}')">✏️ Circle a plant</button>`;
     t += `<button class="btn ghost" style="font-size:11px;padding:3px 8px" onclick="landShowAfter('${esc(pid)}')">✨ ${afterUrl ? "Redo after" : "Show after"}</button>`;
   }
   t += `</div>`;
@@ -1006,7 +1009,7 @@ window.wizLandscapeUI = function () {
   if (photos.length) {
     const canAfter = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
     h += `<div class="row" style="gap:12px;flex-wrap:wrap;margin-top:8px;align-items:flex-start">` + photos.map(pid => landPhotoTileHTML(sv, pid, canAfter)).join("") + `</div>`;
-    if (canAfter) h += `<div class="sub" style="white-space:normal;margin-top:5px;font-size:11px">✨ "Show after" previews a clean professional trim with Gemini — each 'after' costs a few cents on your Gemini key.</div>`;
+    if (canAfter) h += `<div class="sub" style="white-space:normal;margin-top:5px;font-size:11px">✏️ "Circle a plant" lets you ring one plant at a time on a photo — the most accurate way to scope a quote (one ring = one line, no double-counting). ✨ "Show after" previews a clean professional trim (a few cents each on your Gemini key).</div>`;
     const unread = landUnreadPhotos(sv).length;
     const canRun = (typeof rcptFinFull === "function") ? rcptFinFull() : false;
     if (_landReadBusy) {
