@@ -69,6 +69,12 @@ window.teamReactivate = function (id) {
   render();
 };
 function teamMemberById(id) { return (S.users || []).find(u => u && u.id === id && !u.kind && !u.deleted) || null; }
+/* CLOCK STATUS on the People page — the owner couldn't reach a teammate's clock-out from their own phone. Find a
+   member's OPEN timeclock entry so we can show "on the clock" and offer the owner a clock-out (reuses tcClockOut's
+   real modal + odometer + finalize — never a hand-rolled write). */
+function teamClockOpen(uid) { try { return ((typeof D === "function" ? (D().timeclock || []) : [])).find(e => e && !e.deleted && !e.clockOut && e.userId === uid) || null; } catch (e) { return null; } }
+function teamCanClockOut() { return (typeof isOwner === "function" && isOwner()) || (typeof canManageMembers === "function" && canManageMembers()) || teamCanArchive(); }
+function teamClockChip(uid) { return teamClockOpen(uid) ? ` <span class="sub" style="color:var(--accent);font-weight:700;white-space:nowrap">· 🟢 on the clock</span>` : ""; }
 function teamDisplayName(u) { return (u && (u.name || u.username)) || "—"; }
 function teamRoleKey(u) { return (u && ((typeof roleInOrg === "function" && roleInOrg(u.id, S.biz)) || u.role)) || "crew"; }
 function teamTitle(u) {   // the member's own free-text title, else the role's label
@@ -148,7 +154,7 @@ function teamRenderDirectory() {
       <div class="row" style="align-items:center;gap:12px;cursor:pointer">
         ${teamAvatar(u, 46)}
         <div class="grow" style="min-width:0">
-          <div class="nm" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamDisplayName(u))}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}${(typeof cardDirChip === "function") ? cardDirChip(u.id) : ""}</div>
+          <div class="nm" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamDisplayName(u))}${mine ? ` <span class="sub" style="display:inline">· you</span>` : ""}${teamClockChip(u.id)}${(typeof cardDirChip === "function") ? cardDirChip(u.id) : ""}</div>
           <div class="sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(teamTitle(u))}</div>
         </div>
         ${teamQuickIcons(u)}
@@ -181,6 +187,20 @@ function teamRenderProfile(u) {
       ${teamCanEdit(u.id) ? `<button class="btn ghost sm" onclick="teamEditProfile('${esc(u.id)}')">✏️ Edit</button>` : ""}
       ${(!me_is(u) && teamCanArchive()) ? (u.archived ? `<button class="btn ghost sm" onclick="teamReactivate('${esc(u.id)}')">↩ Reactivate</button>` : `<button class="btn ghost sm" onclick="teamArchive('${esc(u.id)}')" title="Archive a departed helper">🗄 Archive</button>`) : ""}
     </div>`;
+  // CLOCK STATUS + owner clock-out (with odometer, via tcClockOut's real modal)
+  const _oe = teamClockOpen(u.id);
+  if (_oe) {
+    const _since = (function () { try { return new Date(_oe.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (x) { return ""; } })();
+    const _dur = (typeof tcFmtDur === "function") ? tcFmtDur((typeof now === "function" ? now() : Date.now()) - _oe.clockIn) : "";
+    const _jt = (typeof tcJobTitle === "function") ? tcJobTitle(_oe.jobId) : "";
+    h += `<div class="card" style="border-left:5px solid var(--accent);background:var(--soft)">
+      <div class="nm" style="font-size:16px">🟢 On the clock</div>
+      <div class="sub" style="white-space:normal;margin-top:2px">Since ${esc(_since)} · ${esc(_dur)}${_jt ? ` · ${esc(_jt)}` : ""}${_oe.odoStart != null ? ` · start odo ${esc(_oe.odoStart)}` : ""}</div>
+      ${teamCanClockOut() ? `<button class="btn acc" style="width:100%;margin-top:10px" onclick="tcClockOut('${esc(_oe.id)}')">⏱ Clock ${esc(teamDisplayName(u))} out…</button>` : ""}
+    </div>`;
+  } else {
+    h += `<div class="card"><div class="sub">⚪ Not clocked in.</div></div>`;
+  }
   h += `<div class="card" style="text-align:center;padding:22px 16px">
       <div style="display:flex;justify-content:center;margin-bottom:12px">${teamAvatar(u, 112)}</div>
       <div class="nm" style="font-size:22px;margin-bottom:4px">${esc(teamDisplayName(u))}</div>
