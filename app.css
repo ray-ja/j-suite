@@ -82,6 +82,11 @@
   h2:first-child{margin-top:4px}
   h3{letter-spacing:-.01em}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:15px 16px;margin-bottom:11px;box-shadow:var(--sh-sm)}
+  /* Job page (js/61 rJobPage) runs several stacked cards per tab — Ray flagged it as too long/chunky. Scope a
+     denser card rhythm to .jobpg only (specificity beats the base + the min-width:900px .card rule at every width),
+     so cards everywhere else keep their roomier spacing. */
+  .jobpg .card{padding:12px 14px;margin-bottom:8px}
+  .jobpg>.secthd{margin-top:2px}
   .row{display:flex;align-items:center;gap:10px}
   .grow{flex:1;min-width:0}
   .nm{font-weight:650;font-size:16px;letter-spacing:-.01em}

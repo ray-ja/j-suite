@@ -133,14 +133,15 @@ const NAV_GROUPS = [
   // only the label + tab set changed. renderSubnav() special-cases this group into ONE merged sub-tab row.
   { key:"team",      label:"People & Places", icon:"🧑‍🤝‍🧑", tabs:["team","accounts"] },
   { key:"booking",   label:"Booking",   icon:"🎟️", tabs:["booking"] },
-  { key:"schedule",  label:"Schedule",  icon:"📅", tabs:["schedule"] },
-  { key:"time",      label:"Time",      icon:"⏱️", tabs:["time"] },   // clock-in/out + owner hours/miles report — was orphaned (a real page with no nav group), so it never showed even when enabled
+  // WORK — the day-to-day field bucket: 🧾 Jobs table + 📅 Schedule (calendar, hosts the crew job page) + ⏱️ Time
+  // (clock-in/out + hours/miles). Ray OK'd folding Jobs in here (2026-07-16) instead of its own top-level menu;
+  // this collapses three separate menus (schedule/time/jobsview) into one.
+  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time"] },
   { key:"receipts",  label:"Receipts",  icon:"📸", tabs:["receipts"] },   // OWN top-level tab (crew-visible entry point to snap/upload receipts; page self-gates finance to owner/admin)
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
-  { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory"] },
+  // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
+  { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory","resale"] },
   { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","quotes","recurring"] },
-  { key:"jobsview",  label:"Jobs",      icon:"🧾", tabs:["jobs"] },   // Jobs = its own top-level menu = the sortable table (Ray: jobs is its own menu, not folded under Sales). Renders rQuotes (quote==job, one collection).
-  { key:"resale",    label:"Resale",    icon:"♻️", tabs:["resale"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
   { key:"invoices",  label:"Invoices",  icon:"💳", tabs:["invoices"] },   // OWN top-level menu (Ray: invoices is its own tab, not folded under Money)

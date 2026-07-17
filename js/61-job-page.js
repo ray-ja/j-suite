@@ -268,7 +268,7 @@ function rJobPage(j) {
   // Title — tap-to-rename (owner/admin). Reveals an inline free-text input writing j.title (NOT the service
   // dropdown); job_title is registered in the js/09 focus-preservation _ids so typing survives the frequent
   // re-renders. Crew see the plain title.
-  let h = `<div class="secthd">`;
+  let h = `<div class="jobpg"><div class="secthd">`;   // .jobpg = job-page-scoped denser card rhythm (app.css)
   if (jobCanEditPlan() && window.JOB_TITLE_EDIT === j.id) {
     h += `<input id="job_title" value="${esc(j.title || "")}" placeholder="Job title" style="flex:1;font-size:18px;font-weight:800;margin:0" onkeydown="if(event.key==='Enter')jobPageRename('${j.id}')"><button class="btn acc sm" style="margin-left:8px" onclick="jobPageRename('${j.id}')">Save</button>`;
   } else {
@@ -576,6 +576,7 @@ function rJobPage(j) {
   if (!_editing && !_visible.some(s => s.html)) h += `<div class="card"><div class="muted">Nothing on the ${esc(_tabDef.label.replace(/^\S+\s/, ""))} tab for this job yet.</div></div>`;
   // Bottom back button — so after scrolling down to check the job you can go back without scrolling all the way up.
   h += `<button class="btn ghost" style="width:100%;margin:14px 0 24px" onclick="jobPageBack()">← Back</button>`;
+  h += `</div>`;   // /.jobpg
   return h;
 }
 
