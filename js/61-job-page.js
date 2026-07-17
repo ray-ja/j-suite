@@ -7,7 +7,7 @@ window.JOB_OPEN = window.JOB_OPEN || null;
 window.JOB_RETURN_TAB = window.JOB_RETURN_TAB || null;   // where the user was when they opened a job (e.g. "receipts") so Back returns there, not always Schedule. Now backed by the shared nav-return helper (NAV_ORIGIN["schedule"]); kept as a mirror for back-compat.
 window.JOB_TITLE_EDIT = window.JOB_TITLE_EDIT || null;   // job id whose title is currently in inline-rename mode (else null)
 // The job page takes over the Schedule tab; record where we came from via the shared nav-return helper (host = the "schedule" tab it takes over) so Back / delete / close all return to origin, not always Schedule.
-window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof navRecordOrigin === "function") ? navRecordOrigin("schedule") : ((typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null); window.JOB_OPEN = id; window.JOB_TITLE_EDIT = null; TAB = "schedule"; if (typeof render === "function") render(); };
+window.openJobPage = function (id) { window.JOB_RETURN_TAB = (typeof navRecordOrigin === "function") ? navRecordOrigin("schedule") : ((typeof TAB !== "undefined" && TAB && TAB !== "schedule") ? TAB : null); if (window.JOB_OPEN !== id) window.JOB_TAB = "overview"; window.JOB_OPEN = id; window.JOB_TITLE_EDIT = null; TAB = "schedule"; if (typeof render === "function") render(); };
 window.jobPageBack = function () { window.JOB_OPEN = null; window.JOB_TITLE_EDIT = null; window.JOB_RETURN_TAB = null; if (typeof navReturn === "function") { navReturn("schedule"); } else { if (typeof render === "function") render(); } };
 window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TAB = null; if (typeof navClearOrigin === "function") navClearOrigin("schedule"); window.JOB_TITLE_EDIT = null; };
 
@@ -195,6 +195,16 @@ function jobRouteMilesSource(j) {
    like financeConfig). Everyone in the org sees the same order. Unknown/new section keys never vanish: the saved
    order is validated against the canonical key list and any missing keys are appended in their default order. ===== */
 const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "vehicles", "clock", "load", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
+/* WORKFLOW TABS — the job page was one endless scroll of 16 look-alike cards. Group them into 4 tabs by what you're
+   doing (arriving → working → money → wrapping up) so you tap instead of scroll-hunting. Each key belongs to one tab. */
+const JOB_TABS = [
+  { key: "overview", label: "📋 Overview", secs: ["data", "crew", "vehicles", "partof"] },
+  { key: "work", label: "🔨 On the job", secs: ["askcap", "clock", "load", "notes", "photos"] },
+  { key: "money", label: "💰 Money", secs: ["costs", "matreport", "change", "invoice"] },
+  { key: "wrap", label: "✓ Close out", secs: ["closeout", "workdays", "done"] }
+];
+window.JOB_TAB = window.JOB_TAB || "overview";
+window.jobSetTab = function (t) { if (JOB_TABS.some(x => x.key === t)) { window.JOB_TAB = t; if (typeof render === "function") render(); } };
 function jobLayoutDoc() { try { return (D().docs || []).find(x => x && x.id === "jobLayout") || null; } catch (e) { return null; } }
 function jobLayoutOrder() {
   const doc = jobLayoutDoc();
@@ -545,14 +555,25 @@ function rJobPage(j) {
   const _editing = !!window.JOB_LAYOUT_EDIT && jobCanEditPlan();
   if (jobCanEditPlan()) h += `<div class="row" style="justify-content:flex-end;margin:2px 2px 6px"><button class="btn ${_editing ? "acc" : "ghost"} sm" onclick="jobLayoutToggleEdit()">${_editing ? "✓ Done reordering" : "⇅ Edit layout"}</button>${_editing ? `<button class="btn ghost sm" style="margin-left:6px" onclick="jobLayoutReset()">↺ Reset</button>` : ""}</div>`;
   if (_editing) h += `<div class="sub muted" style="white-space:normal;margin:0 2px 8px">Reordering the sections for <b>everyone</b> — use ▲▼ to move a section. Empty sections (that don't apply to this job) are hidden but keep their place.</div>`;
-  _ordered.forEach((s, i) => {
+  // WORKFLOW TABS — one group at a time instead of 16 stacked cards (reorder mode still shows all, for moving them).
+  const _atab = JOB_TABS.some(t => t.key === window.JOB_TAB) ? window.JOB_TAB : "overview";
+  const _tabDef = JOB_TABS.find(t => t.key === _atab) || JOB_TABS[0];
+  if (!_editing) {
+    h += `<div class="row" style="gap:5px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin:2px 0 12px;padding-bottom:2px">` + JOB_TABS.map(t => {
+      const _has = _ordered.some(s => t.secs.indexOf(s.key) >= 0 && s.html);
+      return `<button class="btn ${t.key === _atab ? "acc" : "ghost"} sm" style="flex:0 0 auto;white-space:nowrap${_has ? "" : ";opacity:.5"}" onclick="jobSetTab('${t.key}')">${t.label}</button>`;
+    }).join("") + `</div>`;
+  }
+  const _visible = _editing ? _ordered : _ordered.filter(s => _tabDef.secs.indexOf(s.key) >= 0);
+  _visible.forEach((s, i) => {
     if (_editing) {
-      const up = i === 0 ? "disabled" : "", dn = i === _ordered.length - 1 ? "disabled" : "";
+      const up = i === 0 ? "disabled" : "", dn = i === _visible.length - 1 ? "disabled" : "";
       h += `<div class="card" style="padding:6px 10px;background:var(--soft);margin-bottom:6px"><div class="row" style="align-items:center;gap:6px"><div class="grow nm" style="font-size:14px">${s.label}${s.html ? "" : ` <span class="sub" style="font-weight:400">· not on this job</span>`}</div><button class="btn ghost sm" ${up} onclick="jobLayoutMove('${s.key}',-1)" title="Move up">▲</button><button class="btn ghost sm" ${dn} onclick="jobLayoutMove('${s.key}',1)" title="Move down">▼</button></div></div>`;
     } else {
       h += s.html || "";
     }
   });
+  if (!_editing && !_visible.some(s => s.html)) h += `<div class="card"><div class="muted">Nothing on the ${esc(_tabDef.label.replace(/^\S+\s/, ""))} tab for this job yet.</div></div>`;
   // Bottom back button — so after scrolling down to check the job you can go back without scrolling all the way up.
   h += `<button class="btn ghost" style="width:100%;margin:14px 0 24px" onclick="jobPageBack()">← Back</button>`;
   return h;
