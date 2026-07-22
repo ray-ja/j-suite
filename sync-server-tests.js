@@ -1749,6 +1749,17 @@ ok("no cfg at all → Sonnet 4.6 default", t.rcptVisionModel(null, false) === "c
 // The client can NEVER pick the model: rcptVisionModel takes (cfg, escalate) only — a free-form `model` in the
 // request body has no path in. Even a hostile-looking cfg.model resolves to the server default, not the string.
 ok("a client-supplied model string can never reach the call (helper reads only cfg + boolean escalate)", t.rcptVisionModel({ model: "attacker/model" }, false) === "claude-sonnet-4-6", null);
+
+console.log("\n— receipt ownership guard (rcptOwnedByOrg): job line items live in jobMaterials/jobExpenses post-migration —");
+ok("finds a standalone Receipts-page receipt (s.receipts)", t.rcptOwnedByOrg({ obx: { receipts: [{ receiptId: "abc.jpg" }] } }, "obx", "abc.jpg"), null);
+ok("finds a business-expense receipt (s.expenses)", t.rcptOwnedByOrg({ obx: { expenses: [{ receiptId: "exp.png" }] } }, "obx", "exp.png"), null);
+// The regression: after hoistJobLineItems empties job.materials/.expenses, a job-attached receipt lives ONLY in
+// the jobMaterials/jobExpenses collection. Guard must look there or every read of it 404s (Cap can't read job receipts).
+ok("finds a job MATERIAL receipt in the jobMaterials collection", t.rcptOwnedByOrg({ obx: { jobMaterials: [{ id: "jm_1", jobId: "j1", receiptId: "mat.jpg" }], jobs: [{ id: "j1", materials: [] }] } }, "obx", "mat.jpg"), null);
+ok("finds a job EXPENSE receipt in the jobExpenses collection", t.rcptOwnedByOrg({ obx: { jobExpenses: [{ id: "je_1", jobId: "j1", receiptId: "je.webp" }], jobs: [{ id: "j1", expenses: [] }] } }, "obx", "je.webp"), null);
+ok("still finds a legacy nested job.materials receipt (pre-migration data)", t.rcptOwnedByOrg({ obx: { jobs: [{ id: "j1", materials: [{ receiptId: "legacy.jpg" }] }] } }, "obx", "legacy.jpg"), null);
+ok("rejects a receiptId that belongs to no record in the org", !t.rcptOwnedByOrg({ obx: { receipts: [], jobMaterials: [], jobExpenses: [] } }, "obx", "ghost.jpg"), null);
+ok("rejects a receipt owned by a DIFFERENT org (cross-org isolation intact)", !t.rcptOwnedByOrg({ obx: { jobMaterials: [{ receiptId: "mine.jpg" }] }, jam: {} }, "jam", "mine.jpg"), null);
 // Assert the model + max_tokens ACTUALLY SENT to the Anthropic call, by spying on the shared https module.
 (function () {
   const https = require("https");

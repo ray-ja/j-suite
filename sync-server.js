@@ -1346,6 +1346,10 @@ function rcptOwnedByOrg(store, orgId, receiptId) {
   const s = (store && store[orgId]) || {}; if (!receiptId) return false;
   if ((s.receipts || []).some(r => r && r.receiptId === receiptId)) return true;
   if ((s.expenses || []).some(e => e && e.receiptId === receiptId)) return true;
+  // job line items now live in the jobMaterials/jobExpenses collections (hoistJobLineItems empties job.materials/
+  // .expenses). Check both the collections AND the legacy nested arrays so a job-attached receipt is found either way.
+  if ((s.jobMaterials || []).some(e => e && e.receiptId === receiptId)) return true;
+  if ((s.jobExpenses || []).some(e => e && e.receiptId === receiptId)) return true;
   return (s.jobs || []).some(j => j && ((j.materials || []).some(e => e && e.receiptId === receiptId) || (j.expenses || []).some(e => e && e.receiptId === receiptId)));
 }
 // Does photoId (a blob id) belong to a site survey in this org? Guards the survey-vision endpoint from reading
