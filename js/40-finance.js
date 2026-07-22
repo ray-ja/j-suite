@@ -113,6 +113,7 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "cash" ? "on" : ""}" onclick="finSub('cash')">🏦 Cash</button>
     <button class="subbtn ${FINSUB === "payouts" ? "on" : ""}" onclick="finSub('payouts')">💵 Payouts</button>
     <button class="subbtn ${FINSUB === "priority" ? "on" : ""}" onclick="finSub('priority')">🪜 Payout plan</button>
+    <button class="subbtn ${FINSUB === "paybacks" ? "on" : ""}" onclick="finSub('paybacks')">🚜 Paybacks</button>
     <button class="subbtn ${FINSUB === "income" ? "on" : ""}" onclick="finSub('income')">📥 Income</button>
     <button class="subbtn ${FINSUB === "expenses" ? "on" : ""}" onclick="finSub('expenses')">📤 Expenses</button>
     <button class="subbtn ${FINSUB === "tax" ? "on" : ""}" onclick="finSub('tax')">🧾 Tax</button>
@@ -121,6 +122,7 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "analysis" ? "on" : ""}" onclick="finSub('analysis')">📈 Analysis</button></div>`;
   if (FINSUB === "overview" && typeof rFinOverview === "function") { view.innerHTML = sub + '<div class="pgcols">' + rFinOverview() + '</div>'; return; }
   if (FINSUB === "cash" && typeof rFinCash === "function") { view.innerHTML = sub + rFinCash(); return; }
+  if (FINSUB === "paybacks" && typeof instPageHTML === "function") { view.innerHTML = sub + instPageHTML(); return; }
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "analysis" && typeof rJobAnalysis === "function") { view.innerHTML = sub + rJobAnalysis(); return; }

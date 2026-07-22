@@ -1776,6 +1776,23 @@ console.log("\n— vision rate limiter (batch drains get their OWN bucket, NOT t
   for (let i = 0; i < 25; i++) t.rateCheck(ip);   // blow past LOGIN_MAX=20 on the login bucket
   ok("login-bucket exhaustion does NOT throttle the vision endpoint (separate Map)", t.visionRateCheck(ip).ok, null);
 })();
+
+console.log("\n— installments collection (payback plans): new synced collection, zero-loss round-trip + LWW —");
+// realistic pre-change fixture: an org with the usual records PLUS a payback plan; a sync that omits installments
+// must not drop it, and every other record must survive untouched.
+const instStored = { obx: {
+  customers: [{ id: "c1", name: "Mike", updatedAt: 5 }],
+  quotes: [{ id: "q1", total: 1049, updatedAt: 5 }],
+  jobs: [{ id: "j1", title: "Pad", updatedAt: 5 }],
+  installments: [{ id: "inst_1", payeeId: "chase", payeeName: "Chase", label: "Dump trailer", total: 10541.74, count: 24, start: "2026-07", paidNs: [1, 2], updatedAt: 5 }],
+}, users: [{ id: "u1", username: "ray", updatedAt: 1 }] };
+const instMerged = t.mergeState(instStored, { obx: { customers: [{ id: "c1", name: "Mike Green", updatedAt: 9 }] } });   // incoming mentions ONLY a customer edit — installments must survive
+ok("installments is a first-class synced collection (materialized after merge)", Array.isArray(instMerged.obx.installments), Object.keys(instMerged.obx));
+ok("payback plan survives a sync that omits installments (never-drop)", !!(instMerged.obx.installments || []).find(x => x.id === "inst_1"), instMerged.obx.installments);
+ok("zero loss: the customer/quote/job all survive alongside it", !!instMerged.obx.customers.find(x => x.id === "c1") && !!instMerged.obx.quotes.find(x => x.id === "q1") && !!instMerged.obx.jobs.find(x => x.id === "j1"), null);
+ok("customer edit still LWW-applies (Mike Green wins)", instMerged.obx.customers.find(x => x.id === "c1").name === "Mike Green", null);
+const instLww = t.mergeState(instStored, { obx: { installments: [{ id: "inst_1", payeeId: "chase", label: "Dump trailer", total: 10541.74, count: 24, start: "2026-07", paidNs: [1, 2, 3], updatedAt: 9 }] } });
+ok("payback plan LWW: a newer 'paid 3 of 24' record wins over the older 'paid 2'", (instLww.obx.installments.find(x => x.id === "inst_1").paidNs || []).length === 3, instLww.obx.installments);
 // Assert the model + max_tokens ACTUALLY SENT to the Anthropic call, by spying on the shared https module.
 (function () {
   const https = require("https");
