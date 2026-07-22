@@ -1751,6 +1751,22 @@ function rateCheck(ip) {
   if (h.n > LOGIN_MAX) return { ok: false, retry: Math.ceil((LOGIN_WINDOW_MS - (t - h.t0)) / 1000) };
   return { ok: true };
 }
+// SEPARATE limiter for the batch VISION drains (read-receipt / read-survey / read-plant). These fire ONE request
+// per receipt/photo in a throttled sequential drain — a legit owner dropping a dozen-plus receipts is normal use,
+// not abuse, and must NOT share the tiny 20/5min login bucket (that's what 429'd a 12-photo upload). Own bucket,
+// batch-sized ceiling; the endpoints are already owner/admin-gated and spend the org's OWN API key, so the blast
+// radius of a generous limit is just the org's own credits. Client-side the drain is capped at CAP_RCPT_CEILING=250
+// per run + throttled, so this backstops only a runaway/compromised token.
+const VISION_WINDOW_MS = 5 * 60 * 1000, VISION_MAX = 200;
+const visionHits = new Map();
+function visionRateCheck(ip) {
+  const t = Date.now();
+  let h = visionHits.get(ip);
+  if (!h || t - h.t0 > VISION_WINDOW_MS) { h = { n: 0, t0: t }; visionHits.set(ip, h); }
+  h.n++;
+  if (h.n > VISION_MAX) return { ok: false, retry: Math.ceil((VISION_WINDOW_MS - (t - h.t0)) / 1000) };
+  return { ok: true };
+}
 
 function mergeState(stored, incoming) {
   stored = stored || {}; incoming = incoming || {};
@@ -2472,7 +2488,7 @@ const server = http.createServer((req, res) => {
   // rate-limited. Writes NOTHING to the store — the client stamps `receipt.suggested` and the owner still Saves.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/read-receipt") {
     const ip = clientIp(req);
-    const rc = rateCheck(ip);
+    const rc = visionRateCheck(ip);   // batch drain — own 200/5min bucket, NOT the 20/5min login bucket
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const acct = apiAccount(tok);
@@ -2519,7 +2535,7 @@ const server = http.createServer((req, res) => {
   // the suggestion onto its survey record and the human approves each item before it becomes a quote line.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/read-survey") {
     const ip = clientIp(req);
-    const rc = rateCheck(ip);
+    const rc = visionRateCheck(ip);   // batch drain — own 200/5min bucket, NOT the 20/5min login bucket
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const acct = apiAccount(tok);
@@ -2557,7 +2573,7 @@ const server = http.createServer((req, res) => {
   // image is inline (not a stored blob), there is no photo-ownership check and nothing is written to disk or the store.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/read-plant") {
     const ip = clientIp(req);
-    const rc = rateCheck(ip);
+    const rc = visionRateCheck(ip);   // batch drain — own 200/5min bucket, NOT the 20/5min login bucket
     if (!rc.ok) { res.writeHead(429, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "too many requests", retry: rc.retry })); }
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     const acct = apiAccount(tok);
@@ -3292,4 +3308,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

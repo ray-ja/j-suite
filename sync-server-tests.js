@@ -1760,6 +1760,22 @@ ok("finds a job EXPENSE receipt in the jobExpenses collection", t.rcptOwnedByOrg
 ok("still finds a legacy nested job.materials receipt (pre-migration data)", t.rcptOwnedByOrg({ obx: { jobs: [{ id: "j1", materials: [{ receiptId: "legacy.jpg" }] }] } }, "obx", "legacy.jpg"), null);
 ok("rejects a receiptId that belongs to no record in the org", !t.rcptOwnedByOrg({ obx: { receipts: [], jobMaterials: [], jobExpenses: [] } }, "obx", "ghost.jpg"), null);
 ok("rejects a receipt owned by a DIFFERENT org (cross-org isolation intact)", !t.rcptOwnedByOrg({ obx: { jobMaterials: [{ receiptId: "mine.jpg" }] }, jam: {} }, "jam", "mine.jpg"), null);
+
+console.log("\n— vision rate limiter (batch drains get their OWN bucket, NOT the 20/5min login bucket) —");
+// A 12-photo drop that 429'd was hitting the login limiter (LOGIN_MAX=20). visionRateCheck must allow a real batch.
+(function () {
+  const ip = "1.2.3.4-vision";
+  let firstBlockAt = 0;
+  for (let i = 1; i <= 200; i++) if (!t.visionRateCheck(ip).ok && !firstBlockAt) firstBlockAt = i;
+  ok("visionRateCheck allows a full 200-read batch before throttling (a 12-photo upload never trips it)", firstBlockAt === 0, { firstBlockAt });
+  ok("visionRateCheck DOES backstop a runaway (blocks the 201st, with a retry hint)", (function () { const r = t.visionRateCheck(ip); return !r.ok && r.retry > 0; })(), null);
+})();
+// Decoupled buckets: hammering the LOGIN limiter must NOT throttle vision, and vice-versa.
+(function () {
+  const ip = "5.6.7.8-decouple";
+  for (let i = 0; i < 25; i++) t.rateCheck(ip);   // blow past LOGIN_MAX=20 on the login bucket
+  ok("login-bucket exhaustion does NOT throttle the vision endpoint (separate Map)", t.visionRateCheck(ip).ok, null);
+})();
 // Assert the model + max_tokens ACTUALLY SENT to the Anthropic call, by spying on the shared https module.
 (function () {
   const https = require("https");
