@@ -85,7 +85,7 @@
     /* also let the SW notice the new build + purge the stale cache */
     try {
       if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
-        navigator.serviceWorker.getRegistration().then(function (r) { if (r) try { r.update(); } catch (e) {} }).catch(function () {});
+        navigator.serviceWorker.getRegistration().then(function (r) { if (r) try { var p = r.update(); if (p && p.catch) p.catch(function () {}); } catch (e) {} }).catch(function () {});
       }
     } catch (e) {}
 

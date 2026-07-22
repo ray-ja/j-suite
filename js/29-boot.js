@@ -35,8 +35,8 @@ if("serviceWorker" in navigator && window.isSecureContext){
   var _hadCtrl=!!navigator.serviceWorker.controller, _refreshing=false;
   navigator.serviceWorker.register("sw.js").then(function(reg){
     /* an open tab (esp. iOS Safari) never notices a new build on its own — actively poll for one */
-    setInterval(function(){ try{ reg.update(); }catch(e){} }, 60000);
-    window.addEventListener("focus", function(){ try{ reg.update(); }catch(e){} });
+    setInterval(function(){ try{ var p=reg.update(); if(p&&p.catch)p.catch(function(){}); }catch(e){} }, 60000);
+    window.addEventListener("focus", function(){ try{ var p=reg.update(); if(p&&p.catch)p.catch(function(){}); }catch(e){} });
   }).catch(function(){});
   /* when the new SW takes control, reload to the fresh build — but never yank the page out from under
      active typing or an open modal; defer until they refocus / finish */
