@@ -154,6 +154,11 @@ window.capRcptRun = async function (opts) {
   if (_capRcptBusy) return;
   if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips ones it's already read)."); return; }
   _capRcptBusy = true;
+  // FLUSH pending writes to the server FIRST. The blob uploads immediately, but the review RECORD (with its
+  // receiptId) rides a debounced save() push — the server's rcptOwnedByOrg guard 404s until that record lands.
+  // On a mass upload the drain fires the instant the blobs finish, racing the un-pushed records → every read
+  // "not found." whenSynced() force-fires the queued push and waits for it, so the records exist before we read.
+  try { if (typeof whenSynced === "function") await whenSynced(15000); } catch (e) {}
   const throttle = capRcptThrottleMs();
   let done = 0, ok = 0, autoFiled = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
   while (true) {
@@ -256,6 +261,7 @@ window.capRcptOne = async function () {
   if (!capRcptCanRun()) return;
   if (typeof RCPT_EDIT === "undefined" || !RCPT_EDIT || !RCPT_EDIT.receiptId) { alert("No photo on this receipt for Cap to read."); return; }
   const btn = document.getElementById("cap_rcpt_one_btn"); if (btn) { btn.disabled = true; btn.textContent = "🤖 Rereading with the smartest model…"; }
+  try { if (typeof whenSynced === "function") await whenSynced(15000); } catch (e) {}   // flush this record to the server first (see capRcptRun) so the read isn't a "not found" 404
   const res = await capRcptRead(RCPT_EDIT.receiptId, { escalate: true });
   if (res && res.suggested) {
     const loc = RCPT_EDIT.loc || {};
@@ -277,9 +283,17 @@ window.capRcptOne = async function () {
     }
   }
   if (btn) { btn.disabled = false; btn.textContent = "🤖 Reread — try harder (smartest model)"; }
-  if (res && res.skip) alert("Cap couldn't read this one clearly — fill it in by hand.");
-  else if (res && res.status === 400 && /not set up/i.test(res.error || "")) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant.");
-  else alert("Cap couldn't read this receipt right now. Try again in a moment.");
+  // ACCURATE errors — every failure used to collapse to one vague "try again in a moment," so a real problem was
+  // indistinguishable from a transient one. Surface what the server actually said, keyed off status.
+  const st = res && res.status;
+  if (res && res.skip) alert("Cap read it but couldn't make out the details — fill it in by hand.");
+  else if (st === 400 && /not set up/i.test(res.error || "")) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant.");
+  else if (res && res.error === "offline") alert("You're offline — Cap needs a connection to read receipts.");
+  else if (st === 404) alert("That receipt hasn't finished syncing to the server yet. Give it a few seconds and tap Reread again.");
+  else if (st === 429) alert("Too many receipts read at once — wait a minute, then tap Reread again.");
+  else if (st === 400) alert("Cap can only read JPG, PNG, WEBP, or PDF files — this one isn't a supported image.");
+  else if (st === 502) alert("Cap's AI request failed. Check the API key and credits in Admin → Assistant, then try again.");
+  else alert("Cap couldn't read this receipt right now" + (res && res.error ? " (" + String(res.error).slice(0, 80) + ")" : "") + ". Try again in a moment.");
 };
 
 /* the button shown on the Receipts page next to the review-queue banner (owner/admin only) */
