@@ -15,7 +15,7 @@ function invItems(q) {
 }
 function invRowsHTML(q) {
   return invItems(q).map(it =>
-    `<tr><td>${esc(it.name || "Item")}</td><td style="text-align:center">${it.qty || 1}</td><td style="text-align:right">${money((it.price || 0) * (it.qty || 1))}</td></tr>`
+    `<tr><td>${esc(it.name || "Item")}</td><td style="text-align:center">${it.qty || 1}</td><td style="text-align:right">${money2((it.price || 0) * (it.qty || 1))}</td></tr>`
   ).join("") || `<tr><td colspan="3" style="color:#888">No line items on this quote.</td></tr>`;
 }
 /* The invoice must charge the FINAL price (finalPrice override), not the raw line-item subtotal — A/R collects
@@ -23,15 +23,41 @@ function invRowsHTML(q) {
    match (a set-final-price job would show the old number, then sit "awaiting payment" forever). When the final price
    differs from the line-item subtotal, show a Subtotal + Adjustment pair so the document still reconciles. */
 function invEffectiveTotal(q) { return (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0); }
+/* ---------- PASS-THROUGH MATERIALS on the invoice (opt-in per quote: q.billMaterials) --------------------
+   Paver / French-drain jobs bill materials through at cost; junk/flat-rate jobs do NOT — so this is OFF by
+   default (every existing invoice is byte-identical unless the owner flips it on). When on, the job's
+   jobMaterials become itemized "Materials" lines (billed at cost — tax was already paid at purchase, so they
+   are NOT re-taxed) and their sum is added to the amount due (and thus the Stripe pay link). */
+function invMaterials(q) {
+  if (!q || !q.billMaterials) return [];
+  const j = (typeof invJobFor === "function") ? invJobFor(q) : null; if (!j) return [];
+  return ((D().jobMaterials) || []).filter(m => m && !m.deleted && m.jobId === j.id)
+    .map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 }))
+    .filter(m => m.amount > 0);
+}
+function invMaterialsTotal(q) { return Math.round(invMaterials(q).reduce((s, m) => s + m.amount, 0) * 100) / 100; }
+function invGrandTotal(q) { return Math.round((invEffectiveTotal(q) + invMaterialsTotal(q)) * 100) / 100; }
+function invMaterialsRowsHTML(q) {
+  const mats = invMaterials(q); if (!mats.length) return "";
+  return `<tr><td colspan="3" style="padding:10px 0 2px;font-weight:700">Materials (pass-through, at cost)</td></tr>`
+    + mats.map(m => `<tr><td style="padding-left:12px">${esc(m.desc)}</td><td style="text-align:center">1</td><td style="text-align:right">${money2(m.amount)}</td></tr>`).join("");
+}
+function invMaterialsTotRow(q) { const mt = invMaterialsTotal(q); return mt > 0 ? `<tr><td colspan="2" style="text-align:right">Materials</td><td style="text-align:right">${money2(mt)}</td></tr>` : ""; }
+window.invToggleMaterials = function (quoteId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  q.billMaterials = !q.billMaterials; if (typeof touch === "function") touch(q); if (typeof save === "function") save();
+  if (q.billMaterials && q.paymentLink) alert("Materials added — the amount changed, so regenerate the pay link before sending.");
+  if (typeof openInvoice === "function") { closeModal(); openInvoice(quoteId); } else if (typeof render === "function") render();
+};
 function invAdjRows(q) {
   const sub = invItems(q).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
   const adj = Math.round((invEffectiveTotal(q) - sub) * 100) / 100;
   if (Math.abs(adj) < 0.005) return "";
-  return `<tr><td colspan="2" style="text-align:right;padding-top:6px">Subtotal</td><td style="text-align:right;padding-top:6px">${money(sub)}</td></tr>`
-    + `<tr><td colspan="2" style="text-align:right">Adjustment</td><td style="text-align:right">${adj < 0 ? "−" : "+"}${money(Math.abs(adj))}</td></tr>`;
+  return `<tr><td colspan="2" style="text-align:right;padding-top:6px">Subtotal</td><td style="text-align:right;padding-top:6px">${money2(sub)}</td></tr>`
+    + `<tr><td colspan="2" style="text-align:right">Adjustment</td><td style="text-align:right">${adj < 0 ? "−" : "+"}${money2(Math.abs(adj))}</td></tr>`;
 }
 /* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
-function invAmountDue(q) { return (typeof quoteTotalWithTax === "function") ? quoteTotalWithTax(q) : invEffectiveTotal(q); }
+function invAmountDue(q) { const tax = (typeof quoteSalesTax === "function") ? quoteSalesTax(q) : 0; return Math.round((invGrandTotal(q) + tax) * 100) / 100; }
 /* AUTO-GENERATE a Stripe card-payment link for THIS invoice's exact amount (server-side, using the restricted key
    saved in Settings — the key never touches the client). Saves the URL to q.paymentLink so the invoice shows the
    "Pay online" button. Owner/admin only. */
@@ -116,14 +142,14 @@ function invCashNote(q) {
   if (typeof quoteCashPrice !== "function") return "";
   const due = invAmountDue(q), disc = quoteCashDiscount(due), cash = quoteCashPrice(due);
   if (!(disc >= 0.5)) return "";
-  return `💵 Paying cash or check? Save ${Math.round((typeof CASH_DISCOUNT_RATE !== "undefined" ? CASH_DISCOUNT_RATE : 0.03) * 100)}% — ${money(cash)} (you save ${money(disc)})`;
+  return `💵 Paying cash or check? Save ${Math.round((typeof CASH_DISCOUNT_RATE !== "undefined" ? CASH_DISCOUNT_RATE : 0.03) * 100)}% — ${money2(cash)} (you save ${money2(disc)})`;
 }
 /* invoice tax rows — a "Sales tax (6.75%)" line + a "Total due" line, only when the quote is a taxable service */
 function invTaxRows(q, totCls) {
   if (!(typeof quoteTaxable === "function" && quoteTaxable(q))) return "";
   const tax = (typeof quoteSalesTax === "function") ? quoteSalesTax(q) : 0;
-  return `<tr><td colspan="2" style="text-align:right">Sales tax (6.75%)</td><td style="text-align:right">${money(tax)}</td></tr>`
-    + `<tr><td colspan="2" style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>Total due</td><td style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>${money(invAmountDue(q))}</td></tr>`;
+  return `<tr><td colspan="2" style="text-align:right">Sales tax (6.75%)</td><td style="text-align:right">${money2(tax)}</td></tr>`
+    + `<tr><td colspan="2" style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>Total due</td><td style="text-align:right${totCls ? '" class="tot"' : ';font-weight:800;padding-top:8px"'}>${money2(invAmountDue(q))}</td></tr>`;
 }
 
 /* Receipt close-out signal for the owner — informational only, never blocks invoicing. If the job linked to
@@ -161,12 +187,13 @@ window.openInvoice = function (quoteId) {
       <div style="margin-top:10px"><div class="sub" style="font-weight:700">Bill to</div>${billTo.map(l => `<div class="sub">${esc(l)}</div>`).join("")}</div>
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
         <thead><tr><th style="text-align:left">Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${invRowsHTML(q)}</tbody>
-        <tfoot>${invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
+        <tbody>${invRowsHTML(q)}${invMaterialsRowsHTML(q)}</tbody>
+        <tfoot>${invAdjRows(q)}${invMaterialsTotRow(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
+      ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" style="margin-top:8px;white-space:normal" onclick="invToggleMaterials('${q.id}')">${q.billMaterials ? "✓ Billing pass-through materials (" + money2(invMaterialsTotal(q)) + ") — tap to remove" : "＋ Bill pass-through materials at cost (paver / drain jobs)"}</button>` : ""}
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
       ${q.paymentLink
-        ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
+        ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money2(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
         : ((typeof finCanView !== "function" || finCanView())
           ? `<button class="btn acc" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:8px" onclick="invGenPayLink('${q.id}')">⚡ Generate card-payment link</button>`
           : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
@@ -178,19 +205,21 @@ window.openInvoice = function (quoteId) {
     </div>
     <div class="row" style="gap:8px;margin-top:8px">
       <button class="btn ghost sm grow" onclick="invCopy('${q.id}')">Copy</button>
-      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money(invAmountDue(q))}'})">Send reminder</button>` : ``}
+      ${cust ? `<button class="btn ghost sm grow" onclick="closeModal();openMessageComposer('${cust.id}',{total:'${money2(invAmountDue(q))}'})">Send reminder</button>` : ``}
     </div>`);
 };
 
 function invText(q, cust, biz, no) {
-  const lines = invItems(q).map(it => `  ${it.name}${(it.qty || 1) > 1 ? " ×" + it.qty : ""} — ${money((it.price || 0) * (it.qty || 1))}`);
+  const lines = invItems(q).map(it => `  ${it.name}${(it.qty || 1) > 1 ? " ×" + it.qty : ""} — ${money2((it.price || 0) * (it.qty || 1))}`);
+  const matLines = invMaterials(q);
+  if (matLines.length) { lines.push("", "  Materials (pass-through, at cost):"); matLines.forEach(m => lines.push("    " + m.desc + " — " + money2(m.amount))); }
   return [
     biz.name, biz.phone || "", "",
     "INVOICE " + no, fmtDate(q.invoicedDate || q.date || today()), "",
     "Bill to: " + ((cust && (cust.name || cust.company)) || "—"),
     "", ...lines, "",
-    "TOTAL: " + money(invEffectiveTotal(q)),
-    ...(typeof quoteTaxable==="function"&&quoteTaxable(q) ? ["Sales tax (6.75%): "+money(quoteSalesTax(q)), "TOTAL DUE: "+money(invAmountDue(q))] : []),
+    "TOTAL: " + money2(invGrandTotal(q)),
+    ...(typeof quoteTaxable==="function"&&quoteTaxable(q) ? ["Sales tax (6.75%): "+money2(quoteSalesTax(q)), "TOTAL DUE: "+money2(invAmountDue(q))] : []),
     ...(invCashNote(q) ? [invCashNote(q)] : []),
     "Due on receipt", "",
     "Thank you for your business!"
@@ -203,7 +232,7 @@ window.invMark = function (quoteId) {
   if (!q.invoiceNo) q.invoiceNo = invNo(q);
   q.invoicedDate = (typeof today === "function") ? today() : "";
   touch(q);
-  if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money(invEffectiveTotal(q)));
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money2(invEffectiveTotal(q)));
   save(); openInvoice(quoteId);
   var _rj = q.jobId || ((D().jobs || []).find(function (x) { return x && x.quoteId === q.id && !x.deleted; }) || {}).id;
   if (_rj && typeof reviewPrompt === "function") reviewPrompt(_rj);   /* review prompt at the INVOICED moment (moved off job-done per Ray) */
@@ -213,7 +242,7 @@ window.invMarkPaid = function (quoteId) {
   const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
   q.paid = true; q.paidDate = (typeof today === "function") ? today() : "";
   touch(q); if (typeof syncQuoteIncome === "function") syncQuoteIncome(q);
-  if (typeof logChange === "function") logChange("update", "quote", q.id, "Marked paid · " + money(invEffectiveTotal(q)));
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Marked paid · " + money2(invEffectiveTotal(q)));
   save(); openInvoice(quoteId);
 };
 window.invCopy = function (quoteId) {
@@ -232,7 +261,7 @@ window.invPrint = function (quoteId) {
   const no = invNo(q);
   const billTo = cust ? [cust.name || cust.company, cust.company && cust.name ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer)"];
   const dateStr = fmtDate(q.invoicedDate || q.date || today());
-  const amountDue = money(invAmountDue(q));
+  const amountDue = money2(invAmountDue(q));
   let logoUrl = ""; try { if (biz.logo) logoUrl = new URL(biz.logo, location.href).href; } catch (e) {}
   const AC = "#0a7d4b";   // OBX green accent
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -275,8 +304,8 @@ window.invPrint = function (quoteId) {
         <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${amountDue}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}</div>
       </div>
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
-      <tbody>${invRowsHTML(q)}</tbody>
-      <tfoot>${invAdjRows(q)}<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${money(invEffectiveTotal(q))}</td></tr>${invTaxRows(q, true)}</tfoot></table>
+      <tbody>${invRowsHTML(q)}${invMaterialsRowsHTML(q)}</tbody>
+      <tfoot>${invAdjRows(q)}${invMaterialsTotRow(q)}<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q, true)}</tfoot></table>
       ${q.paymentLink && !q.paid ? `<a class="pay" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${amountDue}</a><div class="payurl">${esc(q.paymentLink)}</div>` : ""}
       ${!q.paid && invCashNote(q) ? `<div class="cash">${invCashNote(q)}</div>` : ""}
       <div class="foot">Thank you for your business! &nbsp;·&nbsp; ${esc(biz.name || "")}${biz.phone ? " &nbsp;·&nbsp; " + esc(biz.phone) : ""}</div>
@@ -301,7 +330,7 @@ function rInvoices() {
   const qs = (d.quotes || []).filter(q => q && !q.deleted && (q.accepted || q.invoiced || q.paid || q.jobId));
   const cust = q => esc((q.cust || (q.customerId && typeof custName === "function" ? custName(q.customerId) : "") || "—"));
   const type = q => esc((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job");
-  const amt = q => money(invAmountDue(q));
+  const amt = q => money2(invAmountDue(q));
   // buckets, most-actionable first: DONE jobs not invoiced, then other accepted-not-invoiced, then awaiting pay, then paid
   const notBilled = qs.filter(q => !q.invoiced && !q.paid);
   const ready = notBilled.filter(q => invReadyState(q) === "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
@@ -312,7 +341,7 @@ function rInvoices() {
 
   const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${q.paymentLink ? " · 💳 pay link" : ""}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
 
-  let h = `<div class="secthd"><h2>🧾 Invoices</h2>${arTotal ? `<span class="ct">${money(arTotal)} owed</span>` : ""}</div>`;
+  let h = `<div class="secthd"><h2>🧾 Invoices</h2>${arTotal ? `<span class="ct">${money2(arTotal)} owed</span>` : ""}</div>`;
 
   const needLink = awaiting.filter(q => !q.paymentLink && invAmountDue(q) >= 0.5).length;
   if (needLink) h += `<div class="card" style="border-left:4px solid var(--accent)"><button class="btn acc" id="inv_genall" style="width:100%" onclick="invGenPayLinksAll()">⚡ Generate Stripe pay links for ${needLink} invoice${needLink === 1 ? "" : "s"}</button><div class="sub" style="margin-top:6px;white-space:normal">Makes a card-payment link for each awaiting invoice that doesn't have one yet. Real links — but nobody's charged until a customer actually pays.</div></div>`;
@@ -323,7 +352,7 @@ function rInvoices() {
 
   if (inprog.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">🛠 In progress</h2><span class="ct">${inprog.length}</span></div><div class="card">` + inprog.map(q => row(q, `<b>${amt(q)}</b><div class="sub">not done yet</div>`)).join("") + `</div>`;
 
-  h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">📤 Awaiting payment</h2><span class="ct">${money(arTotal)}</span></div>`;
+  h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">📤 Awaiting payment</h2><span class="ct">${money2(arTotal)}</span></div>`;
   if (!awaiting.length) h += `<div class="card"><div class="muted">Nothing outstanding. 🎉</div></div>`;
   else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); return row(q, `<b style="color:var(--danger)">${amt(q)}</b><div class="sub">${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
 

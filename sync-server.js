@@ -1584,23 +1584,28 @@ function consumeInviteToken(tok) {
 function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 /* ---- HOSTED PUBLIC INVOICE (GET /i/<token>) — server-rendered so a customer can open + pay from any browser ---- */
 const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "", logo: "/assets/logo-jam.png" } };
-function invMoney(n) { n = Math.round(+n || 0); return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US"); }
+function invMoney(n) { n = Math.round((+n || 0) * 100) / 100; return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.name || it.serviceId)); }
 function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
 function invNoOf(q) { if (q && q.invoiceNo) return q.invoiceNo; const ds = String((q && q.date) || "").replace(/-/g, ""); return "INV-" + (ds || "00000000") + "-" + String((q && q.id) || "").slice(-4).toUpperCase(); }
 function invDateOf(ds) { const m = String(ds || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[2] + "/" + m[3] + "/" + m[1].slice(2)) : String(ds || ""); }
-function renderInvoicePage(biz, cust, q) {
+function renderInvoicePage(biz, cust, q, mats) {
   const AC = "#0a7d4b", no = invNoOf(q), dateStr = invDateOf(q.invoicedDate || q.date);
   const items = invItemsOf(q), sub = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
   const eff = invEff(q), adj = Math.round((eff - sub) * 100) / 100;
-  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((eff + tax) * 100) / 100;
+  // pass-through materials (opt-in q.billMaterials) — itemized at cost, NOT re-taxed (tax was paid at purchase)
+  const matList = (q && q.billMaterials && Array.isArray(mats)) ? mats.filter(m => m && (+m.amount) > 0) : [];
+  const matSum = Math.round(matList.reduce((s, m) => s + (+m.amount || 0), 0) * 100) / 100;
+  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((eff + matSum + tax) * 100) / 100;
   const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
-  const rows = items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
-    : `<tr><td colspan="3" style="color:#9ca3af">No line items on this invoice.</td></tr>`;
+  const rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
+    : `<tr><td colspan="3" style="color:#9ca3af">No line items on this invoice.</td></tr>`)
+    + (matList.length ? `<tr><td colspan="3" style="padding-top:10px;font-weight:700">Materials (pass-through, at cost)</td></tr>` + matList.map(m => `<tr><td>${htmlEsc(m.desc || "Material")}</td><td class="c">1</td><td class="n">${invMoney(+m.amount || 0)}</td></tr>`).join("") : "");
   const adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
-  const taxRows = taxable ? `<tr><td colspan="2" class="n">Sales tax (6.75%)</td><td class="n">${invMoney(tax)}</td></tr><tr><td colspan="2" class="n tot">Total due</td><td class="n tot">${invMoney(due)}</td></tr>`
-    : `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
+  const matRow = matList.length ? `<tr><td colspan="2" class="n">Materials</td><td class="n">${invMoney(matSum)}</td></tr>` : "";
+  const taxRows = taxable ? matRow + `<tr><td colspan="2" class="n">Sales tax (6.75%)</td><td class="n">${invMoney(tax)}</td></tr><tr><td colspan="2" class="n tot">Total due</td><td class="n tot">${invMoney(due)}</td></tr>`
+    : matRow + `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
   const dueStr = invMoney(due);
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Invoice ${htmlEsc(no)} · ${htmlEsc(biz.name || "")}</title><style>
@@ -2961,8 +2966,12 @@ const server = http.createServer((req, res) => {
       if (found) { q = found; org = oid; cust = ((store[oid].customers) || []).find(c => c && c.id === q.customerId) || null; break; }
     }
     if (!q) return notFound();
+    // pass-through materials for the linked job — only when the owner opted THIS invoice in (q.billMaterials)
+    const _js = store[org] || {};
+    const _jb = q.billMaterials ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
+    const _mats = _jb ? (_js.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === _jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0) : [];
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
-    return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q));
+    return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q, _mats));
   }
 
   // PATH BUILD GUIDE public page — GET /guide/path/<org>/<quoteId> (must be checked BEFORE /guide/ below since it also
