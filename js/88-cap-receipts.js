@@ -296,13 +296,91 @@ window.capRcptOne = async function () {
   else alert("Cap couldn't read this receipt right now" + (res && res.error ? " (" + String(res.error).slice(0, 80) + ")" : "") + ". Try again in a moment.");
 };
 
-/* the button shown on the Receipts page next to the review-queue banner (owner/admin only) */
+/* ---------- BULK REREAD (selected or all) ----------------------------------------------------------------
+   The auto-drain only reads UNREAD rows (no `suggested`). A row that came back nearly blank still carries a
+   (bad) suggestion, so the drain skips it forever and the only fix was opening each one and tapping Reread.
+   This rereads ANY review receipt — selected via the row checkboxes, or all of them — with the SMART model. */
+var _capRcptSel = Object.create(null);   // review record id -> true (checkbox selection; survives re-renders)
+function capRcptRereadAll() { return (typeof rcptReview === "function" ? rcptReview() : []).filter(function (r) { return r && r.receiptId; }); }
+function capRcptSelCount() { return Object.keys(_capRcptSel).length; }
+function capRcptSelUI() {   // update the reread button label in place (no full re-render on a checkbox tick)
+  var b = document.getElementById("cap_rcpt_reread_btn"); if (!b) return;
+  var n = capRcptSelCount();
+  b.textContent = n ? ("🔁 Reread selected (" + n + ")") : ("🔁 Reread all " + capRcptRereadAll().length);
+}
+window.capRcptToggleSel = function (id, checked) { if (!id) return; if (checked) _capRcptSel[id] = true; else delete _capRcptSel[id]; capRcptSelUI(); };
+window.capRcptSelAll = function () {
+  capRcptRereadAll().forEach(function (r) { _capRcptSel[r.id] = true; });
+  var b = document.querySelectorAll("input.capRcptChk"); for (var i = 0; i < b.length; i++) b[i].checked = true;
+  capRcptSelUI();
+};
+window.capRcptSelClear = function () {
+  _capRcptSel = Object.create(null);
+  var b = document.querySelectorAll("input.capRcptChk"); for (var i = 0; i < b.length; i++) b[i].checked = false;
+  capRcptSelUI();
+};
+/* the per-row checkbox cell (owner/admin + a review row with a photo); an aligned empty cell otherwise */
+function capRcptRowCheckbox(r) {
+  if (!capRcptCanRun() || !r || r.store !== "review" || !r.receiptId) return '<td style="padding:8px 4px"></td>';
+  return '<td style="padding:8px 4px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="capRcptChk"' + (_capRcptSel[r.id] ? " checked" : "") + ' onclick="event.stopPropagation();capRcptToggleSel(\'' + r.id + '\',this.checked)" title="Select to reread"></td>';
+}
+/* Reread selected review receipts (or ALL if none checked) with the SMART model. Mirrors capRcptRun's stamp/
+   auto-file spine but over an explicit list INCLUDING already-suggested rows, and always escalates. Never throws. */
+window.capRcptReread = async function () {
+  if (!capRcptCanRun()) { alert("Only an owner or admin can run Cap."); return; }
+  if (_capRcptBusy) { alert("Cap is already reading — let it finish first."); return; }
+  const sel = capRcptSelCount();
+  const targets = sel
+    ? capRcptRereadAll().filter(function (r) { return _capRcptSel[r.id]; })
+    : capRcptRereadAll();
+  if (!targets.length) { alert("No needs-review receipts with a photo to reread."); return; }
+  if (typeof confirm === "function" && !confirm("Reread " + targets.length + " receipt" + (targets.length > 1 ? "s" : "") + " with the smartest model?\nThat runs " + targets.length + " AI read" + (targets.length > 1 ? "s" : "") + " on this organization's key.")) return;
+  _capRcptBusy = true;
+  try { if (typeof whenSynced === "function") await whenSynced(15000); } catch (e) {}   // flush records first (see capRcptRun)
+  const throttle = capRcptThrottleMs();
+  let done = 0, updated = 0, autoFiled = 0, skipped = 0, stop = "";
+  for (let i = 0; i < targets.length; i++) {
+    const rec = targets[i];
+    capRcptSetStatus("🔁 Rereading " + (done + 1) + " of " + targets.length + "…");
+    if (typeof uploadStatus === "function") uploadStatus("reading", { done: done + 1, total: targets.length });
+    const res = await capRcptRead(rec.receiptId, { escalate: true });   // smart model
+    if (res && res.suggested) {
+      const live = (typeof rcptFindRecord === "function") ? rcptFindRecord("review", null, rec.id) : rec;
+      const records = capRcptFanStamp(live || rec, res.suggested); updated++;
+      records.forEach(function (r) { if (capRcptAutoFileOne(r, { batch: true })) autoFiled++; });
+      if (typeof save === "function") save();
+    } else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { stop = "Cap needs this organization's Anthropic API key. Set it in Admin → Assistant."; break; }
+    else if (res && res.error === "offline") { stop = "You went offline — stopped after " + done + ". Reread the rest when you're back."; break; }
+    else if (res && res.status === 429) { stop = "Hit the read limit after " + done + ". Wait a minute, then reread the rest."; break; }
+    else { skipped++; }
+    done++;
+    if (i < targets.length - 1 && throttle > 0) await capRcptSleep(throttle);
+  }
+  _capRcptBusy = false;
+  _capRcptSel = Object.create(null);
+  if (typeof uploadStatus === "function") uploadStatus("hide");
+  capRcptSetStatus("");
+  if (typeof render === "function") render();
+  if (stop) alert(stop);
+  else alert("🔁 Reread " + done + " — " + updated + " updated" + (autoFiled ? ", " + autoFiled + " auto-filed" : "") + (skipped ? ", " + skipped + " Cap still couldn't read" : "") + ".");
+};
+
+/* the Cap card on the Receipts page (owner/admin only). Shows whenever ANY review receipt has a photo — not
+   just unread ones — so a pile of blank/bad guesses can be rereaded (that pile has suggestions, so the old
+   unread-only gate hid this card exactly when it was needed). */
 function capRcptButtonHTML() {
   if (!capRcptCanRun()) return "";
-  const n = capRcptTargets().length;
-  if (!n) return "";
+  const unread = capRcptTargets().length;                 // review + photo + NO suggestion (auto-drain targets)
+  const all = capRcptRereadAll().length;                  // every review receipt with a photo (reread candidates)
+  if (!all) return "";
+  const sel = capRcptSelCount();
+  const rereadLabel = sel ? ("🔁 Reread selected (" + sel + ")") : ("🔁 Reread all " + all);
   return `<div class="card" style="border-left:4px solid #6b3fa0"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
-    <div class="grow" style="white-space:normal"><b>🤖 Cap: categorize needs-review</b><div class="sub">Cap reads your needs-review photos <b>one at a time</b> and proposes vendor / amount / type / category / job for each. Confident guesses are <b>auto-filed</b> and marked <span style="color:#6b3fa0">🤖 review</span> (purple) for you to review; anything unsure stays here for you to approve.</div></div>
-    <button class="btn acc sm" onclick="capRcptRun()">🤖 Read ${n}</button></div>
+    <div class="grow" style="white-space:normal"><b>🤖 Cap: read needs-review</b><div class="sub">Cap reads your needs-review photos <b>one at a time</b> and proposes vendor / amount / type / category / job. New uploads read automatically; use <b>Reread</b> to re-run the <b>smartest model</b> on ones that came out blank or wrong — check the boxes at the left of each row, or reread them all.</div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;flex:0 0 auto">
+      ${unread ? `<button class="btn acc sm" onclick="capRcptRun()">🤖 Read ${unread} new</button>` : ""}
+      <button id="cap_rcpt_reread_btn" class="btn ghost sm" onclick="capRcptReread()">${rereadLabel}</button>
+      ${all > 1 ? `<button class="btn ghost sm" onclick="capRcptSelAll()">☑ All</button><button class="btn ghost sm" onclick="capRcptSelClear()">✕ None</button>` : ""}
+    </div></div>
     <div id="cap_rcpt_status" class="sub" style="text-align:center;color:#6b3fa0;min-height:16px;margin-top:4px"></div></div>`;
 }
