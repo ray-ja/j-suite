@@ -1327,6 +1327,14 @@ async function main() {
   ok("never blanks a field any copy had — pulls the card the review copy carried", mf.fields.cardLast4 === "8355");
   ok("survivor's manual work wins but the review's photo folds in (both survive — nothing lost)", mf.fields.category === "fuel" && mf.fields.receiptId === "clear.jpg" && mf.fields.vendor === "Depot" && mf.fields.amount === 90);
 
+  console.log("— MERGE CORE: photos[] ACCUMULATE across re-merges (a previously-merged photo is never re-orphaned) —");
+  const pm1 = rcptMergeFields([{ store: "review", recId: "p1", receiptId: "A.jpg", vendor: "Vulcan", amount: 48.15 }, { store: "review", recId: "p2", receiptId: "B.jpg", vendor: "Vulcan", amount: 48.15 }]);
+  ok("a merge keeps BOTH copies' photos", pm1.fields.photos.indexOf("A.jpg") >= 0 && pm1.fields.photos.indexOf("B.jpg") >= 0 && pm1.fields.photos.length === 2, pm1.fields.photos);
+  // RE-merge: the survivor already carries photos:[A,B]; merging it with a new copy C must keep A,B AND add C (the fix
+  // for the restore-loop — previously B was dropped because only receiptId, not photos[], was collected).
+  const pm2 = rcptMergeFields([{ store: "review", recId: "p1", receiptId: "A.jpg", photos: ["A.jpg", "B.jpg"], vendor: "Vulcan", amount: 48.15 }, { store: "review", recId: "p3", receiptId: "C.jpg", vendor: "Vulcan", amount: 48.15 }]);
+  ok("re-merge carries forward the already-merged photos[] (B not dropped) + adds the new one", ["A.jpg", "B.jpg", "C.jpg"].every(p => pm2.fields.photos.indexOf(p) >= 0) && pm2.fields.photos.length === 3, pm2.fields.photos);
+
   console.log("— MERGE CORE: a REAL date beats a Cap 'unknown' (the ISO guard) —");
   const mfDate = rcptMergeFields([
     { store: "review", recId: "a", receiptId: "x", date: "unknown", vendor: "V", amount: 5 },   // survivor (first) has a Cap 'unknown'

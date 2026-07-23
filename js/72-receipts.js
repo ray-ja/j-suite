@@ -548,8 +548,11 @@ function rcptMergeFields(records, forcedSurvivorId) {
   // favor of a blank bank-statement one). Collect ALL distinct blob ids from the group so the owner can flip
   // through them all in review. The primary `receiptId` is just the default thumbnail; `photos` holds them all.
   var mergedPhotos = [];
-  if (photoRec && photoRec.receiptId) mergedPhotos.push(photoRec.receiptId);
-  recs.forEach(function (r) { if (r.receiptId && mergedPhotos.indexOf(r.receiptId) < 0) mergedPhotos.push(r.receiptId); });
+  var addPhoto = function (p) { if (p && mergedPhotos.indexOf(p) < 0) mergedPhotos.push(p); };
+  if (photoRec && photoRec.receiptId) addPhoto(photoRec.receiptId);
+  // collect BOTH each copy's own receiptId AND its already-merged photos[] — so RE-merging a survivor that already
+  // accumulated photos never drops the earlier ones (dropping them was recreating "orphans" → the restore-loop).
+  recs.forEach(function (r) { addPhoto(r.receiptId); (r.photos || []).forEach(addPhoto); });
 
   // LINE ITEMS / suggested: the copy with the most line items (the "better receipt" Cap read).
   var suggRec = survivor;
@@ -1216,8 +1219,11 @@ function rReceipts() {
     }
   }
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
-  const _orphanN = (typeof rcptOrphanReceipts === "function") ? rcptOrphanReceipts().length : 0;
-  if (_orphanN) h += `<div class="card" style="border-left:4px solid #6b3fa0;cursor:pointer" onclick="rcptRestoreOrphans()"><b style="color:#6b3fa0">♻️ ${_orphanN} merged-away receipt photo${_orphanN > 1 ? "s" : ""} can be restored</b> — an earlier merge kept one photo and dropped the rest; the pictures are still saved. <b>Tap to bring them back to Needs-review</b> so you can re-merge (keeps every photo now) or delete the real junk. →</div>`;
+  // NOTE: the "♻️ N merged-away photos can be restored" card was a ONE-TIME recovery for pre-fix merges that dropped
+  // photos. It's retired: merges now keep every photo (rcptMergeFields carries photos[] forward), so the only records
+  // it resurfaced were REDUNDANT extra photos of receipts already filed correctly — and restoring them re-created the
+  // duplicates the owner had just merged (an endless loop). rcptOrphanReceipts/rcptRestoreOrphans remain as an
+  // unsurfaced manual tool. See [[receipt-edit-lineitems]] restore-loop note.
 
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
   if (typeof depositsAwaitingRefund === "function") { const _deps = depositsAwaitingRefund(); if (_deps.length) h += rcptDepositsAwaitingHTML(_deps); }
