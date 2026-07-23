@@ -202,6 +202,7 @@ function rcptSplitCapture() {
     const b = document.querySelector('.rcpt_split_bucket[data-i="' + i + '"]'); if (b) r.bucket = b.value;
     const j = document.querySelector('.rcpt_split_job[data-i="' + i + '"]'); if (j) r.jobId = j.value;
     const n = document.querySelector('.rcpt_split_note[data-i="' + i + '"]'); if (n) r.note = n.value;
+    const iv = document.querySelector('.rcpt_split_inv[data-i="' + i + '"]'); if (iv) r.toInv = iv.checked;   // 🧰 per-line "track this tool in inventory"
   });
 }
 
@@ -231,6 +232,7 @@ function rcptSplitRender() {
         ${RCPT_SPLIT.rows.length > 1 ? `<button class="btn ghost sm" style="flex:0 0 auto;color:var(--danger)" onclick="rcptSplitRemove(${i})" title="Remove line">✕</button>` : ""}
       </div>
       <div class="rcpt_split_jobwrap" data-i="${i}" style="display:${needsJob ? "block" : "none"}"><label>Job it bills to</label><select class="rcpt_split_job" data-i="${i}">${rcptSplitJobOpts(r.jobId)}</select></div>
+      ${r.bucket === "business" ? `<label class="li" style="cursor:pointer;margin-top:6px;display:flex;align-items:center;gap:8px"><input type="checkbox" class="rcpt_split_inv" data-i="${i}" ${r.toInv ? "checked" : ""} style="width:18px;height:18px;flex:0 0 auto"><span class="sub" style="white-space:normal">🧰 Also track this tool in inventory (as an asset) — added when you file</span></label>` : ""}
       <div class="sub" style="margin-top:4px;white-space:normal">${rcptSplitBucketHint(r.bucket)} · <a onclick="rcptSplitRest(${i})" style="cursor:pointer;color:var(--accent)">↳ put the rest here</a></div>
     </div>`;
   });
@@ -293,7 +295,19 @@ window.rcptSaveEditSplit = function () {
   if (typeof submitGuard === "function" && !submitGuard("rcptSaveEditSplit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
   const res = rcptApplySplit(RCPT_EDIT.loc, RCPT_SPLIT.total, allocations, shared);
   if (!res || !res.ok) { alert(res && res.error ? res.error : "Couldn't split this receipt."); return; }
-  if (typeof logChange === "function") logChange("update", "expense", res.newLocs[0].recId, "Receipt split into " + allocations.length + " part" + (allocations.length > 1 ? "s" : "") + " — " + rcptSplitMoney(RCPT_SPLIT.total) + (vendor ? " · " + vendor : ""));
+  // 🧰 PER-LINE INVENTORY — rows and res.newLocs align 1:1 (allocations were built from rows in order). For each
+  // 🔧 tool line the owner ticked "track in inventory", add its JUST-FILED record to the inventory collection via
+  // the existing idempotent rcptInvAdd (two-way link, dedup, cat "tool"). Runs before save() so it persists together.
+  let invAdded = 0;
+  if (typeof rcptInvAdd === "function") {
+    RCPT_SPLIT.rows.forEach((r, i) => {
+      if (r.bucket === "business" && r.toInv && res.newLocs[i]) {
+        const ir = rcptInvAdd(res.newLocs[i]);
+        if (ir && ir.ok) { if (ir.created) invAdded++; if (typeof logChange === "function") logChange(ir.created ? "create" : "update", "inventory", ir.item.id, (ir.created ? "Added to inventory from receipt line: " : "Already in inventory: ") + ir.item.name); }
+      }
+    });
+  }
+  if (typeof logChange === "function") logChange("update", "expense", res.newLocs[0].recId, "Receipt split into " + allocations.length + " part" + (allocations.length > 1 ? "s" : "") + " — " + rcptSplitMoney(RCPT_SPLIT.total) + (vendor ? " · " + vendor : "") + (invAdded ? " · " + invAdded + " → inventory" : ""));
   if (typeof save === "function") save();
   if (typeof closeModal === "function") closeModal();
   RCPT_EDIT = null; RCPT_SPLIT = null;

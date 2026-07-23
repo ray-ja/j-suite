@@ -404,6 +404,22 @@ async function main() {
   ok("editor rows → 🧱 $120 to j1.materials + 🔧 $80 to org tools/equipment", edRes.ok && edMat.length === 1 && edMat[0].amount === 120 && edBiz.length === 1 && edBiz[0].amount === 80 && edBiz[0].category === "tools/equipment", { edMat, edBiz });
   ok("editor save consumed the original review record (out of Needs review)", rcptReview().length === 0);
 
+  console.log("— RECEIPTS EDITOR: a 🔧 tool line flagged for inventory files AND creates a linked inventory item —");
+  resetStore(); global.finCanView = function () { return true; };
+  const edT = seedReview({ receiptId: "bEDT", vendor: "Home Depot", amount: 180, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const edTalloc = [
+    { amount: 100, type: "pass-through", jobId: "j1", category: "", desc: "pavers" },
+    { amount: 80, type: "business", jobId: null, category: "tools/equipment", desc: "impact driver" }
+  ];
+  const edTres = rcptApplySplit({ store: "review", jobId: null, recId: edT.id }, 180, edTalloc, { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bEDT", cardLast4: "" });
+  const toolLoc = edTres.newLocs[1];   // the 🔧 line's just-filed record (rows/newLocs align 1:1, as rcptSaveEditSplit relies on)
+  const invRes = rcptInvAdd(toolLoc);
+  ok("🔧 line → rcptInvAdd creates a linked 'tool' item named after the line, priced at the line amount", invRes.ok && invRes.created && invRes.item.cat === "tool" && invRes.item.name === "impact driver" && invRes.item.price === "$80.00", invRes);
+  const toolRec = rcptFindRecord(toolLoc.store, toolLoc.jobId, toolLoc.recId);
+  ok("two-way link set (receipt.inventoryItemId ↔ item.fromReceiptId)", toolRec.inventoryItemId === invRes.item.id && invRes.item.fromReceiptId === toolRec.id);
+  ok("adding the SAME line again is idempotent — no duplicate inventory item", (() => { const r2 = rcptInvAdd(toolLoc); return r2.ok && !r2.created && D().inventory.filter(x => !x.deleted).length === 1; })());
+  ok("the 🧱 material line did NOT land in inventory (only the flagged 🔧 tool)", !D().inventory.some(x => x.name === "pavers"));
+
   // ========================= CAP AUTO-CATEGORIZE =========================
   const SS = require("./sync-server.js");
   // RCPT_CATS is `const` inside the eval'd js/72 (block-scoped, doesn't leak) — mirror it here for the server-arg tests
