@@ -1579,9 +1579,13 @@ ok("defaults when the 3 new keys are absent → last4 null, refund false, deposi
 // last4 extraction + clamp
 const rpsL4 = t.rcptParseSuggestion('{"vendor":"Sunbelt","amount":300,"last4":"2469","type":"job-expense","category":"rentals"}', rpsCats, rpsJobs);
 ok("extracts a valid 4-digit last4", rpsL4 && rpsL4.last4 === "2469", rpsL4);
-ok("clamps a non-4-digit last4 (\"123\") to null", t.rcptParseSuggestion('{"vendor":"x","last4":"123"}', rpsCats, rpsJobs).last4 === null, null);
+ok("clamps a too-short last4 (\"123\") to null", t.rcptParseSuggestion('{"vendor":"x","last4":"123"}', rpsCats, rpsJobs).last4 === null, null);
 ok("clamps a numeric (non-string) last4 to null", t.rcptParseSuggestion('{"vendor":"x","last4":2469}', rpsCats, rpsJobs).last4 === null, null);
-ok("clamps a masked last4 (\"**1234\") to null (not 4 bare digits)", t.rcptParseSuggestion('{"vendor":"x","last4":"**1234"}', rpsCats, rpsJobs).last4 === null, null);
+// Vulcan Materials & masked cards: strip a C-/****/… prefix → the last 4 digits (Ray: card was in the "CK #" slot as "C-8355")
+ok("Vulcan \"C-8355\" (CK# slot) → 8355", t.rcptParseSuggestion('{"vendor":"Vulcan Materials","last4":"C-8355"}', rpsCats, rpsJobs).last4 === "8355", t.rcptParseSuggestion('{"vendor":"x","last4":"C-8355"}', rpsCats, rpsJobs).last4);
+ok("\"C 8355\" (space variant) → 8355", t.rcptParseSuggestion('{"vendor":"x","last4":"C 8355"}', rpsCats, rpsJobs).last4 === "8355");
+ok("masked \"**1234\" → 1234 (extract the card, don't drop it)", t.rcptParseSuggestion('{"vendor":"x","last4":"**1234"}', rpsCats, rpsJobs).last4 === "1234");
+ok("a mis-slotted long number (8-digit date) is NOT taken as a card → null", t.rcptParseSuggestion('{"vendor":"x","last4":"20260713"}', rpsCats, rpsJobs).last4 === null);
 // refund + deposit booleans (strict === true)
 ok("refund:true → refund true", t.rcptParseSuggestion('{"vendor":"x","refund":true}', rpsCats, rpsJobs).refund === true, null);
 ok("refund non-boolean (\"yes\") → refund false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","refund":"yes"}', rpsCats, rpsJobs).refund === false, null);
