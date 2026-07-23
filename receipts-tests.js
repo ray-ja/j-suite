@@ -868,6 +868,18 @@ async function main() {
   rcptEditOpen("review", null, photoRec.id);
   ok("a photo'd row shows the photo, NOT the CSV link, in the modal", !/View source CSV/.test(LAST_MODAL_HTML), LAST_MODAL_HTML.slice(0, 60));
   STORE.receipts = STORE.receipts.filter(r => r.id !== photoRec.id);   // drop the extra so re-import counts stay clean
+  // PDF receipt: the modal shows a tappable 📄 PDF tile (an <img> can't render a PDF), and the 🤖 Reread button is
+  // enabled for PDFs (the server reads them via a document block) — the "missing photo" that was really a hidden PDF.
+  global.finCanView = function () { return true; };
+  const pdfRec = seedReview({ receiptId: "contract9.pdf", vendor: "The Home Depot", amount: 86.97 });
+  pdfRec.suggested = { vendor: "The Home Depot", amount: 86.97, confidence: 0.9 };
+  rcptEditOpen("review", null, pdfRec.id);
+  ok("PDF receipt: modal shows a 📄 PDF tile linking the blob (no broken <img>)", />📄</.test(LAST_MODAL_HTML) && LAST_MODAL_HTML.indexOf(jsUploadUrl("contract9.pdf")) >= 0 && !/id="rcpt_photoimg"/.test(LAST_MODAL_HTML), LAST_MODAL_HTML.slice(0, 80));
+  ok("PDF receipt: the 🤖 Reread button IS shown (PDFs are valid read targets now)", /cap_rcpt_one_btn/.test(LAST_MODAL_HTML));
+  const imgRec = seedReview({ receiptId: "img9.jpg", vendor: "X", amount: 5 });
+  rcptEditOpen("review", null, imgRec.id);
+  ok("image receipt still shows the <img> thumbnail (not a PDF tile) + Reread", /id="rcpt_photoimg"/.test(LAST_MODAL_HTML) && /cap_rcpt_one_btn/.test(LAST_MODAL_HTML) && !/>📄</.test(LAST_MODAL_HTML));
+  STORE.receipts = STORE.receipts.filter(r => r.id !== pdfRec.id && r.id !== imgRec.id);
   global.modal = function () {};
 
   console.log("— CSV re-import: a dedup MATCH ATTACHES csvFile to the EXISTING record (no dupe, no billing change) —");

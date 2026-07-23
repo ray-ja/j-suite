@@ -218,6 +218,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const jobs = rcptJobs(), members = rcptMembers();
   const jobSel = jobId || rec.jobId || "";
   const base = (typeof jsUploadUrl === "function") ? jsUploadUrl(rec.receiptId) : "";
+  const _isPdf = /\.pdf$/i.test(rec.receiptId || "");   // a PDF receipt can't render in an <img>; show a tappable 📄 tile instead of a hidden/blank thumbnail
 
   // ── PRE-FILL FROM CAP'S GUESS (DISPLAY DEFAULT ONLY — the record's OWN value ALWAYS wins) ──────────────
   // A receipt Cap READ (has `suggested`) but whose record fields are still blank — e.g. it was restored / synced
@@ -283,16 +284,18 @@ window.rcptEditOpen = function (store, jobId, recId) {
   const _allPhotos = (rec.photos && rec.photos.length) ? rec.photos.filter(Boolean) : (rec.receiptId ? [rec.receiptId] : []);
   const _pu = (pid) => (typeof jsUploadUrl === "function") ? jsUploadUrl(pid) : "";
   const photosStrip = (_allPhotos.length > 1)
-    ? `<div style="margin-top:8px"><div class="sub" style="font-weight:700;white-space:normal">📸 ${_allPhotos.length} photos merged — tap each to check them</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${_allPhotos.map(pid => `<a href="${_pu(pid)}" target="_blank" rel="noopener"><img src="${_pu(pid)}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>`).join("")}</div></div>`
+    ? `<div style="margin-top:8px"><div class="sub" style="font-weight:700;white-space:normal">📸 ${_allPhotos.length} files merged — tap each to check them</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${_allPhotos.map(pid => /\.pdf$/i.test(pid) ? `<a href="${_pu(pid)}" target="_blank" rel="noopener" style="width:56px;height:56px;border-radius:6px;border:1px solid var(--line);background:var(--soft);display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:22px">📄</a>` : `<a href="${_pu(pid)}" target="_blank" rel="noopener"><img src="${_pu(pid)}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>`).join("")}</div></div>`
     : "";
 
   modal("Edit receipt", `
     ${sugg}
     <div class="row" style="gap:10px;align-items:flex-start">
-      <a href="${base}" target="_blank" rel="noopener" style="flex:0 0 auto"><img id="rcpt_photoimg" src="${base}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>
-      <div class="grow"><input type="file" id="rcpt_photo" accept="image/*,application/pdf,.pdf" style="display:none" onchange="rcptReplacePhoto(this)"><button class="btn ghost sm" style="width:100%" onclick="document.getElementById('rcpt_photo').click()"><span id="rcpt_photolbl">🔄 Replace photo</span></button>
-      ${(rec.receiptId && !/\.pdf$/i.test(rec.receiptId) && typeof capRcptOne === "function" && (typeof rcptFinFull !== "function" || rcptFinFull())) ? `<button class="btn ghost sm" id="cap_rcpt_one_btn" style="width:100%;margin-top:6px;color:#6b3fa0" onclick="capRcptOne()">🤖 Reread — try harder (smartest model)</button>` : ""}
-      <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div>
+      ${_isPdf
+        ? `<a href="${base}" target="_blank" rel="noopener" style="flex:0 0 auto;width:96px;height:96px;border-radius:8px;border:1px solid var(--line);background:var(--soft);display:flex;flex-direction:column;align-items:center;justify-content:center;text-decoration:none;color:var(--accent)"><div style="font-size:30px;line-height:1.1">📄</div><div class="sub" style="color:var(--accent);font-weight:700">PDF</div></a>`
+        : `<a href="${base}" target="_blank" rel="noopener" style="flex:0 0 auto"><img id="rcpt_photoimg" src="${base}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>`}
+      <div class="grow"><input type="file" id="rcpt_photo" accept="image/*,application/pdf,.pdf" style="display:none" onchange="rcptReplacePhoto(this)"><button class="btn ghost sm" style="width:100%" onclick="document.getElementById('rcpt_photo').click()"><span id="rcpt_photolbl">🔄 Replace ${_isPdf ? "file" : "photo"}</span></button>
+      ${(rec.receiptId && typeof capRcptOne === "function" && (typeof rcptFinFull !== "function" || rcptFinFull())) ? `<button class="btn ghost sm" id="cap_rcpt_one_btn" style="width:100%;margin-top:6px;color:#6b3fa0" onclick="capRcptOne()">🤖 Reread — try harder (smartest model)</button>` : ""}
+      <div class="sub" style="margin-top:6px;white-space:normal">${_isPdf ? "This receipt is a PDF — tap the 📄 to open it." : "Tap the photo to view it full size."}</div>
       ${(!rec.receiptId && rec.csvFile) ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(rec.csvFile) : ""}" target="_blank" rel="noopener" class="sub" style="display:inline-block;margin-top:4px;color:var(--accent)">📄 View source CSV${rec.csvName ? " (" + esc(rec.csvName) + ")" : ""}</a>` : ""}</div>
     </div>
     ${photosStrip}
