@@ -393,6 +393,15 @@ async function main() {
   const seedClamp = rcptSplitSeedRows({ jobId: "j1", suggested: { lineItems: [{ desc: "mystery", amount: 10, bucket: "nonsense" }] } });
   ok("seed: an unknown bucket clamps to pass-through (and then inherits the job)", seedClamp[0].bucket === "pass-through" && seedClamp[0].jobId === "j1", seedClamp);
 
+  console.log("— RECEIPTS EDITOR: a 'Sales Tax' / discount line Cap mislabeled as a lineItem is pulled into the adjustments (not a routable row) —");
+  const seedTaxLine = rcptSplitSeed({ jobId: "j1", suggested: { lineItems: [{ desc: "Marble chips", amount: 68.69, bucket: "pass-through" }, { desc: "Sales Tax", amount: 4.64, bucket: "job-expense" }] } });
+  ok("a 'Sales Tax' lineItem → the tax adjustment, NOT a 'Stored as' row", seedTaxLine.rows.length === 1 && seedTaxLine.rows[0].note === "Marble chips" && seedTaxLine.tax === 4.64, seedTaxLine);
+  const seedDiscLine = rcptSplitSeed({ jobId: "j1", suggested: { lineItems: [{ desc: "Shovel", amount: 39.85, bucket: "pass-through" }, { desc: "Military Discount", amount: 3.99, bucket: "pass-through" }] } });
+  ok("a 'Military Discount' lineItem → the discount adjustment, NOT a row", seedDiscLine.rows.length === 1 && seedDiscLine.discount === 3.99, seedDiscLine);
+  ok("authoritative salesTax field wins over a tax line (no double count)", rcptSplitSeed({ suggested: { salesTax: 2.42, lineItems: [{ desc: "rock", amount: 30, bucket: "pass-through" }, { desc: "Tax", amount: 2.42, bucket: "pass-through" }] } }).tax === 2.42);
+  ok("rcptSplitIsTaxLine matches 'Sales Tax'/'Tax' but not 'taxable'/'tax-exempt'", rcptSplitIsTaxLine("Sales Tax") && rcptSplitIsTaxLine("TAX") && !rcptSplitIsTaxLine("Taxable goods") && !rcptSplitIsTaxLine("tax-exempt widget"));
+  ok("a product named 'Taxable goods' is NOT swallowed as a tax line", rcptSplitSeed({ suggested: { lineItems: [{ desc: "Taxable goods", amount: 30, bucket: "pass-through" }] } }).rows.length === 1);
+
   console.log("— RECEIPTS EDITOR: seeded rows route byte-correctly through rcptApplySplit (2 lines → 2 records) —");
   resetStore();
   const edR = seedReview({ receiptId: "bED", vendor: "Home Depot", amount: 200, uploadedBy: "u_ray", attributedTo: "u_ray" });
@@ -879,8 +888,9 @@ async function main() {
   const imgRec = seedReview({ receiptId: "img9.jpg", vendor: "X", amount: 5 });
   rcptEditOpen("review", null, imgRec.id);
   ok("image receipt still shows the <img> thumbnail (not a PDF tile) + Reread", /id="rcpt_photoimg"/.test(LAST_MODAL_HTML) && /cap_rcpt_one_btn/.test(LAST_MODAL_HTML) && !/>📄</.test(LAST_MODAL_HTML));
-  // receipt-level Type + Category live in #rcpt_typecat_wrap so js/92 can hide them on a split (each line owns its own)
-  ok("Type + Category are wrapped in #rcpt_typecat_wrap (so a split hides them)", /id="rcpt_typecat_wrap"/.test(LAST_MODAL_HTML) && LAST_MODAL_HTML.indexOf('id="rcpt_typecat_wrap"') < LAST_MODAL_HTML.indexOf('id="rcpt_type"') && LAST_MODAL_HTML.indexOf('id="rcpt_type"') < LAST_MODAL_HTML.indexOf('id="rcpt_cat"'), LAST_MODAL_HTML.indexOf('rcpt_typecat_wrap'));
+  // Type is now a hidden input (per-line "Stored as" owns type); Category lives in #rcpt_typecat_wrap (js/92 shows it
+  // only for a single job-cost/business line, hides it for splits + obvious pass-through)
+  ok("Type is a hidden input (owned per-line); Category is in #rcpt_typecat_wrap", /id="rcpt_type_hidden"[^>]*display:\s*none/.test(LAST_MODAL_HTML) && /id="rcpt_typecat_wrap"/.test(LAST_MODAL_HTML) && LAST_MODAL_HTML.indexOf('id="rcpt_typecat_wrap"') < LAST_MODAL_HTML.indexOf('id="rcpt_cat"'), LAST_MODAL_HTML.indexOf('rcpt_type_hidden'));
   STORE.receipts = STORE.receipts.filter(r => r.id !== pdfRec.id && r.id !== imgRec.id);
   global.modal = function () {};
 

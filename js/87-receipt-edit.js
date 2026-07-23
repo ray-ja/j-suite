@@ -311,12 +311,12 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <details id="rcpt_more" open style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
     <label>Date</label><input id="rcpt_date" type="date" value="${esc(preDate)}">
     <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
-    <!-- Receipt-level Type + Category apply only to a SINGLE-line receipt. When it's split into line items, each line
-         carries its own type ("Stored as" 🧱/🚚/🔧) and category, so these are hidden by rcptSplitRender (js/92) to
-         avoid a contradictory receipt-wide value. Kept in the DOM (seeded) so the per-line category fallback + smart
-         defaults still read them. -->
+    <!-- Receipt-level TYPE is fully owned by the per-line "Stored as" (🧱/🚚/🔧) now, so it's kept only as a hidden
+         input (seeded — drives rcptEditTypeChange + the pass-through category fallback). CATEGORY only adds info on a
+         job-cost or business line (fuel/disposal/rentals/subscriptions); rcptSplitRender (js/92) shows the wrap only
+         for a single such line and hides it for a split or an obvious pass-through (category = the derived "materials"). -->
+    <div id="rcpt_type_hidden" style="display:none"><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select></div>
     <div id="rcpt_typecat_wrap">
-    <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <label>Category</label><select id="rcpt_cat" onchange="rcptCatChange()">${catOpts}</select>
     <div id="rcpt_vehwrap" style="display:${preCat === "fuel" ? "block" : "none"}"><label>⛽ Which vehicle <span class="sub">(gas on the business card comes off this vehicle owner's mileage)</span></label><select id="rcpt_veh">${vehOpts}</select></div>
     </div>

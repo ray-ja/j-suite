@@ -137,7 +137,18 @@ function rcptSplitDistributeTax(allocations, tax) { return rcptSplitDistributeAd
    whole receipt as it stands today (a 1-row "split" routes byte-identically to a normal single save — id
    preserved). 🧱/🚚 rows inherit the receipt's current/guessed job so they file to it; 🔧 rows carry no job.
    Pure (DOM-free) so it's unit-testable. Never throws. */
-function rcptSplitSeedRows(rec) {
+// Is this line the receipt's own SALES-TAX / DISCOUNT summary line (not a product)? Cap is told to put tax +
+// discount in their own FIELDS, but it (or an older read) sometimes lists them as lineItems. Those must NOT become
+// routable "Stored as" rows — they belong in the tax/discount adjustments (tax folds into the items, never its own
+// record). Guard tax against "taxable"/"tax-exempt" product wording.
+function rcptSplitIsTaxLine(desc) { const s = String(desc == null ? "" : desc); return /(^|\b)(sales\s*tax|tax)(\b|$)/i.test(s) && !/taxable|tax[-\s]?exempt|tax[-\s]?free/i.test(s); }
+function rcptSplitIsDiscountLine(desc) { return /discount|coupon|military|veteran|rollback|markdown|you\s*saved|savings|promo/i.test(String(desc == null ? "" : desc)); }
+
+/* Seed the editor from a receipt: product rows + the tax/discount adjustments. Any tax/discount line Cap listed as
+   a lineItem is pulled OUT of the product rows and summed into tax/discount (authoritative salesTax/discount fields
+   win when present). Prefers Cap lineItems ▸ mixed splits ▸ one whole-receipt line. Returns {rows, tax, discount}.
+   Pure (DOM-free) so it's unit-testable. Never throws. */
+function rcptSplitSeed(rec) {
   rec = rec || {};
   const sg = rec.suggested || {};
   const curJob = rec.jobId || (sg.jobId || "");
@@ -147,14 +158,29 @@ function rcptSplitSeedRows(rec) {
     const amt = (amount != null && amount !== "" && !isNaN(+amount)) ? String(Math.round(+amount * 100) / 100) : "";
     return { bucket: b, jobId: needsJob ? curJob : "", amount: amt, note: (note == null ? "" : String(note)).slice(0, 120) };
   };
+  let rows = [], taxFromLines = 0, discFromLines = 0;
   const li = Array.isArray(sg.lineItems) ? sg.lineItems : (Array.isArray(rec.lineItems) ? rec.lineItems : null);
-  if (li && li.length) return li.filter(Boolean).map(it => row(it.bucket, it.amount, it.desc));
-  const sp = Array.isArray(sg.splits) ? sg.splits : null;
-  if (sp && sp.length) return sp.filter(Boolean).map(it => row(it.type, it.amount, it.note));
-  // default: the whole receipt as one stored line (the type/job it already has or Cap guessed)
-  const amt = (rec.amount != null && rec.amount !== "") ? rec.amount : (sg.amount != null ? sg.amount : "");
-  return [row(rec.type || sg.type, amt, rec.desc || rec.note || sg.desc || "")];
+  const src = (li && li.length) ? li.map(it => it && { bucket: it.bucket, amount: it.amount, note: it.desc })
+    : (Array.isArray(sg.splits) && sg.splits.length ? sg.splits.map(it => it && { bucket: it.type, amount: it.amount, note: it.note }) : null);
+  if (src && src.length) {
+    src.filter(Boolean).forEach(it => {
+      const amt = (it.amount != null && !isNaN(+it.amount)) ? Math.round(+it.amount * 100) / 100 : 0;
+      if (rcptSplitIsTaxLine(it.note)) { taxFromLines += Math.abs(amt); return; }        // a "Sales Tax" line → the tax adjustment, not a row
+      if (rcptSplitIsDiscountLine(it.note)) { discFromLines += Math.abs(amt); return; }   // a "Military Discount" line → the discount adjustment
+      rows.push(row(it.bucket, it.amount, it.note));
+    });
+  }
+  if (!rows.length) {
+    // default: the whole receipt as one stored line (the type/job it already has or Cap guessed)
+    const amt = (rec.amount != null && rec.amount !== "") ? rec.amount : (sg.amount != null ? sg.amount : "");
+    rows.push(row(rec.type || sg.type, amt, rec.desc || rec.note || sg.desc || ""));
+  }
+  const discount = (sg.discount != null && !isNaN(+sg.discount) && +sg.discount > 0) ? Math.round(+sg.discount * 100) / 100 : Math.round(discFromLines * 100) / 100;
+  const tax = (sg.salesTax != null && !isNaN(+sg.salesTax) && +sg.salesTax > 0) ? Math.round(+sg.salesTax * 100) / 100 : Math.round(taxFromLines * 100) / 100;
+  return { rows: rows, tax: tax, discount: discount };
 }
+/* back-compat: product rows only (callers/tests that just want the rows) */
+function rcptSplitSeedRows(rec) { return rcptSplitSeed(rec).rows; }
 
 /* mount the ALWAYS-ON line-item editor into the modal slot (called by js/87 rcptEditOpen WITH the record). Ray's
    ask: "see each line item the way it's going to be stored, including the split + where each thing goes — all on
@@ -166,20 +192,19 @@ window.rcptSplitInit = function (rec) {
   const slot = document.getElementById("rcpt_split_slot"); if (!slot) return;
   const amtEl = document.getElementById("rcpt_amt");
   let total = (amtEl && amtEl.value !== "") ? (parseFloat(amtEl.value) || 0) : (+((rec && rec.amount)) || +(((rec && rec.suggested) || {}).amount) || 0);
+  // Seed rows + the discount/sales-tax adjustments together (tax/discount lines Cap mislabeled as lineItems are
+  // pulled into the adjustments, not routable rows). A Cap-provided value is treated as KNOWN (touched) so it isn't
+  // auto-overwritten; when Cap gave nothing, we auto-track the remainder.
+  const seeded = rcptSplitSeed(rec);
   RCPT_SPLIT = {
     loc: (typeof RCPT_EDIT !== "undefined" && RCPT_EDIT) ? RCPT_EDIT.loc : null,
     total: Math.round(total * 100) / 100,
-    rows: rcptSplitSeedRows(rec)
+    rows: seeded.rows
   };
-  // Seed the receipt's own discount + sales-tax lines from Cap's read (when it read them). A Cap-provided value is
-  // treated as KNOWN (touched) so it isn't auto-overwritten; when Cap gave nothing, we auto-track the remainder.
-  const sg = (rec && rec.suggested) || {};
-  const capDisc = (sg.discount != null && !isNaN(+sg.discount) && +sg.discount > 0) ? Math.round(+sg.discount * 100) / 100 : 0;
-  const capTax = (sg.salesTax != null && !isNaN(+sg.salesTax) && +sg.salesTax > 0) ? Math.round(+sg.salesTax * 100) / 100 : 0;
-  RCPT_SPLIT.discount = capDisc;
-  RCPT_SPLIT.discountTouched = capDisc > 0;
-  RCPT_SPLIT.tax = capTax || rcptSplitDetectTax(RCPT_SPLIT.rows, RCPT_SPLIT.total);   // Cap's tax wins; else the pre-tax lines' gap up to the total
-  RCPT_SPLIT.taxTouched = capTax > 0;   // auto-track the remainder as tax only when Cap didn't read it
+  RCPT_SPLIT.discount = seeded.discount;
+  RCPT_SPLIT.discountTouched = seeded.discount > 0;
+  RCPT_SPLIT.tax = seeded.tax || rcptSplitDetectTax(seeded.rows, RCPT_SPLIT.total);   // Cap's/extracted tax wins; else the pre-tax lines' gap up to the total
+  RCPT_SPLIT.taxTouched = seeded.tax > 0;   // auto-track the remainder as tax only when we didn't read one
   rcptSplitRender();
 };
 
@@ -250,11 +275,12 @@ function rcptSplitCapture() {
   const dd = document.getElementById("rcpt_split_disc_inp"); if (dd && RCPT_SPLIT.discountTouched) RCPT_SPLIT.discount = Math.round((parseFloat(dd.value) || 0) * 100) / 100;
 }
 
-/* one-line reminder of where a bucket lands — so the owner SEES the destination, not just an emoji */
+/* one-line PLAIN-ENGLISH consequence of the bucket — NOT a restatement of the "Stored as" label above it (the
+   dropdown already names the type). Just says where the money lands. */
 function rcptSplitBucketHint(b) {
-  return b === "pass-through" ? "🧱 Pass-through material — billed to the customer on its job"
-    : b === "job-expense" ? "🚚 Job expense — a cost on its job"
-    : "🔧 Business tool / overhead — off every job (add to inventory after filing)";
+  return b === "pass-through" ? "→ billed to the customer on this job"
+    : b === "job-expense" ? "→ a cost on this job"
+    : "→ business overhead, off every job";
 }
 function rcptSplitRender() {
   const slot = document.getElementById("rcpt_split_slot"); if (!slot || !RCPT_SPLIT) return;
@@ -300,10 +326,15 @@ function rcptSplitRender() {
   h += `<div id="rcpt_split_ind" class="sub" style="margin-top:8px;text-align:center;font-weight:700"></div>
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add a line</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">${saveLbl}</button></div></div>`;
   slot.innerHTML = h;
-  // Receipt-level Type + Category (js/87) only make sense for a SINGLE-line receipt. Once it's split into line items,
-  // each line owns its type ("Stored as") + category, so a single receipt-wide value is contradictory — hide it.
+  // Receipt-level Category (js/87) only ADDS info on a single job-cost / business line (fuel · disposal · rentals ·
+   // subscriptions). Hide it for a split (each line owns its category) AND for a single pass-through line (its
+   // category is just the derived "materials" — the redundant 3rd mention Ray flagged). Reactive on bucket change.
   const _tc = document.getElementById("rcpt_typecat_wrap");
-  if (_tc) _tc.style.display = (RCPT_SPLIT.rows.length > 1) ? "none" : "";
+  if (_tc) {
+    const single = RCPT_SPLIT.rows.length === 1;
+    const b = single ? RCPT_SPLIT.rows[0].bucket : "";
+    _tc.style.display = (single && (b === "job-expense" || b === "business")) ? "" : "none";
+  }
   rcptSplitRecalc();
 }
 
@@ -418,4 +449,4 @@ window.rcptSaveEditSplit = function () {
   if (typeof render === "function") render();
 };
 
-if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields, rcptSplitSeedRows: rcptSplitSeedRows, rcptSplitClampBucket: rcptSplitClampBucket, rcptSplitDetectTax: rcptSplitDetectTax, rcptSplitDistributeTax: rcptSplitDistributeTax, rcptSplitDistributeAdjust: rcptSplitDistributeAdjust }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields, rcptSplitSeedRows: rcptSplitSeedRows, rcptSplitSeed: rcptSplitSeed, rcptSplitIsTaxLine: rcptSplitIsTaxLine, rcptSplitIsDiscountLine: rcptSplitIsDiscountLine, rcptSplitClampBucket: rcptSplitClampBucket, rcptSplitDetectTax: rcptSplitDetectTax, rcptSplitDistributeTax: rcptSplitDistributeTax, rcptSplitDistributeAdjust: rcptSplitDistributeAdjust }; }
