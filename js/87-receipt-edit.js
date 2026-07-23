@@ -10,8 +10,8 @@
 
    rcptApplyEdit is the pure data operation (no DOM) — unit-tested in receipts-tests.js. The DOM handler
    rcptSaveEdit reads the modal, guards against rapid double-submit, and calls it. Cap's `suggested`
-   categorization is surfaced here as a one-tap "Use Cap's guess" that fills the form — the owner still has to
-   Save, so Cap NEVER auto-applies (pending owner approval). */
+   categorization FILLS the form by default (pre-fill on open + auto-apply on reread — no "Use Cap's guess"
+   button); the owner reviews, overrides anything off, and Saves. Cap never files on its own (pending owner Save). */
 
 /* ---- locate a receipt record in whichever array it currently lives ---- */
 function rcptFindRecord(store, jobId, id) {
@@ -264,7 +264,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
   let sugg = "";
   if (RCPT_EDIT.suggested) {
     const s = RCPT_EDIT.suggested;
-    sugg = `<div id="rcpt_suggbanner" class="card" style="background:#6b3fa0;color:#fff;padding:10px;margin-bottom:8px"><div style="font-weight:700">🤖 Cap suggests${s.confidence != null ? ` (${Math.round(s.confidence * 100)}% sure)` : ""}</div><div class="sub" style="color:#fff;opacity:.9;white-space:normal">${[s.vendor, s.amount != null ? money(s.amount) : "", s.type ? (RCPT_TYPE_LABEL[s.type] || s.type) : "", s.category].filter(Boolean).map(esc).join(" · ")}</div><button class="btn sm" style="margin-top:8px;background:#fff;color:#6b3fa0" onclick="rcptApplySuggestion()">Use Cap's guess</button> <span class="sub" style="color:#fff;opacity:.8">— review, then ✓ Done</span></div>`;
+    sugg = `<div id="rcpt_suggbanner" class="card" style="background:#6b3fa0;color:#fff;padding:10px;margin-bottom:8px"><div style="font-weight:700">🤖 Filled in from Cap's read${s.confidence != null ? ` (${Math.round(s.confidence * 100)}% sure)` : ""}</div><div class="sub" style="color:#fff;opacity:.9;white-space:normal">${[s.vendor, s.amount != null ? money(s.amount) : "", s.type ? (RCPT_TYPE_LABEL[s.type] || s.type) : "", s.category].filter(Boolean).map(esc).join(" · ")}</div><div class="sub" style="color:#fff;opacity:.85;margin-top:4px;white-space:normal">Everything below is filled from the receipt — just fix anything that's off, then ✓ Save &amp; file.</div></div>`;
   }
   // 🔗 DEPOSIT-SETTLEMENT match (js/72) — this rental cost looks like the settlement of an open deposit. One tap
   // settles it through the js/96 machinery (net + absorb the duplicate). Suggestion-only until tapped; owner/admin.

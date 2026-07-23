@@ -1,9 +1,9 @@
 /* ---------- CAP AUTO-CATEGORIZE — Cap READS a review receipt's photo and PROPOSES a categorization ----------
    On-demand only (vision calls cost tokens on the ORG'S OWN Anthropic key). Owner/admin trigger it from the
    Receipts page; Cap reads each needs-review photo server-side (js/75 org-AI extended for image input) and
-   writes the guess to `receipt.suggested` — the EXACT shape the edit modal reads (js/87). Cap NEVER applies
-   anything: the owner opens the receipt, taps "Use Cap's guess", and Saves. This module only fills the
-   already-built propose→approve hook; it changes no real field, type, job, or billing.
+   writes the guess to `receipt.suggested` — the EXACT shape the edit modal reads (js/87). The modal FILLS the
+   form from the guess by default (on open, and auto-applied on reread); the owner reviews + Saves. Cap never
+   files on its own — it only fills the propose→approve hook; it changes no real field, type, job, or billing.
 
    Gating: owner/admin only (enforced here AND on the server). Degrades gracefully with no org AI key. */
 
@@ -277,8 +277,12 @@ window.capRcptOne = async function () {
       if (loc.store === "jobmat" || loc.store === "jobexp") { const jb = (D().jobs || []).find(x => x && x.id === loc.jobId); if (jb && typeof touch === "function") touch(jb); }
       else if (typeof touch === "function") touch(live);
       if (typeof save === "function") save();
-      // reopen the modal so the "🤖 Cap suggests" banner + "Use Cap's guess" button render (js/87)
+      // reopen the modal, then AUTO-APPLY the fresh read so the fields fill without a tap. A reread only updates
+      // `suggested` (not the record's scalar fields), so on reopen the pre-fill would show the OLD values — the user
+      // explicitly asked for a fresh read, so apply it. They review + override anything that's off. (No manual
+      // "Use Cap's guess" tap — that button is gone; js/87.)
       if (typeof rcptEditOpen === "function") rcptEditOpen(loc.store, loc.jobId, loc.recId);
+      if (typeof rcptApplySuggestion === "function") rcptApplySuggestion();
       return;
     }
   }

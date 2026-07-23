@@ -1204,7 +1204,7 @@ function rReceipts() {
   }
   if (capReviewN) h += `<div class="card" style="border-left:4px solid ${RCPT_CAP_PURPLE};cursor:pointer" onclick="rcptSetFilter('capreview')"><b style="color:${RCPT_CAP_PURPLE}">🤖 ${capReviewN} receipt${capReviewN > 1 ? "s" : ""} Cap auto-filed — needs your review</b> — Cap was confident and filed ${capReviewN > 1 ? "these" : "this"} for you (purple <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff">🤖 review</span> rows). Tap to jump to them, glance each is right, then tap <b>✓ Reviewed</b> (any edit also clears the mark). →</div>`;
   const suggCount = rows.filter(r => r && r.suggested && r.store === "review").length;   // same gate as the row 🤖 Cap badge: only a REVIEW-queue row is an unresolved "Cap read this, review it" to-do (a filed receipt keeps `suggested` for provenance but was already reviewed when filed)
-  if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s have" : " has"} Cap suggestions to review</b> — 🤖 rows below. Open one, tap "Use Cap's guess", review, then ✓ File it.</div>`;
+  if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s" : ""} Cap read</b> — 🤖 rows below. Open one — it's already filled in from the receipt; review, fix anything off, then ✓ Save &amp; file.</div>`;
   if (typeof rcptTaxSummary === "function" && typeof rcptFinFull === "function" && rcptFinFull()) {
     const _ts = rcptTaxSummary();
     if (_ts.taxedN || _ts.exemptN || needTaxN) {
