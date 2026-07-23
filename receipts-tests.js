@@ -420,6 +420,32 @@ async function main() {
   ok("adding the SAME line again is idempotent — no duplicate inventory item", (() => { const r2 = rcptInvAdd(toolLoc); return r2.ok && !r2.created && D().inventory.filter(x => !x.deleted).length === 1; })());
   ok("the 🧱 material line did NOT land in inventory (only the flagged 🔧 tool)", !D().inventory.some(x => x.name === "pavers"));
 
+  console.log("— RECEIPTS EDITOR: sales tax is its own line (pre-tax lines + tax = tax-inclusive total), folded on file —");
+  // detect: NC/Dare 6.75% on a $74.94 subtotal is $5.06 → recognized as tax, not "money left"
+  ok("detect: $80.00 total − $74.94 pre-tax lines = $5.06, recognized as sales tax", rcptSplitDetectTax([{ amount: "22.98" }, { amount: "29.98" }, { amount: "21.98" }], 80) === 5.06);
+  ok("detect: lines that ALREADY sum to the total → no tax (0)", rcptSplitDetectTax([{ amount: "50" }, { amount: "30" }], 80) === 0);
+  ok("detect: a single whole-receipt line (already tax-inclusive) → no tax", rcptSplitDetectTax([{ amount: "80" }], 80) === 0);
+  ok("detect: an implausibly large gap (a missing line, not tax) → 0, falls back to '$X left'", rcptSplitDetectTax([{ amount: "40" }], 80) === 0);
+  // distribute: fold $5.06 tax across the three lines proportionally, cent-exact, last line absorbs the remainder
+  const dTax = rcptSplitDistributeTax([{ amount: 22.98, type: "business" }, { amount: 29.98, type: "business" }, { amount: 21.98, type: "pass-through" }], 5.06);
+  const dSum = Math.round(dTax.reduce((s, a) => s + a.amount, 0) * 100) / 100;
+  ok("distribute: grossed-up lines sum EXACTLY to the tax-inclusive total ($80.00)", dSum === 80 && dTax.every(a => a.amount > 0), { dTax, dSum });
+  ok("distribute: each line got tax-inclusive (bigger than pre-tax), buckets/desc untouched", dTax[0].amount > 22.98 && dTax[0].type === "business" && dTax[2].type === "pass-through");
+  ok("distribute: no tax (0) → allocations unchanged (byte-identical single/normal route)", (() => { const z = rcptSplitDistributeTax([{ amount: 40, type: "business" }], 0); return z.length === 1 && z[0].amount === 40; })());
+
+  console.log("— RECEIPTS EDITOR: full tax round-trip — pre-tax lines + tax file 2 records summing to the total —");
+  resetStore(); global.finCanView = function () { return true; };
+  const txR = seedReview({ receiptId: "bTAX", vendor: "Lowe's", amount: 80, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const txAlloc = rcptSplitDistributeTax([
+    { amount: 52.96, type: "pass-through", jobId: "j1", category: "", desc: "snips + bit" },
+    { amount: 21.98, type: "business", jobId: null, category: "tools/equipment", desc: "shovel" }
+  ], 5.06);
+  const txRes = rcptApplySplit({ store: "review", jobId: null, recId: txR.id }, 80, txAlloc, { vendor: "Lowe's", date: "2026-07-13", paidBy: "u_ray", attributedTo: "u_ray", receiptId: "bTAX", cardLast4: "8355" });
+  const txMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
+  const txBiz = STORE.expenses.filter(e => !e.deleted);
+  const txTotal = Math.round((txMat.reduce((s, m) => s + m.amount, 0) + txBiz.reduce((s, e) => s + e.amount, 0)) * 100) / 100;
+  ok("tax round-trip: 2 records (🧱 + 🔧), amounts tax-inclusive, sum to the $80.00 total (no tax lost, no tax record)", txRes.ok && txMat.length === 1 && txBiz.length === 1 && txTotal === 80, { txMat, txBiz, txTotal });
+
   // ========================= CAP AUTO-CATEGORIZE =========================
   const SS = require("./sync-server.js");
   // RCPT_CATS is `const` inside the eval'd js/72 (block-scoped, doesn't leak) — mirror it here for the server-arg tests

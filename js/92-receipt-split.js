@@ -98,6 +98,36 @@ const RCPT_SPLIT_BUCKETS = [["pass-through", "🧱 Pass-through material"], ["jo
 
 function rcptSplitClampBucket(b) { return (b === "business" || b === "job-expense" || b === "pass-through") ? b : "pass-through"; }
 
+/* SALES TAX (js/92) — Cap reads the receipt's LINE prices as printed (pre-tax); the grand total is tax-INCLUSIVE.
+   So on an itemized receipt the lines sum to the SUBTOTAL and the gap up to the total is sales tax (NC/Dare 6.75%).
+   That gap must NOT read as "money left to allocate" — it's tax. These pure helpers detect it and fold it back in.
+
+   rcptSplitDetectTax: the gap between the tax-inclusive total and the pre-tax line subtotal, but ONLY when it's a
+   plausible sales-tax band of the subtotal (≤ ~12%, covering 6.75% + rounding/combined). A bigger gap is a genuine
+   missing line, not tax → returns 0 (falls back to the normal "$X left"). */
+function rcptSplitDetectTax(rows, total) {
+  const sub = Math.round((Array.isArray(rows) ? rows : []).reduce((s, r) => s + (parseFloat(r && r.amount) || 0), 0) * 100) / 100;
+  const gap = Math.round(((+total || 0) - sub) * 100) / 100;
+  if (!(gap > 0) || !(sub > 0)) return 0;
+  return (gap <= sub * 0.12 + 0.02) ? gap : 0;
+}
+/* rcptSplitDistributeTax: fold the sales tax into the line allocations proportionally by pre-tax amount, cent-exact
+   (the LAST line absorbs the rounding remainder so Σ == subtotal + tax EXACTLY). This keeps the app's tax model:
+   tax is never its own record — each bucket's stored amount is tax-INCLUSIVE and the "incl. $X sales tax" sub-line
+   backs it out for display, identical to how a single-route receipt already stores. Returns a NEW array. Pure. */
+function rcptSplitDistributeTax(allocations, tax) {
+  allocations = Array.isArray(allocations) ? allocations : [];
+  tax = Math.round((+tax || 0) * 100) / 100;
+  const sub = Math.round(allocations.reduce((s, a) => s + (+a.amount || 0), 0) * 100) / 100;
+  if (!(tax > 0) || !(sub > 0)) return allocations.map(a => Object.assign({}, a));
+  let used = 0; const n = allocations.length;
+  return allocations.map((a, i) => {
+    const share = (i === n - 1) ? Math.round((tax - used) * 100) / 100 : Math.round((tax * ((+a.amount || 0) / sub)) * 100) / 100;
+    if (i !== n - 1) used += share;
+    return Object.assign({}, a, { amount: Math.round(((+a.amount || 0) + share) * 100) / 100 });
+  });
+}
+
 /* Seed the always-on line-item editor's rows from a receipt record — mirrors js/100 jobRcptSeed so the Receipts
    edit modal shows the SAME per-item breakdown the job page does. Prefers Cap's per-item
    lineItems:[{desc,amount,bucket}]; falls back to Cap's mixed splits:[{amount,type,note}]; else ONE line = the
@@ -138,6 +168,8 @@ window.rcptSplitInit = function (rec) {
     total: Math.round(total * 100) / 100,
     rows: rcptSplitSeedRows(rec)
   };
+  RCPT_SPLIT.tax = rcptSplitDetectTax(RCPT_SPLIT.rows, RCPT_SPLIT.total);   // the pre-tax lines' gap up to the total = sales tax
+  RCPT_SPLIT.taxTouched = false;   // auto-track the remainder as tax until the owner edits it
   rcptSplitRender();
 };
 
@@ -204,6 +236,7 @@ function rcptSplitCapture() {
     const n = document.querySelector('.rcpt_split_note[data-i="' + i + '"]'); if (n) r.note = n.value;
     const iv = document.querySelector('.rcpt_split_inv[data-i="' + i + '"]'); if (iv) r.toInv = iv.checked;   // 🧰 per-line "track this tool in inventory"
   });
+  const t = document.getElementById("rcpt_split_tax_inp"); if (t) RCPT_SPLIT.tax = Math.round((parseFloat(t.value) || 0) * 100) / 100;
 }
 
 /* one-line reminder of where a bucket lands — so the owner SEES the destination, not just an emoji */
@@ -236,6 +269,17 @@ function rcptSplitRender() {
       <div class="sub" style="margin-top:4px;white-space:normal">${rcptSplitBucketHint(r.bucket)} · <a onclick="rcptSplitRest(${i})" style="cursor:pointer;color:var(--accent)">↳ put the rest here</a></div>
     </div>`;
   });
+  // SALES-TAX line — on an itemized receipt the lines are pre-tax and the total is tax-inclusive, so tax is its own
+  // line (mirrors the receipt). Auto-filled with the remainder; editable. Folded into the lines on file, never its
+  // own record. Hidden for a single whole-receipt line (that amount is already tax-inclusive).
+  if (RCPT_SPLIT.rows.length > 1) {
+    h += `<div class="card" style="padding:8px;margin-top:8px;border:1px dashed var(--line)">
+      <div class="row" style="gap:6px;align-items:flex-end">
+        <div style="flex:0 0 88px"><label style="margin-top:0">🧾 Sales tax</label><input id="rcpt_split_tax_inp" type="number" inputmode="decimal" value="${RCPT_SPLIT.tax ? esc((Math.round(RCPT_SPLIT.tax * 100) / 100).toFixed(2)) : ""}" placeholder="0.00" oninput="rcptSplitTaxEdit(this.value)"></div>
+        <div class="grow"><div class="sub" style="white-space:normal">The receipt's sales tax — its own line, like the receipt. Spread across the items above when you file (each carries its share); never a separate record, never billed twice.</div></div>
+      </div>
+    </div>`;
+  }
   h += `<div id="rcpt_split_ind" class="sub" style="margin-top:8px;text-align:center;font-weight:700"></div>
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add a line</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">${saveLbl}</button></div></div>`;
   slot.innerHTML = h;
@@ -248,12 +292,36 @@ window.rcptSplitRecalc = function () {
   const ind = document.getElementById("rcpt_split_ind"); if (!ind || !RCPT_SPLIT) return;
   const amtEl = document.getElementById("rcpt_amt");
   if (amtEl && amtEl.value !== "") RCPT_SPLIT.total = Math.round((parseFloat(amtEl.value) || 0) * 100) / 100;   // track the live Amount field
-  let sum = 0; document.querySelectorAll(".rcpt_split_amt").forEach(el => { sum += (parseFloat(el.value) || 0); });
-  sum = Math.round(sum * 100) / 100;
-  const total = RCPT_SPLIT.total, left = Math.round((total - sum) * 100) / 100;
-  if (Math.abs(left) <= 0.01) { ind.style.color = "var(--accent)"; ind.textContent = "✓ Allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total) + " — balanced"; }
-  else if (left > 0) { ind.style.color = "#e0a800"; ind.textContent = "Allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total) + " · " + rcptSplitMoney(left) + " left"; }
-  else { ind.style.color = "var(--danger)"; ind.textContent = "Over by " + rcptSplitMoney(-left) + " — allocated " + rcptSplitMoney(sum) + " of " + rcptSplitMoney(total); }
+  let sub = 0; document.querySelectorAll(".rcpt_split_amt").forEach(el => { sub += (parseFloat(el.value) || 0); });
+  sub = Math.round(sub * 100) / 100;
+  const total = RCPT_SPLIT.total;
+  // auto-track the tax as the plausible remainder (until the owner edits the tax field); reflect it into the input
+  if (!RCPT_SPLIT.taxTouched) {
+    const gap = Math.round((total - sub) * 100) / 100;
+    RCPT_SPLIT.tax = (gap > 0.001 && sub > 0 && gap <= sub * 0.12 + 0.02) ? gap : 0;
+    const tEl = document.getElementById("rcpt_split_tax_inp");
+    if (tEl && document.activeElement !== tEl) tEl.value = RCPT_SPLIT.tax ? (Math.round(RCPT_SPLIT.tax * 100) / 100).toFixed(2) : "";
+  }
+  const tax = Math.round((RCPT_SPLIT.tax || 0) * 100) / 100;
+  const alloc = Math.round((sub + tax) * 100) / 100;
+  const left = Math.round((total - alloc) * 100) / 100;
+  if (Math.abs(left) <= 0.01) {
+    ind.style.color = "var(--accent)";
+    ind.textContent = tax > 0 ? ("✓ Items " + rcptSplitMoney(sub) + " + sales tax " + rcptSplitMoney(tax) + " = " + rcptSplitMoney(total)) : ("✓ Allocated " + rcptSplitMoney(sub) + " of " + rcptSplitMoney(total) + " — balanced");
+  } else if (left > 0) {
+    ind.style.color = "#e0a800";
+    ind.textContent = "Items " + rcptSplitMoney(sub) + (tax > 0 ? " + tax " + rcptSplitMoney(tax) : "") + " · " + rcptSplitMoney(left) + " still to allocate";
+  } else {
+    ind.style.color = "var(--danger)";
+    ind.textContent = "Over by " + rcptSplitMoney(-left) + " — items " + rcptSplitMoney(sub) + (tax > 0 ? " + tax " + rcptSplitMoney(tax) : "");
+  }
+};
+/* the owner typed a tax amount → freeze it (stop auto-tracking) and re-reconcile (no re-render, keeps focus) */
+window.rcptSplitTaxEdit = function (v) {
+  if (!RCPT_SPLIT) return;
+  RCPT_SPLIT.taxTouched = true;
+  RCPT_SPLIT.tax = Math.round((parseFloat(v) || 0) * 100) / 100;
+  rcptSplitRecalc();
 };
 
 window.rcptSplitAdd = function () { if (!RCPT_SPLIT) return; rcptSplitCapture(); RCPT_SPLIT.rows.push({ bucket: "business", jobId: "", amount: "", note: "" }); rcptSplitRender(); };
@@ -292,8 +360,11 @@ window.rcptSaveEditSplit = function () {
     category: (r.bucket === "business") ? "tools/equipment" : (r.bucket === "job-expense") ? "job" : "",
     desc: r.note || ""
   }));
+  // fold the sales tax proportionally into the lines so each stored record is tax-INCLUSIVE (app model) and the set
+  // sums to the tax-inclusive receipt total — never a separate tax record. No-op when tax is 0 (byte-identical).
+  const taxedAllocs = rcptSplitDistributeTax(allocations, RCPT_SPLIT.tax || 0);
   if (typeof submitGuard === "function" && !submitGuard("rcptSaveEditSplit:" + RCPT_EDIT.loc.recId)) return;   // rapid-tap dupe guard
-  const res = rcptApplySplit(RCPT_EDIT.loc, RCPT_SPLIT.total, allocations, shared);
+  const res = rcptApplySplit(RCPT_EDIT.loc, RCPT_SPLIT.total, taxedAllocs, shared);
   if (!res || !res.ok) { alert(res && res.error ? res.error : "Couldn't split this receipt."); return; }
   // 🧰 PER-LINE INVENTORY — rows and res.newLocs align 1:1 (allocations were built from rows in order). For each
   // 🔧 tool line the owner ticked "track in inventory", add its JUST-FILED record to the inventory collection via
@@ -314,4 +385,4 @@ window.rcptSaveEditSplit = function () {
   if (typeof render === "function") render();
 };
 
-if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields, rcptSplitSeedRows: rcptSplitSeedRows, rcptSplitClampBucket: rcptSplitClampBucket }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields, rcptSplitSeedRows: rcptSplitSeedRows, rcptSplitClampBucket: rcptSplitClampBucket, rcptSplitDetectTax: rcptSplitDetectTax, rcptSplitDistributeTax: rcptSplitDistributeTax }; }
