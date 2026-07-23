@@ -446,6 +446,19 @@ async function main() {
   const txTotal = Math.round((txMat.reduce((s, m) => s + m.amount, 0) + txBiz.reduce((s, e) => s + e.amount, 0)) * 100) / 100;
   ok("tax round-trip: 2 records (🧱 + 🔧), amounts tax-inclusive, sum to the $80.00 total (no tax lost, no tax record)", txRes.ok && txMat.length === 1 && txBiz.length === 1 && txTotal === 80, { txMat, txBiz, txTotal });
 
+  console.log("— RECEIPTS EDITOR: a discount is its own (negative) line; items − discount + tax = total, folded on file —");
+  ok("distribute: a negative net adjustment (discount − tax) shrinks the line, sum = the net total", (() => { const a = rcptSplitDistributeAdjust([{ amount: 39.85, type: "pass-through" }], -1.57); return a.length === 1 && a[0].amount === 38.28; })());
+  ok("distribute: negative net across 2 lines is proportional + cent-exact (sum preserved)", (() => { const a = rcptSplitDistributeAdjust([{ amount: 60, type: "pass-through" }, { amount: 40, type: "business" }], -10); const s = Math.round((a[0].amount + a[1].amount) * 100) / 100; return s === 90 && a[0].amount > 0 && a[1].amount > 0; })());
+  ok("distribute: rcptSplitDistributeTax wrapper still folds a positive tax (back-compat)", (() => { const a = rcptSplitDistributeTax([{ amount: 74.94, type: "pass-through" }], 5.06); return a[0].amount === 80; })());
+  // full Home Depot round-trip: list $39.85, military discount $3.99, sales tax $2.42 → net −$1.57 → ONE pass-through record at the net $38.28
+  resetStore(); global.finCanView = function () { return true; };
+  const dR = seedReview({ receiptId: "bDISC", vendor: "The Home Depot", amount: 38.28, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const dNet = Math.round((2.42 - 3.99) * 100) / 100;   // tax − discount
+  const dAlloc = rcptSplitDistributeAdjust([{ amount: 39.85, type: "pass-through", jobId: "j1", category: "", desc: "marble chips" }], dNet);
+  const dRes = rcptApplySplit({ store: "review", jobId: null, recId: dR.id }, 38.28, dAlloc, { vendor: "The Home Depot", date: "2026-07-15", paidBy: "u_ray", attributedTo: "u_ray", receiptId: "bDISC", cardLast4: "8355" });
+  const dMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
+  ok("discount round-trip: ONE pass-through record at the NET $38.28 (discount applied, tax incl.), no discount/tax record", dRes.ok && dMat.length === 1 && dMat[0].amount === 38.28 && STORE.expenses.filter(e => !e.deleted).length === 0, { dMat });
+
   // ========================= CAP AUTO-CATEGORIZE =========================
   const SS = require("./sync-server.js");
   // RCPT_CATS is `const` inside the eval'd js/72 (block-scoped, doesn't leak) — mirror it here for the server-arg tests

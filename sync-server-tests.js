@@ -1586,6 +1586,10 @@ ok("Vulcan \"C-8355\" (CK# slot) → 8355", t.rcptParseSuggestion('{"vendor":"Vu
 ok("\"C 8355\" (space variant) → 8355", t.rcptParseSuggestion('{"vendor":"x","last4":"C 8355"}', rpsCats, rpsJobs).last4 === "8355");
 ok("masked \"**1234\" → 1234 (extract the card, don't drop it)", t.rcptParseSuggestion('{"vendor":"x","last4":"**1234"}', rpsCats, rpsJobs).last4 === "1234");
 ok("a mis-slotted long number (8-digit date) is NOT taken as a card → null", t.rcptParseSuggestion('{"vendor":"x","last4":"20260713"}', rpsCats, rpsJobs).last4 === null);
+// discount + salesTax — their own fields (lineItems are pre-discount/pre-tax list prices; total = ΣlineItems − discount + salesTax)
+ok("reads a military discount + sales tax as their own fields", (() => { const r = t.rcptParseSuggestion('{"vendor":"The Home Depot","amount":38.28,"discount":3.99,"salesTax":2.42,"lineItems":[{"desc":"Marble chips","amount":39.85,"bucket":"pass-through"}]}', rpsCats, rpsJobs); return r.discount === 3.99 && r.salesTax === 2.42; })());
+ok("clamps a negative discount + an absent salesTax to 0", (() => { const r = t.rcptParseSuggestion('{"vendor":"x","discount":-5}', rpsCats, rpsJobs); return r.discount === 0 && r.salesTax === 0; })());
+ok("a plain receipt (no discount/tax fields) defaults both to 0", (() => { const r = t.rcptParseSuggestion('{"vendor":"x","amount":10}', rpsCats, rpsJobs); return r.discount === 0 && r.salesTax === 0; })());
 // refund + deposit booleans (strict === true)
 ok("refund:true → refund true", t.rcptParseSuggestion('{"vendor":"x","refund":true}', rpsCats, rpsJobs).refund === true, null);
 ok("refund non-boolean (\"yes\") → refund false (strict === true)", t.rcptParseSuggestion('{"vendor":"x","refund":"yes"}', rpsCats, rpsJobs).refund === false, null);
