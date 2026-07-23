@@ -375,6 +375,35 @@ async function main() {
   ok("fault-dock is a no-op with no member selected", jobRcptStampFault(jrFres.newLocs, "") === 0);
   ok("the accepted split consumed the original review record", rcptReview().length === 0);
 
+  // ========================= ALWAYS-ON LINE-ITEM EDITOR (js/92 rcptSplitSeedRows) =========================
+  // The Receipts edit modal now shows the line-item editor by default, seeded from the receipt. rcptSplitSeedRows
+  // is the pure seeder; its rows must (a) mirror what the owner sees and (b) route byte-correctly through the same
+  // rcptApplySplit engine the job page uses.
+  console.log("\n— RECEIPTS EDITOR: rcptSplitSeedRows seeds rows from the receipt (lineItems ▸ splits ▸ whole) —");
+  const seedLi = rcptSplitSeedRows({ jobId: "j1", suggested: { amount: 200, jobId: "j1", lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] } });
+  ok("seed: Cap lineItems → 2 rows (note=desc, amount, bucket)", seedLi.length === 2 && seedLi[0].note === "pavers" && seedLi[0].amount === "120" && seedLi[0].bucket === "pass-through" && seedLi[1].bucket === "business", seedLi);
+  ok("seed: 🧱 row inherits the receipt job; 🔧 row carries NO job", seedLi[0].jobId === "j1" && seedLi[1].jobId === "", seedLi);
+  const seedSp = rcptSplitSeedRows({ suggested: { amount: 150, jobId: "j2", splits: [{ amount: 100, type: "pass-through", note: "materials" }, { amount: 50, type: "business", note: "tool" }] } });
+  ok("seed: no lineItems → falls back to Cap splits (type→bucket)", seedSp.length === 2 && seedSp[0].bucket === "pass-through" && seedSp[0].jobId === "j2" && seedSp[1].bucket === "business" && seedSp[1].note === "tool", seedSp);
+  const seedWhole = rcptSplitSeedRows({ jobId: "j3", type: "pass-through", amount: 60, desc: "base rock" });
+  ok("seed: no lineItems/splits → ONE whole-receipt line from the record's own type/amount/desc", seedWhole.length === 1 && seedWhole[0].amount === "60" && seedWhole[0].bucket === "pass-through" && seedWhole[0].note === "base rock" && seedWhole[0].jobId === "j3", seedWhole);
+  const seedBlank = rcptSplitSeedRows({});
+  ok("seed: nothing at all → one blank pass-through line (never empty, never throws)", seedBlank.length === 1 && seedBlank[0].amount === "" && seedBlank[0].bucket === "pass-through", seedBlank);
+  ok("seed: lineItems take precedence over splits when BOTH present", rcptSplitSeedRows({ suggested: { lineItems: [{ desc: "x", amount: 10, bucket: "business" }], splits: [{ amount: 5, type: "pass-through" }, { amount: 5, type: "business" }] } }).length === 1);
+  const seedClamp = rcptSplitSeedRows({ jobId: "j1", suggested: { lineItems: [{ desc: "mystery", amount: 10, bucket: "nonsense" }] } });
+  ok("seed: an unknown bucket clamps to pass-through (and then inherits the job)", seedClamp[0].bucket === "pass-through" && seedClamp[0].jobId === "j1", seedClamp);
+
+  console.log("— RECEIPTS EDITOR: seeded rows route byte-correctly through rcptApplySplit (2 lines → 2 records) —");
+  resetStore();
+  const edR = seedReview({ receiptId: "bED", vendor: "Home Depot", amount: 200, uploadedBy: "u_ray", attributedTo: "u_ray" });
+  const edRows = rcptSplitSeedRows({ jobId: "j1", suggested: { amount: 200, jobId: "j1", lineItems: [{ desc: "pavers", amount: 120, bucket: "pass-through" }, { desc: "wet saw", amount: 80, bucket: "business" }] } });
+  const edAlloc = edRows.map(r => ({ amount: (r.amount === "" || r.amount == null) ? 0 : (parseFloat(r.amount) || 0), type: r.bucket, jobId: (r.bucket === "business") ? null : (r.jobId || null), category: (r.bucket === "business") ? "tools/equipment" : (r.bucket === "job-expense") ? "job" : "", desc: r.note || "" }));
+  const edRes = rcptApplySplit({ store: "review", jobId: null, recId: edR.id }, 200, edAlloc, { vendor: "Home Depot", date: "2026-07-01", paidBy: null, attributedTo: "u_ray", receiptId: "bED", cardLast4: "" });
+  const edMat = plMaterials(STORE.jobs[0]).filter(m => !m.deleted);
+  const edBiz = STORE.expenses.filter(e => !e.deleted);
+  ok("editor rows → 🧱 $120 to j1.materials + 🔧 $80 to org tools/equipment", edRes.ok && edMat.length === 1 && edMat[0].amount === 120 && edBiz.length === 1 && edBiz[0].amount === 80 && edBiz[0].category === "tools/equipment", { edMat, edBiz });
+  ok("editor save consumed the original review record (out of Needs review)", rcptReview().length === 0);
+
   // ========================= CAP AUTO-CATEGORIZE =========================
   const SS = require("./sync-server.js");
   // RCPT_CATS is `const` inside the eval'd js/72 (block-scoped, doesn't leak) — mirror it here for the server-arg tests
@@ -1253,15 +1282,18 @@ async function main() {
   ok("pre: the filed copy + the clearer review copy form ONE dup group of 2", grp && grp.length === 2);
   const mres = rcptMergeGroup(grp);
   ok("merge succeeds, absorbs exactly 1 copy", mres.ok && mres.absorbed === 1, mres);
-  const survFiled = rcptFindRecord("jobexp", "j1", survRev.id);
-  ok("survivor keeps its id + billing home (still in j1.expenses)", !!survFiled && mres.newLoc.store === "jobexp" && mres.newLoc.jobId === "j1" && mres.newLoc.recId === survRev.id);
-  ok("survivor kept the human category (fuel) + swapped in the CLEARER photo", survFiled.category === "fuel" && survFiled.receiptId === "clear.jpg");
-  ok("survivor absorbed the richest line items", survFiled.suggested && survFiled.suggested.lineItems.length === 3);
+  // Ray's rule: a merge is uncertain, so the survivor ALWAYS regresses to Needs review — even a previously-filed
+  // copy — for a human to re-verify. So it lands in review (keeping its id), NOT back in j1.expenses.
+  const survFiled = rcptFindRecord("review", null, survRev.id);
+  ok("survivor regressed to Needs review (a merge always parks in review), keeping its id", !!survFiled && mres.newLoc.store === "review" && mres.newLoc.recId === survRev.id);
+  ok("survivor is no longer filed in j1.expenses (regressed out)", !plExpenses(STORE.jobs[0]).some(e => e.id === survRev.id && !e.deleted));
+  ok("survivor kept the human category (fuel) + swapped in the CLEARER photo", !!survFiled && survFiled.category === "fuel" && survFiled.receiptId === "clear.jpg", survFiled);
+  ok("survivor absorbed the richest line items", !!survFiled && survFiled.suggested && survFiled.suggested.lineItems.length === 3, survFiled);
   ok("the absorbed copy is soft-deleted (reversible, not hard-gone)", STORE.receipts.find(r => r.id === better.id).deleted === true);
   ok("exactly ONE live copy remains — no dup group left", rcptDupGroups().length === 0);
-  ok("merge NEVER blanked the vendor/amount the survivor had", survFiled.vendor === "Depot" && survFiled.amount === 90);
+  ok("merge NEVER blanked the vendor/amount the survivor had", !!survFiled && survFiled.vendor === "Depot" && survFiled.amount === 90);
 
-  console.log("— MERGE END-TO-END: forcing the OTHER copy as survivor lands the merge on ITS home (Ray overrides) —");
+  console.log("— MERGE END-TO-END: forcing the OTHER copy as survivor keeps ITS identity but still regresses to review —");
   resetStore(); global.finCanView = function () { return true; };
   const revA = seedReview({ receiptId: "pa.jpg", vendor: "Home Depot", amount: 40, date: "2026-07-01" });
   const mgFileA = rcptApplyEdit({ store: "review", jobId: null, recId: revA.id }, { type: "pass-through", jobId: "j1", amount: 40, vendor: "Home Depot", date: "2026-07-01", category: "materials", desc: "pavers here", receiptId: "pa.jpg" });
@@ -1269,9 +1301,9 @@ async function main() {
   const mgFileB = rcptApplyEdit({ store: "review", jobId: null, recId: revJB.id }, { type: "pass-through", jobId: "j2", amount: 40, vendor: "Home Depot", date: "2026-07-01", category: "materials", desc: "pavers here", receiptId: "pb.jpg" });
   ok("pre: two photo copies filed to DIFFERENT jobs (near-tie)", mgFileA.ok && mgFileB.ok && rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
   const grp2 = rcptDupGroups()[0];
-  const mres2 = rcptMergeGroup(grp2, revJB.id);   // Ray picks copy B (j2) as survivor
-  ok("merge lands on the CHOSEN survivor's job (j2), not the auto pick", mres2.ok && mres2.newLoc.jobId === "j2" && mres2.newLoc.recId === revJB.id);
-  ok("the other job's copy (j1) is soft-deleted", !plMaterials(STORE.jobs[0]).find(e => e.id === revA.id && !e.deleted) && plMaterials(STORE.jobs[1]).some(e => e.id === revJB.id && !e.deleted));
+  const mres2 = rcptMergeGroup(grp2, revJB.id);   // Ray picks copy B (was j2) as survivor
+  ok("merge keeps the CHOSEN survivor's id (B) but parks it in review (Ray's rule)", mres2.ok && mres2.newLoc.store === "review" && mres2.newLoc.recId === revJB.id, mres2);
+  ok("BOTH job copies are cleared (A soft-deleted, B regressed out of j2.materials into review)", !plMaterials(STORE.jobs[0]).find(e => e.id === revA.id && !e.deleted) && !plMaterials(STORE.jobs[1]).some(e => e.id === revJB.id && !e.deleted) && !!rcptFindRecord("review", null, revJB.id));
 
   console.log("— MARK-AS-DUP: the edit-modal rcptEditMarkDup soft-deletes THIS receipt (existing path), keeps the other —");
   resetStore(); global.finCanView = function () { return true; }; global.modal = global.modal || function () {}; global.val = global.val || function () { return ""; };

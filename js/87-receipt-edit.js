@@ -297,11 +297,14 @@ window.rcptEditOpen = function (store, jobId, recId) {
     </div>
     ${photosStrip}
     <!-- ESSENTIALS (always shown): Amount · Vendor · Job. The rest lives under "More options" (js/98 collapse). -->
-    <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${preAmount != null ? esc(preAmount) : ""}" placeholder="0.00">
+    <label style="margin-top:10px">Amount ($) <span class="sub">(the receipt total — line items below must add up to it)</span></label><input id="rcpt_amt" type="number" inputmode="decimal" value="${preAmount != null ? esc(preAmount) : ""}" placeholder="0.00" oninput="if(typeof rcptSplitRecalc==='function')rcptSplitRecalc()">
     <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(preVendor)}" placeholder="Home Depot, dump, gas…">
     <div id="rcpt_jobwrap" style="display:none"><label>Assign to job</label><select id="rcpt_job" onchange="rcptJobPONote()">${jobOpts}</select>
       <label>PO / job code <span class="sub">(type or paste the P#### off the receipt to auto-pick its job)</span></label><input id="rcpt_po" type="text" placeholder="P1042" value="" oninput="rcptPoBind()" onblur="rcptPoBind()">
       <div id="rcpt_po_note" class="sub" style="margin-top:4px"></div></div>
+    <!-- ALWAYS-ON LINE-ITEM EDITOR (js/92) — front-and-center in the essentials: every line exactly as it will be
+         stored, with per-line routing + the receipt split. Mounted by rcptSplitInit(rec) after render. -->
+    <div id="rcpt_split_slot"></div>
     <details id="rcpt_more" open style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
     <label>Date</label><input id="rcpt_date" type="date" value="${esc(preDate)}">
     <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
@@ -317,10 +320,11 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <div id="rcpt_deposit_hint"></div>
     <label class="li" style="cursor:pointer;margin-top:6px"><input type="checkbox" id="rcpt_refund" ${rec.kind === "refund" ? "checked" : ""} style="width:20px;height:20px;flex:0 0 auto"><div class="grow"><div class="nm" style="font-size:14px;white-space:normal">↩ This is a refund / credit (money coming back)</div><div class="sub" style="white-space:normal">Stores the amount as NEGATIVE so it offsets the matching charge/deposit. Enter the refund amount above as a plain number.</div></div></label>
     <div id="rcpt_refund_hint"></div>
-    <div id="rcpt_split_slot"></div>
     </details>
     ${rcptInvBlockHTML(rec)}
-    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button><button class="btn ${store === "review" ? "ghost" : "acc"} grow" onclick="rcptSaveEdit()" title="${store === "review" ? "Save your edits — stays in Needs review" : "Save"}">✓ Save</button>${store === "review" ? `<button class="btn acc grow" onclick="rcptFileEdit()" title="Done — files this receipt (→ 💸 Owed if you paid on a personal card, else 🗂 Filed for a business-card expense)">✓ Done</button>` : ""}</div>
+    <!-- Filing / re-routing now lives in the always-on line-item editor above (✓ Save & file). Here we keep only
+         Delete, plus — for a Needs-review receipt — a "keep in review" draft-save for when it isn't ready to file. -->
+    <div id="rcpt_edit_actions" class="row" style="gap:8px;margin-top:14px"><button class="btn ghost grow" style="color:var(--danger)" onclick="rcptDelRow('${store}','${jobId || ""}','${recId}')">🗑 Delete</button>${store === "review" ? `<button class="btn ghost grow" onclick="rcptSaveEdit()" title="Save your edits without filing — stays in Needs review">💾 Save draft</button>` : ""}</div>
     ${rcptEditDupActionsHTML({ store: store, jobId: jobId, recId: recId })}`);
   rcptEditTypeChange();   // the pre-filled type (if any) makes the "Assign to job" field visible for a job type
   // CONFIRMATION-ONLY refund/deposit (Ray): if Cap flagged a possible refund/rental-deposit, surface the SAME
@@ -332,7 +336,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
     if (sg.deposit && !rec.isDeposit) _hint("rcpt_deposit_hint", "Cap thinks this may be a rental deposit — tick “⚠ Rental deposit” to confirm (left unchecked).");
   } catch (_e) {}
   if (typeof rcptJobPONote === "function") rcptJobPONote();   // js/95: show the pre-selected job's PO code
-  if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the "🔀 Split this receipt" control into #rcpt_split_slot
+  if (typeof rcptSplitInit === "function") rcptSplitInit(rec);   // js/92: mounts the always-on line-item editor (seeded from this receipt) into #rcpt_split_slot
   if (typeof cardMatchInit === "function") cardMatchInit(rec);   // js/94: match the card last-4 → pre-select "Who paid?" (default only, never writes)
   // SMART DEFAULTS (js/98) — prefill BLANK fields only from context (clocked-in job, your card, per-vendor
   // memory). NEVER clobbers an existing value or an un-applied Cap suggestion (only truly-empty inputs). Then
@@ -414,13 +418,13 @@ window.rcptApplySuggestion = function () {
   hint("rcpt_refund_hint", s.refund ? "Cap thinks this may be a refund — tick “↩ This is a refund” to confirm (left unchecked)." : "");
   hint("rcpt_deposit_hint", s.deposit ? "Cap thinks this may be a rental deposit — tick “⚠ Rental deposit” to confirm (left unchecked)." : "");
   // Cap SPLIT SUGGESTION (js/92) — a MIXED receipt (≥2 buckets, e.g. materials + a reusable tool). OPEN the
-  // split editor PRE-FILLED from Cap's balanced allocations for the owner to review + tap "Save splits".
+  // line-item editor PRE-FILLED from Cap's balanced allocations for the owner to review + tap "✓ Save & file".
   // Cap proposes, the owner confirms — this never auto-commits. <2 splits → the single-categorization above stands.
-  let banner = "✓ Cap's guess applied — review the fields, then tap ✓ Done (or Save to keep editing).";
+  let banner = "✓ Cap's guess applied — check the line item(s) below, then tap ✓ Save & file.";
   if (s.splits && Array.isArray(s.splits) && s.splits.length >= 2 && typeof rcptSplitStartFromSuggestion === "function") {
     rcptSplitStartFromSuggestion(s.splits, s.jobId || "");
-    banner = "✓ Cap split this into " + s.splits.length + " parts — review the amounts + jobs, then tap Save splits.";
-  }
+    banner = "✓ Cap split this into " + s.splits.length + " line items — review the amounts + jobs, then tap ✓ Save & file.";
+  } else if (typeof rcptSplitRecalc === "function") { rcptSplitRecalc(); }   // keep the always-on editor's "of $X" total in sync with the applied amount
   const b = document.getElementById("rcpt_suggbanner"); if (b) b.innerHTML = `<span class="sub" style="color:#fff">${esc(banner)}</span>`;
 };
 window.rcptReplacePhoto = function (input) {

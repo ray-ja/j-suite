@@ -96,14 +96,49 @@ function rcptApplySplit(loc, total, allocations, shared) {
 let RCPT_SPLIT = null;   // { loc, total, rows:[{bucket,jobId,amount,note}] }  — active only while splitting
 const RCPT_SPLIT_BUCKETS = [["pass-through", "🧱 Pass-through material"], ["job-expense", "🚚 Job expense"], ["business", "🔧 Business tool / overhead"]];
 
-/* mount the collapsed "🔀 Split this receipt" control into the modal slot (called by js/87 rcptEditOpen) */
-window.rcptSplitInit = function () {
+function rcptSplitClampBucket(b) { return (b === "business" || b === "job-expense" || b === "pass-through") ? b : "pass-through"; }
+
+/* Seed the always-on line-item editor's rows from a receipt record — mirrors js/100 jobRcptSeed so the Receipts
+   edit modal shows the SAME per-item breakdown the job page does. Prefers Cap's per-item
+   lineItems:[{desc,amount,bucket}]; falls back to Cap's mixed splits:[{amount,type,note}]; else ONE line = the
+   whole receipt as it stands today (a 1-row "split" routes byte-identically to a normal single save — id
+   preserved). 🧱/🚚 rows inherit the receipt's current/guessed job so they file to it; 🔧 rows carry no job.
+   Pure (DOM-free) so it's unit-testable. Never throws. */
+function rcptSplitSeedRows(rec) {
+  rec = rec || {};
+  const sg = rec.suggested || {};
+  const curJob = rec.jobId || (sg.jobId || "");
+  const row = (bucket, amount, note) => {
+    const b = rcptSplitClampBucket(bucket);
+    const needsJob = (b === "pass-through" || b === "job-expense");
+    const amt = (amount != null && amount !== "" && !isNaN(+amount)) ? String(Math.round(+amount * 100) / 100) : "";
+    return { bucket: b, jobId: needsJob ? curJob : "", amount: amt, note: (note == null ? "" : String(note)).slice(0, 120) };
+  };
+  const li = Array.isArray(sg.lineItems) ? sg.lineItems : (Array.isArray(rec.lineItems) ? rec.lineItems : null);
+  if (li && li.length) return li.filter(Boolean).map(it => row(it.bucket, it.amount, it.desc));
+  const sp = Array.isArray(sg.splits) ? sg.splits : null;
+  if (sp && sp.length) return sp.filter(Boolean).map(it => row(it.type, it.amount, it.note));
+  // default: the whole receipt as one stored line (the type/job it already has or Cap guessed)
+  const amt = (rec.amount != null && rec.amount !== "") ? rec.amount : (sg.amount != null ? sg.amount : "");
+  return [row(rec.type || sg.type, amt, rec.desc || rec.note || sg.desc || "")];
+}
+
+/* mount the ALWAYS-ON line-item editor into the modal slot (called by js/87 rcptEditOpen WITH the record). Ray's
+   ask: "see each line item the way it's going to be stored, including the split + where each thing goes — all on
+   the edit-receipt screen." So instead of a "🔀 Split" button, the editor is open by default, seeded from the
+   receipt, and its "✓ Save & file" routes every line to its own record via the SAME tested rcptApplySplit engine
+   (a 1-line receipt saves byte-identically to today's single route). */
+window.rcptSplitInit = function (rec) {
   if (typeof rcptFinFull === "function" && !rcptFinFull()) return;
   const slot = document.getElementById("rcpt_split_slot"); if (!slot) return;
-  RCPT_SPLIT = null;
-  const acts = document.getElementById("rcpt_edit_actions"); if (acts) acts.style.display = "";
-  slot.innerHTML = `<button class="btn ghost sm" style="width:100%;margin-top:10px;color:var(--accent)" onclick="rcptSplitStart()">🔀 Split this receipt into parts</button>
-    <div class="sub" style="white-space:normal;margin-top:4px;opacity:.7">One receipt paid partly for materials, partly for a tool? Split it by dollar amount — each part files to its own bucket.</div>`;
+  const amtEl = document.getElementById("rcpt_amt");
+  let total = (amtEl && amtEl.value !== "") ? (parseFloat(amtEl.value) || 0) : (+((rec && rec.amount)) || +(((rec && rec.suggested) || {}).amount) || 0);
+  RCPT_SPLIT = {
+    loc: (typeof RCPT_EDIT !== "undefined" && RCPT_EDIT) ? RCPT_EDIT.loc : null,
+    total: Math.round(total * 100) / 100,
+    rows: rcptSplitSeedRows(rec)
+  };
+  rcptSplitRender();
 };
 
 /* expand the allocation editor, seeded from the current form (its type/job + the amount as the total) */
@@ -170,26 +205,37 @@ function rcptSplitCapture() {
   });
 }
 
+/* one-line reminder of where a bucket lands — so the owner SEES the destination, not just an emoji */
+function rcptSplitBucketHint(b) {
+  return b === "pass-through" ? "🧱 Pass-through material — billed to the customer on its job"
+    : b === "job-expense" ? "🚚 Job expense — a cost on its job"
+    : "🔧 Business tool / overhead — off every job (add to inventory after filing)";
+}
 function rcptSplitRender() {
   const slot = document.getElementById("rcpt_split_slot"); if (!slot || !RCPT_SPLIT) return;
-  const acts = document.getElementById("rcpt_edit_actions"); if (acts) acts.style.display = "none";   // split has its own Save
+  // total tracks the live Amount field so editing it up top reflows the "of $X" target
+  const amtEl = document.getElementById("rcpt_amt");
+  if (amtEl && amtEl.value !== "") RCPT_SPLIT.total = Math.round((parseFloat(amtEl.value) || 0) * 100) / 100;
+  const store = (typeof RCPT_EDIT !== "undefined" && RCPT_EDIT && RCPT_EDIT.loc) ? RCPT_EDIT.loc.store : "";
+  const saveLbl = (store === "review") ? "✓ Save &amp; file" : "✓ Save changes";
   let h = `<div class="card" style="margin-top:10px;padding:10px;background:var(--soft)">
-    <div class="row" style="justify-content:space-between;align-items:center"><b>🔀 Split ${rcptSplitMoney(RCPT_SPLIT.total)}</b><button class="btn ghost sm" onclick="rcptSplitCancel()">✕ Cancel split</button></div>`;
+    <div style="font-weight:800">📋 Line items <span class="sub" style="font-weight:400">· each line is stored as its own record</span></div>
+    <div class="sub" style="white-space:normal;margin:4px 0 2px">This is exactly how it saves. Tag where each line goes; the amounts must add up to the receipt total.</div>`;
   RCPT_SPLIT.rows.forEach((r, i) => {
     const needsJob = (r.bucket === "pass-through" || r.bucket === "job-expense");
     h += `<div class="card" style="padding:8px;margin-top:8px">
-      <div class="row" style="gap:6px;align-items:flex-end">
-        <div style="flex:0 0 92px"><label style="margin-top:0">Amount ($)</label><input class="rcpt_split_amt" data-i="${i}" type="number" inputmode="decimal" value="${esc(r.amount)}" placeholder="0.00" oninput="rcptSplitRecalc()"></div>
-        <div class="grow"><label style="margin-top:0">Goes to</label><select class="rcpt_split_bucket" data-i="${i}" onchange="rcptSplitSetBucket(${i},this.value)">${rcptSplitBucketOpts(r.bucket)}</select></div>
-        ${RCPT_SPLIT.rows.length > 1 ? `<button class="btn ghost sm" style="flex:0 0 auto;color:var(--danger)" onclick="rcptSplitRemove(${i})" title="Remove">✕</button>` : ""}
+      <input class="rcpt_split_note" data-i="${i}" value="${esc(r.note || "")}" placeholder="What — pavers, dump fee, a tool…" style="font-weight:600">
+      <div class="row" style="gap:6px;margin-top:6px;align-items:flex-end">
+        <div style="flex:0 0 88px"><label style="margin-top:0">Amount ($)</label><input class="rcpt_split_amt" data-i="${i}" type="number" inputmode="decimal" value="${esc(r.amount)}" placeholder="0.00" oninput="rcptSplitRecalc()"></div>
+        <div class="grow"><label style="margin-top:0">Stored as</label><select class="rcpt_split_bucket" data-i="${i}" onchange="rcptSplitSetBucket(${i},this.value)">${rcptSplitBucketOpts(r.bucket)}</select></div>
+        ${RCPT_SPLIT.rows.length > 1 ? `<button class="btn ghost sm" style="flex:0 0 auto;color:var(--danger)" onclick="rcptSplitRemove(${i})" title="Remove line">✕</button>` : ""}
       </div>
-      <div class="rcpt_split_jobwrap" data-i="${i}" style="display:${needsJob ? "block" : "none"}"><label>Job</label><select class="rcpt_split_job" data-i="${i}">${rcptSplitJobOpts(r.jobId)}</select></div>
-      <label>Note <span class="sub">(optional)</span></label><input class="rcpt_split_note" data-i="${i}" value="${esc(r.note || "")}" placeholder="what this part was">
-      <button class="btn ghost sm" style="margin-top:6px" onclick="rcptSplitRest(${i})">↳ put the rest here</button>
+      <div class="rcpt_split_jobwrap" data-i="${i}" style="display:${needsJob ? "block" : "none"}"><label>Job it bills to</label><select class="rcpt_split_job" data-i="${i}">${rcptSplitJobOpts(r.jobId)}</select></div>
+      <div class="sub" style="margin-top:4px;white-space:normal">${rcptSplitBucketHint(r.bucket)} · <a onclick="rcptSplitRest(${i})" style="cursor:pointer;color:var(--accent)">↳ put the rest here</a></div>
     </div>`;
   });
   h += `<div id="rcpt_split_ind" class="sub" style="margin-top:8px;text-align:center;font-weight:700"></div>
-    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add split</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">✓ Save splits</button></div></div>`;
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add a line</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">${saveLbl}</button></div></div>`;
   slot.innerHTML = h;
   rcptSplitRecalc();
 }
@@ -198,6 +244,8 @@ function rcptSplitRender() {
    (reads the amount inputs directly) so typing never loses focus. */
 window.rcptSplitRecalc = function () {
   const ind = document.getElementById("rcpt_split_ind"); if (!ind || !RCPT_SPLIT) return;
+  const amtEl = document.getElementById("rcpt_amt");
+  if (amtEl && amtEl.value !== "") RCPT_SPLIT.total = Math.round((parseFloat(amtEl.value) || 0) * 100) / 100;   // track the live Amount field
   let sum = 0; document.querySelectorAll(".rcpt_split_amt").forEach(el => { sum += (parseFloat(el.value) || 0); });
   sum = Math.round(sum * 100) / 100;
   const total = RCPT_SPLIT.total, left = Math.round((total - sum) * 100) / 100;
@@ -252,4 +300,4 @@ window.rcptSaveEditSplit = function () {
   if (typeof render === "function") render();
 };
 
-if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { rcptApplySplit: rcptApplySplit, rcptRouteNew: rcptRouteNew, rcptSplitFields: rcptSplitFields, rcptSplitSeedRows: rcptSplitSeedRows, rcptSplitClampBucket: rcptSplitClampBucket }; }
