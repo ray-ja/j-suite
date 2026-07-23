@@ -1216,6 +1216,8 @@ function rReceipts() {
     }
   }
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
+  const _orphanN = (typeof rcptOrphanReceipts === "function") ? rcptOrphanReceipts().length : 0;
+  if (_orphanN) h += `<div class="card" style="border-left:4px solid #6b3fa0;cursor:pointer" onclick="rcptRestoreOrphans()"><b style="color:#6b3fa0">♻️ ${_orphanN} merged-away receipt photo${_orphanN > 1 ? "s" : ""} can be restored</b> — an earlier merge kept one photo and dropped the rest; the pictures are still saved. <b>Tap to bring them back to Needs-review</b> so you can re-merge (keeps every photo now) or delete the real junk. →</div>`;
 
   // 🏗 RENTAL DEPOSITS AWAITING REFUND (js/96) — held out of job cost until the owner confirms the refund
   if (typeof depositsAwaitingRefund === "function") { const _deps = depositsAwaitingRefund(); if (_deps.length) h += rcptDepositsAwaitingHTML(_deps); }
@@ -2015,6 +2017,31 @@ function rcptMergeGroup(group, forcedSurvivorId) {
 }
 /* the resolver's primary action — MERGE the group holding `survivorId` into that copy, keeping the best of each.
    Owner/admin, confirm (with the merged preview), reversible. Reuses rcptDupIndex / rcptMergeGroup / rcptDupResolveAfter. */
+/* RECOVER MERGED-AWAY PHOTOS: a PRE-FIX merge kept one photo and dropped the rest — the absorbed copies are only
+   soft-deleted and their blobs still exist. An "orphan" = a soft-deleted review receipt whose photo is on NO live
+   record (so the merge really lost it, vs a normal filed-away copy whose photo moved to its filed home). Restoring
+   un-deletes them to review WITH their photos, so the owner can re-merge (now keeps every photo) or delete real junk. */
+function _rcptLivePhotoIds() {
+  var d = D(); var s = {};
+  var add = function (r) { if (r && !r.deleted) { if (r.receiptId) s[r.receiptId] = 1; (r.photos || []).forEach(function (p) { if (p) s[p] = 1; }); } };
+  (d.receipts || []).forEach(add);
+  ["jobMaterials", "jobExpenses", "expenses"].forEach(function (c) { (d[c] || []).forEach(add); });
+  return s;
+}
+function rcptOrphanReceipts() {
+  var live = _rcptLivePhotoIds();
+  return (D().receipts || []).filter(function (r) { return r && r.deleted && r.receiptId && !live[r.receiptId]; });
+}
+window.rcptRestoreOrphans = function () {
+  if (typeof rcptFinFull === "function" && !rcptFinFull()) { alert("Owner / Admin only."); return; }
+  var orphans = rcptOrphanReceipts();
+  if (!orphans.length) { alert("No merged-away receipt photos to restore."); return; }
+  if (!confirm("Restore " + orphans.length + " merged-away receipt" + (orphans.length > 1 ? "s" : "") + " to Needs-review?\n\nThey come back with their photos so you can re-merge (keeps every photo now) or file them. Real junk you can just delete again.")) return;
+  orphans.forEach(function (r) { r.deleted = false; r.status = "review"; r.updatedAt = now(); if (typeof touch === "function") touch(r); });
+  if (typeof logChange === "function") logChange("update", "receipt", "restore-orphans", "Restored " + orphans.length + " merged-away receipts (with photos) to review");
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
 window.rcptDupMerge = function (survivorId) {
   if (!rcptFinFull()) return;
   const grp = rcptDupIndex().byId[survivorId];
