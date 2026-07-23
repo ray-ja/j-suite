@@ -1956,6 +1956,26 @@ async function main() {
   rcptInlineSet("review", "", rvPT.id, "jobId", "j2");
   ok("Job inline on a pass-through review row → job.materials on j2 (id+photo kept)", plMaterials(STORE.jobs[1]).some(x => x.id === rvPT.id && x.receiptId === "bPT" && !x.deleted) && !rcptReview().some(x => x.id === rvPT.id), { mat: plMaterials(STORE.jobs[1]) });
 
+  // (G) CARD change on an ALREADY-COMPLETE review row must NOT file it (Ray: changing the card made it vanish).
+  // A complete review receipt (pass-through + job) stays in Needs review after a card edit; only "✓ File it" files it.
+  resetStore();
+  const rvC = rcptNewReview("bCARD"); Object.assign(rvC, { amount: 68.69, vendor: "Vulcan", type: "pass-through", jobId: "j1", cardLast4: "8752" });   // complete but still in review
+  STORE.receipts.push(rvC);
+  rcptInlineSet("review", "j1", rvC.id, "cardLast4", "8355");
+  ok("card edit on a complete review row → card updated but STAYS in review (not filed)", rcptReview().some(x => x.id === rvC.id && x.cardLast4 === "8355") && !plMaterials(STORE.jobs[0]).some(x => x.id === rvC.id && !x.deleted), { rev: rcptReview().map(r => r.id), mat: plMaterials(STORE.jobs[0]).map(m => m.id) });
+  // category edit on a review row likewise stays in review
+  resetStore();
+  const rvC2 = rcptNewReview("bCAT"); Object.assign(rvC2, { amount: 50, vendor: "Depot", type: "pass-through", jobId: "j1" });
+  STORE.receipts.push(rvC2);
+  rcptInlineSet("review", "j1", rvC2.id, "category", "materials");
+  ok("category edit on a complete review row also stays in review (only routing fields file)", rcptReview().some(x => x.id === rvC2.id), rcptReview().map(r => r.id));
+
+  // (H) TABLE: a business-type receipt shows NO job (even with a stale jobId) — Ray's Cloudflare row
+  resetStore();
+  const bizHtml = rcptTableHTML([{ store: "review", jobId: "j1", recId: "bizR", id: "bizR", vendor: "Cloudflare", amount: 12.2, type: "business", category: "subscription/software" }], {});
+  const ptHtml = rcptTableHTML([{ store: "review", jobId: "j1", recId: "ptR", id: "ptR", vendor: "Depot", amount: 20, type: "pass-through" }], {});
+  ok("a business receipt with a stale jobId shows NO job (Cloudflare row); a pass-through with the same job DOES show it", bizHtml.indexOf("Paver patio") < 0 && ptHtml.indexOf("Paver patio") >= 0, { biz: bizHtml.indexOf("Paver patio"), pt: ptHtml.indexOf("Paver patio") });
+
   // ========================= REFUND / DEPOSIT ARE CONFIRMATION-ONLY (Cap may suggest, NEVER auto-applies) =========================
   // A wrong Cap "refund" read would auto-file the receipt with its amount flipped NEGATIVE; a wrong "deposit" would
   // hold money out of a job's cost. Ray's rule: those two flags are set ONLY by his tick + Save. So (a) the Cap

@@ -1609,7 +1609,13 @@ window.rcptInlineSet = function (store, jobId, recId, field, value) {
   if (isRefund && amt != null) amt = -Math.abs(amt);
   const cat = (isDeposit && !category) ? "rentals" : category;
   const fields = { type: type || null, jobId: jobIdF || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: rec.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
-  const res = rcptApplyEdit({ store: store, jobId: jobId || null, recId: recId }, fields);
+  // An inline edit reroutes a record ONLY when the edited field is a ROUTING field (type / jobId — the two rcptTargetHome
+  // keys). Editing any OTHER field (card, category, "for") on a Needs-review receipt must NOT file it out of review —
+  // it just stores the edit in place (keepReview). Without this, changing the card on an already-complete review
+  // receipt routed it straight to its filed home and it "vanished" from the review list. Filing stays explicit (the
+  // "✓ File it" button / the modal). Type/Job inline edits still complete+file as before; filed rows re-bucket as before.
+  const keepReview = (store === "review" && field !== "type" && field !== "jobId");
+  const res = rcptApplyEdit({ store: store, jobId: jobId || null, recId: recId }, fields, keepReview ? { keepReview: true } : undefined);
   if (!res || !res.ok) { alert("Couldn't update: " + ((res && res.error) || "unknown")); return; }
   rcptStampReviewed(res.newLoc);   // a human inline edit = reviewed → clears the purple Cap-auto-file mark
   if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Receipt inline-edit · " + field + " → " + (value || "—") + (vendor ? " · " + vendor : ""));
@@ -1689,7 +1695,11 @@ function rcptTableHTML(rows, dups) {
     const isFlash = _rcptFlashId && (r.recId === _rcptFlashId || r.id === _rcptFlashId);
     const typeDisp = esc(RCPT_TYPE_LABEL[m.type] || m.type);
     const catDisp = r.category ? esc(r.category) : `<span style="color:var(--muted)">—</span>`;
-    const jobDisp = `${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}`;
+    // A business expense is never job-attached — don't show a (possibly stale) job for it. It self-heals on the next
+    // edit/file (business → jobId null); this keeps the table honest + consistent with the modal (no job field).
+    const jobDisp = (m.type === "business")
+      ? `<span style="color:var(--muted)">—</span>`
+      : `${m.cust ? esc(m.cust) : ""}${m.jobLabel ? `<div class="sub" style="font-size:11px">${esc(m.jobLabel)}</div>` : (m.cust ? "" : `<span style="color:var(--muted)">—</span>`)}`;
     const forDisp = m.forName ? esc(m.forName) : `<span style="color:var(--muted)">—</span>`;
     const cardDisp = rcptCardCell(r);
     const rowBg = isFlash ? ";background:var(--ok-soft,#e7f7ee)" : (isDup ? ";background:var(--danger-soft,#fdecea)" : (needsCapReview ? ";background:rgba(107,63,160,.08)" : ""));
