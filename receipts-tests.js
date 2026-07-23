@@ -1335,6 +1335,25 @@ async function main() {
   const pm2 = rcptMergeFields([{ store: "review", recId: "p1", receiptId: "A.jpg", photos: ["A.jpg", "B.jpg"], vendor: "Vulcan", amount: 48.15 }, { store: "review", recId: "p3", receiptId: "C.jpg", vendor: "Vulcan", amount: 48.15 }]);
   ok("re-merge carries forward the already-merged photos[] (B not dropped) + adds the new one", ["A.jpg", "B.jpg", "C.jpg"].every(p => pm2.fields.photos.indexOf(p) >= 0) && pm2.fields.photos.length === 3, pm2.fields.photos);
 
+  console.log("— MANUAL = LAW: a LOCKED (human-set) field is never overwritten by a merge, and survives edits —");
+  // survivor (a bank-statement copy) says card 9999 + business; a review copy has the MANUALLY-locked card 8355. The
+  // locked value + lock must win, even though the survivor is the "better"/filed-ish copy.
+  const lm = rcptMergeFields([
+    { store: "review", recId: "L1", receiptId: "a.jpg", vendor: "Vulcan", amount: 68.69, cardLast4: "9999", type: "business" },
+    { store: "review", recId: "L2", receiptId: "b.jpg", vendor: "Vulcan", amount: 68.69, cardLast4: "8355", type: "pass-through", jobId: "j1", locked: { cardLast4: true, type: true, jobId: true } }
+  ], "L1");   // force the 9999/business copy as survivor
+  ok("a merge keeps the LOCKED manual card (8355), not the survivor's 9999", lm.fields.cardLast4 === "8355", lm.fields);
+  ok("a merge keeps the LOCKED manual type/job (pass-through/j1), not business", lm.fields.type === "pass-through" && lm.fields.jobId === "j1", lm.fields);
+  ok("the merged record STAYS locked on those fields", lm.fields.locked && lm.fields.locked.cardLast4 && lm.fields.locked.type && lm.fields.locked.jobId, lm.fields.locked);
+
+  console.log("— MANUAL = LAW: locked survives an edit round-trip (rcptApplyEdit carry) —");
+  resetStore();
+  const lkRv = rcptNewReview("bLK"); Object.assign(lkRv, { amount: 30, vendor: "V", type: "pass-through", jobId: "j1", cardLast4: "8355", locked: { cardLast4: true } });
+  STORE.receipts.push(lkRv);
+  rcptApplyEdit({ store: "review", jobId: "j1", recId: lkRv.id }, { type: "pass-through", jobId: "j1", amount: 30, vendor: "V", category: "materials", receiptId: "bLK", cardLast4: "8355" }, { keepReview: true });
+  const lkAfter = rcptReview().find(x => x.id === lkRv.id);
+  ok("locked{cardLast4} carries through an edit (not dropped)", lkAfter && lkAfter.locked && lkAfter.locked.cardLast4 === true, lkAfter && lkAfter.locked);
+
   console.log("— MERGE CORE: a REAL date beats a Cap 'unknown' (the ISO guard) —");
   const mfDate = rcptMergeFields([
     { store: "review", recId: "a", receiptId: "x", date: "unknown", vendor: "V", amount: 5 },   // survivor (first) has a Cap 'unknown'
@@ -1926,9 +1945,9 @@ async function main() {
   const aInlineJson = JSON.stringify(inlNorm(aRec));
   // …byte-identical to the equivalent modal save (rcptApplyEdit with the fields rcptSaveEdit would gather)
   const A2 = seedFiledJobExp();
-  rcptApplyEdit({ store: "jobexp", jobId: "j1", recId: A2.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-02", category: "tools/equipment", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bX", cardLast4: "4242", isDeposit: false, kind: "" });
+  rcptApplyEdit({ store: "jobexp", jobId: "j1", recId: A2.id }, { type: "job-expense", jobId: "j1", amount: 90, vendor: "Depot", date: "2026-07-02", category: "tools/equipment", paidBy: "u_chase", attributedTo: "u_chase", desc: "gas", receiptId: "bX", cardLast4: "4242", isDeposit: false, kind: "", locked: { category: true } });
   const aModalJson = JSON.stringify(inlNorm(plExpenses(STORE.jobs[0]).find(x => x.id === A2.id)));
-  ok("category inline edit is BYTE-IDENTICAL to the modal save", aInlineJson === aModalJson, { inline: aInlineJson, modal: aModalJson });
+  ok("category inline edit is BYTE-IDENTICAL to the modal save (both lock the manual field)", aInlineJson === aModalJson, { inline: aInlineJson, modal: aModalJson });
 
   // (B) CARD + (C) FOR change in place — same home + id
   const B = seedFiledJobExp();

@@ -87,6 +87,10 @@ function rcptBuildRecord(home, id, fields, carry) {
   // detailed receipt is ever dropped for a blank one. Additive array of blob ids, form-wins-else-carry (like
   // cardLast4). Survives re-homing/filing so a merged receipt never loses its extra photos.
   if (fields.photos != null) { if (Array.isArray(fields.photos) && fields.photos.length) base.photos = fields.photos.slice(); } else if (Array.isArray(carry.photos) && carry.photos.length) base.photos = carry.photos.slice();
+  // LOCKED (manual-wins): fields the human explicitly set. UNION of carry + fields (locks only accumulate — once
+  // manual, always manual) so nothing re-reads / merges over them. Additive {field:true}; absent = no locks.
+  var lk = Object.assign({}, carry.locked || {}, fields.locked || {});
+  if (Object.keys(lk).length) base.locked = lk;
   // job expense carries its receipt CATEGORY so the 3-way split works (a tools/equipment receipt → excluded from
   // the job's cost as business overhead; anything else = a plain job cost). Default "job" when the receipt was uncategorized.
   if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; base.category = fields.category || "job"; return base; }
@@ -100,6 +104,7 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (fields.vehicleId != null) { if (fields.vehicleId) rev.vehicleId = fields.vehicleId; } else if (carry.vehicleId) rev.vehicleId = carry.vehicleId;
   Object.assign(rev, dep);
   if (fields.photos != null) { if (Array.isArray(fields.photos) && fields.photos.length) rev.photos = fields.photos.slice(); } else if (Array.isArray(carry.photos) && carry.photos.length) rev.photos = carry.photos.slice();
+  if (Object.keys(lk).length) rev.locked = lk;
   return rev;
 }
 /* THE PURE RE-BUCKETING OP. loc={store,jobId,recId}; fields={type,jobId,amount,vendor,date,category,paidBy,desc,receiptId}.
@@ -111,7 +116,7 @@ function rcptApplyEdit(loc, fields, opts) {
   // keepReview: a plain SAVE on a Needs-review receipt stores the fields (type/job/paidBy included) IN PLACE and
   // does NOT route it out — filing is a separate, explicit step. Force the home to stay 'review'.
   const home = (opts && opts.keepReview) ? { store: "review", jobId: null } : rcptTargetHome(fields);
-  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType, photos: cur.photos };
+  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType, photos: cur.photos, locked: cur.locked };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
   if (sameHome) {
@@ -412,13 +417,18 @@ window.rcptPoBind = function () {
 };
 window.rcptApplySuggestion = function () {
   const s = RCPT_EDIT && RCPT_EDIT.suggested; if (!s) return;
-  const set = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== "") el.value = v; };
+  // MANUAL = LAW: never overwrite a field the human locked (typed/corrected). Reread fills what Cap found, but a
+  // locked field is left exactly as the owner set it — even a wrong re-read can't clobber a manual card/type.
+  const _rec = (RCPT_EDIT && RCPT_EDIT.loc && typeof rcptFindRecord === "function") ? rcptFindRecord(RCPT_EDIT.loc.store, RCPT_EDIT.loc.jobId, RCPT_EDIT.loc.recId) : null;
+  const locked = (_rec && _rec.locked) || {};
+  const idField = { rcpt_vendor: "vendor", rcpt_amt: "amount", rcpt_cat: "category", rcpt_desc: "desc", rcpt_refno: "refNo", rcpt_type: "type", rcpt_job: "jobId", rcpt_card4: "cardLast4" };
+  const set = (id, v) => { if (locked[idField[id]]) return; const el = document.getElementById(id); if (el && v != null && v !== "") el.value = v; };
   set("rcpt_vendor", s.vendor); set("rcpt_amt", s.amount); set("rcpt_cat", s.category); set("rcpt_desc", s.desc); set("rcpt_refno", s.refNo);
-  if (s.type) { const el = document.getElementById("rcpt_type"); if (el) { el.value = s.type; rcptEditTypeChange(); } }
-  if (s.jobId) { set("rcpt_job", s.jobId); if (typeof rcptJobPONote === "function") rcptJobPONote(); }   // Cap assigns the job → its PO auto-fills too (Request 2)
+  if (s.type && !locked.type) { const el = document.getElementById("rcpt_type"); if (el) { el.value = s.type; rcptEditTypeChange(); } }
+  if (s.jobId && !locked.jobId) { set("rcpt_job", s.jobId); if (typeof rcptJobPONote === "function") rcptJobPONote(); }   // Cap assigns the job → its PO auto-fills too (Request 2)
   // Cap Phase 4 — card last-4 (js/94: auto-matches "Who paid?"), refund + rental-deposit toggles (js/96).
   // Only APPLY when present: a null last4 / false toggle leaves the owner's existing entry untouched.
-  if (s.last4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card
+  if (s.last4 && !locked.cardLast4) { set("rcpt_card4", s.last4); if (typeof cardMatchRefresh === "function") cardMatchRefresh(); }   // auto-match paidBy from the card
   // REFUND / RENTAL-DEPOSIT are CONFIRMATION-ONLY (Ray): Cap may SUGGEST them, but "Use Cap's guess" must NEVER
   // TICK the box — a wrong "refund" read would flip the amount NEGATIVE, a wrong "deposit" would hold it out of
   // the job's cost. So instead of checking the box we SURFACE a highlighted hint next to it and leave it UNCHECKED;
@@ -515,6 +525,19 @@ function rcptReadEditForm() {
   const cat = (isDeposit && !category) ? "rentals" : category;
   const vehicleId = (cat === "fuel") ? (val("rcpt_veh") || "") : "";   // vehicle tag only meaningful for fuel; clears if category changed away
   const fields = { type: type || null, jobId: jobId || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: RCPT_EDIT.receiptId || null, cardLast4: cardLast4, refNo: refNo, vehicleId: vehicleId, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
+  // MANUAL = LAW: LOCK any field the human changed AWAY FROM Cap's guess (a deliberate override) so no reread/merge
+  // overwrites it. Carry forward existing locks. Accepting Cap's value doesn't lock (a reread can still improve it).
+  const _sg = (RCPT_EDIT && RCPT_EDIT.suggested) || {};
+  const _cur = (RCPT_EDIT && RCPT_EDIT.loc && typeof rcptFindRecord === "function") ? rcptFindRecord(RCPT_EDIT.loc.store, RCPT_EDIT.loc.jobId, RCPT_EDIT.loc.recId) : null;
+  const _locked = Object.assign({}, (_cur && _cur.locked) || {});
+  const _lockDiff = (fld, formV, capV) => { const f = (formV == null ? "" : String(formV)); const c = (capV == null ? "" : String(capV)); if (f !== "" && f !== c) _locked[fld] = true; };
+  _lockDiff("cardLast4", cardLast4, (/^\d{4}$/.test(String(_sg.last4 || "")) ? _sg.last4 : ""));
+  _lockDiff("type", type, _sg.type);
+  _lockDiff("category", cat, _sg.category);
+  _lockDiff("jobId", jobId, _sg.jobId || "");
+  _lockDiff("vendor", vendor, _sg.vendor);
+  _lockDiff("amount", (amt == null ? "" : amt), (_sg.amount == null ? "" : _sg.amount));
+  if (Object.keys(_locked).length) fields.locked = _locked;
   return { fields: fields, type: type, jobId: jobId, amt: amt, vendor: vendor, isDeposit: isDeposit, isRefund: isRefund };
 }
 /* completeness gate — only needed to FILE a receipt (a draft Save may be incomplete). "" = OK, else the message. */

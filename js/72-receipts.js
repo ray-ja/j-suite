@@ -588,6 +588,15 @@ function rcptMergeFields(records, forcedSurvivorId) {
   var mergedJob = survivor.jobId || null;
   if (!mergedJob && mergedType !== "business") for (var g = 0; g < recs.length; g++) if (recs[g].jobId) { mergedJob = recs[g].jobId; break; }
 
+  // MANUAL = LAW across a merge: a field ANY copy LOCKED (human-set) keeps its manual value + stays locked — the fold
+  // above never gets to overwrite it. Union the locks; take the first locked copy's value for each locked field.
+  var mergedLocked = {}, lockedVal = {};
+  recs.forEach(function (r) {
+    if (r && r.locked) Object.keys(r.locked).forEach(function (f) {
+      if (r.locked[f]) { mergedLocked[f] = true; if (!(f in lockedVal) && r[f] != null && r[f] !== "") lockedVal[f] = r[f]; }
+    });
+  });
+
   var fields = {
     type: mergedType || null,
     jobId: mergedJob || null,
@@ -603,6 +612,15 @@ function rcptMergeFields(records, forcedSurvivorId) {
     photos: mergedPhotos,
     suggested: mergedSuggested
   };
+  // apply the locked (manual) values over the folded ones, then stamp the union of locks onto the merged record
+  if ("cardLast4" in lockedVal) fields.cardLast4 = rcptCard4(lockedVal.cardLast4) || fields.cardLast4;
+  if ("type" in lockedVal) fields.type = lockedVal.type;
+  if ("jobId" in lockedVal) fields.jobId = lockedVal.jobId;
+  if ("category" in lockedVal) fields.category = lockedVal.category;
+  if ("vendor" in lockedVal) fields.vendor = lockedVal.vendor;
+  if ("amount" in lockedVal) fields.amount = lockedVal.amount;
+  if ("attributedTo" in lockedVal) fields.attributedTo = lockedVal.attributedTo;
+  if (Object.keys(mergedLocked).length) fields.locked = mergedLocked;
   return {
     survivor: survivor,
     survivorLoc: { store: survivor.store, jobId: survivor.jobId || null, recId: _rcptRowId(survivor) },
@@ -1615,6 +1633,9 @@ window.rcptInlineSet = function (store, jobId, recId, field, value) {
   if (isRefund && amt != null) amt = -Math.abs(amt);
   const cat = (isDeposit && !category) ? "rentals" : category;
   const fields = { type: type || null, jobId: jobIdF || null, amount: amt, vendor: vendor, date: date, category: cat, paidBy: paidBy || null, attributedTo: attributedTo || null, desc: desc, receiptId: rec.receiptId || null, cardLast4: cardLast4, isDeposit: isDeposit, kind: isRefund ? "refund" : "" };
+  // MANUAL = LAW: an inline edit is a deliberate human override — LOCK the edited field so nothing (reread auto-apply,
+  // Cap, a merge) ever overwrites it again. Locks only accumulate (rcptBuildRecord unions carry+fields).
+  const _lockObj = {}; _lockObj[field] = true; fields.locked = Object.assign({}, rec.locked || {}, _lockObj);
   // An inline edit reroutes a record ONLY when the edited field is a ROUTING field (type / jobId — the two rcptTargetHome
   // keys). Editing any OTHER field (card, category, "for") on a Needs-review receipt must NOT file it out of review —
   // it just stores the edit in place (keepReview). Without this, changing the card on an already-complete review
