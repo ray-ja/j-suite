@@ -544,6 +544,12 @@ function rcptMergeFields(records, forcedSurvivorId) {
     if (!photoRec) { photoRec = r; return; }
     if (_rcptLineItems(r).length > _rcptLineItems(photoRec).length) photoRec = r;
   });
+  // KEEP EVERY PHOTO: a merge must never drop a copy's picture (a full detailed receipt was being discarded in
+  // favor of a blank bank-statement one). Collect ALL distinct blob ids from the group so the owner can flip
+  // through them all in review. The primary `receiptId` is just the default thumbnail; `photos` holds them all.
+  var mergedPhotos = [];
+  if (photoRec && photoRec.receiptId) mergedPhotos.push(photoRec.receiptId);
+  recs.forEach(function (r) { if (r.receiptId && mergedPhotos.indexOf(r.receiptId) < 0) mergedPhotos.push(r.receiptId); });
 
   // LINE ITEMS / suggested: the copy with the most line items (the "better receipt" Cap read).
   var suggRec = survivor;
@@ -591,6 +597,7 @@ function rcptMergeFields(records, forcedSurvivorId) {
     cardLast4: mergedCard,
     desc: foldDesc(),
     receiptId: photoRec ? photoRec.receiptId : (survivor.receiptId || null),
+    photos: mergedPhotos,
     suggested: mergedSuggested
   };
   return {
@@ -1992,7 +1999,9 @@ function rcptMergeGroup(group, forcedSurvivorId) {
     // fold the richest line items / Cap read onto the survivor BEFORE the edit so the spine carries it through
     // (rcptApplyEdit preserves the survivor's own `suggested` — cap read isn't part of the fields set).
     if (merged.fields.suggested && merged.fields.suggested !== survRec.suggested) survRec.suggested = merged.fields.suggested;
-    var res = (typeof rcptApplyEdit === "function") ? rcptApplyEdit({ store: loc.store, jobId: loc.jobId, recId: loc.recId }, merged.fields) : null;
+    // keepReview:true — a merge is uncertain (wrong survivor / oddly-folded fields), so ALWAYS park the result back
+    // in the needs-review queue for a human to verify, even if that regresses a filed copy to review (Ray's rule).
+    var res = (typeof rcptApplyEdit === "function") ? rcptApplyEdit({ store: loc.store, jobId: loc.jobId, recId: loc.recId }, merged.fields, { keepReview: true }) : null;
     if (!res || !res.ok) return { ok: false, error: (res && res.error) || "merge edit failed" };
     // soft-delete every ABSORBED copy (reversible). The survivor kept its id (same-home edit), so skip it.
     var absorbed = 0;
@@ -2011,10 +2020,10 @@ window.rcptDupMerge = function (survivorId) {
   const grp = rcptDupIndex().byId[survivorId];
   if (!grp) { rcptDupResolveAfter(); return; }
   const preview = (typeof rcptMergePreviewText === "function") ? rcptMergePreviewText(grp, survivorId) : "";
-  if (!confirm("Merge these " + grp.length + " copies into one receipt?\n\n" + preview + "\n\n(An admin can undo.)")) return;
+  if (!confirm("Merge these " + grp.length + " copies into one receipt?\n\n" + preview + "\n\nKeeps EVERY photo, and sends the result back to Needs-review so you can check it against all of them. An admin can undo.")) return;
   const res = rcptMergeGroup(grp, survivorId);
   if (!res || !res.ok) { alert("Couldn't merge these copies: " + ((res && res.error) || "unknown")); return; }
-  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Merged " + grp.length + " duplicate receipts into one — kept the best photo + line items + your categorization; removed " + res.absorbed + " absorbed cop" + (res.absorbed > 1 ? "ies" : "y"));
+  if (typeof logChange === "function") logChange("update", "expense", res.newLoc.recId, "Merged " + grp.length + " duplicate receipts into one — kept ALL " + grp.length + " photos + line items + your categorization, sent to review; removed " + res.absorbed + " absorbed cop" + (res.absorbed > 1 ? "ies" : "y"));
   rcptDupResolveAfter();
 };
 /* delete ONE copy from a group (keeps the others) — confirmed soft-delete via the existing path (SECONDARY:

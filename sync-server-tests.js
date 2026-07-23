@@ -1793,6 +1793,14 @@ ok("zero loss: the customer/quote/job all survive alongside it", !!instMerged.ob
 ok("customer edit still LWW-applies (Mike Green wins)", instMerged.obx.customers.find(x => x.id === "c1").name === "Mike Green", null);
 const instLww = t.mergeState(instStored, { obx: { installments: [{ id: "inst_1", payeeId: "chase", label: "Dump trailer", total: 10541.74, count: 24, start: "2026-07", paidNs: [1, 2, 3], updatedAt: 9 }] } });
 ok("payback plan LWW: a newer 'paid 3 of 24' record wins over the older 'paid 2'", (instLww.obx.installments.find(x => x.id === "inst_1").paidNs || []).length === 3, instLww.obx.installments);
+
+console.log("\n— merged-receipt photos[] array survives sync (dedup keeps every copy's photo) —");
+const phStored = { obx: { receipts: [{ id: "r1", status: "review", receiptId: "a.jpg", photos: ["a.jpg", "b.jpg", "c.jpg"], amount: 12.5, updatedAt: 5 }] } };
+const phMerged = t.mergeState(phStored, { obx: { customers: [{ id: "c1", updatedAt: 1 }] } });   // incoming omits receipts
+const _r1 = (phMerged.obx.receipts || []).find(x => x.id === "r1");
+ok("a merged receipt's photos[] array survives a sync that omits receipts (never-drop, zero loss)", !!_r1 && Array.isArray(_r1.photos) && _r1.photos.length === 3, _r1 && _r1.photos);
+const phLww = t.mergeState(phStored, { obx: { receipts: [{ id: "r1", status: "review", receiptId: "a.jpg", photos: ["a.jpg", "b.jpg", "c.jpg", "d.jpg"], amount: 12.5, updatedAt: 9 }] } });
+ok("photos[] LWW: a newer copy carrying 4 photos wins over the older 3", (phLww.obx.receipts.find(x => x.id === "r1").photos || []).length === 4, null);
 // Assert the model + max_tokens ACTUALLY SENT to the Anthropic call, by spying on the shared https module.
 (function () {
   const https = require("https");

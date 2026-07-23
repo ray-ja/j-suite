@@ -83,6 +83,10 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (fields.refundOfId != null) { if (fields.refundOfId) dep.refundOfId = fields.refundOfId; } else if (carry.refundOfId) dep.refundOfId = carry.refundOfId;
   if (fields.kind != null) { if (fields.kind) dep.kind = fields.kind; } else if (carry.kind) dep.kind = carry.kind;
   Object.assign(base, dep);
+  // MERGED PHOTOS: the dedup keeps EVERY copy's photo (js/72) so the owner can flip through all of them and no
+  // detailed receipt is ever dropped for a blank one. Additive array of blob ids, form-wins-else-carry (like
+  // cardLast4). Survives re-homing/filing so a merged receipt never loses its extra photos.
+  if (fields.photos != null) { if (Array.isArray(fields.photos) && fields.photos.length) base.photos = fields.photos.slice(); } else if (Array.isArray(carry.photos) && carry.photos.length) base.photos = carry.photos.slice();
   // job expense carries its receipt CATEGORY so the 3-way split works (a tools/equipment receipt → excluded from
   // the job's cost as business overhead; anything else = a plain job cost). Default "job" when the receipt was uncategorized.
   if (home.store === "jobexp") { base.faultMemberId = carry.faultMemberId || null; base.category = fields.category || "job"; return base; }
@@ -95,6 +99,7 @@ function rcptBuildRecord(home, id, fields, carry) {
   if (refType) rev.refType = refType;
   if (fields.vehicleId != null) { if (fields.vehicleId) rev.vehicleId = fields.vehicleId; } else if (carry.vehicleId) rev.vehicleId = carry.vehicleId;
   Object.assign(rev, dep);
+  if (fields.photos != null) { if (Array.isArray(fields.photos) && fields.photos.length) rev.photos = fields.photos.slice(); } else if (Array.isArray(carry.photos) && carry.photos.length) rev.photos = carry.photos.slice();
   return rev;
 }
 /* THE PURE RE-BUCKETING OP. loc={store,jobId,recId}; fields={type,jobId,amount,vendor,date,category,paidBy,desc,receiptId}.
@@ -106,7 +111,7 @@ function rcptApplyEdit(loc, fields, opts) {
   // keepReview: a plain SAVE on a Needs-review receipt stores the fields (type/job/paidBy included) IN PLACE and
   // does NOT route it out — filing is a separate, explicit step. Force the home to stay 'review'.
   const home = (opts && opts.keepReview) ? { store: "review", jobId: null } : rcptTargetHome(fields);
-  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType };
+  const carry = { ts: cur.ts, uploadedBy: cur.uploadedBy, attributedTo: cur.attributedTo, reimbursedAt: cur.reimbursedAt, capRead: cur.capRead, faultMemberId: cur.faultMemberId, suggested: cur.suggested, by: cur.by, cardLast4: cur.cardLast4, isDeposit: cur.isDeposit, depositSettled: cur.depositSettled, refundOfId: cur.refundOfId, kind: cur.kind, refNo: cur.refNo, refType: cur.refType, photos: cur.photos };
   if ((cur.paidBy || null) !== (fields.paidBy || null)) carry.reimbursedAt = undefined;   // payer changed → the old reimbursement settlement no longer applies
   const sameHome = (loc.store === home.store) && (!(loc.store === "jobmat" || loc.store === "jobexp") || loc.jobId === home.jobId);
   if (sameHome) {
@@ -273,6 +278,14 @@ window.rcptEditOpen = function (store, jobId, recId) {
   }
   sugg = depSugg + sugg;
 
+  // MERGED PHOTOS strip: when a dedup merged several copies we keep every photo (js/72). Show them all so the
+  // owner can flip through and confirm against the fullest one — no detailed receipt hidden behind a blank copy.
+  const _allPhotos = (rec.photos && rec.photos.length) ? rec.photos.filter(Boolean) : (rec.receiptId ? [rec.receiptId] : []);
+  const _pu = (pid) => (typeof jsUploadUrl === "function") ? jsUploadUrl(pid) : "";
+  const photosStrip = (_allPhotos.length > 1)
+    ? `<div style="margin-top:8px"><div class="sub" style="font-weight:700;white-space:normal">📸 ${_allPhotos.length} photos merged — tap each to check them</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">${_allPhotos.map(pid => `<a href="${_pu(pid)}" target="_blank" rel="noopener"><img src="${_pu(pid)}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--soft)" onerror="this.style.display='none'"></a>`).join("")}</div></div>`
+    : "";
+
   modal("Edit receipt", `
     ${sugg}
     <div class="row" style="gap:10px;align-items:flex-start">
@@ -282,6 +295,7 @@ window.rcptEditOpen = function (store, jobId, recId) {
       <div class="sub" style="margin-top:6px;white-space:normal">Tap the photo to view it full size.</div>
       ${(!rec.receiptId && rec.csvFile) ? `<a href="${(typeof jsUploadUrl === "function") ? jsUploadUrl(rec.csvFile) : ""}" target="_blank" rel="noopener" class="sub" style="display:inline-block;margin-top:4px;color:var(--accent)">📄 View source CSV${rec.csvName ? " (" + esc(rec.csvName) + ")" : ""}</a>` : ""}</div>
     </div>
+    ${photosStrip}
     <!-- ESSENTIALS (always shown): Amount · Vendor · Job. The rest lives under "More options" (js/98 collapse). -->
     <label style="margin-top:10px">Amount ($)</label><input id="rcpt_amt" type="number" inputmode="decimal" value="${preAmount != null ? esc(preAmount) : ""}" placeholder="0.00">
     <label>Vendor / where bought</label><input id="rcpt_vendor" value="${esc(preVendor)}" placeholder="Home Depot, dump, gas…">
