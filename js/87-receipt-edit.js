@@ -311,9 +311,15 @@ window.rcptEditOpen = function (store, jobId, recId) {
     <details id="rcpt_more" open style="margin-top:12px"><summary style="cursor:pointer;padding:6px 0;color:var(--muted);font-size:14px;user-select:none">More options ▾</summary>
     <label>Date</label><input id="rcpt_date" type="date" value="${esc(preDate)}">
     <label>What was it</label><input id="rcpt_desc" value="${esc(preDesc)}" placeholder="pavers, dump fee, fuel…">
+    <!-- Receipt-level Type + Category apply only to a SINGLE-line receipt. When it's split into line items, each line
+         carries its own type ("Stored as" 🧱/🚚/🔧) and category, so these are hidden by rcptSplitRender (js/92) to
+         avoid a contradictory receipt-wide value. Kept in the DOM (seeded) so the per-line category fallback + smart
+         defaults still read them. -->
+    <div id="rcpt_typecat_wrap">
     <label>Type</label><select id="rcpt_type" onchange="rcptEditTypeChange()">${typeOpts}</select>
     <label>Category</label><select id="rcpt_cat" onchange="rcptCatChange()">${catOpts}</select>
     <div id="rcpt_vehwrap" style="display:${preCat === "fuel" ? "block" : "none"}"><label>⛽ Which vehicle <span class="sub">(gas on the business card comes off this vehicle owner's mileage)</span></label><select id="rcpt_veh">${vehOpts}</select></div>
+    </div>
     <label>Who paid?</label><select id="rcpt_paidby" onchange="rcptPaidByCouple()">${paidOpts}</select>
     <label>Card ••••<span class="sub">(last 4 — auto-matches who paid)</span></label><input id="rcpt_card4" type="text" inputmode="numeric" maxlength="4" value="${esc(preCard4)}" placeholder="1234" oninput="if(typeof cardMatchRefresh==='function')cardMatchRefresh()">
     <div id="rcpt_card_slot"></div>

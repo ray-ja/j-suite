@@ -879,6 +879,8 @@ async function main() {
   const imgRec = seedReview({ receiptId: "img9.jpg", vendor: "X", amount: 5 });
   rcptEditOpen("review", null, imgRec.id);
   ok("image receipt still shows the <img> thumbnail (not a PDF tile) + Reread", /id="rcpt_photoimg"/.test(LAST_MODAL_HTML) && /cap_rcpt_one_btn/.test(LAST_MODAL_HTML) && !/>📄</.test(LAST_MODAL_HTML));
+  // receipt-level Type + Category live in #rcpt_typecat_wrap so js/92 can hide them on a split (each line owns its own)
+  ok("Type + Category are wrapped in #rcpt_typecat_wrap (so a split hides them)", /id="rcpt_typecat_wrap"/.test(LAST_MODAL_HTML) && LAST_MODAL_HTML.indexOf('id="rcpt_typecat_wrap"') < LAST_MODAL_HTML.indexOf('id="rcpt_type"') && LAST_MODAL_HTML.indexOf('id="rcpt_type"') < LAST_MODAL_HTML.indexOf('id="rcpt_cat"'), LAST_MODAL_HTML.indexOf('rcpt_typecat_wrap'));
   STORE.receipts = STORE.receipts.filter(r => r.id !== pdfRec.id && r.id !== imgRec.id);
   global.modal = function () {};
 

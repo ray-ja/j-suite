@@ -300,6 +300,10 @@ function rcptSplitRender() {
   h += `<div id="rcpt_split_ind" class="sub" style="margin-top:8px;text-align:center;font-weight:700"></div>
     <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost grow" onclick="rcptSplitAdd()">+ Add a line</button><button class="btn acc grow" onclick="rcptSaveEditSplit()">${saveLbl}</button></div></div>`;
   slot.innerHTML = h;
+  // Receipt-level Type + Category (js/87) only make sense for a SINGLE-line receipt. Once it's split into line items,
+  // each line owns its type ("Stored as") + category, so a single receipt-wide value is contradictory — hide it.
+  const _tc = document.getElementById("rcpt_typecat_wrap");
+  if (_tc) _tc.style.display = (RCPT_SPLIT.rows.length > 1) ? "none" : "";
   rcptSplitRecalc();
 }
 
