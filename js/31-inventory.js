@@ -293,6 +293,7 @@ function rInventory(){
   var ncount=invNeedsCleaning().length;
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(INVVIEW==="master"?"on":"")+'" onclick="invSetView(\'master\')">Master list</button>'
+    +'<button class="subbtn '+(INVVIEW==="buy"?"on":"")+'" onclick="invSetView(\'buy\')">🛒 To buy'+(invToBuyCount()?' <span class="badge" style="background:#6b3fa0;color:#fff;margin-left:4px">'+invToBuyCount()+'</span>':"")+'</button>'
     +'<button class="subbtn '+(INVVIEW==="vehicles"?"on":"")+'" onclick="invSetView(\'vehicles\')">🚚 Vehicles</button>'
     +'<button class="subbtn '+(INVVIEW==="cleaning"?"on":"")+'" onclick="invSetView(\'cleaning\')">🧽 Needs cleaning'+(ncount?' <span class="badge" style="background:#b8860b;color:#fff;margin-left:4px">'+ncount+'</span>':"")+'</button>'
     +'<button class="subbtn '+(INVVIEW==="job"?"on":"")+'" onclick="invSetView(\'job\')">By job type</button>'
@@ -308,7 +309,27 @@ function rInventory(){
     return;
   }
   view.innerHTML=sub+'<div id="inv_body"></div>';
-  if(INVVIEW==="vehicles")invRenderVehicles();else if(INVVIEW==="cleaning")invRenderCleaning();else if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else invRenderMaster();
+  if(INVVIEW==="vehicles")invRenderVehicles();else if(INVVIEW==="cleaning")invRenderCleaning();else if(INVVIEW==="avail")invRenderAvail();else if(INVVIEW==="job")invRenderJob();else if(INVVIEW==="buy")invRenderBuy();else invRenderMaster();
+}
+
+/* count of don't-have, non-vehicle items = the shopping list badge */
+function invToBuyCount(){ return actInv().filter(function(i){return !i.have && (i.cat||"")!=="vehicle";}).length; }
+/* ---------- TO BUY (the shopping list) — every don't-have item; check one off → it moves to the Master list ---------- */
+function invRenderBuy(){
+  var body=document.getElementById("inv_body"); if(!body)return;
+  var all=actInv();
+  var list=all.filter(function(i){return !i.have && (i.cat||"")!=="vehicle";});
+  var q=INVSEARCH; if(q)list=list.filter(function(i){return (i.name+" "+i.brand+" "+i.section+" "+(i.tags||[]).join(" ")+" "+(i.notes||"")).toLowerCase().indexOf(q)>=0;});
+  var h='<div class="secthd"><h2>🛒 To buy</h2><span class="ct">'+list.length+'</span></div>';
+  h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">The gear we still need. Check one off when you get it and it moves to your Master list. Tap ＋ to add anything missing.</p>';
+  h+='<input class="search" placeholder="Search the buy list…" oninput="invSearchOn(this.value)" value="'+esc(INVSEARCH)+'">';
+  if(!list.length){h+='<div class="empty"><div class="big">✅</div>Nothing on the buy list'+(q?' matches "'+esc(q)+'"':' — you have everything logged')+'.</div>';body.innerHTML=h;return;}
+  var order=[],groups={};
+  list.forEach(function(i){var s=i.section||"Other";if(!groups[s]){groups[s]=[];order.push(s);}groups[s].push(i);});
+  order.forEach(function(s){var g=groups[s];
+    h+='<div class="secthd"><h2>'+esc(s)+'</h2><span class="ct">'+g.length+'</span></div><div class="card" style="padding:6px 10px">'+g.map(invMasterRow).join("")+'</div>';
+  });
+  body.innerHTML=h;
 }
 
 /* ---------- MASTER (edit Have?/Qty here, once) ---------- */
