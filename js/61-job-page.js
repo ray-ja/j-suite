@@ -405,7 +405,7 @@ function rJobPage(j) {
   _secLoad += `</div>`;
 
   // Time clock — each person clocks in with their own vehicle + odometer
-  let _secClock = `<div class="card" style="border-left:5px solid var(--accent)"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
+  let _secClock = (typeof depJobCardHTML === "function" ? depJobCardHTML(j) : "") + `<div class="card" style="border-left:5px solid var(--accent)"><div style="font-weight:800;margin-bottom:8px">⏱️ Time clock</div>`;
   const _estEach = (typeof jobEstHrsEach === "function") ? jobEstHrsEach(j) : 0, _estCrew = (typeof jobEstCrew === "function") ? jobEstCrew(j) : 1, _estCH = (typeof jobEstCrewHrs === "function") ? jobEstCrewHrs(j) : 0, _actCH = (typeof jobClockedHrs === "function") ? jobClockedHrs(j) : 0;
   if (_estCH > 0 || _actCH > 0) {
     let _cmp = "";

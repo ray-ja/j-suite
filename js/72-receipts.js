@@ -1232,16 +1232,9 @@ function rReceipts() {
   if (capReviewN) h += `<div class="card" style="border-left:4px solid ${RCPT_CAP_PURPLE};cursor:pointer" onclick="rcptSetFilter('capreview')"><b style="color:${RCPT_CAP_PURPLE}">🤖 ${capReviewN} receipt${capReviewN > 1 ? "s" : ""} Cap auto-filed — needs your review</b> — Cap was confident and filed ${capReviewN > 1 ? "these" : "this"} for you (purple <span class="badge" style="background:${RCPT_CAP_PURPLE};color:#fff">🤖 review</span> rows). Tap to jump to them, glance each is right, then tap <b>✓ Reviewed</b> (any edit also clears the mark). →</div>`;
   const suggCount = rows.filter(r => r && r.suggested && r.store === "review").length;   // same gate as the row 🤖 Cap badge: only a REVIEW-queue row is an unresolved "Cap read this, review it" to-do (a filed receipt keeps `suggested` for provenance but was already reviewed when filed)
   if (suggCount) h += `<div class="card" style="border-left:4px solid #6b3fa0"><b>🤖 ${suggCount} receipt${suggCount > 1 ? "s" : ""} Cap read</b> — 🤖 rows below. Open one — it's already filled in from the receipt; review, fix anything off, then ✓ Save &amp; file.</div>`;
-  if (typeof rcptTaxSummary === "function" && typeof rcptFinFull === "function" && rcptFinFull()) {
-    const _ts = rcptTaxSummary();
-    if (_ts.taxedN || _ts.exemptN || needTaxN) {
-      h += `<div class="card" style="border-left:4px solid ${needTaxN ? "#e0a800" : "var(--accent)"}"><b>🧾 Sales tax set aside: ${money2(_ts.taxTotal)}</b> <span class="sub">across ${_ts.taxedN} taxable receipt${_ts.taxedN === 1 ? "" : "s"}${_ts.exemptN ? ` · ${_ts.exemptN} non-taxable (SaaS/insurance)` : ""}${needTaxN ? ` · <span style="color:#e0a800">${needTaxN} not yet assessed</span>` : ""}</span>`
-        + `<div class="sub" style="white-space:normal;margin-top:4px">The sales-tax portion of each total (printed where Cap read it, else 6.75% Dare/Currituck backed out). SaaS / hosting / insurance are non-taxable in NC. New receipts auto-assess on file; additive &amp; reversible.</div>`
-        + `<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">`
-        + (needTaxN ? `<button class="btn sm" style="background:#e0a800;border-color:#e0a800;color:#fff" onclick="rcptEvalTaxAll()">🧾 Assess ${needTaxN} unassessed</button>` : "")
-        + `<button class="btn ghost sm" onclick="rcptReassessAllTax()">↻ Re-assess all</button></div></div>`;
-    }
-  }
+  // (The "Sales tax set aside" card was removed here — Ray: we don't set sales tax aside, we just record what we
+  //  paid on purchases, and it read as confusing money-management in the Receipts area. The sales-tax-paid figure
+  //  still lives quietly in Money → Tax for anyone who wants it; receipts no longer nag to "assess" it.)
   if (dupCount) h += `<div class="card" style="border-left:4px solid var(--danger);cursor:pointer" onclick="rcptDupResolveOpen()"><b>⚠ ${dupCount} possible duplicate${dupCount > 1 ? "s" : ""}</b> — same amount + a matching vendor / card / transaction #, filed more than once. <b>Tap to review them side by side</b> and delete the extras. →</div>`;
   // NOTE: the "♻️ N merged-away photos can be restored" card was a ONE-TIME recovery for pre-fix merges that dropped
   // photos. It's retired: merges now keep every photo (rcptMergeFields carries photos[] forward), so the only records
@@ -1280,7 +1273,7 @@ function rReceipts() {
     const _filedN = allRows.filter(r => r.store !== "review" && !r.paidBy).length;
     const statusOpts = [["all", "All", allRows.length], ["review", "📥 Needs review", reviewCount], ["owed", "💸 Owed", _owedN], ["paidback", "✓ Paid back", _paidN], ["filed", "🗂 Filed", _filedN]];
     if (capReviewN || RCPT_FILTER === "capreview") statusOpts.push(["capreview", "🤖 Cap to review", capReviewN]);
-    if (needTaxN || RCPT_FILTER === "needtax") statusOpts.push(["needtax", "🧾 Needs tax", needTaxN]);
+    // ("🧾 Needs tax" filter chip removed — sales-tax-paid is recorded quietly, not a receipts to-do. See Money → Tax.)
     const statusSel = `<div><label>Status</label><select onchange="rcptSetFilter(this.value)" style="width:100%;font-size:14px">${statusOpts.map(o => `<option value="${o[0]}"${RCPT_FILTER === o[0] ? " selected" : ""}>${o[1]} (${o[2]})</option>`).join("")}</select></div>`;
     const typeOrder = ["review", "business", "job-expense", "pass-through"];
     const typesPresent = typeOrder.filter(t => allRows.some(r => rcptRowMeta(r).type === t));

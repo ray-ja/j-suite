@@ -135,7 +135,7 @@ function rFinTax() {
     } else if (typeof rcptNeedsTax === "function" && rcptNeedsTax(r)) unevalN++;
   });
   let h = hTop + `<div class="card" style="border-left:5px solid var(--brand)"><div style="font-weight:800;margin-bottom:6px">🧾 Sales tax paid on purchases</div>`;
-  h += `<div class="row" style="justify-content:space-between"><span class="sub">Sales tax set aside (paid)</span><b>${m2(tax)}</b></div>`;
+  h += `<div class="row" style="justify-content:space-between"><span class="sub">Sales tax paid on purchases</span><b>${m2(tax)}</b></div>`;
   h += `<div class="row" style="justify-content:space-between"><span class="sub">Business spend (net of refunds)</span><b>${m2(net)}</b></div>`;
   h += `<div class="row" style="justify-content:space-between"><span class="sub">Non-taxable (SaaS / insurance)</span><b>${m2(exemptTotal)}</b></div>`;
   h += `<div class="sub" style="margin-top:2px">${taxedN} taxable · ${exemptN} non-taxable${unevalN ? ` · <span style="color:#e0a800">${unevalN} not yet assessed</span>` : ""}</div>`;

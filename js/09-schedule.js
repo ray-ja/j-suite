@@ -228,7 +228,7 @@ function liJob(j){
   const crew=(j.crew&&j.crew.length)?`<div style="margin-top:4px">${crewChips(j)}</div>`:"";
   const _ll=(typeof jobLatLng==="function")?jobLatLng(j):null,_drive=(_ll&&typeof driveBadge==="function")?driveBadge(_ll.lat,_ll.lng):"";
   return `<div class="li"><div class="grow" onclick="openJobPage('${j.id}')">
-    <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")}</div>
+    <div class="nm" style="${j.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(j.title||"Job")} ${(typeof depBadgeHTML==="function")?depBadgeHTML(j):""}</div>
     <div class="sub">${fmtDate(j.date)}${j.time?" · "+j.time:""}${j.customerId?" · "+esc(custName(j.customerId)):""}${_drive?" · "+_drive:""}${(typeof jobPO==="function"&&jobPO(j))?" · 🧾 "+jobPO(j):""}</div>${crew}${jobEquipLine(j)}</div>
     <input type="checkbox" style="width:22px;height:22px" ${j.done?"checked":""} onchange="toggleJob('${j.id}')"></div>`;
 }

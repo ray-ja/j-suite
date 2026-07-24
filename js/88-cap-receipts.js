@@ -215,7 +215,7 @@ window.capRcptRun = async function (opts) {
     } catch (e) {}
   }
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
-  else if (!opts.auto) { alert("🤖 Cap read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · auto-filed " + autoFiled + " for review" : "") + (skipped ? " (" + skipped + " skipped)" : "") + (capped ? " — more will read shortly" : "") + ". " + (autoFiled ? "The purple 🤖 review rows are Cap's — check them (use the “🤖 To review” filter)." : "Open a 🤖 row to review and approve its guess.")); }
+  else if (!opts.auto) { capRcptSetStatus("🤖 Read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · " + autoFiled + " filed for review" : "") + (skipped ? " · " + skipped + " skipped" : "") + "."); }   // quiet status, not a popup — receipts are handled in the Receipts area, no need to interrupt with a message
   // safeRender (js/26) — the auto sweep path runs mid-session; a bare render() here would rebuild #view under a
   // focused text field. Falls back to render() where safeRender isn't loaded (tests).
   { const _rr = (typeof safeRender === "function") ? safeRender : (typeof render === "function" ? render : null); if (_rr) _rr(); }
@@ -366,7 +366,7 @@ window.capRcptReread = async function () {
   capRcptSetStatus("");
   if (typeof render === "function") render();
   if (stop) alert(stop);
-  else alert("🔁 Reread " + done + " — " + updated + " updated" + (autoFiled ? ", " + autoFiled + " auto-filed" : "") + (skipped ? ", " + skipped + " Cap still couldn't read" : "") + ".");
+  else capRcptSetStatus("🔁 Reread " + done + " · " + updated + " updated" + (autoFiled ? " · " + autoFiled + " filed" : "") + (skipped ? " · " + skipped + " unreadable" : "") + ".");   // quiet status, not a popup
 };
 
 /* the Cap card on the Receipts page (owner/admin only). Shows whenever ANY review receipt has a photo — not

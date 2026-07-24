@@ -28,7 +28,7 @@ window.navReturn = function(host, fallback){
 // Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
 // notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
 // to the dispatch so the two can't drift.
-const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","finance","invoices","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
+const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","nextcheck","finance","invoices","receipts","data","approvals","admin","playbook","research","escape","booking","life","budget","team"];
 /* Is `t` a real, currently-accessible screen? Used to sanitize tabs that arrive from OUTSIDE the app (a ?tab=
    deep link, or the SW's {type:"navigate"} postMessage on a notification click). A notification sent on an OLD
    build can carry a tab that no longer exists — routing to it must never blank the app. Returns true only when
@@ -84,7 +84,7 @@ function render(){
   // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
-  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
   try{ _screen(); }
   catch(_e1){
     try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
@@ -145,7 +145,7 @@ const NAV_GROUPS = [
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
   { key:"invoices",  label:"Invoices",  icon:"💳", tabs:["invoices"] },   // OWN top-level menu (Ray: invoices is its own tab, not folded under Money)
-  { key:"money",     label:"Money",     icon:"💰", tabs:["finance","pay","routes"] },
+  { key:"money",     label:"Money",     icon:"💰", tabs:["nextcheck","finance","pay","routes"] },
   { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
   { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","route"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
@@ -154,7 +154,7 @@ const NAV_GROUPS = [
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, leads:{l:"Leads",i:"📞"}, quotes:{l:"Quotes",i:"🧾"}, recurring:{l:"Recurring",i:"🔁"}, jobs:{l:"Jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
   accounts:{l:"Customers",i:"👥"}, route:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
-  pay:{l:"My Pay",i:"💵"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
+  pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
   todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Routes",i:"🗺️"}
 };

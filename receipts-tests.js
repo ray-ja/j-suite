@@ -2402,6 +2402,18 @@ async function main() {
   const capQ = { id: "cap1", total: 2000, billMode: "actual", items: [{ name: "Paver", price: 1800, estMat: 300 }, { name: "Pickup", price: 200 }] };
   ok("estMat comes from item.estMat when present (labor 1700 + 500 = 2200)", RC.invGrandTotal(capQ) === 2200, RC.invGrandTotal(capQ));
 
+  /* ---- DEPOSIT GATE (js/118): a required-but-unreceived deposit blocks clock-in; received clears it ---- */
+  const j118 = fs.readFileSync(__dirname + "/js/118-deposit.js", "utf8");
+  const DEP = eval("(function(){ var _s; function D(){return _s;} function setStore(s){_s=s;} "
+    + pull(j118, "depQuoteFor") + " " + pull(j118, "depQuoteAwaiting") + " " + pull(j118, "depJobAwaiting") + " " + pull(j118, "depJobBlocksClockIn") + " "
+    + "return {setStore:setStore, depQuoteAwaiting:depQuoteAwaiting, depJobBlocksClockIn:depJobBlocksClockIn}; })()");
+  DEP.setStore({ quotes: [{ id: "q1", jobId: "j1", depositRequired: true, depositReceived: false }, { id: "q2", jobId: "j2", depositRequired: true, depositReceived: true }, { id: "q3", jobId: "j3" }], jobs: [{ id: "j1", quoteId: "q1" }, { id: "j2", quoteId: "q2" }, { id: "j3", quoteId: "q3" }] });
+  ok("deposit required + not received → awaiting", DEP.depQuoteAwaiting({ depositRequired: true, depositReceived: false }));
+  ok("deposit required + not received → clock-in BLOCKED", DEP.depJobBlocksClockIn("j1") === true);
+  ok("deposit received → clock-in allowed", DEP.depJobBlocksClockIn("j2") === false);
+  ok("no deposit required → clock-in allowed", DEP.depJobBlocksClockIn("j3") === false);
+  ok("unknown job → not blocked (no false-positive gate)", DEP.depJobBlocksClockIn("nope") === false);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

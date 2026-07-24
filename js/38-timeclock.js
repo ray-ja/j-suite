@@ -257,6 +257,7 @@ window.tcClockInWith = async function (args) {
   if (_tcInBusy) return { ok: false, error: "busy" };   // a clock-in save is already in flight
   const jobId = args.jobId;
   if (!jobId) return { ok: false, error: "no-job" };
+  if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) return { ok: false, error: "deposit-required" };   // job is waiting on the customer's deposit — no work until it's in
   // `who` override (additive): an owner/admin can clock ANOTHER person in from the live roster. Existing callers
   // pass no `who`, so this is byte-identical to tcWho() for every self clock-in.
   const who = (args.who && args.who.userId)
@@ -314,6 +315,7 @@ window.tcClockIn = async function () {
   if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
   const jobId = val("tc_job");
   if (!jobId) { alert("Pick the job you're working on."); return; }
+  if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) { alert("⏳ This job is waiting on the customer's deposit — work can't start until it's received. (An owner marks the deposit received on the job page.)"); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
   // RIDER ROLE — only the DRIVER logs a vehicle's miles (default driver if the form predates the picker).
