@@ -65,20 +65,27 @@ function invComboSelected() {
 /* the reconciled line rows for one job: its quote items, a "final price adjustment" line when the effective total
    differs from the item sum, then its pass-through materials (only when that quote opted in). */
 
-/* one clean labor line per job (its type/title at the effective/final price — no messy sub-items or adjustment
-   lines), matching the approved single-invoice layout. Effective price already folds in pickups + finalPrice. */
+/* one clean labor line per job. In FIXED mode that's the whole all-in price; in ACTUAL mode it's the reconciled
+   grand MINUS the actual materials (so the estimate-floor folds into the labor line and materials pull out into
+   the consolidated section below). Either way, labor line + this job's materials == invGrandTotal(q). */
+function invComboIsActual(q) { return (typeof invBillMode === "function") ? invBillMode(q) === "actual" : false; }
 function invComboLaborLines(sel) {
-  return sel.map(q => ({
-    label: ((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"),
-    no: (typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "",
-    amount: (typeof invEffectiveTotal === "function") ? invEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0)
-  }));
+  return sel.map(q => {
+    const gt = (typeof invGrandTotal === "function") ? invGrandTotal(q) : (+(q.finalPrice || q.total) || 0);
+    const mat = invComboIsActual(q) && typeof invActualMat === "function" ? invActualMat(q) : 0;
+    return {
+      label: ((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"),
+      no: (typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "",
+      amount: Math.round((gt - mat) * 100) / 100
+    };
+  });
 }
-/* every selected job's pass-through materials, cleaned + merged by description into ONE consolidated list. */
+/* consolidated actual materials from the ACTUAL-mode jobs only (fixed jobs already have materials inside their
+   price), cleaned + merged by description into ONE list. */
 function invComboMaterials(sel) {
   const out = [], idx = {};
   sel.forEach(q => {
-    ((q.billMaterials && typeof invMaterials === "function") ? invMaterials(q) : []).forEach(m => {
+    (invComboIsActual(q) && typeof invMaterials === "function" ? invMaterials(q) : []).forEach(m => {
       const k = String(m.desc || "").toLowerCase().trim();
       if (idx[k] != null) out[idx[k]].amount = Math.round((out[idx[k]].amount + m.amount) * 100) / 100;
       else { idx[k] = out.length; out.push({ desc: m.desc, amount: m.amount }); }

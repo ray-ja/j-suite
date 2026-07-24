@@ -1602,23 +1602,59 @@ function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.na
 function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
 function invNoOf(q) { if (q && q.invoiceNo) return q.invoiceNo; const ds = String((q && q.date) || "").replace(/-/g, ""); return "INV-" + (ds || "00000000") + "-" + String((q && q.id) || "").slice(-4).toUpperCase(); }
 function invDateOf(ds) { const m = String(ds || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[2] + "/" + m[3] + "/" + m[1].slice(2)) : String(ds || ""); }
+// MIRRORS the client invCleanMatDesc (js/46) — strip Cap/import annotation cruft off a material description.
+function srvCleanMatDesc(desc) {
+  let s = String(desc == null ? "" : desc).trim();
+  s = s.replace(/\s*[—–-]\s*PO:\s*\S+/gi, "");
+  s = s.replace(/\s*[—–-]?\s*likely for\b[^—–]*/gi, "");
+  s = s.replace(/\s*[—–-]?\s*materials to install for customer\b[^—–]*/gi, "");
+  s = s.replace(/\s*[—–-]\s*install(?:ation)? materials?\b[^—–]*/gi, "");
+  s = s.replace(/\s+installation materials?\b\s*$/gi, "");
+  s = s.replace(/\s+to install\s+(?:on job|for (?:the )?customer|for job)\b[^—–]*/gi, "");
+  s = s.replace(/\s{2,}/g, " ").replace(/\s*[—–,-]\s*$/, "").trim();
+  return s;
+}
+// materials already baked into the agreed estimate (manual override → estimator-captured → legacy item cost).
+function invEstMatOf(q) {
+  if (q && q.estMat != null) return Math.round((+q.estMat || 0) * 100) / 100;
+  const items = (q && q.items) || [];
+  if (items.some(it => it && it.estMat != null)) return Math.round(items.reduce((s, it) => s + (+it.estMat || 0), 0) * 100) / 100;
+  return Math.round(items.reduce((s, it) => s + (+it.cost || 0), 0) * 100) / 100;
+}
+// MIRRORS the client invReconcile (js/46). fixed → the estimate; actual → (labor+drive)+actual receipts, floored
+// at the estimate. Client & server MUST agree — the owner's view and the customer's hosted invoice are the same math.
+function invReconcileSrv(q, mats) {
+  const eff = invEff(q), mode = !!(q && q.billMode === "actual");
+  const actualList = (Array.isArray(mats) ? mats : []).filter(m => m && (+m.amount) > 0);
+  const actualMat = Math.round(actualList.reduce((s, m) => s + (+m.amount || 0), 0) * 100) / 100;
+  const estMat = invEstMatOf(q), laborDrive = Math.round((eff - estMat) * 100) / 100;
+  const actualTotal = Math.round((laborDrive + actualMat) * 100) / 100;
+  const grand = mode ? Math.max(eff, actualTotal) : eff;
+  return { mode: mode, eff: eff, estMat: estMat, actualMat: actualMat, actualList: actualList, laborDrive: laborDrive, actualTotal: actualTotal, grand: Math.round(grand * 100) / 100 };
+}
 function renderInvoicePage(biz, cust, q, mats) {
   const AC = "#0a7d4b", no = invNoOf(q), dateStr = invDateOf(q.invoicedDate || q.date);
   const items = invItemsOf(q), sub = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
   const eff = invEff(q), adj = Math.round((eff - sub) * 100) / 100;
-  // pass-through materials (opt-in q.billMaterials) — itemized at cost, NOT re-taxed (tax was paid at purchase)
-  const matList = (q && q.billMaterials && Array.isArray(mats)) ? mats.filter(m => m && (+m.amount) > 0) : [];
-  const matSum = Math.round(matList.reduce((s, m) => s + (+m.amount || 0), 0) * 100) / 100;
-  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((eff + matSum + tax) * 100) / 100;
+  const R = invReconcileSrv(q, mats);   // fixed → the estimate; actual → reconciled to receipts (estimate is the floor)
+  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((R.grand + tax) * 100) / 100;
   const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
-  const rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
-    : `<tr><td colspan="3" style="color:#9ca3af">No line items on this invoice.</td></tr>`)
-    + (matList.length ? `<tr><td colspan="3" style="padding-top:10px;font-weight:700">Materials (pass-through, at cost)</td></tr>` + matList.map(m => `<tr><td>${htmlEsc(m.desc || "Material")}</td><td class="c">1</td><td class="n">${invMoney(+m.amount || 0)}</td></tr>`).join("") : "");
-  const adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
-  const matRow = matList.length ? `<tr><td colspan="2" class="n">Materials</td><td class="n">${invMoney(matSum)}</td></tr>` : "";
-  const taxRows = taxable ? matRow + `<tr><td colspan="2" class="n">Sales tax (6.75%)</td><td class="n">${invMoney(tax)}</td></tr><tr><td colspan="2" class="n tot">Total due</td><td class="n tot">${invMoney(due)}</td></tr>`
-    : matRow + `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
+  let rows, adjRows;
+  if (R.mode) {
+    // ACTUAL: one labor line (= grand − actual materials, so the estimate-floor folds in) + itemized actual materials
+    const laborLine = Math.round((R.grand - R.actualMat) * 100) / 100;
+    rows = `<tr><td>Labor &amp; installation</td><td class="c">1</td><td class="n">${invMoney(laborLine)}</td></tr>`
+      + (R.actualList.length ? `<tr><td colspan="3" style="padding-top:10px;font-weight:700">Materials (at cost)</td></tr>` + R.actualList.map(m => `<tr><td>${htmlEsc(srvCleanMatDesc(m.desc) || m.desc || "Material")}</td><td class="c">1</td><td class="n">${invMoney(+m.amount || 0)}</td></tr>`).join("") : "");
+    adjRows = "";
+  } else {
+    // FIXED: the quote line items (materials already inside their prices), + subtotal/adjustment when final ≠ line sum
+    rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
+      : `<tr><td colspan="3" style="color:#9ca3af">No line items on this invoice.</td></tr>`);
+    adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
+  }
+  const taxRows = taxable ? `<tr><td colspan="2" class="n">Sales tax (6.75%)</td><td class="n">${invMoney(tax)}</td></tr><tr><td colspan="2" class="n tot">Total due</td><td class="n tot">${invMoney(due)}</td></tr>`
+    : `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
   const dueStr = invMoney(due);
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Invoice ${htmlEsc(no)} · ${htmlEsc(biz.name || "")}</title><style>
@@ -2979,9 +3015,9 @@ const server = http.createServer((req, res) => {
       if (found) { q = found; org = oid; cust = ((store[oid].customers) || []).find(c => c && c.id === q.customerId) || null; break; }
     }
     if (!q) return notFound();
-    // pass-through materials for the linked job — only when the owner opted THIS invoice in (q.billMaterials)
+    // actual materials for the linked job — only when THIS invoice reconciles to actuals (q.billMode === "actual")
     const _js = store[org] || {};
-    const _jb = q.billMaterials ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
+    const _jb = (q.billMode === "actual") ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
     const _mats = _jb ? (_js.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === _jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0) : [];
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q, _mats));

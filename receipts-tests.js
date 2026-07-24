@@ -2365,6 +2365,43 @@ async function main() {
   ok("PRESERVES real quantity spec '— 0.95 tons'", clean("#57/#67 Havre de Grace stone — 0.95 tons") === "#57/#67 Havre de Grace stone — 0.95 tons", clean("#57/#67 Havre de Grace stone — 0.95 tons"));
   ok("PRESERVES parenthetical + hyphenated product name", clean("12.0-in x 12.0-in x 2.0-in Square Gray Concrete Patio stone (QTY 15)") === "12.0-in x 12.0-in x 2.0-in Square Gray Concrete Patio stone (QTY 15)");
 
+  /* ---- BILL MODE reconciliation (js/46 client + sync-server.js): fixed vs actual, estimate-is-the-floor,
+          and the client & server MUST compute the identical total (owner view == customer's hosted invoice). ---- */
+  const srvSrc = fs.readFileSync(__dirname + "/sync-server.js", "utf8");
+  const pull = (src, name) => { const m = src.match(new RegExp("function " + name + "\\b[\\s\\S]*?\\n\\}")); if (!m) throw new Error("cannot extract " + name); return m[0]; };
+  const RC = eval("(function(){ "
+    + "function invEffectiveTotal(q){return +(q.finalPrice||q.total)||0;} "
+    + "var _am={}; function invActualMat(q){return _am[q.id]||0;} function setActual(id,v){_am[id]=v;} "
+    + pull(j46, "invEstMat") + " " + pull(j46, "invBillMode") + " " + pull(j46, "invReconcile") + " " + pull(j46, "invGrandTotal") + " "
+    + "return {invGrandTotal:invGrandTotal, invReconcile:invReconcile, setActual:setActual}; })()");
+  const RS = eval("(function(){ "
+    + "function invEff(q){return +((q&&(q.finalPrice||q.total)))||0;} "
+    + pull(srvSrc, "invEstMatOf") + " " + pull(srvSrc, "invReconcileSrv") + " "
+    + "return {invReconcileSrv:invReconcileSrv}; })()");
+  const matsOf = (amt) => amt > 0 ? [{ desc: "Materials", amount: amt }] : [];
+  const scenario = (id, mode, eff, estMat, actualMat) => {
+    const q = { id: id, total: eff, estMat: estMat, billMode: mode };
+    RC.setActual(id, actualMat);
+    return { client: RC.invGrandTotal(q), server: RS.invReconcileSrv(q, matsOf(actualMat)).grand };
+  };
+  const fx = scenario("f1", "fixed", 1378, 200, 441.22);
+  ok("FIXED mode charges the estimate, ignores receipts (no double-count)", fx.client === 1378 && fx.server === 1378, fx);
+  const ov = scenario("a1", "actual", 1000, 200, 350);      // laborDrive 800 + 350 = 1150 > 1000
+  ok("ACTUAL over-estimate: overage passes through (=$1150)", ov.client === 1150 && ov.server === 1150, ov);
+  const un = scenario("a2", "actual", 1000, 200, 100);      // laborDrive 800 + 100 = 900 < 1000 → floored
+  ok("ACTUAL under-estimate: floored to the estimate (=$1000)", un.client === 1000 && un.server === 1000, un);
+  const ex = scenario("a3", "actual", 1000, 200, 200);      // exactly the estimate
+  ok("ACTUAL at-estimate: equals the estimate (=$1000)", ex.client === 1000 && ex.server === 1000, ex);
+  // client & server agree across a sweep (the whole point — one bill of record)
+  let agree = true;
+  [["fixed", 1378, 61, 441.22], ["actual", 1378, 61, 441.22], ["actual", 2335, 425, 425.58], ["actual", 1160, 366, 191.59], ["fixed", 600, 0, 0]]
+    .forEach((s, i) => { const r = scenario("sw" + i, s[0], s[1], s[2], s[3]); if (r.client !== r.server) { agree = false; ok("client==server for " + JSON.stringify(s), false, r); } });
+  ok("client & server reconcile to the identical total across the sweep", agree);
+  // estMat capture path: an estimator item carries estMat (no manual override) → used as the baseline
+  RC.setActual("cap1", 500);
+  const capQ = { id: "cap1", total: 2000, billMode: "actual", items: [{ name: "Paver", price: 1800, estMat: 300 }, { name: "Pickup", price: 200 }] };
+  ok("estMat comes from item.estMat when present (labor 1700 + 500 = 2200)", RC.invGrandTotal(capQ) === 2200, RC.invGrandTotal(capQ));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

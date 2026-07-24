@@ -115,7 +115,7 @@ function pvItem(c){
   const notes = ["Full premium build — base + bedding + polymeric joints + edging + "+(c.spoilTip>0?"excavate & haul off the spoil":"excavate (customer keeps the dirt — no haul-off)")+".",
     "Labor (the install): $"+c.laborSqft+"/sq ft · "+c.crew+"-person crew.",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")];
-  return { serviceId:"", name:"Paver patio / pad install (full premium build)", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"paver",
+  return { serviceId:"", name:"Paver patio / pad install (full premium build)", unit:"job", price:c.price, qty:1, cost:c.cost, estMat:Math.round((c.materials||0)*100)/100, notes:notes, bandKey:"paver",
     breakdown:[ (WZ.pv.L)+"×"+(WZ.pv.W)+" = "+Math.round(c.area)+" sq ft · labor $"+c.laborSqft+"/sq ft + materials at cost" ] };
 }
 function pvPickupItem(pk){

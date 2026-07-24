@@ -163,7 +163,7 @@ function fdItem(c){
     "Labor (the install): $"+c.lft+"/linear ft · "+c.crew+"-person crew"+(c.complexity>1?" · ×"+c.complexity+" (ground/access)":"")+".",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")+" ~"+(Math.round(c.rockTon*10)/10)+" ton #57 ("+(Math.round(c.rockCY*100)/100)+" cy)."
   ];
-  return { serviceId:"", name:"French drain — trench install", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"frenchdrain",
+  return { serviceId:"", name:"French drain — trench install", unit:"job", price:c.price, qty:1, cost:c.cost, estMat:Math.round((c.materials||0)*100)/100, notes:notes, bandKey:"frenchdrain",
     breakdown:[ c.run+" ft × "+fd.width+"″×"+fd.depth+"″ ("+fd.cap+"″ cap) · ~"+(Math.round(c.rockTon*10)/10)+" t #57 · $"+c.lft+"/ft" ] };
 }
 function fdPickupItem(pk){

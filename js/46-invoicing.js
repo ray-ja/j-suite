@@ -23,11 +23,15 @@ function invRowsHTML(q) {
    match (a set-final-price job would show the old number, then sit "awaiting payment" forever). When the final price
    differs from the line-item subtotal, show a Subtotal + Adjustment pair so the document still reconciles. */
 function invEffectiveTotal(q) { return (typeof quoteEffectiveTotal === "function") ? quoteEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0); }
-/* ---------- PASS-THROUGH MATERIALS on the invoice (opt-in per quote: q.billMaterials) --------------------
-   Paver / French-drain jobs bill materials through at cost; junk/flat-rate jobs do NOT — so this is OFF by
-   default (every existing invoice is byte-identical unless the owner flips it on). When on, the job's
-   jobMaterials become itemized "Materials" lines (billed at cost — tax was already paid at purchase, so they
-   are NOT re-taxed) and their sum is added to the amount due (and thus the Stripe pay link). */
+/* ---------- BILL MODE: fixed estimate  vs  reconcile-to-actual (q.billMode) --------------------------------
+   Our estimators (paver/drain/stepping-stone) already BUILD materials INTO the quote price (labor + est.
+   materials + drive), so an invoice must NEVER add materials on top — that double-counts. Instead every job
+   invoices one of two ways, flipped at invoice time:
+     • "fixed"  (default) — charge the agreed all-in estimate. Materials already inside; not itemized.
+     • "actual"          — reconcile to receipts: charge (labor+drive) + ACTUAL materials, but the estimate is
+                           the FLOOR — overages pass through, savings you keep. Shows the breakdown.
+   To reconcile without double-counting we need the materials already IN the estimate (estMat): captured by the
+   estimator on the item (item.estMat), overridable per-invoice (q.estMat), else the stored line-item cost. */
 /* Strip Cap/import annotation cruft from a material description so notes never land on a customer invoice —
    "likely for…", "materials to install for customer", "PO: MIKE", "installation material", "to install on job".
    Preserves the real product name + quantity specs ("0.95 tons", "x6", "(QTY 15)"). Display-only. */
@@ -42,27 +46,71 @@ function invCleanMatDesc(desc) {
   s = s.replace(/\s{2,}/g, " ").replace(/\s*[—–,-]\s*$/, "").trim();            // tidy trailing punctuation
   return s;
 }
+function invBillMode(q) { return (q && q.billMode === "actual") ? "actual" : "fixed"; }
+/* ACTUAL material receipts filed to this quote's job (cleaned). Independent of bill mode. */
 function invMaterials(q) {
-  if (!q || !q.billMaterials) return [];
+  if (!q) return [];
   const j = (typeof invJobFor === "function") ? invJobFor(q) : null; if (!j) return [];
   return ((D().jobMaterials) || []).filter(m => m && !m.deleted && m.jobId === j.id)
     .map(m => { const raw = m.desc || m.vendor || "Material"; return { desc: invCleanMatDesc(raw) || raw, amount: Math.round((+m.amount || 0) * 100) / 100 }; })
     .filter(m => m.amount > 0);
 }
-function invMaterialsTotal(q) { return Math.round(invMaterials(q).reduce((s, m) => s + m.amount, 0) * 100) / 100; }
-function invGrandTotal(q) { return Math.round((invEffectiveTotal(q) + invMaterialsTotal(q)) * 100) / 100; }
-function invMaterialsRowsHTML(q) {
-  const mats = invMaterials(q); if (!mats.length) return "";
-  return `<tr><td colspan="3" style="padding:10px 0 2px;font-weight:700">Materials (pass-through, at cost)</td></tr>`
-    + mats.map(m => `<tr><td style="padding-left:12px">${esc(m.desc)}</td><td style="text-align:center">1</td><td style="text-align:right">${money2(m.amount)}</td></tr>`).join("");
+function invActualMat(q) { return Math.round(invMaterials(q).reduce((s, m) => s + m.amount, 0) * 100) / 100; }
+/* materials already baked into the agreed estimate (see header). Manual per-invoice override wins. */
+function invEstMat(q) {
+  if (q && q.estMat != null) return Math.round((+q.estMat || 0) * 100) / 100;
+  const items = (q && q.items) || [];
+  if (items.some(it => it && it.estMat != null)) return Math.round(items.reduce((s, it) => s + (+it.estMat || 0), 0) * 100) / 100;
+  return Math.round(items.reduce((s, it) => s + (+it.cost || 0), 0) * 100) / 100;
 }
-function invMaterialsTotRow(q) { const mt = invMaterialsTotal(q); return mt > 0 ? `<tr><td colspan="2" style="text-align:right">Materials</td><td style="text-align:right">${money2(mt)}</td></tr>` : ""; }
-window.invToggleMaterials = function (quoteId) {
+/* Reconciliation, estimate-is-the-floor. billed = max(estimate, (labor+drive) + actual materials). */
+function invReconcile(q) {
+  const est = invEffectiveTotal(q), estMat = invEstMat(q);
+  const laborDrive = Math.round((est - estMat) * 100) / 100;
+  const actualMat = invActualMat(q);
+  const actualTotal = Math.round((laborDrive + actualMat) * 100) / 100;
+  const billed = Math.round(Math.max(est, actualTotal) * 100) / 100;
+  return { est: est, estMat: estMat, laborDrive: laborDrive, actualMat: actualMat, actualTotal: actualTotal, billed: billed, overage: Math.round((billed - est) * 100) / 100 };
+}
+/* the invoiced service total — fixed = the estimate; actual = the reconciled (floored) amount. Never adds on top. */
+function invGrandTotal(q) { return (invBillMode(q) === "actual") ? invReconcile(q).billed : invEffectiveTotal(q); }
+/* line rows: fixed shows the quote items; actual shows one labor line (= grand − actual materials, so the floor
+   folds in) + the itemized actual materials. */
+function invLineRowsHTML(q) {
+  if (invBillMode(q) !== "actual") return invRowsHTML(q);
+  const mats = invMaterials(q), labor = Math.round((invGrandTotal(q) - invActualMat(q)) * 100) / 100;
+  let h = `<tr><td>Labor &amp; installation</td><td style="text-align:center">1</td><td style="text-align:right">${money2(labor)}</td></tr>`;
+  if (mats.length) h += `<tr><td colspan="3" style="padding:10px 0 2px;font-weight:700">Materials (actual, at cost)</td></tr>`
+    + mats.map(m => `<tr><td style="padding-left:12px">${esc(m.desc)}</td><td style="text-align:center">1</td><td style="text-align:right">${money2(m.amount)}</td></tr>`).join("");
+  return h;
+}
+window.invToggleBillMode = function (quoteId) {
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
-  q.billMaterials = !q.billMaterials; if (typeof touch === "function") touch(q); if (typeof save === "function") save();
-  if (q.billMaterials && q.paymentLink) alert("Materials added — the amount changed, so regenerate the pay link before sending.");
+  q.billMode = (q.billMode === "actual") ? "fixed" : "actual";
+  if (typeof touch === "function") touch(q); if (typeof save === "function") save();
+  if (q.paymentLink) alert("The amount may have changed — regenerate the pay link before sending.");
   if (typeof openInvoice === "function") { closeModal(); openInvoice(quoteId); } else if (typeof render === "function") render();
 };
+window.invSetEstMat = function (quoteId, val) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  const n = parseFloat(val); q.estMat = isNaN(n) ? 0 : Math.round(n * 100) / 100;
+  if (typeof touch === "function") touch(q); if (typeof save === "function") save();
+  if (typeof openInvoice === "function") { closeModal(); openInvoice(quoteId); }
+};
+/* the fixed / actual lever + (in actual mode) the reconciliation breakdown with an editable estimate-materials figure */
+function invModeControl(q) {
+  if (typeof finCanView === "function" && !finCanView()) return "";
+  if (invBillMode(q) !== "actual") {
+    return `<div class="card" style="margin-top:8px;padding:10px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>📋 Fixed price</b><div class="sub" style="white-space:normal">Charging the agreed estimate. Materials already included.</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="invToggleBillMode('${q.id}')">Reconcile to actual →</button></div></div>`;
+  }
+  const r = invReconcile(q), over = r.actualTotal > r.est + 0.005;
+  return `<div class="card" style="margin-top:8px;padding:10px;border-left:4px solid var(--accent)">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>🧾 Reconciled to actual</b><div class="sub" style="white-space:normal">Estimate is the floor — overages pass through.</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="invToggleBillMode('${q.id}')">← Back to fixed</button></div>
+    <div class="sub" style="display:flex;justify-content:space-between;margin-top:8px"><span>Agreed estimate</span><span>${money2(r.est)}</span></div>
+    <div class="sub" style="display:flex;justify-content:space-between;align-items:center"><span>Materials already in the estimate</span><span>$<input type="number" step="0.01" value="${r.estMat}" style="width:78px;text-align:right" onchange="invSetEstMat('${q.id}',this.value)"></span></div>
+    <div class="sub" style="display:flex;justify-content:space-between"><span>Actual receipts</span><span>${money2(r.actualMat)}</span></div>
+    <div class="row" style="justify-content:space-between;font-weight:700;margin-top:4px;color:${over ? "var(--danger)" : "var(--accent)"}"><span>${over ? "Overage billed" : "Under estimate — billing the floor"}</span><span>${over ? "+" + money2(r.actualMat - r.estMat) : "—"}</span></div></div>`;
+}
 function invAdjRows(q) {
   const sub = invItems(q).reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0);
   const adj = Math.round((invEffectiveTotal(q) - sub) * 100) / 100;
@@ -201,10 +249,10 @@ window.openInvoice = function (quoteId) {
       <div style="margin-top:10px"><div class="sub" style="font-weight:700">Bill to</div>${billTo.map(l => `<div class="sub">${esc(l)}</div>`).join("")}</div>
       <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:14px">
         <thead><tr><th style="text-align:left">Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${invRowsHTML(q)}${invMaterialsRowsHTML(q)}</tbody>
-        <tfoot>${invAdjRows(q)}${invMaterialsTotRow(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
+        <tbody>${invLineRowsHTML(q)}</tbody>
+        <tfoot>${invBillMode(q) === "actual" ? "" : invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
-      ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" style="margin-top:8px;white-space:normal" onclick="invToggleMaterials('${q.id}')">${q.billMaterials ? "✓ Billing pass-through materials (" + money2(invMaterialsTotal(q)) + ") — tap to remove" : "＋ Bill pass-through materials at cost (paver / drain jobs)"}</button>` : ""}
+      ${invModeControl(q)}
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
       ${q.paymentLink
         ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money2(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
@@ -318,8 +366,8 @@ window.invPrint = function (quoteId) {
         <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${amountDue}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}</div>
       </div>
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
-      <tbody>${invRowsHTML(q)}${invMaterialsRowsHTML(q)}</tbody>
-      <tfoot>${invAdjRows(q)}${invMaterialsTotRow(q)}<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q, true)}</tfoot></table>
+      <tbody>${invLineRowsHTML(q)}</tbody>
+      <tfoot>${invBillMode(q) === "actual" ? "" : invAdjRows(q)}<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q, true)}</tfoot></table>
       ${q.paymentLink && !q.paid ? `<a class="pay" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${amountDue}</a><div class="payurl">${esc(q.paymentLink)}</div>` : ""}
       ${!q.paid && invCashNote(q) ? `<div class="cash">${invCashNote(q)}</div>` : ""}
       <div class="foot">Thank you for your business! &nbsp;·&nbsp; ${esc(biz.name || "")}${biz.phone ? " &nbsp;·&nbsp; " + esc(biz.phone) : ""}</div>

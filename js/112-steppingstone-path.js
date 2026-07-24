@@ -188,7 +188,7 @@ function spItem(c){
     "Labor (the install): $"+c.lft+"/linear ft · "+c.crew+"-person crew"+(c.complexity>1?" · ×"+c.complexity+" (curves/access)":"")+".",
     "Materials at COST, no markup — we provide: "+(ours.length?ours.join(", "):"none")+(theirs.length?("; customer provides: "+theirs.join(", ")):".")+" ~"+g.stoneCount+" stones · ~"+(Math.round(g.marbleTon*100)/100)+" ton marble · ~"+(Math.round(g.baseTon*100)/100)+" ton base · ~"+Math.round(g.fabricSqft)+" sq ft fabric."
   ];
-  return { serviceId:"", name:"Stepping-stone path — install", unit:"job", price:c.price, qty:1, cost:c.cost, notes:notes, bandKey:"steppath",
+  return { serviceId:"", name:"Stepping-stone path — install", unit:"job", price:c.price, qty:1, cost:c.cost, estMat:Math.round((c.materials||0)*100)/100, notes:notes, bandKey:"steppath",
     breakdown:[ c.run+" ft × "+sp.widthFt+" ft · "+sp.stoneL+"×"+sp.stoneW+"″ stones ("+g.stoneCount+") · "+sp.gap+"″ gap · "+sp.borderW+"″ border · $"+c.lft+"/ft" ] };
 }
 function spPickupItem(pk){
