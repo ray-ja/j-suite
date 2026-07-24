@@ -111,10 +111,10 @@ function pvCalc(){
   const price = laborPrice + materials + driveCharge;
   const cost = materials + driveMileage;
   const profit = price - cost, allInSqft = area>0 ? Math.round(price/area) : 0;
-  // min/sq ft to lay — RECALIBRATED 2026-07 to actual OBX hand-method time (was 6/5/4.5, ~2× too optimistic per the
-  // Mike Green post-mortem: root-laced soil + perfectionist hand digging runs ~2× the book rate). Drives est HOURS +
-  // the $/hr margin warning, NOT the customer price (that's the $/sq-ft slider).
-  const mpu = area<150 ? 12 : area<300 ? 10 : 9;
+  // min/sq ft to lay — COMMON-SENSE hand-method estimate (NOT from clock data — Ray's clock is broken/worthless).
+  // Pavers were genuinely slow BY HAND (dig base + set + joint in root-laced soil), so higher than the old 6/5/4.5;
+  // a mini skid steer for the digging cuts this hard. Drives est HOURS + the $/hr warning, NOT the customer price.
+  const mpu = area<150 ? 10 : area<300 ? 9 : 8;
   const workMin = Math.round(area*mpu*cplx) + 120;   // harder shapes take longer to lay; mobilization is fixed
   const crew = Math.max(1, pv.crew || 2), totalPH = (workMin/60) + crew*(dr.min/60) + crew*(20/60), hours = crew>0?totalPH/crew:totalPH;
   const fieldPool = Math.max(0, profit)*0.48, perHr = hours>0 ? fieldPool/crew/hours : 0;

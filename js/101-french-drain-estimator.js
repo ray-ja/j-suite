@@ -22,9 +22,10 @@ const FDRAIN_SETTLE     = 0.10;    // +10% stone for settling/compaction (toggle
 const FDRAIN_LABOR_DEF  = 12;      // $/linear ft install labor (dig + lay + backfill)
 const FDRAIN_LABOR_MIN  = 6, FDRAIN_LABOR_MAX = 30;
 const FDRAIN_LABOR_BAND = { lo: 9, hi: 18 };
-const FDRAIN_MIN_PER_FT = 20;      // RECALIBRATED 2026-07 (was 4): the Mike Green drain took 7 site days by hand — real
-                                   // hand-trenching in root-laced OBX soil is ~15-30 min/ft. Drives est HOURS + the
-                                   // $/hr warning (NOT the price). Add a trencher/mini-skid → drop this back toward 4-6.
+const FDRAIN_MIN_PER_FT = 6;       // COMMON-SENSE hand-trench estimate (NOT from clock data — that's broken/worthless).
+                                   // Ray: the drain was actually quick & easy; a hand French-drain trench in sandy OBX
+                                   // soil runs ~5-8 min/ft. A trencher/mini-skid makes it faster still. Drives est
+                                   // HOURS + the $/hr warning, never the price.
 
 /* Materials — each priced off a GEOMETRY basis (a field on fdGeo): rockTon, fabricSF, pipeFt, capTon.
    lbs = pounds PER basis unit (rockTon×2000 = the real weight). def = who provides by default. */
