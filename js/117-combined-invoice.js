@@ -76,7 +76,7 @@ function invComboSections(sel) {
     return {
       label: ((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"),
       no: (typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "",
-      labor: Math.round((subtotal - matTotal) * 100) / 100, mats: mats, subtotal: subtotal
+      labor: Math.round((subtotal - matTotal) * 100) / 100, matTotal: matTotal, subtotal: subtotal
     };
   });
 }
@@ -90,12 +90,11 @@ window.invComboPrint = function () {
   const AC = "#0a7d4b";
   const secs = invComboSections(sel);
   const grand = Math.round(secs.reduce((s, x) => s + x.subtotal, 0) * 100) / 100;
-  const anyMats = secs.some(x => x.mats.length);
+  const anyMats = secs.some(x => x.matTotal > 0);
   const covers = secs.map(x => x.no).filter(Boolean);
   const sections = secs.map(x => {
     let body = `<tr><td>Labor &amp; installation</td><td class="r">${money2(x.labor)}</td></tr>`;
-    if (x.mats.length) body += `<tr class="mh"><td colspan="2">Materials (at cost)</td></tr>`
-      + x.mats.map(m => `<tr><td class="ind">${esc(m.desc)}</td><td class="r">${money2(m.amount)}</td></tr>`).join("");
+    if (x.matTotal > 0) body += `<tr><td>Materials (at cost)</td><td class="r">${money2(x.matTotal)}</td></tr>`;
     return `<div class="sec"><div class="sech"><span>${esc(x.label)}</span>${x.no ? `<span class="no">${esc(x.no)}</span>` : ""}</div>`
       + `<table class="lt"><tbody>${body}</tbody><tfoot><tr class="st"><td>Subtotal</td><td class="r">${money2(x.subtotal)}</td></tr></tfoot></table></div>`;
   }).join("");
@@ -141,7 +140,7 @@ window.invComboCopy = function () {
   secs.forEach(x => {
     lines.push((x.label + (x.no ? "  [" + x.no + "]" : "")).toUpperCase());
     lines.push("  Labor & installation — " + money2(x.labor));
-    if (x.mats.length) { lines.push("  Materials (at cost):"); x.mats.forEach(m => lines.push("    " + m.desc + " — " + money2(m.amount))); }
+    if (x.matTotal > 0) lines.push("  Materials (at cost) — " + money2(x.matTotal));
     lines.push("  Subtotal: " + money2(x.subtotal), "");
   });
   lines.push("TOTAL DUE: " + money2(grand), "Due on receipt");
