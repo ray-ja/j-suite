@@ -2423,6 +2423,8 @@ async function main() {
   ok("all work days in the past → NOT open (finished one-off patio)", OPEN.jobIsOpenNow({ date: "2026-07-14", workDays: ["2026-07-14", "2026-07-23"] }) === false);
   ok("done → not open even if a future day is listed", OPEN.jobIsOpenNow({ done: true, workDays: ["2026-08-01"] }) === false);
   ok("deleted → not open", OPEN.jobIsOpenNow({ deleted: true, workDays: ["2026-08-01"] }) === false);
+  ok("nested pickup sub-job (stopKind) → NOT open even if upcoming (worked via parent)", OPEN.jobIsOpenNow({ stopKind: "pickup", parentJobId: "p", sharedJobIds: ["p"], workDays: ["2026-07-27"] }) === false);
+  ok("its real parent job (same date) → open", OPEN.jobIsOpenNow({ workDays: ["2026-07-27"] }) === true);
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);

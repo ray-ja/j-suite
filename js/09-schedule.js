@@ -17,6 +17,9 @@ function jobOnDay(j,ds){return jobWorkDays(j).indexOf(ds)>=0;}
    NOT open even if nobody remembered to tick "done". */
 function jobIsOpenNow(j){
   if(!j||j.done||j.deleted)return false;
+  // A nested STOP / sub-job (a materials pickup, a dump run) is never its OWN clock-in / nest target — you work its
+  // PARENT job and the stop's miles/time roll up. It's excluded from every job LIST, so exclude it here too.
+  if(j.stopKind||j.parentJobId||(Array.isArray(j.sharedJobIds)&&j.sharedJobIds.length))return false;
   const t=(typeof today==="function")?today():"";
   const wd=(typeof jobWorkDays==="function")?jobWorkDays(j):(j.date?[j.date]:[]);
   if(wd.some(d=>d>=t))return true;
