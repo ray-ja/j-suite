@@ -380,10 +380,19 @@ function invRenderVehicles(){
   if(!invVeh.length)h+='<div class="empty" style="margin:0 4px">No inventory vehicles yet. Tap ＋ above to add yours (plate, personal/company, clock-in).</div>';
   else h+='<div class="card" style="padding:6px 10px">'+invVeh.map(invVehicleRow).join("")+'</div>';
 
-  h+='<div class="secthd"><h2>Company trucks &amp; trailers</h2><span class="ct">'+reg.length+'</span>'
+  // owner-tagged registry trucks (Rj's F-150) are personal — show them as the owner's, NOT under company
+  var regOwned=reg.filter(function(v){return v.ownerId;});
+  var regCompany=reg.filter(function(v){return !v.ownerId;});
+  if(regOwned.length){
+    h+='<div class="secthd"><h2>Crew-owned trucks</h2><span class="ct">'+regOwned.length+'</span>'
+      +(canAdmin?'<button class="btn ghost sm" style="margin-left:8px" onclick="navSub(\'admin\')">Manage in Admin ›</button>':'')+'</div>';
+    h+='<p class="muted" style="margin:0 4px 6px;font-size:12.5px">A crew member’s own truck used for company work — mileage credits them. Owner/plate managed in Admin.</p>';
+    h+='<div class="card" style="padding:6px 10px">'+regOwned.map(invRegTruckRow).join("")+'</div>';
+  }
+  h+='<div class="secthd"><h2>Company trucks &amp; trailers</h2><span class="ct">'+regCompany.length+'</span>'
     +(canAdmin?'<button class="btn ghost sm" style="margin-left:8px" onclick="navSub(\'admin\')">Manage in Admin ›</button>':'')+'</div>';
-  if(!reg.length)h+='<div class="empty" style="margin:0 4px">No company trucks yet.'+(canAdmin?' Add them in Admin.':'')+'</div>';
-  else h+='<div class="card" style="padding:6px 10px">'+reg.map(invRegTruckRow).join("")+'</div>';
+  if(!regCompany.length)h+='<div class="empty" style="margin:0 4px">No company-owned trucks or trailers yet.'+(canAdmin?' Add them in Admin.':'')+'</div>';
+  else h+='<div class="card" style="padding:6px 10px">'+regCompany.map(invRegTruckRow).join("")+'</div>';
   h+='<p class="muted" style="margin:8px 4px;font-size:12.5px">Company trucks are managed by the owner/admin in <b>Admin</b> — shown here read-only so every vehicle + its plate is visible in one place.</p>';
   body.innerHTML=h;
 }
@@ -408,9 +417,12 @@ function invRegTruckRow(v){
   var meta=[];
   if(v.plate)meta.push('🔖 '+esc(v.plate));
   meta.push(isTrailer?"trailer · no odometer":"truck");
+  // an owner-tagged truck (e.g. Rj's F-150) is that person's vehicle used for company work — badge it as theirs,
+  // NOT "Company" (mileage credits the owner). Only an UNOWNED registry truck is truly company-owned.
+  var _own=v.ownerId&&(typeof userName==="function")?userName(v.ownerId):"";
   return '<div class="li" style="align-items:flex-start">'
     +'<div class="grow"><div class="nm">'+(isTrailer?"🚛 ":"🚚 ")+esc(v.name||(isTrailer?"Trailer":"Truck"))
-      +'<span class="badge" style="background:#1b7f4d;color:#fff;margin-left:6px">Company</span>'
+      +(_own?'<span class="badge" style="background:#5d4037;color:#fff;margin-left:6px">'+esc(_own)+"’s</span>":'<span class="badge" style="background:#1b7f4d;color:#fff;margin-left:6px">Company</span>')
       +(v.active===false?'<span class="badge" style="background:var(--soft);color:var(--muted);margin-left:4px">retired</span>':"")+'</div>'
     +'<div class="sub" style="white-space:normal">'+meta.join(" · ")+'</div></div>'
     +'<div class="sub" style="flex:0 0 auto;color:var(--muted)">read-only</div></div>';
