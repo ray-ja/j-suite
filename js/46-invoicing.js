@@ -356,6 +356,8 @@ function rInvoices() {
   if (!awaiting.length) h += `<div class="card"><div class="muted">Nothing outstanding. 🎉</div></div>`;
   else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); return row(q, `<b style="color:var(--danger)">${amt(q)}</b><div class="sub">${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
 
+  if (typeof invComboCustomers === "function" && invComboCustomers().length) h += `<div class="card" style="border-left:4px solid #6b3fa0"><button class="btn" style="width:100%;background:#6b3fa0;border-color:#6b3fa0;color:#fff" onclick="invComboOpen()">🧾 Combine into one invoice</button><div class="sub" style="margin-top:6px;white-space:normal">Several open jobs for the same customer → one invoice to hand them (e.g. to send as a single Square invoice). Each job stays its own record for payments &amp; payout.</div></div>`;
+
   if (paid.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">✓ Paid</h2><span class="ct">${paid.length}</span></div><div class="card">` + paid.map(q => row(q, `<b style="color:var(--accent)">${amt(q)}</b><div class="sub">${q.paidDate ? "paid " + fmtDate(q.paidDate) : "paid"}</div>`)).join("") + `</div>`;
 
   view.innerHTML = h;   // top-level screen renderer sets #view itself (render() only calls it)
