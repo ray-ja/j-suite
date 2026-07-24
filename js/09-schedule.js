@@ -572,20 +572,10 @@ window.acceptQuoteToJob=function(quoteId){
   touch(job);
   q.accepted=true;q.jobId=job.id;q.acceptedDate=date;touch(q);
   if(typeof WZ!=="undefined"&&WZ&&WZ.id===q.id){WZ.accepted=true;WZ.jobId=job.id;WZ.acceptedDate=date;}
-  // auto-create / update a "Materials pickup" SUB-JOB from the pickup line — assignable to a different person,
-  // its own crew → its own pay pool (income splits per job); its cost rolls up into the patio's P&L (subJobsOf).
-  const pickLine=(q.items||[]).find(it=>it&&it._pickup);
-  if(pickLine){
-    let sub=q.pickupJobId?d.jobs.find(j=>j.id===q.pickupJobId):null;const isNewSub=!sub;
-    if(!sub){sub={id:uid(),done:false,crew:[]};d.jobs.push(sub);}
-    sub.title=pickLine.name||"Materials pickup";sub.parentJobId=job.id;sub.sharedJobIds=[job.id];sub.stopKind="pickup";
-    sub.customerId=q.customerId||sub.customerId||"";sub.propertyId=q.propertyId||sub.propertyId||"";
-    sub.address=q.address||sub.address||"";sub.date=date;sub.time=time;sub.quoteId=q.id;sub.pickupRun=true;
-    sub.estHours=+pickLine.estHours||0;sub.estCrew=Math.max(1,+pickLine.estCrew||2);
-    if(typeof jobEnsurePO==="function")jobEnsurePO(sub);
-    touch(sub);q.pickupJobId=sub.id;
-    if(typeof logChange==="function")logChange(isNewSub?"create":"update","job",sub.id,(isNewSub?"Pickup sub-job created — ":"Pickup sub-job updated — ")+(sub.title||"pickup")+" · assign who's hauling");
-  }
+  // A materials pickup is NO LONGER its own job — it stays a cost/revenue LINE on this job (the `_pickup` quote
+  // item, kept in q.items), never a separate schedule/clock-in entry. The crew log the pickup's receipt & miles on
+  // THIS job like any other cost. (The quote total — and thus this job's price/P&L — is byte-identical either way;
+  // the parent's cost was always from actual logged records, never the pickup sub-job.) [Ray: kill pickup-as-a-job.]
   const c=q.customerId?d.customers.find(x=>x.id===q.customerId):null;
   if(c&&c.status!=="Won"&&c.status!=="Lost"){c.status="Won";touch(c);}
   if(typeof logChange==="function"){

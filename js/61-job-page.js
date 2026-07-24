@@ -1219,7 +1219,7 @@ window.jobOpenSplitPicker = function (jobId, kind) {
   modal("🔀 Split across other jobs / mark as generic", `
     <p class="muted" style="margin-bottom:8px">For a dump run, a shared materials pickup, or any cost that isn't just this job — pick every job it applies to (or none, for a general business cost). The amount splits evenly across whatever's checked.</p>
     <label style="margin-top:0">Category</label>
-    <select id="split_cat"><option value="dump">🚛 Dump run</option><option value="pickup">📦 Materials pickup</option><option value="other" selected>🔀 Other</option></select>
+    <select id="split_cat"><option value="dump">🚛 Dump run</option><option value="other" selected>🔀 Other</option></select>
     <label>Which job(s)? <span class="sub">(search ALL active jobs — leave none checked for a generic/overhead cost)</span></label>
     <input id="split_search" placeholder="Search jobs by title or customer…" autocomplete="off" oninput="splitRenderJobs()">
     <div id="split_joblist" style="max-height:240px;overflow:auto;margin-top:4px"></div>
