@@ -22,7 +22,9 @@ const FDRAIN_SETTLE     = 0.10;    // +10% stone for settling/compaction (toggle
 const FDRAIN_LABOR_DEF  = 12;      // $/linear ft install labor (dig + lay + backfill)
 const FDRAIN_LABOR_MIN  = 6, FDRAIN_LABOR_MAX = 30;
 const FDRAIN_LABOR_BAND = { lo: 9, hi: 18 };
-const FDRAIN_MIN_PER_FT = 4;       // labor-time model: ~4 min of crew work per linear ft (× complexity) + mobilization
+const FDRAIN_MIN_PER_FT = 20;      // RECALIBRATED 2026-07 (was 4): the Mike Green drain took 7 site days by hand — real
+                                   // hand-trenching in root-laced OBX soil is ~15-30 min/ft. Drives est HOURS + the
+                                   // $/hr warning (NOT the price). Add a trencher/mini-skid → drop this back toward 4-6.
 
 /* Materials — each priced off a GEOMETRY basis (a field on fdGeo): rockTon, fabricSF, pipeFt, capTon.
    lbs = pounds PER basis unit (rockTon×2000 = the real weight). def = who provides by default. */
@@ -221,7 +223,7 @@ function fdPickupInfoHTML(pk){
   const warn = (pk.suspect && !pk.manual) ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The geocoder put the supplier <b>${pk.legBP} mi</b> away — that's wrong. Type the real miles below.</div>` : "";
   const override = `<div class="row" style="gap:6px;align-items:center;margin-top:5px"><div class="grow sub">${pk.manual?'✓ <b>Using your miles</b>':'Drive off? Set the run miles'} <span style="opacity:.7">(base→supplier→site)</span>:</div><input type="number" inputmode="decimal" value="${pk.manual?pk.miles:''}" placeholder="auto ${pk.miles}" style="width:72px;padding:3px 6px;font-size:13px" onchange="wizFdPickMiles(this.value)"><span class="sub">mi</span></div>`;
   const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the yard <b>deliver</b> usually beats self-haul once it's 2+ trips.</div>` : "";
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${fdCrewBtns(pk.crew,"wizFdPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${(typeof PAVER_PICKUP_RATE_MIN!=="undefined"?PAVER_PICKUP_RATE_MIN:20)}" max="${(typeof PAVER_PICKUP_RATE_MAX!=="undefined"?PAVER_PICKUP_RATE_MAX:45)}" step="1" value="${pk.rate}" oninput="wizFdPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px">${tip}`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${fdCrewBtns(pk.crew,"wizFdPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr${typeof haulCapNote==="function"?haulCapNote(pk.weight,pk.trips):""}<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${(typeof PAVER_PICKUP_RATE_MIN!=="undefined"?PAVER_PICKUP_RATE_MIN:20)}" max="${(typeof PAVER_PICKUP_RATE_MAX!=="undefined"?PAVER_PICKUP_RATE_MAX:45)}" step="1" value="${pk.rate}" oninput="wizFdPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px">${tip}`;
 }
 
 function fdBreakHTML(c, pk){

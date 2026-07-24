@@ -27,6 +27,15 @@ const PAVER_LOAD_CAP      = 4000;
 const PAVER_HANDLE_PH_TON = 1.3;
 const PAVER_PICKUP_DEF_MI = 20;
 const PAVER_PICKUP_RATE_DEF = 30, PAVER_PICKUP_RATE_MIN = 20, PAVER_PICKUP_RATE_MAX = 45;
+/* TRAILER CAPACITY GUARDRAIL (2026-07 positioning) — the U-Dump hauls ~3,600 lb cargo/load; we do NOT do dirt/sand/
+   rock until a dually. Shows on any weight-driven material pickup (shared by all 3 hardscape estimators). */
+const HAUL_CARGO_CAP_LB = 3600;
+function haulCapNote(totalLb, trips){
+  var perTrip = Math.max(0, +totalLb || 0) / Math.max(1, +trips || 1);
+  if (perTrip > HAUL_CARGO_CAP_LB) return '<div class="sub" style="color:#c1121f;font-weight:600;white-space:normal">🚛 ~'+Math.round(perTrip)+' lb/load is over the trailer’s ~'+HAUL_CARGO_CAP_LB+' lb cargo cap — needs more trips, and we don’t haul dirt/sand/rock until we have a dually.</div>';
+  return '<div class="sub" style="color:var(--muted);white-space:normal;font-size:11px">🚛 Trailer cargo ~'+HAUL_CARGO_CAP_LB+' lb/load — no dirt/sand/rock hauls until a dually.</div>';
+}
+if (typeof window !== "undefined") window.haulCapNote = haulCapNote;
 const PAVER_OBX_PREMIUM = 1.22;   // Outer Banks premium over the national market (2026 research: scarce trades + island logistics + tourist demand, +20-25%; NOT cost-of-living, which is only +4%). Tunable.
 
 /* MARKET band for THIS job — what the OPEN MARKET pays, so we price to fair value (not to what Ray needs).
@@ -102,7 +111,10 @@ function pvCalc(){
   const price = laborPrice + materials + driveCharge;
   const cost = materials + driveMileage;
   const profit = price - cost, allInSqft = area>0 ? Math.round(price/area) : 0;
-  const mpu = area<150 ? 6 : area<300 ? 5 : 4.5;
+  // min/sq ft to lay — RECALIBRATED 2026-07 to actual OBX hand-method time (was 6/5/4.5, ~2× too optimistic per the
+  // Mike Green post-mortem: root-laced soil + perfectionist hand digging runs ~2× the book rate). Drives est HOURS +
+  // the $/hr margin warning, NOT the customer price (that's the $/sq-ft slider).
+  const mpu = area<150 ? 12 : area<300 ? 10 : 9;
   const workMin = Math.round(area*mpu*cplx) + 120;   // harder shapes take longer to lay; mobilization is fixed
   const crew = Math.max(1, pv.crew || 2), totalPH = (workMin/60) + crew*(dr.min/60) + crew*(20/60), hours = crew>0?totalPH/crew:totalPH;
   const fieldPool = Math.max(0, profit)*0.48, perHr = hours>0 ? fieldPool/crew/hours : 0;
@@ -168,7 +180,7 @@ function pvPickupInfoHTML(pk){
   const warn = (pk.suspect && !pk.manual) ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The geocoder put the supplier <b>${pk.legBP} mi</b> away — that's wrong. Using a ~${pk.miles} mi estimate for now. Re-pick the supplier from the dropdown, or just <b>type the real miles</b> below.</div>` : "";
   const override = `<div class="row" style="gap:6px;align-items:center;margin-top:5px"><div class="grow sub">${pk.manual?'✓ <b>Using your miles</b>':'Drive off? Set the run miles'} <span style="opacity:.7">(base→supplier→site)</span>:</div><input type="number" inputmode="decimal" value="${pk.manual?pk.miles:''}" placeholder="auto ${pk.miles}" style="width:72px;padding:3px 6px;font-size:13px" onchange="wizPvPickMiles(this.value)"><span class="sub">mi</span></div>`;
   const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the supplier <b>deliver</b> (~$50–150 flat) usually beats self-haul once it's 2+ trips. Or have the customer provide it.</div>` : "";
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${pvCrewBtns(pk.crew,"wizPvPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr${typeof haulCapNote==="function"?haulCapNote(pk.weight,pk.trips):""}<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${PAVER_PICKUP_RATE_MIN}" max="${PAVER_PICKUP_RATE_MAX}" step="1" value="${pk.rate}" oninput="wizPvPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px"><div class="sub" style="font-size:11px">Customer-service rate $${PAVER_PICKUP_RATE_MIN}→$${PAVER_PICKUP_RATE_MAX}/hr. ${pk.crew} ppl × ~${pk.hoursEach} hr = ~${pk.personHrs} person-hr of work.</div>${tip}`;
 }
 
 function wizPaverUI(){

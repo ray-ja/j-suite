@@ -17,8 +17,8 @@ const STEPPATH_SETTLE      = 0.10;   // +10% rock for settling/compaction (toggl
 const STEPPATH_LABOR_DEF   = 14;     // $/linear ft install labor — DEFAULT = the LOW end of the band (undercut/value)
 const STEPPATH_LABOR_MIN   = 8, STEPPATH_LABOR_MAX = 35;
 const STEPPATH_LABOR_BAND  = { lo: 14, hi: 25 };   // national labor-only band (setting stones + decorative rock is labor-intensive)
-const STEPPATH_MIN_PER_STONE = 6;    // labor-time model: ~6 min/crew to set + level each stone (× complexity)
-const STEPPATH_MIN_PER_SQFT  = 2.5;  // + base prep & rock spreading per sq ft of path (× complexity)
+const STEPPATH_MIN_PER_STONE = 9;    // RECALIBRATED 2026-07 (was 6): hand-set + level each stone in OBX soil (× complexity)
+const STEPPATH_MIN_PER_SQFT  = 5;    // RECALIBRATED 2026-07 (was 2.5): base prep & hand rock-spreading per sq ft (× complexity) — drives est HOURS + $/hr, not price
 
 /* Materials — each priced off a GEOMETRY basis (a field on spGeo). lbs = pounds PER basis unit. def = who provides. */
 const STEPPATH_MATS = [
@@ -253,7 +253,7 @@ function spPickupInfoHTML(pk){
   const warn = (pk.suspect && !pk.manual) ? `<div class="sub" style="color:var(--danger);margin-top:2px">⚠ The geocoder put the supplier <b>${pk.legBP} mi</b> away — that's wrong. Type the real miles below.</div>` : "";
   const override = `<div class="row" style="gap:6px;align-items:center;margin-top:5px"><div class="grow sub">${pk.manual?'✓ <b>Using your miles</b>':'Drive off? Set the run miles'} <span style="opacity:.7">(base→supplier→site)</span>:</div><input type="number" inputmode="decimal" value="${pk.manual?pk.miles:''}" placeholder="auto ${pk.miles}" style="width:72px;padding:3px 6px;font-size:13px" onchange="wizSpPickMiles(this.value)"><span class="sub">mi</span></div>`;
   const tip = pk.trips>=2 ? `<div class="sub" style="color:#b8860b;margin-top:4px">💡 ${pk.trips} trips / ${pk.tons} ton — having the yard <b>deliver</b> usually beats self-haul once it's 2+ trips.</div>` : "";
-  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${spCrewBtns(pk.crew,"wizSpPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${(typeof PAVER_PICKUP_RATE_MIN!=="undefined"?PAVER_PICKUP_RATE_MIN:20)}" max="${(typeof PAVER_PICKUP_RATE_MAX!=="undefined"?PAVER_PICKUP_RATE_MAX:45)}" step="1" value="${pk.rate}" oninput="wizSpPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px">${tip}`;
+  return `<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow sub">Pickup crew</div>${spCrewBtns(pk.crew,"wizSpPickCrew")}</div>⚖️ ~${pk.tons} ton (${pk.weight} lb) · ${pk.trips} trip(s) · ${pk.crew} × ~${pk.hoursEach} hr${typeof haulCapNote==="function"?haulCapNote(pk.weight,pk.trips):""}<br>🚗 ${milesTxt}${pk.trips>1?` × ${pk.trips} trips`:""}${ex}: mileage <b>${money(pk.cost)}</b>${warn}${override}<br><div class="row" style="justify-content:space-between;align-items:baseline;margin-top:4px"><div>Pickup charge <b>${money(pk.charge)}</b></div><div class="sub">each takes home <b>$${pk.rate}/hr</b></div></div><input type="range" min="${(typeof PAVER_PICKUP_RATE_MIN!=="undefined"?PAVER_PICKUP_RATE_MIN:20)}" max="${(typeof PAVER_PICKUP_RATE_MAX!=="undefined"?PAVER_PICKUP_RATE_MAX:45)}" step="1" value="${pk.rate}" oninput="wizSpPickRate(this.value)" style="width:100%;accent-color:#b8860b;margin-top:4px">${tip}`;
 }
 
 function spBreakHTML(c, pk){
