@@ -2354,6 +2354,17 @@ async function main() {
   ok("the cell tooltip labels it by refType ('Contract #186510')", /Contract #186510/.test(rcptOrderCell(colRec)), rcptOrderCell(colRec));
   ok("rcptOrderCell → '—' when the receipt has no ref", /—/.test(rcptOrderCell({ vendor: "x" })));
 
+  /* ---- invCleanMatDesc (js/46): annotation cruft never reaches a customer invoice, real specs survive ---- */
+  const j46 = fs.readFileSync(__dirname + "/js/46-invoicing.js", "utf8");
+  const clean = eval("(function(){ " + j46.match(/function invCleanMatDesc[\s\S]*?\n\}/)[0] + " return invCleanMatDesc; })()");
+  ok("strips Cap '— likely for …' note", clean("0.5-CU FT Paver Sand x6 — likely for patio/paver job") === "0.5-CU FT Paver Sand x6", clean("0.5-CU FT Paver Sand x6 — likely for patio/paver job"));
+  ok("strips 'materials to install for customer (…)' note", clean("0.5-cu ft paver sand x10 — materials to install for customer (patio paver job)") === "0.5-cu ft paver sand x10", clean("0.5-cu ft paver sand x10 — materials to install for customer (patio paver job)"));
+  ok("strips '- installation material'", clean("BW 1/4-IN T Dual Spacer - installation material") === "BW 1/4-IN T Dual Spacer", clean("BW 1/4-IN T Dual Spacer - installation material"));
+  ok("strips '— PO: MIKE' tag", clean("Paver installation materials — leveling sand — PO: MIKE") === "Paver installation materials — leveling sand", clean("Paver installation materials — leveling sand — PO: MIKE"));
+  ok("strips trailing 'to install on job'", clean("Paver sand and tile spacers to install on job") === "Paver sand and tile spacers", clean("Paver sand and tile spacers to install on job"));
+  ok("PRESERVES real quantity spec '— 0.95 tons'", clean("#57/#67 Havre de Grace stone — 0.95 tons") === "#57/#67 Havre de Grace stone — 0.95 tons", clean("#57/#67 Havre de Grace stone — 0.95 tons"));
+  ok("PRESERVES parenthetical + hyphenated product name", clean("12.0-in x 12.0-in x 2.0-in Square Gray Concrete Patio stone (QTY 15)") === "12.0-in x 12.0-in x 2.0-in Square Gray Concrete Patio stone (QTY 15)");
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

@@ -28,11 +28,25 @@ function invEffectiveTotal(q) { return (typeof quoteEffectiveTotal === "function
    default (every existing invoice is byte-identical unless the owner flips it on). When on, the job's
    jobMaterials become itemized "Materials" lines (billed at cost — tax was already paid at purchase, so they
    are NOT re-taxed) and their sum is added to the amount due (and thus the Stripe pay link). */
+/* Strip Cap/import annotation cruft from a material description so notes never land on a customer invoice —
+   "likely for…", "materials to install for customer", "PO: MIKE", "installation material", "to install on job".
+   Preserves the real product name + quantity specs ("0.95 tons", "x6", "(QTY 15)"). Display-only. */
+function invCleanMatDesc(desc) {
+  let s = String(desc || "").trim();
+  s = s.replace(/\s*[—–-]\s*PO:\s*\S+/gi, "");                                  // "— PO: MIKE"
+  s = s.replace(/\s*[—–-]?\s*likely for\b[^—–]*/gi, "");                        // "— likely for patio/paver job"
+  s = s.replace(/\s*[—–-]?\s*materials to install for customer\b[^—–]*/gi, ""); // Cap's job note
+  s = s.replace(/\s*[—–-]\s*install(?:ation)? materials?\b[^—–]*/gi, "");       // "- installation material"
+  s = s.replace(/\s+installation materials?\b\s*$/gi, "");
+  s = s.replace(/\s+to install\s+(?:on job|for (?:the )?customer|for job)\b[^—–]*/gi, ""); // "to install on job"
+  s = s.replace(/\s{2,}/g, " ").replace(/\s*[—–,-]\s*$/, "").trim();            // tidy trailing punctuation
+  return s;
+}
 function invMaterials(q) {
   if (!q || !q.billMaterials) return [];
   const j = (typeof invJobFor === "function") ? invJobFor(q) : null; if (!j) return [];
   return ((D().jobMaterials) || []).filter(m => m && !m.deleted && m.jobId === j.id)
-    .map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 }))
+    .map(m => { const raw = m.desc || m.vendor || "Material"; return { desc: invCleanMatDesc(raw) || raw, amount: Math.round((+m.amount || 0) * 100) / 100 }; })
     .filter(m => m.amount > 0);
 }
 function invMaterialsTotal(q) { return Math.round(invMaterials(q).reduce((s, m) => s + m.amount, 0) * 100) / 100; }

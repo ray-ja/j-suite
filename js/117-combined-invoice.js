@@ -64,13 +64,27 @@ function invComboSelected() {
 
 /* the reconciled line rows for one job: its quote items, a "final price adjustment" line when the effective total
    differs from the item sum, then its pass-through materials (only when that quote opted in). */
-function invComboSectionRows(q) {
-  const items = (typeof invItems === "function") ? invItems(q) : [];
-  const itemsSum = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
-  const mats = (q.billMaterials && typeof invMaterials === "function") ? invMaterials(q) : [];
-  const matsSum = mats.reduce((s, m) => s + (+m.amount || 0), 0);
-  const adj = Math.round((invGrandTotal(q) - itemsSum - matsSum) * 100) / 100;
-  return { items: items, mats: mats, adj: adj };
+
+/* one clean labor line per job (its type/title at the effective/final price — no messy sub-items or adjustment
+   lines), matching the approved single-invoice layout. Effective price already folds in pickups + finalPrice. */
+function invComboLaborLines(sel) {
+  return sel.map(q => ({
+    label: ((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"),
+    no: (typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "",
+    amount: (typeof invEffectiveTotal === "function") ? invEffectiveTotal(q) : (+(q.finalPrice || q.total) || 0)
+  }));
+}
+/* every selected job's pass-through materials, cleaned + merged by description into ONE consolidated list. */
+function invComboMaterials(sel) {
+  const out = [], idx = {};
+  sel.forEach(q => {
+    ((q.billMaterials && typeof invMaterials === "function") ? invMaterials(q) : []).forEach(m => {
+      const k = String(m.desc || "").toLowerCase().trim();
+      if (idx[k] != null) out[idx[k]].amount = Math.round((out[idx[k]].amount + m.amount) * 100) / 100;
+      else { idx[k] = out.length; out.push({ desc: m.desc, amount: m.amount }); }
+    });
+  });
+  return out;
 }
 
 window.invComboPrint = function () {
@@ -78,17 +92,16 @@ window.invComboPrint = function () {
   if (!sel.length) { alert("Pick at least one job to combine."); return; }
   const d = D(), cust = (d.customers || []).find(x => x.id === _invCombo.cid), biz = ((typeof BIZ !== "undefined") && BIZ[S.biz]) || { name: "", phone: "" };
   const billTo = cust ? [cust.name || cust.company, cust.company && cust.name ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer)"];
-  const grand = sel.reduce((s, q) => s + invGrandTotal(q), 0);
   const dateStr = (typeof fmtDate === "function") ? fmtDate((typeof today === "function") ? today() : "") : "";
   const AC = "#0a7d4b";
-  const sections = sel.map(q => {
-    const r = invComboSectionRows(q);
-    let body = r.items.map(it => `<tr><td>${esc(it.name)}${(it.qty || 1) > 1 ? " ×" + it.qty : ""}</td><td class="r">${money2((it.price || 0) * (it.qty || 1))}</td></tr>`).join("");
-    if (Math.abs(r.adj) > 0.01) body += `<tr><td>Final price adjustment</td><td class="r">${money2(r.adj)}</td></tr>`;
-    if (r.mats.length) { body += `<tr class="mh"><td colspan="2">Materials (pass-through, at cost)</td></tr>`; body += r.mats.map(m => `<tr><td class="ind">${esc(m.desc)}</td><td class="r">${money2(m.amount)}</td></tr>`).join(""); }
-    return `<div class="sec"><div class="sech"><span>${esc(((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"))}</span><span class="no">${esc((typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "")}</span></div>
-      <table class="lt"><tbody>${body}</tbody><tfoot><tr class="st"><td>Subtotal</td><td class="r">${money2(invGrandTotal(q))}</td></tr></tfoot></table></div>`;
-  }).join("");
+  const labor = invComboLaborLines(sel);
+  const laborTotal = Math.round(labor.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const mats = invComboMaterials(sel);
+  const matTotal = Math.round(mats.reduce((s, m) => s + m.amount, 0) * 100) / 100;
+  const grand = Math.round((laborTotal + matTotal) * 100) / 100;
+  const covers = labor.map(l => l.no).filter(Boolean);
+  const laborRows = labor.map(l => `<tr><td>${esc(l.label)}</td><td class="r">${money2(l.amount)}</td></tr>`).join("");
+  const matRows = mats.map(m => `<tr><td class="ind">${esc(m.desc)}</td><td class="r">${money2(m.amount)}</td></tr>`).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice — ${esc((cust && (cust.name || cust.company)) || "Customer")}</title>
   <style>*{box-sizing:border-box}body{font:14px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;margin:0;padding:24px}
   .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
@@ -96,20 +109,23 @@ window.invComboPrint = function () {
   .top{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}.bizname{font-size:20px;font-weight:800;letter-spacing:-.2px}.muted{color:#6b7280;font-size:13px}
   .badge{text-align:right}.badge .t{font-weight:800;letter-spacing:1px}
   .bill{margin-top:18px}.bill .h{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:3px}
-  .sec{margin-top:22px}.sech{font-weight:700;border-bottom:2px solid ${AC};padding-bottom:5px;display:flex;justify-content:space-between;gap:12px}.sech .no{font-weight:400;color:#6b7280;font-size:12px}
-  .lt{width:100%;border-collapse:collapse;margin-top:6px}.lt td{padding:5px 0;border-bottom:1px solid #eef0f3}.lt td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .lt td.ind{padding-left:16px;color:#6b7280;font-size:13px}.lt tr.mh td{padding-top:9px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:${AC};font-weight:700;border:none}
-  .lt tr.st td{padding-top:7px;font-weight:700;border:none}
+  .sec{margin-top:24px}.sech{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:${AC};font-weight:700;border-bottom:2px solid ${AC};padding-bottom:5px}
+  .lt{width:100%;border-collapse:collapse;margin-top:4px}.lt td{padding:6px 0;border-bottom:1px solid #eef0f3}.lt td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lt td.ind{padding-left:16px;color:#4b5563;font-size:13px}
+  .lt tr.st td{padding-top:8px;font-weight:700;border:none}
   .grand{margin-top:26px;background:#1a1a1a;color:#fff;border-radius:8px;padding:16px 22px;display:flex;justify-content:space-between;align-items:baseline}
   .grand .v{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
-  .foot{margin-top:16px;color:#6b7280;font-size:12px}@media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0}}</style></head>
+  .note{margin-top:16px;padding:11px 14px;background:#eef7f0;border-left:3px solid ${AC};border-radius:0 4px 4px 0;color:#4b5563;font-size:12px}
+  .foot{margin-top:14px;color:#6b7280;font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}@media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0}}</style></head>
   <body><div class="sheet"><div class="bar"></div><div class="pad">
     <div class="top"><div><div class="bizname">${esc(biz.name || "OBX Lot Solutions")}</div><div class="muted">${esc(biz.phone || "")}</div></div>
       <div class="badge"><div class="t">INVOICE</div><div class="muted">${esc(dateStr)}</div><div class="muted">Due on receipt</div></div></div>
     <div class="bill"><div class="h">Bill to</div>${billTo.map(l => `<div>${esc(l)}</div>`).join("")}</div>
-    ${sections}
+    <div class="sec"><div class="sech">Labor &amp; installation</div><table class="lt"><tbody>${laborRows}</tbody>${mats.length ? `<tfoot><tr class="st"><td>Labor subtotal</td><td class="r">${money2(laborTotal)}</td></tr></tfoot>` : ""}</table></div>
+    ${mats.length ? `<div class="sec"><div class="sech">Materials — pass-through, at cost</div><table class="lt"><tbody>${matRows}</tbody><tfoot><tr class="st"><td>Materials subtotal</td><td class="r">${money2(matTotal)}</td></tr></tfoot></table></div>` : ""}
     <div class="grand"><span>Total due</span><span class="v">${money2(grand)}</span></div>
-    <div class="foot">Thank you for your business.</div>
+    ${mats.length ? `<div class="note"><b>No sales tax</b> — real-property capital improvements; sales tax was paid on materials at purchase, so none is charged on the contract. Materials billed through at cost, no markup.</div>` : ""}
+    <div class="foot"><span>${covers.length ? "Covers " + esc(covers.join(" · ")) : ""}</span><span>Thank you for your business.</span></div>
   </div></div>
   <script>setTimeout(function(){try{window.print();}catch(e){}},400);<\/script>
   </body></html>`;
@@ -122,17 +138,22 @@ window.invComboCopy = function () {
   const sel = invComboSelected();
   if (!sel.length) { alert("Pick at least one job to combine."); return; }
   const d = D(), cust = (d.customers || []).find(x => x.id === _invCombo.cid), biz = ((typeof BIZ !== "undefined") && BIZ[S.biz]) || { name: "", phone: "" };
-  const grand = sel.reduce((s, q) => s + invGrandTotal(q), 0);
-  const lines = [biz.name || "OBX Lot Solutions", biz.phone || "", "", "INVOICE — " + ((cust && (cust.name || cust.company)) || "Customer"), (typeof fmtDate === "function") ? fmtDate((typeof today === "function") ? today() : "") : "", ""];
-  sel.forEach(q => {
-    lines.push(((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job") + "  [" + ((typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "") + "]");
-    const r = invComboSectionRows(q);
-    r.items.forEach(it => lines.push("  " + it.name + (((it.qty || 1) > 1) ? " ×" + it.qty : "") + " — " + money2((it.price || 0) * (it.qty || 1))));
-    if (Math.abs(r.adj) > 0.01) lines.push("  Final price adjustment — " + money2(r.adj));
-    if (r.mats.length) { lines.push("  Materials (at cost):"); r.mats.forEach(m => lines.push("    " + m.desc + " — " + money2(m.amount))); }
-    lines.push("  Subtotal: " + money2(invGrandTotal(q)), "");
-  });
-  lines.push("TOTAL DUE: " + money2(grand), "Due on receipt", "", "Thank you for your business.");
+  const labor = invComboLaborLines(sel);
+  const laborTotal = Math.round(labor.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const mats = invComboMaterials(sel);
+  const matTotal = Math.round(mats.reduce((s, m) => s + m.amount, 0) * 100) / 100;
+  const grand = Math.round((laborTotal + matTotal) * 100) / 100;
+  const lines = [biz.name || "OBX Lot Solutions", biz.phone || "", "", "INVOICE — " + ((cust && (cust.name || cust.company)) || "Customer"), (typeof fmtDate === "function") ? fmtDate((typeof today === "function") ? today() : "") : "", "", "LABOR & INSTALLATION"];
+  labor.forEach(l => lines.push("  " + l.label + " — " + money2(l.amount)));
+  if (mats.length) {
+    lines.push("  Labor subtotal: " + money2(laborTotal), "", "MATERIALS (pass-through, at cost)");
+    mats.forEach(m => lines.push("  " + m.desc + " — " + money2(m.amount)));
+    lines.push("  Materials subtotal: " + money2(matTotal));
+  }
+  lines.push("", "TOTAL DUE: " + money2(grand), "Due on receipt");
+  const covers = labor.map(l => l.no).filter(Boolean);
+  if (covers.length) lines.push("Covers " + covers.join(" · "));
+  lines.push("", "Thank you for your business.");
   const txt = lines.join("\n");
   const ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select();
   try { document.execCommand("copy"); alert("Combined invoice copied — paste it into Square, an email, or a text."); }
