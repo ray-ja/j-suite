@@ -54,7 +54,8 @@ function invComboRender(custs) {
     <div class="row" style="gap:8px;margin-top:10px">
       <button class="btn acc grow" onclick="invComboPrint()">🖨️ View / Print combined</button>
       <button class="btn ghost grow" onclick="invComboCopy()">Copy</button>
-    </div>`);
+    </div>
+    <button class="btn ghost" style="width:100%;margin-top:8px" onclick="invComboMatDetail()">📎 Materials detail (attachment)</button>`);
 }
 
 function invComboSelected() {
@@ -80,6 +81,62 @@ function invComboSections(sel) {
     };
   });
 }
+
+/* MATERIALS DETAIL attachment — the itemized materials behind each job's summed "Materials" line, so a customer
+   (or your own records) can see exactly what went into the at-cost figure. Companion doc to the combined invoice;
+   does NOT include the receipt images ("available on request"). */
+window.invComboMatDetail = function () {
+  const sel = invComboSelected();
+  if (!sel.length) { alert("Pick at least one job first."); return; }
+  const d = D(), cust = (d.customers || []).find(x => x.id === _invCombo.cid), biz = ((typeof BIZ !== "undefined") && BIZ[S.biz]) || { name: "", phone: "" };
+  const billTo = cust ? [cust.name || cust.company, cust.company && cust.name ? cust.company : "", cust.phone, cust.email].filter(Boolean) : ["(no customer)"];
+  const dateStr = (typeof fmtDate === "function") ? fmtDate((typeof today === "function") ? today() : "") : "";
+  const AC = "#0a7d4b";
+  const jobs = sel.map(q => {
+    const mats = (typeof invMaterials === "function") ? invMaterials(q) : [];
+    return {
+      label: ((typeof quoteType === "function" ? quoteType(q) : "") || q.title || "Job"),
+      no: (typeof invNo === "function" ? invNo(q) : q.invoiceNo) || "",
+      mats: mats, sub: Math.round(mats.reduce((s, m) => s + m.amount, 0) * 100) / 100
+    };
+  });
+  const grand = Math.round(jobs.reduce((s, j) => s + j.sub, 0) * 100) / 100;
+  const sections = jobs.map(j => {
+    const rows = j.mats.length
+      ? j.mats.map(m => `<tr><td>${esc(m.desc)}</td><td class="r">${money2(m.amount)}</td></tr>`).join("")
+      : `<tr><td colspan="2" style="color:#9ca3af">No materials recorded for this job.</td></tr>`;
+    return `<div class="sec"><div class="sech"><span>${esc(j.label)}</span>${j.no ? `<span class="no">${esc(j.no)}</span>` : ""}</div>`
+      + `<table class="lt"><tbody>${rows}</tbody><tfoot><tr class="st"><td>Materials subtotal</td><td class="r">${money2(j.sub)}</td></tr></tfoot></table></div>`;
+  }).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Materials detail — ${esc((cust && (cust.name || cust.company)) || "Customer")}</title>
+  <style>*{box-sizing:border-box}body{font:14px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;margin:0;padding:24px}
+  .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
+  .bar{height:6px;background:linear-gradient(90deg,${AC},#12b877)}.pad{padding:34px 40px}
+  .top{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap}.bizname{font-size:20px;font-weight:800;letter-spacing:-.2px}.muted{color:#6b7280;font-size:13px}
+  .badge{text-align:right}.badge .t{font-weight:800;letter-spacing:.5px;font-size:13px}
+  .bill{margin-top:16px}.bill .h{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#6b7280;margin-bottom:3px}
+  .sec{margin-top:22px}.sech{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-weight:700;border-bottom:2px solid ${AC};padding-bottom:5px}.sech .no{font-weight:400;color:#6b7280;font-size:12px;font-variant-numeric:tabular-nums}
+  .lt{width:100%;border-collapse:collapse;margin-top:4px}.lt td{padding:6px 0;border-bottom:1px solid #eef0f3}.lt td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lt tr.st td{padding-top:8px;font-weight:700;border:none}
+  .grand{margin-top:24px;background:#1a1a1a;color:#fff;border-radius:8px;padding:14px 22px;display:flex;justify-content:space-between;align-items:baseline}
+  .grand .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+  .note{margin-top:16px;padding:11px 14px;background:#eef7f0;border-left:3px solid ${AC};border-radius:0 4px 4px 0;color:#4b5563;font-size:12px}
+  .foot{margin-top:14px;color:#6b7280;font-size:12px}@media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0}}</style></head>
+  <body><div class="sheet"><div class="bar"></div><div class="pad">
+    <div class="top"><div><div class="bizname">${esc(biz.name || "OBX Lot Solutions")}</div><div class="muted">${esc(biz.phone || "")}</div></div>
+      <div class="badge"><div class="t">MATERIALS DETAIL</div><div class="muted">${esc(dateStr)}</div><div class="muted">Attachment to invoice</div></div></div>
+    <div class="bill"><div class="h">Prepared for</div>${billTo.map(l => `<div>${esc(l)}</div>`).join("")}</div>
+    ${sections}
+    <div class="grand"><span>Total materials (at cost)</span><span class="v">${money2(grand)}</span></div>
+    <div class="note"><b>Materials billed through at our cost, no markup.</b> Original vendor receipts available on request.</div>
+    <div class="foot">This sheet itemizes the “Materials (at cost)” line on your invoice.</div>
+  </div></div>
+  <script>setTimeout(function(){try{window.print();}catch(e){}},400);<\/script>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Allow pop-ups to view the materials detail."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+};
 
 window.invComboPrint = function () {
   const sel = invComboSelected();
