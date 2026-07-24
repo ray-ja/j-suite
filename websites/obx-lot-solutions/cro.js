@@ -1,6 +1,6 @@
 /* CRO layer — A/B hero, social proof, exit-intent lead capture, click-to-call. Static, no deps. */
 (function(){
- var CFG={"tel": "+12525648717", "telDisp": "(252) 564-8717", "accent": "#1B2A4E", "magnet": "home-watch-checklist.html", "exitTitle": "Leaving already?", "exitBody": "Grab our free OBX Home-Watch Checklist \u2014 the exact list we run on every vacant-home visit, inside and out.", "exitCta": "Email me the free checklist"};
+ var CFG={"tel": "+12522075985", "telDisp": "(252) 207-5985", "accent": "#1B2A4E", "magnet": "home-watch-checklist.html", "exitTitle": "Leaving already?", "exitBody": "Grab our free OBX Home-Watch Checklist \u2014 the exact list we run on every vacant-home visit, inside and out.", "exitCta": "Email me the free checklist"};
  var V=localStorage.getItem('cro_v'); if(V!=='A'&&V!=='B'){V=Math.random()<0.5?'A':'B';localStorage.setItem('cro_v',V);}
  document.documentElement.setAttribute('data-cro',V);
  function ready(fn){if(document.readyState!='loading')fn();else document.addEventListener('DOMContentLoaded',fn);}
