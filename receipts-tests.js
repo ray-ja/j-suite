@@ -1209,6 +1209,19 @@ async function main() {
   seedReview({ receiptId: "w1", vendor: "", amount: 30.00 });
   seedReview({ receiptId: "w2", vendor: "", amount: 30.00 });
   ok("amount-only with no signal is NOT auto-flagged", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+  console.log("— DUP-GROUP: same $ + same store + same card but DIFFERENT DATES → NOT flagged (Ray's tarp vs pick-mattock) —");
+  resetStore();
+  seedReview({ receiptId: "hdtarp", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355", date: "2026-06-10" });
+  seedReview({ receiptId: "hdpick", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355", date: "2026-07-08" });
+  ok("different-date, same store/card/total receipts are NOT merged as dups", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+  resetStore();
+  seedReview({ receiptId: "same1", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355", date: "2026-07-08" });
+  seedReview({ receiptId: "same2", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355", date: "2026-07-08" });
+  ok("SAME-date same-everything (a genuine double-upload) STILL flags", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
+  resetStore();
+  seedReview({ receiptId: "blk1", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355", date: "2026-07-08" });
+  seedReview({ receiptId: "blk2", vendor: "The Home Depot", amount: 33.60, cardLast4: "8355" });   // no date on one copy
+  ok("a blank date on one copy still flags (missing date = wildcard)", rcptDupGroups().length === 1 && rcptDupGroups()[0].length === 2);
   console.log("— DUP-GROUP: two CSV rows, same $/vendor but DIFFERENT refNo → NOT flagged (distinct orders) —");
   resetStore();
   seedReview({ receiptId: "o1", vendor: "Lowe's", amount: 38.94, refNo: "147424942" });

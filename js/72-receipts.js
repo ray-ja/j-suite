@@ -392,6 +392,12 @@ function rcptDupMatch(a, b) {
   if (!ca || ca !== cb) return false;                 // amount must match exactly (and be non-zero)
   var ra = a.refNo ? String(a.refNo) : "", rb = b.refNo ? String(b.refNo) : "";
   if (ra && rb) return ra === rb;                     // two CSV rows with txn #s: same # = dup, different # = distinct order
+  // DIFFERENT DATES = DIFFERENT PURCHASES. Two photos of the SAME receipt carry the SAME printed date, so when BOTH
+  // copies have a real date and they DIFFER, they cannot be the same receipt — never a dup. This stops distinct
+  // same-total, same-store, same-card receipts (e.g. a $33.60 tarp on 6/10 vs a $33.60 pick-mattock on 7/8 at Home
+  // Depot on the same card) from colliding + being merged into one. A blank date stays a wildcard (Cap may miss one).
+  var da = (typeof _rcptIsoDate === "function") ? _rcptIsoDate(a.date) : "", db = (typeof _rcptIsoDate === "function") ? _rcptIsoDate(b.date) : "";
+  if (da && db && da !== db) return false;
   var va = rcptVendorNorm(a.vendor), vb = rcptVendorNorm(b.vendor);
   if (va && vb && va === vb) return true;             // same normalized vendor
   var la = rcptCard4(a.cardLast4), lb = rcptCard4(b.cardLast4);
