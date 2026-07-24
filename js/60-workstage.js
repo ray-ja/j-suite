@@ -25,6 +25,7 @@ function workStageJob(q) {
 const workStageMeta = {
   lead:    { label: "Lead",               color: "#8a63d2" },
   quote:   { label: "Quote",              color: "#97a0ad" },
+  deposit: { label: "Pending deposit",    color: "#c1121f" },
   job:     { label: "Job",                color: "#2f6fed" },
   expense: { label: "Expense collecting", color: "#d9822b" },
   invoice: { label: "Invoice",            color: "#e0a800" },
@@ -54,6 +55,9 @@ function workStage(q) {
   const signedOff = !!(job && job.expensesCollected);              // owner's explicit "all expenses collected" sign-off (additive flag)
   if (q.invoiced || (jobDone && (fullyClosed || noCrew || signedOff))) return "invoice";
   if (jobDone) return "expense";
+  // ACCEPTED but the customer's deposit isn't in yet → "Pending deposit" (work is clock-gated until it's received,
+  // js/118). Derived only from the existing depositRequired/depositReceived flags — stores nothing.
+  if ((q.accepted || q.jobId) && q.depositRequired && !q.depositReceived) return "deposit";
   if (q.accepted || q.jobId) return "job";
   return "quote";
 }

@@ -276,12 +276,22 @@ function rJobPage(j) {
   }
   h += `<button class="btn ghost sm" style="margin-left:auto" onclick="jobPageBack()">← Back</button></div>`;
   h += editedByLine(j);
-  // CREW GUIDE — the crew open the job (from Today) to do the work; if this customer has a landscaping survey with
-  // identified plants, surface the print/share field guide right here at the top (js/113). One button, crew-visible.
-  if (typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
-  // PATH BUILD GUIDE — if this customer has a stepping-stone quote, surface its build guide (specs + steps) too.
-  if (typeof D === "function" && j.customerId) {
-    const _pq = (D().quotes || []).filter(function (x) { return x && !x.deleted && x.customerId === j.customerId && x.sp && (x.items || []).some(function (i) { return i && i.bandKey === "steppath"; }); }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
+  // CREW GUIDE — surface the guide that matches THIS job's TYPE (not just "any guide this customer has"). A job
+  // resolves to its own quote; the quote's bandKey (steppath vs landscape) / q.sp / q.survey tells us which build
+  // this actually is, so a path job shows the path guide and a landscaping job shows the plant guide — never both.
+  // The playbookLib compendium (js/114) is untouched; only this per-job DISPLAY selection is gated by job type.
+  const _jq = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
+  const _isPathJob = !!(_jq && (_jq.sp || (_jq.items || []).some(i => i && i.bandKey === "steppath")));
+  const _isLandJob = !!(_jq && (_jq.survey || (_jq.items || []).some(i => i && i.bandKey === "landscape")));
+  // If the job's own quote is neither type (a generic/older job with no type marker), fall back to showing whatever
+  // guide the customer has — so nothing that used to appear silently disappears; only the AMBIGUOUS both-types case
+  // (customer has a survey AND a path quote) is now disambiguated by the job's own quote.
+  const _typed = _isPathJob || _isLandJob;
+  // PLANT crew guide — a landscaping job (or an untyped job that only has a plant guide)
+  if ((_isLandJob || !_typed) && typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
+  // PATH BUILD GUIDE — a path job (prefer this job's OWN quote); or an untyped job whose customer has a path quote.
+  if ((_isPathJob || !_typed) && typeof D === "function" && j.customerId) {
+    const _pq = (_isPathJob && _jq) ? _jq : (D().quotes || []).filter(function (x) { return x && !x.deleted && x.customerId === j.customerId && x.sp && (x.items || []).some(function (i) { return i && i.bandKey === "steppath"; }); }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
     if (_pq) {
       h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="openPathGuide('${_pq.id}')">🪨 Path Build Guide — specs &amp; steps</button>`;
       const _busy = (typeof pathPrevBusy === "function" && pathPrevBusy());
@@ -376,7 +386,8 @@ function rJobPage(j) {
   // common-case UI (1 parent) and writes sharedJobIds=[oneId] under the hood — the multi-job case is the new
   // "🔀 Split across other jobs" picker below, on the OTHER job's page (the one the stop-job is created from).
   const _subs = (typeof subJobsOf === "function") ? subJobsOf(j.id) : [];
-  const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && !Array.isArray(x.sharedJobIds));
+  const _curParent = (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1) ? j.sharedJobIds[0] : null;   // keep an existing link visible even if that parent is now finished
+  const _opts = (typeof actJ === "function" ? actJ() : []).filter(x => x && x.id !== j.id && !Array.isArray(x.sharedJobIds) && ((typeof jobIsOpenNow === "function" ? jobIsOpenNow(x) : !x.done) || x.id === _curParent));
   let _secPartOf = `<div class="card"><label style="margin-top:0">↳ Part of a bigger job?</label><select onchange="jobSetParent('${j.id}',this.value)"><option value="">— standalone job —</option>` + _opts.map(x => `<option value="${x.id}" ${(Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1 && j.sharedJobIds[0] === x.id) ? "selected" : ""}>${esc(x.title || "Job")}${x.customerId && typeof custName === "function" ? " · " + esc(custName(x.customerId)) : ""}${x.date ? " · " + fmtDate(x.date) : ""}</option>`).join("") + `</select>`;
   if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length === 1) _secPartOf += `<div class="sub" style="margin-top:6px;white-space:normal">Its mileage, dump fees &amp; time roll up into that job's cost.</div>`;
   else if (Array.isArray(j.sharedJobIds) && j.sharedJobIds.length > 1) {
@@ -1224,7 +1235,7 @@ window.jobOpenSplitPicker = function (jobId, kind) {
 function splitRenderJobs() {
   const box = document.getElementById("split_joblist"); if (!box) return;
   const q = (val("split_search") || "").trim().toLowerCase();
-  const jobs = (typeof actJ === "function" ? actJ() : []).filter(x => x && !Array.isArray(x.sharedJobIds));
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(x => x && !Array.isArray(x.sharedJobIds) && (typeof jobIsOpenNow === "function" ? jobIsOpenNow(x) : !x.done));
   const list = jobs.filter(x => {
     if (!q) return true;
     const cust = (x.customerId && typeof custName === "function") ? custName(x.customerId) : "";

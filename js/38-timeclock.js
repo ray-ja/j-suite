@@ -615,7 +615,7 @@ window.tcChangeJob = function (id) {
   // same job-picker construction as the clock-in form above (today's jobs first, then by date; "your jobs" first)
   const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
   const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
-  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done && j.id !== e.jobId).sort((a, b) => {
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => jobIsOpenNow(j) && j.id !== e.jobId).sort((a, b) => {
     const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;
     return (b.date || "") < (a.date || "") ? -1 : 1;
   });
@@ -1457,7 +1457,7 @@ window.tcLogDrivePickJob = function () {
   if (!canAdd) { alert("Owner/admin only."); return; }
   const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
   const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
-  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(jobIsOpenNow).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
   if (!jobs.length) { alert("No open jobs to log a drive against."); return; }
   const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
   modal("🚗 Log a drive", `
@@ -1535,7 +1535,7 @@ window.tcRosterClockIn = function (userId) {
   const nm = (typeof userName === "function" ? userName(userId) : "") || "Crew";
   const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
   const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
-  const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
+  const jobs = (typeof actJ === "function" ? actJ() : []).filter(jobIsOpenNow).sort((a, b) => { const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at; return (b.date || "") < (a.date || "") ? -1 : 1; });
   if (!jobs.length) { alert("No open jobs to clock into."); return; }
   const opt = j => `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`;
   modal("Clock in — " + esc(nm), `
@@ -1593,7 +1593,7 @@ function tcClockInFormHTML(preJobId) {
     // MULTI-DAY: a job is clock-in-able on ANY of its work days. Surface jobs worked TODAY first, then by date.
     const _td = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
     const _onToday = j => (typeof jobOnDay === "function") ? jobOnDay(j, _td) : (j.date === _td);
-    const jobs = (typeof actJ === "function" ? actJ() : []).filter(j => !j.done).sort((a, b) => {
+    const jobs = (typeof actJ === "function" ? actJ() : []).filter(jobIsOpenNow).sort((a, b) => {
       const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;   // today's work days first
       return (b.date || "") < (a.date || "") ? -1 : 1;
     });

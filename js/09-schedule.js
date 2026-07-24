@@ -11,6 +11,19 @@ function jobWorkDays(j){
 }
 /* true if the job is worked on the given YYYY-MM-DD (any of its work days) */
 function jobOnDay(j,ds){return jobWorkDays(j).indexOf(ds)>=0;}
+/* "open right now" — the filter for clock-in + sub-job-nest pickers so FINISHED one-off jobs drop off but the
+   current/recurring/upcoming ones stay. Open = not done/deleted AND (a work day today-or-later, OR someone is
+   actively clocked into it right now). A job whose whole scheduled run is in the past (e.g. a wrapped patio) is
+   NOT open even if nobody remembered to tick "done". */
+function jobIsOpenNow(j){
+  if(!j||j.done||j.deleted)return false;
+  const t=(typeof today==="function")?today():"";
+  const wd=(typeof jobWorkDays==="function")?jobWorkDays(j):(j.date?[j.date]:[]);
+  if(wd.some(d=>d>=t))return true;
+  try{ if(((D().timeclock)||[]).some(e=>e&&!e.deleted&&e.jobId===j.id&&e.clockIn&&!e.clockOut))return true; }catch(e){}
+  return false;
+}
+window.jobIsOpenNow=jobIsOpenNow;
 let CALY=null,CALM=null,SCHEDSUB="calendar",SCHED_DATE=null,JOBCREW=new Set(),JSEARCH="";
 let JOBWORKDAYS=[];   // live multi-day work-day set for the open job modal (mirrors JOBCREW)
 /* Calendar view mode (month/week/day) + the single selected-date anchor that carries across switches.

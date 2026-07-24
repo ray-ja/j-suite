@@ -68,21 +68,17 @@ function depBadgeHTML(job) {
 }
 window.depBadgeHTML = depBadgeHTML;
 
-/* the deposit control the job page renders — set/require, mark received, or the ✓ cleared state */
+/* the deposit strip the JOB page shows — READ-MOSTLY. The require/amount control lives on the QUOTE now (js/23);
+   here the job only reflects state: nothing if no deposit is required, a "Pending deposit" block that gates work
+   (with a Mark-received convenience for the owner), or — once received — the deposit shown as the crew's MATERIALS
+   BUDGET so they can see the number they're working against. */
 function depJobCardHTML(job) {
   if (!job) return "";
-  const q = depQuoteFor(job); if (!q) return "";
+  const q = depQuoteFor(job); if (!q || !q.depositRequired) return "";   // no deposit on this job → nothing here
   const canEdit = depCanEdit();
-  if (!q.depositRequired) {
-    if (!canEdit) return "";
-    return `<div class="card" style="padding:10px"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>💰 Deposit</b><div class="sub">No deposit required — work can start anytime.</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="depToggleRequired('${q.id}')">Require a deposit →</button></div></div>`;
-  }
   if (depQuoteAwaiting(q)) {
-    return `<div class="card" style="padding:10px;border-left:4px solid #c1121f">`
-      + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>⏳ Waiting on deposit</b><div class="sub" style="white-space:normal">Work can't start until the deposit is in.${q.depositAmount ? " Asked: <b>" + depMoney(q.depositAmount) + "</b>." : ""}</div></div>${canEdit ? `<button class="btn acc sm" style="flex:0 0 auto" onclick="depMarkReceived('${q.id}')">✓ Deposit received</button>` : ""}</div>`
-      + (canEdit ? `<div class="row" style="align-items:center;gap:6px;margin-top:8px"><span class="sub">Deposit amount</span><span>$<input type="number" step="0.01" value="${q.depositAmount || ''}" style="width:90px;text-align:right" onchange="depSetAmount('${q.id}',this.value)"></span><button class="btn ghost sm" style="margin-left:auto" onclick="depToggleRequired('${q.id}')">Remove requirement</button></div>` : "")
-      + `</div>`;
+    return `<div class="card" style="padding:10px;border-left:4px solid #c1121f"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>⏳ Pending deposit</b><div class="sub" style="white-space:normal">Work can't start until the customer's deposit is in.${q.depositAmount ? " Asked: <b>" + depMoney(q.depositAmount) + "</b>." : ""}</div></div>${canEdit ? `<button class="btn acc sm" style="flex:0 0 auto" onclick="depMarkReceived('${q.id}')">✓ Deposit received</button>` : ""}</div></div>`;
   }
-  return `<div class="card" style="padding:10px;border-left:4px solid var(--accent)"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>✓ Deposit received</b><div class="sub">${q.depositReceivedDate ? (typeof fmtDate === "function" ? fmtDate(q.depositReceivedDate) : q.depositReceivedDate) : ""}${q.depositAmount ? " · " + depMoney(q.depositAmount) : ""} — cleared to work.</div></div>${canEdit ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="depUndoReceived('${q.id}')">Undo</button>` : ""}</div></div>`;
+  return `<div class="card" style="padding:10px;border-left:4px solid var(--accent)"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><div><b>💰 Materials budget: ${depMoney(q.depositAmount || 0)}</b><div class="sub">Deposit received${q.depositReceivedDate ? " · " + (typeof fmtDate === "function" ? fmtDate(q.depositReceivedDate) : q.depositReceivedDate) : ""} — you can go over if the job needs it.</div></div>${canEdit ? `<button class="btn ghost sm" style="flex:0 0 auto" onclick="depUndoReceived('${q.id}')">Undo</button>` : ""}</div></div>`;
 }
 window.depJobCardHTML = depJobCardHTML;

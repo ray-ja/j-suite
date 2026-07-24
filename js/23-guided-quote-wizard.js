@@ -366,6 +366,20 @@ function wizReview(){
         <button class="btn acc" onclick="openAcceptSchedule('${WZ.id}')">Accept &amp; schedule job →</button>`;
     }
     h+=`</div>`;
+    // 💰 DEPOSIT — set on the QUOTE (covers materials). Read state from the real quote (deposit mutators in js/118
+    // edit the quote directly; Object.assign in wizPersist preserves these fields). A required-but-unreceived
+    // deposit puts the accepted quote in "Pending deposit" and clock-gates the job until it's marked received.
+    const _dq = (typeof D === "function") ? (D().quotes.find(x => x && x.id === WZ.id) || {}) : {};
+    h += `<div class="card" style="margin-top:10px${_dq.depositRequired && !_dq.depositReceived ? ";border-left:4px solid #c1121f" : ""}"><div style="font-weight:800;margin-bottom:6px">💰 Deposit</div>`;
+    if (!_dq.depositRequired) {
+      h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Require a deposit before work starts — it's the crew's materials budget. Once accepted, the job stays <b>Pending deposit</b> (nobody can clock in) until you mark the deposit received.</div>`
+        + `<button class="btn ghost" style="width:100%" onclick="depToggleRequired('${WZ.id}')">Require a deposit →</button>`;
+    } else {
+      h += `<div class="row" style="align-items:center;gap:8px;margin-bottom:8px"><span class="sub grow">Deposit amount (materials budget)</span><span>$<input type="number" step="0.01" value="${_dq.depositAmount || ''}" style="width:100px;text-align:right" onchange="depSetAmount('${WZ.id}',this.value)"></span></div>`;
+      if (_dq.depositReceived) h += `<div class="nm" style="color:var(--accent)">✓ Deposit received${_dq.depositReceivedDate ? " · " + fmtDate(_dq.depositReceivedDate) : ""} — cleared to work.</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" onclick="depUndoReceived('${WZ.id}')">Undo received</button><button class="btn ghost sm" onclick="depToggleRequired('${WZ.id}')">Remove requirement</button></div>`;
+      else h += `<div class="nm" style="color:#c1121f">⏳ Pending deposit — work is on hold until it's in.</div><div class="row" style="gap:8px;margin-top:8px"><button class="btn acc grow" onclick="depMarkReceived('${WZ.id}')">✓ Deposit received</button><button class="btn ghost sm" onclick="depToggleRequired('${WZ.id}')">Remove</button></div>`;
+    }
+    h += `</div>`;
     // Invoice & payment card — DRAFTS only. For ACCEPTED quotes this lives on the unified job page (js/61);
     // hidden here to avoid a duplicate surface. The wizToggleInvoiced/Paid/SetFinal mutators stay defined.
     if(!WZ.accepted){

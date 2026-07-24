@@ -2414,6 +2414,16 @@ async function main() {
   ok("no deposit required → clock-in allowed", DEP.depJobBlocksClockIn("j3") === false);
   ok("unknown job → not blocked (no false-positive gate)", DEP.depJobBlocksClockIn("nope") === false);
 
+  /* ---- jobIsOpenNow (js/09): finished one-off jobs drop out of pickers; today/upcoming stay ---- */
+  const j09 = fs.readFileSync(__dirname + "/js/09-schedule.js", "utf8");
+  const OPEN = eval("(function(){ var _s={timeclock:[]}; function D(){return _s;} function today(){return '2026-07-24';} "
+    + pull(j09, "jobWorkDays") + " " + pull(j09, "jobIsOpenNow") + " return {jobIsOpenNow:jobIsOpenNow}; })()");
+  ok("work day today → open", OPEN.jobIsOpenNow({ workDays: ["2026-07-24"] }) === true);
+  ok("upcoming work day → open (recurring/scheduled)", OPEN.jobIsOpenNow({ workDays: ["2026-07-16", "2026-07-30"] }) === true);
+  ok("all work days in the past → NOT open (finished one-off patio)", OPEN.jobIsOpenNow({ date: "2026-07-14", workDays: ["2026-07-14", "2026-07-23"] }) === false);
+  ok("done → not open even if a future day is listed", OPEN.jobIsOpenNow({ done: true, workDays: ["2026-08-01"] }) === false);
+  ok("deleted → not open", OPEN.jobIsOpenNow({ deleted: true, workDays: ["2026-08-01"] }) === false);
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 }

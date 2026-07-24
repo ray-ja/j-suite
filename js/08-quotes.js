@@ -3,7 +3,7 @@ let QSEARCH="",QSTAGE_SET={};   // status filter is now MULTI-select: keys of QS
 // Jobs-list sort (survives re-render; the ⇅ Sort control toggles). DEFAULT date-desc is byte-identical to the
 // old list's `(b.date).localeCompare(a.date)` order. Plus the collapsible Date-range filter + hide-finished toggle.
 let QSORT="date",QSORTDIR="desc",QDATE_FROM="",QDATE_TO="",QHIDE_DONE=true;   // hide fully-finished jobs by DEFAULT
-const QSTAGE_ORDER={lead:0,quote:1,quoted:1,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
+const QSTAGE_ORDER={lead:0,quote:1,quoted:1,deposit:1.5,job:2,scheduled:2,expense:3,invoice:4,invoiced:4,paid:5};
 function quoteStage(q){ if(q.paid)return "paid"; if(q.invoiced)return "invoiced"; if(q.accepted||q.jobId)return "scheduled"; return "quoted"; }
 const QSTAGE_META={ paid:{label:"Paid",color:"#1a7f37"}, invoiced:{label:"Invoiced",color:"#e0a800"}, scheduled:{label:"Scheduled",color:"#2f6fed"}, quoted:{label:"Quoted",color:"#97a0ad"} };
 function quoteType(q){ if(q&&q._jobOnly)return q.title||""; const items=(q&&q.items)||[];
@@ -176,7 +176,7 @@ function rQuotes(){
     h+=`<input class="search" id="qsearch" placeholder="Search jobs (customer, type, date)…" value="${esc(QSEARCH)}" oninput="qSearchOn(this.value)">`;
     // Status filter — MULTI-select. "All" clears the selection (shows every status); each chip toggles that status
     // in/out, so you can watch e.g. Job + Expense + Invoice at once but not Paid. "on" chip = currently selected.
-    const stages=[["quote","Quote"],["job","Job"],["expense","Expense"],["invoice","Invoice"],["paid","Paid"]];
+    const stages=[["quote","Quote"],["deposit","Pending deposit"],["job","Job"],["expense","Expense"],["invoice","Invoice"],["paid","Paid"]];
     const stKeys=Object.keys(QSTAGE_SET).filter(k=>QSTAGE_SET[k]);
     h+=`<div class="subnav" style="margin:8px 0"><button class="subbtn ${stKeys.length===0?"on":""}" onclick="quoteFilter('all')">All</button>`
       +stages.map(s=>`<button class="subbtn ${QSTAGE_SET[s[0]]?"on":""}" onclick="quoteFilter('${s[0]}')">${s[1]}</button>`).join("")+`</div>`;
