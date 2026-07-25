@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 48" role="img" aria-label="OBX Junk Co.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 262 48" role="img" aria-label="OBX Junk Co.">
   <title>OBX Junk Co.</title>
-  <!-- Header lockup: mark + wordmark ONLY. The micro-tagline was unreadable at header size, so it lives in
-       logo-full.svg (print/signage) instead. Tight viewBox = the wordmark renders large for its display height. -->
+  <!-- Header lockup: mark + wordmark only (the micro-tagline lives in logo-full.svg for print/signage).
+       textLength+lengthAdjust PINS the wordmark to an exact 198px box, so it can never overflow the viewBox
+       and clip (the "Co." was being cut off) no matter which system font actually renders it. -->
   <g>
     <rect x="0" y="2" width="44" height="44" rx="11" fill="#14161a"/>
     <path d="M9 33 L31 17 L38 26.5 L16 38 Z" fill="#f26a1b"/>
@@ -11,6 +12,7 @@
     <circle cx="15" cy="42.2" r="3.1" fill="#e8eaed"/><circle cx="15" cy="42.2" r="1.2" fill="#14161a"/>
     <circle cx="29" cy="42.2" r="3.1" fill="#e8eaed"/><circle cx="29" cy="42.2" r="1.2" fill="#14161a"/>
   </g>
-  <text x="53" y="33" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-        font-size="31" font-weight="800" letter-spacing="-0.9" fill="#14161a">OBX <tspan fill="#d4530a">Junk</tspan> Co.</text>
+  <text x="54" y="34" textLength="198" lengthAdjust="spacingAndGlyphs"
+        font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+        font-size="31" font-weight="800" fill="#14161a">OBX <tspan fill="#d4530a">Junk</tspan> Co.</text>
 </svg>

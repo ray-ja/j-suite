@@ -7,5 +7,7 @@
 /areas               /service-area 301
 /estate-cleanout     /cleanouts   301
 /rental-turnover     /cleanouts   301
-/hot-tub-removal     /what-we-take 301
-/hatteras            /service-area 301
+/hot-tub-removal     /demolition  301
+/demo                /demolition  301
+/deck-removal        /demolition  301
+/shed-removal        /demolition  301
