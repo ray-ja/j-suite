@@ -1,0 +1,14 @@
+# OBX Lot Solutions — Cloudflare Pages redirects
+/tree                /tree-service   301
+/trees               /tree-service   301
+/stump-grinding      /tree-service   301
+/tree-removal        /tree-service   301
+/clearing            /land-clearing  301
+/lot-clearing        /land-clearing  301
+/brush-removal       /land-clearing  301
+/yard                /landscaping    301
+/french-drain        /drainage       301
+/demo                /demolition     301
+/quote               /contact        301
+/estimate            /contact        301
+/areas               /service-area   301

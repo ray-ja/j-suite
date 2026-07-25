@@ -37,6 +37,8 @@ img,svg{max-width:100%}
 /* header / nav */
 header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .nav{max-width:var(--wrap);margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.logo{flex:0 0 auto;display:flex;align-items:center}
+.logo img{display:block;height:46px;width:auto;max-width:none}
 .navlinks{display:flex;gap:22px;font-weight:600;font-size:16.5px;white-space:nowrap}
 .navlinks a{color:var(--ink-2)}
 .navlinks a:hover{color:var(--orange-deep)}
