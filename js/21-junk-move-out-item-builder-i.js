@@ -7,16 +7,41 @@ const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for 
 const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
 const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
-const JUNK_MAXLOAD=250;      // cu ft we can pull in ONE dump run (8-ft bed + 5×14 open-channel trailer) — TUNE to your real average fill
+/* ---- OUR REAL HAULING CAPACITY (2026-07: the U-Dump dump trailer replaced the old bed+utility-trailer setup) ----
+   Trailer box: 83" W × 14' L × 31" walls = 250 cu ft LEVEL (9.3 cu yd) · ~325 cu ft heaped (12 cu yd).
+   We load the TRAILER; the F-150's 8-ft bed (~71 cu ft) is emergency overflow only and is NOT counted here.
+   THE BINDING LIMIT IS OFTEN WEIGHT, NOT VOLUME — cargo caps ~3,600 lb:
+     · light household junk (~15 lb/cu ft) → ~240 cu ft ≈ the box is full right as the weight caps out.
+     · dense C&D / wet debris (~30 lb/cu ft) → weights out at ~120 cu ft = HALF a box. Quote by weight there.
+   junkCapCheck() below reports whichever limit binds first so a load is never quoted over the axle rating. */
+const JUNK_TRAILER_CUFT=250;   // level-full, the honest planning number
+const JUNK_TRAILER_HEAPED=325; // realistically heaped with bulky junk
+const JUNK_CARGO_LB=3600;      // cargo weight cap (trailer + truck rating) — dirt/sand/rock stay off, per the haul rules
+const JUNK_MAXLOAD=JUNK_TRAILER_CUFT;  // cu ft we can pull in ONE dump run
 /* one full dump run's cost — the 55-mi round trip: mileage + 80 min of drive time at $45/hr-loaded ($93.75/hr) */
 function junkDumpRunCost(){ const mi=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55); return mi*QE.MILEAGE + (80/60)*(QE.TAKE_HOME/QE.FIELD_SPLIT); }
 /* this job's SHARE of a dump run, amortized by volume — junk is stashed + batched, so we always dump a full load */
 function junkDumpAmort(cuft){ return JUNK_MAXLOAD>0 ? (cuft/JUNK_MAXLOAD)*junkDumpRunCost() : 0; }
-/* suggest the cheapest adequate haul method from the load volume (eighths ≈ 60-cu-ft pickup loads) */
-function junkHaulSuggest(c){const loads=c.eighths;
-  if(loads<=1.5)return{method:"pickup",label:"Pickup (self-haul)",note:loads<=1?"one trip":"1–2 trips"};
-  if(loads<=4)return{method:"trailer",label:"Rental dump trailer",note:"a few loads"};
-  return{method:"rolloff",label:(loads<=6?"20-yd":"30-yd")+" roll-off dumpster",note:"whole-house volume"};}
+/* TRAILER LOADS this job needs, by whichever limit binds first — volume or weight. Returns the real trip count
+   so a heavy C&D job isn't quoted as one trip when it physically weights out at half a box. */
+function junkCapCheck(cuft,lbs){
+  cuft=Math.max(0,+cuft||0); lbs=Math.max(0,+lbs||0);
+  const byVol=cuft/JUNK_TRAILER_CUFT, byWt=lbs/JUNK_CARGO_LB;
+  const trips=Math.max(byVol,byWt), binds=byWt>byVol?"weight":"volume";
+  return { byVol:byVol, byWt:byWt, trips:trips, tripsUp:Math.max(1,Math.ceil(trips-0.001)), binds:binds,
+    // "dense" only when weight binds MEANINGFULLY harder than volume (>15%). Normal household junk (~15 lb/cu ft)
+    // fills the box and hits the cap at nearly the same moment by design — that's not a warning, that's the spec.
+    density: cuft>0 ? lbs/cuft : 0, overWeight: byVol>0 && byWt>byVol*1.15,
+    pctOfBox: Math.round(byVol*100), pctOfWeight: Math.round(byWt*100) };
+}
+/* suggest the haul method from REAL trailer loads (our box = 250 cu ft level / ~325 heaped) */
+function junkHaulSuggest(c){
+  const cap=junkCapCheck(c.cuft,c.lbs), t=cap.trips;
+  const wtNote=cap.overWeight?" — WEIGHT-limited (dense debris), not volume":"";
+  if(t<=0.35)return{method:"pickup",label:"Small load — trailer (or the truck bed)",note:"one easy trip"+wtNote};
+  if(t<=1)return{method:"trailer",label:"One trailer load",note:cap.pctOfBox+"% of the box"+wtNote};
+  if(t<=2.2)return{method:"trailer",label:cap.tripsUp+" trailer loads",note:"multi-trip job"+wtNote};
+  return{method:"rolloff",label:cap.tripsUp+" trailer loads — consider a roll-off",note:"whole-house volume; a dumpster may beat "+cap.tripsUp+" trips"+wtNote};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
 const JUNK_CD_TON=120;   // heavy/C&D disposal — the transfer station bills by WEIGHT (~$73-94/ton) + handling; estimate the tonnage from the item's pounds
 /* per-ITEM disposal fee. "cd" (heavy/construction debris) is weight-based; everything else is a flat fee. Fixes the old "+$undefined". */
@@ -32,8 +57,8 @@ const JUNK_LOC_TIME={ground:1,curbside:0.85,upstairs:2,floor3:3,basement:2,attic
 const JUNK_MODS=[{k:"longcarry",short:"📏 Long carry",locf:0.20,timeMult:1.5},{k:"heavy",short:"🏋️ Heavy",priceMult:0.5,timeMult:1.75},{k:"disasm",short:"🔧 Disassembly",flatD:20,flatMin:12},{k:"bolted",short:"🔩 Bolted/mounted",flatD:12,flatMin:8}];
 // Home Depot rental reference. Trailers = 4-hr price as quoted. Trucks = per-75-min rate × 4 increments to cover a 4-hr job.
 const JUNK_RENTAL=[["none","No rental — using my own truck",0],["t_lg","Lawn & garden trailer 3×5 (4 hr)",25],["t_cf","Channel-frame trailer 5×8 (4 hr)",39],["t_sw","Solid-wall trailer 5×8 (4 hr)",42],["t_d58","Dump trailer 5×8 (4 hr)",157],["t_d610","Dump trailer 6×10 (4 hr)",172],["t_d714","Dump trailer 7×14 (4 hr)",187],["k_pickup","8-ft pickup truck (4 hr = 4×$18)",72],["k_flat8","8-ft flatbed truck (4 hr = 4×$19)",76],["k_flat10","10-ft flatbed truck (4 hr = 4×$19)",76],["k_van","Cargo van (4 hr = 4×$19)",76],["k_box","Box truck (4 hr = 4×$29)",116]];
-function getTruckCap(){try{const d=S.obx.docs.find(x=>x.id==="truckcap"&&!x.deleted);if(d)return parseFloat(d.text)||95;}catch(e){}return 95;}
-window.setTruckCap=function(v){v=parseFloat(v)||95;let d=S.obx.docs.find(x=>x.id==="truckcap");if(d){d.text=String(v);d.updatedAt=now();}else S.obx.docs.push({id:"truckcap",text:String(v),updatedAt:now()});save();const el=document.getElementById("je_trips");if(el)el.textContent=(calcJunk().cuft/getTruckCap()).toFixed(1);};
+function getTruckCap(){try{const d=S.obx.docs.find(x=>x.id==="truckcap"&&!x.deleted);if(d)return parseFloat(d.text)||JUNK_TRAILER_CUFT;}catch(e){}return JUNK_TRAILER_CUFT;}  // default = the U-Dump trailer, level full
+window.setTruckCap=function(v){v=parseFloat(v)||JUNK_TRAILER_CUFT;let d=S.obx.docs.find(x=>x.id==="truckcap");if(d){d.text=String(v);d.updatedAt=now();}else S.obx.docs.push({id:"truckcap",text:String(v),updatedAt:now()});save();const el=document.getElementById("je_trips");if(el)el.textContent=(calcJunk().cuft/getTruckCap()).toFixed(1);};
 // [key, name, cubic feet (as-loaded), weight lb, special-flag]
 const JUNK_CAT=[
  ["Furniture",[["sofa","Sofa / couch",30,100,""],["sectional","Sectional (per piece)",40,130,""],["loveseat","Loveseat",22,80,""],["recliner","Recliner / armchair",20,75,""],["dining_t","Dining table",22,90,""],["chair","Chair (each)",5,15,""],["table_sm","Coffee / end table",6,30,""],["dresser","Dresser",18,110,""],["nightstand","Nightstand",5,30,""],["bookshelf","Bookshelf",12,55,""],["desk","Desk",16,80,""],["wardrobe","Wardrobe / armoire",28,140,""],["bedframe","Bed frame / headboard",12,55,""],["cabinet","China cabinet / hutch",28,140,""]]],
@@ -76,7 +101,7 @@ function calcJunk(){
   const eighths=cuft/JUNK_EIGHTH;
   const haul=cuft>0?eighths*JUNK_PEREIGHTH:0;                                                               // PURE volume — no base (the static drive + $175 min already cover "the truck is moving")
   let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+modLabor+special)/25)*25);          // residential: NO weight surcharge
-  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),haul:Math.round(haul),locLabor:Math.round(locLabor),modLabor:Math.round(modLabor),special:special,total:total,counts:counts,softGoods:softGoods,loadMin:loadMin};
+  return {cuft:Math.round(cuft),lbs:Math.round(lbs),eighths:eighths,trips:cuft/getTruckCap(),cap:junkCapCheck(cuft,lbs),haul:Math.round(haul),locLabor:Math.round(locLabor),modLabor:Math.round(modLabor),special:special,total:total,counts:counts,softGoods:softGoods,loadMin:loadMin};
 }
 /* round-trip drive to the job, auto-figured from the customer's address → home base */
 function junkSiteDrive(){
@@ -215,7 +240,9 @@ window.wizAddJunk=function(){
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.counts.freon)notes.push(c.counts.freon+" Freon unit(s) — needs EPA-certified refrigerant recovery before disposal.");
   if(c.counts.cd)notes.push("Heavy / C&D items — weight-billed at the transfer station; tipping fee included.");
-  notes.push("≈ "+c.eighths.toFixed(1)+"/8 truck ("+c.cuft+" cu ft, "+c.lbs+" lb) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
+  const _cap=c.cap||junkCapCheck(c.cuft,c.lbs);
+  notes.push("≈ "+_cap.trips.toFixed(2)+" trailer load"+(_cap.trips>=1.005?"s":"")+" ("+c.cuft+" cu ft = "+_cap.pctOfBox+"% of the box, "+c.lbs+" lb = "+_cap.pctOfWeight+"% of the 3,600-lb cap) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
+  if(_cap.overWeight)notes.push("⚖️ WEIGHT-limited: this load hits the "+JUNK_CARGO_LB+"-lb cargo cap at only "+_cap.pctOfBox+"% full (dense debris ~"+_cap.density.toFixed(0)+" lb/cu ft) — price it as "+_cap.tripsUp+" trip"+(_cap.tripsUp>1?"s":"")+", not one.");
   const cost=Math.round((c.special+dumpAmort+_dr.rt*QE.MILEAGE)*100)/100;   // reserved/passthrough: disposal + dump-run reserve + site mileage
   // job time for the pay check — STASHED, no dump run on this job: 20-min on-site baseline + load times + site drive
   const totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60);
