@@ -37,16 +37,16 @@ img,svg{max-width:100%}
 /* header / nav */
 header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 .nav{max-width:var(--wrap);margin:0 auto;padding:14px 22px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-.navlinks{display:flex;gap:26px;font-weight:600;font-size:16.5px}
+.navlinks{display:flex;gap:22px;font-weight:600;font-size:16.5px;white-space:nowrap}
 .navlinks a{color:var(--ink-2)}
 .navlinks a:hover{color:var(--orange-deep)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:var(--orange);color:#fff;font-weight:800;padding:13px 22px;border-radius:10px;font-size:16.5px;border:0;cursor:pointer;line-height:1.2}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;white-space:nowrap;background:var(--orange);color:#fff;font-weight:800;padding:13px 22px;border-radius:10px;font-size:16.5px;border:0;cursor:pointer;line-height:1.2}
 .btn:hover{background:var(--orange-deep)}
 .btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
 .btn.ghost:hover{background:transparent;border-color:var(--ink);color:var(--ink)}
 .btn.onDark{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.28)}
 .btn.onDark:hover{background:rgba(255,255,255,.08);color:#fff}
-.btn.big{font-size:18px;padding:16px 28px;border-radius:11px}
+.btn.big{font-size:17.5px;padding:15px 24px;border-radius:11px}
 #nav-check,.menu-toggle,.mobilemenu{display:none}
 @media(max-width:860px){
   .navlinks,.navcta{display:none}
@@ -57,6 +57,9 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);ba
   .mobilemenu a:last-child{border:0;color:var(--orange-deep)}
 }
 
+.navcta .btn{padding:11px 18px;font-size:16px}
+/* a mid-width band where 5 links + a phone button get tight: shrink the links before anything wraps */
+@media(max-width:1180px){.navlinks{gap:17px;font-size:15.5px}.navcta .btn{padding:10px 15px;font-size:15px}}
 /* hero */
 .hero{background:var(--ink);color:#fff;position:relative;overflow:hidden;padding:74px 0 78px}
 .hero:before{content:"";position:absolute;right:-180px;top:-150px;width:560px;height:560px;background:radial-gradient(closest-side,rgba(242,106,27,.20),transparent 70%)}
