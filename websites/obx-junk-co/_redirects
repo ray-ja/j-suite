@@ -1,0 +1,10 @@
+# OBX Junk Co. — Cloudflare Pages redirects.
+# Pages serves foo.html at /foo and canonicalizes /foo.html -> /foo, so never list a real page on the left.
+/junk-removal        /            301
+/junk                /            301
+/quote               /contact     301
+/estimate            /contact     301
+/areas               /service-area 301
+/estate-cleanout     /cleanouts   301
+/rental-turnover     /cleanouts   301
+/hot-tub-removal     /what-we-take 301
