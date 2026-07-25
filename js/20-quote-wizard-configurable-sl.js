@@ -84,7 +84,10 @@ var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
 var MILEAGE_RATE          = 0.725;   // $/mi round-trip vehicle cost — 2026 IRS rate 72.5¢ (absorbs fuel; no separate gas line, no hourly wage)
 var MILEAGE_RATE_LABEL    = "72.5¢"; // display form (avoids $0.725 rounding to $0.72)
 var CONSUMABLES_PCT       = 0.05;    // washing/cleaning chemical + consumable allowance, as % of labor sub
-var VEG_FREE              = true;    // clean vegetative debris dumps FREE in Dare County (mixed loads = $73.16/ton)
+var VEG_FREE              = false;   // CORRECTED 2026-07-25: veg is NOT free for a CONTRACTOR. Dare charges
+                                     // $65/ton commercial yard debris (darenc.gov); our own Currituck receipt was $38/1,300 lb
+                                     // (~$58/ton). The free residential yard-waste site explicitly excludes contractor-
+                                     // generated and lot-clearing material. Mixed C&D = $73.16/ton, transfer station $94.04.
 function mileageCost(miles){ return Math.round((Math.max(0,+miles||0) * MILEAGE_RATE) * 100) / 100; }
 function disposalCost(lbs){
   lbs = Math.max(0, +lbs || 0);

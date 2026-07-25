@@ -19,7 +19,7 @@ const CREW_SOPS=[
   pricing:"mow+trim+edge from $45/visit · hedges from $89 · debris haul from $99 · big lot from $69 — recurring 20% off",
   scopeIn:["Mow + string-trim + edge + blow hardscape","Hedge/shrub trim, leaf/debris cleanup, mulch (materials line)","Limb/small-tree ONLY if reachable from ground or 30-ft ladder"],
   scopeOut:["No climbing, no large trees — refer to a tree service, note for Ray"],
-  aids:["Clean vegetative debris dumps FREE — keep green waste separate; mixing in trash/lumber loses the free rate ($73.16/ton)","Remote north (Corolla/Carova) → higher minimum + travel line, bundle the route","Flat per visit, never hourly"],
+  aids:["Veg/brush disposal is NOT free for us — ~$58-65/ton. STILL keep green waste separate: veg is cheaper than mixed C&D ($73.16/ton) and much cheaper than the transfer station ($94.04/ton). Always put a dump-fee line on brush jobs.","Remote north (Corolla/Carova) → higher minimum + travel line, bundle the route","Flat per visit, never hourly"],
   checklist:["Mow at right height (don't scalp coastal lawns)","Trim fence lines/beds/obstacles; edge walks + driveway","Blow clippings off all hardscape","Walk for trash/limbs, bag + haul","Photo the finished yard for the route log"]},
  {id:"04",name:"Junk Removal / Clear-Outs",tier:"SPINE",crew:"2",svc:["junk"],
   pricing:"$350–850 typical · whole-house $1,200–2,500 · price by volume + dump fees + access — flat, never hourly",
