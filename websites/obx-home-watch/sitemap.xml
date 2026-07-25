@@ -2,6 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://obx-home-watch.pages.dev/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>
   <url><loc>https://obx-home-watch.pages.dev/what-we-check</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://obx-home-watch.pages.dev/sample-report</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://obx-home-watch.pages.dev/plans</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://obx-home-watch.pages.dev/storm</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://obx-home-watch.pages.dev/service-area</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
