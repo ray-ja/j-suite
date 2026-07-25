@@ -1,0 +1,10 @@
+# OBX Home Watch — Cloudflare Pages redirects.
+/home-watch          /            301
+/homewatch           /            301
+/pricing             /plans       301
+/checklist           /what-we-check 301
+/hurricane           /storm       301
+/storm-prep          /storm       301
+/quote               /contact     301
+/consultation        /contact     301
+/areas               /service-area 301

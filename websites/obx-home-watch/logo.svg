@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 44" role="img" aria-label="OBX Home Watch">
+  <title>OBX Home Watch</title>
+  <g>
+    <path d="M19 2 L35 9 V21 C35 30 19 38 19 38 C19 38 3 30 3 21 V9 Z" fill="#101c2b"/>
+    <path d="m13 21 4 4 8-8.5" fill="none" stroke="#b8894a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="44" y="30" textLength="200" lengthAdjust="spacingAndGlyphs"
+        font-family="ui-serif,Georgia,'Times New Roman',serif" font-size="27" font-weight="600" fill="#101c2b">OBX Home Watch</text>
+</svg>
