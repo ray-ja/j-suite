@@ -1,5 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 56" role="img" aria-label="OBX Junk Co.">
-  <rect x="0" y="10" width="36" height="36" rx="9" fill="#ff7a1a"/>
-  <text x="18" y="35" font-family="system-ui,sans-serif" font-size="19" text-anchor="middle">🚛</text>
-  <text x="46" y="37" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-size="25" font-weight="800" fill="#15171c" letter-spacing="-.4">OBX Junk Co.</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" role="img" aria-label="OBX Junk Co. — Outer Banks junk removal">
+  <title>OBX Junk Co.</title>
+  <!-- Mark: a dump trailer tipping its load — the actual thing the business does, on the asset it runs on.
+       Pure vector: scales from a business card to a truck door with no pixelation. -->
+  <g>
+    <rect x="2" y="8" width="52" height="48" rx="12" fill="#15171c"/>
+    <path d="M12 41 L38 22 L46 33.5 L20 47 Z" fill="#ff7a1a"/>
+    <rect x="41" y="39" width="5" height="5" rx="1.2" fill="#ff7a1a" opacity=".85"/>
+    <rect x="46.5" y="45" width="4" height="4" rx="1" fill="#ff7a1a" opacity=".6"/>
+    <rect x="36" y="46.5" width="3.4" height="3.4" rx="1" fill="#ff7a1a" opacity=".45"/>
+    <rect x="10" y="46.5" width="34" height="3.2" rx="1.6" fill="#8b9099"/>
+    <circle cx="19" cy="52" r="3.6" fill="#e8eaed"/><circle cx="19" cy="52" r="1.4" fill="#15171c"/>
+    <circle cx="35" cy="52" r="3.6" fill="#e8eaed"/><circle cx="35" cy="52" r="1.4" fill="#15171c"/>
+  </g>
+  <text x="64" y="34" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+        font-size="27" font-weight="800" letter-spacing="-0.6" fill="#15171c">OBX <tspan fill="#e05e04">Junk</tspan> Co.</text>
+  <text x="65" y="49" font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+        font-size="10" font-weight="600" letter-spacing="2.4" fill="#6b6660">OUTER BANKS · WE DO THE LOADING</text>
 </svg>
