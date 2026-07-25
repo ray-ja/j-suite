@@ -1,9 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 44" role="img" aria-label="OBX Home Watch">
-  <title>OBX Home Watch</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 286 46" role="img" aria-label="Milepost Home Watch">
+  <title>Milepost Home Watch</title>
+  <!-- Mark: an Outer Banks milepost marker. Everyone here navigates by MP number, so the brand mark IS the
+       local idiom. Brass rule under "MP" echoes the highway marker without copying a road sign. -->
   <g>
-    <path d="M19 2 L35 9 V21 C35 30 19 38 19 38 C19 38 3 30 3 21 V9 Z" fill="#101c2b"/>
-    <path d="m13 21 4 4 8-8.5" fill="none" stroke="#b8894a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="2" y="3" width="34" height="40" rx="5" fill="#101c2b"/>
+    <text x="19" y="21" text-anchor="middle" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
+          font-size="12" font-weight="800" letter-spacing=".5" fill="#b8894a">MP</text>
+    <rect x="9" y="25" width="20" height="1.6" fill="#b8894a" opacity=".55"/>
+    <path d="m12 34 4 4 8-8.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="44" y="30" textLength="200" lengthAdjust="spacingAndGlyphs"
-        font-family="ui-serif,Georgia,'Times New Roman',serif" font-size="27" font-weight="600" fill="#101c2b">OBX Home Watch</text>
+  <text x="45" y="30" textLength="236" lengthAdjust="spacingAndGlyphs"
+        font-family="ui-serif,Georgia,'Times New Roman',serif" font-size="26" font-weight="600" fill="#101c2b">Milepost Home Watch</text>
 </svg>
