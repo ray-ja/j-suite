@@ -41,7 +41,7 @@ Grab your **Google review short-link** once and paste it where it says `[GOOGLE 
 >
 > Thank you,
 > Ray — OBX Lot Solutions
-> (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+> (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 
 **Gentle nudge — day 4–5 only if no review (send ONCE):**
 > Hi Michelle — no worries if you've been slammed, just floating my note in case it's handy. Quick review here if you get a sec: [GOOGLE REVIEW LINK]. Either way, thanks again — and keep me in mind for your next closing. — Ray

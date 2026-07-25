@@ -41,7 +41,7 @@ Build the page as written. The 3 pricing tiers + free lite variant are in the co
 - **Fillable fields:** every `[bracketed]` placeholder (Welcome Book) and every blank table cell (Vendor Sheet) should be a real form field or a cleanly styled blank line — owners fill these in.
 - **Checkboxes:** the `- [ ]` items render as actual checkboxes (print-tickable; interactive nice-to-have).
 - **★ markers:** the ★ in the source flags OBX-specific items — give them a subtle accent (color/icon), don't delete the star meaning.
-- **Footer each page:** kit name + "© OBX Lot Solutions" + soft "Need it done for you? obxlotsolutions.com · (252) 564-8717".
+- **Footer each page:** kit name + "© OBX Lot Solutions" + soft "Need it done for you? obxlotsolutions.com · (252) 207-5985".
 - **Palette/brand:** OBX Lot Solutions green `#8BC34A` / navy `#1B2A4E` (this is an OBX Lot Solutions product). The tech-guide component (#7) may use Jamieson navy `#002052` / blue `#0099E5` accents to signal the tech cross-sell — Marketing's call if you want consistency vs. the subtle brand cue; either is fine.
 - **Print + screen:** US Letter, readable on a phone too (owners use these on-site).
 - **Keep the caveats:** county tax/permit and insurance-discount disclaimers stay visible in the designed versions (compliance).

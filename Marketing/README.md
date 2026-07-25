@@ -1,6 +1,6 @@
 # Marketing — Index & Launch Order-of-Operations
 
-*Everything in this folder, at a glance, plus the exact order to fire it when the site goes live. **All assets are drafts — nothing posts or sends until Ray approves.** Brand colors: OBX green `#8BC34A` / navy `#1B2A4E` · Jamieson navy `#002052` / blue `#0099E5`. Contact on everything: (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com*
+*Everything in this folder, at a glance, plus the exact order to fire it when the site goes live. **All assets are drafts — nothing posts or sends until Ray approves.** Brand colors: OBX green `#8BC34A` / navy `#1B2A4E` · Jamieson navy `#002052` / blue `#0099E5`. Contact on everything: (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com*
 
 ---
 

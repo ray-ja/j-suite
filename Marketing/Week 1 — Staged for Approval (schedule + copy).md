@@ -4,7 +4,7 @@
 
 **What's new vs. the earlier `Week-1 Posts — Captions & Graphics.md`:** added a **Sunday GBP launch post**, switched the Saturday post to drive **Google reviews now that the profile is live**, and confirmed the **Insured ($1M)** trust line is fair game for OBX. The five midweek posts are unchanged and already approval-ready in that file — summarized here so you can approve the whole week in one place.
 
-**Contact on every post:** (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+**Contact on every post:** (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 **Brand discipline:** OBX = green `#8BC34A` / navy `#1B2A4E`; Jamieson = navy `#002052` / blue `#0099E5`. Never mixed.
 
 ---
@@ -38,7 +38,7 @@
 >
 > Give us a follow, and if we've ever helped you out, a quick review means the world to a local crew.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Find us on Google — tap "Save" so we're one click away.
 **Hashtags:** #OuterBanks #OBX #LocalBusiness #PressureWashing #HomeWatch #JunkRemoval #OBXhomes #OBXLotSolutions
@@ -57,7 +57,7 @@
 >
 > Worked with us? Tap below — it takes 30 seconds and it genuinely helps.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Leave us a Google review → [GOOGLE REVIEW LINK]
 **Hashtags:** #OuterBanks #OBX #CustomerReview #LocalBusiness #OBXhomes #FiveStars #OBXLotSolutions

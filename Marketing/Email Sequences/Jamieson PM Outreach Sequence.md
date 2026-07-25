@@ -3,7 +3,7 @@
 *Cold outreach to vacation-rental property managers and multi-door owners for the rental-ready tech package. One PM controls dozens to hundreds of doors, so this is relationship-sold, not blasted. Hooks: **keyless entry** (no more lockbox chaos / lost keys) and **reliable guest wifi** (the #1 driver of bad connectivity reviews). Jamieson voice: expert, precise, reassuring — the pro who gets it right the first time.*
 
 **Draft only — nothing sends without Ray's approval.** No autonomous sending.
-**Contact:** Jamieson Automation · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+**Contact:** Jamieson Automation · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 
 ---
 
@@ -34,7 +34,7 @@
 >
 > Best,
 > **Ray — Jamieson Automation**
-> (252) 564-8717 · obxlotsolutions.com
+> (252) 207-5985 · obxlotsolutions.com
 
 ---
 
@@ -54,7 +54,7 @@
 >
 > Best,
 > **Ray — Jamieson Automation**
-> (252) 564-8717
+> (252) 207-5985
 
 *(If sending the leave-behind here: "Attached is the one-pager — Why rental-ready tech sells your rentals.")*
 
@@ -70,7 +70,7 @@
 >
 > If keyless entry and reliable guest wifi are on your list for this season, I'd love to do one free walk-through of a property so you can see exactly what we'd do and what it costs — no obligation. If the timing's not right, totally understand — just reply "later" and I'll check back down the road.
 >
-> Either way, I'm local and easy to reach: **(252) 564-8717**. Thanks for your time, {{first_name}}.
+> Either way, I'm local and easy to reach: **(252) 207-5985**. Thanks for your time, {{first_name}}.
 >
 > Best,
 > **Ray — Jamieson Automation**
@@ -89,7 +89,7 @@
 > Hey {{first_name}}, circling back. Quick tip in case it helps: most "smart lock dropped" issues are really wifi coverage at the door, not the lock — that's why our installs start with the signal at the device. Means fewer 9pm "can't get in" calls and fewer wifi complaints for you. I've got a one-pager on how it pays off for rentals — want me to send it?
 
 **DM 3 — soft close (+5–6 days)**
-> Last note for now, {{first_name}} 🙂 If keyless entry + solid guest wifi are on your list this season, I'll do a free walk-through of one property so you can see exactly what we'd do and what it runs. No obligation. If now's not the time, just say "later" and I'll check back. — Ray, (252) 564-8717
+> Last note for now, {{first_name}} 🙂 If keyless entry + solid guest wifi are on your list this season, I'll do a free walk-through of one property so you can see exactly what we'd do and what it runs. No obligation. If now's not the time, just say "later" and I'll check back. — Ray, (252) 207-5985
 
 ---
 

@@ -2,7 +2,7 @@
 
 *Ready-to-review copy for the six Week-2 posts in the content calendar. Same format as Week 1: caption, CTA, hashtags, alt text, graphic note. Graphics saved in `Marketing/Assets/` as 1080×1080 squares. Photo posts use a branded placeholder frame until Ray's real shots come in.*
 
-**Nothing posts without Ray's approval. Drafts only. Contact everywhere: (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com**
+**Nothing posts without Ray's approval. Drafts only. Contact everywhere: (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com**
 
 ---
 
@@ -18,7 +18,7 @@
 >
 > (Worth a two-minute call to your own agent to ask exactly what your policy says — every carrier words it differently.)
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Want us to handle the checks? Message us.
 **Hashtags:** #OuterBanks #OBX #SecondHome #HomeWatch #HomeInsurance #VacationRental #AbsenteeOwner #OBXLotSolutions
@@ -38,7 +38,7 @@
 >
 > Booking house washes across the OBX now — recurring plans available so it stays this clean.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Comment or call for a free wash quote.
 **Hashtags:** #BeforeAndAfter #OuterBanks #OBX #SoftWash #HouseWashing #SatisfyingClean #CurbAppeal #OBXLotSolutions
@@ -59,7 +59,7 @@
 >
 > Run multiple doors? We do it per-door so it scales.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Hosting on the OBX? Let's make your place rental-ready.
 **Hashtags:** #JamiesonAutomation #OuterBanks #OBX #VacationRental #STR #SmartHome #Starlink #SmartLock #AirbnbHost
@@ -83,7 +83,7 @@
 >
 > That's the whole case for a regular check — catch all five while they're still small. (Our free checklist walks through exactly what to look for; comment "CHECKLIST" and we'll send it.)
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Comment "CHECKLIST" for the free download.
 **Hashtags:** #OuterBanks #OBX #SecondHome #HomeWatch #CoastalLiving #HomeMaintenance #VacationRental #OBXLotSolutions
@@ -101,7 +101,7 @@
 >
 > Rental clean-out before the next guest? We work on turnover timelines.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Got a pile? Message us for a quick quote.
 **Hashtags:** #JunkRemoval #OuterBanks #OBX #CleanOut #VacationRental #DeclutterOBX #OBXLotSolutions
@@ -120,7 +120,7 @@
 >
 > That's the difference between buying a device and buying a working system. We do the second one.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Planning an install? Let's talk.
 **Hashtags:** #JamiesonAutomation #OuterBanks #OBX #SmartHome #Starlink #HomeNetworking #CleanInstall #STR

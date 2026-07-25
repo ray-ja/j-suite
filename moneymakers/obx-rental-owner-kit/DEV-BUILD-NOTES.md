@@ -9,7 +9,7 @@ Built per `DEV HANDOFF — PDF Reskin Spec.md`. Marketing's `kit-contents/` + `s
   2. Kit + Tech-Ready Guide — **$39**
   3. Kit + Tech + 20-min consult — **$49**
   (Hero + final CTAs anchor to `#pricing`, so there are exactly 3 Gumroad placeholders = the 3 tiers.)
-- `OBX-Rental-Owner-Kit.pdf` — **combined master** (20 pages): cover + contents + all 7 components, branded (green/navy; tech guide #7 uses a blue accent bar), real checkboxes, ★ accents, styled `[fill-in]` blanks, fillable tables, footer per spec ("Need it done for you? obxlotsolutions.com · (252) 564-8717").
+- `OBX-Rental-Owner-Kit.pdf` — **combined master** (20 pages): cover + contents + all 7 components, branded (green/navy; tech guide #7 uses a blue accent bar), real checkboxes, ★ accents, styled `[fill-in]` blanks, fillable tables, footer per spec ("Need it done for you? obxlotsolutions.com · (252) 207-5985").
 - `OBX-Rental-Owner-Kit-SAMPLE.pdf` — **free "lite"** (5 pages): Turnover Checklist + "what's in the full kit" + tier CTA. This is the lead-magnet the form delivers.
 - `build-pdfs.py` — the generator. It **parses the markdown in `kit-contents/` directly**, so when Marketing edits copy, just re-run: `python3 build-pdfs.py` (needs reportlab + DejaVu fonts). No transcription — copy stays canonical.
 

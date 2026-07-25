@@ -9,7 +9,7 @@
 
 ## SHORT description (the "from the business" tagline — ~max 750 chars; keep tight)
 
-OBX Lot Solutions is your local Outer Banks property-care crew — home-watch, pressure & soft washing, yard care, junk removal, and cleanup, run on a schedule. Most owners put us on a recurring plan: we keep your home or rental clean, watched, and cared-for year-round, send a photo report every visit, and charge 20% less than one-off rates. Uniformed crew, on time, insured. Serving Corolla to Hatteras and lower Currituck. Call or text (252) 564-8717 for a free quote or to start a plan.
+OBX Lot Solutions is your local Outer Banks property-care crew — home-watch, pressure & soft washing, yard care, junk removal, and cleanup, run on a schedule. Most owners put us on a recurring plan: we keep your home or rental clean, watched, and cared-for year-round, send a photo report every visit, and charge 20% less than one-off rates. Uniformed crew, on time, insured. Serving Corolla to Hatteras and lower Currituck. Call or text (252) 207-5985 for a free quote or to start a plan.
 
 ---
 
@@ -31,7 +31,7 @@ Put your property on a plan and save 20% on every visit — one crew that alread
 
 We're a local company serving the entire Outer Banks — Corolla, Duck, Southern Shores, Kitty Hawk, Kill Devil Hills, Nags Head, Manteo, Hatteras Island, and lower Currituck — and we're insured ($1M general liability).
 
-Call or text (252) 564-8717, or visit obxlotsolutions.com to start a plan or get a quote.
+Call or text (252) 207-5985, or visit obxlotsolutions.com to start a plan or get a quote.
 
 ---
 

@@ -32,7 +32,7 @@ The form fields already match your Guided Quote wizard (name, phone, email, addr
 
 ## ✅ Pre-launch checklist (fill these in before sending traffic)
 **Both sites**
-- [ ] Confirm the real **phone number** (OBX is set to (252) 564-8717; **Jamieson is a placeholder (252) 555-0143 — replace it**).
+- [ ] Confirm the real **phone number** (OBX is set to (252) 207-5985; **Jamieson is a placeholder (252) 555-0143 — replace it**).
 - [ ] Confirm the real **email** (placeholders: hello@obxlotsolutions.com / hello@jamiesonautomation.com).
 - [ ] Confirm **business hours** in the top bar.
 - [ ] Replace the **placeholder reviews** with real Google reviews (reviews.html + homepage).

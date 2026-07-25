@@ -2,7 +2,7 @@
 
 *Ready-to-review copy for the six Week-1 posts in the content calendar. Each entry has the caption, the CTA, hashtags, alt text (for accessibility + SEO), and a note on the graphic. Graphics are saved in `Marketing/Assets/` as 1080×1080 squares (Instagram/Facebook/GBP-friendly). Photo posts use a branded placeholder frame until Ray's real before/after shots come in.*
 
-**Nothing posts without Ray's approval. These are drafts. Contact everywhere: (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com**
+**Nothing posts without Ray's approval. These are drafts. Contact everywhere: (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com**
 
 ---
 
@@ -18,7 +18,7 @@
 >
 > Out here, salt and humidity bring the green back every year. We use the right method for every surface, so your home gets clean without getting damaged.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Comment or call for a free wash quote.
 **Hashtags:** #OuterBanks #OBX #PressureWashing #SoftWash #OBXhomes #CoastalLiving #HomeMaintenance #OBXLotSolutions
@@ -38,7 +38,7 @@
 >
 > Grab the checklist free, or let us handle the checks and send you a photo report every visit. Either way, your home's covered.
 >
-> 📞 (252) 564-8717 · contact@obxlotsolutions.com
+> 📞 (252) 207-5985 · contact@obxlotsolutions.com
 
 **CTA:** Comment "CHECKLIST" or message us and we'll send it over.
 **Hashtags:** #OuterBanks #OBX #SecondHome #VacationRental #HomeWatch #OBXrealestate #AbsenteeOwner #PeaceOfMind #OBXLotSolutions
@@ -59,7 +59,7 @@
 >
 > Reliable wifi is the foundation everything else runs on. Get that right and the smart home just… works.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Planning smart locks or cameras for your rental? Let's talk.
 **Hashtags:** #JamiesonAutomation #OuterBanks #OBX #SmartHome #SmartLock #VacationRental #HomeNetworking #WiFi #STR
@@ -79,7 +79,7 @@
 >
 > Want yours to look like the "after"? We're booking washes across the Outer Banks now.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Message us for a free quote.
 **Hashtags:** #BeforeAndAfter #OuterBanks #OBX #PressureWashing #SoftWash #SatisfyingClean #OBXhomes #CurbAppeal #OBXLotSolutions
@@ -100,7 +100,7 @@
 >
 > Set it once. We've got the rest.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Ask us about recurring plans for your home or rental.
 **Hashtags:** #OuterBanks #OBX #PressureWashing #SoftWash #HomeMaintenance #VacationRental #OBXhomes #OBXLotSolutions
@@ -118,7 +118,7 @@
 >
 > Reliable, local, and photo-proof every visit — that's the whole promise. Thank you for trusting us with your property.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 **CTA:** Worked with us? A quick Google review helps more than you'd think.
 **Hashtags:** #OuterBanks #OBX #CustomerReview #LocalBusiness #OBXhomes #FiveStars #OBXLotSolutions

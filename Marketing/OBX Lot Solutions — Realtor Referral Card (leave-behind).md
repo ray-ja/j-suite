@@ -35,7 +35,7 @@ Corolla · Duck · Southern Shores · Kitty Hawk · Kill Devil Hills · Nags Hea
 
 ## Contact block
 OBX Lot Solutions — Kitty Hawk, NC
-(252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+(252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 *Call or text for a free walkthrough & same-day quote.*
 
 ---

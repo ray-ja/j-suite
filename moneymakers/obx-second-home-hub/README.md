@@ -28,7 +28,7 @@ Plus `style.css`, `robots.txt`, `sitemap.xml`, and `OBX-Home-Watch-Checklist.pdf
 1. **Affiliate links.** In `recommended-gear.html`, replace every `REPLACE_WITH_AFFILIATE_LINK` (11 product links) with your real affiliate URLs. Amazon Associates is the easy default (free to join). Keep `rel="sponsored nofollow"` and the disclosure block. The gear teasers on the guide pages link into this page's anchors, so you only edit links in one file.
 2. **Domain.** Canonical/OG URLs use the placeholder `https://www.obxsecondhomehub.com/`. If you use a different domain (or host it as a subdomain/subfolder of obxlotsolutions.com), find-and-replace that base URL across all files and in `sitemap.xml` / `robots.txt`.
 3. **Email.** Schema uses `hello@obxlotsolutions.com` — confirm or change.
-4. **Phone** is set to the real OBX number `(252) 564-8717`. Confirm.
+4. **Phone** is set to the real OBX number `(252) 207-5985`. Confirm.
 
 ## Deploy (Netlify recommended — forms work out of the box)
 1. Free account at netlify.com.

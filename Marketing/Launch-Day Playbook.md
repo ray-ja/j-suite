@@ -3,7 +3,7 @@
 *The moment the site goes live, this turns everything we've built into action. Three parts: (1) set up the Google Business Profile — the single highest-ROI free asset; (2) get the house-watch checklist in front of the right OBX audiences with copy that's ready to paste; (3) a first-week posting schedule tied to the content calendar so nothing stalls.*
 
 **Draft only — nothing posts until Ray approves. All copy below is ready to paste once approved.**
-**Contact used everywhere:** OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+**Contact used everywhere:** OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 
 ---
 
@@ -27,7 +27,7 @@
 
 ## C. Complete every field (Google rewards completeness)
 
-- **Phone:** (252) 564-8717 · **Website:** obxlotsolutions.com · **Email** where prompted.
+- **Phone:** (252) 207-5985 · **Website:** obxlotsolutions.com · **Email** where prompted.
 - **Service area:** list your real coverage — e.g. Kitty Hawk, Kill Devil Hills, Nags Head, Southern Shores, Duck, Corolla, Manteo, Wanchese, Colington, and any others you serve. (Confirm the exact list with Ray.)
 - **Hours:** set real hours; add **special hours** for holidays. Even a service business should show hours.
 - **Services:** add each one with a short description and price-from where comfortable — pull straight from the Service Guide (soft wash, pressure wash, house-watch, junk removal, gutter cleaning, etc.). This feeds search.
@@ -36,7 +36,7 @@
 - **Opening date:** set it so the profile shows established history.
 
 ### Ready-to-paste business description
-> OBX Lot Solutions is your reliable local for property care across the Outer Banks. We handle soft washing and pressure washing, house-watch and property checks for absentee owners, junk removal and clean-outs, gutter and window cleaning, and seasonal storm prep — with a photo report on every visit. Salt and humidity are hard on coastal homes, so we offer recurring plans that keep your property clean and cared for year-round, whether you live here or three states away. Dependable, local, and documented every time. Call (252) 564-8717 for a free quote.
+> OBX Lot Solutions is your reliable local for property care across the Outer Banks. We handle soft washing and pressure washing, house-watch and property checks for absentee owners, junk removal and clean-outs, gutter and window cleaning, and seasonal storm prep — with a photo report on every visit. Salt and humidity are hard on coastal homes, so we offer recurring plans that keep your property clean and cared for year-round, whether you live here or three states away. Dependable, local, and documented every time. Call (252) 207-5985 for a free quote.
 
 ## D. Photos (this is where your Shot Guide pays off)
 
@@ -89,7 +89,7 @@
 >
 > Comment "CHECKLIST" or send me a message and I'll get it to you. Happy to answer any home-care questions in the comments too. 🙂
 >
-> — Ray, OBX Lot Solutions (local property care · (252) 564-8717)
+> — Ray, OBX Lot Solutions (local property care · (252) 207-5985)
 
 ### Version B — Nextdoor (neighborly)
 > Neighbors — if you've got a second home or a place that sits empty part of the year, I made a free **Home-Watch Checklist** for keeping a coastal home in good shape while you're away (what to check, how often, storm-season tips).
@@ -108,7 +108,7 @@
 >
 > Photo report on every visit. Free quotes. Message us for pricing — and ask for our **free Absentee Owner's Home-Watch Checklist**, yours whether you hire us or not.
 >
-> 📞 (252) 564-8717 · obxlotsolutions.com
+> 📞 (252) 207-5985 · obxlotsolutions.com
 
 ### Version D — Short comment/DM reply (when someone says "CHECKLIST")
 > Sent it your way! 🙌 It walks through everything to check on a vacant OBX home, inside and out, plus how often. If you ever want us to handle the checks and send you a photo report each visit, just say the word — but no pressure, the checklist's yours either way.

@@ -2,7 +2,7 @@
 
 *The conversion engine behind the wedge. When someone downloads the Absentee Owner's Home-Watch Checklist, this 4-email sequence turns that download into a recurring house-watch client — and ladders them up to washing/junk, then Jamieson tech. OBX voice throughout: plain-spoken, local, dependable, proof over hype.*
 
-**Draft only — nothing sends without Ray's approval.** Contact in every footer: OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+**Draft only — nothing sends without Ray's approval.** Contact in every footer: OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 
 ---
 
@@ -41,7 +41,7 @@ Reliable. Local. Photo-proof every visit.
 📎 *Attached: OBX Absentee Owner's Home-Watch Checklist (PDF)*
 
 ---
-*OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com*
+*OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com*
 *You're getting this because you downloaded our home-watch checklist. Unsubscribe anytime.*
 
 ---
@@ -69,7 +69,7 @@ More soon,
 *P.S. The checklist from the other day lists exactly what a good check covers — that's the documentation standard worth holding any home-watch to, including ours.*
 
 ---
-*OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
+*OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
 
 ---
 
@@ -93,13 +93,13 @@ The owners who've figured it out use **one local who's already there.** Once we'
 
 Same trusted person, same photo reports, one number to call. That's the whole idea behind OBX Lot Solutions: be the reliable local the Outer Banks runs short on.
 
-Whenever you want to talk through what your place needs, just reply or call **(252) 564-8717**.
+Whenever you want to talk through what your place needs, just reply or call **(252) 207-5985**.
 
 Best,
 **Ray — OBX Lot Solutions**
 
 ---
-*OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
+*OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
 
 ---
 
@@ -122,7 +122,7 @@ Every visit includes the full interior + exterior walk-through from your checkli
 
 And down the road, if you ever want the home to *run* better while you're away — reliable guest wifi, smart locks, cameras, Starlink — that's our sister company, **Jamieson Automation**, and it's the same trusted hands.
 
-Want to get started, or just have questions about your specific property? Reply to this email or call **(252) 564-8717** and we'll set it up.
+Want to get started, or just have questions about your specific property? Reply to this email or call **(252) 207-5985** and we'll set it up.
 
 Thanks for following along,
 **Ray — OBX Lot Solutions**
@@ -131,7 +131,7 @@ Reliable. Local. Photo-proof every visit.
 *P.S. Not ready yet? Keep the checklist handy and reach out whenever. We're not going anywhere.*
 
 ---
-*OBX Lot Solutions · (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
+*OBX Lot Solutions · (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com · Unsubscribe anytime.*
 
 ---
 

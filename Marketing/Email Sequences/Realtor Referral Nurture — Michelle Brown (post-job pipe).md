@@ -36,7 +36,7 @@
 > I'll drop a few cards by your office so they're easy to pass along. Thanks, Michelle.
 >
 > Ray — OBX Lot Solutions
-> (252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+> (252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 
 *Pair with the realtor referral card (`Marketing/OBX Lot Solutions — Realtor Referral Card.pdf`) + the 4-up cards for her colleagues.*
 

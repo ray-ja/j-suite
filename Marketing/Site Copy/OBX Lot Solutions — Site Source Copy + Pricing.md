@@ -12,7 +12,7 @@
 
 **Legal/contact (site-wide footer):**
 DYAD Holdings LLC DBA OBX Lot Solutions · Kitty Hawk, NC · serving the Outer Banks
-(252) 564-8717 · contact@obxlotsolutions.com · obxlotsolutions.com
+(252) 207-5985 · contact@obxlotsolutions.com · obxlotsolutions.com
 Insured — $1M general liability (eff. 2026-06-01). *(True: Next Insurance COI in hand. Insurance line goes live with the policy date. Do NOT add "licensed" — no contractor license claimed.)*
 
 ---
@@ -150,9 +150,9 @@ We serve the Outer Banks and lower Currituck: **Corolla · Duck · Southern Shor
 ## CONTACT / QUOTE FORM
 
 **Headline:** Free, same-day written quote.
-**Subhead:** Call or text (252) 564-8717, or tell us about your property below.
+**Subhead:** Call or text (252) 207-5985, or tell us about your property below.
 **Form fields (match the Guided Quote wizard):** name · phone · email · property address · service(s) needed · details · recurring? (yes/no) · how did you hear about us?
-**Confirmation (thanks page):** Got it — we'll be in touch the same day with your written quote. For anything urgent, call or text (252) 564-8717.
+**Confirmation (thanks page):** Got it — we'll be in touch the same day with your written quote. For anything urgent, call or text (252) 207-5985.
 
 ---
 
