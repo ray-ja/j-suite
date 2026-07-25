@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.obxhomewatch.com/sitemap.xml
+Sitemap: https://obx-home-watch.pages.dev/sitemap.xml
