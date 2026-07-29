@@ -207,12 +207,24 @@ function quoteFigures(){
   if(CURQ&&CURQ.total!=null)return{sub:CURQ.subtotal||0,disc:CURQ.discount||0,total:CURQ.total};
   let sub=0;QITEMS.forEach(it=>sub+=(it.price||0)*(it.qty||1));return{sub:sub,disc:0,total:sub};
 }
+/* The totals block a CUSTOMER reads. Two rules, both learned the hard way:
+   1. Always print the subtotal when the total differs from the line items, so the document reconciles.
+   2. A NEGATIVE discount is a mark-UP (the price slider pushed the price above the items). Label it
+      "Adjustment: +$X" — never "Discount: -$-285" over a total that's higher than the items. */
+function quoteTotalsParts(t){
+  const disc=+t.disc||0, sub=+t.sub||0;
+  if(!disc) return null;
+  const pct = sub>0 ? Math.round(Math.abs(disc)/sub*100) : 0;
+  return { subLabel:"Subtotal", subAmt:money(sub),
+    adjLabel: disc>0 ? ("Discount"+(pct?" ("+pct+"%)":"")) : "Adjustment",
+    adjAmt:   disc>0 ? ("-"+money(disc)) : ("+"+money(-disc)) };
+}
 window.copyQuote=function(){
   const t=quoteFigures();const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
   let txt=`${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"} — Quote\n`+
     (who?`For: ${who}\n`:"")+
-    "\n"+lines.join("\n")+(t.disc?`\nRecurring discount (20%): -${money(t.disc)}`:"")+`\n\nTotal: ${money(t.total)}`+
+    "\n"+lines.join("\n")+(()=>{const p=quoteTotalsParts(t);return p?`\n\n${p.subLabel}: ${p.subAmt}\n${p.adjLabel}: ${p.adjAmt}`:"";})()+`\n\nTotal: ${money(t.total)}`+
     (BIZ[S.biz].phone?`\n\n${BIZ[S.biz].phone}`:"");
   if(navigator.clipboard)navigator.clipboard.writeText(txt);
   alert("Quote copied — paste it into a text or email:\n\n"+txt);
@@ -243,7 +255,7 @@ window.printQuote=function(){
   <body><div class="hd">${brandHtml}<div style="font-weight:700">${(CURQ&&CURQ.invoiced)?"INVOICE":"QUOTE"}</div></div>
   ${who?`<h2>Prepared for</h2><div>${esc(who)}${(CURQ&&CURQ.address)?"<br>"+esc(CURQ.address):""}</div>`:""}
   <h2>Services</h2><table><tr><th>Service</th><th style="text-align:center">Qty</th><th style="text-align:right">Price</th></tr>${rows}</table>
-  ${t.disc?`<div class="disc">Discount: -${money(t.disc)}</div>`:""}
+  ${(()=>{const p=quoteTotalsParts(t);return p?`<div class="disc">${p.subLabel}: ${p.subAmt}<br>${p.adjLabel}: ${p.adjAmt}</div>`:"";})()}
   <div class="tot">Total: ${money(t.total)}</div>
   <div class="ft">${esc(name)}${phone?" &middot; "+phone:""} &middot; ${new Date().toLocaleDateString()}</div>
   <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script></body></html>`;
