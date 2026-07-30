@@ -473,11 +473,27 @@ function writerManagesOrg(store, selfId, orgId) {
 const ORG_AI_FILE = path.join(__dirname, "org-ai-config.json");
 function loadOrgAi() { try { return JSON.parse(fs.readFileSync(ORG_AI_FILE, "utf8")); } catch (e) { return {}; } }
 function saveOrgAi(m) { const tmp = ORG_AI_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(m, null, 2)); fs.renameSync(tmp, ORG_AI_FILE); }
+/* SHARED AI CREDENTIALS (Ray, 2026-07-27: "sharing the key is fine, all of the keys can be shared").
+   org-ai-config.json may carry a reserved "_shared" entry; any org WITHOUT its own key inherits it.
+   Field-by-field, so an org can still override just the model while inheriting the key — and an org
+   that sets its own key or an explicit enabled:false still wins. One place to rotate.
+   "_shared" is a reserved config key, never an org id (org ids are generated), and nothing iterates
+   this file's keys as orgs — checked. The key is still never synced, never echoed to a client. */
+const ORG_AI_SHARED = "_shared";
+function orgAiFor(orgId) {
+  const cfg = loadOrgAi();
+  const own = (orgId && cfg[orgId]) || {};
+  const shared = cfg[ORG_AI_SHARED] || {};
+  if (!shared.apiKey && !shared.imageKey) return own;
+  return Object.assign({}, shared, own);
+}
 function orgAiStatus(orgId) {   // NEVER includes the key. `models` = the org's SAVED, allowlisted per-fn picks (unset fns omitted → client shows the default).
-  const c = loadOrgAi()[orgId] || {};
+  const c = orgAiFor(orgId);
+  const own = loadOrgAi()[orgId] || {};
   const models = {};
   if (c.models && typeof c.models === "object") for (const k of AI_FN_KEYS) if (typeof c.models[k] === "string" && AI_MODELS_SET.has(c.models[k])) models[k] = c.models[k];
-  return { enabled: !!c.enabled, hasKey: !!c.apiKey, hasImageKey: !!c.imageKey, model: c.model || "claude-haiku-4-5-20251001", models: models };
+  // sharedKey = this org is running on the shared credential, not one of its own (so the UI can say so)
+  return { enabled: !!c.enabled, hasKey: !!c.apiKey, hasImageKey: !!c.imageKey, model: c.model || "claude-haiku-4-5-20251001", models: models, sharedKey: !!(c.apiKey && !own.apiKey) };
 }
 function apiAccount(tok) { const uid = userForToken(tok); return uid ? accountById(loadStore(), uid) : null; }   // resolve the per-user account behind a bearer token
 function orgAiContext(store, orgId) {   // a concise, ORG-SCOPED data summary handed to that org's assistant (its data only)
@@ -2553,7 +2569,7 @@ const server = http.createServer((req, res) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const store = loadStore(), org = p && p.org;
       if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization"}'); }
       callAnthropic(cfg.apiKey, resolveModel(cfg, "ask"), orgAiContext(store, org), p.question, (err, answer) => {
         if (err) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"AI request failed"}'); }
@@ -2579,7 +2595,7 @@ const server = http.createServer((req, res) => {
       if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run Cap"}'); }
       if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp|pdf)$/i.test(receiptId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad receiptId"}'); }
       if (!rcptOwnedByOrg(store, org, receiptId)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"receipt not found in this org"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
       const full = path.join(__dirname, "uploads", receiptId);
       if (!full.startsWith(path.join(__dirname, "uploads") + path.sep) || !fs.existsSync(full)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"image file missing"}'); }
@@ -2626,7 +2642,7 @@ const server = http.createServer((req, res) => {
       if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run Cap"}'); }
       if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp)$/i.test(photoId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad photoId"}'); }
       if (!landPhotoOwnedByOrg(store, org, photoId)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"photo not found in this org"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
       const full = path.join(__dirname, "uploads", photoId);
       if (!full.startsWith(path.join(__dirname, "uploads") + path.sep) || !fs.existsSync(full)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"image file missing"}'); }
@@ -2662,7 +2678,7 @@ const server = http.createServer((req, res) => {
       const store = loadStore(), org = p && p.org;
       if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
       if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run Cap"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
       const img = String((p && p.image) || "");
       const m = /^data:(image\/(?:jpe?g|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(img);
@@ -2700,7 +2716,7 @@ const server = http.createServer((req, res) => {
       if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can run this"}'); }
       if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp)$/i.test(photoId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad photoId"}'); }
       if (!landPhotoOwnedByOrg(store, org, photoId)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"photo not found in this org"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.imageKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"set the Gemini image key in the Assistant card first"}'); }
       const full = path.join(__dirname, "uploads", photoId);
       if (!full.startsWith(path.join(__dirname, "uploads") + path.sep) || !fs.existsSync(full)) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"image file missing"}'); }
@@ -2743,7 +2759,7 @@ const server = http.createServer((req, res) => {
       const store = loadStore(), org = p && p.org, photoId = (p && typeof p.photoId === "string") ? p.photoId : "", quoteId = (p && typeof p.quoteId === "string") ? p.quoteId : "";
       if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
       if (!/^[A-Za-z0-9]+\.(jpe?g|png|webp)$/i.test(photoId)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad photoId"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.imageKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"set the Gemini image key in the Assistant card first"}'); }
       const slab = store[org] || {}, q = (slab.quotes || []).find(function (x) { return x && x.id === quoteId && !x.deleted; });
       const s = pathSpecs((q && q.sp) || {});
@@ -2791,7 +2807,7 @@ const server = http.createServer((req, res) => {
       if (!writerManagesOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"only an owner or admin can generate a crew brief"}'); }
       const tasks = Array.isArray(p && p.tasks) ? p.tasks.slice(0, 60) : [];
       if (!tasks.length) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"no tasks to brief"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
       const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").slice(0, n);
       const job = (p && p.job && typeof p.job === "object") ? p.job : {};
@@ -2843,7 +2859,7 @@ const server = http.createServer((req, res) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const store = loadStore(), org = p && p.org;
       if (!acct || !org || orgsForUser(store, acct).indexOf(org) < 0) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization"}'); }
       // the CLAMP context: which jobIds this user may act on (their today's + active jobs) + today's ISO day for markWorkDay.
       const oo = store[org] || {}, tISO = nyParts(new Date()).iso;
@@ -2885,7 +2901,7 @@ const server = http.createServer((req, res) => {
       if (customJobNeedsOwner(job) && !writerOwnsOrg(store, acct.id, org)) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"finance, broadcast, and propose tasks are owner-only"}'); }
       const prompt = String(job.prompt || "").trim();
       if (!prompt) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"the task needs a prompt"}'); }
-      const cfg = loadOrgAi()[org];
+      const cfg = orgAiFor(org);
       if (!cfg || !cfg.enabled || !cfg.apiKey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"AI is not set up for this organization — set an API key in the Assistant card first"}'); }
       const ctx = orgAiScopedContext(store, org, job.dataScope, { maxRows: job.maxRows });
       callAnthropicTask(cfg.apiKey, resolveModel(cfg, "digest"), ctx, prompt, (err, answer) => {
@@ -3396,4 +3412,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
