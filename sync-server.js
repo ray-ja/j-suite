@@ -65,7 +65,9 @@ function auditLabel(r) { return String((r && (r.name || r.title || r.cust || r.l
 function auditDiff(userId, pre, incoming) {
   if (!userId || !incoming) return;   // only attribute identified (per-user-token) syncs; anonymous legacy syncs aren't logged
   const now = Date.now(), entries = [];
-  ["obx", "jam"].forEach(b => {
+  // MULTI-ORG: auditing only obx/jam meant writes to any newer org (escape room, personal) left NO
+  // paper trail at all. Audit whatever orgs the incoming payload actually touches.
+  orgIdsOf(incoming).forEach(b => {
     const inc = incoming[b] || {}, sto = (pre && pre[b]) || {};
     AUDIT_COLLECTIONS.forEach(c => {
       const incArr = Array.isArray(inc[c]) ? inc[c] : []; if (!incArr.length) return;
@@ -1597,6 +1599,15 @@ function consumeInviteToken(tok) {
 function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 /* ---- HOSTED PUBLIC INVOICE (GET /i/<token>) — server-rendered so a customer can open + pay from any browser ---- */
 const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "", logo: "/assets/logo-jam.png" } };
+/* Branding for a PUBLIC, customer-facing page. INV_BIZ only ever had obx/jam, and the call sites
+   defaulted to OBX's name AND phone — so a guide or invoice served for any other org rendered as
+   "OBX Lot Solutions" with OBX's number on it. Fall back to the org's REGISTRY name instead, and
+   never inherit another org's phone. */
+function pubBizOf(store, org) {
+  if (INV_BIZ[org]) return INV_BIZ[org];
+  const reg = ((store && store.registry) || []).find(r => r && r.id === org && !r.deleted);
+  return { name: (reg && reg.name) || org || "", phone: "", logo: "" };
+}
 function invMoney(n) { n = Math.round((+n || 0) * 100) / 100; return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.name || it.serviceId)); }
 function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
@@ -1850,7 +1861,11 @@ function ceoCustName(store, b, cid) {
 function ceoProjection(store, opts) {
   opts = opts || {};
   store = store || {};
-  const bizes = (opts.biz && opts.biz !== "all" && BIZES.indexOf(opts.biz) >= 0) ? [opts.biz] : BIZES;
+  // MULTI-ORG: BIZES is the legacy ["obx","jam"] pair. Validating against it meant asking for any
+  // NEWER org (escape room, personal) silently fell through to "all" — and "all" itself only ever
+  // covered obx+jam, so those orgs were invisible to the projection entirely.
+  const _allOrgs = orgIdsOf(store).length ? orgIdsOf(store) : BIZES;
+  const bizes = (opts.biz && opts.biz !== "all" && _allOrgs.indexOf(opts.biz) >= 0) ? [opts.biz] : _allOrgs;
   const asOf = Date.now();
   const today = ceoDateStr(new Date(asOf));
   const members = ((store.users) || []).filter(u => u && !u.deleted && !u.kind);
@@ -1963,7 +1978,9 @@ function ceoProjection(store, opts) {
   const full = { ok: true, asOf, biz: opts.biz || "all", crew, availabilityWeek, openJobs, openQuotes, counts };
   // filed receipts that Cap hasn't read yet (has a receiptId, no capRead) — for the background receipt reader
   if (view === "receipts") {
-    const receipts = [], _bz = ["obx", "jam"].filter(b => store[b]);
+    // MULTI-ORG: was ["obx","jam"] — unread receipts in any newer org were invisible to Cap's
+    // background reader, so they simply never got read.
+    const receipts = [], _bz = orgIdsOf(store);
     _bz.forEach(b => {
       (((store[b] || {}).jobs) || []).forEach(j => { if (j && !j.deleted) {
         (j.expenses || []).forEach(e => { if (e && !e.deleted && e.receiptId && !e.capRead) receipts.push({ biz: b, type: "jobexp", jobId: j.id, id: e.id, receiptId: e.receiptId, amount: +e.amount || 0, vendor: e.vendor || "", desc: e.desc || "" }); });
@@ -2218,10 +2235,11 @@ function ymdCompact(ds) { return String(ds || "").replace(/-/g, ""); }
 function ymdPlus(ds, n) { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() + n); return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()); }
 function todayStr(d) { d = d || new Date(); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); }
 
-/* a user's upcoming (today-onward), non-deleted, not-done jobs across both businesses, time-sorted */
+/* a user's upcoming (today-onward), non-deleted, not-done jobs across EVERY org they're crewed on,
+   time-sorted. Was BIZES-only, so a job in any org past obx/jam never reached the person on it. */
 function jobsForUser(store, userId, nowDate) {
   const t = todayStr(nowDate), out = [];
-  for (const biz of BIZES) {
+  for (const biz of (orgIdsOf(store).length ? orgIdsOf(store) : BIZES)) {
     for (const j of ((store[biz] || {}).jobs || [])) {
       if (!j || j.deleted || j.done || !j.date || j.date < t) continue;
       if ((j.crew || []).indexOf(userId) < 0) continue;
@@ -3028,7 +3046,7 @@ const server = http.createServer((req, res) => {
     const _jb = (q.billMode === "actual") ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
     const _mats = _jb ? (_js.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === _jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0) : [];
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
-    return res.end(renderInvoicePage(INV_BIZ[org] || { name: (store.registry || []).reduce((n, r) => (r && r.id === org && r.name) || n, org) }, cust, q, _mats));
+    return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats));
   }
 
   // PATH BUILD GUIDE public page — GET /guide/path/<org>/<quoteId> (must be checked BEFORE /guide/ below since it also
@@ -3040,7 +3058,7 @@ const server = http.createServer((req, res) => {
     const q = slab && (slab.quotes || []).find(function (x) { return x && x.id === qid && !x.deleted; });
     if (!q || !q.sp) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Path guide not found</h2></body>"); }
     const cust = slab && (slab.customers || []).find(function (c) { return c && c.id === q.customerId; });
-    const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
+    const biz = pubBizOf(store, org);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(pathGuideRenderHTML(q, cust, biz, (slab && slab.playbookLib) || []));
   }
@@ -3053,7 +3071,7 @@ const server = http.createServer((req, res) => {
     const store = loadStore(), slab = store[org];
     const sv = slab && (slab.siteSurveys || []).find(function (s) { return s && s.id === sid && !s.deleted; });
     if (!sv) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Guide not found</h2><p>This link may be incorrect or no longer active.</p></body>"); }
-    const biz = Object.assign({ name: "OBX Lot Solutions", phone: "(252) 207-5985" }, (typeof INV_BIZ === "object" && INV_BIZ && INV_BIZ[org]) || {});
+    const biz = pubBizOf(store, org);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(landGuideRenderHTML(sv, biz, (slab && slab.playbookLib) || []));
   }
@@ -3265,7 +3283,9 @@ const server = http.createServer((req, res) => {
       noteActive(syncUserId);   // ops-brain last-active (in-memory; doesn't affect the merge)
       const pre = loadStore();
       if (puid) { const _acct = (pre.users || []).find(u => u && u.id === puid); if (_acct && _acct.logoutAt && (+tokRec.issued || 0) < _acct.logoutAt) { res.writeHead(401); return res.end('{"error":"session ended — sign in again"}'); } }   // "log out everywhere": a token issued before the account's logoutAt is dead
-      const hadMsg = {}; BIZES.forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
+      // pre-merge message ids per org, for the new-message push dedupe below. Built over EVERY real
+      // org (not the legacy BIZES pair) or a message in a newer org reads as "already seen" and never pushes.
+      const hadMsg = {}; orgIdsOf(pre).forEach(b => { hadMsg[b] = new Set((((pre[b] || {}).messages) || []).map(m => m && m.id)); });
       const me = puid ? accountById(pre, puid) : null;
       const myOrgs = me ? orgsForUser(pre, me) : ["obx", "jam"].filter(o => pre[o]);   // ISOLATION: identified user → their member orgs; legacy shared token → original orgs only (new orgs stay isolated from it)
       const verifiedOwner = !!(me && me.role === "owner");   // Phase 4: only a verified-owner per-user token may write accounts/roles/passwords
@@ -3281,7 +3301,9 @@ const server = http.createServer((req, res) => {
       // best-effort push: tickle recipients of genuinely-new human messages (DMs + broadcasts) synced in
       try {
         const nowMs = Date.now(), incoming = payload.state || {};
-        BIZES.forEach(b => (((incoming[b] || {}).messages) || []).forEach(m => {
+        // iterate the caller's OWN orgs (writes were already scoped to them) so a human message in the
+        // escape-room or personal org tickles its recipients too — BIZES-only meant it never did.
+        (myOrgs || []).forEach(b => (((incoming[b] || {}).messages) || []).forEach(m => {
           if (pushWorthy(m, hadMsg[b], nowMs)) pushNotify(merged, b, m.threadId, m.senderId).catch(() => {});
         }));
       } catch (e) {}
@@ -3374,4 +3396,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
