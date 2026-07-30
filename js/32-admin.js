@@ -447,13 +447,25 @@ function roleBadge(key) {
   const c = key === "owner" ? "background:var(--brand);color:#fff" : key === "admin" ? "background:var(--accent);color:var(--accent-ink)" : "background:var(--soft);color:var(--ink)";
   return `<span class="badge" style="${c}">${esc(label)}</span>`;
 }
+/* The Admin unlock is scoped to USER + ORG. Keying it to the user alone (the old behaviour) meant
+   unlocking Admin in one org silently unlocked it in EVERY org on the same device — so a phone left
+   unlocked on the business org could be switched straight into the personal org's Admin. Switching
+   orgs now re-asks for the PIN. */
+function adminPinKey(me) { return (me && me.id ? me.id : "?") + "|" + (typeof S !== "undefined" && S ? (S.biz || "") : ""); }
+function adminPinUnlocked(me) {
+  if (!me) return false;
+  try { return sessionStorage.getItem("jra_admin_ok") === adminPinKey(me); } catch (e) { return false; }
+}
+function adminPinMarkUnlocked(me) { try { sessionStorage.setItem("jra_admin_ok", adminPinKey(me)); } catch (e) {} }
+if (typeof window !== "undefined") { window.adminPinUnlocked = adminPinUnlocked; window.adminPinKey = adminPinKey; }
+
 function rAdmin() {
   const owner = isOwner(), canMembers = (typeof canManageMembers === "function") && canManageMembers();
   if (!owner && !canMembers) { view.innerHTML = `<div class="card"><div class="nm">Restricted</div><div class="sub">This screen is restricted to the Owner and Manager roles.</div></div>`; return; }
   const accs = orgMembers(S.biz), roles = allRoles();   // MULTI-ORG: the ACTIVE org's members only
   const me = (typeof curUser === "function") ? curUser() : null;
   // PIN gate — lock the Admin page behind the owner's PIN (unlocked for the browser session once entered)
-  let _adminOk = false; try { _adminOk = !!(me && sessionStorage.getItem("jra_admin_ok") === me.id); } catch (e) {}
+  let _adminOk = adminPinUnlocked(me);
   if (me && me.adminPin && !_adminOk) {
     view.innerHTML = `<div class="card" style="max-width:340px;margin:36px auto;text-align:center">
       <div class="nm" style="font-size:18px">🛡️ Admin locked</div>
@@ -588,7 +600,7 @@ window.adminPinSubmit = async function () {
   const el = document.getElementById("adminpin"), msg = document.getElementById("adminpinmsg");
   const pin = ((el && el.value) || "").trim();
   if (!pin) { if (msg) msg.textContent = "Enter your PIN."; return; }
-  try { const hh = await hashPw(pin); if (hh === me.adminPin) { try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {} render(); return; } } catch (e) {}
+  try { const hh = await hashPw(pin); if (hh === me.adminPin) { adminPinMarkUnlocked(me); render(); return; } } catch (e) {}
   if (msg) msg.textContent = "Wrong PIN."; if (el) { el.value = ""; el.focus(); }
 };
 window.adminSetPin = async function () {
@@ -600,7 +612,7 @@ window.adminSetPin = async function () {
   let hash; try { hash = await hashPw(p); } catch (e) { alert("Couldn't set the PIN."); return; }
   const me = (typeof curUser === "function") ? curUser() : null; if (!me) return;   // RE-FETCH after the await: a sync that landed while the prompt was open may have replaced S.users (the bug that silently dropped the PIN)
   me.adminPin = hash; if (typeof touch === "function") touch(me); save();
-  try { sessionStorage.setItem("jra_admin_ok", me.id); } catch (e) {}
+  adminPinMarkUnlocked(me);
   if (typeof syncRun === "function") syncRun("auto");
   render(); alert("Admin PIN set — you'll be asked for it each session.");
 };
