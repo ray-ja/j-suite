@@ -1986,7 +1986,11 @@ function ceoProjection(store, opts) {
    quotes, jobs, accounts, or any other collection. Per-record LWW (stable ids), no clobber. */
 function ceoBuildMessage(p, store) {
   p = p || {}; store = store || {};
-  const biz = (BIZES.indexOf(p.biz) >= 0) ? p.biz : "obx";
+  // MULTI-ORG: BIZES is the legacy ["obx","jam"] pair. Resolving against it alone silently coerced
+  // EVERY other org (the escape room, the personal org) to "obx" — a Cap/Sentinel post aimed at one
+  // of those landed in OBX, and a broadcast would have landed crew-visible in the wrong org.
+  // orgIdsOf(store) is the real org list; BIZES stays as a fallback for an empty/partial store.
+  const biz = (p.biz && (orgIdsOf(store).indexOf(p.biz) >= 0 || BIZES.indexOf(p.biz) >= 0)) ? p.biz : "obx";
   const ts = Date.now();
   const records = [];
   let tid = p.threadId;
@@ -2044,7 +2048,11 @@ const PROPOSE_COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker
 const PROPOSE_TYPES = ["create", "update", "softDelete"];  // no hard delete, ever
 function ceoBuildProposal(p, store) {
   p = p || {}; store = store || {};
-  const biz = (BIZES.indexOf(p.biz) >= 0) ? p.biz : "obx";
+  // MULTI-ORG: BIZES is the legacy ["obx","jam"] pair. Resolving against it alone silently coerced
+  // EVERY other org (the escape room, the personal org) to "obx" — a Cap/Sentinel post aimed at one
+  // of those landed in OBX, and a broadcast would have landed crew-visible in the wrong org.
+  // orgIdsOf(store) is the real org list; BIZES stays as a fallback for an empty/partial store.
+  const biz = (p.biz && (orgIdsOf(store).indexOf(p.biz) >= 0 || BIZES.indexOf(p.biz) >= 0)) ? p.biz : "obx";
   const type = String(p.type || "");
   const collection = String(p.collection || "");
   if (PROPOSE_TYPES.indexOf(type) < 0) return { ok: false, error: "type not allowed: " + type };
