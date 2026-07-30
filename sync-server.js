@@ -1377,6 +1377,9 @@ function rcptOwnedByOrg(store, orgId, receiptId) {
   const s = (store && store[orgId]) || {}; if (!receiptId) return false;
   if ((s.receipts || []).some(r => r && r.receiptId === receiptId)) return true;
   if ((s.expenses || []).some(e => e && e.receiptId === receiptId)) return true;
+  // js/121 BUDGET RECEIPT SCAN — a personal budget txn can carry a receipt too. Without this the
+  // read-receipt route 404s ("receipt not found in this org") for anything scanned from the Budget page.
+  if ((s.budgetTx || []).some(t => t && t.receiptId === receiptId)) return true;
   // job line items now live in the jobMaterials/jobExpenses collections (hoistJobLineItems empties job.materials/
   // .expenses). Check both the collections AND the legacy nested arrays so a job-attached receipt is found either way.
   if ((s.jobMaterials || []).some(e => e && e.receiptId === receiptId)) return true;

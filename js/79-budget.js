@@ -76,7 +76,9 @@ function budgetInBook(r){ return budgetIsAll()||r.bookId===BUDGET_BOOK; }
 function actBudgetCats(){ return (D().budgetCats||[]).filter(function(c){return !c.deleted&&budgetInBook(c);})
   .sort(function(a,b){ return (a.order||0)-(b.order||0) || (a.name||"").localeCompare(b.name||""); }); }
 /* transactions in scope, EXCLUDING transfers + card payments (neither counts as income/spending — they only move cash) */
-function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.isTransfer&&!t.isCardPayment&&budgetInBook(t);}); }
+/* t.pending = a receipt scan (js/121) that has been read but not confirmed yet. Excluded HERE, at the one
+   accessor every total/envelope/TBB/tax figure flows through, so an unconfirmed scan can never move a number. */
+function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.pending&&!t.isTransfer&&!t.isCardPayment&&budgetInBook(t);}); }
 /* transfers + card payments in scope (for the Transactions list display) */
 function actBudgetTransfers(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&(t.isTransfer||t.isCardPayment)&&budgetInBook(t);}); }
 function budgetCat(id){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.id===id;}); }
@@ -759,6 +761,7 @@ function budgetRenderTx(){
   /* show transfers in the list too (clearly flagged), so the month's cash moves are visible */
   var xfers=actBudgetTransfers().filter(function(t){return budgetMonthOf(t.date)===m;});
   var all=rows.concat(xfers).sort(function(a,b){ return (b.date||"")<(a.date||"")?-1:((b.date||"")>(a.date||"")?1:(b.updatedAt||0)-(a.updatedAt||0)); });
+  var _rcptCard=(typeof bgtRcptCardHTML==="function")?bgtRcptCardHTML():"";   /* js/121 — snap a receipt into a txn */
 
   var h='<div class="card"><div class="row" style="gap:8px;align-items:center">'
     +'<button class="btn ghost sm" onclick="budgetNavMonth(-1)">‹</button>'
@@ -786,7 +789,7 @@ function budgetRenderTx(){
         +'<div style="font-weight:800;color:'+(inc?"var(--ok,#1b7f4d)":"var(--danger)")+'">'+(inc?"+":"−")+budgetMoney(t.amount)+'</div></div>';
     }).join("")+'</div>';
   }
-  body.innerHTML=h;
+  body.innerHTML=_rcptCard+h;
 }
 /* a transfer leg row (out of one book / in to another) — muted, flagged ⇄, tap to edit the pair */
 function budgetTransferRow(t){
@@ -902,7 +905,9 @@ window.saveBudgetTx=function(id,isNew){
   if(t.accountId){ var pa=budgetAccount(t.accountId); if(pa&&budgetIsActiveCard(pa))ensurePaymentCat(pa); }   // make sure the card's Payment envelope exists
   t.date=val("bt_date")||today();
   t.note=val("bt_note");
-  t.deleted=false; touch(t); if(isNew)d.budgetTx.push(t);
+  t.deleted=false;
+  if(t.pending)delete t.pending;   // js/121: confirming the scan in this modal is what promotes it to a real txn
+  touch(t); if(isNew)d.budgetTx.push(t);
   /* jump the month view to where this txn lives so it's visible after save */
   BUDGET_MONTH=budgetMonthOf(t.date);
   save(); closeModal(); render();
