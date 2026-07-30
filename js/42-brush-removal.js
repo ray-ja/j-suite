@@ -2,7 +2,9 @@
    On-site, value-priced. Ray quotes the cut-down and the stump/root removal
    as SEPARATE, independently-selectable line items, so it outputs TWO quote
    lines: "Brush/shrub removal — cut & haul" and "Stump/root removal".
-   Cost model (per CLAUDE.md): clean-veg disposal is FREE in Dare/Currituck → $0.
+   Cost model: veg disposal is NOT free for a CONTRACTOR (corrected 2026-07-27 — this file was
+   missed in the 2026-07-25 sweep). Dare charges commercial veg/yard debris ~$58-65/ton; the free
+   residential yard site EXCLUDES contractor-generated material. Priced via qeTipFee(lbs,"veg").
    Hard costs = stump-grinder rental (only if a stump line is selected) + optional
    trailer (passthrough). NO labor line, and NO chainsaw rental — the saw is owned.
    Drive is static-from-the-property-address via wizDriveCharge (the legacy js/41 travel-zone line is retired).
@@ -17,10 +19,13 @@ const BRUSH_BANDS_DEFAULT={
   xlarge: {label:"X-Large — 15–30 ft", cut:325, stump:275}
 };
 const BRUSH_TIER_ORDER=["small","medium","large","xlarge"];
+// Rough GREEN-WEIGHT estimate per item (lb), used only to price the veg tip fee. Estimates —
+// override the total on the Hard costs card when you know the real load.
+const BRUSH_LBS={small:40,medium:150,large:400,xlarge:900};
 // [value, label, multiplier] — applied to both cut and stump per item.
 const BRUSH_ACCESS=[["open","Open — clear drop zone",1.0],["near","Near structures (fence/shed) +15%",1.15],["tight","Tight access +30%",1.30]];
 const BRUSH_RENT_DEFAULT={grinder:100}; // chainsaw rental removed — saw is owned; pole-saw rental can be added here if one is ever rented
-const BRUSH_SRC="Value/undercut pricing for OBX shrub & small-tree removal; clean-veg disposal free in Dare/Currituck; saw owned (no rental); stump-grinder rental at Home Depot day rates (2026).";
+const BRUSH_SRC="Value/undercut pricing for OBX shrub & small-tree removal; COMMERCIAL veg disposal ~$58-65/ton (NOT free for a contractor); saw owned (no rental); stump-grinder rental at Home Depot day rates (2026).";
 
 // Editable-rate overlay (doc id "brushrates"), same pattern as deepOverrides / truckcap.
 function brushOverrides(){try{const d=D().docs.find(x=>x.id==="brushrates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return {};}
@@ -28,6 +33,12 @@ function setBrushOverrides(o){let d=D().docs.find(x=>x.id==="brushrates");if(d){
 function getBrushBands(){const base=JSON.parse(JSON.stringify(BRUSH_BANDS_DEFAULT));const ov=brushOverrides().bands||{};BRUSH_TIER_ORDER.forEach(t=>{if(ov[t]){if(ov[t].cut!=null)base[t].cut=ov[t].cut;if(ov[t].stump!=null)base[t].stump=ov[t].stump;}});return base;}
 function getBrushRent(){const base=Object.assign({},BRUSH_RENT_DEFAULT);const ov=brushOverrides().rent||{};if(ov.grinder!=null)base.grinder=ov.grinder;return base;}
 function brushAccessMult(a){const o=BRUSH_ACCESS.find(x=>x[0]===a);return o?o[2]:1;}
+/* Estimated green weight of the brush being hauled. Only CUT items generate debris — a stump
+   that's ground in place stays on site. Ray can override the total on the Hard costs card. */
+function brushEstLbs(){let lb=0;(( typeof WZ!=="undefined"&&WZ&&WZ.brush)||[]).forEach(li=>{
+  if(!li||!li.cut)return;lb+=(BRUSH_LBS[li.tier]||0)*Math.max(1,+li.qty||1);});return Math.round(lb);}
+function brushVegLbs(){const ov=(typeof WZ!=="undefined"&&WZ)?WZ.brushVegLbs:null;
+  return (ov!=null&&ov!==""&&+ov>=0)?Math.round(+ov):brushEstLbs();}
 
 function calcBrush(){
   const bands=getBrushBands(),rent=getBrushRent();
@@ -49,13 +60,15 @@ function calcBrush(){
   const cutLine=cutSub>0?rnd5(cutSub):0;
   const stumpLine=stumpSub>0?rnd5(stumpSub):0;
   const price=cutLine+stumpLine;
-  // Hard costs — disposal is $0 (clean veg free); chainsaw is owned (no rental). Drive is the
-  // separate travel line (js/41), so it's not folded in here. Grinder applies only with a stump line.
+  // Hard costs — veg DISPOSAL (a contractor pays for it), chainsaw is owned (no rental). Drive is
+  // the separate travel line (js/41), so it's not folded in here. Grinder applies only with a stump line.
   const trailer=Math.max(0,WZ.brushTrailer||0);
   const grinder=stumpLine>0?rent.grinder:0;
-  const cost=grinder+trailer;
+  const vegLbs=brushVegLbs();
+  const dump=(typeof qeTipFee==="function")?qeTipFee(vegLbs,"veg"):0;
+  const cost=grinder+trailer+dump;
   return {rows:rows,cutLine:cutLine,stumpLine:stumpLine,price:price,mins:Math.round(mins),
-    grinder:grinder,trailer:trailer,cost:Math.round(cost*100)/100};
+    grinder:grinder,trailer:trailer,vegLbs:vegLbs,dump:Math.round(dump*100)/100,cost:Math.round(cost*100)/100};
 }
 
 function brushLineRow(li,i){
@@ -86,7 +99,7 @@ function wizBrushUI(){
   const _TGT=(typeof QE!=="undefined"?QE.TAKE_HOME:45),_CF=(typeof QE!=="undefined"?QE.CREW_FLOOR:30),_tier=_perHr>=_TGT?2:_perHr>=_CF?1:0;
   let h=wizHead(3,5,"Brush / shrub / small-tree removal");
   h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">📋 How to use this (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px"><b>Walk the yard with the customer.</b> For each shrub or small tree, tap its <b>size band</b> (by height), set <b>how many</b> of that size, and the <b>access</b>. Then choose what they want: <b>cut &amp; haul</b>, <b>stump/root removal</b>, or both — they're priced and presented separately so the customer can pick either or both.<br><br><b>Ground-based work only, up to ~30 ft.</b> Anything taller, or that needs climbing, rigging, or felling a real trunk, is a tree-service job — flip the toggle at the top and refer it out.</div></details>`;
-  h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💬 What to say to the customer (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">1. "Let's walk the yard and I'll note each shrub and small tree."<br>2. "I price the cut-down and the stump separately — you can do just the tops, or have me grind the stumps too. Your call."<br>3. "For the brush cut and hauled it's <b>[cut number]</b>; to also pull the stumps it's <b>[stump number]</b>." Then stop talking.<br>4. "The brush hauls free — clean yard waste doesn't cost anything at the county, so you're only paying for the work."<br>5. If anything's a real tree: "That one's a tree job — I'd bring in a tree service so it's done safely, I won't cut corners on that."</div></details>`;
+  h+=`<details class="card"><summary style="font-weight:800;cursor:pointer">💬 What to say to the customer (tap)</summary><div style="font-size:13px;line-height:1.6;margin-top:8px">1. "Let's walk the yard and I'll note each shrub and small tree."<br>2. "I price the cut-down and the stump separately — you can do just the tops, or have me grind the stumps too. Your call."<br>3. "For the brush cut and hauled it's <b>[cut number]</b>; to also pull the stumps it's <b>[stump number]</b>." Then stop talking.<br>4. "That price covers the work and hauling it to the county — yard debris is charged by the ton for a contractor, so it's built in."<br>5. If anything's a real tree: "That one's a tree job — I'd bring in a tree service so it's done safely, I won't cut corners on that."</div></details>`;
 
   // Scope cap — enforce + warn
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${oos?"checked":""} onchange="wizBrushOOS(this.checked)"><span style="margin:0;font-weight:700">⚠ Anything over 30 ft, or needs climbing / rigging / large-trunk felling?</span></label>
@@ -99,9 +112,11 @@ function wizBrushUI(){
   // Cost inputs (rentals only — drive is the separate travel line)
   const rent=getBrushRent();
   h+=`<div class="card"><div style="font-weight:800;margin-bottom:4px">Hard costs</div>
-    <div class="sub" style="margin-bottom:6px">Clean-veg disposal is <b>free</b> in Dare/Currituck → <b>$0 dump</b>. The chainsaw is <b>owned — no rental</b>. The stump grinder ${money(rent.grinder)} applies only when a stump line is selected. Rentals are editable in the rate editor; travel is its own line below.</div>
-    <label style="margin-top:0">Optional trailer rental (passthrough $)</label><input type="number" inputmode="decimal" value="${WZ.brushTrailer||0}" onchange="wizBrushCost('brushTrailer',this.value)">
-    <div class="sub" style="margin-top:4px">Work cost in this quote: grinder ${money(c.grinder)} + trailer ${money(c.trailer)} = <b>${money(c.cost)}</b>. 🚗 Drive is figured automatically from the property address.</div></div>`;
+    <div class="sub" style="margin-bottom:6px">Veg disposal is <b>NOT free for a contractor</b> — Dare charges commercial yard debris by the ton (the free residential site excludes contractor material). The chainsaw is <b>owned — no rental</b>. The stump grinder ${money(rent.grinder)} applies only when a stump line is selected. Rentals are editable in the rate editor; travel is its own line below.</div>
+    <label style="margin-top:0">Brush weight hauled (lb) — est. ${brushEstLbs().toLocaleString()}</label><input type="number" inputmode="numeric" min="0" value="${WZ.brushVegLbs!=null&&WZ.brushVegLbs!==""?WZ.brushVegLbs:""}" placeholder="${brushEstLbs()}" onchange="wizBrushCost('brushVegLbs',this.value)">
+    <div class="sub" style="font-size:11px;margin-top:2px">Rough estimate from the item sizes — override it when you know the real load. Ground-in-place stumps don't get hauled, so they don't count.</div>
+    <label>Optional trailer rental (passthrough $)</label><input type="number" inputmode="decimal" value="${WZ.brushTrailer||0}" onchange="wizBrushCost('brushTrailer',this.value)">
+    <div class="sub" style="margin-top:4px">Work cost in this quote: grinder ${money(c.grinder)} + trailer ${money(c.trailer)} + veg dump ${money(c.dump)} (${c.vegLbs.toLocaleString()} lb) = <b>${money(c.cost)}</b>. 🚗 Drive is figured automatically from the property address.</div></div>`;
 
   if(!oos){
     // Breakdown
@@ -113,7 +128,7 @@ function wizBrushUI(){
 
     // COGS / margin strip + floor
     if(c.price>0){
-      h+=`<div class="card">${cogsStrip(c.price,c.cost)}<div class="sub">Hard cost only (rentals + drive); disposal is $0 and there's no labor line — the crew is paid from the revenue split.</div></div>`;
+      h+=`<div class="card">${cogsStrip(c.price,c.cost)}<div class="sub">Hard cost only (veg disposal + rentals + drive); no labor line — the crew is paid from the revenue split.</div></div>`;
     }
 
     // Crew selector + live pay check (paver-standard)
@@ -153,8 +168,8 @@ window.wizAddBrush=function(){
   const rent=getBrushRent(),trailer=Math.max(0,WZ.brushTrailer||0);
   const accNote=(WZ.brush||[]).some(l=>l.access!=="open")?" Some items have access adders (near structures / tight).":"";
   if(c.cutLine>0){
-    WZ.items.push({name:"Brush/shrub removal — cut & haul",price:c.cutLine,cost:trailer,
-      notes:["Clean veg hauls free (no disposal cost); saw is owned (no rental)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:"",bandKey:"brush"});
+    WZ.items.push({name:"Brush/shrub removal — cut & haul",price:c.cutLine,cost:trailer+c.dump,
+      notes:["Includes hauling and county veg disposal (charged by the ton for a contractor); saw is owned (no rental)."+accNote,"Ground-based, ≤30 ft, no climbing."],qty:1,unit:"job",serviceId:"",bandKey:"brush"});
   }
   if(c.stumpLine>0){
     WZ.items.push({name:"Stump/root removal",price:c.stumpLine,cost:rent.grinder+(c.cutLine>0?0:trailer),
@@ -180,7 +195,7 @@ function brushEditorHTML(){
   h+=`</div><div class="card"><div style="font-weight:800;margin-bottom:6px">Rental cost defaults (hard cost)</div>
     <div class="sub" style="margin-bottom:6px">The chainsaw is owned — no rental line. Add a pole-saw rental here if one is ever rented.</div>
     <div class="row" style="gap:10px;align-items:center"><div class="grow sub">Stump-grinder rental</div><span class="sub">$</span><input type="number" style="width:90px" value="${rent.grinder}" onchange="setBrushRent('grinder',this.value)"></div>
-    <div class="sub" style="margin-top:8px">Access multipliers (open ×1.0 · near structures ×1.15 · tight ×1.30) and the $0 clean-veg disposal are fixed by policy.</div></div>`;
+    <div class="sub" style="margin-top:8px">Access multipliers (open ×1.0 · near structures ×1.15 · tight ×1.30) are fixed by policy. Veg disposal is charged by the ton (~$${(typeof QE!=="undefined"?QE.VEG_TON:58.46)}/ton for a contractor) off the estimated brush weight.</div></div>`;
   h+=`<button class="btn ghost" style="margin-top:6px" onclick="resetBrushRates()">↺ Reset to defaults</button>`;
   return h;
 }

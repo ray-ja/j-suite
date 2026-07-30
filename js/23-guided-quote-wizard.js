@@ -39,6 +39,7 @@ window.openQuote=function(id,customerId,preset){
     WZ.disc=q.manualDisc!=null?q.manualDisc:Math.max(0,(q.discount||0)-(q.recurring?Math.round((q.subtotal||0)*0.2):0));
     WZ.discPct=null;WZ.invoiced=!!q.invoiced;WZ.paid=!!q.paid;WZ.paymentLink=q.paymentLink||"";WZ.finalPrice=q.finalPrice||0;WZ.adjNote=q.adjNote||"";WZ.taxable=!!q.taxable;
     WZ.accepted=!!q.accepted;WZ.jobId=q.jobId||"";WZ.acceptedDate=q.acceptedDate||"";
+    WZ.digRentKind=q.digRentKind||"";WZ.digRentDays=+q.digRentDays||0;WZ.digRentRate=+q.digRentRate||0;   // js/120 machine rental
     if(q.pv){WZ.pv=JSON.parse(JSON.stringify(q.pv));WZ._pvFromSave=true;}else{WZ._pvFromSave=false;}   // builder inputs for change-order editing
     if(q.fd){WZ.fd=JSON.parse(JSON.stringify(q.fd));WZ._fdFromSave=true;}else{WZ._fdFromSave=false;}   // french-drain builder inputs (change-order editing)
     if(q.sp){WZ.sp=JSON.parse(JSON.stringify(q.sp));WZ._spFromSave=true;}else{WZ._spFromSave=false;}   // stepping-stone-path builder inputs (change-order editing)
@@ -127,7 +128,7 @@ function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 window.wizChangeServiceType=function(){
   if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;
   if(WZ.items&&WZ.items.length&&!confirm("Rebuild this quote as a different service?\n\nThe current line item(s) will be cleared and you'll pick a new service to build. The customer, the quote, and any attached receipts all stay (receipts live on the job, not the quote line)."))return;
-  WZ.items=[];WZ.svc=null;WZ.inp={};WZ.deep={};WZ.deepMods={};WZ.deepSearch="";WZ.disc=0;WZ.discPct=null;
+  WZ.items=[];WZ.svc=null;WZ.inp={};WZ.deep={};WZ.deepMods={};WZ.deepSearch="";WZ.disc=0;WZ.discPct=null;WZ.digRentKind="";WZ.digRentDays=0;WZ.digRentRate=0;
   WZ.step="pick";wizAutosave();render();
 };
 function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
@@ -242,7 +243,7 @@ function reviewSummaryHTML(){
   pvEnsureMkt();
   let sub=0;WZ.items.forEach(it=>sub+=(it.price||0)*(it.qty||1));
   const total=Math.max(0,sub-(WZ.disc||0));
-  const cost=itemsCost(WZ.items)+wizExtraDaysCost();     // hard cost (disposal + 1 site trip baked into line) + extra multi-day SITE round-trips
+  const cost=itemsCost(WZ.items)+wizExtraDaysCost()+(typeof digRentCostWZ==="function"?digRentCostWZ():0);   // + machine rental on digging jobs (js/120)     // hard cost (disposal + 1 site trip baked into line) + extra multi-day SITE round-trips
   const profit=total-cost;
   const crewN=Math.max(1,WZ.crewN||1), hrs=WZ.hours||0, personHrs=crewN*hrs;
   const fieldPool=Math.max(0,total-cost)*0.48;           // (revenue − hard costs) × 60% labor × 80% field work
@@ -262,6 +263,7 @@ function reviewSummaryHTML(){
     ${(WZ.items[0]&&WZ.items[0].mkt)?pvBandHTML(WZ.items[0].mkt,total):`<div style="position:relative;height:13px;margin-top:8px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:7px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
     <div class="sub" style="font-size:12px;margin-top:3px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · ${money(bandLo)}–${money(bandHi)} market range</div>`}
     <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px"><div class="row" style="gap:14px;flex-wrap:wrap"><div class="grow"><div class="sub">${crewN} ${crewN===1?"person":"people"} × ~${hrs||"?"} hr each${personHrs?` (${Math.round(personHrs*10)/10} crew-hrs · drive + load + 20-min on-site)`:""}</div><div class="nm" style="font-size:15px">${money(perPersonField)} each</div></div><div class="grow" style="text-align:right"><div class="sub">Per hour each</div><div class="nm" style="font-size:20px;color:${hrs>0?tCol:"var(--muted)"}">${hrs>0?money(Math.floor(perHr))+"/hr "+tIcon:"—"}</div></div></div>`;
+  if(typeof digWizControlHTML==="function")h+=digWizControlHTML();   // js/120 — digging job: machine rental + NC811
   // # of days on site — multi-day jobs drive the SITE round-trip once per day (dump runs never multiplied)
   const _dDays=Math.max(1,+((WZ&&WZ.days)||1)),_dXt=wizExtraDaysCost(),_dRt=wizSiteDriveRT().rt;
   h+=`<div class="row" style="justify-content:space-between;align-items:center;gap:8px;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"><div class="grow"><div class="sub">📅 # of days on site</div>${_dXt>0?`<div class="sub" style="color:var(--muted)">🚗 Extra site trips: ${_dDays-1} × ${_dRt} mi RT = ${money(_dXt)} added to cost</div>`:`<div class="sub" style="color:var(--muted)">1 = single trip · dump runs are never multiplied</div>`}</div><input type="number" inputmode="numeric" min="1" step="1" value="${_dDays}" onchange="wizSetDays(this.value)" style="width:70px;text-align:center"></div>`;
@@ -466,8 +468,9 @@ window.wizPersist=function(){
     pv:(WZ.pv&&WZ.items[0]&&(WZ.items[0].bandKey==="paver"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="paver")))?JSON.parse(JSON.stringify(WZ.pv)):undefined,
     fd:(WZ.fd&&WZ.items[0]&&(WZ.items[0].bandKey==="frenchdrain"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="frenchdrain")))?JSON.parse(JSON.stringify(WZ.fd)):undefined,
     sp:(WZ.sp&&WZ.items[0]&&(WZ.items[0].bandKey==="steppath"||(typeof guessBandKey==="function"&&guessBandKey(WZ.items[0].name)==="steppath")))?JSON.parse(JSON.stringify(WZ.sp)):undefined,
+    digRentKind:WZ.digRentKind||undefined,digRentDays:+WZ.digRentDays||undefined,digRentRate:+WZ.digRentRate||undefined,
     recurring:rec,subtotal:sub,discount:disc,manualDisc:manual,miles:(WZ.miles||0),estDays:Math.max(1,+WZ.days||1),disposalTrip:!!WZ.disposalTrip,total:total,
-    cost:itemsCost(WZ.items)+mileageCost(WZ.miles)+wizExtraDaysCost(),
+    cost:itemsCost(WZ.items)+mileageCost(WZ.miles)+wizExtraDaysCost()+(typeof digRentCostWZ==="function"?digRentCostWZ():0),
     paymentLink:WZ.paymentLink||base.paymentLink||"",invoiced:!!WZ.invoiced,paid:!!WZ.paid,finalPrice:+WZ.finalPrice||0,adjNote:WZ.adjNote||base.adjNote||"",taxable:!!WZ.taxable,hours:+WZ.hours||0,crewN:+WZ.crewN||1,haul:WZ.haul||base.haul||"pickup"
   });
   touch(q);
