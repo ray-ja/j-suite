@@ -3,7 +3,7 @@
  * whole tab dead in the field; this catches both on every run.
  *
  * Tabs are taken from render()'s dispatch table in js/03-routing.js (the authoritative list) plus the opt-in
- * tabs (escape/booking/life/budget), which we enable on the obx org so render() routes them naturally instead
+ * tabs (escape/booking/life/journal/budget), which we enable on the obx org so render() routes them naturally instead
  * of coercing to Today.
  *
  * Errors are captured by verify-app.js's window.__errs (console.error / thrown / unhandledrejection). This test
@@ -24,12 +24,12 @@ localStorage.setItem("jra_session", "u_rendersmoke_test");
 localStorage.setItem("jra_offline_ok", "1");
 S.biz = "obx";
 
-// ---- enable ALL tabs on obx (incl. the opt-in escape/booking/life/budget) so render() routes each one ----
+// ---- enable ALL tabs on obx (incl. the opt-in escape/booking/life/journal/budget) so render() routes each one ----
 (function () {
   var reg = (S.registry || []).find(function (r) { return r && r.id === "obx"; });
   if (reg && typeof ALL_TABS !== "undefined") {
     // include the standard tabs (ALL_TABS) + the opt-in niche tabs so nothing gets coerced to Today
-    var extra = ["escape", "booking", "life", "budget"];
+    var extra = ["escape", "booking", "life", "journal", "budget"];
     reg.tabs = ALL_TABS.slice().concat(extra.filter(function (t) { return ALL_TABS.indexOf(t) < 0; }));
   }
 })();
@@ -44,7 +44,7 @@ d.todos = d.todos || []; if (!d.todos.length) d.todos.push({ id: "t_rs", title: 
 var SCREENS = ["today", "messages", "schedule", "leads", "quotes", "recurring", "accounts",
   "finance", "receipts", "pay", "inventory", "resale", "admin", "data", "playbook",
   "research", "todo", "map", "route", "plan", "market", "opps", "sites", "buildplan",
-  "training", "time", "approvals", "escape", "booking", "life", "budget", "team", "routes"];
+  "training", "time", "approvals", "escape", "booking", "life", "journal", "budget", "team", "routes"];
 
 var view = document.getElementById("view");
 var totalErrsBefore, results = [];

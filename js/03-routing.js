@@ -84,7 +84,7 @@ function render(){
   // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
-  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),journal:(typeof rJournal==="function"?rJournal:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday)}[TAB])||rToday;
   try{ _screen(); }
   catch(_e1){
     try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
@@ -143,6 +143,10 @@ const NAV_GROUPS = [
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["inventory","resale"] },
   { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","quotes","recurring"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
+  // JOURNAL — its own top-level tab (Ray, 2026-08-02: "journal needs to be its own tab"). It was a sub-tab buried
+  // inside Life; the entries are the SAME lifeNotes collection (no new collection, no migration), just promoted so
+  // it's one tap away and Cap can be pointed at it.
+  { key:"journal",   label:"Journal",   icon:"📓", tabs:["journal"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
   { key:"invoices",  label:"Invoices",  icon:"💳", tabs:["invoices"] },   // OWN top-level menu (Ray: invoices is its own tab, not folded under Money)
   { key:"money",     label:"Money",     icon:"💰", tabs:["nextcheck","finance","pay","routes"] },
@@ -154,22 +158,29 @@ const NAV_GROUPS = [
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, leads:{l:"Leads",i:"📞"}, quotes:{l:"Quotes",i:"🧾"}, recurring:{l:"Recurring",i:"🔁"}, jobs:{l:"Jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
   accounts:{l:"Customers",i:"👥"}, route:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
-  pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, approvals:{l:"Approvals",i:"📥"},
+  pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, invoices:{l:"Invoices",i:"💳"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Routes",i:"🗺️"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Routes",i:"🗺️"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.
-const ORG_CORE_TABS = ["today","admin","data","team"];   // team directory is always-on (every org has members to reach)
+// `team` (People & Places) is NO LONGER core — a solo personal org has nobody to reach, and forcing the crew
+// directory onto it was pure business noise (Ray, 2026-08-02). It stays visible everywhere it was before: orgs on
+// the null/"full" default (jam, escaperoom) get it implicitly, and OBX — the one org with an explicit tab list —
+// now names it. Only an org that deliberately omits it (personal) loses it.
+const ORG_CORE_TABS = ["today","admin","data"];
 // OPT-IN tabs: org-specific tools that must be EXPLICITLY enabled per org. They are NEVER part of the
 // implicit "all the standard tools" (null tabs → field-services default), so niche tools — the escape-room
 // Rooms board + Booking page, and the personal Life tracker — stay out of OBX / Jamieson (which run on the
 // null/"full" default) and appear ONLY when an org's registry.tabs explicitly lists them.
-const ORG_OPTIN_TABS = ["escape","booking","life","budget"];
+const ORG_OPTIN_TABS = ["escape","booking","life","journal","budget"];
 const ORG_TEMPLATES = {
   full: null,                                                                 // field services (OBX / Jamieson) — every standard tool (not the opt-in niche ones)
   bookings: ["escape","booking","messages","schedule","accounts","finance","invoices","receipts","time","playbook"],   // e.g. an escape room — the room board + booking page + customers, calendar, money, comms
-  personal: ["life","budget","todo","plan","finance","playbook"]              // e.g. a personal area — life tracker (notes/journal + habits), budget (income/spend + monthly plan), planning (+ Cap via the org AI)
+  // PERSONAL — a life-management app, not a shrunken business one. Life (habits/trackers) · Journal (its own tab)
+  // · Budget · To-Do · Messages (Cap's check-in DMs land here). Deliberately NO jobs/leads/quotes/pay/approvals/
+  // recurring/accounts — Ray, 2026-08-02: "none of it belongs on a personal page."
+  personal: ["life","journal","budget","todo","messages"]
 };
 function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
 // PER-ORG NAV ORDER (admin-controlled): registry[org].navOrder = [groupKey,…]. renderNav applies it; any

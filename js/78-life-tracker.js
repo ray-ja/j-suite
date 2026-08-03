@@ -39,11 +39,17 @@ window.lifeFabAdd=function(){
   else openLifeNote(null,LIFE_DATE||today());   // Today view → a note for the shown day
 };
 
-/* ---------- main render ---------- */
+/* ---------- main render ----------
+   When Journal is its own TOP-LEVEL tab (orgHasTab("journal") — the personal template), it is dropped from this
+   sub-nav so there's exactly ONE way in and no duplicate screen. Where journal isn't a top-level tab the sub-tab
+   stays exactly as it was, so nothing regresses for an org that never opted in. */
+function lifeJournalIsOwnTab(){ return (typeof orgHasTab==="function") && orgHasTab("journal"); }
 function rLife(){
+  var own=lifeJournalIsOwnTab();
+  if(own&&LIFE_SUB==="journal")LIFE_SUB="today";   // never strand the view on a sub-tab that no longer renders
   var sub='<div class="subnav">'
     +'<button class="subbtn '+(LIFE_SUB==="today"?"on":"")+'" onclick="lifeSetSub(\'today\')">📆 Today</button>'
-    +'<button class="subbtn '+(LIFE_SUB==="journal"?"on":"")+'" onclick="lifeSetSub(\'journal\')">📓 Journal</button>'
+    +(own?"":'<button class="subbtn '+(LIFE_SUB==="journal"?"on":"")+'" onclick="lifeSetSub(\'journal\')">📓 Journal</button>')
     +'<button class="subbtn '+(LIFE_SUB==="trackers"?"on":"")+'" onclick="lifeSetSub(\'trackers\')">📈 Trackers</button>'
     +'</div>';
   view.innerHTML=sub+'<div id="life_body"></div>';
@@ -51,6 +57,13 @@ function rLife(){
   else if(LIFE_SUB==="trackers")lifeRenderTrackers();
   else lifeRenderToday();
 }
+
+/* the JOURNAL tab — same lifeNotes records, same renderer, just promoted to its own screen */
+function rJournal(){
+  view.innerHTML='<div id="life_body"></div>';
+  lifeRenderJournal();
+}
+if(typeof window!=="undefined")window.rJournal=rJournal;
 
 /* ---------- TODAY — log the day's trackers + quick reminders ---------- */
 function lifeRenderToday(){

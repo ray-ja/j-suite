@@ -7,8 +7,15 @@ function rToday(){
   const mem=(typeof schedMembers==="function")?schedMembers():[];
   let h="";
 
+  /* Today is the ONE core tab every org gets, so its sections must follow the org's enabled tools rather than
+     assuming a field-services crew. Each business block below is gated on the tab it belongs to, so a personal
+     org stops showing Clock / Who's working / Today's jobs / Money / Payouts (Ray, 2026-08-02: "none of it
+     belongs on a personal page") — and an escape-room or any future org gets the same treatment for free.
+     Orgs on the null/"full" default are unchanged: orgHasTab() returns true for every non-opt-in tab. */
+  const todayHas=(tab)=>(typeof orgHasTab==="function")?orgHasTab(tab):true;
+
   // 0) Approvals waiting (admin only) — above everything
-  if(owner && typeof apprPending==="function"){
+  if(owner && todayHas("approvals") && typeof apprPending==="function"){
     const _pend=apprPending();
     if(_pend.length){
       h+=`<div class="secthd"><h2>📥 Approvals waiting</h2><span class="ct">${_pend.length}</span></div><div class="card" style="border-left:4px solid var(--accent)">`+_pend.map(x=>{const pc=x.pc;return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(pc.summary||pc.collection||"Change")}</div><div class="sub">Cap wants your okay · ${esc(pc.collection||"")}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn acc sm" onclick="apprApprove('${x.biz}','${pc.id}')">✓</button><button class="btn ghost sm" onclick="apprReject('${x.biz}','${pc.id}')">✕</button></div></div>`;}).join("")+`</div>`;
@@ -25,13 +32,13 @@ function rToday(){
   // 1.5) 📸 Snap a receipt — the obvious, discoverable capture entry right under Cap (the always-on path is the
   //   floating FAB in js/99). Routes to the SAME rcptUploadFiles pipeline (smart-defaults + auto-read + one-tap file).
   //   Only shown when there's a live server + signed in (else the upload can't connect); the FAB hides the same way.
-  if(typeof capCaptureReady==="function" && capCaptureReady())
+  if(todayHas("receipts") && typeof capCaptureReady==="function" && capCaptureReady())
     h+=`<button class="btn ghost" style="width:100%;margin-bottom:14px;font-size:15px" onclick="if(typeof capQuickCapture==='function')capQuickCapture()">📸 Snap a receipt</button>`;
 
   // 2) Clock — clocked-in banner OR the prominent clock-in card (Item 3): clock in right here on Today, picking or
   // adding the job to attach the shift to. Uses the SAME shared form (js/38 tcClockInFormHTML) as the Time tab +
   // job page, so vehicle/trailer/rider-role/start-odo/route-estimate all come along.
-  if(me){
+  if(me && todayHas("time")){
     const open=(typeof tcMyOpen==="function")?tcMyOpen():null;
     if(open){ const oj=actJ().find(x=>x.id===open.jobId); const since=new Date(open.clockIn).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
       h+=`<div class="card" style="border-left:5px solid var(--accent)"><div class="row"><div class="grow"><div class="nm">⏱️ Clocked in${oj?` · ${esc(oj.title||"job")}`:""}</div><div class="sub">since ${since}</div></div><button class="btn danger sm" onclick="tcClockOut('${open.id}')">Clock out</button></div></div>`;
@@ -47,7 +54,7 @@ function rToday(){
   }
 
   // 2.5) Needs-cleaning nudge — operational (everyone sees it); taps through to the Inventory cleaning list.
-  if(typeof invNeedsCleaning==="function"){
+  if(todayHas("inventory") && typeof invNeedsCleaning==="function"){
     const _nc=invNeedsCleaning();
     if(_nc.length){
       h+=`<div class="card" style="border-left:4px solid #b8860b;cursor:pointer" onclick="invGotoCleaning()"><div class="row"><div class="grow"><div class="nm">🧽 ${_nc.length} item${_nc.length>1?"s":""} need${_nc.length>1?"":"s"} cleaning</div><div class="sub" style="white-space:normal">${_nc.slice(0,3).map(i=>esc(i.name)).join(", ")}${_nc.length>3?" +"+(_nc.length-3):""}</div></div><span class="sub">Clean →</span></div></div>`;
@@ -55,7 +62,7 @@ function rToday(){
   }
 
   // 3) Who's working today (+ when) — with a link to the full Schedule
-  if(mem.length){
+  if(mem.length && todayHas("schedule")){
     h+=`<div class="secthd"><h2>👥 Who's working today</h2>${(typeof navSub==="function")?`<button class="btn ghost sm" style="margin-left:auto" onclick="navSub('schedule')">Schedule →</button>`:""}</div><div class="card">`;
     h+=mem.map(u=>{ const a=(typeof availOn==="function")?availOn(u,t):{status:"unknown",label:""};
       const col=a.status==="on"?"var(--accent)":a.status==="partial"?"#e0a800":a.status==="oncall"?"#2f6fed":(a.status==="off"||a.status==="timeoff")?"var(--danger)":"var(--muted)";
@@ -66,7 +73,7 @@ function rToday(){
 
   // 3.5) Recurring visits this week — a light nudge so standing contracts aren't forgotten (owner/admin).
   // Reads generated jobs (planId set) dated within the next 7 days; taps through to the Recurring tab.
-  if(owner){
+  if(owner && todayHas("recurring")){
     try{
       const _wkEnd=(typeof recurAddDays==="function")?recurAddDays(t,7):t;
       const _rv=(D().jobs||[]).filter(j=>j&&j.planId&&!j.done&&!j.deleted&&j.date&&j.date>=t&&j.date<=_wkEnd);
@@ -83,13 +90,16 @@ function rToday(){
   const _aj=actJ();   // active jobs, computed ONCE for this render (was re-filtered on every actJ() call below)
   const jobs=_aj.filter(j=>!j.done&&_onDay(j,t));
   const nextJob=jobs.length?null:(_aj.filter(j=>!j.done&&_nextDay(j)).sort((a,b)=>_nextDay(a).localeCompare(_nextDay(b)))[0]||null);
-  h+=`<div class="secthd"><h2>📅 Today's jobs</h2><span class="ct">${jobs.length}</span><button class="btn ghost sm" style="margin-left:auto" onclick="openQuickTask()">+ Add</button></div>`;
-  if(jobs.length) h+=`<div class="card">`+jobs.map(liJob).join("")+`</div>`;
-  else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
-  else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
+  // ONLY the OUTPUT is gated — _aj is still computed above because section 5 (Money) indexes it.
+  if(todayHas("jobs")){
+    h+=`<div class="secthd"><h2>📅 Today's jobs</h2><span class="ct">${jobs.length}</span><button class="btn ghost sm" style="margin-left:auto" onclick="openQuickTask()">+ Add</button></div>`;
+    if(jobs.length) h+=`<div class="card">`+jobs.map(liJob).join("")+`</div>`;
+    else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
+    else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
+  }
 
   // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
-  if(owner){
+  if(owner && todayHas("finance")){
     // index active jobs by id ONCE — jobDone below was doing a full actJ().find() per booked quote (O(quotes×jobs))
     const _jByIdToday=new Map(); _aj.forEach(j=>{ if(j&&j.id!=null&&!_jByIdToday.has(j.id))_jByIdToday.set(j.id,j); });
     // a booked quote's job is "done" once its linked job is checked off (matches the pipeline split: to-do vs ready-to-bill)
@@ -107,7 +117,7 @@ function rToday(){
   }
 
   // 6) Payouts — monthly, paid the first workday of next month (owner: everyone; crew: yourself)
-  if(typeof finRollup==="function"&&typeof finPayouts==="function"&&mem.length){
+  if(todayHas("pay")&&typeof finRollup==="function"&&typeof finPayouts==="function"&&mem.length){
     try{
       const ym=(typeof finMonth==="function")?finMonth():t.slice(0,7);
       const b=(typeof monthBounds==="function")?monthBounds(ym):{from:ym+"-01",to:ym+"-31"};
@@ -125,7 +135,7 @@ function rToday(){
   }
 
   // 7) Top to-dos (owner) — just the top few
-  if(owner&&typeof actTodo==="function"){
+  if(todayHas("todo")&&owner&&typeof actTodo==="function"){
     const td0=actTodo().filter(x=>!x.done);
     const top=((typeof sortTodos==="function")?sortTodos(td0):td0).slice(0,4);
     if(top.length){ h+=`<div class="secthd"><h2>✅ Top to-dos</h2>${td0.length>top.length?`<span class="ct">+${td0.length-top.length}</span>`:""}</div><div class="card">`+top.map(td=>liTodo(td,t)).join("")+`</div>`; }
