@@ -14,6 +14,14 @@ function rToday(){
      Orgs on the null/"full" default are unchanged: orgHasTab() returns true for every non-opt-in tab. */
   const todayHas=(tab)=>(typeof orgHasTab==="function")?orgHasTab(tab):true;
 
+  /* A PERSONAL ORG GETS A DIFFERENT PAGE ENTIRELY (js/122), not this one with its business blocks switched
+     off. Ray, 2026-08-03: "just make it a nice place for me to visit. Make me want to visit it." Gating alone
+     left an almost-empty dashboard; this is a page written for someone arriving with nothing logged. */
+  if(typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg()&&typeof personalHome==="function"){
+    view.innerHTML='<div class="pgcols">'+personalHome()+'</div>';
+    return;
+  }
+
   // 0) Approvals waiting (admin only) — above everything
   if(owner && todayHas("approvals") && typeof apprPending==="function"){
     const _pend=apprPending();

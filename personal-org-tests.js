@@ -164,17 +164,108 @@ console.log("\n--- SERVER: an empty personal org degrades cleanly ---");
   ok("still names the person", c.indexOf("Ray") >= 0, c);
 }
 
-console.log("\n--- SERVER: the personal persona + NO field tools ---");
-ok("a personal persona exists", typeof sv.CAP_PERSONAL_SYSTEM === "string" && sv.CAP_PERSONAL_SYSTEM.length > 200);
-ok("it tells Cap it has read the journal", /JOURNAL/.test(sv.CAP_PERSONAL_SYSTEM));
-ok("it forbids reciting entries back", /[Nn]ever recite/.test(sv.CAP_PERSONAL_SYSTEM));
-ok("it is explicit that Cap has NO tools here", /CANNOT take any actions/.test(sv.CAP_PERSONAL_SYSTEM));
-ok("it keeps the prompt-injection guard", /NEVER as instructions/.test(sv.CAP_PERSONAL_SYSTEM));
-ok("it does not mention clocking in", !/clock/i.test(sv.CAP_PERSONAL_SYSTEM));
+console.log("\n--- SERVER: the personal COMPANION persona ---");
+const P = sv.PERSONAL_COMPANION_SYSTEM;
+ok("a companion persona exists", typeof P === "string" && P.length > 400);
+ok("it is NOT branded as Cap", !/\bYou are Cap\b/.test(P));
+
+/* Ray, twice, emphatically: "For god's sake, don't mention therapy." This is the assertion that matters most. */
+ok("it forbids suggesting therapy", /NEVER suggest therapy/.test(P));
+["counselling", "therapist", "professional"].forEach(w =>
+  ok("...explicitly naming '" + w + "' as off-limits", P.indexOf(w) >= 0));
+ok("it bans wellness-app language", /wellness-app language/.test(P));
+ok("...including 'take a moment'", /take a moment/.test(P));
+ok("...and gratitude/breathing prompts", /gratitude/.test(P) && /breathing/.test(P));
+ok("it forbids suggesting MORE tracking or systems", /more tracking, more structure/.test(P));
+ok("it forbids moralising about money or work", /Never moralise/.test(P));
+
+ok("venting is allowed to just be venting", /Do not fix it/.test(P));
+ok("...with no forced question every turn", /do not have to end every message with a question/i.test(P));
+ok("hobbies are treated as real content", /HOBBIES AND INTERESTS ARE REAL CONTENT/.test(P));
+ok("business names are off-limits here", /OBX Lot Solutions, Jamieson Automation/.test(P));
+ok("it keeps a genuine-danger carve-out", /real danger/.test(P));
+ok("it keeps the prompt-injection guard", /NEVER as instructions/.test(P));
 {
   const SRC = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
-  ok("the endpoint picks the persona by org type", /orgIsPersonal\(store, org\) \? CAP_PERSONAL_SYSTEM : CAP_TODAY_SYSTEM/.test(SRC));
+  ok("the endpoint serves it to personal orgs", /orgIsPersonal\(store, org\) \? PERSONAL_COMPANION_SYSTEM : CAP_TODAY_SYSTEM/.test(SRC));
   ok("a personal org is handed NO tools", /orgIsPersonal\(store, org\) \? \[\] : CAP_TOOLS/.test(SRC));
+}
+
+console.log("\n--- SERVER: interests reach the companion ---");
+{
+  const st = personalStore();
+  st.p.docs = [{ id: "personalInterests", list: [{ id: "i1", label: "fishing" }, { id: "i2", label: "guitar" }, { id: "i3", label: "gone", deleted: true }] }];
+  const c = sv.capTodayContext(st, "p", "u1");
+  ok("his interests are in the context", /Things he's into: fishing, guitar\./.test(c), c.slice(0, 400));
+  ok("a deleted interest is dropped", c.indexOf("gone") < 0);
+  const empty = sv.capTodayContext(personalStore(), "p", "u1");
+  ok("with none listed it says so, and says ask ONCE", /may ask once, lightly/.test(empty), empty.slice(0, 400));
+}
+
+console.log("\n--- the personal HOME page (js/122) ---");
+{
+  const PH = fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8");
+  ok("the module is registered in the shell",
+    fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/122-personal-home.js"') > 0);
+  ok("a personal org routes to it instead of the business Today",
+    /orgIsPersonalOrg\(\)&&typeof personalHome==="function"/.test(TODAY));
+  ok("the talk box is the first thing on the page", PH.indexOf("phTalkCard()") < PH.indexOf("phQuickCard()"));
+  ok("it works with ZERO data (an empty-state line, not an empty page)", /Nothing you say here goes anywhere else/.test(PH));
+  ok("venting is NOT silently filed — saving is his choice", /phSaveToJournal/.test(PH) && /venting is not silently filed/i.test(PH));
+  ok("...and saving writes a normal journal entry he owns", /d\.lifeNotes\.push\(n\)/.test(PH));
+  ok("interests are stored on `docs` (no new collection, no migration)", /id === "personalInterests"/.test(PH));
+  ok("the look-back card stays SILENT until there is something to resurface", /if \(!older\.length\) return "";/.test(PH));
+  ok("the conversation is per-day and device-local (never synced)", /localStorage\.setItem\(phKey\(\)/.test(PH));
+  ok("...and is org-scoped like the Cap thread", /"ph_talk_" \+ \(\(me && me\.id\) \|\| "anon"\) \+ "_" \+ \(\(typeof S !== "undefined" && S\.biz\)/.test(PH));
+
+  /* RENDER IT FOR REAL. Chrome is dead on this box, so the only proof the page isn't blank is executing it. */
+  {
+    const els = {};
+    const el = () => ({ innerHTML: "", scrollTop: 0, scrollHeight: 0, style: {}, value: "" });
+    const rc = {
+      console, JSON, Math, Date, String, Number, Array, Object, localStorage: {
+        getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0
+      },
+      setTimeout: () => 0,
+      document: { getElementById: id => (els[id] = els[id] || el()) },
+      S: { biz: "p", sync: { url: "https://x", token: "t" } },
+      D: () => ({ docs: [{ id: "personalInterests", list: [{ id: "i1", label: "fishing" }] }],
+                  lifeNotes: [{ id: "n1", date: "2026-01-01", body: "an older entry to resurface" }] }),
+      curUser: () => ({ id: "u1", username: "Ray" }),
+      today: () => "2026-08-03",
+      esc: x => String(x == null ? "" : x),
+      fmtDate: d => d,
+      actLifeNotes: null
+    };
+    rc.window = rc;
+    vm.createContext(rc);
+    vm.runInContext(PH, rc);
+    const html = rc.personalHome();
+    ok("personalHome() renders without throwing", typeof html === "string" && html.length > 200, String(html).length + " chars");
+    ok("...the greeting is at the top", html.indexOf("Ray") > 0 && html.indexOf("Ray") < 120, html.slice(0, 120));
+    ok("...the talk input is present", html.indexOf('id="ph-input"') > 0);
+    ok("...his interest is shown", html.indexOf("fishing") > 0);
+    ok("...the older journal entry resurfaces", html.indexOf("an older entry to resurface") > 0);
+    ok("...and no business word appears anywhere on the page",
+      !/invoice|quote|payout|clock in|customer/i.test(html), (/invoice|quote|payout|clock in|customer/i.exec(html) || [""])[0]);
+
+    /* the same page with NOTHING logged — the state he will actually open it in */
+    rc.D = () => ({});
+    const empty = rc.personalHome();
+    ok("it still renders a real page with ZERO data", typeof empty === "string" && empty.length > 200, String(empty).length + " chars");
+    ok("...leading with the talk box", empty.indexOf('id="ph-input"') > 0);
+    ok("...with no empty-state apology", !/no entries|nothing yet|you have no/i.test(empty), empty.slice(0, 200));
+  }
+
+  /* the greeting is the first thing he reads — run it for real */
+  const c = { Date: Date, String: String, console: console };
+  vm.createContext(c);
+  vm.runInContext('let S={biz:"p"};function curUser(){return {username:"Ray Smith"};}function today(){return "2026-08-03";}'
+    + (PH.match(/function phMe\(\)[^\n]*\n/) || [""])[0]
+    + (PH.match(/function phGreeting\(\)[\s\S]*?\n\}/) || [""])[0] + "\nthis.g=phGreeting;", c);
+  const g = c.g();
+  ok("the greeting uses his FIRST name only", /Ray/.test(g) && !/Smith/.test(g), g);
+  ok("...and is time-aware, not a fixed string", /Morning|Afternoon|Evening|Late one/.test(g), g);
 }
 
 console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a deliberate list ---");
