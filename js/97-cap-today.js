@@ -16,13 +16,25 @@ function capBase() { return (typeof orgAiBase === "function") ? orgAiBase() : ((
 function capHeaders() { return (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json", "Authorization": "Bearer " + ((typeof S !== "undefined" && S.sync && S.sync.token) || "") }; }
 function capOnline() { return !!capBase() && !!(typeof S !== "undefined" && S.sync && S.sync.token); }
 
-/* ----- per-user-per-day localStorage (auto-expires on rollover; prunes yesterday's keys) ----- */
-function capStoreKey() { const me = (typeof curUser === "function") ? curUser() : null; const t = (typeof today === "function") ? today() : ""; return "cap_today_" + ((me && me.id) || "anon") + "_" + t; }
+/* ----- per-user-per-ORG-per-day localStorage (auto-expires on rollover; prunes yesterday's keys) -----
+   THE ORG IS PART OF THE KEY, and must stay that way. Without it every org shares one thread, so switching from
+   OBX to the personal org replayed the business conversation onto a personal Today page — a real cross-org bleed
+   even though D() (=S[S.biz]) and the server request (org: S.biz) were both correctly scoped all along. */
+function capUserPfx() { const me = (typeof curUser === "function") ? curUser() : null; return "cap_today_" + ((me && me.id) || "anon") + "_"; }
+function capStoreKey() {
+  const org = (typeof S !== "undefined" && S && S.biz) ? S.biz : "none";
+  const t = (typeof today === "function") ? today() : "";
+  return capUserPfx() + org + "_" + t;
+}
 function capLoadThread() {
   const key = capStoreKey();
-  try {   // prune stale days for THIS user (keep the localStorage clean)
-    const me = (typeof curUser === "function") ? curUser() : null, pfx = "cap_today_" + ((me && me.id) || "anon") + "_";
-    for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.indexOf(pfx) === 0 && k !== key) localStorage.removeItem(k); }
+  try {   // prune STALE DAYS for this user — never a sibling org's thread for TODAY (that would wipe the
+          // other org's conversation on every switch, which is the same bleed wearing the opposite mask)
+    const pfx = capUserPfx(), t = (typeof today === "function") ? today() : "", suf = "_" + t;
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf(pfx) === 0 && (!t || k.slice(-suf.length) !== suf)) localStorage.removeItem(k);
+    }
   } catch (e) {}
   try { const a = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(a) ? a.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : []; }
   catch (e) { return []; }
