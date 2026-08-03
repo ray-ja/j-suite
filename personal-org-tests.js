@@ -73,7 +73,20 @@ ok("the gate helper exists", /const todayHas=\(tab\)=>\(typeof orgHasTab==="func
  ["finance", "Money"], ["pay", "Payouts"], ["inventory", "cleaning"], ["recurring", "recurring visits"],
  ["receipts", "snap a receipt"], ["todo", "top to-dos"]]
   .forEach(([tab, label]) => ok(label + " is gated on todayHas(\"" + tab + "\")", TODAY.indexOf('todayHas("' + tab + '")') > 0));
-ok("Cap itself is NOT gated (it's the point of the personal page)", /if\(typeof capTodayPanel==="function"\) h\+=capTodayPanel\(\);/.test(TODAY));
+/* Cap is WORK-ONLY (Ray, 2026-08-03) — the panel must not render on a personal org. */
+ok("the Cap panel is hidden on a personal org", /if\(!\(typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg\(\)\) && typeof capTodayPanel==="function"\)/.test(TODAY), "cap panel gate missing");
+ok("...and the reason is recorded next to it", /CAP IS WORK-ONLY/.test(TODAY));
+{
+  const c = { S: { biz: "o", registry: [] }, Array, String, console };
+  vm.createContext(c);
+  vm.runInContext((R.match(/function orgTabs\(\)\{[\s\S]*?\n\}/) || [""])[0] + "\n"
+    + (R.match(/function orgIsPersonalOrg\(\)\{[^\n]*\}/) || [""])[0] + "\nthis.f=orgIsPersonalOrg;", c);
+  const run = tabs => { c.S.registry = [{ id: "o", tabs: tabs }]; return c.f(); };
+  ok("personal org detected client-side", run(PERSONAL_TABS) === true);
+  ok("OBX is not personal", run(OBX_TABS) === false);
+  ok("a null-tabs org is not personal", run(null) === false);
+  ok("an escape-room style list is not personal", run(["escape", "booking"]) === false);
+}
 ok("the jobs COMPUTATION stays outside the gate (Money still indexes _aj)",
   TODAY.indexOf("const _aj=actJ();") < TODAY.indexOf('if(todayHas("jobs")){'));
 

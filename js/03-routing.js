@@ -183,6 +183,9 @@ const ORG_TEMPLATES = {
   personal: ["life","journal","budget","todo","messages"]
 };
 function orgTabs(){ const r=(S.registry||[]).find(x=>x&&x.id===S.biz); return (r&&Array.isArray(r.tabs))?r.tabs:null; }
+// A personal/life org: an explicit tab list WITH life and WITHOUT jobs. Mirrors orgIsPersonal() in sync-server.js
+// — keep the two in step. Orgs on the null/"full" default (OBX, Jamieson) are never personal.
+function orgIsPersonalOrg(){ const t=orgTabs(); return !!t && t.indexOf("jobs")<0 && t.indexOf("life")>=0; }
 // PER-ORG NAV ORDER (admin-controlled): registry[org].navOrder = [groupKey,…]. renderNav applies it; any
 // listed-but-unknown key is ignored, and any group NOT listed (incl. a NEW group added later) is appended
 // in the default NAV_GROUPS order — so an org with an old/partial navOrder never loses a menu. Unset → default.

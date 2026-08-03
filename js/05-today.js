@@ -27,7 +27,10 @@ function rToday(){
 
   // 1) Cap — the conversational secretary at the very top (replaces the old notice board). The notice-board
   //    `ceo` doc is preserved + owner-editable as a compact "📌 Pinned" strip folded inside the Cap panel (js/97).
-  if(typeof capTodayPanel==="function") h+=capTodayPanel();
+  //    CAP IS WORK-ONLY. Ray, 2026-08-03: "cap should be separate and only for work related to obx lot
+  //    solutions or jamieson automation." So the panel is hidden on a personal org — the personal assistant is
+  //    the check-in thread in Messages, which is a different thing with a different name and no business data.
+  if(!(typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg()) && typeof capTodayPanel==="function") h+=capTodayPanel();
 
   // 1.5) 📸 Snap a receipt — the obvious, discoverable capture entry right under Cap (the always-on path is the
   //   floating FAB in js/99). Routes to the SAME rcptUploadFiles pipeline (smart-defaults + auto-read + one-tap file).
