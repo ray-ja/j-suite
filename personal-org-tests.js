@@ -164,5 +164,38 @@ ok("it does not mention clocking in", !/clock/i.test(sv.CAP_PERSONAL_SYSTEM));
   ok("a personal org is handed NO tools", /orgIsPersonal\(store, org\) \? \[\] : CAP_TOOLS/.test(SRC));
 }
 
+console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a deliberate list ---");
+{
+  const ST = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");
+  const block = (ST.match(/\(S\.registry\|\|\[\]\)\.forEach\(r=>\{[\s\S]*?\n  \}\);/) || [""])[0];
+  ok("the repair block was found", block.length > 100);
+  ok("it only touches obx and jam", /r\.id!=="obx"&&r\.id!=="jam"/.test(block), block);
+  ok("it runs ONCE (guarded by a marker)", /r\.tabsRepaired\)return;/.test(block));
+  ok("...and sets that marker", /r\.tabsRepaired=true;/.test(block));
+
+  /* execute it for real against a personal org + a narrowed business org */
+  function runRepair(registry) {
+    const c = { S: { registry: registry }, now: () => 1234, Array, String, console };
+    vm.createContext(c);
+    vm.runInContext(block, c);
+    return c.S.registry;
+  }
+  const per = runRepair([{ id: "mqwvs3mq98pij", tabs: ["life", "journal", "budget", "todo", "messages"], updatedAt: 1 }])[0];
+  ok("the personal org is left completely alone", JSON.stringify(per.tabs) === JSON.stringify(["life", "journal", "budget", "todo", "messages"]), JSON.stringify(per.tabs));
+  ok("...and its updatedAt is NOT bumped (so it stops clobbering the server)", per.updatedAt === 1, String(per.updatedAt));
+  ok("...no jobs tab sneaks back in", per.tabs.indexOf("jobs") < 0);
+
+  const obx1 = runRepair([{ id: "obx", tabs: ["quotes"], updatedAt: 1 }])[0];
+  ok("OBX still gets its stale list repaired", obx1.tabs.indexOf("jobs") >= 0 && obx1.tabs.indexOf("accounts") >= 0);
+  ok("...and is marked repaired", obx1.tabsRepaired === true);
+
+  const obx2 = runRepair([{ id: "obx", tabs: ["quotes"], updatedAt: 1, tabsRepaired: true }])[0];
+  ok("a REPAIRED org is never widened again", obx2.tabs.indexOf("jobs") < 0, JSON.stringify(obx2.tabs));
+  ok("...so an admin narrowing tools in Admin -> Tools now sticks", obx2.updatedAt === 1);
+
+  const esc = runRepair([{ id: "mqwvr5d7h4a7u", tabs: ["escape", "booking"], updatedAt: 1 }])[0];
+  ok("a third org with an explicit list is untouched", JSON.stringify(esc.tabs) === JSON.stringify(["escape", "booking"]));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

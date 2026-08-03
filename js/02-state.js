@@ -66,7 +66,21 @@ function load(){
   // approvals, leads, jobs, routes). Idempotent; null tabs = "all" already sees them; bump updatedAt only on a
   // real change so it propagates once then no-ops. (OTHER-business/advanced tabs like market/opps/plan/research
   // stay excludable — we only restore the core OBX/Jamieson toolset a stale list dropped.)
-  (S.registry||[]).forEach(r=>{ if(r&&Array.isArray(r.tabs)){ let _ch=false; ["accounts","leads","jobs","routes","map","route","pay","approvals","recurring"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } }); if(_ch&&typeof now==="function")r.updatedAt=now(); } });
+  // 2026-08-03 — this ran on EVERY load for EVERY org with an explicit list, and that made it a permanent
+  // re-infection rather than a repair. Two real failures: (1) the personal org (rbjvl) had its business tabs
+  // pushed back in and updatedAt bumped on every app open, so it clobbered the deliberate personal tab list on
+  // the server every single time — Ray kept seeing Work / Sales / People & Places after it was fixed; (2) ANY
+  // org an admin narrowed on purpose via Admin → Tools was silently re-widened on the next load.
+  // Now scoped to the two orgs the comment above actually names, and marked so it repairs ONCE and never fights
+  // a deliberate choice again.
+  (S.registry||[]).forEach(r=>{
+    if(!r||!Array.isArray(r.tabs)||r.tabsRepaired)return;
+    if(r.id!=="obx"&&r.id!=="jam")return;
+    let _ch=false;
+    ["accounts","leads","jobs","routes","map","route","pay","approvals","recurring"].forEach(t=>{ if(r.tabs.indexOf(t)<0){ r.tabs.push(t); _ch=true; } });
+    r.tabsRepaired=true;
+    if(typeof now==="function")r.updatedAt=now();
+  });
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];
