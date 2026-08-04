@@ -292,7 +292,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -1151,6 +1151,19 @@ function capPersonalContext(store, org, acctId, ny, t) {
     }
   } else {
     L.push("He hasn't listed any interests yet — you may ask once, lightly, then leave it.");
+  }
+
+  // THE SHELF — what he's keeping to come back to (js/123). Reference material, NOT a reading to-do: it is
+  // offered here so the companion can talk ABOUT these things, never so it can ask why he hasn't read them.
+  const shelf = live("shelfItems");
+  if (shelf.length) {
+    const byTopic = {};
+    shelf.forEach(x => { const t = clip(x.topic || "Unfiled", 40); (byTopic[t] = byTopic[t] || []).push(x); });
+    L.push("ON HIS SHELF — things he saved to come back to. Talk about these as subjects worth discussing; NEVER ask why he hasn't read something, and never treat the shelf as a backlog:");
+    Object.keys(byTopic).slice(0, 6).forEach(t => {
+      const rows = byTopic[t].slice(0, 8).map(x => clip(x.title || "", 70) + (x.author ? " (" + clip(x.author, 30) + ")" : "") + (x.status === "read" ? " [read]" : ""));
+      L.push("  " + t + ": " + rows.join("; "));
+    });
   }
 
   // HABITS / TRACKERS — today's state, so Cap can nudge on what's still open

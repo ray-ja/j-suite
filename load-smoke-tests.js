@@ -123,6 +123,11 @@ ok("every nav tab has a screen in the dispatch table", noScreen.length === 0, no
 const noMeta = uniq.filter(t => !new RegExp("(^|[{,\\s])" + t + ":\\{").test(metaBlock));
 ok("every nav tab has TAB_META (label + icon)", noMeta.length === 0, noMeta.join(", "));
 ok("journal is among them", uniq.indexOf("journal") >= 0);
+/* ROUTE_TABS gates deep links and notification routing (validTab). A nav tab missing from it silently fails
+   to open from a ?tab= link or a push notification — journal shipped with exactly that gap. */
+const routeBlock = (R.match(/const ROUTE_TABS=\[[^\]]*\];/) || [""])[0];
+const noRoute = uniq.filter(t => routeBlock.indexOf('"' + t + '"') < 0);
+ok("every nav tab is in ROUTE_TABS (deep links + notifications)", noRoute.length === 0, noRoute.join(", "));
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

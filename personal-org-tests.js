@@ -14,7 +14,7 @@ const R = fs.readFileSync(path.join(__dirname, "js", "03-routing.js"), "utf8");
 const TODAY = fs.readFileSync(path.join(__dirname, "js", "05-today.js"), "utf8");
 const LIFE = fs.readFileSync(path.join(__dirname, "js", "78-life-tracker.js"), "utf8");
 
-const PERSONAL_TABS = ["life", "journal", "budget", "todo", "messages"];
+const PERSONAL_TABS = ["life", "journal", "shelf", "budget", "todo", "messages"];
 const OBX_TABS = ["schedule", "messages", "todo", "inventory", "quotes", "finance", "receipts", "playbook",
   "time", "leads", "jobs", "accounts", "pay", "approvals", "recurring", "invoices", "team"];
 
@@ -34,7 +34,7 @@ function tabCtx(tabs) {
 console.log("\n--- NAV: the personal org gets a personal tab set ---");
 {
   const p = tabCtx(PERSONAL_TABS);
-  ["life", "journal", "budget", "todo", "messages"].forEach(t => ok("personal HAS " + t, p.orgHasTab(t)));
+  ["life", "journal", "shelf", "budget", "todo", "messages"].forEach(t => ok("personal HAS " + t, p.orgHasTab(t)));
   ["jobs", "leads", "quotes", "schedule", "time", "pay", "approvals", "recurring", "accounts", "inventory", "receipts", "finance", "invoices", "map", "route", "routes"]
     .forEach(t => ok("personal does NOT have " + t, !p.orgHasTab(t)));
   ok("People & Places (team) is gone from personal", !p.orgHasTab("team"));
@@ -61,7 +61,7 @@ ok("journal is in the nav groups", /key:"journal"[\s\S]{0,80}tabs:\["journal"\]/
 ok("journal has a screen (rJournal)", /journal:\(typeof rJournal==="function"\?rJournal:rToday\)/.test(R));
 ok("journal has TAB_META", /journal:\{l:"Journal"/.test(R));
 ok("journal is opt-in (never appears in OBX/Jamieson)", /ORG_OPTIN_TABS = \[[^\]]*"journal"/.test(R));
-ok("the personal template lists journal", /personal: \["life","journal","budget","todo","messages"\]/.test(R));
+ok("the personal template lists journal + shelf", /personal: \["life","journal","shelf","budget","todo","messages"\]/.test(R));
 ok("rJournal is defined and exported", /function rJournal\(\)/.test(LIFE) && /window\.rJournal=rJournal/.test(LIFE));
 ok("it renders the SAME lifeNotes journal (no fork of the data)", /function rJournal\(\)\{[\s\S]{0,120}lifeRenderJournal\(\)/.test(LIFE));
 ok("Life drops its duplicate Journal sub-tab when journal is its own tab", /own\?"":'<button class="subbtn '\+\(LIFE_SUB==="journal"/.test(LIFE));
@@ -315,6 +315,64 @@ console.log("\n--- PERSONA: the two delicate things ---");
   ok("...no preaching", /never preach at him/.test(P));
   ok("...no arguing", /never argue with it/.test(P));
   ok("...and never psychoanalysed", /never treat it as something to be analysed/.test(P));
+}
+
+console.log("\n--- THE SHELF (js/123): a reference library, NOT a reading to-do ---");
+{
+  const SH = fs.readFileSync(path.join(__dirname, "js", "123-shelf.js"), "utf8");
+  const ST = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");
+  const SRC = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+
+  ok("registered in the shell",
+    fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/123-shelf.js"') > 0);
+  ok("shelf has a screen", /shelf:\(typeof rShelf==="function"\?rShelf:rToday\)/.test(R));
+  ok("shelf has TAB_META", /shelf:\{l:"Shelf"/.test(R));
+  ok("shelf is opt-in (never on OBX/Jamieson)", /ORG_OPTIN_TABS = \[[^\]]*"shelf"/.test(R));
+  ok("shelf is in ROUTE_TABS (deep links + notifications)", /const ROUTE_TABS=\[[^\]]*"shelf"/.test(R));
+
+  /* the data-layer wiring the collection pattern requires — all three sites */
+  ok("shelfItems is in blank()", /shelfItems:\[\]\}\}/.test(ST));
+  ok("shelfItems is backfilled on every org slab", (ST.match(/S\[b\]\.shelfItems/g) || []).length >= 2,
+    String((ST.match(/S\[b\]\.shelfItems/g) || []).length) + " backfill sites");
+  ok("shelfItems is in the server COLLECTIONS", /"playbookLib", "installments", "shelfItems"\]/.test(SRC));
+
+  /* THE CONSTRAINT THAT MATTERS: he already told me reading is something he "likes the idea of but never got
+     good at". A shelf with counters or nudges would rebuild the guilt machine. */
+  /* strip comments first — the module's own header explains what it must NOT do ("no progress bars, unread
+     counts, streaks or reminders"), and that prose would trip a naive scan of the whole file. */
+  const SH_CODE = SH.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  ok("no unread/progress counter in the CODE", !/unread|progress|% read|remaining/i.test(SH_CODE),
+    (/unread|progress|% read|remaining/i.exec(SH_CODE) || [""])[0]);
+  ok("no streaks, reminders or due dates in the CODE", !/streak|remind|overdue|dueDate/i.test(SH_CODE),
+    (/streak|remind|overdue|dueDate/i.exec(SH_CODE) || [""])[0]);
+  ok("status is optional and explicitly never counted", /never counted or nagged/.test(SH));
+  ok("the no-reading-list rule is recorded in the module", /THIS IS A SHELF, NOT A READING LIST/.test(SH));
+  ok("the empty state doesn't imply a backlog", /Nothing here is a to-do list/.test(SH));
+  ok("ideas render before books (the frame the books hang off)", SH.indexOf("if (ideas.length)") < SH.indexOf("if (books.length)"));
+  ok("entries are grouped by topic", /shelfTopics\(\)/.test(SH));
+
+  /* the companion may DISCUSS the shelf but never chase it */
+  ok("the shelf reaches the companion context", /ON HIS SHELF/.test(SRC));
+  ok("...with an explicit no-chasing instruction", /NEVER ask why he hasn't read something/.test(SRC));
+  ok("...and is not framed as a backlog", /never treat the shelf as a backlog/.test(SRC));
+}
+
+console.log("\n--- SERVER: the shelf renders into the context ---");
+{
+  const st = personalStore();
+  st.p.shelfItems = [
+    { id: "shf_1", kind: "book", topic: "Feudalism → industry", title: "The Great Transformation", author: "Karl Polanyi", status: "want" },
+    { id: "shf_2", kind: "idea", topic: "Feudalism → industry", title: "The real argument is about the MECHANISM" },
+    { id: "shf_3", kind: "book", topic: "Philosophy — read", title: "Meditations", author: "Marcus Aurelius", status: "read" },
+    { id: "shf_4", kind: "book", topic: "Feudalism → industry", title: "gone", deleted: true }
+  ];
+  const c = sv.capTodayContext(st, "p", "u1");
+  ok("the shelf is in the context", /ON HIS SHELF/.test(c), c.slice(0, 600));
+  ok("grouped by topic", /Feudalism → industry: The Great Transformation \(Karl Polanyi\)/.test(c), c);
+  ok("a read book is marked", /Meditations \(Marcus Aurelius\) \[read\]/.test(c));
+  ok("a deleted item is dropped", c.indexOf("gone") < 0);
+  const noShelf = sv.capTodayContext(personalStore(), "p", "u1");
+  ok("silent when the shelf is empty", noShelf.indexOf("ON HIS SHELF") < 0);
 }
 
 console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a deliberate list ---");
