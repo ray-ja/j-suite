@@ -196,7 +196,7 @@ console.log("\n--- SERVER: interests reach the companion ---");
   const st = personalStore();
   st.p.docs = [{ id: "personalInterests", list: [{ id: "i1", label: "fishing" }, { id: "i2", label: "guitar" }, { id: "i3", label: "gone", deleted: true }] }];
   const c = sv.capTodayContext(st, "p", "u1");
-  ok("his interests are in the context", /Things he's into: fishing, guitar\./.test(c), c.slice(0, 400));
+  ok("his interests are in the context, grouped", /Other: fishing, guitar/.test(c), c.slice(0, 500));
   ok("a deleted interest is dropped", c.indexOf("gone") < 0);
   const empty = sv.capTodayContext(personalStore(), "p", "u1");
   ok("with none listed it says so, and says ask ONCE", /may ask once, lightly/.test(empty), empty.slice(0, 400));
@@ -266,6 +266,55 @@ console.log("\n--- the personal HOME page (js/122) ---");
   const g = c.g();
   ok("the greeting uses his FIRST name only", /Ray/.test(g) && !/Smith/.test(g), g);
   ok("...and is time-aware, not a fixed string", /Morning|Afternoon|Evening|Late one/.test(g), g);
+}
+
+console.log("\n--- INTERESTS: the Enter fix + categories + aspirations ---");
+{
+  const PH = fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8");
+  /* Ray: "I tried adding them manually, but it's really slow because I can't hit enter." */
+  ok("Enter submits the interest field", /onkeydown="if\(event\.key===\\?.Enter\\?.\)\{event\.preventDefault\(\);phSaveInterest\(\);\}/.test(PH),
+    (PH.match(/onkeydown="[^"]*"/) || ["(no onkeydown found)"])[0]);
+  ok("...the field is cleared but KEEPS focus", /inp\.value = "";[\s\S]{0,120}inp\.focus\(\);/.test(PH));
+  ok("...and only the LIST re-renders, not the whole modal", /phRefreshInterestList\(\);/.test(PH) && !/window\.phAddInterest\(\);\s*\};\s*if \(typeof window[^\n]*phDelInterest/.test(PH));
+  ok("...the field is focused when the modal opens", /getElementById\("ph_int"\); if \(el\) el\.focus\(\)/.test(PH));
+  ok("the reason is recorded next to the fix", /THE ENTER FIX/.test(PH));
+
+  ok("interests carry a category", /cat: \(catEl && catEl\.value\)/.test(PH));
+  ok("...and an aspiration flag", /aspiration: !!\(aspEl && aspEl\.checked\)/.test(PH));
+  ["reading", "games", "ideas", "faith", "music"].forEach(k =>
+    ok("category '" + k + "' exists", new RegExp('key: "' + k + '"').test(PH)));
+  ok("faith is its own category, not lumped into Other", /key: "faith",\s*label: "Faith"/.test(PH));
+  ok("an aspiration is shown gently, not as a task", /want to get back to/.test(PH) && !/overdue|TODO|goal/i.test(PH.slice(PH.indexOf("phInterestListHTML"), PH.indexOf("phRefreshInterestList"))));
+}
+
+console.log("\n--- SERVER: interests reach the companion GROUPED, with aspirations flagged ---");
+{
+  const st = personalStore();
+  st.p.docs = [{ id: "personalInterests", list: [
+    { id: "i1", label: "Morrowind", cat: "games" },
+    { id: "i2", label: "Sci-fi", cat: "reading" },
+    { id: "i3", label: "Catholicism", cat: "faith" },
+    { id: "i4", label: "Japanese", cat: "ideas", aspiration: true },
+    { id: "i5", label: "gone", cat: "games", deleted: true }
+  ] }];
+  const c = sv.capTodayContext(st, "p", "u1");
+  ok("grouped by category", /Games: Morrowind/.test(c) && /Reading: Sci-fi/.test(c), c.slice(0, 600));
+  ok("faith is surfaced as Faith", /Faith: Catholicism/.test(c));
+  ok("a deleted interest is dropped", c.indexOf("gone") < 0);
+  ok("aspirations are called out separately", /LIKES THE IDEA OF but has never gotten good at: Japanese/.test(c));
+  ok("...and explicitly marked NOT goals", /Wistful, not goals/.test(c));
+  ok("...with a hard no-nudge instruction", /NEVER turn one into a suggestion/.test(c));
+}
+
+console.log("\n--- PERSONA: the two delicate things ---");
+{
+  const P = sv.PERSONAL_COMPANION_SYSTEM;
+  ok("aspirations must not become suggestions", /never convert one into a suggestion/.test(P));
+  ok("...named concretely so it can't be hand-waved", /philosophy, Russian, Chinese, Japanese, the keyboard/.test(P));
+  ok("his faith is handled with respect", /he is Catholic/.test(P));
+  ok("...no preaching", /never preach at him/.test(P));
+  ok("...no arguing", /never argue with it/.test(P));
+  ok("...and never psychoanalysed", /never treat it as something to be analysed/.test(P));
 }
 
 console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a deliberate list ---");

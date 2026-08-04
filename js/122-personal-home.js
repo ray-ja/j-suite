@@ -51,30 +51,84 @@ function phInterestsDoc() {
   return t;
 }
 function phInterests() { return phInterestsDoc().list.filter(x => x && !x.deleted); }
+/* Interests carry a CATEGORY and an `aspiration` flag.
+   The flag exists because of something Ray said precisely: philosophy, languages (Russian, then Chinese, then
+   Japanese) and the keyboard are "things I like the idea of, but I've never actually gotten good at."
+   Those must NEVER become nags. An app that reminds him of his unfinished ambitions is the same guilt machine
+   the check-in thread turned into — see PERSONAL_COMPANION_SYSTEM, which is told to treat them as things to be
+   curious about, never to chase. */
+const PH_CATS = [
+  { key: "reading", label: "Reading" },
+  { key: "games",   label: "Games" },
+  { key: "ideas",   label: "Ideas & learning" },
+  { key: "faith",   label: "Faith" },
+  { key: "music",   label: "Music" },
+  { key: "other",   label: "Other" }
+];
+function phCatLabel(k) { const c = PH_CATS.find(x => x.key === k); return c ? c.label : "Other"; }
+
+function phInterestListHTML() {
+  const list = phInterests();
+  if (!list.length) return '<div class="muted" style="font-size:13px">Nothing yet.</div>';
+  let h = "";
+  PH_CATS.forEach(function (c) {
+    const inCat = list.filter(i => (i.cat || "other") === c.key);
+    if (!inCat.length) return;
+    h += '<div class="sub" style="font-weight:700;margin-top:8px">' + esc(c.label) + '</div>';
+    inCat.forEach(function (i) {
+      h += '<div class="row" style="gap:6px;align-items:center;margin-top:3px">'
+        + '<div class="grow" style="font-size:13.5px">' + esc(i.label)
+        + (i.aspiration ? ' <span class="muted" style="font-size:11px">· want to get back to</span>' : '')
+        + '</div>'
+        + '<button class="btn ghost sm" onclick="phDelInterest(\'' + i.id + '\')">✕</button></div>';
+    });
+  });
+  return h;
+}
+function phRefreshInterestList() {
+  const el = document.getElementById("ph_int_list");
+  if (el) el.innerHTML = phInterestListHTML();
+}
+
+/* THE ENTER FIX. Ray: "I tried adding them manually, but it's really slow because I can't hit enter."
+   He was right — there was no key handler, so every item meant reaching for a button, and saving rebuilt the
+   whole modal and threw away focus. Now: Enter adds, the field clears and KEEPS focus, and only the list below
+   re-renders. You can rattle off twenty things without leaving the keyboard. */
 if (typeof window !== "undefined") window.phAddInterest = function () {
   modal("Things you're into", ''
-    + '<div class="sub" style="white-space:normal;margin-bottom:8px">Hobbies, things you used to do, things you keep meaning to get back to. It gives us something to talk about that isn\'t work.</div>'
-    + '<label>Add one</label><input id="ph_int" placeholder="e.g. fishing, guitar, working on the truck" autocomplete="off">'
+    + '<div class="sub" style="white-space:normal;margin-bottom:8px">Type one and hit Enter. Keep going — it stays open.</div>'
+    + '<label>Add</label><input id="ph_int" placeholder="e.g. Morrowind, sci-fi, Age of Mythology" autocomplete="off" '
+    + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();phSaveInterest();}">'
+    + '<label style="margin-top:8px">Category</label>'
+    + '<select id="ph_int_cat">' + PH_CATS.map(c => '<option value="' + c.key + '">' + esc(c.label) + '</option>').join("") + '</select>'
+    + '<label class="toggle" style="margin-top:8px"><input type="checkbox" id="ph_int_asp"> Something I want to get back to</label>'
     + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="phSaveInterest()">Add</button>'
-    + (phInterests().length ? '<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:8px">'
-        + phInterests().map(i => '<div class="row" style="gap:6px;align-items:center;margin-bottom:4px"><div class="grow">' + esc(i.label) + '</div>'
-        + '<button class="btn ghost sm" onclick="phDelInterest(\'' + i.id + '\')">✕</button></div>').join("") + '</div>' : ''));
+    + '<div id="ph_int_list" style="border-top:1px solid var(--line);margin-top:12px;padding-top:8px">' + phInterestListHTML() + '</div>');
+  setTimeout(function () { const el = document.getElementById("ph_int"); if (el) el.focus(); }, 60);
 };
 if (typeof window !== "undefined") window.phSaveInterest = function () {
-  const v = (typeof val === "function" ? val("ph_int") : "").trim(); if (!v) return;
+  const inp = document.getElementById("ph_int"); if (!inp) return;
+  const v = (inp.value || "").trim(); if (!v) return;
+  const catEl = document.getElementById("ph_int_cat"), aspEl = document.getElementById("ph_int_asp");
   const t = phInterestsDoc();
-  t.list.push({ id: "int-" + (typeof uid === "function" ? uid() : String(Date.now())), label: v.slice(0, 60) });
+  t.list.push({ id: "int-" + (typeof uid === "function" ? uid() : String(Date.now())),
+                label: v.slice(0, 80),
+                cat: (catEl && catEl.value) || "other",
+                aspiration: !!(aspEl && aspEl.checked) });
   t.updatedAt = (typeof now === "function") ? now() : Date.now();
   if (typeof touch === "function") touch(t);
   if (typeof save === "function") save();
-  window.phAddInterest();
+  inp.value = "";                 // clear, KEEP focus, refresh only the list — no modal rebuild
+  phRefreshInterestList();
+  inp.focus();
 };
 if (typeof window !== "undefined") window.phDelInterest = function (id) {
   const t = phInterestsDoc(); const i = t.list.find(x => x && x.id === id); if (i) i.deleted = true;
   t.updatedAt = (typeof now === "function") ? now() : Date.now();
   if (typeof touch === "function") touch(t);
   if (typeof save === "function") save();
-  window.phAddInterest();
+  phRefreshInterestList();
+  const el = document.getElementById("ph_int"); if (el) el.focus();
 };
 
 /* ---- a greeting that reads like a person, not a dashboard ---- */
@@ -174,12 +228,18 @@ function phInterestsCard() {
   if (!list.length) {
     return '<div class="card"><div class="row" style="gap:8px;align-items:center">'
       + '<div class="grow"><div class="nm">What are you into?</div>'
-      + '<div class="sub" style="white-space:normal">Add a few things — fishing, guitar, whatever. Gives us something to talk about besides work.</div></div>'
+      + '<div class="sub" style="white-space:normal">Add a few things. Gives us something to talk about besides work.</div></div>'
       + '<button class="btn ghost sm" style="flex:0 0 auto" onclick="phAddInterest()">Add</button></div></div>';
   }
+  let body = "";
+  PH_CATS.forEach(function (c) {
+    const inCat = list.filter(i => (i.cat || "other") === c.key);
+    if (!inCat.length) return;
+    body += '<div style="margin-top:6px"><span class="sub" style="font-weight:700">' + esc(c.label) + '</span> '
+      + '<span class="sub">' + inCat.map(i => esc(i.label)).join(" · ") + '</span></div>';
+  });
   return '<div class="card"><div class="row" style="gap:8px;align-items:flex-start">'
-    + '<div class="grow"><div class="nm">Things you\'re into</div>'
-    + '<div class="sub" style="white-space:normal;margin-top:2px">' + list.map(i => esc(i.label)).join(" · ") + '</div></div>'
+    + '<div class="grow"><div class="nm">Things you\'re into</div>' + body + '</div>'
     + '<button class="btn ghost sm" style="flex:0 0 auto" onclick="phAddInterest()">Edit</button></div></div>';
 }
 
