@@ -1486,6 +1486,168 @@ function _rcptCleanLast4(v) {
   return (d.length >= 4 && d.length <= 6) ? d.slice(-4) : null;
 }
 // Does receiptId (a photo blob id) belong to this org? Guards the vision endpoint from reading arbitrary blobs.
+/* ============================ ORG PORTABILITY — export / import / delete ============================
+   Ray, 2026-08-04: "so are all the organizations separate folders i can move / delete? thats how it should be,
+   totally self contained and portable."
+
+   They are NOT separate folders on disk, and deliberately still aren't: one data.json is a single atomic write,
+   and splitting it into four would turn the one unrecoverable failure surface in this system into a
+   partial-write problem. Two further blockers make a literal split wrong today — 5 of 6 accounts belong to more
+   than one org, and blobs carry no org tag (ownership is derived by scanning records).
+
+   So the PROPERTY is delivered instead of the layout: an export produces a genuinely self-contained FOLDER he
+   can move, copy, archive or delete —
+       <org>-<timestamp>/org.json      the slab + registry entry + the accounts/memberships that touch it
+       <org>-<timestamp>/uploads/…     the actual photo/receipt files that org references
+       <org>-<timestamp>/README.txt
+   …and import reads one back. Everything below is a PURE function over a store so it can be tested without a
+   filesystem; the endpoints do the I/O. */
+
+const ORG_EXPORT_DIR = path.join(__dirname, "org-exports");
+
+/* Every blob id an org slab references. Blob→org is not stored anywhere, so it must be derived — these are the
+   only fields that ever hold an upload id (receiptId, photoId, photoIds[], attachments[].id, refImage). */
+const BLOB_KEYS = ["receiptId", "photoId", "refImage", "blobId"];
+const BLOB_ARRAY_KEYS = ["photoIds"];
+function orgBlobIds(slab) {
+  const out = new Set();
+  const isId = v => typeof v === "string" && v && v.length < 200 && !/[\/\\]/.test(v);
+  const walk = (node, depth) => {
+    if (!node || typeof node !== "object" || depth > 6) return;
+    if (Array.isArray(node)) { node.forEach(x => walk(x, depth + 1)); return; }
+    BLOB_KEYS.forEach(k => { if (isId(node[k])) out.add(node[k]); });
+    BLOB_ARRAY_KEYS.forEach(k => { if (Array.isArray(node[k])) node[k].forEach(v => { if (isId(v)) out.add(v); }); });
+    if (Array.isArray(node.attachments)) node.attachments.forEach(a => { if (a && isId(a.id)) out.add(a.id); });
+    Object.keys(node).forEach(k => { const v = node[k]; if (v && typeof v === "object") walk(v, depth + 1); });
+  };
+  walk(slab, 0);
+  return Array.from(out);
+}
+
+/* the portable bundle for ONE org. Accounts are included because an org without the people in it isn't
+   restorable; memberships are filtered to this org only, so importing can never smuggle in access elsewhere. */
+function orgExportBundle(store, orgId) {
+  store = store || {};
+  const slab = store[orgId];
+  if (!slab) return null;
+  const reg = (store.registry || []).find(r => r && r.id === orgId) || null;
+  const memberships = (store.users || []).filter(u => u && u.kind === "membership" && u.orgId === orgId);
+  const wanted = new Set(memberships.map(m => m.accountId));
+  const accounts = (store.users || []).filter(u => u && !u.kind && wanted.has(u.id));
+  return {
+    format: "j-suite-org-export",
+    version: 1,
+    orgId: orgId,
+    registry: reg,
+    slab: slab,
+    accounts: accounts,
+    memberships: memberships,
+    blobIds: orgBlobIds(slab)
+  };
+}
+
+/* APPLY an imported bundle. Returns {store, report} and NEVER touches another org's slab.
+   mode "merge" (default) LWW-merges into an existing org; "skip" refuses when the org already exists. */
+function orgImportApply(store, bundle, opts) {
+  opts = opts || {};
+  const report = { ok: false, error: null, orgId: null, collections: 0, records: 0, accounts: 0, memberships: 0, existed: false };
+  if (!bundle || bundle.format !== "j-suite-org-export" || !bundle.orgId || !bundle.slab) {
+    report.error = "not a j-Suite org export"; return { store: store, report: report };
+  }
+  const out = Object.assign({}, store);
+  const orgId = bundle.orgId;
+  report.orgId = orgId;
+  report.existed = !!out[orgId];
+  if (report.existed && opts.mode === "skip") { report.error = "that organization already exists"; return { store: out, report: report }; }
+
+  /* slab: per-collection LWW by record id — the same rule the sync layer uses, so an import can update but
+     never drop a record that is already there. */
+  const cur = out[orgId] || {};
+  const next = {};
+  COLLECTIONS.forEach(c => {
+    const merged = mergeColl(cur[c] || [], bundle.slab[c] || []);
+    if (merged.length || Array.isArray(cur[c]) || Array.isArray(bundle.slab[c])) { next[c] = merged; report.collections++; report.records += merged.length; }
+  });
+  Object.keys(bundle.slab).forEach(k => { if (COLLECTIONS.indexOf(k) < 0 && !(k in next)) next[k] = bundle.slab[k]; });   // carry non-collection fields verbatim
+  out[orgId] = next;
+
+  /* registry: LWW on the single entry, never replacing the whole list */
+  out.registry = mergeColl(out.registry || [], bundle.registry ? [bundle.registry] : []);
+
+  /* accounts + memberships: merge by id. Memberships are re-filtered to THIS org so a doctored bundle can't
+     grant access to an org it doesn't contain. */
+  const incomingUsers = (bundle.accounts || []).concat((bundle.memberships || []).filter(m => m && m.orgId === orgId));
+  out.users = mergeColl(out.users || [], incomingUsers);
+  report.accounts = (bundle.accounts || []).length;
+  report.memberships = (bundle.memberships || []).filter(m => m && m.orgId === orgId).length;
+  report.ok = true;
+  return { store: out, report: report };
+}
+
+/* REMOVE an org. Returns {store, report, blobsToDelete}. Account RECORDS are never deleted (a person almost
+   always belongs to another org too — 5 of 6 here do); only their membership of THIS org goes. A blob is only
+   listed for deletion when no OTHER surviving org references it. */
+function orgDeleteApply(store, orgId) {
+  const report = { ok: false, error: null, orgId: orgId, memberships: 0, blobs: 0 };
+  store = store || {};
+  if (!store[orgId]) { report.error = "no such organization"; return { store: store, report: report, blobsToDelete: [] }; }
+  if (orgIdsOf(store).length <= 1) { report.error = "that's the only organization left"; return { store: store, report: report, blobsToDelete: [] }; }
+
+  const mine = new Set(orgBlobIds(store[orgId]));
+  const out = Object.assign({}, store);
+  delete out[orgId];
+  orgIdsOf(out).forEach(o => orgBlobIds(out[o]).forEach(b => mine.delete(b)));   // keep anything another org still uses
+
+  const before = (out.users || []).length;
+  out.users = (out.users || []).filter(u => !(u && u.kind === "membership" && u.orgId === orgId));
+  report.memberships = before - out.users.length;
+  out.registry = (out.registry || []).filter(r => !(r && r.id === orgId));
+  report.blobs = mine.size;
+  report.ok = true;
+  return { store: out, report: report, blobsToDelete: Array.from(mine) };
+}
+
+/* write a bundle to a real, movable folder on disk. Timestamped so an export never overwrites an earlier one. */
+function orgExportToDisk(store, orgId, withPhotos) {
+  const bundle = orgExportBundle(store, orgId);
+  if (!bundle) throw new Error("no such organization");
+  const reg = bundle.registry || {};
+  const safe = String(reg.name || orgId).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || orgId;
+  const d = new Date(), pad = n => String(n).padStart(2, "0");
+  const stamp = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  const name = safe + "-" + stamp;
+  const dir = path.join(ORG_EXPORT_DIR, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "org.json"), JSON.stringify(bundle, null, 2));
+  let photos = 0, missing = 0;
+  if (withPhotos !== false) {
+    fs.mkdirSync(path.join(dir, "uploads"), { recursive: true });
+    bundle.blobIds.forEach(b => {
+      try {
+        const src = path.join(__dirname, "uploads", path.basename(b));
+        if (src.startsWith(path.join(__dirname, "uploads") + path.sep) && fs.existsSync(src)) { fs.copyFileSync(src, path.join(dir, "uploads", path.basename(b))); photos++; }
+        else missing++;
+      } catch (e) { missing++; }
+    });
+  }
+  const counts = COLLECTIONS.map(c => [c, (bundle.slab[c] || []).length]).filter(x => x[1]);
+  fs.writeFileSync(path.join(dir, "README.txt"),
+    "j-Suite organization export\n" +
+    "===========================\n\n" +
+    "Organization : " + (reg.name || orgId) + "  (" + orgId + ")\n" +
+    "Exported     : " + d.toString() + "\n\n" +
+    "This folder is self-contained and safe to move, copy, archive or delete.\n" +
+    "  org.json   the organization's records, its registry entry, and the accounts that belong to it\n" +
+    "  uploads/   " + photos + " photo/receipt files this organization references" + (missing ? "  (" + missing + " referenced file(s) were already missing)" : "") + "\n\n" +
+    "Restore it from Settings -> Organizations -> Import, or by POSTing {name:\"" + name + "\"} to /api/org/import.\n" +
+    "Importing merges by record id and last-write-wins: it can update records, never drop them.\n\n" +
+    "Contents:\n" + counts.map(x => "  " + String(x[1]).padStart(6) + "  " + x[0]).join("\n") + "\n" +
+    "  " + String(bundle.accounts.length).padStart(6) + "  accounts\n" +
+    "  " + String(bundle.memberships.length).padStart(6) + "  memberships\n");
+  return { name: name, dir: dir, photos: photos, missingPhotos: missing,
+           records: counts.reduce((a, x) => a + x[1], 0), accounts: bundle.accounts.length };
+}
+
 function rcptOwnedByOrg(store, orgId, receiptId) {
   const s = (store && store[orgId]) || {}; if (!receiptId) return false;
   if ((s.receipts || []).some(r => r && r.receiptId === receiptId)) return true;
@@ -3028,6 +3190,111 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  /* ============ ORG PORTABILITY endpoints — export / import / delete ============
+     Export and delete are SUPER-ADMIN only: they move or destroy a whole organization. Delete ALWAYS takes a
+     full export first, so "delete" can never be the last copy of anything. Import paths are resolved inside
+     ORG_EXPORT_DIR and re-checked after resolution, so a crafted name can't traverse out of it. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org/export") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    readBodyUtf8(req, 2e4, (body) => {
+      let p2; try { p2 = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const org = String((p2 && p2.org) || "");
+      const store = loadStore();
+      if (!org || !store[org]) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"no such organization"}'); }
+      try {
+        const r = orgExportToDisk(store, org, p2 && p2.withPhotos !== false);
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify(r));
+      } catch (e) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "export failed: " + ((e && e.message) || "unknown") }));
+      }
+    });
+    return;
+  }
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/org/exports") {
+    const q = new URL(req.url, "http://x");
+    const sc = tokenScope((req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "");
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    let list = [];
+    try {
+      list = fs.readdirSync(ORG_EXPORT_DIR).filter(n => {
+        try { return fs.statSync(path.join(ORG_EXPORT_DIR, n)).isDirectory() && fs.existsSync(path.join(ORG_EXPORT_DIR, n, "org.json")); }
+        catch (e) { return false; }
+      }).map(n => {
+        let meta = {}; try { meta = JSON.parse(fs.readFileSync(path.join(ORG_EXPORT_DIR, n, "org.json"), "utf8")); } catch (e) {}
+        let photos = 0; try { photos = fs.readdirSync(path.join(ORG_EXPORT_DIR, n, "uploads")).length; } catch (e) {}
+        return { name: n, orgId: meta.orgId || "", orgName: (meta.registry && meta.registry.name) || meta.orgId || "",
+                 accounts: (meta.accounts || []).length, photos: photos };
+      }).sort((a, b) => (a.name < b.name ? 1 : -1));
+    } catch (e) {}
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ dir: ORG_EXPORT_DIR, exports: list }));
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org/import") {
+    const sc = tokenScope((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    readBodyUtf8(req, 2e4, (body) => {
+      let p2; try { p2 = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const name = String((p2 && p2.name) || "");
+      const dir = path.resolve(ORG_EXPORT_DIR, name);
+      if (!name || !dir.startsWith(path.resolve(ORG_EXPORT_DIR) + path.sep)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad export name"}'); }
+      let bundle; try { bundle = JSON.parse(fs.readFileSync(path.join(dir, "org.json"), "utf8")); }
+      catch (e) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"export not found"}'); }
+      const r = orgImportApply(loadStore(), bundle, { mode: (p2 && p2.mode) || "merge" });
+      if (!r.report.ok) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify(r.report)); }
+      let restored = 0;
+      try {
+        const up = path.join(dir, "uploads");
+        if (fs.existsSync(up)) fs.readdirSync(up).forEach(f => {
+          const dest = path.join(__dirname, "uploads", path.basename(f));
+          if (!fs.existsSync(dest)) { fs.copyFileSync(path.join(up, f), dest); restored++; }
+        });
+      } catch (e) {}
+      saveStore(r.store);
+      r.report.photosRestored = restored;
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(r.report));
+    });
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/org/delete") {
+    const sc = tokenScope((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    readBodyUtf8(req, 2e4, (body) => {
+      let p2; try { p2 = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const org = String((p2 && p2.org) || "");
+      const store = loadStore();
+      const reg = (store.registry || []).find(r2 => r2 && r2.id === org) || {};
+      /* typing the org's NAME is the confirmation — an id is easy to fat-finger, a name is not */
+      if (!org || !store[org]) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end('{"error":"no such organization"}'); }
+      if (String((p2 && p2.confirmName) || "").trim() !== String(reg.name || org).trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"type the organization name exactly to confirm"}');
+      }
+      let backup = null;
+      try { backup = orgExportToDisk(store, org, true); }          // ALWAYS a full copy first
+      catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"refused: could not take a backup first"}'); }
+      const r = orgDeleteApply(store, org);
+      if (!r.report.ok) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify(r.report)); }
+      saveStore(r.store);
+      let removed = 0;
+      (r.blobsToDelete || []).forEach(b => {
+        try {
+          const full = path.join(__dirname, "uploads", path.basename(b));
+          if (full.startsWith(path.join(__dirname, "uploads") + path.sep) && fs.existsSync(full)) { fs.unlinkSync(full); removed++; }
+        } catch (e) {}
+      });
+      r.report.photosRemoved = removed;
+      r.report.backup = backup && backup.name;
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(r.report));
+    });
+    return;
+  }
+
   // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
@@ -3528,4 +3795,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

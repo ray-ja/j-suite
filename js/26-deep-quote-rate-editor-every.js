@@ -87,6 +87,7 @@ function rData(){
       <div class="row" style="align-items:center"><div class="grow"><strong>${(typeof homeBase==="function"&&homeBase())?(homeBase().lat!=null?"📍 "+esc(homeBase().resolved||homeBase().address):"⚠ "+esc(homeBase().address)+" — not located, tap Set to fix"):"Not set yet — pickup mileage needs this"}</strong></div><button class="btn acc sm" style="flex:0 0 auto" onclick="setHomeBase()">${(typeof homeBase==="function"&&homeBase()&&homeBase().address)?"Change":"Set"}</button></div></div>
     <h2>Archive</h2>
     <div class="card"><div class="row" style="align-items:center"><div class="grow"><strong>🗑 Deleted jobs &amp; quotes</strong><div class="sub">${(typeof archiveCount==="function"?archiveCount():0)} in the archive · restorable for 60 days, then auto-clears</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="openArchive()">Open</button></div></div>
+    ${(typeof orgpCardHTML==="function")?orgpCardHTML():""}
     <h2>Backups</h2>
     <div class="card">
       <div id="bk_status" class="sub" style="margin-bottom:12px">🗄️ Checking server backups…</div>
@@ -116,6 +117,7 @@ function rData(){
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
+  if(window.orgpRefresh&&typeof orgpCan==="function"&&orgpCan())setTimeout(orgpRefresh,40);
   if(window.loadSecStatus)setTimeout(loadSecStatus,30);
 }
 window.saveSync=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}S.sync.url=val("sy_url");S.sync.token=val("sy_token");
