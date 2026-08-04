@@ -375,6 +375,45 @@ console.log("\n--- SERVER: the shelf renders into the context ---");
   ok("silent when the shelf is empty", noShelf.indexOf("ON HIS SHELF") < 0);
 }
 
+console.log("\n--- THE STACK (js/125): a record, never an adherence tracker ---");
+{
+  const SK = fs.readFileSync(path.join(__dirname, "js", "125-stack.js"), "utf8");
+  const SRC2 = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+  ok("registered in the shell",
+    fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/125-stack.js"') > 0);
+  ok("the card renders on the Life tab", /stackCardHTML\(\)/.test(LIFE));
+  ok("stored on a docs record (no new collection, no migration)", /id === "personalStack"/.test(SK));
+
+  /* He said of his vitamin D: "most days, but not every day." That must never become a visible failure. */
+  const SK_CODE = SK.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  ok("no taken-today checkbox", !/taken|checkbox|compliance/i.test(SK_CODE), (/taken|checkbox|compliance/i.exec(SK_CODE) || [""])[0]);
+  ok("no streaks or missed-day logic", !/streak|missed|adherence/i.test(SK_CODE));
+  ok("it says so on the card itself", /A record, not a checklist/.test(SK));
+  ok("the reason is recorded in the module", /REFERENCE, NOT AN ADHERENCE TRACKER/.test(SK));
+
+  /* the Enter lesson, applied from the start this time */
+  ok("Enter adds an entry", /onkeydown="if\(event\.key===\\?.Enter\\?.\)\{event\.preventDefault\(\);stackSave\(\);\}/.test(SK));
+  ok("...fields clear and focus returns", /nameEl\.focus\(\);/.test(SK));
+  ok("...and only the list re-renders", /stackRefresh\(\);/.test(SK));
+
+  ok("the companion is told it's a record, not a checklist", /A record, not a checklist\. NEVER ask whether he took something today/.test(SRC2));
+}
+
+console.log("\n--- SERVER: the stack reaches the companion ---");
+{
+  const st = personalStore();
+  st.p.docs = [{ id: "personalStack", list: [
+    { id: "s1", name: "Boron", dose: "10 mg" },
+    { id: "s2", name: "Vitamin D3", dose: "10,000 IU" },
+    { id: "s3", name: "gone", deleted: true }
+  ] }];
+  const c = sv.capTodayContext(st, "p", "u1");
+  ok("it knows what he takes", /What he takes: Boron 10 mg, Vitamin D3 10,000 IU\./.test(c), c.slice(0, 600));
+  ok("a deleted entry is dropped", c.indexOf("gone") < 0);
+  ok("with the no-nagging rule attached", /NEVER ask whether he took something today/.test(c));
+  ok("silent when nothing is listed", sv.capTodayContext(personalStore(), "p", "u1").indexOf("What he takes") < 0);
+}
+
 console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a deliberate list ---");
 {
   const ST = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");

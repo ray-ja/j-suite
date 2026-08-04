@@ -1153,6 +1153,15 @@ function capPersonalContext(store, org, acctId, ny, t) {
     L.push("He hasn't listed any interests yet — you may ask once, lightly, then leave it.");
   }
 
+  // WHAT HE TAKES (js/125). Reference only — he said of his vitamin D "most days, but not every day", and
+  // this must never become an adherence check.
+  const stack = ((o.docs || []).find(d => d && d.id === "personalStack" && !d.deleted) || {}).list || [];
+  const sLive = stack.filter(x => x && !x.deleted);
+  if (sLive.length) {
+    L.push("What he takes: " + sLive.map(x => clip(x.name || "", 60) + (x.dose ? " " + clip(x.dose, 20) : "")).join(", ") + ".");
+    L.push("  ^ A record, not a checklist. NEVER ask whether he took something today, never track compliance, never nudge about a missed day.");
+  }
+
   // THE SHELF — what he's keeping to come back to (js/123). Reference material, NOT a reading to-do: it is
   // offered here so the companion can talk ABOUT these things, never so it can ask why he hasn't read them.
   const shelf = live("shelfItems");

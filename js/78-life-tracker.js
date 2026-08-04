@@ -78,6 +78,7 @@ function lifeRenderToday(){
     +'<button class="btn ghost sm" onclick="lifeShiftDay(1)" title="Next day">›</button>'
     +'</div><div class="sub" style="text-align:center;margin-top:6px">'+(typeof DOW!=="undefined"?DOW[dowOf(ds)]+" · ":"")+fmtDate(ds)
     +(ds===today()?' · <b>today</b>':'')+'</div></div>';
+  if(typeof stackCardHTML==="function")h+=stackCardHTML();
 
   /* trackers to log */
   h+='<div class="secthd"><h2>Daily check-in</h2><span class="ct">'+done+'/'+trackers.length+'</span></div>';
