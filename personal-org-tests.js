@@ -492,5 +492,52 @@ console.log("\n--- THE PEOPLE: names and roles reach the companion, family frict
   ok("no household recorded -> the section is silent", !/The people in his life/.test(none));
 }
 
+console.log("\n--- FILE HAND-OFF (js/127): the door he can actually reach ---");
+{
+  const PF = fs.readFileSync(path.join(__dirname, "js", "127-files.js"), "utf8");
+  const SVX = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+  const STX = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");
+
+  ok("the module is in the shell",
+    fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/127-files.js"') > 0);
+  ok("the card is on the personal home",
+    /pfCardHTML\(\)/.test(fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8")));
+  ok("collection in server COLLECTIONS", /"personalFiles"/.test(SVX));
+  ok("collection in client blank()", /personalFiles:\[\]/.test(STX));
+  eq("both load() backfills present", (STX.match(/personalFiles\)\)S\[b\]\.personalFiles=\[\]/g) || []).length, 2);
+
+  ok("it accepts images, PDFs AND csv", /accept = "image\/\*,application\/pdf,text\/csv,\.csv"/.test(PF));
+  ok("multiple files at once", /inp\.multiple = true/.test(PF));
+  ok("it reuses jsUpload rather than a new endpoint", /await jsUpload\(/.test(PF));
+  ok("a failed file doesn't abort the rest of the batch", /failed\.push/.test(PF));
+  ok("each file keeps a note — an unlabelled blob is useless", /what is this\?/.test(PF));
+  ok("...and it prompts for labels right after upload", /if \(ok\) pfOpenList\(true\)/.test(PF));
+  ok("deletes are soft", /f\.deleted = true/.test(PF));
+  ok("it warns against sending credentials", /Never put a password/.test(PF));
+
+  /* run the real formatter + card against stubs */
+  const els = {};
+  const c = { console, JSON, Math, Date, String, Number, Array, Object,
+    esc: x => String(x == null ? "" : x),
+    D: () => ({ personalFiles: [
+      { id: "f1", blobId: "aa.pdf", name: "nfcu-june.pdf", size: 240000, note: "NFCU June", ts: 2 },
+      { id: "f2", blobId: "bb.csv", name: "cards.csv", size: 900, ts: 1 },
+      { id: "f3", blobId: "cc.png", name: "gone.png", size: 10, deleted: true }
+    ] }),
+    S: { sync: { token: "t" } }, jsUpload: () => {}, document: { getElementById: id => (els[id] = els[id] || {}) } };
+  c.window = c;
+  vm.createContext(c);
+  vm.runInContext(PF, c);
+  eq("deleted files are excluded", c.actFiles().length, 2);
+  eq("bytes", c.pfSize(900), "900 B");
+  eq("kilobytes", c.pfSize(240000), "234 KB");
+  eq("megabytes", c.pfSize(5242880), "5.0 MB");
+  const card = c.pfCardHTML();
+  ok("the card renders", typeof card === "string" && card.length > 200);
+  ok("it shows the label he typed, not the hex blob name", card.indexOf("NFCU June") > 0 && card.indexOf("aa.pdf") < 0);
+  ok("it counts what I haven't read", /haven't read yet/.test(card), card);
+  ok("a csv gets a different icon from a pdf", card.indexOf("📊") > 0 && card.indexOf("📄") > 0);
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

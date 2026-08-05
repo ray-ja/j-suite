@@ -277,6 +277,8 @@ function personalHome() {
   /* Dates he'd otherwise be carrying in his head, directly under the talk box — the one place he actually
      lands. Silent when nothing is within 30 days, so it never becomes background noise. */
   if (typeof evHomeCardHTML === "function") h += evHomeCardHTML(30);
+  /* the file hand-off — he has no access to the workstation, so this is the only door (js/127) */
+  if (typeof pfCardHTML === "function") h += pfCardHTML();
   h += phQuickCard();
   h += phLookBackCard();
   h += phInterestsCard();

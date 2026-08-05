@@ -81,8 +81,8 @@ ok("nothing scores or counts him", !/percent|compliance|score/i.test(CAL_CODE));
 ok("...and the file says why", /Deliberately NOT a habit surface/.test(CAL));
 
 console.log("\n--- the collection is wired the way the data layer requires ---");
-ok("server COLLECTIONS lists it", /"shelfItems", "personalEvents"\]/.test(SV));
-ok("client blank() has it", /personalEvents:\[\]\}\}/.test(ST));
+ok("server COLLECTIONS lists it", /"personalEvents"/.test(SV));
+ok("client blank() has it", /personalEvents:\[\]/.test(ST));
 eq("both load() backfills present", (ST.match(/personalEvents\)\)S\[b\]\.personalEvents=\[\]/g) || []).length, 2);
 ok("records carry a stable pev_ id", /"pev_" \+ \(typeof uid/.test(CAL));
 ok("deletes are SOFT (never dropped from the store)", /e\.deleted = true/.test(CAL));
