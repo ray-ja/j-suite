@@ -74,6 +74,115 @@ function evHomeCardHTML(within) {
     + '</div><button class="btn ghost sm" style="flex:0 0 auto" onclick="if(typeof navSub===\'function\')navSub(\'cal\')">Open</button></div></div>';
 }
 
+/* ---- MONTH VIEW ------------------------------------------------------------------------------------
+   Ray asked "do we have a calendar view tab" — the tab existed but rendered an agenda list, which is not
+   what a calendar view means. This is the grid. Mobile-first: seven narrow columns, a dot per event, and a
+   tap on any day opens that day. Annual items resolve by month+day so a birthday shows in every year's grid. */
+var CAL_VIEW = "month";        // "month" | "list"
+var CAL_YM = null;             // the displayed month, "YYYY-MM"; null = the current one
+var CAL_DOW = ["S", "M", "T", "W", "T", "F", "S"];
+var CAL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function calYM() {
+  if (CAL_YM) return CAL_YM;
+  var t = evISO(evTodayUTC());
+  return t.slice(0, 7);
+}
+if (typeof window !== "undefined") {
+  window.calSetView = function (v) { CAL_VIEW = v; if (typeof render === "function") render(); };
+  window.calShiftMonth = function (delta) {
+    var ym = calYM(), y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + delta;
+    y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    CAL_YM = y + "-" + String(m + 1).padStart(2, "0");
+    if (typeof render === "function") render();
+  };
+  window.calToday = function () { CAL_YM = null; if (typeof render === "function") render(); };
+}
+
+/* every event landing on a given ISO day — annual ones match month+day in ANY year */
+function evOnDay(iso) {
+  var mm = iso.slice(5, 7), dd = iso.slice(8, 10);
+  return actEvents().filter(function (e) {
+    var d = String(e.date || ""); if (d.length < 10) return false;
+    return e.annual ? (d.slice(5, 7) === mm && d.slice(8, 10) === dd) : (d.slice(0, 10) === iso);
+  });
+}
+
+function calMonthHTML() {
+  var ym = calYM(), y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
+  var first = new Date(Date.UTC(y, m, 1)).getUTCDay();          // 0=Sun
+  var days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  var todayISO = evISO(evTodayUTC());
+
+  var h = '<div class="card"><div class="row" style="gap:6px;align-items:center;margin-bottom:8px">'
+    + '<button class="btn ghost sm" style="flex:0 0 auto" onclick="calShiftMonth(-1)">‹</button>'
+    + '<div class="grow" style="text-align:center;font-weight:800;font-size:15px">' + CAL_MONTHS[m] + ' ' + y + '</div>'
+    + '<button class="btn ghost sm" style="flex:0 0 auto" onclick="calShiftMonth(1)">›</button></div>';
+
+  h += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+  CAL_DOW.forEach(function (d) {
+    h += '<div class="sub" style="text-align:center;font-size:10.5px;font-weight:700;padding:2px 0">' + d + '</div>';
+  });
+  for (var i = 0; i < first; i++) h += '<div></div>';            // lead-in blanks
+  for (var day = 1; day <= days; day++) {
+    var iso = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    var evs = evOnDay(iso), isToday = iso === todayISO;
+    h += '<div onclick="calOpenDay(\'' + iso + '\')" style="min-height:40px;padding:3px 1px 2px;text-align:center;border-radius:7px;cursor:pointer;'
+      + (isToday ? 'background:var(--accent);color:var(--accent-ink,#fff);font-weight:800;' : (evs.length ? 'background:var(--soft,rgba(0,0,0,.05));' : ''))
+      + '">'
+      + '<div style="font-size:12.5px;line-height:1.2">' + day + '</div>'
+      + (evs.length
+          ? '<div style="display:flex;gap:2px;justify-content:center;margin-top:2px">'
+            + evs.slice(0, 3).map(function () {
+                return '<span style="width:5px;height:5px;border-radius:50%;background:' + (isToday ? 'var(--accent-ink,#fff)' : 'var(--accent)') + ';display:inline-block"></span>';
+              }).join("") + '</div>'
+          : '')
+      + '</div>';
+  }
+  h += '</div></div>';
+
+  /* what's in THIS month, under the grid, so the view is useful without tapping */
+  var inMonth = [];
+  for (var d2 = 1; d2 <= days; d2++) {
+    var iso2 = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d2).padStart(2, "0");
+    evOnDay(iso2).forEach(function (e) { inMonth.push({ iso: iso2, e: e }); });
+  }
+  if (inMonth.length) {
+    h += '<div class="card" style="padding:6px 10px">' + inMonth.map(function (x) {
+      return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openEvent(\'' + x.e.id + '\')">'
+        + '<div class="grow"><div class="nm">' + esc(evLabel(x.e)) + '</div>'
+        + '<div class="sub">' + esc((typeof fmtDate === "function") ? fmtDate(x.iso) : x.iso)
+        + (x.iso === todayISO ? ' · today' : '') + '</div>'
+        + (x.e.note ? '<div class="sub" style="white-space:normal;margin-top:2px">' + esc(x.e.note) + '</div>' : '')
+        + '</div></div>';
+    }).join("") + '</div>';
+  } else {
+    h += '<div class="muted" style="text-align:center;font-size:13px;padding:6px 0">Nothing this month.</div>';
+  }
+  return h;
+}
+
+/* tapping a day: show it, and offer to add on that date */
+if (typeof window !== "undefined") window.calOpenDay = function (iso) {
+  var evs = evOnDay(iso);
+  var pretty = (typeof fmtDate === "function") ? fmtDate(iso) : iso;
+  modal(pretty,
+    (evs.length
+      ? evs.map(function (e) {
+          return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="closeModal();openEvent(\'' + e.id + '\')">'
+            + '<div class="grow"><div class="nm">' + esc(evLabel(e)) + '</div>'
+            + (e.annual ? '<div class="sub">every year</div>' : '')
+            + (e.note ? '<div class="sub" style="white-space:normal">' + esc(e.note) + '</div>' : '')
+            + '</div></div>';
+        }).join("")
+      : '<div class="muted" style="font-size:13px">Nothing on this day.</div>')
+    + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal();openEventOn(\'' + iso + '\')">+ Add on this day</button>');
+};
+if (typeof window !== "undefined") window.openEventOn = function (iso) {
+  window.openEvent(null);
+  setTimeout(function () { var el = document.getElementById("ev_date"); if (el) el.value = iso; }, 80);
+};
+
 /* ---- the tab ---- */
 function rCal() {
   var all = actEvents().map(function (e) { return { e: e, d: evDaysAway(e) }; })
@@ -82,6 +191,17 @@ function rCal() {
   var future = all.filter(function (x) { return x.d >= 0; });
   var h = '<div class="secthd"><h2>📅 Calendar</h2><span class="ct">' + future.length + '</span>'
     + '<button class="btn ghost sm" style="margin-left:auto" onclick="openEvent(null)">+ Add</button></div>';
+  h += '<div class="subnav">'
+    + '<button class="subbtn ' + (CAL_VIEW === "month" ? "on" : "") + '" onclick="calSetView(\'month\')">🗓 Month</button>'
+    + '<button class="subbtn ' + (CAL_VIEW === "list" ? "on" : "") + '" onclick="calSetView(\'list\')">📋 Upcoming</button>'
+    + '</div>';
+  if (CAL_VIEW === "month") {
+    h += calMonthHTML();
+    if (calYM() !== evISO(evTodayUTC()).slice(0, 7))
+      h += '<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="calToday()">Back to this month</button>';
+    view.innerHTML = h;
+    return;
+  }
   if (!future.length) {
     h += '<div class="empty"><div class="big">📅</div>Nothing coming up. Add a birthday once and it repeats every year.'
       + '<br><button class="btn ghost sm" style="margin-top:8px" onclick="openEvent(null)">+ Add a date</button></div>';
@@ -147,5 +267,6 @@ if (typeof window !== "undefined") window.delEvent = function (id) {
 if (typeof window !== "undefined") {
   window.actEvents = actEvents; window.evUpcoming = evUpcoming; window.evHomeCardHTML = evHomeCardHTML;
   window.evNextISO = evNextISO; window.evDaysAway = evDaysAway; window.evCountdown = evCountdown;
+  window.evOnDay = evOnDay; window.calMonthHTML = calMonthHTML;
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { evNextISO: evNextISO, evDaysAway: evDaysAway, evCountdown: evCountdown };

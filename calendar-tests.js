@@ -126,5 +126,75 @@ console.log("\n--- the companion is TOLD the dates ---");
   ok("no events -> the section is silent, not an empty header", !/Coming up/.test(none), none);
 }
 
+console.log("\n--- MONTH VIEW: the grid itself ---");
+{
+  /* render the real grid for August 2026 with his three dates */
+  const els = {};
+  const c = {
+    console, JSON, Math, Date, String, Number, Array, Object,
+    today: () => "2026-08-05",
+    esc: x => String(x == null ? "" : x),
+    fmtDate: d => d,
+    D: () => ({ personalEvents: [
+      { id: "e1", date: "2026-08-16", title: "Wife's birthday", annual: true, confirmed: true, note: "floats" },
+      { id: "e2", date: "2026-08-15", title: "Friend birthday", annual: true, confirmed: true },
+      { id: "e3", date: "2026-08-22", title: "Party", confirmed: true },
+      { id: "e4", date: "2026-09-09", title: "Next month", confirmed: true },
+      { id: "e5", date: "2026-08-16", title: "GONE", deleted: true }
+    ] }),
+    document: { getElementById: id => (els[id] = els[id] || { innerHTML: "", value: "" }) }
+  };
+  c.window = c; c.view = { innerHTML: "" };
+  vm.createContext(c);
+  vm.runInContext(CAL, c);
+
+  const grid = c.calMonthHTML();
+  ok("the grid renders", typeof grid === "string" && grid.length > 400, String(grid).length + " chars");
+  ok("it names the month", grid.indexOf("August 2026") > 0);
+  ok("it is a 7-column grid", /grid-template-columns:repeat\(7,1fr\)/.test(grid));
+
+  /* August 2026 starts on a Saturday -> 6 lead-in blanks, and has 31 days */
+  eq("Aug 1 2026 is a Saturday (6 blanks)", new Date(Date.UTC(2026, 7, 1)).getUTCDay(), 6);
+  eq("exactly that many lead-in blanks", (grid.match(/<div><\/div>/g) || []).length, 6);
+  eq("31 day cells", (grid.match(/onclick="calOpenDay\(/g) || []).length, 31);
+  ok("the last day is the 31st", grid.indexOf("calOpenDay('2026-08-31')") > 0);
+  ok("there is no 32nd", grid.indexOf("calOpenDay('2026-09-01')") < 0);
+
+  ok("today is highlighted", /calOpenDay\('2026-08-05'\)[^>]*var\(--accent\)/.test(grid), "today cell not marked");
+  ok("days with events are marked", grid.indexOf("calOpenDay('2026-08-16')") > 0);
+  ok("this month's events are listed under the grid", grid.indexOf("Wife's birthday") > 0 && grid.indexOf("Party") > 0);
+  ok("next month's event is NOT in this grid", grid.indexOf("Next month") < 0);
+  ok("a deleted event never shows", grid.indexOf("GONE") < 0);
+
+  /* evOnDay is the thing the whole grid leans on */
+  eq("two events on the 16th? no — one (other is deleted)", c.evOnDay("2026-08-16").length, 1);
+  eq("the 15th has one", c.evOnDay("2026-08-15").length, 1);
+  eq("an empty day has none", c.evOnDay("2026-08-03").length, 0);
+  eq("an ANNUAL birthday appears in a DIFFERENT year's grid", c.evOnDay("2031-08-16").length, 1);
+  eq("...but a one-off does not", c.evOnDay("2031-08-22").length, 0);
+
+  /* month arithmetic must not break at the year boundary */
+  c.calShiftMonth(-8);
+  ok("stepping back 8 months lands in 2025", c.calMonthHTML().indexOf("December 2025") > 0, c.calMonthHTML().slice(0, 200));
+  c.calToday();
+  ok("Back-to-this-month returns to August 2026", c.calMonthHTML().indexOf("August 2026") > 0);
+  c.calShiftMonth(5);
+  ok("forward 5 months crosses into 2027", c.calMonthHTML().indexOf("January 2027") > 0);
+  c.calToday();
+
+  /* February leap-year length */
+  c.CAL_YM = "2028-02";
+  eq("Feb 2028 has 29 cells", (c.calMonthHTML().match(/onclick="calOpenDay\(/g) || []).length, 29);
+  c.CAL_YM = "2027-02";
+  eq("Feb 2027 has 28", (c.calMonthHTML().match(/onclick="calOpenDay\(/g) || []).length, 28);
+}
+
+console.log("\n--- the tab offers both views ---");
+ok("a Month / Upcoming toggle exists", CAL.indexOf("calSetView(") > 0 && CAL.indexOf("month") > 0 && CAL.indexOf("list") > 0);
+ok("month is the default", /var CAL_VIEW = "month"/.test(CAL));
+ok("tapping a day opens it", /window\.calOpenDay = function/.test(CAL));
+ok("...and can add on that date", /openEventOn/.test(CAL));
+
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
