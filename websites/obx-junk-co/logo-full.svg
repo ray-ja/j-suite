@@ -1,20 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 316 74" role="img" aria-label="OBX Junk Co. — Outer Banks, we do the loading">
-  <title>OBX Junk Co. — Outer Banks</title>
-  <!-- FULL lockup with tagline — for print, signage, truck decals and social profiles, where it renders large
-       enough to read. The header uses logo.svg. textLength pins both lines so nothing can clip. -->
-  <g>
-    <rect x="0" y="8" width="58" height="58" rx="14" fill="#14161a"/>
-    <path d="M12 45 L41 24 L50 36 L21 51 Z" fill="#f26a1b"/>
-    <rect x="44" y="42" width="5.6" height="5.6" rx="1.4" fill="#f26a1b" opacity=".85"/>
-    <rect x="50" y="49" width="4.4" height="4.4" rx="1.1" fill="#f26a1b" opacity=".55"/>
-    <rect x="10" y="50" width="38" height="3.6" rx="1.8" fill="#8b9099"/>
-    <circle cx="20" cy="56" r="4" fill="#e8eaed"/><circle cx="20" cy="56" r="1.6" fill="#14161a"/>
-    <circle cx="38" cy="56" r="4" fill="#e8eaed"/><circle cx="38" cy="56" r="1.6" fill="#14161a"/>
-  </g>
-  <text x="70" y="41" textLength="238" lengthAdjust="spacingAndGlyphs"
-        font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-        font-size="34" font-weight="800" fill="#14161a">OBX <tspan fill="#d4530a">Junk</tspan> Co.</text>
-  <text x="72" y="60" textLength="200" lengthAdjust="spacingAndGlyphs"
-        font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-        font-size="12.5" font-weight="700" fill="#54504a">WE DO THE LOADING</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 62" role="img" aria-label="OBX Junk Co. — we do the loading">
+  <title>OBX Junk Co. — we do the loading</title>
+  <!-- Print, signage, truck decals and social profiles, where it renders large enough to read the tagline.
+       "WE DO THE LOADING" answers the actual objection (do I have to carry this out?) before anyone calls. -->
+  <text x="0" y="34" textLength="250" lengthAdjust="spacingAndGlyphs"
+        font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="32" font-weight="900" letter-spacing="-0.5"
+        fill="#14161a">OBX <tspan fill="#f26a1b">JUNK</tspan> CO.</text>
+  <rect x="0" y="40" width="250" height="4.5" rx="2.25" fill="#f26a1b"/>
+  <text x="1" y="57" font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="10" font-weight="700"
+        letter-spacing="5.1" fill="#54504a">WE DO THE LOADING</text>
 </svg>

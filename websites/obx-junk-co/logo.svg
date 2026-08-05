@@ -1,18 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 262 48" role="img" aria-label="OBX Junk Co.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 48" role="img" aria-label="OBX Junk Co.">
   <title>OBX Junk Co.</title>
-  <!-- Header lockup: mark + wordmark only (the micro-tagline lives in logo-full.svg for print/signage).
-       textLength+lengthAdjust PINS the wordmark to an exact 198px box, so it can never overflow the viewBox
-       and clip (the "Co." was being cut off) no matter which system font actually renders it. -->
-  <g>
-    <rect x="0" y="2" width="44" height="44" rx="11" fill="#14161a"/>
-    <path d="M9 33 L31 17 L38 26.5 L16 38 Z" fill="#f26a1b"/>
-    <rect x="33.5" y="31" width="4.4" height="4.4" rx="1.1" fill="#f26a1b" opacity=".85"/>
-    <rect x="38" y="36.5" width="3.4" height="3.4" rx=".9" fill="#f26a1b" opacity=".55"/>
-    <rect x="7.5" y="37.5" width="29" height="2.8" rx="1.4" fill="#8b9099"/>
-    <circle cx="15" cy="42.2" r="3.1" fill="#e8eaed"/><circle cx="15" cy="42.2" r="1.2" fill="#14161a"/>
-    <circle cx="29" cy="42.2" r="3.1" fill="#e8eaed"/><circle cx="29" cy="42.2" r="1.2" fill="#14161a"/>
-  </g>
-  <text x="54" y="34" textLength="198" lengthAdjust="spacingAndGlyphs"
-        font-family="system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-        font-size="31" font-weight="800" fill="#14161a">OBX <tspan fill="#d4530a">Junk</tspan> Co.</text>
+  <!-- WORDMARK ONLY. Ray, 2026-08-05, after working through the category: junk removal brands are stylised
+       NAMES, not pictures — 1-800-GOT-JUNK, Junk King, College Hunks, LoadUp. It is a recall business: the
+       name has to be remembered and read off a truck at speed, which a picture mark does not help with.
+       "OBX Junk Co." is also almost exactly what people type into Google, so the name IS the asset.
+       All caps at weight 900 for signage legibility; textLength pins it so it can never overflow or clip. -->
+  <text x="0" y="34" textLength="250" lengthAdjust="spacingAndGlyphs"
+        font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="32" font-weight="900" letter-spacing="-0.5"
+        fill="#14161a">OBX <tspan fill="#f26a1b">JUNK</tspan> CO.</text>
 </svg>

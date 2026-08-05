@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 48" role="img" aria-label="OBX Junk Co.">
+  <title>OBX Junk Co.</title>
+  <!-- Reversed: dark garments, the site footer, truck panels. JUNK stays orange so the brand colour survives. -->
+  <text x="0" y="34" textLength="250" lengthAdjust="spacingAndGlyphs"
+        font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="32" font-weight="900" letter-spacing="-0.5"
+        fill="#ffffff">OBX <tspan fill="#f26a1b">JUNK</tspan> CO.</text>
+</svg>

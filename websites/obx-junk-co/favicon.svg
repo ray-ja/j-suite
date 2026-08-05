@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="OBX Junk Co.">
+  <title>OBX Junk Co.</title>
+  <!-- 16px browser tab. "OBX JUNK" is unreadable at that size; a solid orange tile with a J still gets
+       recognised in a row of tabs, which is the only job a favicon has. -->
+  <rect width="48" height="48" rx="12" fill="#f26a1b"/>
+  <text x="24" y="36" text-anchor="middle"
+        font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="34" font-weight="900" fill="#14161a">J</text>
+</svg>
