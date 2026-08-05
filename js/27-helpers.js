@@ -129,6 +129,9 @@ window.toggleTheme=function(){
    @ JPEG 0.82 — still sharp for plant ID / receipt OCR, but ~0.5MB. IMAGES ONLY; PDFs/CSVs pass through untouched.
    Any failure (old browser, decode error, non-image) falls back to the ORIGINAL file, so upload never breaks. */
 window.jsDownscaleImage=function(file,maxEdge,quality){
+  /* NEVER rasterise a vector. An SVG must reach the server byte-identical or it stops being scalable,
+     which is the whole reason for uploading one. Everything else falls through to the photo shrink. */
+  try{ if(file&&(file.type==="image/svg+xml"||/\.svg$/i.test(file.name||"")))return Promise.resolve(file); }catch(_e){}
   maxEdge=maxEdge||2000; quality=quality||0.82;
   return new Promise(function(resolve){
     try{
@@ -156,7 +159,7 @@ window.jsDownscaleImage=function(file,maxEdge,quality){
 window.jsUpload=function(file,onProgress){
   onProgress=(typeof onProgress==="function")?onProgress:function(){};
   return new Promise(function(resolve,reject){
-    if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||"")||file.type==="text/csv"||file.type==="application/csv"||file.type==="application/vnd.ms-excel"||/\.csv$/i.test(file.name||""))){reject(new Error("Pick an image, PDF, or CSV"));return;}
+    if(!file||!(/^image\//.test(file.type||"")||file.type==="application/pdf"||/\.pdf$/i.test(file.name||"")||file.type==="text/csv"||file.type==="application/csv"||file.type==="application/vnd.ms-excel"||/\.(csv|svg)$/i.test(file.name||""))){reject(new Error("Pick an image, PDF, CSV, or SVG"));return;}
     const fr=new FileReader();
     fr.onload=function(){
       const base=((S.sync&&S.sync.url)||location.origin).replace(/\/+$/,""),tok=(S.sync&&S.sync.token)||"";

@@ -506,7 +506,7 @@ console.log("\n--- FILE HAND-OFF (js/127): the door he can actually reach ---");
   ok("collection in client blank()", /personalFiles:\[\]/.test(STX));
   eq("both load() backfills present", (STX.match(/personalFiles\)\)S\[b\]\.personalFiles=\[\]/g) || []).length, 2);
 
-  ok("it accepts images, PDFs AND csv", /accept = "image\/\*,application\/pdf,text\/csv,\.csv"/.test(PF));
+  ok("it accepts images, PDFs, csv AND svg", /accept = "image\/\*,application\/pdf,text\/csv,\.csv,\.svg"/.test(PF));
   ok("multiple files at once", /inp\.multiple = true/.test(PF));
   ok("it reuses jsUpload rather than a new endpoint", /await jsUpload\(/.test(PF));
   ok("a failed file doesn't abort the rest of the batch", /failed\.push/.test(PF));

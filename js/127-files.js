@@ -27,6 +27,7 @@ function pfSize(n) {
 }
 function pfIcon(f) {
   var t = String((f && (f.type || f.name)) || "").toLowerCase();
+  if (/svg/.test(t)) return "✏️";
   if (/csv|excel/.test(t)) return "📊";
   if (/pdf/.test(t)) return "📄";
   return "🖼";
@@ -74,7 +75,7 @@ if (typeof window !== "undefined") window.pfPick = function () {
   if (!pfCanUpload()) { alert("This needs a signed-in, synced device."); return; }
   var inp = document.createElement("input");
   inp.type = "file"; inp.multiple = true;
-  inp.accept = "image/*,application/pdf,text/csv,.csv";
+  inp.accept = "image/*,application/pdf,text/csv,.csv,.svg";
   inp.onchange = function () { var fs = inp.files ? [].slice.call(inp.files) : []; if (fs.length) pfUploadAll(fs); };
   inp.click();
 };

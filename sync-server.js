@@ -3811,12 +3811,39 @@ const server = http.createServer((req, res) => {
       let p; try { p = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch (e) { res.writeHead(400); return res.end('{"error":"bad json"}'); }
       // photos (png/jpg/webp/pdf) AND CSV receipt-import source files — the CSV holds card last-4s just like a
       // receipt photo, so it lives as a gitignored served blob (never committed), the record keeps only the id.
-      const m = /^data:(image\/(?:png|jpe?g|webp)|application\/pdf|text\/csv|application\/csv|application\/vnd\.ms-excel);base64,([A-Za-z0-9+/=]+)$/.exec(String((p && p.dataUrl) || ""));
-      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image (png/jpg/webp), pdf, or csv only"}'); }
+      const m = /^data:(image\/(?:png|jpe?g|webp|svg\+xml)|application\/pdf|text\/csv|application\/csv|application\/vnd\.ms-excel);base64,([A-Za-z0-9+/=]+)$/.exec(String((p && p.dataUrl) || ""));
+      if (!m) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"image (png/jpg/webp/svg), pdf, or csv only"}'); }
       let buf; try { buf = Buffer.from(m[2], "base64"); } catch (e) { res.writeHead(400); return res.end('{"error":"bad data"}'); }
       if (!buf.length || buf.length > 10e6) { res.writeHead(413, { "Content-Type": "application/json" }); return res.end('{"error":"file too big (max 10MB)"}'); }
       const dir = path.join(__dirname, "uploads"); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
-      const id = crypto.randomBytes(12).toString("hex") + "." + (m[1] === "application/pdf" ? "pdf" : (m[1] === "image/jpeg" ? "jpg" : (/csv|vnd\.ms-excel/.test(m[1]) ? "csv" : m[1].split("/")[1])));
+      /* SVG IS A DOCUMENT, NOT A PICTURE. It can carry <script>, event handlers, external references and
+         <foreignObject> (arbitrary HTML), and /uploads/ is served back by content-type — so a hostile SVG
+         would execute in this origin. Ray reasonably points out he is the only uploader; the exposure is
+         really "anything that ever lands in uploads/ becomes a live page". So SVG is accepted, but only
+         after it is checked here AND locked down by a CSP on the way out (see the static serve below). */
+      if (m[1] === "image/svg+xml") {
+        const svg = buf.toString("utf8");
+        const nasty = [
+          [/<\s*script/i,                      "a <script> tag"],
+          [/<\s*foreignObject/i,               "a <foreignObject> (arbitrary HTML)"],
+          [/\son[a-z]+\s*=/i,                   "an inline event handler (onload=, onclick=…)"],
+          [/javascript\s*:/i,                   "a javascript: URL"],
+          [/<\s*(iframe|embed|object|use[^>]*href\s*=\s*["\']?https?:)/i, "an external/embedded reference"],
+          [/<!ENTITY/i,                         "an XML entity (billion-laughs / XXE)"]
+        ];
+        for (const [re, what] of nasty) {
+          if (re.test(svg)) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "that SVG contains " + what + " — export it as a plain vector and try again" }));
+          }
+        }
+      }
+      const outExt = m[1] === "application/pdf" ? "pdf"
+        : m[1] === "image/jpeg" ? "jpg"
+        : m[1] === "image/svg+xml" ? "svg"
+        : /csv|vnd\.ms-excel/.test(m[1]) ? "csv"
+        : m[1].split("/")[1];
+      const id = crypto.randomBytes(12).toString("hex") + "." + outExt;
       try { fs.writeFileSync(path.join(dir, id), buf); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id, url: "/uploads/" + id }));
     });
@@ -3841,7 +3868,11 @@ const server = http.createServer((req, res) => {
       const st = fs.statSync(full);
       const etag = '"' + st.size.toString(16) + "-" + Math.round(st.mtimeMs).toString(16) + '"';
       if (req.headers["if-none-match"] === etag) { res.writeHead(304, { "Cache-Control": "no-cache", "ETag": etag }); return res.end(); }
-      res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "no-cache", "ETag": etag });
+      const hdrs = { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "no-cache", "ETag": etag, "X-Content-Type-Options": "nosniff" };
+      /* An SVG still renders as an image under this CSP, but nothing inside it can run or phone home.
+         Belt (the upload check) and braces (this), because the upload check only sees NEW files. */
+      if (ext === ".svg") hdrs["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+      res.writeHead(200, hdrs);
       return res.end(fs.readFileSync(full));
     }
   }
