@@ -235,8 +235,12 @@ function phInterestsCard() {
   PH_CATS.forEach(function (c) {
     const inCat = list.filter(i => (i.cat || "other") === c.key);
     if (!inCat.length) return;
-    body += '<div style="margin-top:6px"><span class="sub" style="font-weight:700">' + esc(c.label) + '</span> '
-      + '<span class="sub">' + inCat.map(i => esc(i.label)).join(" · ") + '</span></div>';
+    /* .sub is globally nowrap + ellipsis (right for one-line list rows in the business app, wrong for a
+       paragraph). Without white-space:normal these lists ran off the card and scrolled the whole page
+       sideways, cutting his own interests mid-word. */
+    body += '<div style="margin-top:6px;white-space:normal">'
+      + '<span class="sub" style="font-weight:700;white-space:normal">' + esc(c.label) + '</span> '
+      + '<span class="sub" style="white-space:normal;overflow:visible">' + inCat.map(i => esc(i.label)).join(" · ") + '</span></div>';
   });
   return '<div class="card"><div class="row" style="gap:8px;align-items:flex-start">'
     + '<div class="grow"><div class="nm">Things you\'re into</div>' + body + '</div>'

@@ -256,6 +256,16 @@ console.log("\n--- the personal HOME page (js/122) ---");
     ok("...and no business word appears anywhere on the page",
       !/invoice|quote|payout|clock in|customer/i.test(html), (/invoice|quote|payout|clock in|customer/i.exec(html) || [""])[0]);
 
+    /* LAYOUT: .sub is globally nowrap+ellipsis, so any long personal prose MUST opt out or it scrolls the
+       whole page sideways and truncates his own words (seen live in a screenshot 2026-08-05). */
+    {
+      const cats = html.split("Things you're into")[1] || "";
+      const subs = cats.match(/class="sub"[^>]*/g) || [];
+      const bad = subs.filter(t => !/white-space:normal/.test(t));
+      ok("every interests line is allowed to wrap", bad.length === 0, bad.join(" | "));
+      ok("...and the long list is not clipped with an ellipsis", !/text-overflow/.test(cats));
+    }
+
     /* the same page with NOTHING logged — the state he will actually open it in */
     rc.D = () => ({});
     const empty = rc.personalHome();
