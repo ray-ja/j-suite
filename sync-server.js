@@ -292,7 +292,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -1129,6 +1129,36 @@ function capPersonalContext(store, org, acctId, ny, t) {
     });
   } else {
     L.push("Journal: no entries yet.");
+  }
+
+  // UPCOMING DATES (js/126) — birthdays and the like, within 45 days, soonest first. He asked for a calendar
+  // precisely because he was holding these in his head; the companion should know them without being asked.
+  // `annual` items roll to their next occurrence, and an unconfirmed date is marked so it isn't stated as fact.
+  {
+    const evs = live("personalEvents");
+    const tMs = Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10));
+    const rows = [];
+    evs.forEach(e => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(e.date || "")); if (!m) return;
+      let when = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+      if (e.annual) {
+        const y = new Date(tMs).getUTCFullYear();
+        when = Date.UTC(y, +m[2] - 1, +m[3]);
+        if (when < tMs) when = Date.UTC(y + 1, +m[2] - 1, +m[3]);
+      }
+      const days = Math.round((when - tMs) / 86400000);
+      if (days < 0 || days > 45) return;
+      rows.push({ days: days, line: "  - " + clip(e.title || "something", 60)
+        + " on " + new Date(when).toISOString().slice(0, 10)
+        + " (" + (days === 0 ? "today" : days === 1 ? "tomorrow" : "in " + days + " days") + ")"
+        + (e.confirmed === false ? " [date NOT confirmed — don't state it as fact]" : "")
+        + (e.note ? " — " + clip(e.note, 80) : "") });
+    });
+    if (rows.length) {
+      rows.sort((a, b) => a.days - b.days);
+      L.push("Coming up (next 45 days):");
+      rows.slice(0, 8).forEach(r => L.push(r.line));
+    }
   }
 
   // INTERESTS — the things he said he's into (js/122 stores them on a `docs` record). This is the material for

@@ -1,7 +1,7 @@
 /* ---------- state ---------- */
 const KEY="jra_app_v1";
 let S;
-function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[],jobExpenses:[],jobMaterials:[],siteSurveys:[],playbookLib:[],installments:[],shelfItems:[]}}
+function blank(){return {customers:[],quotes:[],jobs:[],todos:[],mktTracker:[],docs:[],places:[],properties:[],milestones:[],changelog:[],inventory:[],locks:[],timeclock:[],income:[],expenses:[],messages:[],resale:[],pendingChanges:[],knowledge:[],disbursements:[],escapeRooms:[],escapeBookings:[],lifeNotes:[],lifeTrackers:[],lifeLogs:[],budgetBooks:[],budgetCats:[],budgetTx:[],budgetMemo:[],budgetAccounts:[],budgetBudgets:[],budgetTax:[],budgetBills:[],customJobs:[],research:[],receipts:[],recurringPlans:[],invoices:[],jobExpenses:[],jobMaterials:[],siteSurveys:[],playbookLib:[],installments:[],shelfItems:[],personalEvents:[]}}
 /* MIGRATE (client mirror of the server's hoistJobLineItems): promote a single org slab's nested job.materials/
    expenses into its jobMaterials/jobExpenses collections. Idempotent (dedupe by element id), loss-free (id-less
    rows get a deterministic id), clears the nested array once hoisted, NEVER bumps job.updatedAt. */
@@ -109,6 +109,7 @@ function load(){
     if(!Array.isArray(S[b].jobMaterials))S[b].jobMaterials=[];   // job.materials[] promoted out of the job record (same reason)
     if(!Array.isArray(S[b].installments))S[b].installments=[];   // INSTALLMENT PAYBACKS (js/116): synced payback plans {id"inst_",payeeId,total,count,start,paidNs}; off-books tracker -> finance byte-identical. Additive, empty by default.
     if(!Array.isArray(S[b].siteSurveys))S[b].siteSurveys=[];   // LANDSCAPE SITE SURVEY (Phase 1): synced survey records {id"srv_",customerId,propertyId,photoIds,items,status…}. A survey assembles into a normal quote → holds no money → finance byte-identical. Additive, empty by default.
+    if(!Array.isArray(S[b].personalEvents))S[b].personalEvents=[];   // PERSONAL CALENDAR (js/126): dates that matter in his own life {id"pev_",date,title,note,annual,kind,confirmed}. Ray asked for it directly 2026-08-05 ("we do need a calendar... a personal calendar for sure") while holding a wife's birthday and two party dates in his head. Holds no money -> finance byte-identical. Additive, empty by default.
     if(!Array.isArray(S[b].shelfItems))S[b].shelfItems=[];   // THE SHELF (js/123): personal reference library — books + the ideas/notes that go with them {id"shf_",kind:"book"|"idea",topic,title,author,year,body,note,status}. Reference material, NOT a reading to-do: no progress counters, no reminders. Holds no money -> finance byte-identical. Additive, empty by default.
     if(!Array.isArray(S[b].playbookLib))S[b].playbookLib=[];   // PLAYBOOK LIBRARY (Phase 1): synced reusable plant/process guide entries {id"pl_"+key,kind,name,latin,identify,do[],dont[],when,tools[],safety[],refImage,aliases[]}. The crew guides PULL from these (js/114); holds no money → finance byte-identical. Additive, empty by default.
     hoistJobLineItems(S[b]);   // MIGRATE: move any nested job.materials/expenses into the collections (idempotent, loss-free, mirrors the server's hoist). Clears the nested arrays so no reader double-counts.
@@ -196,6 +197,7 @@ function load(){
     if(!S[b].customJobs)S[b].customJobs=[];          // WORKSHOP: user-defined scheduled AI tasks (custom cron jobs) — per-org, synced
     if(!S[b].recurringPlans)S[b].recurringPlans=[];  // RECURRING SERVICE (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/102 engine always find the array
     if(!Array.isArray(S[b].siteSurveys))S[b].siteSurveys=[];  // LANDSCAPE SITE SURVEY (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/113 always find the array
+    if(!Array.isArray(S[b].personalEvents))S[b].personalEvents=[];  // PERSONAL CALENDAR: backfill on EVERY org slab so the sync layer / js/126 always find the array
     if(!Array.isArray(S[b].shelfItems))S[b].shelfItems=[];  // THE SHELF: backfill on EVERY org slab so the sync layer / js/123 always find the array
     if(!Array.isArray(S[b].playbookLib))S[b].playbookLib=[];  // PLAYBOOK LIBRARY (Phase 1): backfill on EVERY org slab (obx/jam + any created org) so the sync layer / js/114 always find the array
     if(!Array.isArray(S[b].installments))S[b].installments=[];  // INSTALLMENT PAYBACKS: backfill on EVERY org slab so the sync layer / js/116 always find the array

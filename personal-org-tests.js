@@ -61,7 +61,14 @@ ok("journal is in the nav groups", /key:"journal"[\s\S]{0,80}tabs:\["journal"\]/
 ok("journal has a screen (rJournal)", /journal:\(typeof rJournal==="function"\?rJournal:rToday\)/.test(R));
 ok("journal has TAB_META", /journal:\{l:"Journal"/.test(R));
 ok("journal is opt-in (never appears in OBX/Jamieson)", /ORG_OPTIN_TABS = \[[^\]]*"journal"/.test(R));
-ok("the personal template lists journal + shelf", /personal: \["life","journal","shelf","budget","todo","messages"\]/.test(R));
+/* membership, not exact position — the list grows as personal tools are added */
+{
+  const tmpl = (R.match(/personal: \[([^\]]*)\]/) || [, ""])[1].replace(/"/g, "").split(",");
+  ["life", "journal", "shelf", "cal", "budget", "todo", "messages"].forEach(t =>
+    ok("the personal template lists " + t, tmpl.indexOf(t) >= 0, tmpl.join("|")));
+  ["jobs", "leads", "quotes", "pay", "approvals", "accounts"].forEach(t =>
+    ok("...and never " + t, tmpl.indexOf(t) < 0, tmpl.join("|")));
+}
 ok("rJournal is defined and exported", /function rJournal\(\)/.test(LIFE) && /window\.rJournal=rJournal/.test(LIFE));
 ok("it renders the SAME lifeNotes journal (no fork of the data)", /function rJournal\(\)\{[\s\S]{0,120}lifeRenderJournal\(\)/.test(LIFE));
 ok("Life drops its duplicate Journal sub-tab when journal is its own tab", /own\?"":'<button class="subbtn '\+\(LIFE_SUB==="journal"/.test(LIFE));
@@ -331,10 +338,10 @@ console.log("\n--- THE SHELF (js/123): a reference library, NOT a reading to-do 
   ok("shelf is in ROUTE_TABS (deep links + notifications)", /const ROUTE_TABS=\[[^\]]*"shelf"/.test(R));
 
   /* the data-layer wiring the collection pattern requires — all three sites */
-  ok("shelfItems is in blank()", /shelfItems:\[\]\}\}/.test(ST));
+  ok("shelfItems is in blank()", /shelfItems:\[\]/.test(ST));
   ok("shelfItems is backfilled on every org slab", (ST.match(/S\[b\]\.shelfItems/g) || []).length >= 2,
     String((ST.match(/S\[b\]\.shelfItems/g) || []).length) + " backfill sites");
-  ok("shelfItems is in the server COLLECTIONS", /"playbookLib", "installments", "shelfItems"\]/.test(SRC));
+  ok("shelfItems is in the server COLLECTIONS", /"shelfItems"/.test(SRC));
 
   /* THE CONSTRAINT THAT MATTERS: he already told me reading is something he "likes the idea of but never got
      good at". A shelf with counters or nudges would rebuild the guilt machine. */

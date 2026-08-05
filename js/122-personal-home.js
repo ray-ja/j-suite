@@ -270,6 +270,9 @@ function personalHome() {
   setTimeout(function () { const b = document.getElementById("ph-thread"); if (b) b.scrollTop = b.scrollHeight; }, 40);
   let h = '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>';
   h += phTalkCard();
+  /* Dates he'd otherwise be carrying in his head, directly under the talk box — the one place he actually
+     lands. Silent when nothing is within 30 days, so it never becomes background noise. */
+  if (typeof evHomeCardHTML === "function") h += evHomeCardHTML(30);
   h += phQuickCard();
   h += phLookBackCard();
   h += phInterestsCard();
