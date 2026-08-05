@@ -464,5 +464,33 @@ console.log("\n--- THE RE-INFECTION: the tab-repair migration must not fight a d
   ok("a third org with an explicit list is untouched", JSON.stringify(esc.tabs) === JSON.stringify(["escape", "booking"]));
 }
 
+console.log("\n--- THE PEOPLE: names and roles reach the companion, family friction never does ---");
+{
+  const st = personalStore();
+  st.p.docs = [{ id: "personalPeople", list: [
+    { id: "p1", name: "Brooke", rel: "wife", note: "does the laundry" },
+    { id: "p2", name: "Jamie", rel: "son", born: "2021-05-12" },
+    { id: "p3", name: "Leona", rel: "daughter", born: (+TODAY_ISO.slice(0, 4)) + "-06-15" },
+    { id: "p4", name: "Ghost", rel: "nobody", deleted: true }
+  ] }];
+  const c = sv.capTodayContext(st, "p", "u1");
+  ok("the household is in the context", /The people in his life/.test(c), c.slice(0, 600));
+  ok("his wife is named", c.indexOf("Brooke") >= 0);
+  ok("a deleted person is dropped", c.indexOf("Ghost") < 0);
+  ok("ages are derived from the birth year", /Jamie — son, \d/.test(c), (/Jamie[^\n]*/.exec(c) || [""])[0]);
+  ok("a baby reads as 'under 1', not 0", /Leona — daughter, under 1/.test(c), (/Leona[^\n]*/.exec(c) || [""])[0]);
+  ok("it is told never to introduce a person he hasn't mentioned", /never introduce a person he hasn't mentioned/.test(c));
+  ok("...and never to raise a family conflict", /NEVER raise a family member/.test(c));
+  ok("...nor to analyse the relationship", /do not analyse the relationship/.test(c));
+
+  const P = sv.PERSONAL_COMPANION_SYSTEM;
+  ok("the persona carries the same rule (not just the context)", /NEVER raise a family member/.test(P));
+  ok("...covering parents and siblings explicitly", /not his parents, not his siblings/.test(P));
+  ok("...and forbids assigning motives", /assign motives/.test(P));
+
+  const none = sv.capTodayContext(personalStore(), "p", "u1");
+  ok("no household recorded -> the section is silent", !/The people in his life/.test(none));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
