@@ -196,5 +196,48 @@ ok("tapping a day opens it", /window\.calOpenDay = function/.test(CAL));
 ok("...and can add on that date", /openEventOn/.test(CAL));
 
 
+console.log("\n--- BILLS ON THE CALENDAR ---");
+{
+  const els = {};
+  const c = { console, JSON, Math, Date, String, Number, Array, Object,
+    today: () => "2026-08-05", esc: x => String(x == null ? "" : x), fmtDate: d => d,
+    D: () => ({ personalEvents: [], budgetBills: [
+      { id: "b0", name: "Already paid", amount: 650, dueDay: 1, active: true },
+      { id: "b1", name: "Rent", amount: 3750, dueDay: 13, active: true, note: "ACH" },
+      { id: "b2", name: "Discover", amount: 215, dueDay: 16, active: true },
+      { id: "b3", name: "Month-end thing", amount: 99, dueDay: 31, active: true },
+      { id: "b4", name: "Paused", amount: 50, dueDay: 5, active: false },
+      { id: "b5", name: "GONE", amount: 10, dueDay: 5, deleted: true }
+    ] }),
+    document: { getElementById: id => (els[id] = els[id] || { innerHTML: "", value: "" }) } };
+  c.window = c; c.view = { innerHTML: "" };
+  vm.createContext(c); vm.runInContext(CAL, c);
+
+  eq("a bill lands on its due day", c.calBillsOnDay("2026-08-13").length, 1);
+  eq("a day with no bill is empty", c.calBillsOnDay("2026-08-12").length, 0);
+  ok("an INACTIVE bill never shows", c.calBillsOnDay("2026-08-05").length === 0);
+  ok("a deleted bill never shows", JSON.stringify(c.calBillsOnDay("2026-08-05")).indexOf("GONE") < 0);
+
+  /* a day-31 bill must not vanish in a short month — it clamps to the last day */
+  eq("day-31 bill lands on Aug 31", c.calBillsOnDay("2026-08-31").length, 1);
+  eq("...and on Feb 28 in a non-leap year", c.calBillsOnDay("2027-02-28").length, 1);
+  eq("...and on Feb 29 in a leap year", c.calBillsOnDay("2028-02-29").length, 1);
+  eq("...but NOT on Feb 27", c.calBillsOnDay("2027-02-27").length, 0);
+
+  const soon = c.calBillsDueSoon(14);
+  ok("due-soon spans the window", soon.length >= 2, JSON.stringify(soon.map(x => x.iso)));
+  ok("it is ordered by date", soon.every((x, i) => i === 0 || soon[i - 1].iso <= x.iso));
+  const card = c.calBillsCardHTML(14);
+  ok("the card renders with a total", /Bills due in the next 14 days/.test(card) && /\$3,965\.00|\$[0-9,]+\.[0-9]{2}/.test(card));
+  ok("it names the bill", card.indexOf("Rent") > 0);
+  ok("and carries the note", card.indexOf("ACH") > 0);
+  eq("no bills in range -> silent, not an empty header", c.calBillsCardHTML(0).indexOf("Bills due") >= 0 ? "shown" : "silent", "silent");
+
+  const grid = c.calMonthHTML();
+  ok("the month grid lists the month's bills", grid.indexOf("Bills this month") > 0);
+  ok("...marks bill days with a marker", grid.indexOf("💵") > 0);
+  ok("...and dims days already past", /opacity:\.45/.test(grid));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

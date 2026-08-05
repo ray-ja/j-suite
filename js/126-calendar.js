@@ -58,6 +58,59 @@ function evWhen(e) {
   return ((typeof fmtDate === "function") ? fmtDate(iso) : iso) + " · " + evCountdown(e);
 }
 
+/* ---- BILLS ON THE CALENDAR --------------------------------------------------------------------------
+   Ray, 2026-08-05: "map out my personal finances on the calendar... note which days which things are due,
+   car insurance, the electric bill... so nothing's gonna catch us off guard."
+
+   Bills live in budgetBills (js/79) with a dueDay; this only READS them, so there is one source of truth and
+   editing a bill in Budget updates the calendar. They render distinctly from events (💵 vs a dot) because
+   "the rent leaves on the 13th" and "Brooke's birthday" are different kinds of fact. */
+function calBills() {
+  try {
+    return (D().budgetBills || []).filter(function (b) { return b && !b.deleted && b.active !== false; });
+  } catch (e) { return []; }
+}
+function calBillsOnDay(iso) {
+  var dd = +iso.slice(8, 10);
+  var y = +iso.slice(0, 4), mo = +iso.slice(5, 7);
+  var dim = new Date(y, mo, 0).getDate();
+  return calBills().filter(function (b) {
+    var d = Math.min(Math.max(1, +b.dueDay || 1), dim);   // a day-31 bill lands on the 28th in February
+    return d === dd;
+  });
+}
+function calMoney(n) { return "$" + (Math.round(n * 100) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+
+/* what is due between today and `days` out — the "no surprises" surface */
+function calBillsDueSoon(days) {
+  var out = [], t = evTodayUTC();
+  for (var i = 0; i <= (days == null ? 14 : days); i++) {
+    var iso = evISO(t + i * 86400000);
+    calBillsOnDay(iso).forEach(function (b) { out.push({ iso: iso, days: i, b: b }); });
+  }
+  return out;
+}
+function calBillsCardHTML(days) {
+  var due = calBillsDueSoon(days == null ? 14 : days);
+  if (!due.length) return "";
+  var total = due.reduce(function (a, x) { return a + (+x.b.amount || 0); }, 0);
+  return '<div class="card"><div class="row" style="gap:8px;align-items:flex-start">'
+    + '<div class="grow"><div class="nm">💵 Bills due in the next ' + (days == null ? 14 : days) + ' days</div>'
+    + '<div class="sub" style="margin-top:2px">' + calMoney(total) + ' in total</div>'
+    + due.map(function (x) {
+        var soon = x.days <= 3;
+        return '<div class="row" style="gap:6px;align-items:baseline;margin-top:5px">'
+          + '<div class="grow" style="font-size:13.5px' + (soon ? ';font-weight:700' : '') + '">' + esc(x.b.name || "bill") + '</div>'
+          + '<div class="sub" style="flex:0 0 auto;font-size:11.5px">' + calMoney(+x.b.amount || 0) + '</div>'
+          + '<div class="sub" style="flex:0 0 auto;font-size:11.5px;min-width:64px;text-align:right'
+          + (soon ? ';color:var(--danger);font-weight:700' : '') + '">'
+          + (x.days === 0 ? "today" : x.days === 1 ? "tomorrow" : "in " + x.days + "d") + '</div></div>'
+          + (x.b.note ? '<div class="sub" style="white-space:normal;font-size:11px;margin-top:1px">' + esc(x.b.note) + '</div>' : '');
+      }).join("")
+    + '</div><button class="btn ghost sm" style="flex:0 0 auto" onclick="if(typeof navSub===\'function\')navSub(\'cal\')">Open</button></div></div>';
+}
+if (typeof window !== "undefined") { window.calBillsOnDay = calBillsOnDay; window.calBillsCardHTML = calBillsCardHTML; window.calBillsDueSoon = calBillsDueSoon; }
+
 /* ---- the card for the personal home page: only what's actually close ---- */
 function evHomeCardHTML(within) {
   var up = evUpcoming(within == null ? 30 : within);
@@ -126,16 +179,18 @@ function calMonthHTML() {
   for (var i = 0; i < first; i++) h += '<div></div>';            // lead-in blanks
   for (var day = 1; day <= days; day++) {
     var iso = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-    var evs = evOnDay(iso), isToday = iso === todayISO;
+    var evs = evOnDay(iso), bills = calBillsOnDay(iso), isToday = iso === todayISO;
     h += '<div onclick="calOpenDay(\'' + iso + '\')" style="min-height:40px;padding:3px 1px 2px;text-align:center;border-radius:7px;cursor:pointer;'
-      + (isToday ? 'background:var(--accent);color:var(--accent-ink,#fff);font-weight:800;' : (evs.length ? 'background:var(--soft,rgba(0,0,0,.05));' : ''))
+      + (isToday ? 'background:var(--accent);color:var(--accent-ink,#fff);font-weight:800;' : ((evs.length || bills.length) ? 'background:var(--soft,rgba(0,0,0,.05));' : ''))
       + '">'
       + '<div style="font-size:12.5px;line-height:1.2">' + day + '</div>'
-      + (evs.length
-          ? '<div style="display:flex;gap:2px;justify-content:center;margin-top:2px">'
+      + ((evs.length || bills.length)
+          ? '<div style="display:flex;gap:2px;justify-content:center;align-items:center;margin-top:2px">'
             + evs.slice(0, 3).map(function () {
                 return '<span style="width:5px;height:5px;border-radius:50%;background:' + (isToday ? 'var(--accent-ink,#fff)' : 'var(--accent)') + ';display:inline-block"></span>';
-              }).join("") + '</div>'
+              }).join("")
+            + (bills.length ? '<span style="font-size:8px;line-height:1;opacity:.85">💵</span>' : '')
+            + '</div>'
           : '')
       + '</div>';
   }
@@ -146,6 +201,24 @@ function calMonthHTML() {
   for (var d2 = 1; d2 <= days; d2++) {
     var iso2 = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d2).padStart(2, "0");
     evOnDay(iso2).forEach(function (e) { inMonth.push({ iso: iso2, e: e }); });
+  }
+  /* the money side of the month, day by day */
+  var billRows = [];
+  for (var d3 = 1; d3 <= days; d3++) {
+    var iso3 = y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d3).padStart(2, "0");
+    calBillsOnDay(iso3).forEach(function (b) { billRows.push({ iso: iso3, b: b }); });
+  }
+  if (billRows.length) {
+    var mTotal = billRows.reduce(function (a, x) { return a + (+x.b.amount || 0); }, 0);
+    h += '<div class="secthd" style="margin-top:12px"><h2>💵 Bills this month</h2><span class="ct">' + calMoney(mTotal) + '</span></div>'
+      + '<div class="card" style="padding:6px 10px">' + billRows.map(function (x) {
+        var past = x.iso < todayISO;
+        return '<div class="row" style="gap:6px;align-items:baseline;padding:4px 0' + (past ? ';opacity:.45' : '') + '">'
+          + '<div class="sub" style="flex:0 0 34px;font-size:11.5px">' + x.iso.slice(8, 10) + (past ? ' ✓' : '') + '</div>'
+          + '<div class="grow" style="font-size:13.5px">' + esc(x.b.name || "bill") + '</div>'
+          + '<div style="flex:0 0 auto;font-weight:700;font-size:13px">' + calMoney(+x.b.amount || 0) + '</div></div>'
+          + (x.b.note ? '<div class="sub" style="white-space:normal;font-size:11px;margin:-2px 0 4px 34px">' + esc(x.b.note) + '</div>' : '');
+      }).join("") + '</div>';
   }
   if (inMonth.length) {
     h += '<div class="card" style="padding:6px 10px">' + inMonth.map(function (x) {
@@ -164,7 +237,7 @@ function calMonthHTML() {
 
 /* tapping a day: show it, and offer to add on that date */
 if (typeof window !== "undefined") window.calOpenDay = function (iso) {
-  var evs = evOnDay(iso);
+  var evs = evOnDay(iso), bills = calBillsOnDay(iso);
   var pretty = (typeof fmtDate === "function") ? fmtDate(iso) : iso;
   modal(pretty,
     (evs.length
@@ -175,7 +248,15 @@ if (typeof window !== "undefined") window.calOpenDay = function (iso) {
             + (e.note ? '<div class="sub" style="white-space:normal">' + esc(e.note) + '</div>' : '')
             + '</div></div>';
         }).join("")
-      : '<div class="muted" style="font-size:13px">Nothing on this day.</div>')
+      : '')
+    + (bills.length
+        ? bills.map(function (b) {
+            return '<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">💵 ' + esc(b.name || "bill") + '</div>'
+              + '<div class="sub">' + calMoney(+b.amount || 0) + ' · every month</div>'
+              + (b.note ? '<div class="sub" style="white-space:normal">' + esc(b.note) + '</div>' : '') + '</div></div>';
+          }).join("")
+        : '')
+    + ((!evs.length && !bills.length) ? '<div class="muted" style="font-size:13px">Nothing on this day.</div>' : '')
     + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal();openEventOn(\'' + iso + '\')">+ Add on this day</button>');
 };
 if (typeof window !== "undefined") window.openEventOn = function (iso) {
