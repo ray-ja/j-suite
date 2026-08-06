@@ -18,8 +18,8 @@ p{margin:0 0 1em} .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px}
 header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);box-shadow:0 1px 0 var(--line)}
 .nav{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;max-width:var(--maxw);margin:0 auto}
 .logo{display:flex;align-items:center;gap:11px;text-decoration:none}
-.logo .mark{width:40px;height:40px;flex:0 0 auto}
-.logo .txt{font-weight:800;color:var(--navy);font-size:1.08rem;line-height:1} .logo .txt span{color:var(--blue);display:block;font-size:.66rem;font-weight:700;letter-spacing:1.5px}
+.logo .mark{width:46px;height:46px;flex:0 0 auto}
+.logo .txt{font-weight:800;color:var(--navy);font-size:1.34rem;line-height:1.05;letter-spacing:-.01em} .logo .txt span{color:var(--blue);display:block;font-size:.72rem;font-weight:700;letter-spacing:1.6px;margin-top:2px}
 .navlinks{display:none} .navlinks a{color:var(--navy);text-decoration:none;font-weight:600;margin-left:20px;font-size:.95rem} .navlinks a:hover{color:var(--blue)}
 .navcta{display:none}
 .menu-toggle{background:var(--navy);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-size:1.1rem;cursor:pointer}
@@ -86,7 +86,7 @@ body{padding-bottom:54px}
 .stars{display:inline-flex;gap:2px;align-items:center;color:#f0a500}
 .star-svg{width:15px;height:15px;flex:0 0 auto}
 /* the header mark is his own file now, not an inline placeholder */
-.logo img.mark{display:block;width:40px;height:40px;flex:0 0 auto}
+.logo img.mark{display:block;width:46px;height:46px;flex:0 0 auto}
 
 /* ---- REAL WORK PHOTOS (2026-08-06) ------------------------------------------------------------------
    First actual images on the site — Ray's own Starlink installs. width/height are declared on every img
