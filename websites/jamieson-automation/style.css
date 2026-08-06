@@ -87,3 +87,14 @@ body{padding-bottom:54px}
 .star-svg{width:15px;height:15px;flex:0 0 auto}
 /* the header mark is his own file now, not an inline placeholder */
 .logo img.mark{display:block;width:40px;height:40px;flex:0 0 auto}
+
+/* ---- REAL WORK PHOTOS (2026-08-06) ------------------------------------------------------------------
+   First actual images on the site — Ray's own Starlink installs. width/height are declared on every img
+   so the browser reserves the space and the page does not jump while they load, and everything below the
+   fold is loading="lazy". */
+.shot{margin:22px 0;border-radius:14px;overflow:hidden;background:var(--soft);box-shadow:0 1px 3px rgba(0,32,82,.10)}
+.shot img{display:block;width:100%;height:auto}
+.shot figcaption{font-size:.86rem;color:var(--muted);padding:10px 14px;background:#fff;border-top:1px solid var(--line)}
+.shotgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin:22px 0}
+.shotgrid .shot{margin:0}
+@media(max-width:640px){.shotgrid{grid-template-columns:1fr}}
