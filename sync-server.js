@@ -20,6 +20,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 let QB = null; try { QB = require("./qb-bridge"); } catch (e) {}
 const AvailResolve = require("./availability-resolve");   // shared client/server availability logic
 const TaxEst = require("./js/82-tax-estimator");          // contractor (1099) tax set-aside estimator (P2) — pure math, shared client/server
@@ -292,7 +293,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles", "studioVideos"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -3801,6 +3802,87 @@ const server = http.createServer((req, res) => {
 
   // photo/receipt upload → stored as a server-side blob (uploads/<id>.<ext>), referenced by id in records.
   // Auth = the sync TOKEN. Image or PDF, size-capped, random id (no path traversal). Served by the static handler below.
+  /* ---------- VIDEO INGEST (chunked, streaming) ------------------------------------------------------
+     Ray films long-form on his phone and wants to drop it straight into the app: "put the videos there,
+     and you know that it's a video that needs to be edited for TikTok or Twitter."
+
+     /api/upload CANNOT carry this. It takes a base64 data URL, which means the browser holds the whole
+     file in memory, inflates it 33%, and the server caps it at 10MB. A phone video is 200MB-2GB.
+
+     So this is a separate, dumber, more robust path: raw binary appended chunk by chunk, straight to disk
+     in ~/studio/raw/ where ingest.py already expects it. Nothing is buffered whole, at either end.
+
+       POST /api/video/init   {name,size,org,targets,note}  -> {id}
+       POST /api/video/chunk?id=..&n=..   <raw bytes>        -> {received}
+       POST /api/video/done?id=..                           -> {path,bytes}
+
+     Chunks are sequential and idempotent by index: a phone that drops signal mid-upload re-sends the same
+     chunk number and overwrites rather than duplicating. That is the difference between this working on
+     cellular and not. */
+  if (req.method === "POST" && req.url.split("?")[0].startsWith("/api/video/")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const STUDIO = path.join(os.homedir(), "studio");
+    const TMP = path.join(STUDIO, ".incoming");
+    try { fs.mkdirSync(path.join(STUDIO, "raw"), { recursive: true }); fs.mkdirSync(TMP, { recursive: true }); } catch (e) {}
+    const act = req.url.split("?")[0].slice("/api/video/".length);
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+
+    if (act === "init") {
+      return readBodyUtf8(req, 2e4, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const safe = String((p && p.name) || "video.mp4").replace(/[^A-Za-z0-9._-]/g, "-").slice(-80);
+        if (!/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(safe)) return J(400, { error: "video files only (mp4/mov/m4v/webm/mkv/avi)" });
+        const id = crypto.randomBytes(9).toString("hex");
+        const meta = { id: id, name: safe, size: +((p && p.size)) || 0, org: String((p && p.org) || "").slice(0, 40),
+                       targets: Array.isArray(p && p.targets) ? p.targets.slice(0, 6) : [],
+                       note: String((p && p.note) || "").slice(0, 200), started: Date.now(), chunks: 0 };
+        try {
+          fs.writeFileSync(path.join(TMP, id + ".json"), JSON.stringify(meta));
+          fs.writeFileSync(path.join(TMP, id + ".part"), Buffer.alloc(0));
+        } catch (e) { return J(500, { error: "could not open the upload" }); }
+        return J(200, { ok: true, id: id, name: safe });
+      });
+    }
+
+    if (act === "chunk") {
+      const id = String(q.searchParams.get("id") || "").replace(/[^a-f0-9]/g, "");
+      const part = path.join(TMP, id + ".part");
+      if (!id || !fs.existsSync(part)) return J(404, { error: "unknown upload — start again" });
+      const chunks = []; let len = 0;
+      req.on("data", c => { chunks.push(c); len += c.length; if (len > 12e6) req.destroy(); });   // 8MB chunks + headroom
+      req.on("end", () => {
+        try {
+          fs.appendFileSync(part, Buffer.concat(chunks));
+          const st = fs.statSync(part);
+          return J(200, { ok: true, received: st.size });
+        } catch (e) { return J(500, { error: "write failed" }); }
+      });
+      req.on("error", () => {});
+      return;
+    }
+
+    if (act === "done") {
+      const id = String(q.searchParams.get("id") || "").replace(/[^a-f0-9]/g, "");
+      const part = path.join(TMP, id + ".part"), mp = path.join(TMP, id + ".json");
+      if (!id || !fs.existsSync(part) || !fs.existsSync(mp)) return J(404, { error: "unknown upload" });
+      let meta = {}; try { meta = JSON.parse(fs.readFileSync(mp, "utf8")); } catch (e) {}
+      const st = fs.statSync(part);
+      if (!st.size) { try { fs.unlinkSync(part); fs.unlinkSync(mp); } catch (e) {} return J(400, { error: "nothing was uploaded" }); }
+      /* never clobber an earlier file of the same name */
+      let dest = path.join(STUDIO, "raw", meta.name || (id + ".mp4"));
+      if (fs.existsSync(dest)) {
+        const e = path.extname(dest), b = dest.slice(0, -e.length);
+        dest = b + "-" + id.slice(0, 6) + e;
+      }
+      try { fs.renameSync(part, dest); fs.unlinkSync(mp); }
+      catch (e) { return J(500, { error: "could not finalise" }); }
+      return J(200, { ok: true, path: dest, name: path.basename(dest), bytes: st.size });
+    }
+    return J(404, { error: "not found" });
+  }
+
   if (req.method === "POST" && req.url.split("?")[0] === "/api/upload") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
