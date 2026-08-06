@@ -72,3 +72,18 @@ body{padding-bottom:54px}
   .callbar{display:none} body{padding-bottom:0}
   .split{display:grid;grid-template-columns:1.1fr .9fr;gap:34px;align-items:center}
 }
+
+/* ---- LINE ICONS (replaced every emoji, 2026-08-06) --------------------------------------------------
+   Ray: "I don't like emojis. Emojis are unprofessional." He is right for this audience — a property
+   manager comparing three quotes reads a 📞 as a consumer app, not a contractor.
+   These inherit currentColor, so an icon in a white-on-navy button is white and the same icon in body
+   copy is body colour, with no per-context overrides. */
+.ic-svg{width:1.05em;height:1.05em;vertical-align:-.16em;flex:0 0 auto}
+.card .ic .ic-svg{width:26px;height:26px;color:#fff}          /* inside the navy gradient tile */
+.badge .ic-svg{width:.95em;height:.95em;vertical-align:-.12em;margin-right:.15em}
+.btn .ic-svg{margin-right:.3em}
+.menu-toggle .ic-svg{width:26px;height:26px}
+.stars{display:inline-flex;gap:2px;align-items:center;color:#f0a500}
+.star-svg{width:15px;height:15px;flex:0 0 auto}
+/* the header mark is his own file now, not an inline placeholder */
+.logo img.mark{display:block;width:40px;height:40px;flex:0 0 auto}
