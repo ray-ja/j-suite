@@ -3819,6 +3819,60 @@ const server = http.createServer((req, res) => {
      Chunks are sequential and idempotent by index: a phone that drops signal mid-upload re-sends the same
      chunk number and overwrites rather than duplicating. That is the difference between this working on
      cellular and not. */
+  /* ---------- WEBSITE LEAD INTAKE ----------------------------------------------------------------------
+     A lead from jamiesonautomation.com lands HERE, as a real customer record in the app Ray already opens
+     several times a day — not in a Cloudflare dashboard he would never think to check.
+
+     Why not Cloudflare KV (the "binding" the lead function suggests): KV stores the lead perfectly well and
+     then nobody ever looks at it. A lead that isn't in front of him is the same as a lost lead. j-Suite
+     already models a lead as a customer with status "Lead" (js/66), so it lands on the Leads tab inside the
+     follow-up flow he already has.
+
+     Auth is a shared key in the URL, compared in constant time. The key lives in ceo-config.json (gitignored)
+     and in the Pages project's env vars, which are server-side — it never reaches a browser. Deliberately
+     NOT the sync token: a public website form should never hold a credential that can read the whole store. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/lead") {
+    const q = new URL(req.url, "http://x");
+    let lcfg = {}; try { lcfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+    const want = String(lcfg.leadKey || ""), got = String(q.searchParams.get("k") || "");
+    const okKey = want.length > 16 && got.length === want.length &&
+      crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+    if (!okKey) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+
+    return readBodyUtf8(req, 3e4, (body) => {
+      let d; try { d = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const cut = (v, n) => String(v == null ? "" : v).replace(/[\r\n\t]+/g, " ").trim().slice(0, n);
+      const org = String(q.searchParams.get("org") || "jam");
+      const store = loadStore();
+      if (!store[org]) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"unknown org"}'); }
+      if (!Array.isArray(store[org].customers)) store[org].customers = [];
+
+      const name = cut(d.name, 120) || cut(d.email, 120) || "Website enquiry";
+      const notes = [
+        cut(d.message, 1500),
+        d.service ? "Service: " + cut(d.service, 80) : "",
+        d.magnet ? "Wanted: " + cut(d.magnet, 120) : "",
+        "From " + cut(d.form || "the website", 60) + (d.ref ? " (" + cut(d.ref, 200) + ")" : "")
+      ].filter(Boolean).join("\n");
+
+      /* deterministic id from email+day, so a double-submitted form is ONE lead, not two */
+      const dayKey = (cut(d.email, 200) || cut(d.phone, 40) || name) + "|" + new Date().toISOString().slice(0, 10);
+      const id = "web-" + crypto.createHash("sha1").update(dayKey).digest("hex").slice(0, 12);
+      if (store[org].customers.some(c => c && c.id === id)) {
+        res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":true,"duplicate":true}');
+      }
+
+      store[org].customers.push({
+        id: id, name: name, email: cut(d.email, 200), phone: cut(d.phone, 40),
+        status: "Lead", notes: notes, source: "website",
+        createdAt: Date.now(), updatedAt: Date.now(), deleted: false
+      });
+      try { saveStore(store); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
+      try { if (typeof pushNotifyOwner === "function") pushNotifyOwner(org, "New website lead", name + (d.service ? " — " + cut(d.service, 60) : "")); } catch (e) {}
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id }));
+    });
+  }
+
   if (req.method === "POST" && req.url.split("?")[0].startsWith("/api/video/")) {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
