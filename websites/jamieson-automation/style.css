@@ -32,6 +32,8 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);ba
    distinction matters: we spent a whole pass removing things a property manager could catch as false.
    The gradient is kept ON TOP so the white headline stays legible whatever the image does. */
 .hero{background:linear-gradient(160deg,rgba(0,32,82,.86) 0%,rgba(4,18,43,.92) 100%),radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.30),transparent),url('/img/hero-coastal-home.jpg');background-size:cover,auto,cover;background-position:center,center,center 60%;color:#fff;position:relative;overflow:hidden}
+.hero.uplink{background-image:linear-gradient(160deg,rgba(0,32,82,.84) 0%,rgba(4,18,43,.93) 100%),radial-gradient(1200px 500px at 50% -20%,rgba(0,153,229,.34),transparent),url('/img/hero-starlink-uplink.jpg');background-position:center,center,center 42%}
+@media(max-width:760px){.hero.uplink{background-image:linear-gradient(160deg,rgba(0,32,82,.86) 0%,rgba(4,18,43,.94) 100%),radial-gradient(1200px 500px at 50% -20%,rgba(0,153,229,.34),transparent),url('/img/hero-starlink-uplink-960.jpg')}}
 @media(max-width:760px){.hero{background-image:linear-gradient(160deg,rgba(0,32,82,.88) 0%,rgba(4,18,43,.94) 100%),radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.30),transparent),url('/img/hero-coastal-home-960.jpg')}}
 .hero .wrap{padding:50px 18px 58px;position:relative;z-index:2}
 .hero h1{color:#fff;max-width:20ch} .hero p.lead{font-size:1.15rem;max-width:46ch;color:#cfe0f0}
