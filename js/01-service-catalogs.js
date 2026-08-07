@@ -62,20 +62,21 @@ const CATALOG = {
     {id:"g3",cat:"Gutters",name:"Gutter guard install (quote)",price:0,unit:"quote"}
   ],
   jam: [
-    {id:"j1",cat:"Flat-rate installs",name:"Starlink — standard",price:299,unit:"flat"},
-    {id:"j2",cat:"Flat-rate installs",name:"Starlink — roof/pole mount",price:449,unit:"flat"},
-    {id:"j3",cat:"Flat-rate installs",name:"Starlink — complex (quote)",price:0,unit:"quote"},
-    {id:"j4",cat:"Flat-rate installs",name:"Mesh WiFi / network (≤3 nodes)",price:249,unit:"flat"},
-    {id:"j5",cat:"Flat-rate installs",name:"WiFi — extra node (each)",price:75,unit:"each"},
-    {id:"j6",cat:"Flat-rate installs",name:'TV mount ≤55"',price:149,unit:"flat"},
-    {id:"j7",cat:"Flat-rate installs",name:'TV mount 56–75"',price:199,unit:"flat"},
-    {id:"j8",cat:"Flat-rate installs",name:'TV mount 75"+ / fireplace',price:279,unit:"flat"},
-    {id:"j9",cat:"Flat-rate installs",name:"Cord concealment",price:79,unit:"flat"},
-    {id:"j10",cat:"Flat-rate installs",name:"Soundbar / basic A/V (from)",price:149,unit:"flat"},
-    {id:"j11",cat:"Flat-rate installs",name:"Smart lock (each)",price:129,unit:"each"},
-    {id:"j12",cat:"Flat-rate installs",name:"Smart thermostat",price:149,unit:"flat"},
-    {id:"j13",cat:"Flat-rate installs",name:"Smart camera / doorbell (1st)",price:129,unit:"flat"},
-    {id:"j14",cat:"Flat-rate installs",name:"Smart-home starter bundle (from)",price:499,unit:"flat"},
+    /* The original "Flat-rate installs" block was written before the researched per-category
+       lists below, and six of its rows had drifted into contradicting them — most seriously
+       mesh wifi at $249 against $499 on the live site and in the product guide. A picker that
+       offers the same job at two prices is how a quote goes out wrong. Removed: Starlink
+       standard/roof (dup of the Starlink block, which correctly splits roof $449 from pole
+       $499), mesh wifi $249, smart lock $129, thermostat $149 and camera $129 (all ambiguous
+       install-only rows already stated properly below). What is left here is the A/V work that
+       lives nowhere else. */
+    {id:"j3",cat:"A/V & TV",name:"Starlink — complex (quote)",price:0,unit:"quote"},
+    {id:"j5",cat:"Networking & WiFi",name:"WiFi — extra mesh node (each)",price:75,unit:"each"},
+    {id:"j6",cat:"A/V & TV",name:'TV mount ≤55"',price:149,unit:"flat"},
+    {id:"j7",cat:"A/V & TV",name:'TV mount 56–75"',price:199,unit:"flat"},
+    {id:"j8",cat:"A/V & TV",name:'TV mount 75"+ / fireplace',price:279,unit:"flat"},
+    {id:"j9",cat:"A/V & TV",name:"Cord concealment",price:79,unit:"flat"},
+    {id:"j10",cat:"A/V & TV",name:"Soundbar / basic A/V (from)",price:149,unit:"flat"},
     {id:"jc1",cat:"Custom (quote)",name:"Home automation (quote)",price:0,unit:"quote"},
     {id:"jc2",cat:"Custom (quote)",name:"Whole-house A/V & sound (quote)",price:0,unit:"quote"},
     {id:"jc3",cat:"Custom (quote)",name:"Commercial sound system (quote)",price:0,unit:"quote"},
