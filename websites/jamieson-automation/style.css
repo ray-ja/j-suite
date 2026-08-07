@@ -27,7 +27,12 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.96);ba
 .mobilemenu{display:none;flex-direction:column;background:var(--navy);padding:8px 18px 16px}
 .mobilemenu a{color:#fff;text-decoration:none;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.12);font-weight:600}
 #nav-check:checked ~ .mobilemenu{display:flex}
-.hero{background:radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.35),transparent),linear-gradient(160deg,var(--navy) 0%,var(--dark) 100%);color:#fff;position:relative;overflow:hidden}
+/* HERO. The photograph sits BEHIND a navy scrim, as atmosphere — never captioned, never presented as
+   a job. Ray's real install photos carry the 'this is our work' claim further down the page, and the
+   distinction matters: we spent a whole pass removing things a property manager could catch as false.
+   The gradient is kept ON TOP so the white headline stays legible whatever the image does. */
+.hero{background:linear-gradient(160deg,rgba(0,32,82,.86) 0%,rgba(4,18,43,.92) 100%),radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.30),transparent),url('/img/hero-coastal-home.jpg');background-size:cover,auto,cover;background-position:center,center,center 60%;color:#fff;position:relative;overflow:hidden}
+@media(max-width:760px){.hero{background-image:linear-gradient(160deg,rgba(0,32,82,.88) 0%,rgba(4,18,43,.94) 100%),radial-gradient(1200px 500px at 70% -10%,rgba(0,153,229,.30),transparent),url('/img/hero-coastal-home-960.jpg')}}
 .hero .wrap{padding:50px 18px 58px;position:relative;z-index:2}
 .hero h1{color:#fff;max-width:20ch} .hero p.lead{font-size:1.15rem;max-width:46ch;color:#cfe0f0}
 .hero .cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
