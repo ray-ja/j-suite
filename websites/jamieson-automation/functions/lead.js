@@ -20,15 +20,27 @@ export async function onRequestPost(context) {
   try {
     const ct = request.headers.get("content-type") || "";
     if (ct.includes("application/json")) d = await request.json();
-    else { const fd = await request.formData(); for (const [k, v] of fd.entries()) d[k] = typeof v === "string" ? v : ""; }
+    else {
+      const fd = await request.formData();
+      for (const [k, v] of fd.entries()) d[k] = typeof v === "string" ? v : "";
+      d.__fd = fd;   // kept so the multi-value `services` checkboxes survive the flattening above
+    }
   } catch (e) { /* malformed body — still send them to thanks, no 500 */ }
 
   // honeypot: silently accept bots, store nothing
   if (d["bot-field"]) return thanks(request);
 
   const cut = (v, n) => String(v == null ? "" : v).slice(0, n);
+  /* The consultation form asks for address, property type, door count and which services they want.
+     All four used to be read off the form and thrown away here, so a lead arrived in the app with no
+     idea WHERE the job is — and an install quote without an address is not a quote. `services` is a
+     checkbox group, so formData gives us the last value only; getAll() keeps every box they ticked. */
+  let services = "";
+  try { const fd2 = d.__fd; if (fd2) services = fd2.getAll("services").join(", "); } catch (e) {}
   const lead = {
     email: cut(d.email, 200), name: cut(d.name, 120), phone: cut(d.phone, 40),
+    address: cut(d.address, 300), propertyType: cut(d.property_type, 60), doors: cut(d.doors, 40),
+    services: cut(services || d.services, 300),
     message: cut(d.message || d.details, 2000),
     form: cut(d["form-name"] || d.source || "lead", 60),
     magnet: cut(d.magnet, 120), service: cut(d.service, 80), source: cut(d.source, 60), variant: cut(d.variant, 8),

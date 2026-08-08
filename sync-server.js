@@ -3848,9 +3848,14 @@ const server = http.createServer((req, res) => {
       if (!Array.isArray(store[org].customers)) store[org].customers = [];
 
       const name = cut(d.name, 120) || cut(d.email, 120) || "Website enquiry";
+      const addr = cut(d.address, 300);
       const notes = [
         cut(d.message, 1500),
         d.service ? "Service: " + cut(d.service, 80) : "",
+        d.services ? "Wants: " + cut(d.services, 300) : "",
+        d.propertyType ? "Property: " + cut(d.propertyType, 60) : "",
+        d.doors ? "Doors: " + cut(d.doors, 40) : "",
+        addr ? "Address: " + addr : "",
         d.magnet ? "Wanted: " + cut(d.magnet, 120) : "",
         "From " + cut(d.form || "the website", 60) + (d.ref ? " (" + cut(d.ref, 200) + ")" : "")
       ].filter(Boolean).join("\n");
@@ -3867,6 +3872,22 @@ const server = http.createServer((req, res) => {
         status: "Lead", notes: notes, source: "website",
         createdAt: Date.now(), updatedAt: Date.now(), deleted: false
       });
+
+      /* An install quote needs a place, not just a person — the guided quote asks for a property and
+         a website lead used to arrive without one. The property id derives from the customer id, so a
+         re-submitted form updates the same place instead of littering the map with duplicates. It is
+         created unpositioned (no lat/lng); geocoding stays a deliberate act in the app. */
+      if (addr) {
+        if (!Array.isArray(store[org].properties)) store[org].properties = [];
+        const pid = "web-prop-" + crypto.createHash("sha1").update(id).digest("hex").slice(0, 10);
+        if (!store[org].properties.some(p => p && p.id === pid)) {
+          store[org].properties.push({
+            id: pid, label: name + " — from the website", address: addr,
+            customerIds: [id], accessNotes: "", source: "website",
+            createdAt: Date.now(), updatedAt: Date.now(), deleted: false
+          });
+        }
+      }
       try { saveStore(store); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
       try { if (typeof pushNotifyOwner === "function") pushNotifyOwner(org, "New website lead", name + (d.service ? " — " + cut(d.service, 60) : "")); } catch (e) {}
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id }));
