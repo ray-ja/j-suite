@@ -1,0 +1,14 @@
+# OBX Holiday Lights — Cloudflare Pages redirects.
+# Pages serves foo.html at /foo and canonicalizes /foo.html -> /foo, so never list a real page on the left.
+/christmas-lights      /christmas          301
+/holiday-lights        /christmas          301
+/xmas                  /christmas          301
+/lights                /christmas          301
+/parties               /birthdays          301
+/party-lighting        /birthdays          301
+/birthday              /birthdays          301
+/quote                 /contact            301
+/estimate              /contact            301
+/rentals               /property-managers  301
+/property-management   /property-managers  301
+/prices                /pricing            301

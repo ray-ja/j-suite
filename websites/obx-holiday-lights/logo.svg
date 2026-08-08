@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 46" role="img" aria-label="OBX Holiday Lights">
+<g fill="none" stroke="#d99420" stroke-width="2" stroke-linecap="round">
+<path d="M4 14 q10 9 20 0 q10 9 20 0"/>
+</g>
+<g fill="#d99420"><circle cx="14" cy="17" r="3.4"/><circle cx="34" cy="17" r="3.4"/><circle cx="4" cy="14" r="2.6"/><circle cx="44" cy="14" r="2.6"/></g>
+<text x="56" y="22" font-family="system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="19" font-weight="800" fill="#101725">OBX Holiday Lights</text>
+<text x="56" y="38" font-family="system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="600" letter-spacing="1.4" fill="#a06a09">CHRISTMAS &#183; HALLOWEEN &#183; PARTIES</text>
+</svg>
