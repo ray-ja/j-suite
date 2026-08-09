@@ -69,3 +69,6 @@ dev-overrides/
 
 # per-org exports — contain REAL customer data + photos, never commit
 org-exports/
+cf-token.txt
+*token*.txt
+*.token
