@@ -108,7 +108,9 @@ ok("a tabs list without life is NOT personal (escape-room style)",
   !sv.orgIsPersonal(REG([{ id: "e", tabs: ["escape", "booking", "messages"] }]), "e"));
 
 console.log("\n--- SERVER: Cap actually reads the journal ---");
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
+/* MUST be the America/New_York date, not the UTC one — capTodayContext uses NY as its source of truth, so a
+   UTC-based fixture disagrees with the code every evening after 8pm ET and the tests fail for no reason. */
+const TODAY_ISO = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const YM = TODAY_ISO.slice(0, 7);
 function personalStore() {
   return {
