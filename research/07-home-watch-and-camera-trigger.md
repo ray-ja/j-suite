@@ -80,3 +80,58 @@ Reporting a break-in you happen to find is fine. *Selling* intrusion detection i
 
 ### NHWA accreditation — worth it
 Not just a logo. It requires **third-party background checks of the company and each member, proper insurance, and bonding**. Since key custody is the entire trust problem in this business, "bonded, insured, background-checked, NHWA-accredited" is exactly the trust play already chosen for these brands.
+
+---
+
+# FOLLOW-UP: "PoE cameras only, no fire alarm, no wiring" — does that change it?
+_2026-08-10. Ray's clarified scope: cameras only, PoE/network only, no fire alarms, no low-voltage electrical wiring — run Cat6, mount the camera, plug a PoE switch into an existing receptacle._
+
+## The scope change splits the question in two
+
+**❌ It does NOT help with the 74D alarm licence.** GS 74D-2(a)(2) names cameras directly. PoE, wireless, battery — irrelevant. **The 74D licence is required in every scenario.**
+
+**✅ It DOES bear on the electrical licence** — which is the part that adds months.
+
+## 74D does not create the electrical requirement
+GS 74D-2 never orders licensees to hold an electrical licence. It appears once, in **74D-2(h)**, which exempts *74C-licensed guard companies doing remote monitoring* from, among other things, "hold[ing] a low voltage electrical license" — on the basis that monitoring involves no field wiring.
+
+**Ray is outside (h) twice over** (not a 74C guard company; installs rather than monitors). But it confirms the structure: **the electrical obligation flows from Chapter 87, not 74D** — you need it if and only if your work is "electrical contracting." The ASLB checklist then enforces it administratively, listing the electrical licence copy as a required document **with no stated carve-out.**
+
+## 🔬 THE CRUX — genuinely unsettled
+**21 NCAC 18B .0804(a)(5)** defines as licensed work:
+> *"alarm systems or devices used to detect burglary or theft **as defined in G.S. 74D-2(a)**."*
+
+**21 NCAC 18B .0805** opens:
+> *"Exemption. **Except a fire alarm, burglar alarm or low voltage wiring system as defined in Rule .0804**, the installation… of low voltage wiring systems may be performed by those not licensed…"*
+
+**That opening clause is decisive: if cameras are inside .0804(a)(5), the exemption never applies regardless of voltage. The six conditions are never reached.**
+
+| The argument FOR Ray | The argument AGAINST |
+|---|---|
+| The operative noun is "**alarm** systems or devices." A recording-only camera annunciates nothing — on a strict reading it is not an alarm device. | The cross-reference points at **74D-2(a)**, which **since 2025-10-01 expressly names "cameras… used to detect or observe burglary."** If the reference is read dynamically, cameras are inside .0804(a)(5) by name. |
+
+**.0804(a)(5) was last amended in 2011** — long before the 2025 camera clause. Whether NCBEEC reads the cross-reference **dynamically or frozen** is exactly the unresolved question. **No NCBEEC guidance, declaratory ruling or case resolving cameras was found.**
+
+⚠️ **Practical reality cuts against the narrow reading:** the cameras he'd actually sell (motion detection, person alerts, push notifications) *are* functionally detection-and-annunciation devices even on the strict view.
+
+⚠️ **PoE voltage nuance:** standard 802.3af/at runs ~48-50V and passes condition (3); **802.3bt high-power PoE runs up to 57V and fails "not in excess of 50 volts" on its own.**
+
+**CONSERVATIVE READING: camera cabling is licensed electrical work, .0805 is unavailable, and SP-FA/LV is required.**
+
+## The other three answers
+**No narrower classification exists.** .0801(a) establishes exactly six special restricted licences — fire alarm/low voltage, elevator, plumbing/HVAC, groundwater pump, electric sign, swimming pool. **There is no video-surveillance-only licence.** SP-FA/LV is the narrowest fit; holding it does not oblige him to do fire-alarm work, but the PSI exam tests NFPA 72 content regardless.
+
+**"Let the customer's electrician provide the outlet" cures nothing.** .0804(b) already assumes the line-voltage supply is installed "by others" — **the licensed work at issue IS the low-voltage cabling itself.** The question collapses entirely into the .0804(a)(5) question.
+
+**The one genuine design-around: all-wireless cameras with plug-in power supplies.** Zero field wiring under any reading. **But 74D still applies** — it attaches to selling and installing security cameras however they are powered.
+
+## Timelines
+- **Path (a) — 74D alone**, if the electrical licence proves unnecessary: ESA CAT-I ~2-6 weeks self-paced, then application, prints, SBI/FBI, and a board that meets six times a year → **realistically 2-4 months.**
+- **Path (b) — 74D + SP-FA/LV**: adds the NCBEEC exam application with 3,000 documented hours, a PSI pass, and the firm's electrical licence issued **first** → **6+ months.**
+
+**Either way, "advertise now, certify when a job lands" stays dead** — the course is the *fastest* item in the chain, and the licence it feeds cannot exist before the first advertised act is already regulated.
+
+## ☎️ THE TWO CALLS THAT SETTLE IT
+**NCBEEC — (919) 733-9042:** *"Does the Board read 21 NCAC 18B .0804(a)(5) — 'alarm systems or devices used to detect burglary or theft as defined in G.S. 74D-2(a)' — to include video surveillance cameras as described in G.S. 74D-2(a)(2) as rewritten by S.L. 2025-51? Specifically: does installing Cat6 cabling and PoE-powered IP cameras, with no line-voltage work, require an SP-FA/LV licence, or does that work qualify for the Rule .0805 exemption?"* **Ask for it in writing, or a declaratory ruling under GS 150B-4.**
+
+**ASLB — (919) 788-5320:** *"For a new security systems licence limited to camera installation, is the 'copy of your company's current NC Electrical Contractors license' checklist item waived where the applicant will perform no work requiring licensure under Chapter 87 — and if not, what is its legal basis for a camera-only applicant?"*
