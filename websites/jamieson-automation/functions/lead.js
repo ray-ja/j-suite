@@ -1,4 +1,4 @@
-/* Cloudflare Pages Function — POST /lead (Jamieson Automation)
+/* Cloudflare Pages Function — POST /lead (Jamieson Networks, jamiesonautomation.com)
  *
  * The site is a static host (Cloudflare Pages). The old forms POSTed to /thanks.html, which a static
  * host answers with 405 Method Not Allowed. This function accepts the POST, captures the lead, and

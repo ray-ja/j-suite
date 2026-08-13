@@ -4,7 +4,7 @@
    2026-08-06 (no real reviews exist yet). Exit-intent capture and click-to-call promotion still run.
    Original CRO layer — A/B hero, social proof, exit-intent lead capture, click-to-call. Static, no deps. */
 (function(){
- var CFG={"tel": "+12522075985", "telDisp": "(252) 207-5985", "accent": "#0099E5", "magnet": "rental-ready-checklist.html", "heroH1": "", "heroLead": "", "exitTitle": "Before you go \u2014", "exitBody": "The free Rental-Ready Tech Checklist covers the setup that stops the guest wifi and lockout complaints. Read it on the site, or have it emailed to you.", "exitCta": "Email me the checklist"};
+ var CFG={"tel": "+12522075985", "telDisp": "(252) 207-5985", "accent": "#0099E5", "magnet": "rental-ready-checklist.html", "heroH1": "", "heroLead": "", "exitTitle": "Before you go \u2014", "exitBody": "The free Rental-Ready Tech Checklist covers the setup that stops the guest wifi complaints. Read it on the site, or have it emailed to you.", "exitCta": "Email me the checklist"};
  var V=localStorage.getItem('cro_v'); if(V!=='A'&&V!=='B'){V=Math.random()<0.5?'A':'B';localStorage.setItem('cro_v',V);}
  document.documentElement.setAttribute('data-cro',V);
  function ready(fn){if(document.readyState!='loading')fn();else document.addEventListener('DOMContentLoaded',fn);}

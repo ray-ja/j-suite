@@ -69,7 +69,7 @@
   function pageGroup() {
     var p = location.pathname.replace(/^\/|\.html$/g, "") || "home";
     if (/^(avon|buxton|corolla|duck|frisco|hatteras|kill-devil-hills|kitty-hawk|manteo|nags-head|ocracoke|rodanthe|salvo|southern-shores|waves|wanchese)/.test(p)) return "town";
-    if (/^(starlink|smart-home|security|networking|lighting|services)/.test(p)) return "service";
+    if (/^(starlink|led-lighting|lighting|networking|services)/.test(p)) return "service";
     if (/quote|contact/.test(p)) return "conversion";
     if (p === "home") return "home";
     return "resource";

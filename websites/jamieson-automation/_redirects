@@ -1,0 +1,20 @@
+# Jamieson Networks (jamiesonautomation.com) — 301s for pages removed in the 2026-08 scope cut
+# (no security cameras, smart locks, alarms, or smart-home category — see Ray's decided scope).
+# Cloudflare Pages: targets are EXTENSIONLESS (Pages serves foo.html at /foo and canonicalizes
+# /foo.html -> /foo). Never put a REAL page on the left side — that loops.
+# Both the .html and clean-URL forms of each deleted page are listed so old links land either way.
+
+/smart-home.html                              /services   301
+/smart-home                                   /services   301
+/smart-home-duck.html                         /duck       301
+/smart-home-duck                              /duck       301
+/security-cameras-nags-head.html              /nags-head  301
+/security-cameras-nags-head                   /nags-head  301
+/best-smart-locks-obx-vacation-rentals.html   /blog       301
+/best-smart-locks-obx-vacation-rentals        /blog       301
+/why-smart-lock-keeps-going-offline.html      /do-you-need-mesh-network-obx  301
+/why-smart-lock-keeps-going-offline           /do-you-need-mesh-network-obx  301
+/poe-vs-wifi-cameras-obx.html                 /blog       301
+/poe-vs-wifi-cameras-obx                      /blog       301
+/smart-thermostats-coastal-rentals.html       /blog       301
+/smart-thermostats-coastal-rentals            /blog       301
