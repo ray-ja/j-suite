@@ -1,7 +1,10 @@
-# OBX Home Watch — Cloudflare Pages redirects.
+# Milepost Home Watch — Cloudflare Pages redirects.
 /home-watch          /            301
 /homewatch           /            301
 /pricing             /plans       301
+/prices              /plans       301
+/rates               /plans       301
+/maintenance         /plans       301
 /checklist           /what-we-check 301
 /sample              /sample-report 301
 /report              /sample-report 301
