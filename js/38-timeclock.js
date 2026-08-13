@@ -256,7 +256,11 @@ window.tcClockInWith = async function (args) {
   args = args || {};
   if (_tcInBusy) return { ok: false, error: "busy" };   // a clock-in save is already in flight
   const jobId = args.jobId;
-  if (!jobId) return { ok: false, error: "no-job" };
+  /* A job is normally REQUIRED — it is what hours and mileage get costed against. But Ray, 2026-08-13,
+     replacing QuickBooks Time on Jamieson: not every hour has a job record (remote work, a site visit that
+     never became one). opts.noJob is an EXPLICIT opt-in from a separate button, never a silent bypass, so the
+     OBX job-costing flow is unchanged. */
+  if (!jobId && !(opts && opts.noJob)) return { ok: false, error: "no-job" };
   if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) return { ok: false, error: "deposit-required" };   // job is waiting on the customer's deposit — no work until it's in
   // `who` override (additive): an owner/admin can clock ANOTHER person in from the live roster. Existing callers
   // pass no `who`, so this is byte-identical to tcWho() for every self clock-in.
@@ -311,10 +315,14 @@ window.tcClockInWith = async function (args) {
   if (!(args.who && args.who.userId)) tcPingStart();   // only ping when clocking in on THIS device (a self clock-in), not when an owner clocks someone else in
   return { ok: true, entry: e };
 };
+/* NO-JOB SHIFT — an explicit, separate action so a job-costed org can never lose attribution by accident.
+   Ray, 2026-08-13: not every Jamieson hour has a job record. */
+var _tcNoJob = false;
+window.tcClockInNoJob = function () { _tcNoJob = true; try { window.tcClockIn(); } finally { _tcNoJob = false; } };
 window.tcClockIn = async function () {
   if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
   const jobId = val("tc_job");
-  if (!jobId) { alert("Pick the job you're working on."); return; }
+  if (!jobId && !_tcNoJob) { alert("Pick the job you\u2019re working on, or use \u201cJust track time\u201d."); return; }
   if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) { alert("⏳ This job is waiting on the customer's deposit — work can't start until it's received. (An owner marks the deposit received on the job page.)"); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
@@ -338,7 +346,7 @@ window.tcClockIn = async function () {
   const btn = document.getElementById("tc_inbtn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
   // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping (byte-identical)
-  await tcClockInWith({ jobId: jobId, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  await tcClockInWith({ noJob: _tcNoJob, jobId: jobId, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
   render();
 };
 /* clock-out (and — when contJobId is given — the "close the old segment" half of Change Job, see below) share
@@ -1608,7 +1616,8 @@ function tcClockInFormHTML(preJobId) {
     <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
     ${tcRolePicker(_role)}
     ${tcRoleDetail(_role, _defVal, who.userId, jobId)}
-    <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>`;
+    <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>
+    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockInNoJob()">⏱ Just track time (no job)</button>`;
 }
 
 function tcClockHTML() {
@@ -1622,7 +1631,7 @@ function tcClockHTML() {
       ${j && j.customerId ? `<div class="sub" style="white-space:normal;margin-bottom:2px">${esc(custName(j.customerId))}</div>` : ""}
       ${(j && jobEstHrsEach(j)) ? `<div class="sub" style="white-space:normal;color:var(--brand-text);font-weight:600">⏱ Est ~${jobEstHrsEach(j)} hr (your share) · likely finish ~${(function(){try{return new Date(open.clockIn+jobEstHrsEach(j)*3600000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}catch(e){return""}})()} · breaks don't count</div>` : ""}
       <div class="tc-metrics">
-        <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>
+        <div><div style="font-size:24px;font-weight:800" id="tc_elapsed">${tcFmtDur(now() - open.clockIn)}</div><div class="sub">elapsed</div></div>${(typeof shiftNotesHTML==="function")?`<div style="flex-basis:100%;margin-top:10px">${shiftNotesHTML(open.id,{})}</div>`:""}
         <div><div style="font-size:24px;font-weight:800" id="tc_miles">${tcRound(open.computedMiles)} mi est</div><div class="sub" id="tc_pings">${(open.pings || []).length} ping${(open.pings || []).length === 1 ? "" : "s"}</div></div>
       </div>
       ${tcShiftVehLine(open)}
@@ -1651,19 +1660,23 @@ function tcClockHTML() {
   if (recent.length) {
     h += `<div class="secthd"><h2>Your recent shifts</h2><span class="ct">${recent.length}</span></div><div class="card">` +
       recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcJobTitle(e.jobId))}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}${tcSaneMiles(e) ? " · ⚠ review" : ""}${e.odoPending ? " · 🕑 odo" : ""}</div>${e.odoPending && (typeof tcCanEditEntry === "function" && tcCanEditEntry(e)) ? `<div class="sub" style="margin-top:2px"><a href="#" onclick="tcAddEndOdo('${e.id}');return false" style="color:var(--brand-text);font-weight:700">＋ Add ending odometer</a></div>` : ""}</div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
+        <div class="sub">${(typeof shiftNoteCount==="function"&&shiftNoteCount(e.id))?`📝 ${shiftNoteCount(e.id)} · `:""}${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}${tcSaneMiles(e) ? " · ⚠ review" : ""}${e.odoPending ? " · 🕑 odo" : ""}</div>${e.odoPending && (typeof tcCanEditEntry === "function" && tcCanEditEntry(e)) ? `<div class="sub" style="margin-top:2px"><a href="#" onclick="tcAddEndOdo('${e.id}');return false" style="color:var(--brand-text);font-weight:700">＋ Add ending odometer</a></div>` : ""}</div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
   }
   return h;
 }
 
 /* owner rollup — hours + miles + mileage $ per job and per user */
 function tcReportHTML() {
-  const all = actTC().filter(e => e.clockOut);   // completed shifts only in the rollup
-  const open = actTC().filter(e => !e.clockOut);
-  if (!all.length && !open.length) return `<div class="card"><div class="muted">No time logged yet. Crew clock in/out from the ⏱ Clock tab; hours and GPS mileage land here per job and per person.</div></div>`;
+  /* js/128 supplies the period filter + CSV export; without it this behaves exactly as before */
+  const _bar = (typeof hxBarHTML === "function") ? hxBarHTML() : "";
+  const _rng = (typeof hxRange === "function") ? hxRange() : null;
+  const _scope = (typeof hxFilter === "function" && _rng) ? hxFilter(actTC(), _rng, (typeof HX !== "undefined" ? HX.who : "")) : actTC();
+  const all = _scope.filter(e => e.clockOut);   // completed shifts only in the rollup
+  const open = _scope.filter(e => !e.clockOut);
+  if (!all.length && !open.length) return _bar + `<div class="card"><div class="muted">No time logged in this period. Crew clock in/out from the ⏱ Clock tab; hours and GPS mileage land here per job and per person.</div></div>`;
   const totHrs = all.reduce((s, e) => s + tcHours(e), 0), totMi = all.reduce((s, e) => s + tcMiles(e), 0);
   const unconf = all.filter(e => !e.milesConfirmed).length;
-  let h = `<div class="card" style="display:flex;gap:6px;text-align:center">
+  let h = _bar + `<div class="card" style="display:flex;gap:6px;text-align:center">
     <div class="grow"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${totHrs.toFixed(1)}h</div><div class="sub">logged hours</div></div>
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${tcRound(totMi)} mi</div><div class="sub">miles (est)</div></div>
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${money(totMi * TC_RATE)}</div><div class="sub">mileage @ $${TC_RATE}</div></div>
@@ -1682,7 +1695,7 @@ function tcReportHTML() {
     const j = tcJob(jid);
     h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(tcJobTitle(jid))}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div></div></div>` +
       es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}${tcSaneMiles(e) ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ needs review</span>` : ""}${e.odoPending ? ` <span class="badge" style="background:#E1A100;color:#fff">🕑 odo pending</span>` : ""}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
+        <div class="sub">${(typeof shiftNoteCount==="function"&&shiftNoteCount(e.id))?`📝 ${shiftNoteCount(e.id)} · `:""}${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
   });
 
   // group by user

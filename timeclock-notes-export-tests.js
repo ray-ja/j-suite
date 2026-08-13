@@ -1,0 +1,145 @@
+/* timeclock-notes-export-tests.js — the QuickBooks Time replacement (js/127 notes + js/128 report export).
+   Ray, 2026-08-13: "vehicle tracking should be optional… very reliable… review and export a report of my
+   hours… take notes assigned to shifts to list out what I do as I work piecemeal… easily edit the clock in
+   and clock out times whether I am clocked in or not… gps data shown on a map is a plus."
+   One test per requirement, plus the regression that matters: OBX job-costing must not lose attribution.
+   Pure node. Run: node timeclock-notes-export-tests.js */
+const fs = require("fs"), path = require("path");
+const hx = require("./js/128-hours-export.js");
+let pass = 0, fail = 0;
+function ok(n, c, x) { if (c) { pass++; console.log("  ok  " + n); } else { fail++; console.log("  FAIL " + n + (x ? "  -> " + x : "")); } }
+function eq(n, g, w) { ok(n, g === w, "got " + JSON.stringify(g) + " want " + JSON.stringify(w)); }
+
+const TC = fs.readFileSync(path.join(__dirname, "js", "38-timeclock.js"), "utf8");
+const SN = fs.readFileSync(path.join(__dirname, "js", "127-shift-notes.js"), "utf8");
+const ST = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");
+const SV = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+
+console.log("\n--- REQ: notes are their own records, not an array on the punch ---");
+ok("shiftNotes is a real synced collection in blank()", /shiftNotes:\[\]/.test(ST));
+ok("...backfilled on every org slab", (ST.match(/S\[b\]\.shiftNotes/g) || []).length >= 2);
+ok("...and in the server COLLECTIONS", /"shiftNotes"\]/.test(SV));
+ok("the reason is recorded so nobody 'simplifies' it back", /would silently lose notes|whole-record last-write-wins/.test(SN));
+ok("each note carries its own id", /id: "sn_"/.test(SN));
+ok("notes are NOT stored on the timeclock entry", !/\.notes\s*=\s*\[/.test(TC));
+
+console.log("\n--- REQ: piecemeal — many notes per shift, in the order the work happened ---");
+{
+  const c = { D: () => ({ shiftNotes: [
+    { id: "a", entryId: "e1", ts: 300, text: "third" },
+    { id: "b", entryId: "e1", ts: 100, text: "first" },
+    { id: "c", entryId: "e1", ts: 200, text: "second" },
+    { id: "d", entryId: "e2", ts: 150, text: "other shift" },
+    { id: "e", entryId: "e1", ts: 400, text: "deleted", deleted: true }
+  ] }) };
+  const vm = require("vm"); vm.createContext(c);
+  vm.runInContext((SN.match(/function actShiftNotes\(\)[^\n]*\n/) || [""])[0]
+    + (SN.match(/function shiftNotesFor\(entryId\) \{[\s\S]*?\n\}/) || [""])[0]
+    + (SN.match(/function shiftNoteCount\(entryId\)[^\n]*\n/) || [""])[0]
+    + "\nthis.f=shiftNotesFor;this.n=shiftNoteCount;", c);
+  eq("three live notes on the shift", c.n("e1"), 3);
+  eq("...in chronological order", c.f("e1").map(n => n.text).join(","), "first,second,third");
+  ok("another shift's notes don't bleed in", !c.f("e1").some(n => n.text === "other shift"));
+  ok("a deleted note is excluded", !c.f("e1").some(n => n.text === "deleted"));
+  eq("a shift with no notes is empty, not an error", c.n("nope"), 0);
+  eq("no entryId yields nothing", c.f("").length, 0);
+}
+ok("the note timestamp is when the WORK happened, and is editable", /sn_ts.*datetime-local|type="datetime-local"/.test(SN) && /ts = tsV \? new Date\(tsV\)\.getTime\(\)/.test(SN));
+ok("notes surface on the OPEN shift card — the piecemeal capture point", /shiftNotesHTML\(open\.id/.test(TC));
+ok("a shift row shows its note count", /shiftNoteCount\(e\.id\)/.test(TC));
+
+console.log("\n--- REQ: vehicle tracking is OPTIONAL ---");
+ok("a no-vehicle shift role exists", /role === "none": no vehicle, no mileage/.test(TC));
+ok("...and carries no mileage", (TC.match(/role === "none": no vehicle, no mileage/g) || []).length >= 2);
+
+console.log("\n--- REQ: edit clock in/out whether clocked in or NOT ---");
+ok("the punch editor takes both times", /id="tc_p_in"/.test(TC) && /id="tc_p_out"/.test(TC));
+ok("an OPEN shift can be edited and stay open", /leave blank to keep it open/.test(TC));
+ok("clock-out must be after clock-in", /Clock-out must be after clock-in/.test(TC));
+ok("editing times never invents mileage", /Never invents or changes mileage — times only/.test(TC));
+
+console.log("\n--- REQ: clock in with NO job (Jamieson) — without breaking OBX job costing ---");
+ok("the core accepts an explicit noJob opt-in", /if \(!jobId && !\(opts && opts\.noJob\)\) return \{ ok: false, error: "no-job" \}/.test(TC));
+ok("it is a SEPARATE button, not a silent bypass", /tcClockInNoJob/.test(TC) && /Just track time \(no job\)/.test(TC));
+ok("...and the reason is recorded", /EXPLICIT opt-in from a separate button, never a silent bypass/.test(TC));
+ok("without the opt-in, a job is still required", /if \(!jobId && !_tcNoJob\)/.test(TC));
+
+console.log("\n--- REQ: date range on the report ---");
+{
+  const E = [
+    { id: "1", userId: "u1", clockIn: new Date(2026, 6, 15, 9).getTime(), clockOut: new Date(2026, 6, 15, 17).getTime() },
+    { id: "2", userId: "u1", clockIn: new Date(2026, 7, 3, 9).getTime(), clockOut: new Date(2026, 7, 3, 12).getTime() },
+    { id: "3", userId: "u2", clockIn: new Date(2026, 7, 4, 9).getTime(), clockOut: new Date(2026, 7, 4, 12).getTime() },
+    { id: "4", userId: "u1", clockIn: new Date(2026, 7, 9, 9).getTime(), clockOut: null },
+    { id: "5", userId: "u1", clockIn: new Date(2026, 7, 3, 9).getTime(), deleted: true }
+  ];
+  eq("a month range picks only that month", hx.hxFilter(E, { from: "2026-08-01", to: "2026-08-31" }, "").length, 3);
+  eq("...and July is excluded", hx.hxFilter(E, { from: "2026-08-01", to: "2026-08-31" }, "").filter(e => e.id === "1").length, 0);
+  eq("range is INCLUSIVE of both ends (1 live entry that day; the other is deleted)", hx.hxFilter(E, { from: "2026-08-03", to: "2026-08-03" }, "").length, 1);
+  eq("filtering by person works", hx.hxFilter(E, { from: "2026-08-01", to: "2026-08-31" }, "u1").length, 2);
+  eq("an OPEN shift is still included", hx.hxFilter(E, { from: "2026-08-01", to: "2026-08-31" }, "u1").filter(e => !e.clockOut).length, 1);
+  ok("a deleted entry never appears", !hx.hxFilter(E, {}, "").some(e => e.id === "5"));
+  eq("no range = everything live", hx.hxFilter(E, {}, "").length, 4);
+  /* a shift is counted on the day it STARTED — a night shift must not land in two periods */
+  const night = [{ id: "n", userId: "u1", clockIn: new Date(2026, 7, 31, 22).getTime(), clockOut: new Date(2026, 8, 1, 2).getTime() }];
+  eq("a night shift counts in the month it started", hx.hxFilter(night, { from: "2026-08-01", to: "2026-08-31" }, "").length, 1);
+  eq("...and NOT in the next month", hx.hxFilter(night, { from: "2026-09-01", to: "2026-09-30" }, "").length, 0);
+}
+console.log("\n--- presets are payroll-shaped ---");
+["week", "lastweek", "month", "lastmonth", "year"].forEach(k => {
+  const r = hx.hxPreset(k);
+  ok("preset '" + k + "' returns a range", !!r.from && !!r.to && r.from <= r.to, JSON.stringify(r));
+});
+eq("'all' means no bounds", JSON.stringify(hx.hxPreset("all")), JSON.stringify({ from: "", to: "" }));
+
+console.log("\n--- REQ: the CSV export ---");
+{
+  const rows = hx.hxRows([{ id: "e1", userId: "u1", userName: "Ray", jobId: "", vehicle: "F-150",
+    clockIn: new Date(2026, 7, 3, 9).getTime(), clockOut: new Date(2026, 7, 3, 12, 30).getTime(),
+    computedMiles: 12.34, milesConfirmed: true, startLat: 36.1, startLng: -75.7, endLat: 35.9, endLng: -75.6 }]);
+  const r = rows[0];
+  eq("one row per shift", rows.length, 1);
+  eq("hours are decimal, for payroll", r.Hours, "3.50");
+  eq("a no-job shift is labelled, not blank", r.Job, "(no job — time only)");
+  eq("mileage is costed", r["Mileage $"], "8.95");
+  eq("confirmed mileage is marked", r["Miles confirmed"], "yes");
+  ok("GPS start is exported", /36\.1, -75\.7/.test(r["GPS start"]));
+  ok("GPS end is exported", /35\.9, -75\.6/.test(r["GPS end"]));
+  ok("a MAP LINK is built from the GPS", /google\.com\/maps\/dir\/36\.1,-75\.7\/35\.9,-75\.6/.test(r.Map), r.Map);
+
+  const csv = hx.hxBuildCSV(rows);
+  const head = csv.split("\n")[0];
+  ["Date", "Person", "Job", "Hours", "Miles", "Notes", "GPS start", "Map"].forEach(c =>
+    ok("CSV header has '" + c + "'", head.indexOf(c) >= 0));
+  eq("header + one data row", csv.split("\n").length, 2);
+}
+console.log("\n--- CSV escaping (a note WILL contain a comma one day) ---");
+eq("a comma is quoted", hx.hxCsvCell("ran cable, then tested"), '"ran cable, then tested"');
+eq("a quote is doubled", hx.hxCsvCell('said "done"'), '"said ""done"""');
+eq("a newline is quoted", hx.hxCsvCell("line1\nline2"), '"line1\nline2"');
+eq("a plain value is untouched", hx.hxCsvCell("Ray"), "Ray");
+eq("null becomes empty", hx.hxCsvCell(null), "");
+ok("a note with a comma survives a round trip",
+  hx.hxBuildCSV([{ Date: "2026-08-03", Notes: "ran cable, tested AP" }]).indexOf('"ran cable, tested AP"') > 0);
+
+console.log("\n--- map link degrades safely ---");
+eq("no GPS at all -> no link", hx.hxMapLink({}), "");
+ok("start only -> a search link", /maps\/search/.test(hx.hxMapLink({ startLat: 1, startLng: 2 })));
+ok("start and end -> a directions link", /maps\/dir/.test(hx.hxMapLink({ startLat: 1, startLng: 2, endLat: 3, endLng: 4 })));
+
+console.log("\n--- the report actually uses the range (no silent all-time totals) ---");
+ok("the report scopes to the filtered set", /const _scope = \(typeof hxFilter === "function"/.test(TC));
+ok("...and totals come from that scope", /const all = _scope\.filter\(e => e\.clockOut\)/.test(TC));
+ok("the filter bar renders above the report", /let h = _bar \+/.test(TC));
+ok("the empty state says 'in this period', not 'ever'", /No time logged in this period/.test(TC));
+ok("it degrades gracefully if js/128 is absent", /\(typeof hxBarHTML === "function"\) \? hxBarHTML\(\) : ""/.test(TC));
+
+console.log("\n--- wiring ---");
+{
+  const SHELL = fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8");
+  ok("js/127 registered", SHELL.indexOf('src="js/127-shift-notes.js"') > 0);
+  ok("js/128 registered", SHELL.indexOf('src="js/128-hours-export.js"') > 0);
+}
+
+console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
+process.exit(fail ? 1 : 0);
