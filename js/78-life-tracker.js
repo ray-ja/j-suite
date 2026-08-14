@@ -190,6 +190,10 @@ function lifeRenderJournal(){
      nothing at all if the module isn't loaded, so this screen never depends on it. */
   h+=(typeof vjBarHTML==="function")?vjBarHTML():"";
   h+='<button class="btn ghost" style="width:100%;margin-bottom:10px" onclick="openLifeNote(null)">＋ Write one instead</button>';
+  /* OFFERS (js/132) render only when there is something to offer — silence is the normal state.
+     REMINDERS (js/133) sit under them so what's coming is visible without opening anything. */
+  h+=(typeof jaCardHTML==="function")?jaCardHTML():"";
+  h+=(typeof rmCardHTML==="function")?rmCardHTML():"";
   if(!notes.length){
     h+='<div class="empty"><div class="big">📓</div>Nothing here yet. Hit <b>Talk</b> and just say it — or write one instead.</div>';
   }else{
@@ -211,6 +215,8 @@ window.openLifeNote=function(id,presetDate){
     +'<label>Title (optional)</label><input id="ln_title" value="'+esc(n.title||"")+'" placeholder="A short title">'
     +'<label>Note</label><textarea id="ln_body" rows="9" placeholder="Write freely…">'+esc(n.body||"")+'</textarea>'
     +'<button class="btn acc" style="margin-top:12px" onclick="saveLifeNote(\''+n.id+'\','+isNew+')">Save</button>'
+    /* on demand only — a typed entry, or one written before js/132 existed. Never automatic on open. */
+    +((!isNew&&typeof jaRescan==="function")?'<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="jaRescan(\''+n.id+'\')">Look for anything to add</button>':"")
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delLifeNote(\''+n.id+'\')">Delete</button>')
   );
 };

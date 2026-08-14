@@ -18,7 +18,9 @@ const SV = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
 console.log("\n--- REQ: notes are their own records, not an array on the punch ---");
 ok("shiftNotes is a real synced collection in blank()", /shiftNotes:\[\]/.test(ST));
 ok("...backfilled on every org slab", (ST.match(/S\[b\]\.shiftNotes/g) || []).length >= 2);
-ok("...and in the server COLLECTIONS", /"shiftNotes"\]/.test(SV));
+/* membership, not position — this asserted shiftNotes was the LAST entry, so it went red the moment
+   another collection was appended after it. */
+ok("...and in the server COLLECTIONS", /const COLLECTIONS = \[[^\]]*"shiftNotes"/.test(SV));
 ok("the reason is recorded so nobody 'simplifies' it back", /would silently lose notes|whole-record last-write-wins/.test(SN));
 ok("each note carries its own id", /id: "sn_"/.test(SN));
 ok("notes are NOT stored on the timeclock entry", !/\.notes\s*=\s*\[/.test(TC));

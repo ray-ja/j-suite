@@ -296,6 +296,9 @@ function vjLand(localId, serverId, text) {
   if (typeof touch === "function") touch(n);
   d.lifeNotes.push(n);
   if (typeof save === "function") save();
+  /* SECOND PASS (js/132) — only after the entry is safely saved, and it can only ever offer. Venting
+     returns nothing and shows nothing; see the header of js/132 for why this is deliberately separate. */
+  if (typeof jaScan === "function") { try { jaScan(n.id, text); } catch (e) {} }
   /* local copy goes only now that the entry exists and is queued to sync */
   vjDrop(localId, function () { vjRefresh(); if (typeof render === "function") render(); });
 }

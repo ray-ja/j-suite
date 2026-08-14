@@ -74,7 +74,12 @@ console.log("\n--- ⭐ the journal must never reach a business context ---");
    ============================================================================================ */
 console.log("\n--- the recording survives every step ---");
 ok("each 5s slice is written to IndexedDB as it arrives", /rec\.ondataavailable[\s\S]{0,220}vjPut\("chunks"/.test(CL));
-ok("the local copy is deleted ONLY after the entry exists", /d\.lifeNotes\.push\(n\)[\s\S]{0,200}vjDrop\(localId/.test(CL));
+/* ORDER, not proximity — the earlier distance-bounded regex broke the moment a comment was added
+   between the two statements, while the property it was checking still held. */
+ok("the local copy is deleted ONLY after the entry exists",
+  CL.indexOf("d.lifeNotes.push(n)") > 0 && CL.indexOf("vjDrop(localId") > CL.indexOf("d.lifeNotes.push(n)"));
+ok("...and only after save() has queued it to sync",
+  CL.indexOf("vjDrop(localId") > CL.lastIndexOf("save();", CL.indexOf("vjDrop(localId")));
 ok("an upload failure returns the recording to 'pending', never a dead end", /state: "pending", error:/.test(CL));
 ok("...and the failure path is explained so nobody 'tidies' it away", /Never a dead end/.test(CL));
 ok("it retries when the network comes back", /addEventListener\("online"/.test(CL));
