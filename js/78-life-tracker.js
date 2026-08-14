@@ -186,14 +186,17 @@ function lifeRenderJournal(){
   var body=document.getElementById("life_body"); if(!body)return;
   var notes=actLifeNotes().sort(function(a,b){ return (b.date||"")<(a.date||"")?-1:((b.date||"")>(a.date||"")?1:(b.updatedAt||0)-(a.updatedAt||0)); });
   var h='<div class="secthd"><h2>Journal</h2><span class="ct">'+notes.length+' '+(notes.length===1?"entry":"entries")+'</span></div>';
-  h+='<button class="btn acc" style="width:100%;margin-bottom:10px" onclick="openLifeNote(null)">＋ New entry</button>';
+  /* VOICE FIRST (js/131) — talking is the low-friction way in, and the one Ray asked for. Degrades to
+     nothing at all if the module isn't loaded, so this screen never depends on it. */
+  h+=(typeof vjBarHTML==="function")?vjBarHTML():"";
+  h+='<button class="btn ghost" style="width:100%;margin-bottom:10px" onclick="openLifeNote(null)">＋ Write one instead</button>';
   if(!notes.length){
-    h+='<div class="empty"><div class="big">📓</div>Nothing written yet. Tap <b>New entry</b> for a free-form note — a thought, a plan, how the day went.</div>';
+    h+='<div class="empty"><div class="big">📓</div>Nothing here yet. Hit <b>Talk</b> and just say it — or write one instead.</div>';
   }else{
     h+='<div class="card" style="padding:6px 10px">'+notes.map(function(n){
       var preview=(n.body||"").replace(/\s+/g," ").trim();
       return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openLifeNote(\''+n.id+'\')">'
-        +'<div class="grow"><div class="nm">'+esc(n.title||preview.slice(0,40)||"(untitled)")+'</div>'
+        +'<div class="grow"><div class="nm">'+(n.voice?"🎙️ ":"")+esc(n.title||preview.slice(0,40)||"(untitled)")+'</div>'
         +'<div class="sub" style="white-space:normal">'+esc(fmtDate(n.date))+(preview?' · '+esc(preview.slice(0,80))+(preview.length>80?"…":""):"")+'</div></div></div>';
     }).join("")+'</div>';
   }

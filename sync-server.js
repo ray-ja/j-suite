@@ -2671,6 +2671,87 @@ function readBodyUtf8(req, limit, cb) {
   req.on("end", () => cb(Buffer.concat(chunks).toString("utf8")));
 }
 
+/* ---------- VOICE TRANSCRIPTION QUEUE ---------------------------------------------------------------
+   One GPU, so one transcription at a time — a queue rather than a spawn storm. Jobs are held in memory
+   for polling, but the ANSWER is written to uploads/<id>.txt, so a finished transcript survives a server
+   restart even though an in-flight one does not (the client can always retry; the audio is on disk).
+
+   THE VOCABULARY is what makes this accurate on Ray's entries specifically. Whisper accepts an
+   initial_prompt that biases spelling toward words you tell it to expect, so we hand it the proper nouns
+   out of the app's own records — the people in his personal org, org names, customers. Without it the
+   model writes "Twitty" for Twiddy and "Carola" for Corolla. Built fresh per job so it never goes stale.  */
+const VOICE_JOBS = new Map();
+let VOICE_BUSY = false;
+const VOICE_PENDING = [];
+
+function voiceAudioPath(id) {
+  if (!/^[a-f0-9]{4,24}$/.test(String(id || ""))) return "";
+  const UP = path.join(__dirname, "uploads");
+  for (const ext of ["webm", "ogg", "m4a", "mp4", "wav"]) {
+    const f = path.join(UP, id + "." + ext);
+    if (fs.existsSync(f)) return f;
+  }
+  return "";
+}
+
+/* proper nouns from the store, so names come back spelled right */
+function voiceVocab(org) {
+  const words = new Set();
+  try {
+    const store = loadStore();
+    ((store || {}).registry || []).forEach(r => { if (r && r.name) words.add(String(r.name)); });
+    const o = (org && store[org]) || {};
+    (((o.docs || []).find(d => d && d.id === "personalPeople" && !d.deleted) || {}).list || [])
+      .forEach(p => { if (p && p.name && !p.deleted) words.add(String(p.name)); });
+    (o.customers || []).slice(0, 60).forEach(c => { if (c && c.name && !c.deleted) words.add(String(c.name)); });
+  } catch (e) {}
+  const out = [];
+  words.forEach(w => { const s = w.trim(); if (s && s.length < 40) out.push(s); });
+  return out.slice(0, 60).join(", ");
+}
+
+function voiceQueue(id, file, org) {
+  VOICE_JOBS.set(id, { state: "working" });
+  VOICE_PENDING.push({ id: id, file: file, org: org });
+  voiceDrain();
+}
+
+function voiceDrain() {
+  if (VOICE_BUSY || !VOICE_PENDING.length) return;
+  VOICE_BUSY = true;
+  const job = VOICE_PENDING.shift();
+  const args = [path.join(__dirname, "transcribe.py"), job.file];
+  const vocab = voiceVocab(job.org);
+  if (vocab) { args.push("--vocab", vocab); }
+  let out = "", err = "";
+  let child;
+  try {
+    child = require("child_process").spawn("python3", args, { cwd: __dirname });
+  } catch (e) {
+    VOICE_JOBS.set(job.id, { state: "error", error: "could not start the transcriber" });
+    VOICE_BUSY = false; return voiceDrain();
+  }
+  /* a 20-minute entry is ~1 min on the GPU; 30 min is a hung process, not a slow one */
+  const killer = setTimeout(() => { try { child.kill("SIGKILL"); } catch (e) {} }, 30 * 60 * 1000);
+  child.stdout.on("data", d => { out += d; });
+  child.stderr.on("data", d => { err += d.toString().slice(0, 2000); });
+  child.on("error", () => {});
+  child.on("close", () => {
+    clearTimeout(killer);
+    let parsed = null;
+    try { parsed = JSON.parse(out.trim().split("\n").filter(Boolean).pop() || "null"); } catch (e) {}
+    if (parsed && typeof parsed.text === "string") {
+      VOICE_JOBS.set(job.id, { state: "done", text: parsed.text, words: parsed.words || 0, device: parsed.device || "" });
+      try { fs.writeFileSync(path.join(__dirname, "uploads", job.id + ".txt"), parsed.text); } catch (e) {}
+    } else {
+      const msg = (parsed && parsed.error) || err.trim().split("\n").pop() || "transcription failed";
+      VOICE_JOBS.set(job.id, { state: "error", error: String(msg).slice(0, 300) });
+    }
+    VOICE_BUSY = false;
+    voiceDrain();
+  });
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -3892,6 +3973,118 @@ const server = http.createServer((req, res) => {
       try { if (typeof pushNotifyOwner === "function") pushNotifyOwner(org, "New website lead", name + (d.service ? " — " + cut(d.service, 60) : "")); } catch (e) {}
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id }));
     });
+  }
+
+  /* ---------- VOICE JOURNAL INGEST + TRANSCRIPTION ---------------------------------------------------
+     Ray, 2026-08-13: "in the personal app i need a voice to text journaling feature. it has to be
+     accurate with the transcription. theres so much i need to get out."
+
+     Audio in, text out, entirely on this box — transcribe.py runs faster-whisper large-v3 on the 4090.
+     Nothing is sent to any API and it costs nothing per minute.
+
+       POST /api/voice/init   {mime,seconds}      -> {id}
+       POST /api/voice/chunk?id=..&n=..  <bytes>  -> {received}
+       POST /api/voice/done?id=..                 -> {id,bytes}   (queues transcription, returns at once)
+       GET  /api/voice/status?id=..               -> {state:"working"|"done"|"error", text}
+       POST /api/voice/retry?id=..                -> re-transcribe an existing recording
+
+     ⚠️ CHUNKS ARE ADDRESSED BY INDEX, each to its own `<id>.<n>.part` file, and assembled in order on
+     done. The older /api/video/chunk appends blindly, so a phone that drops signal and re-sends chunk
+     7 gets chunk 7 twice — its own comment promises idempotence it does not have. Here a re-send
+     overwrites, which is what makes this survive cellular. Losing a recording someone needed to make
+     is the one failure this feature cannot have.
+
+     `done` returns immediately rather than holding the request open for the length of the
+     transcription; the client polls status. Transcription is serialised through a one-at-a-time queue
+     because there is one GPU. The audio file is written to disk BEFORE any transcription is attempted,
+     so a transcription failure never costs the recording — it can always be retried. */
+  if (req.url.split("?")[0].startsWith("/api/voice/")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const UP = path.join(__dirname, "uploads"), TMP = path.join(UP, ".voice");
+    try { fs.mkdirSync(UP, { recursive: true }); fs.mkdirSync(TMP, { recursive: true }); } catch (e) {}
+    const act = req.url.split("?")[0].slice("/api/voice/".length);
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+    const cleanId = v => String(v || "").replace(/[^a-f0-9]/g, "").slice(0, 24);
+
+    if (req.method === "POST" && act === "init") {
+      return readBodyUtf8(req, 2e4, (body) => {
+        let p = {}; try { p = JSON.parse(body) || {}; } catch (e) { return J(400, { error: "bad json" }); }
+        const ext = /ogg/i.test(p.mime || "") ? "ogg" : /mp4|m4a|aac/i.test(p.mime || "") ? "m4a" : "webm";
+        const id = crypto.randomBytes(9).toString("hex");
+        try { fs.writeFileSync(path.join(TMP, id + ".meta"), JSON.stringify({ id, ext, started: Date.now() })); }
+        catch (e) { return J(500, { error: "could not open the upload" }); }
+        return J(200, { ok: true, id: id, ext: ext });
+      });
+    }
+
+    if (req.method === "POST" && act === "chunk") {
+      const id = cleanId(q.searchParams.get("id"));
+      const n = parseInt(q.searchParams.get("n"), 10);
+      if (!id || !fs.existsSync(path.join(TMP, id + ".meta"))) return J(404, { error: "unknown upload — start again" });
+      if (!(n >= 0 && n < 20000)) return J(400, { error: "bad chunk index" });
+      const bufs = []; let len = 0;
+      req.on("data", c => { bufs.push(c); len += c.length; if (len > 12e6) req.destroy(); });
+      req.on("end", () => {
+        try {
+          /* by INDEX, not append: a re-sent chunk overwrites instead of duplicating */
+          fs.writeFileSync(path.join(TMP, id + "." + n + ".part"), Buffer.concat(bufs));
+          return J(200, { ok: true, n: n, received: len });
+        } catch (e) { return J(500, { error: "write failed" }); }
+      });
+      req.on("error", () => {});
+      return;
+    }
+
+    if (req.method === "POST" && act === "done") {
+      const id = cleanId(q.searchParams.get("id"));
+      const mp = path.join(TMP, id + ".meta");
+      if (!id || !fs.existsSync(mp)) return J(404, { error: "unknown upload" });
+      let meta = {}; try { meta = JSON.parse(fs.readFileSync(mp, "utf8")); } catch (e) {}
+      const parts = fs.readdirSync(TMP)
+        .filter(f => f.startsWith(id + ".") && f.endsWith(".part"))
+        .map(f => ({ f: f, n: parseInt(f.slice(id.length + 1), 10) }))
+        .filter(x => x.n >= 0).sort((a, b) => a.n - b.n);
+      if (!parts.length) return J(400, { error: "nothing was uploaded" });
+      const dest = path.join(UP, id + "." + (meta.ext || "webm"));
+      try {
+        const out = fs.openSync(dest, "w");
+        parts.forEach(p => { fs.writeSync(out, fs.readFileSync(path.join(TMP, p.f))); });
+        fs.closeSync(out);
+        parts.forEach(p => { try { fs.unlinkSync(path.join(TMP, p.f)); } catch (e) {} });
+        try { fs.unlinkSync(mp); } catch (e) {}
+      } catch (e) { return J(500, { error: "could not finalise the recording" }); }
+      const bytes = fs.statSync(dest).size;
+      if (!bytes) { try { fs.unlinkSync(dest); } catch (e) {} return J(400, { error: "the recording was empty" }); }
+      voiceQueue(id, dest, String(q.searchParams.get("org") || ""));
+      return J(200, { ok: true, id: id, bytes: bytes });
+    }
+
+    if (req.method === "POST" && act === "retry") {
+      const id = cleanId(q.searchParams.get("id"));
+      const f = voiceAudioPath(id);
+      if (!f) return J(404, { error: "no recording with that id" });
+      VOICE_JOBS.delete(id);
+      try { fs.unlinkSync(path.join(UP, id + ".txt")); } catch (e) {}
+      voiceQueue(id, f, String(q.searchParams.get("org") || ""));
+      return J(200, { ok: true, id: id, state: "working" });
+    }
+
+    if (req.method === "GET" && act === "status") {
+      const id = cleanId(q.searchParams.get("id"));
+      if (!id) return J(400, { error: "no id" });
+      const job = VOICE_JOBS.get(id);
+      if (job) return J(200, job);
+      /* disk is the durable answer — an in-flight job is lost on restart, a finished one is not */
+      const txt = path.join(UP, id + ".txt");
+      if (fs.existsSync(txt)) {
+        try { return J(200, { state: "done", text: fs.readFileSync(txt, "utf8") }); } catch (e) {}
+      }
+      if (voiceAudioPath(id)) return J(200, { state: "idle" });   // audio exists, never transcribed
+      return J(404, { error: "unknown recording" });
+    }
+    return J(404, { error: "not found" });
   }
 
   if (req.method === "POST" && req.url.split("?")[0].startsWith("/api/video/")) {
