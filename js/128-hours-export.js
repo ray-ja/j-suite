@@ -88,9 +88,15 @@ function hxRows(entries) {
     return {
       "Date": hxISO(new Date(e.clockIn)),
       "Person": e.userName || ((typeof userName === "function") ? userName(e.userId) : "") || "",
-      "Job": e.jobId ? ((typeof tcJobTitle === "function") ? tcJobTitle(e.jobId) : e.jobId) : "(no job — time only)",
-      "Customer": (e.jobId && typeof tcJob === "function" && typeof custName === "function")
-                    ? (function () { var j = tcJob(e.jobId); return (j && j.customerId) ? custName(j.customerId) : ""; })() : "",
+      /* a no-job shift is no longer anonymous: it carries the customer it was for and what kind of work it
+         was, so "3 hours of routine maintenance for Mike Green" survives the export (Ray, 2026-08-14). */
+      "Job": e.jobId ? ((typeof tcJobTitle === "function") ? tcJobTitle(e.jobId) : e.jobId)
+                     : (e.workType || "(no job — time only)"),
+      "Customer": (function () {
+        var cid = (typeof tcEntryCustomerId === "function") ? tcEntryCustomerId(e)
+                : (e.customerId || (e.jobId && typeof tcJob === "function" ? ((tcJob(e.jobId) || {}).customerId || "") : ""));
+        return (cid && typeof custName === "function") ? custName(cid) : "";
+      })(),
       "Clock in": fmt(e.clockIn),
       "Clock out": e.clockOut ? fmt(e.clockOut) : "(still open)",
       "Hours": hrs ? hrs.toFixed(2) : "",

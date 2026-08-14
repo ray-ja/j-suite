@@ -56,7 +56,9 @@ function rToday(){
     } else {
       const _form=(typeof tcClockInFormHTML==="function")?tcClockInFormHTML(null):"";
       h+=`<div class="card" style="border-top:4px solid var(--accent)"><div class="nm" style="font-size:16px">⏱️ Clock in</div>`;
-      h+=_form?_form:`<div class="muted" style="margin-top:6px">No open jobs yet — add one to clock into.</div>`;
+      /* defensive only — js/38 now always renders a form ("no specific job" is a real choice), so this no
+         longer means "you have no jobs" and must not say so. */
+      h+=_form?_form:`<div class="muted" style="margin-top:6px">The clock-in form couldn't be built — reload the app.</div>`;
       // "＋ Add a job" → create it, then land on its page (which has the pre-scoped clock-in form) so a new job
       // flows straight into clocking in.
       h+=`<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="openQuickTask(function(id){ if(typeof openJobPage==='function') openJobPage(id); })">＋ Add a job to clock into</button>`;

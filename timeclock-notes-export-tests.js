@@ -62,9 +62,16 @@ ok("editing times never invents mileage", /Never invents or changes mileage — 
 
 console.log("\n--- REQ: clock in with NO job (Jamieson) — without breaking OBX job costing ---");
 ok("the core accepts an explicit noJob opt-in", /if \(!jobId && !\(opts && opts\.noJob\)\) return \{ ok: false, error: "no-job" \}/.test(TC));
-ok("it is a SEPARATE button, not a silent bypass", /tcClockInNoJob/.test(TC) && /Just track time \(no job\)/.test(TC));
+/* was: a separate "Just track time (no job)" button. That button is gone — "— No specific job —" is a real
+   option in the picker now, which is equally explicit AND lets you say who the time was for. */
+ok("it is an explicit CHOICE in the picker, not a silent bypass", /— No specific job —/.test(TC));
+ok("...and the programmatic entry point still exists", /tcClockInNoJob/.test(TC));
 ok("...and the reason is recorded", /EXPLICIT opt-in from a separate button, never a silent bypass/.test(TC));
-ok("without the opt-in, a job is still required", /if \(!jobId && !_tcNoJob\)/.test(TC));
+/* the FORM-level guard is intentionally gone (2026-08-14): picking "— No specific job —" is now a legitimate
+   choice, so rejecting an empty job there would block the thing Ray asked for. The guard that matters — the
+   one protecting PROGRAMMATIC callers from silently creating a jobless shift — is still in tcClockInWith,
+   and the form opts in only when there is genuinely no job. */
+ok("the form opts in explicitly, only when there is no job", /noJob: !jobId, jobId: jobId/.test(TC));
 
 console.log("\n--- REQ: date range on the report ---");
 {

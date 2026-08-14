@@ -75,6 +75,36 @@ function jobEstCrewHrs(j) { return Math.round(jobEstHrsEach(j) * jobEstCrew(j) *
 function jobClockedHrs(j) { if (!j) return 0; return Math.round((D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut).reduce((s, e) => s + Math.max(0, e.clockOut - e.clockIn), 0) / 3600000 * 10) / 10; }
 function tcJobTitle(id) { const j = tcJob(id); return j ? (j.title || "Job") : "—"; }
 
+/* WHAT A SHIFT WAS FOR, in one line — the label every screen should use.
+   Ray, 2026-08-14: "Sometimes it's just, like, routine stuff, routine maintenance kind of things… the most
+   important thing is that I can select a customer to clock into."
+   A shift is now one of three things, in falling order of specificity:
+     a JOB              -> the job's title (unchanged; job costing still keys off jobId)
+     a CUSTOMER + type  -> "Mike Green · Routine maintenance"   (no job record exists, and none should be
+                           invented — fake jobs would land in the Jobs list and skew every job report)
+     neither            -> "Time only"
+   tcJobTitle() is left alone on purpose: plenty of call sites mean "the job" specifically. */
+function tcEntryLabel(e) {
+  if (!e) return "—";
+  if (e.jobId) return tcJobTitle(e.jobId);   /* ← tcJobTitle, NOT tcEntryLabel: this is the recursion base case */
+  const cust = e.customerId ? ((typeof custName === "function") ? custName(e.customerId) : "") : "";
+  const wt = e.workType || "";
+  if (cust && cust !== "—") return cust + (wt ? " · " + wt : "");
+  return wt || "Time only";
+}
+/* the customer a shift belongs to, whether it came via a job or was picked directly */
+function tcEntryCustomerId(e) {
+  if (!e) return "";
+  if (e.customerId) return e.customerId;
+  const j = e.jobId ? tcJob(e.jobId) : null;
+  return (j && j.customerId) || "";
+}
+if (typeof window !== "undefined") { window.tcEntryLabel = tcEntryLabel; window.tcEntryCustomerId = tcEntryCustomerId; }
+
+/* the routine-work categories. Ray offered this himself as an alternative to a fake job — it is the
+   "permanent broad category" version, kept as a short preset list plus free text so it stays HIS words. */
+var TC_WORK_TYPES = ["Routine maintenance", "Site visit", "Estimate / walkthrough", "Shop / yard work", "Errand / supply run", "Admin"];
+
 /* ----- geometry + math ----- */
 function tcHaversine(a, b) {
   if (!a || !b || a.lat == null || b.lat == null) return 0;
@@ -288,6 +318,10 @@ window.tcClockInWith = async function (args) {
   const loc = (args.loc !== undefined) ? args.loc : await tcGetPos();
   const e = {
     id: uid(), jobId: jobId, userId: who.userId, userName: who.name,
+    /* WHO the time was for, when there's no job record (Ray, 2026-08-14: "the most important thing is that
+       I can select a customer to clock into"). On a job shift this stays empty and the customer is read off
+       the job, so there is exactly ONE source of truth per shift and they can never disagree. */
+    customerId: args.customerId || "", workType: args.workType || "",
     clockIn: now(), clockOut: null,
     inLoc: loc, outLoc: null, pings: [], stops: [],
     computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
@@ -296,7 +330,7 @@ window.tcClockInWith = async function (args) {
     vehicleId: veh.vehicleId, vehicle: veh.vehicle, vehicleOwnerId: veh.vehicleOwnerId, invVehicleId: veh.invVehicleId || null, rate: TC_RATE, updatedAt: now()
   };
   tcoll().push(e);
-  if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcJobTitle(jobId) + " · " + who.name + (loc ? "" : " (no GPS)"));
+  if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Clocked in — " + tcEntryLabel(e) + " · " + who.name + (loc ? "" : " (no GPS)"));
   // (Item 4A) clocking in AUTO-ADDS this clock-in's local day to the job's work days (Set-union, additive — it
   // GROWS j.workDays, never shrinks it). Reuses jobPageCommitDays (js/61) so the day-list + full editor stay in
   // sync. Idempotent: a no-op when the day is already a work day.
@@ -322,7 +356,11 @@ window.tcClockInNoJob = function () { _tcNoJob = true; try { window.tcClockIn();
 window.tcClockIn = async function () {
   if (_tcInBusy) return;   // ignore rapid re-taps while a clock-in save is already in flight
   const jobId = val("tc_job");
-  if (!jobId && !_tcNoJob) { alert("Pick the job you\u2019re working on, or use \u201cJust track time\u201d."); return; }
+  /* "\u2014 No specific job \u2014" is now a real choice in the picker, so an empty jobId is intentional and needs no
+     separate opt-in. _tcNoJob remains for the legacy button and for tcClockInWith's programmatic callers. */
+  const _cust = (typeof val === "function") ? (val("tc_cust") || "") : "";
+  const _wt = (typeof val === "function") ? (val("tc_worktype") || "") : "";
+  if (!jobId && _cust) { try { localStorage.setItem("tc_last_cust", _cust); } catch (e) {} }
   if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) { alert("⏳ This job is waiting on the customer's deposit — work can't start until it's received. (An owner marks the deposit received on the job page.)"); return; }
   const who = tcWho();
   if (tcOpenShift(who.userId)) { alert("You already have an open shift — clock out first."); render(); return; }
@@ -346,7 +384,7 @@ window.tcClockIn = async function () {
   const btn = document.getElementById("tc_inbtn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
   // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping (byte-identical)
-  await tcClockInWith({ noJob: _tcNoJob, jobId: jobId, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  await tcClockInWith({ noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
   render();
 };
 /* clock-out (and — when contJobId is given — the "close the old segment" half of Change Job, see below) share
@@ -403,7 +441,7 @@ window.tcClockOut = function (id, contJobId) {
   // typed one, else the GPS estimate + "odometer pending"). It NEVER blocks on the odometer or on GPS.
   modal(title, suggestHtml + `
     <div class="card" style="border-left:5px solid var(--accent);background:var(--soft);margin-bottom:12px">
-      <div class="sub" style="white-space:normal">You've been on <b>${esc(tcJobTitle(e.jobId))}</b> for <b>${tcFmtDur(now() - e.clockIn)}</b> in ${esc(e.vehicle || "the vehicle")}. Tap below and you're clocked out right away — the odometer is optional.</div>
+      <div class="sub" style="white-space:normal">You've been on <b>${esc(tcEntryLabel(e))}</b> for <b>${tcFmtDur(now() - e.clockIn)}</b> in ${esc(e.vehicle || "the vehicle")}. Tap below and you're clocked out right away — the odometer is optional.</div>
     </div>
     <button class="btn acc" style="width:100%;font-size:17px;padding:14px" onclick="tcClockOutNow('${id}')">✓ Clock out now</button>
     <label style="margin-top:16px">Add your ending odometer <span class="sub">(optional — you can add it later)</span></label>
@@ -437,7 +475,7 @@ window.tcClockOutNow = function (id) {
   touch(e); tcPingStop();
   if (typeof renderClockPill === "function") renderClockPill();   // OPTIMISTIC: flip the header pill to "clocked out" this instant
   const src = (odoEnd != null) ? "odometer" : "GPS";
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (" + src + ") — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi" + (odoEnd != null ? "" : " est") + " · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠" : ""));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (" + src + ") — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi" + (odoEnd != null ? "" : " est") + " · " + tcEntryLabel(e) + (e.milesFlag ? " ⚠" : ""));
   save();
   // best-effort out-location, fully non-blocking (mirrors tcFinishClockOut / tcClockOutWith) — never affects the clock-out
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
@@ -455,7 +493,7 @@ function tcClockedOutFlash(e) {
     const canOdo = (typeof tcCanEditEntry === "function") ? tcCanEditEntry(e) : true;
     modal("✓ You're clocked out", `
       <div class="card" style="border-left:5px solid var(--accent);background:var(--soft)">
-        <div class="nm" style="font-size:18px;white-space:normal">✓ Clocked out — ${esc(tcJobTitle(e.jobId))}</div>
+        <div class="nm" style="font-size:18px;white-space:normal">✓ Clocked out — ${esc(tcEntryLabel(e))}</div>
         <div class="sub" style="white-space:normal;margin-top:2px">${tcFmtDur((e.clockOut || now()) - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}</div>
       </div>
       ${sane ? `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${tcMiles(e)} mi is over ${TC_SANE_MAX_MILES} — flagged for the owner to review (it won't count as confirmed until they check it).</div></div>` : ""}
@@ -490,7 +528,7 @@ window.tcSaveEndOdo = function (id) {
     const v = tcVerify(e); e.milesFlag = (v && v.flag) ? v.kind : null;
   }
   touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added ending odometer " + o + " — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added ending odometer " + o + " — " + tcMiles(e) + " mi · " + tcEntryLabel(e));
   save(); if (typeof closeModal === "function") closeModal(); render();
 };
 /* Item 8 — the INFORMATIONAL route-estimate line inside the clock-out odometer modal. Shows the job's offline
@@ -525,7 +563,7 @@ window.tcHomeClockOut = function (id, atTs) {
   tcFinalizeSegment(e, odoEnd, atTs);
   e.clockOutSource = "home-gps";
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (home GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (home GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcEntryLabel(e));
   save(); render();
   // best-effort out-location, non-blocking (mirrors tcFinishClockOut) — never affects the chosen clock-out time
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
@@ -560,7 +598,7 @@ window.tcClockOutGps = function (id) {
   e.computedMiles = tcComputeMiles(e);
   e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; e.milesConfirmed = false;   // GPS estimate → owner still confirms
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out (GPS) — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcEntryLabel(e));
   save(); render();
   // cross-device: prefer a mobile-tagged fix (this capture, or the last foreground ping — which may be
   // from the OTHER device that actually clocked in) over a desktop one; never overwrite a better fix already set.
@@ -586,7 +624,7 @@ function tcClockOutWith(entryId, opts) {
   }
   tcFinalizeSegment(e, odoEnd);
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcEntryLabel(e) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
   save();
   // best-effort out-location, fully non-blocking — fills it in if/when GPS resolves; never affects the clock-out.
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
@@ -631,7 +669,7 @@ window.tcChangeJob = function (id) {
   const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
   const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
   modal("Change job", `
-    <p class="muted" style="margin-bottom:8px">Ends your time on <b>${esc(tcJobTitle(e.jobId))}</b> right now and starts a new segment on the job you pick — same vehicle, trailer, and role carry over, no re-entry.</p>
+    <p class="muted" style="margin-bottom:8px">Ends your time on <b>${esc(tcEntryLabel(e))}</b> right now and starts a new segment on the job you pick — same vehicle, trailer, and role carry over, no re-entry.</p>
     <label>Switch to</label>
     <select id="tc_changejob_sel">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>
     <button class="btn acc" style="margin-top:14px;width:100%" onclick="tcChangeJobPicked('${id}')">Continue</button>`);
@@ -654,7 +692,7 @@ window.tcFinishChangeJob = function (id, newJobId) {
   if (typeof closeModal === "function") closeModal();
   tcFinalizeSegment(e, odoEnd);
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcEntryLabel(e));
   tcOpenNewSegmentFrom(e, newJobId);
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
@@ -665,7 +703,7 @@ window.tcChangeJobGps = function (id, newJobId) {
   e.computedMiles = tcComputeMiles(e);
   e.miles = tcRound(e.computedMiles); e.milesSource = "gps"; e.milesConfirmed = false;
   touch(e); tcPingStop();
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job (GPS) — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Changed job (GPS) — closed " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi est · " + tcEntryLabel(e));
   tcOpenNewSegmentFrom(e, newJobId);
   try { tcGetPos().then(function (loc) { const chosen = tcFinalizeOutLoc(e, loc); if (chosen && chosen !== e.outLoc) { e.outLoc = chosen; e.computedMiles = tcComputeMiles(e); if (e.milesSource === "gps" && !e.milesConfirmed) e.miles = tcRound(e.computedMiles); touch(e); save(); } }).catch(function () {}); } catch (ex) {}
 };
@@ -841,9 +879,33 @@ function tcJobEstBox(jobId) {
 /* job <select> changed on the clock-in form → refresh the route-estimate box for the newly-picked job (no full
    re-render, so the role/vehicle/odometer the user already set survive). */
 window.tcJobPicked = function () {
+  const jid = (typeof val === "function") ? val("tc_job") : "";
+  /* swap the customer/work-type box in or out — a job already carries its customer, so asking again would
+     be a second source of truth for the same fact */
+  const nj = document.getElementById("tc_nojob_box");
+  if (nj) nj.outerHTML = tcNoJobBoxHTML(jid);
   const box = document.getElementById("tc_est_box"); if (!box) return;
-  box.outerHTML = tcJobEstBox((typeof val === "function") ? val("tc_job") : "");
+  box.outerHTML = tcJobEstBox(jid);
 };
+
+/* WHO the time is for, shown only when no job is selected. Both fields are optional: the point is that
+   clocking in NEVER blocks, and "Time only" stays a valid answer. */
+function tcNoJobBoxHTML(jobId) {
+  if (jobId) return `<div id="tc_nojob_box"></div>`;
+  const cs = ((typeof D === "function" ? (D().customers || []) : []))
+    .filter(c => c && !c.deleted)
+    .sort((a, b) => String(a.name || a.company || "").localeCompare(String(b.name || b.company || "")));
+  const last = (typeof localStorage !== "undefined" && localStorage.getItem("tc_last_cust")) || "";
+  return `<div id="tc_nojob_box">
+    <label style="margin-top:10px">Customer <span class="sub">· optional</span></label>
+    <select id="tc_cust"><option value="">— None (just my time) —</option>${cs.map(c =>
+      `<option value="${esc(c.id)}"${c.id === last ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select>
+    <label style="margin-top:10px">What kind of work? <span class="sub">· optional</span></label>
+    <select id="tc_worktype"><option value="">— Not set —</option>${TC_WORK_TYPES.map(w =>
+      `<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select>
+  </div>`;
+}
+if (typeof window !== "undefined") window.tcNoJobBoxHTML = tcNoJobBoxHTML;
 /* the role-specific detail block (re-rendered into #tc_role_detail when the role changes). jobId (optional) drives
    the informational route-estimate box in the driver branch. */
 function tcRoleDetail(role, defVehVal, driverId, jobId) {
@@ -1024,14 +1086,14 @@ window.tcAddStop = async function (id, presetName) {
   const loc = await tcGetPos();   // GPS-stamp the stop as it's added
   e.stops.push({ id: uid(), name: name, loc: loc, ts: now() });
   touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added stop “" + name + "” — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Added stop “" + name + "” — " + tcEntryLabel(e));
   save(); render();
 };
 window.tcDelStop = function (id, stopId) {
   const e = tcoll().find(x => x.id === id); if (!e || !Array.isArray(e.stops)) return;
   const s = e.stops.find(x => x && x.id === stopId); if (!s) return;
   s.deleted = true; touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Removed a stop — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Removed a stop — " + tcEntryLabel(e));
   save(); render();
 };
 /* quick-pick chips from saved places (Map pins) — distinct names, capped so the row stays mobile-friendly */
@@ -1097,7 +1159,7 @@ function tcSetStartOdo(entryId, miles) {
   e.odoStart = Math.max(0, o - accrued);
   e.odoStartEnteredAt = now(); e.odoStartReading = o; e.odoStartAccruedAtEntry = accrued;   // auditable provenance
   touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Entered start odometer " + o + (accrued > 0.3 ? " (anchored −" + accrued + " mi already driven)" : "") + " — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Entered start odometer " + o + (accrued > 0.3 ? " (anchored −" + accrued + " mi already driven)" : "") + " — " + tcEntryLabel(e));
   save();
   return { ok: true, entry: e };
 }
@@ -1127,7 +1189,7 @@ window.tcOpenEntry = function (id) {
   else if (v && !v.flag && odoM != null) flagHtml = `<div class="sub" style="margin-bottom:8px;color:var(--ok,#1a9a5a)">✓ Odometer ${odoM} mi matches the GPS path (${v.gps} mi) within tolerance.</div>`;
   const sane = tcSaneMiles(e);
   if (sane) flagHtml += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ <b>Implausible distance</b> — this shift's ${tcMiles(e)} mi is over the ${TC_SANE_MAX_MILES}-mi sanity ceiling for a local day. It won't count as confirmed until you check it. If it's a real long haul, adjust/confirm the miles below; otherwise fix the reading.</div></div>`;
-  modal("Time entry — " + esc(tcJobTitle(e.jobId)), `
+  modal("Time entry — " + esc(tcEntryLabel(e)), `
     <div class="card" style="padding:10px"><div class="nm" style="font-size:15px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}</div>
       <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur((e.clockOut || now()) - e.clockIn)} worked${e.clockOut ? "" : " · still open"}</div>
       ${odoM != null ? `<div class="sub">Odometer: <b>${e.odoStart}</b> → <b>${e.odoEnd}</b> = <b>${odoM} mi</b>${e.odoStartEnteredAt ? " (late-entered, GPS-anchored)" : ""}</div>` : ""}
@@ -1154,7 +1216,7 @@ window.tcSaveEntry = function (id) {
   e.riderRole = (veh.vehicleId || veh.vehicleOwnerId || veh.vehicle) ? "driver" : "none";
   e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
   touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcEntryLabel(e));
   save(); closeModal(); render();
 };
 window.tcDelEntry = function (id) {
@@ -1162,7 +1224,7 @@ window.tcDelEntry = function (id) {
   if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can delete it." : "You can only remove your own punches."); return; }
   if (!confirm("Delete this time entry?")) return;
   e.deleted = true; touch(e);
-  if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Deleted time entry — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Deleted time entry — " + tcEntryLabel(e));
   save(); closeModal(); render();
 };
 
@@ -1188,7 +1250,7 @@ window.tcEditPunch = function (id) {
   // owner/admin (manage-members tier) may add ANOTHER person who was on site for the same times — a passenger
   // entry (their TIME for pay, no duplicate mileage). Crew editing their own punch don't get this.
   const canAddPerson = owner || ((typeof canManageMembers === "function") && canManageMembers());
-  modal("Edit punch — " + esc(tcJobTitle(e.jobId)), `
+  modal("Edit punch — " + esc(tcEntryLabel(e)), `
     <p class="muted" style="margin-bottom:8px">${esc(nm)} · adjust the clock-in / clock-out times.</p>
     <label>Clock in</label>
     <input id="tc_p_in" type="datetime-local" value="${tcDatetimeLocal(e.clockIn)}">
@@ -1207,7 +1269,7 @@ window.tcSavePunch = function (id) {
   const outV = val("tc_p_out"); let outMs = null;
   if (outV) { outMs = new Date(outV).getTime(); if (!(outMs > inMs)) { alert("Clock-out must be after clock-in."); return; } }
   e.clockIn = inMs; e.clockOut = outMs; touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Edited punch times — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Edited punch times — " + tcEntryLabel(e));
   // grow the job's work days to include the (possibly moved) clock-in day — union only, never shrink
   try {
     const _jb = tcJob(e.jobId), _day = tcLocalDay(e.clockIn);
@@ -1220,7 +1282,7 @@ window.tcDelPunch = function (id) {
   if (!tcCanEditEntry(e)) { alert(e.milesConfirmed ? "This entry's mileage is confirmed — only the owner can remove it." : "You can only remove your own punches."); return; }
   if (!confirm("Remove this punch? The work day stays — only this time entry is deleted.")) return;
   e.deleted = true; touch(e);
-  if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Removed punch — " + tcJobTitle(e.jobId));
+  if (typeof logChange === "function") logChange("delete", "timeclock", e.id, "Removed punch — " + tcEntryLabel(e));
   save(); if (typeof closeModal === "function") closeModal(); render();
 };
 /* Does `userId` already have a (non-deleted) punch on the SAME job whose interval overlaps the source punch's?
@@ -1252,7 +1314,7 @@ window.tcAddToPunchPrompt = function (sourceId) {
   const nameOf = id => (typeof userName === "function" ? userName(id) : "") || "Crew";
   if (!elig.length) { alert("No one to add — everyone on this job already has an overlapping punch (or there's no other crew)."); return; }
   modal("Add someone to this punch", `
-    <p class="muted" style="margin-bottom:8px">Log the SAME hours for someone who rode along on <b>${esc(tcJobTitle(src.jobId))}</b> — same clock-in/out, no separate mileage (they rode with the driver, so their time counts for pay, not a duplicate trip).</p>
+    <p class="muted" style="margin-bottom:8px">Log the SAME hours for someone who rode along on <b>${esc(tcEntryLabel(src))}</b> — same clock-in/out, no separate mileage (they rode with the driver, so their time counts for pay, not a duplicate trip).</p>
     <label>Who was here</label>
     <select id="tc_addp_user">${elig.map(id => `<option value="${esc(id)}">${esc(nameOf(id))}</option>`).join("")}</select>
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="tcAddPersonToPunch('${src.id}', document.getElementById('tc_addp_user').value)">➕ Add — same hours, no mileage</button>`);
@@ -1294,7 +1356,7 @@ window.tcAddPersonToPunch = function (sourceId, userId) {
       } catch (ex) {}
     }
     if (typeof touch === "function") touch(e);
-    if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Added " + uname + " to a punch (same times, no mileage) — " + tcJobTitle(src.jobId));
+    if (typeof logChange === "function") logChange("create", "timeclock", e.id, "Added " + uname + " to a punch (same times, no mileage) — " + tcEntryLabel(src));
     if (typeof save === "function") save();
     if (typeof closeModal === "function") closeModal();
     if (typeof render === "function") render();
@@ -1516,7 +1578,7 @@ function tcRosterHTML() {
       h += `<div class="card">
         <div class="nm" style="font-size:16px;white-space:normal">${esc(nm)}</div>
         <div class="sub" style="white-space:normal">⏱ ${tcFmtDur(now() - (e.clockIn || now()))} · since ${tcHHMM(e.clockIn)}</div>
-        <div class="sub" style="white-space:normal">📋 ${esc(tcJobTitle(e.jobId))}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div>
+        <div class="sub" style="white-space:normal">📋 ${esc(tcEntryLabel(e))}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div>
         ${tcShiftVehLine(e)}
         ${tcWhereLine(e)}
         ${flags.length ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${flags.join("")}</div>` : ""}
@@ -1605,19 +1667,31 @@ function tcClockInFormHTML(preJobId) {
       const at = _onToday(a) ? 1 : 0, bt = _onToday(b) ? 1 : 0; if (at !== bt) return bt - at;   // today's work days first
       return (b.date || "") < (a.date || "") ? -1 : 1;
     });
-    if (!jobs.length) return "";
+    /* ⚠️ THIS USED TO `return ""` WHEN THERE WERE NO OPEN JOBS, and both callers then rendered "No open jobs
+       to clock in against — schedule a job first." The no-job button lived INSIDE this form, so the one escape
+       hatch vanished exactly when it was the only thing that applied. Ray hit this on routine work with
+       nothing scheduled: "I wanna be able to clock in without assigning a specific job."
+       The form now always renders; with no jobs it simply opens on "no specific job". */
     const mine = jobs.filter(j => (j.crew || []).indexOf(who.userId) >= 0);
-    jobId = (mine[0] || jobs[0]).id;   // the option the <select> starts on → the route estimate matches it
+    jobId = jobs.length ? (mine[0] || jobs[0]).id : "";
     const opt = j => { const wd = (typeof jobWorkDays === "function") ? jobWorkDays(j) : (j.date ? [j.date] : []); const multi = wd.length > 1 ? ` · ${wd.length}-day${_onToday(j) ? ", today" : ""}` : ""; return `<option value="${j.id}">${esc(j.title || "Job")}${j.date ? " · " + fmtDate(j.date) : ""}${multi}${j.customerId ? " · " + esc(custName(j.customerId)) : ""}</option>`; };
-    jobControl = `<label>Job</label>
-      <select id="tc_job" onchange="tcJobPicked()">${mine.length ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup>` : jobs.map(opt).join("")}</select>`;
+    const noJobOpt = `<option value="">— No specific job —</option>`;
+    jobControl = `<label>What are you working on?</label>
+      <select id="tc_job" onchange="tcJobPicked()">${jobs.length
+        ? (mine.length
+            ? `<optgroup label="Your jobs">${mine.map(opt).join("")}</optgroup><optgroup label="All open jobs">${jobs.filter(j => mine.indexOf(j) < 0).map(opt).join("")}</optgroup><optgroup label="No job">${noJobOpt}</optgroup>`
+            : `${jobs.map(opt).join("")}<optgroup label="No job">${noJobOpt}</optgroup>`)
+        : noJobOpt}</select>
+      ${tcNoJobBoxHTML(jobId)}`;
   }
   return `${jobControl}
     <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
     ${tcRolePicker(_role)}
     ${tcRoleDetail(_role, _defVal, who.userId, jobId)}
-    <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>
-    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="tcClockInNoJob()">⏱ Just track time (no job)</button>`;
+    <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>`;
+  /* the old "⏱ Just track time (no job)" button is gone: "— No specific job —" is now a real option in the
+     picker above, and unlike the button it lets you say WHO the time was for. tcClockInNoJob() is kept as a
+     programmatic entry point. */
 }
 
 function tcClockHTML() {
@@ -1646,7 +1720,9 @@ function tcClockHTML() {
   } else {
     const form = tcClockInFormHTML(null);
     if (!form) {
-      h += `<div class="card"><div class="muted">No open jobs to clock in against. <a href="#" onclick="TAB='schedule';render();return false" style="color:var(--brand-text);font-weight:700">Schedule a job</a> first.</div></div>`;
+      /* defensive only — the form no longer returns "" for want of open jobs, because "no specific job" is
+         a real choice now. If this ever shows again it is a genuine fault, so it must not blame the schedule. */
+      h += `<div class="card"><div class="muted">The clock-in form couldn't be built. Reload the app — and if it keeps happening, that's a bug, not something you did.</div></div>`;
     } else {
       h += `<div class="card" style="border-top:4px solid var(--accent)">
         <div class="nm" style="font-size:16px">Clock in — ${esc(who.name)}</div>
@@ -1659,7 +1735,7 @@ function tcClockHTML() {
   const recent = actTC().filter(e => e.userId === who.userId && e.clockOut).sort((a, b) => b.clockIn - a.clockIn).slice(0, 10);
   if (recent.length) {
     h += `<div class="secthd"><h2>Your recent shifts</h2><span class="ct">${recent.length}</span></div><div class="card">` +
-      recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcJobTitle(e.jobId))}</div>
+      recent.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(tcEntryLabel(e))}</div>
         <div class="sub">${(typeof shiftNoteCount==="function"&&shiftNoteCount(e.id))?`📝 ${shiftNoteCount(e.id)} · `:""}${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi${e.milesConfirmed ? "" : " est"}${e.riderRole === "passenger" ? " · 🧍 passenger" : (e.vehicle ? " · 🚚 " + esc(e.vehicle) + (e.trailerId ? " + 🚛" : "") : "")}${e.milesFlag ? " · ⚠" : ""}${tcSaneMiles(e) ? " · ⚠ review" : ""}${e.odoPending ? " · 🕑 odo" : ""}</div>${e.odoPending && (typeof tcCanEditEntry === "function" && tcCanEditEntry(e)) ? `<div class="sub" style="margin-top:2px"><a href="#" onclick="tcAddEndOdo('${e.id}');return false" style="color:var(--brand-text);font-weight:700">＋ Add ending odometer</a></div>` : ""}</div>${tcSourceBadge(e)}</div>`).join("") + `</div>`;
   }
   return h;
@@ -1685,15 +1761,25 @@ function tcReportHTML() {
   const review = all.filter(e => tcSaneMiles(e)).length;
   if (review) h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${review} shift${review === 1 ? "" : "s"} with an <b>implausible distance</b> (over ${TC_SANE_MAX_MILES} mi) — tap to review before it counts. A real cross-country haul is rare; a 2,000-mi local day is almost always bad GPS/odometer.</div></div>`;
   if (open.length) h += `<div class="secthd"><h2>On the clock now</h2><span class="ct">${open.length}</span></div><div class="card">` +
-    open.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} · ${esc(tcJobTitle(e.jobId))}</div><div class="sub">since ${new Date(e.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${tcRound(e.computedMiles)} mi est</div></div></div>`).join("") + `</div>`;
+    open.map(e => `<div class="li"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} · ${esc(tcEntryLabel(e))}</div><div class="sub">since ${new Date(e.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${tcRound(e.computedMiles)} mi est</div></div></div>`).join("") + `</div>`;
 
-  // group by job
-  const byJob = {}; all.forEach(e => { (byJob[e.jobId] = byJob[e.jobId] || []).push(e); });
+  /* GROUP BY WHAT THE TIME WAS FOR, not strictly by job id. Keying on e.jobId alone collapsed every
+     no-job shift into one nameless "—" bucket, which is exactly where routine customer work would land.
+     The key is the job id when there is one, else the customer (so a customer's routine hours add up
+     across days), else a single "time only" bucket. */
+  const byJob = {};
+  all.forEach(e => {
+    const k = e.jobId ? e.jobId : (e.customerId ? "cust:" + e.customerId : "none");
+    (byJob[k] = byJob[k] || []).push(e);
+  });
   h += `<div class="secthd"><h2>By job</h2></div>`;
   Object.keys(byJob).forEach(jid => {
     const es = byJob[jid], jh = es.reduce((s, e) => s + tcHours(e), 0), jm = es.reduce((s, e) => s + tcMiles(e), 0);
     const j = tcJob(jid);
-    h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(tcJobTitle(jid))}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${j && j.customerId ? " · " + esc(custName(j.customerId)) : ""}</div></div></div>` +
+    const _custId = (typeof tcEntryCustomerId === "function") ? tcEntryCustomerId(es[0]) : (j && j.customerId);
+    const _head = j ? tcJobTitle(jid)
+      : (jid.indexOf("cust:") === 0 ? custName(jid.slice(5)) + " · no job" : "Time only (no job)");
+    h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(_head)}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${(j && _custId) ? " · " + esc(custName(_custId)) : ""}</div></div></div>` +
       es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}${tcSaneMiles(e) ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ needs review</span>` : ""}${e.odoPending ? ` <span class="badge" style="background:#E1A100;color:#fff">🕑 odo pending</span>` : ""}</div>
         <div class="sub">${(typeof shiftNoteCount==="function"&&shiftNoteCount(e.id))?`📝 ${shiftNoteCount(e.id)} · `:""}${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div></div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
   });
