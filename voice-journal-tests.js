@@ -125,12 +125,23 @@ ok("long pauses become paragraph breaks", /s\["start"\] - prev_end > 2\.0/.test(
    PURE HELPERS
    ============================================================================================ */
 console.log("\n--- title + clock ---");
-eq("a title is the first seven words", vj.vjTitle("today was long and I did not sleep at all really"), "today was long and I did not…");
+/* the title is the first SENTENCE now, not the first seven words — word-cutting speech produced
+   mid-sentence fragments ("so today was kind of a…") that read like a rendering glitch. */
+eq("a title is the first sentence", vj.vjTitle("So today was kind of a mess. Chase showed up late again."), "So today was kind of a mess.");
+{
+  const src = "today was long and I did not sleep at all really and it went on";
+  const got = vj.vjTitle(src);
+  eq("no sentence break in range falls back to a word cut", got, "today was long and I did not sleep at all really and it…");
+  /* the real property: whatever it kept is a whole-word prefix of the source, so no word is left in
+     half. (An earlier regex here flagged any short final word, which was wrong — "it…" is a clean cut.) */
+  const kept = got.replace(/…$/, "");
+  ok("...and the cut lands on a word boundary", src.indexOf(kept) === 0 && (src[kept.length] === " " || src.length === kept.length), kept);
+}
 eq("a short entry needs no ellipsis", vj.vjTitle("short one"), "short one");
 eq("empty text yields no title", vj.vjTitle(""), "");
 eq("null is safe", vj.vjTitle(null), "");
 eq("newlines collapse", vj.vjTitle("one\n\ntwo three"), "one two three");
-ok("a very long single word is truncated", vj.vjTitle("z".repeat(200)).length <= 60, vj.vjTitle("z".repeat(200)).length);
+ok("a very long single word is truncated", vj.vjTitle("z".repeat(200)).length <= 61, vj.vjTitle("z".repeat(200)).length);
 eq("clock formats mm:ss", vj.vjClock(75), "1:15");
 eq("...pads seconds", vj.vjClock(65), "1:05");
 eq("...zero", vj.vjClock(0), "0:00");

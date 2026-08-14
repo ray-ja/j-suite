@@ -195,6 +195,15 @@
   .msg-meta{font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:2px}
   .msgrow.me .msg-meta{color:rgba(255,255,255,.85)}
   .msg-text{white-space:pre-wrap;overflow-wrap:anywhere}
+  /* PROSE — long-form text meant to be READ, not skimmed or edited (journal entries, especially spoken
+     ones, which run to thousands of words). The app's default 16px/1.5 is tuned for dense operational
+     lists; a wall of transcript needs more air, a longer line-height and paragraph separation, or it is
+     genuinely unreadable on a phone. pre-wrap keeps the paragraph breaks transcribe.py inserts at pauses. */
+  .prose{white-space:pre-wrap;overflow-wrap:anywhere;font-size:17px;line-height:1.72;letter-spacing:-.003em;color:var(--ink)}
+  .prose+.prose{margin-top:1em}
+  /* a 2-3 line snippet in a list: wraps, then cuts with an ellipsis instead of running off the row */
+  .snip{color:var(--muted);font-size:13.5px;line-height:1.5;margin-top:3px;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .snip.two{-webkit-line-clamp:2}
   .msg-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .msg-atts img{max-width:180px;max-height:180px;border-radius:8px;border:1px solid var(--line);display:block}
   .msg-del{background:none;border:none;color:var(--danger);opacity:.45;cursor:pointer;font-size:14px;padding:2px;align-self:center}

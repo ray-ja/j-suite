@@ -38,12 +38,19 @@ function vjClock(s) {
   var m = Math.floor(s / 60);
   return m + ":" + String(s % 60).padStart(2, "0");
 }
-/* first few words become the title — no AI, no privacy cost, and he can rename it */
+/* THE FIRST SENTENCE becomes the title — no AI, no privacy cost, and he can rename it.
+   It used to be the first seven words, which on speech reliably produced a mid-sentence fragment
+   ("so today was kind of a…") that read like a rendering glitch. A sentence, even a rambling one, reads
+   as a sentence. Falls back to a word cut only when the entry has no sentence break in range. */
 function vjTitle(text) {
-  var w = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
-  if (!w.length) return "";
-  var t = w.slice(0, 7).join(" ");
-  return t.length > 60 ? t.slice(0, 57) + "…" : t + (w.length > 7 ? "…" : "");
+  var s = String(text || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  var m = /^(.{10,80}?[.!?])(\s|$)/.exec(s);
+  if (m) return m[1].length > 80 ? m[1].slice(0, 77) + "…" : m[1];
+  if (s.length <= 60) return s;
+  var cut = s.slice(0, 60);
+  var sp = cut.lastIndexOf(" ");
+  return (sp > 20 ? cut.slice(0, sp) : cut) + "…";
 }
 
 /* ---------- IndexedDB: the local safety net ---------- */

@@ -182,9 +182,72 @@ function lifeStreak(trackerId,endDate){
 }
 
 /* ---------- JOURNAL — free-form dated notes ---------- */
+/* ---------- READING an entry -------------------------------------------------------------------------
+   Ray, 2026-08-14: "the journal isnt very readable."
+
+   He was right, and the cause was structural: the only way to open an entry was the EDIT modal, so reading
+   happened inside a <textarea rows="9">. That was fine when entries were typed one-liners. A spoken entry
+   runs to thousands of words, and a phone-sized edit box is the worst possible surface for it — no
+   paragraphs, no line-height, nine lines at a time.
+
+   So reading and editing are now separate. This is a full-width reading view: real prose type (.prose in
+   app.css), the paragraph breaks transcribe.py inserts at natural pauses, and no form controls in the way.
+   Editing is one tap from here and still uses the old modal, which is the right shape for editing. */
+var LIFE_NOTE = "";      // id of the entry being READ ("" = the list)
+
+function lifeWordCount(s){ return String(s||"").trim().split(/\s+/).filter(Boolean).length; }
+/* how long it takes to read, which is the useful signal on a list of transcripts — 200wpm, floor of 1 */
+function lifeReadMins(s){ return Math.max(1, Math.round(lifeWordCount(s)/200)); }
+function lifeLenLabel(s){
+  var w=lifeWordCount(s);
+  if(!w) return "";
+  if(w<60) return w+" words";
+  return w.toLocaleString()+" words · "+lifeReadMins(s)+" min read";
+}
+/* a heading for an untitled entry: the first SENTENCE, not the first N words. "so today was kind of a…"
+   is what word-cutting produces on speech, and it reads like a glitch. */
+function lifeAutoHead(body){
+  var s=String(body||"").replace(/\s+/g," ").trim();
+  if(!s) return "";
+  var m=/^(.{10,90}?[.!?])(\s|$)/.exec(s);
+  var t=m?m[1]:s.slice(0,70)+(s.length>70?"…":"");
+  return t.length>90?t.slice(0,87)+"…":t;
+}
+if(typeof window!=="undefined"){
+  window.lifeOpenNote=function(id){ LIFE_NOTE=id||""; if(typeof render==="function")render(); };
+  window.lifeCloseNote=function(){ LIFE_NOTE=""; if(typeof render==="function")render(); };
+  window.lifeWordCount=lifeWordCount; window.lifeAutoHead=lifeAutoHead; window.lifeLenLabel=lifeLenLabel;
+}
+
+function lifeRenderRead(n){
+  var body=document.getElementById("life_body"); if(!body)return;
+  var when=(typeof fmtDate==="function")?fmtDate(n.date):(n.date||"");
+  var dow=(typeof DOW!=="undefined"&&typeof dowOf==="function"&&n.date)?DOW[dowOf(n.date)]+" · ":"";
+  var len=lifeLenLabel(n.body);
+  var h='<div class="row" style="gap:8px;align-items:center;margin-bottom:10px">'
+    +'<button class="btn ghost sm" style="flex:0 0 auto" onclick="lifeCloseNote()">‹ Journal</button>'
+    +'<div class="grow"></div>'
+    +'<button class="btn ghost sm" style="flex:0 0 auto" onclick="openLifeNote(\''+n.id+'\')">✎ Edit</button></div>';
+  h+='<div class="card">'
+    +'<div class="sub" style="white-space:normal">'+(n.voice?"🎙️ ":"")+esc(dow+when)+(len?' · '+esc(len):'')+'</div>'
+    +(n.title?'<div style="font-weight:800;font-size:19px;line-height:1.3;margin:8px 0 2px">'+esc(n.title)+'</div>':'')
+    +'<div class="prose" style="margin-top:12px">'+esc(n.body||"")+'</div>'
+    +'</div>';
+  /* the offers this entry produced, if any — read it, then decide what to do about it */
+  if(typeof jaCardHTML==="function")h+=jaCardHTML();
+  h+='<button class="btn ghost sm" style="width:100%;margin-top:10px" onclick="lifeCloseNote()">‹ Back to journal</button>';
+  body.innerHTML=h;
+}
+
 function lifeRenderJournal(){
   var body=document.getElementById("life_body"); if(!body)return;
   var notes=actLifeNotes().sort(function(a,b){ return (b.date||"")<(a.date||"")?-1:((b.date||"")>(a.date||"")?1:(b.updatedAt||0)-(a.updatedAt||0)); });
+  /* reading one entry takes over the whole screen — a long transcript needs the width */
+  if(LIFE_NOTE){
+    var open=notes.find(function(x){return x.id===LIFE_NOTE;});
+    if(open)return lifeRenderRead(open);
+    LIFE_NOTE="";   // it was deleted out from under us
+  }
   var h='<div class="secthd"><h2>Journal</h2><span class="ct">'+notes.length+' '+(notes.length===1?"entry":"entries")+'</span></div>';
   /* VOICE FIRST (js/131) — talking is the low-friction way in, and the one Ray asked for. Degrades to
      nothing at all if the module isn't loaded, so this screen never depends on it. */
@@ -197,12 +260,32 @@ function lifeRenderJournal(){
   if(!notes.length){
     h+='<div class="empty"><div class="big">📓</div>Nothing here yet. Hit <b>Talk</b> and just say it — or write one instead.</div>';
   }else{
-    h+='<div class="card" style="padding:6px 10px">'+notes.map(function(n){
+    /* A JOURNAL IS NAVIGATED BY DATE, so the date is the heading — not a title cut out of the middle of a
+       spoken sentence. Under it, three wrapped lines of the actual entry (.snip), which tells you what it
+       was far better than 80 characters running off the side of the row. Grouped by month so a year of
+       entries doesn't read as one undifferentiated wall. */
+    var curMonth="";
+    h+=notes.map(function(n){
       var preview=(n.body||"").replace(/\s+/g," ").trim();
-      return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openLifeNote(\''+n.id+'\')">'
-        +'<div class="grow"><div class="nm">'+(n.voice?"🎙️ ":"")+esc(n.title||preview.slice(0,40)||"(untitled)")+'</div>'
-        +'<div class="sub" style="white-space:normal">'+esc(fmtDate(n.date))+(preview?' · '+esc(preview.slice(0,80))+(preview.length>80?"…":""):"")+'</div></div></div>';
-    }).join("")+'</div>';
+      var mk=(n.date||"").slice(0,7);
+      var head="";
+      if(mk&&mk!==curMonth){
+        curMonth=mk;
+        var d=new Date(mk+"-01T12:00:00");
+        var label=isNaN(d.getTime())?mk:d.toLocaleDateString([], {month:"long", year:"numeric"});
+        head='<div class="secthd" style="margin-top:14px"><h2 style="font-size:14px;color:var(--muted)">'+esc(label)+'</h2></div>';
+      }
+      var dow=(typeof DOW!=="undefined"&&typeof dowOf==="function"&&n.date)?DOW[dowOf(n.date)]+" · ":"";
+      var len=lifeLenLabel(n.body);
+      return head+'<div class="card" style="cursor:pointer;margin-bottom:8px" onclick="lifeOpenNote(\''+n.id+'\')">'
+        +'<div class="row" style="align-items:baseline;gap:6px">'
+        +'<div class="nm grow" style="font-size:15px">'+(n.voice?"🎙️ ":"")+esc(dow+((typeof fmtDate==="function")?fmtDate(n.date):(n.date||"")))+'</div>'
+        +(len?'<div class="sub" style="flex:0 0 auto;font-size:12px">'+esc(len)+'</div>':'')
+        +'</div>'
+        +(n.title?'<div style="font-weight:700;font-size:14.5px;margin-top:4px;line-height:1.35">'+esc(n.title)+'</div>':'')
+        +(preview?'<div class="snip'+(n.title?' two':'')+'">'+esc(preview.slice(0,320))+'</div>':'')
+        +'</div>';
+    }).join("");
   }
   body.innerHTML=h;
 }
@@ -213,7 +296,9 @@ window.openLifeNote=function(id,presetDate){
   modal(isNew?"New journal entry":"Journal entry",''
     +'<label>Date</label><input id="ln_date" type="date" value="'+(n.date||today())+'">'
     +'<label>Title (optional)</label><input id="ln_title" value="'+esc(n.title||"")+'" placeholder="A short title">'
-    +'<label>Note</label><textarea id="ln_body" rows="9" placeholder="Write freely…">'+esc(n.body||"")+'</textarea>'
+    /* taller and looser than the app's default input: this box can hold a 3,000-word spoken entry, and
+       nine cramped rows was most of why the journal read badly. Reading now happens in lifeRenderRead(). */
+    +'<label>Note</label><textarea id="ln_body" rows="16" style="line-height:1.6;font-size:16.5px" placeholder="Write freely…">'+esc(n.body||"")+'</textarea>'
     +'<button class="btn acc" style="margin-top:12px" onclick="saveLifeNote(\''+n.id+'\','+isNew+')">Save</button>'
     /* on demand only — a typed entry, or one written before js/132 existed. Never automatic on open. */
     +((!isNew&&typeof jaRescan==="function")?'<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="jaRescan(\''+n.id+'\')">Look for anything to add</button>':"")
@@ -232,7 +317,9 @@ window.saveLifeNote=function(id,isNew){
 window.delLifeNote=function(id){
   if(!confirm("Delete this entry?"))return;
   var n=actLifeNotes().find(function(x){return x.id===id;}); if(!n)return;
-  n.deleted=true; touch(n); save(); closeModal(); render();
+  n.deleted=true; touch(n); save(); closeModal();
+  if(LIFE_NOTE===id)LIFE_NOTE="";   // don't strand the reader on an entry that no longer exists
+  render();
 };
 
 /* ---------- TRACKERS — define what to track + see history ---------- */
