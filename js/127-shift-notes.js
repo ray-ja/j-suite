@@ -26,6 +26,17 @@ function shiftNotesFor(entryId) {
 }
 function shiftNoteCount(entryId) { return shiftNotesFor(entryId).length; }
 
+/* THE PUNCH DESCRIPTION — what this shift was, in one line, in Ray's own words.
+   Ray, 2026-08-19: "it should show in the punch descriptions on invoices and such and timesheets."
+   The notes ARE the description of the work: a punch that says "3.5 hrs" tells a customer nothing, and
+   "Ran cable to the second-floor AP · Swapped the failed switch · Tested both APs" tells them everything.
+   One place builds this string so the timesheet, the CSV export and any future invoice line all read
+   identically — a customer and a payroll report should never see two different accounts of one shift. */
+function shiftPunchDesc(entryId, sep) {
+  return shiftNotesFor(entryId).map(function (n) { return String(n.text || "").trim(); })
+    .filter(Boolean).join(sep || " · ");
+}
+
 function snWho() {
   var u = (typeof curUser === "function") ? curUser() : null;
   return { userId: (u && u.id) || "", userName: (u && u.username) || "" };
@@ -44,9 +55,16 @@ function snDtLocal(ms) {
 /* ---- the running list, rendered under a punch ---- */
 function shiftNotesHTML(entryId, opts) {
   opts = opts || {};
-  var list = shiftNotesFor(entryId);
+  var all = shiftNotesFor(entryId);
+  /* opts.max — show only the most recent N (Today's card, where this sits under a live shift and a
+     ten-note day would push everything else off the screen). The older ones are counted, never hidden
+     silently. Omit max and you get the full list, which is what the Time tab wants. */
+  var max = +opts.max || 0;
+  var hidden = (max && all.length > max) ? (all.length - max) : 0;
+  var list = hidden ? all.slice(-max) : all;
   var canEdit = opts.canEdit !== false;
   var h = "";
+  if (hidden) h += '<div class="sub" style="padding:2px 0 4px">＋ ' + hidden + ' earlier note' + (hidden === 1 ? "" : "s") + '</div>';
   if (list.length) {
     h += '<div style="border-left:2px solid var(--line);margin:6px 0 4px;padding-left:10px">';
     list.forEach(function (n) {
@@ -124,8 +142,9 @@ if (typeof window !== "undefined") {
   window.actShiftNotes = actShiftNotes;
   window.shiftNotesFor = shiftNotesFor;
   window.shiftNoteCount = shiftNoteCount;
+  window.shiftPunchDesc = shiftPunchDesc;
   window.shiftNotesHTML = shiftNotesHTML;
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { shiftNotesFor: shiftNotesFor, shiftNoteCount: shiftNoteCount };
+  module.exports = { shiftNotesFor: shiftNotesFor, shiftNoteCount: shiftNoteCount, shiftPunchDesc: shiftPunchDesc };
 }

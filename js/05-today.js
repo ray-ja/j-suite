@@ -52,7 +52,15 @@ function rToday(){
   if(me && todayHas("time")){
     const open=(typeof tcMyOpen==="function")?tcMyOpen():null;
     if(open){ const oj=actJ().find(x=>x.id===open.jobId); const since=new Date(open.clockIn).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-      h+=`<div class="card" style="border-left:5px solid var(--accent)"><div class="row"><div class="grow"><div class="nm">⏱️ Clocked in${oj?` · ${esc(oj.title||"job")}`:""}</div><div class="sub">since ${since}</div></div><button class="btn danger sm" onclick="tcClockOut('${open.id}')">Clock out</button></div></div>`;
+      /* SHIFT NOTES, RIGHT HERE (Ray, 2026-08-19: "I need a spot to add notes about the shift, right there
+         easy and accessible on the clock in area on today"). Today is where he actually lands, so burying the
+         running log on the Time tab meant it only got written up after the fact — which defeats the whole
+         point of logging piecemeal. Capped to the last 3 so a note-heavy day can't push the rest of Today off
+         the screen; older ones are counted, never silently dropped. */
+      const _label=(typeof tcEntryLabel==="function")?tcEntryLabel(open):(oj?(oj.title||"job"):"");
+      h+=`<div class="card" style="border-left:5px solid var(--accent)"><div class="row"><div class="grow"><div class="nm">⏱️ Clocked in${_label&&_label!=="—"?` · ${esc(_label)}`:""}</div><div class="sub">since ${since}</div></div><button class="btn danger sm" onclick="tcClockOut('${open.id}')">Clock out</button></div>`
+        +((typeof shiftNotesHTML==="function")?`<div style="margin-top:8px">${shiftNotesHTML(open.id,{max:3})}</div>`:"")
+        +`</div>`;
     } else {
       const _form=(typeof tcClockInFormHTML==="function")?tcClockInFormHTML(null):"";
       h+=`<div class="card" style="border-top:4px solid var(--accent)"><div class="nm" style="font-size:16px">⏱️ Clock in</div>`;

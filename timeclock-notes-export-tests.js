@@ -48,7 +48,65 @@ console.log("\n--- REQ: piecemeal — many notes per shift, in the order the wor
 }
 ok("the note timestamp is when the WORK happened, and is editable", /sn_ts.*datetime-local|type="datetime-local"/.test(SN) && /ts = tsV \? new Date\(tsV\)\.getTime\(\)/.test(SN));
 ok("notes surface on the OPEN shift card — the piecemeal capture point", /shiftNotesHTML\(open\.id/.test(TC));
-ok("a shift row shows its note count", /shiftNoteCount\(e\.id\)/.test(TC));
+/* superseded 2026-08-19: a bare count told you nothing. The row now shows the note TEXT — what you
+   actually did that day — which is what makes a timesheet readable. */
+ok("a shift row shows what you actually did, not a count", (TC.match(/shiftPunchDesc\(e\.id\)/g) || []).length >= 2);
+
+console.log("\n--- ⭐ notes are reachable ON TODAY, where he actually lands ---");
+{
+  const TD = fs.readFileSync(path.join(__dirname, "js", "05-today.js"), "utf8");
+  ok("the clocked-in card on Today renders the notes", /shiftNotesHTML\(open\.id,\{max:3\}\)/.test(TD));
+  ok("...capped so a note-heavy day can't bury the rest of Today", /max:3/.test(TD));
+  ok("...and it degrades if js/127 is absent", /typeof shiftNotesHTML==="function"/.test(TD));
+  ok("the reason it moved to Today is recorded", /only got written up after the fact/.test(TD));
+  ok("the card names what the shift is for", /tcEntryLabel\(open\)/.test(TD));
+}
+
+console.log("\n--- the punch DESCRIPTION: one source, used everywhere ---");
+{
+  const c = { D: () => ({ shiftNotes: [
+    { id: "a", entryId: "e1", ts: 200, text: "Swapped the failed switch" },
+    { id: "b", entryId: "e1", ts: 100, text: "Ran cable to the second-floor AP" },
+    { id: "c", entryId: "e1", ts: 300, text: "  " },
+    { id: "d", entryId: "e1", ts: 400, text: "Tested both APs", deleted: true },
+    { id: "e", entryId: "e2", ts: 100, text: "other shift" }
+  ] }) };
+  const vm = require("vm"); vm.createContext(c);
+  vm.runInContext((SN.match(/function actShiftNotes\(\)[^\n]*\n/) || [""])[0]
+    + (SN.match(/function shiftNotesFor\(entryId\) \{[\s\S]*?\n\}/) || [""])[0]
+    + (SN.match(/function shiftPunchDesc\(entryId, sep\) \{[\s\S]*?\n\}/) || [""])[0]
+    + "\nthis.d=shiftPunchDesc;", c);
+  eq("notes join in the order the work happened", c.d("e1"), "Ran cable to the second-floor AP · Swapped the failed switch");
+  ok("a blank note doesn't leave a dangling separator", c.d("e1").indexOf("·  ·") < 0 && !/·\s*$/.test(c.d("e1")), c.d("e1"));
+  ok("a deleted note is excluded", c.d("e1").indexOf("Tested both APs") < 0);
+  ok("another shift's notes don't bleed in", c.d("e1").indexOf("other shift") < 0);
+  eq("a shift with no notes is an empty string, not 'undefined'", c.d("nope"), "");
+  eq("a custom separator is honoured", c.d("e1", " | "), "Ran cable to the second-floor AP | Swapped the failed switch");
+  eq("no entryId is safe", c.d(""), "");
+}
+ok("the timesheet shows the note TEXT, not just a count", /shiftPunchDesc\(e\.id\)/.test(TC));
+ok("...and the count-only version is gone from the report row", !/📝 \$\{shiftNoteCount\(e\.id\)\} · /.test(TC));
+ok("the CSV export still carries notes", /"Notes": notes/.test(fs.readFileSync(path.join(__dirname, "js", "128-hours-export.js"), "utf8")));
+ok("why one shared description exists is recorded", /never see two different accounts of one shift/.test(SN));
+
+console.log("\n--- older notes are counted, never silently hidden ---");
+{
+  const many = { D: () => ({ shiftNotes: Array.from({ length: 7 }, (_, i) => ({ id: "n" + i, entryId: "e1", ts: i * 100, text: "note " + i })) }) };
+  const vm = require("vm"); vm.createContext(many);
+  many.esc = (x) => String(x == null ? "" : x);
+  vm.runInContext((SN.match(/function actShiftNotes\(\)[^\n]*\n/) || [""])[0]
+    + (SN.match(/function shiftNotesFor\(entryId\) \{[\s\S]*?\n\}/) || [""])[0]
+    + (SN.match(/function snTime\(ts\) \{[\s\S]*?\n\}/) || [""])[0]
+    + (SN.match(/function shiftNotesHTML\(entryId, opts\) \{[\s\S]*?\n\}/) || [""])[0]
+    + "\nthis.h=shiftNotesHTML;", many);
+  const capped = many.h("e1", { max: 3 });
+  ok("only the most recent 3 render", (capped.match(/note \d/g) || []).length === 3, (capped.match(/note \d/g) || []));
+  ok("...the most RECENT ones", /note 6/.test(capped) && !/note 0/.test(capped));
+  ok("the earlier ones are counted", /4 earlier notes/.test(capped), capped.slice(0, 120));
+  const full = many.h("e1", {});
+  ok("no max means the full list (the Time tab)", (full.match(/note \d/g) || []).length === 7);
+  ok("...with no 'earlier' line", !/earlier note/.test(full));
+}
 
 console.log("\n--- REQ: vehicle tracking is OPTIONAL ---");
 ok("a no-vehicle shift role exists", /role === "none": no vehicle, no mileage/.test(TC));
