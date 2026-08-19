@@ -75,6 +75,38 @@ function jobEstCrewHrs(j) { return Math.round(jobEstHrsEach(j) * jobEstCrew(j) *
 function jobClockedHrs(j) { if (!j) return 0; return Math.round((D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut).reduce((s, e) => s + Math.max(0, e.clockOut - e.clockIn), 0) / 3600000 * 10) / 10; }
 function tcJobTitle(id) { const j = tcJob(id); return j ? (j.title || "Job") : "—"; }
 
+/* A CHOSEN start time, clamped. Never the future (you can't have started work that hasn't happened), never
+   more than 24h back (a mis-keyed date shouldn't create a week-long shift nobody notices until payroll). */
+function tcClampStart(at) {
+  const n = now(), ms = +at || 0;
+  if (!(ms > 0)) return n;
+  if (ms > n) return n;
+  if (n - ms > 86400000) return n - 86400000;
+  return ms;
+}
+/* the last shift this person finished — a clock-in can't precede it */
+function tcLastEnd(userId) {
+  let best = 0;
+  actTC().forEach(e => { if (e && e.userId === userId && e.clockOut && e.clockOut > best) best = e.clockOut; });
+  return best;
+}
+/* the "when am I clocking in?" control on the clock-in form (js/135) */
+function tcWhenInHTML(jobId) {
+  if (typeof cwWhenHTML !== "function") return "";
+  const who = tcWho();
+  const sug = (typeof cwSuggestIn === "function")
+    ? cwSuggestIn({ nowMs: now(), job: jobId ? tcJob(jobId) : null, lastShiftEnd: tcLastEnd(who.userId) }) : [];
+  setTimeout(function () {   // keep an untouched field on the real current time until it's edited
+    if (typeof cwTick !== "function") return;
+    clearInterval(window._tcWhenTick);
+    window._tcWhenTick = setInterval(function () {
+      if (!document.getElementById("tc_when_in")) { clearInterval(window._tcWhenTick); return; }
+      cwTick("tc_when_in");
+    }, 20000);
+  }, 0);
+  return cwWhenHTML("tc_when_in", now(), sug, { label: "Starting when?", hint: "Defaults to right now — change it if you started earlier." });
+}
+
 /* WHAT A SHIFT WAS FOR, in one line — the label every screen should use.
    Ray, 2026-08-14: "Sometimes it's just, like, routine stuff, routine maintenance kind of things… the most
    important thing is that I can select a customer to clock into."
@@ -326,7 +358,10 @@ window.tcClockInWith = async function (args) {
        I can select a customer to clock into"). On a job shift this stays empty and the customer is read off
        the job, so there is exactly ONE source of truth per shift and they can never disagree. */
     customerId: args.customerId || "", workType: args.workType || "",
-    clockIn: now(), clockOut: null,
+    /* args.at — a chosen start time (Ray, 2026-08-19: "I was actually here at nine, I just forgot to
+       clock in till now"). Clamped: never in the future, never more than 24h back, so a typo cannot
+       create a week-long shift. Defaults to now, which is what every existing caller gets. */
+    clockIn: tcClampStart(args.at), clockOut: null,
     inLoc: loc, outLoc: null, pings: [], stops: [],
     computedMiles: 0, miles: null, milesConfirmed: false, milesSource: null,
     odoStart: odoStart, odoEnd: null,
@@ -393,7 +428,8 @@ window.tcClockIn = async function () {
   let _r = null;
   try {
     // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping
-    _r = await tcClockInWith({ noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+    const _at = (typeof cwRead === "function") ? cwRead("tc_when_in", now()) : now();
+    _r = await tcClockInWith({ at: _at, noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
   } catch (err) {
     _r = { ok: false, error: "crashed" };
     try { console.error("clock-in failed", err); } catch (e) {}
@@ -427,18 +463,28 @@ window.tcClockOut = function (id, contJobId) {
   // SUGGESTED CLOCK-OUT (real clock-out only, never Change Job): if the shift's own GPS history shows the phone
   // got back home a meaningful while ago, offer that time as the likely real clock-out (forgot-to-clock-out).
   // Additive only — it doesn't alter the odometer/GPS buttons below; it just adds a "use that time" shortcut.
+  /* THE "WHEN" BLOCK (js/135) — an editable date+time defaulting to now, plus every suggestion the shift's
+     own evidence supports, plus a loud warning when the shift has obviously run away overnight.
+     Ray, 2026-08-19: "if I accidentally stayed clocked in overnight, that would be an obvious one."
+     This replaces the older home-arrival-only card; home arrival is now one ranked suggestion among several. */
   let suggestHtml = "";
   if (!contJobId) {
     const home = tcUserHome(e.userId);
     const arr = home ? tcHomeArrival(e, home) : null;
-    if (arr != null && arr > e.clockIn && (now() - arr) >= TC_HOME_SUGGEST_MIN_MS) {
-      const t = (function () { try { return new Date(arr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (x) { return ""; } })();
-      suggestHtml = `<div class="card" style="border-left:5px solid var(--accent);background:var(--soft);margin-bottom:12px">
-        <div class="nm" style="font-size:16px">🏠 Recommended clock-out: ${t}</div>
-        <div class="sub" style="white-space:normal;margin-top:2px">This is when your phone got back home${home.label ? " (" + esc(home.label) + ")" : ""} — looks like you forgot to clock out. Use it so your hours are accurate.</div>
-        <button class="btn acc" style="margin-top:10px;width:100%" onclick="tcHomeClockOut('${id}',${arr})">🏠 Clock out at ${t} — when you got home</button>
-        <div class="sub" style="text-align:center;margin-top:6px">— or —</div>
+    const useArr = (arr != null && arr > e.clockIn && (now() - arr) >= TC_HOME_SUGGEST_MIN_MS) ? arr : null;
+    const sug = (typeof cwSuggestOut === "function")
+      ? cwSuggestOut(e, { nowMs: now(), homeArrival: useArr,
+                          notes: (typeof shiftNotesFor === "function") ? shiftNotesFor(e.id) : [] }) : [];
+    const over = (typeof cwOvernight === "function") ? cwOvernight(e.clockIn, now()) : null;
+    if (over) {
+      suggestHtml += `<div class="card" style="border-left:5px solid var(--danger);background:var(--soft);margin-bottom:10px">
+        <div class="nm" style="font-size:15px">⚠ That's a ${over.hours}-hour shift</div>
+        <div class="sub" style="white-space:normal;margin-top:2px">${esc(over.why)} If you forgot to clock out, pick one of the times below instead of now — otherwise this lands in your hours as worked.</div>
       </div>`;
+    }
+    if (typeof cwWhenHTML === "function") {
+      suggestHtml += `<div class="card" style="margin-bottom:10px">${cwWhenHTML("tc_when_out", now(), sug,
+        { label: "Finishing when?", hint: sug.length ? "" : "Defaults to right now — change it if you finished earlier." })}</div>`;
     }
   }
   if (!tcEntryHasVehicle(e)) {   // No-vehicle shift → no odometer, no mileage; just close it out
@@ -645,7 +691,9 @@ function tcClockOutWith(entryId, opts) {
     if (!(odoEnd >= 0)) return { ok: false, error: "odo-required" };
     if (e.odoStart != null && odoEnd < e.odoStart) return { ok: false, error: "odo-low", odoStart: e.odoStart };
   }
-  tcFinalizeSegment(e, odoEnd);
+  /* opts.at — a chosen finish time (js/135). tcFinalizeSegment already ignores anything at or before
+     clock-in, so a bad value degrades to "now" rather than creating a negative shift. */
+  tcFinalizeSegment(e, odoEnd, (opts.at != null ? opts.at : null));
   touch(e); tcPingStop();
   if (typeof logChange === "function") logChange("update", "timeclock", e.id, "Clocked out — " + tcFmtDur(e.clockOut - e.clockIn) + " · " + tcMiles(e) + " mi · " + tcEntryLabel(e) + (e.milesFlag ? " ⚠ GPS-mismatch" : ""));
   save();
@@ -663,9 +711,12 @@ window.tcFinishClockOut = function (id) {
     if (!(odoEnd >= 0)) { alert("Enter the ending odometer reading, or tap “use GPS estimate”."); return; }
     if (e.odoStart != null && odoEnd < e.odoStart) { alert("End reading can't be less than the start (" + e.odoStart + ")."); return; }
   }
+  /* the chosen finish time (js/135), read BEFORE the modal closes and takes the field with it.
+     tcClockOutWith already accepts `at` and refuses anything before clock-in. */
+  const _at = (typeof cwRead === "function") ? cwRead("tc_when_out", now()) : now();
   if (typeof closeModal === "function") closeModal();
   // delegate the close (finalize + log + save + out-location) to the shared core — byte-identical record
-  tcClockOutWith(id, { odoEnd: hasVeh ? odoEnd : null });
+  tcClockOutWith(id, { at: _at, odoEnd: hasVeh ? odoEnd : null });
   render();
   tcClockedOutFlash(e);   // unmistakable "✓ You're clocked out" confirmation
 };
@@ -1731,6 +1782,7 @@ function tcClockInFormHTML(preJobId) {
     <label style="margin-top:10px">How are you getting there? <span class="sub">· only the driver logs the truck's miles</span></label>
     ${tcRolePicker(_role)}
     ${tcRoleDetail(_role, _defVal, who.userId, jobId)}
+    ${tcWhenInHTML(jobId)}
     <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>`;
   /* the old "⏱ Just track time (no job)" button is gone: "— No specific job —" is now a real option in the
      picker above, and unlike the button it lets you say WHO the time was for. tcClockInNoJob() is kept as a
