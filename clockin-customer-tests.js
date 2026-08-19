@@ -53,7 +53,10 @@ ok("deleted customers aren't offered", /filter\(c => c && !c\.deleted\)/.test(TC
 ok("customers are listed alphabetically", /localeCompare/.test(TC.slice(TC.indexOf("function tcNoJobBoxHTML"))));
 
 console.log("\n--- the guard still protects programmatic callers ---");
-ok("a jobless clock-in still needs an explicit opt-in in tcClockInWith", /if \(!jobId && !\(opts && opts\.noJob\)\) return \{ ok: false, error: "no-job" \}/.test(TC));
+/* ⚠️ this used to assert the guard as a REGEX OVER SOURCE, matching `opts.noJob` — a variable that did not
+   exist. It passed for six days while a jobless clock-in threw ReferenceError in the field. The BEHAVIOUR is
+   now covered by clockin-runtime-tests.js, which calls the function; this only checks the arg name is right. */
+ok("the jobless guard reads its own parameter, not a phantom one", /if \(!jobId && !\(args && args\.noJob\)\)/.test(TC) && !/opts && opts\.noJob/.test(TC));
 ok("the form opts in only when there is genuinely no job", /noJob: !jobId, jobId: jobId/.test(TC));
 
 console.log("\n--- a shift is labelled by what it was actually for ---");

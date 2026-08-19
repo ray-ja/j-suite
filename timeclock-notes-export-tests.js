@@ -61,7 +61,8 @@ ok("clock-out must be after clock-in", /Clock-out must be after clock-in/.test(T
 ok("editing times never invents mileage", /Never invents or changes mileage — times only/.test(TC));
 
 console.log("\n--- REQ: clock in with NO job (Jamieson) — without breaking OBX job costing ---");
-ok("the core accepts an explicit noJob opt-in", /if \(!jobId && !\(opts && opts\.noJob\)\) return \{ ok: false, error: "no-job" \}/.test(TC));
+/* was a source regex matching the undefined `opts` — see clockin-runtime-tests.js for why that was useless */
+ok("the core accepts an explicit noJob opt-in", /if \(!jobId && !\(args && args\.noJob\)\)/.test(TC));
 /* was: a separate "Just track time (no job)" button. That button is gone — "— No specific job —" is a real
    option in the picker now, which is equally explicit AND lets you say who the time was for. */
 ok("it is an explicit CHOICE in the picker, not a silent bypass", /— No specific job —/.test(TC));

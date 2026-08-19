@@ -290,7 +290,11 @@ window.tcClockInWith = async function (args) {
      replacing QuickBooks Time on Jamieson: not every hour has a job record (remote work, a site visit that
      never became one). opts.noJob is an EXPLICIT opt-in from a separate button, never a silent bypass, so the
      OBX job-costing flow is unchanged. */
-  if (!jobId && !(opts && opts.noJob)) return { ok: false, error: "no-job" };
+  /* ⚠️ 2026-08-19 PROD BUG: this read `opts.noJob`, but the parameter is `args` — so a jobless clock-in threw
+     ReferenceError instead of checking the opt-in, and the ONLY path that hit it was the no-job path Ray
+     actually needed. Two of my own tests asserted this exact line as a STRING and passed while it was broken.
+     A regex over source text cannot catch a runtime error; the tests now CALL this function. */
+  if (!jobId && !(args && args.noJob)) return { ok: false, error: "no-job" };
   if (typeof depJobBlocksClockIn === "function" && depJobBlocksClockIn(jobId)) return { ok: false, error: "deposit-required" };   // job is waiting on the customer's deposit — no work until it's in
   // `who` override (additive): an owner/admin can clock ANOTHER person in from the live roster. Existing callers
   // pass no `who`, so this is byte-identical to tcWho() for every self clock-in.
@@ -383,8 +387,27 @@ window.tcClockIn = async function () {
   }   // role === "none": no vehicle, no mileage
   const btn = document.getElementById("tc_inbtn");
   if (btn) { btn.disabled = true; btn.textContent = "Clocking in…"; }
-  // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping (byte-identical)
-  await tcClockInWith({ noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  /* ⚠️ try/finally, added 2026-08-19. Without it, ANY throw inside the core left this button disabled reading
+     "Clocking in…" forever, with no error and no way back except reloading the app — which is exactly how the
+     `opts` ReferenceError presented in the field. The button must always come back, even on failure. */
+  let _r = null;
+  try {
+    // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping
+    _r = await tcClockInWith({ noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  } catch (err) {
+    _r = { ok: false, error: "crashed" };
+    try { console.error("clock-in failed", err); } catch (e) {}
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "📍 Clock in"; }
+  }
+  /* say WHY rather than silently doing nothing — a dead button teaches you the app is broken */
+  if (_r && !_r.ok && _r.error && _r.error !== "busy" && _r.error !== "already-open") {
+    const MSG = { "no-job": "Pick a job, or choose “— No specific job —”.",
+                  "no-vehicle": "Pick a vehicle, or switch to Passenger / No vehicle.",
+                  "deposit-required": "This job is waiting on the customer's deposit.",
+                  "crashed": "Something went wrong clocking in. Your time wasn't started — try again." };
+    alert(MSG[_r.error] || ("Couldn't clock in (" + _r.error + ")."));
+  }
   render();
 };
 /* clock-out (and — when contJobId is given — the "close the old segment" half of Change Job, see below) share
@@ -892,14 +915,30 @@ window.tcJobPicked = function () {
    clocking in NEVER blocks, and "Time only" stays a valid answer. */
 function tcNoJobBoxHTML(jobId) {
   if (jobId) return `<div id="tc_nojob_box"></div>`;
+  /* ⭐ SHOW THE BUSINESS, NOT JUST THE CONTACT (Ray, 2026-08-19: "it should list, like, the contact and the
+     property name or business name, not just the contact name"). On Jamieson the customer IS a business and
+     the contact is a person at it — "Dave" in a dropdown is useless when you have four Daves at four sites.
+     Company leads when there is one, with the contact after it; a property address is appended when the
+     customer has exactly one, since that's what actually identifies the job in your head. */
+  const _props = (typeof D === "function" ? (D().properties || []) : []).filter(p => p && !p.deleted);
+  const label = c => {
+    const co = String(c.company || "").trim(), nm = String(c.name || "").trim();
+    let s = (co && nm) ? (co + " · " + nm) : (co || nm || "Customer");
+    const mine = _props.filter(p => p && (p.customerId === c.id || (Array.isArray(p.customerIds) && p.customerIds.indexOf(c.id) >= 0)));
+    if (mine.length === 1) {
+      const where = String(mine[0].label || mine[0].address || "").trim();
+      if (where && s.toLowerCase().indexOf(where.toLowerCase()) < 0) s += " — " + where;
+    } else if (mine.length > 1) s += " (" + mine.length + " properties)";
+    return s;
+  };
   const cs = ((typeof D === "function" ? (D().customers || []) : []))
     .filter(c => c && !c.deleted)
-    .sort((a, b) => String(a.name || a.company || "").localeCompare(String(b.name || b.company || "")));
+    .sort((a, b) => label(a).localeCompare(label(b)));
   const last = (typeof localStorage !== "undefined" && localStorage.getItem("tc_last_cust")) || "";
   return `<div id="tc_nojob_box">
     <label style="margin-top:10px">Customer <span class="sub">· optional</span></label>
     <select id="tc_cust"><option value="">— None (just my time) —</option>${cs.map(c =>
-      `<option value="${esc(c.id)}"${c.id === last ? " selected" : ""}>${esc(c.name || c.company || "Customer")}</option>`).join("")}</select>
+      `<option value="${esc(c.id)}"${c.id === last ? " selected" : ""}>${esc(label(c))}</option>`).join("")}</select>
     <label style="margin-top:10px">What kind of work? <span class="sub">· optional</span></label>
     <select id="tc_worktype"><option value="">— Not set —</option>${TC_WORK_TYPES.map(w =>
       `<option value="${esc(w)}">${esc(w)}</option>`).join("")}</select>
@@ -1586,6 +1625,10 @@ function tcRosterHTML() {
           <button class="btn danger grow" onclick="tcClockOut('${e.id}')">⏹ Clock out ${esc(first)}</button>
           <button class="btn ghost grow" onclick="tcOpenEntry('${e.id}')">Details</button>
         </div>
+        <!-- Ray, 2026-08-19: "I don't see how I can edit the clock in time because I was actually here at
+             nine, I just forgot to clock in till now." The editor existed (tcEditPunch) but was only
+             reachable from a CLOSED shift, which is the one case where you don't urgently need it. -->
+        <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="tcEditPunch('${e.id}')">🕘 Started earlier? Fix the time</button>
       </div>`;
     });
   }
