@@ -106,7 +106,9 @@ console.log("\n--- the field value round-trips ---");
 console.log("\n--- wired into both ends of the clock ---");
 ok("the clock-in form carries the control", /\$\{tcWhenInHTML\(jobId\)\}/.test(TC));
 ok("clock-in reads the chosen time", /cwRead\("tc_when_in", now\(\)\)/.test(TC));
-ok("...and passes it to the core", /at: _at, noJob: !jobId/.test(TC));
+/* membership, not adjacency — this broke the moment another argument was inserted between them, while
+   the property it checks (the chosen time reaches the core) still held perfectly. */
+ok("...and passes it to the core", /tcClockInWith\(\{ at: _at[,\s]/.test(TC));
 ok("the core honours it", /clockIn: tcClampStart\(args\.at\)/.test(TC));
 ok("clock-out carries the control", /cwWhenHTML\("tc_when_out"/.test(TC));
 ok("clock-out reads the chosen time", /cwRead\("tc_when_out", now\(\)\)/.test(TC));

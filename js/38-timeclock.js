@@ -75,6 +75,13 @@ function jobEstCrewHrs(j) { return Math.round(jobEstHrsEach(j) * jobEstCrew(j) *
 function jobClockedHrs(j) { if (!j) return 0; return Math.round((D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut).reduce((s, e) => s + Math.max(0, e.clockOut - e.clockIn), 0) / 3600000 * 10) / 10; }
 function tcJobTitle(id) { const j = tcJob(id); return j ? (j.title || "Job") : "—"; }
 
+/* which customer the form is currently pointed at — a job's customer, else the one picked directly.
+   Drives the rate resolution so a contract rate (escape room $55) is applied without being chosen. */
+function tcFormCustomerId(jobId) {
+  if (jobId && typeof tcJob === "function") { const j = tcJob(jobId); if (j && j.customerId) return j.customerId; }
+  try { return (typeof localStorage !== "undefined" && localStorage.getItem("tc_last_cust")) || ""; } catch (e) { return ""; }
+}
+
 /* A CHOSEN start time, clamped. Never the future (you can't have started work that hasn't happened), never
    more than 24h back (a mis-keyed date shouldn't create a week-long shift nobody notices until payroll). */
 function tcClampStart(at) {
@@ -358,6 +365,15 @@ window.tcClockInWith = async function (args) {
        I can select a customer to clock into"). On a job shift this stays empty and the customer is read off
        the job, so there is exactly ONE source of truth per shift and they can never disagree. */
     customerId: args.customerId || "", workType: args.workType || "",
+    /* ⚠️ THE RESOLVED RATE IS STORED, NOT REFERENCED (js/136). If Ray raises the standard rate next spring,
+       last autumn's timesheets must still read what was actually agreed — a rate card is a set of defaults
+       for NEW work, never a retroactive price list. So the punch carries its own numbers forever. */
+    ...(function () {
+      const cust = args.customerId || ((args.jobId && typeof tcJob === "function") ? ((tcJob(args.jobId) || {}).customerId || "") : "");
+      const r = (typeof brResolveNow === "function") ? brResolveNow(cust, args.rateModId || "") : null;
+      return r ? { billRate: r.rate, billBase: r.base, billMult: r.mult, billRateName: r.modName,
+                   billRateId: r.modId, billBaseId: r.baseId, billContract: !!r.contract } : {};
+    })(),
     /* args.at — a chosen start time (Ray, 2026-08-19: "I was actually here at nine, I just forgot to
        clock in till now"). Clamped: never in the future, never more than 24h back, so a typo cannot
        create a week-long shift. Defaults to now, which is what every existing caller gets. */
@@ -429,7 +445,8 @@ window.tcClockIn = async function () {
   try {
     // delegate to the shared core — it owns the submit-lock, record build, work-day union, save + ping
     const _at = (typeof cwRead === "function") ? cwRead("tc_when_in", now()) : now();
-    _r = await tcClockInWith({ at: _at, noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
+  const _modId = (typeof val === "function") ? (val("tc_rate") || "") : "";
+    _r = await tcClockInWith({ at: _at, rateModId: _modId, noJob: !jobId, jobId: jobId, customerId: _cust, workType: _wt, role: role, veh: veh, trailerId: trailerId, rodeWith: rodeWith, odoStart: odoStart });
   } catch (err) {
     _r = { ok: false, error: "crashed" };
     try { console.error("clock-in failed", err); } catch (e) {}
@@ -1783,6 +1800,7 @@ function tcClockInFormHTML(preJobId) {
     ${tcRolePicker(_role)}
     ${tcRoleDetail(_role, _defVal, who.userId, jobId)}
     ${tcWhenInHTML(jobId)}
+    ${(typeof brPickerHTML==="function")?brPickerHTML(tcFormCustomerId(jobId),""):""}
     <button class="btn acc" id="tc_inbtn" style="margin-top:14px;width:100%" onclick="tcClockIn()">📍 Clock in</button>`;
   /* the old "⏱ Just track time (no job)" button is gone: "— No specific job —" is now a real option in the
      picker above, and unlike the button it lets you say WHO the time was for. tcClockInNoJob() is kept as a
@@ -1852,6 +1870,23 @@ function tcReportHTML() {
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${tcRound(totMi)} mi</div><div class="sub">miles (est)</div></div>
     <div class="grow" style="border-left:1px solid var(--line)"><div style="font-size:22px;font-weight:800;color:var(--brand-text)">${money(totMi * TC_RATE)}</div><div class="sub">mileage @ $${TC_RATE}</div></div>
   </div>`;
+  /* BILLABLE — only shown when some of this period's time actually carries a rate, so an org that doesn't
+     bill by the hour (OBX quotes flat) never sees a meaningless $0 line. */
+  {
+    const _billed = all.filter(e => +e.billRate > 0);
+    if (_billed.length && typeof brShiftAmount === "function") {
+      const _tot = _billed.reduce((s2, e) => s2 + brShiftAmount(e), 0);
+      const _hrs = _billed.reduce((s2, e) => s2 + tcHours(e), 0);
+      const _kinds = {};
+      _billed.forEach(e => { const k = e.billRateName || "Standard"; _kinds[k] = (_kinds[k] || 0) + brShiftAmount(e); });
+      h += `<div class="card" style="border-left:4px solid var(--accent)">
+        <div class="row" style="align-items:baseline"><div class="grow" style="font-weight:800">💵 Billable</div>
+        <div style="font-size:20px;font-weight:800;color:var(--brand-text)">${money(_tot)}</div></div>
+        <div class="sub">${_hrs.toFixed(1)}h billed${_billed.length < all.length ? ` · ${all.length - _billed.length} shift${all.length - _billed.length === 1 ? "" : "s"} with no rate` : ""}</div>
+        ${Object.keys(_kinds).length > 1 ? `<div class="sub" style="margin-top:4px;white-space:normal">${Object.keys(_kinds).map(k => esc(k) + " " + money(_kinds[k])).join(" · ")}</div>` : ""}
+      </div>`;
+    }
+  }
   if (unconf) h += `<div class="card" style="border-left:4px solid #E1A100;background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${unconf} entr${unconf === 1 ? "y has" : "ies have"} estimated (GPS) mileage not yet confirmed. Tap an entry to verify the real driven miles before payroll.</div></div>`;
   const review = all.filter(e => tcSaneMiles(e)).length;
   if (review) h += `<div class="card" style="border-left:4px solid var(--danger);background:var(--soft)"><div class="sub" style="white-space:normal">⚠ ${review} shift${review === 1 ? "" : "s"} with an <b>implausible distance</b> (over ${TC_SANE_MAX_MILES} mi) — tap to review before it counts. A real cross-country haul is rare; a 2,000-mi local day is almost always bad GPS/odometer.</div></div>`;
@@ -1876,8 +1911,10 @@ function tcReportHTML() {
       : (jid.indexOf("cust:") === 0 ? custName(jid.slice(5)) + " · no job" : "Time only (no job)");
     h += `<div class="card"><div class="row" style="align-items:center"><div class="grow"><div class="nm">${esc(_head)}</div><div class="sub">${jh.toFixed(1)}h · ${tcRound(jm)} mi · ${money(jm * TC_RATE)}${(j && _custId) ? " · " + esc(custName(_custId)) : ""}</div></div></div>` +
       es.sort((a, b) => b.clockIn - a.clockIn).map(e => `<div class="li" style="cursor:pointer" onclick="tcOpenEntry('${e.id}')"><div class="grow"><div class="nm" style="font-size:14px">${esc(e.userName || "Crew")} ${tcSourceBadge(e)}${e.milesFlag ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ GPS mismatch</span>` : ""}${tcSaneMiles(e) ? ` <span class="badge" style="background:var(--danger);color:#fff">⚠ needs review</span>` : ""}${e.odoPending ? ` <span class="badge" style="background:#E1A100;color:#fff">🕑 odo pending</span>` : ""}</div>
-        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div>${(typeof shiftPunchDesc==="function"&&shiftPunchDesc(e.id))?`<div class="sub" style="white-space:normal;margin-top:3px;color:var(--ink)">📝 ${esc(shiftPunchDesc(e.id))}</div>`:""}</div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
+        <div class="sub">${fmtDate(new Date(e.clockIn).toISOString().slice(0,10))} · ${tcFmtDur(e.clockOut - e.clockIn)} · ${tcMiles(e)} mi ${e.milesConfirmed ? `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">confirmed</span>` : `<span class="badge" style="background:var(--soft);color:var(--muted)">est</span>`}${e.vehicle ? " · 🚚 " + esc(e.vehicle) : ""}</div>${(typeof shiftPunchDesc==="function"&&shiftPunchDesc(e.id))?`<div class="sub" style="white-space:normal;margin-top:3px;color:var(--ink)">📝 ${esc(shiftPunchDesc(e.id))}</div>`:""}${(typeof brShiftLabel==="function"&&brShiftLabel(e))?`<div class="sub" style="margin-top:2px">💵 ${esc(brShiftLabel(e))}${(typeof brShiftAmount==="function"&&brShiftAmount(e))?" = "+money(brShiftAmount(e)):""}</div>`:""}</div><span class="sub">${money(tcMileageCost(e))}</span></div>`).join("") + `</div>`;
   });
+
+  if (typeof brCardHTML === "function") h += brCardHTML();
 
   // group by user
   const byUser = {}; all.forEach(e => { (byUser[e.userId] = byUser[e.userId] || []).push(e); });

@@ -83,7 +83,10 @@ ok("a date-misread is called out as the reason for a better model", /a misread d
 console.log("\n--- the reminders collection is wired in all four places ---");
 ok("blank() has reminders", /reminders:\[\]/.test(ST));
 ok("backfilled on every org slab (both migration sites)", (ST.match(/S\[b\]\.reminders/g) || []).length >= 2);
-ok("server COLLECTIONS has reminders", /"shiftNotes", "reminders"\]/.test(SV));
+/* ⚠️ SECOND TIME I'VE MADE THIS MISTAKE: this asserted `reminders` was the LAST entry in COLLECTIONS, so
+   it went red the moment billRates was appended — exactly as the shiftNotes assertion did before it.
+   Assert MEMBERSHIP in the array, never position. */
+ok("server COLLECTIONS has reminders", /const COLLECTIONS = \[[^\]]*"reminders"/.test(SV));
 ok("why it isn't a flag on todos is recorded", /a reminder FIRES once at a moment/.test(ST));
 
 console.log("\n--- due-time maths ---");
