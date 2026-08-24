@@ -29,8 +29,19 @@ function shelfStatusLabel(s) {
 /* ---- render ---- */
 function rShelf() {
   var items = actShelf(), topics = shelfTopics();
-  var h = '<div class="secthd"><h2>📚 Shelf</h2>'
+  /* TWO VIEWS OVER THE SAME RECORDS (js/138). "Reading list" is the planning view Ray asked for on
+     2026-08-24; "Shelf" is the original reference library, grouped by topic. A book is one record either
+     way — there is deliberately no second library to keep in sync or forget to look at. */
+  var twoView = (typeof rlHTML === "function");
+  var h = '<div class="secthd"><h2>📚 ' + (twoView && rlView() === "list" ? "Reading list" : "Shelf") + '</h2>'
     + '<button class="btn ghost sm" style="margin-left:auto" onclick="openShelfItem(null)">＋ Add</button></div>';
+  if (twoView) {
+    h += '<div class="subnav" style="margin-bottom:10px">'
+      + '<button class="subbtn ' + (rlView() === "list" ? "on" : "") + '" onclick="rlSetView(\'list\')">📖 Reading list</button>'
+      + '<button class="subbtn ' + (rlView() === "shelf" ? "on" : "") + '" onclick="rlSetView(\'shelf\')">📚 Shelf</button>'
+      + '</div>';
+    if (rlView() === "list") { view.innerHTML = h + rlHTML(); return; }
+  }
 
   if (!items.length) {
     view.innerHTML = h + '<div class="empty"><div class="big">📚</div>Things worth keeping — books, arguments, '
@@ -106,6 +117,12 @@ if (typeof window !== "undefined") window.openShelfItem = function (id) {
     + '<div style="flex:0 0 90px"><label>Year</label><input id="sh_year" value="' + esc(x.year || "") + '" autocomplete="off"></div></div>'
     + '<label>What it says / why it\'s here</label><textarea id="sh_body" rows="5">' + esc(x.body || "") + '</textarea>'
     + '<label>Your note</label><textarea id="sh_note" rows="3" placeholder="your own thoughts — optional">' + esc(x.note || "") + '</textarea>'
+    + '<div class="row" style="gap:8px"><div style="flex:0 0 110px"><label>Pages</label><input id="sh_pages" type="number" inputmode="numeric" value="' + esc(x.pages || "") + '" placeholder="approx"></div>'
+    /* HIS review of it. Never averaged, never ranked, never compared to anything. */
+    + '<div class="grow"><label>Your rating <span class="muted" style="font-weight:400">(optional)</span></label>'
+    + '<select id="sh_rating">' + [0,1,2,3,4,5].map(function (n) {
+        return '<option value="' + n + '"' + ((+x.rating || 0) === n ? " selected" : "") + '>' + (n ? (typeof rlStars === "function" ? rlStars(n) : n + " star" + (n===1?"":"s")) : "—") + '</option>';
+      }).join("") + '</select></div></div>'
     + '<label>Status <span class="muted" style="font-weight:400">(optional — never counted or nagged)</span></label>'
     + '<select id="sh_status">'
     + ['', 'want', 'reading', 'read'].map(function (s) {
@@ -124,6 +141,11 @@ if (typeof window !== "undefined") window.saveShelfItem = function (id, isNew) {
   x.title = title;
   x.author = val("sh_author"); x.year = val("sh_year");
   x.body = val("sh_body"); x.note = val("sh_note"); x.status = val("sh_status");
+  x.pages = Math.max(0, parseInt(val("sh_pages"), 10) || 0);
+  x.rating = Math.max(0, Math.min(5, parseInt(val("sh_rating"), 10) || 0));
+  /* stamp the finish date when it lands on "read"; clear it if it moves back off */
+  if (x.status === "read") { if (!x.finishedOn) x.finishedOn = (typeof today === "function") ? today() : ""; }
+  else x.finishedOn = "";
   x.deleted = false;
   if (typeof touch === "function") touch(x);
   if (isNew) d.shelfItems.push(x);
