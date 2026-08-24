@@ -8,6 +8,8 @@ function rTodos(){
   const t=today();const list=sortTodos(actTodo());
   const openCt=list.filter(x=>!x.done).length;
   let h=`<div class="secthd"><h2>To-Do · ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2><span class="ct">${openCt} open</span></div>`;
+  /* what the nightly reconciler noticed in the journal (js/137) — silent when there's nothing pending */
+  h+=(typeof tpCardHTML==="function")?tpCardHTML():"";
   if(!list.length)h+=`<div class="empty"><div class="big">✅</div>No to-dos yet. Tap + to add one.</div>`;
   else h+=`<div class="card">`+list.map(td=>liTodo(td,t)).join("")+`</div>`;
   view.innerHTML=h;
