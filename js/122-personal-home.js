@@ -337,19 +337,8 @@ function phLookBackCard() {
     + '<div class="sub" style="white-space:normal;margin-top:3px">' + esc(body) + (body.length >= 160 ? '…' : '') + '</div></div>';
 }
 
-/* ---- quick ways in, so the page is never a dead end ---- */
-/* Ray, 2026-08-26: "its not clear what the jounral buttons pertain to." They said "Write something" and
-   "Log the day", which name neither what they capture nor where it lands. Now they say the noun and carry a
-   heading, so it reads as one thing — a place to record what happened — rather than two loose buttons. */
-function phQuickCard() {
-  const wk = (typeof rWorkout === "function" || typeof wkCardHTML === "function");
-  return '<div class="secthd"><h2 style="font-size:13px">Record something</h2></div>'
-    + '<div class="row" style="gap:8px;margin-bottom:14px;align-items:stretch">'
-    + '<button class="btn ghost" style="flex:1" onclick="openLifeNote(null)">📓<br>Journal entry</button>'
-    + (wk ? '<a class="btn ghost" style="flex:1;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center" href="/workout.html">🏋️<br>Workout</a>' : '')
-    + '<button class="btn ghost" style="flex:1" onclick="if(typeof navSub===\'function\')navSub(\'life\')">🌱<br>Daily check-in</button>'
-    + '</div>';
-}
+/* phQuickCard is gone. Its three buttons — journal, workout, daily check-in — are routine items now, so
+   they sit at the hour of the day he actually does them instead of in a floating row. See js/141. */
 
 /* ---------- TODAY'S PLAN — the actual point of this page ----------------------------------------------
    Ray, 2026-08-25, defining what Today is for: "Today is for things that I need to know that are happening
@@ -433,27 +422,39 @@ if (typeof window !== "undefined") window.phTickTodo = function (id) {
 function personalHome() {
   PH_THREAD = phLoad();
   setTimeout(function () { const b = document.getElementById("ph-thread"); if (b) b.scrollTop = b.scrollHeight; }, 40);
+  if (typeof rtSeed === "function") rtSeed();
+
+  /* ⭐ TODAY READS AS A DAY, top to bottom. Ray, 2026-08-26: "i want the today page to look more like a
+     routine. in order of morning stuff, like mood journal a quick little note of how i feel and stuff, then
+     workout, then morning tasks like email checks, invoice statuses, etc. i run multiple businesses, today
+     needs to be my one stop shop for what my day looks like."
+
+     So the order is the order he described, not a pile of cards sorted by when I happened to build them:
+       talk box  ·  MORNING routine  ·  what's on today across the businesses  ·  the to-do plan  ·
+       what's coming / what's due  ·  DURING THE DAY  ·  EVENING
+     Every section disappears when it's empty, so a quiet day is a short page. */
   let h = '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>';
   h += phTalkCard();
-  /* ⭐ THE LIST IS THE PAGE. Everything below it is "what's happening today"; everything that isn't about
-     today belongs on its own tab. */
+
+  const part = (k) => {
+    if (typeof rtPartHTML !== "function" || typeof ROUTINE_PARTS === "undefined") return "";
+    const p = ROUTINE_PARTS.find(function (x) { return x.key === k; });
+    return p ? rtPartHTML(p) : "";
+  };
+
+  h += part("morning");
+  /* every business's work for today, in one place — the "one stop shop" half of the ask */
+  if (typeof rtJobsTodayHTML === "function") h += rtJobsTodayHTML();
   h += phPlanCard();
-  /* Dates he'd otherwise be carrying in his head, directly under the talk box — the one place he actually
-     lands. Silent when nothing is within 30 days, so it never becomes background noise. */
+  /* urgent items from the other orgs (js/140) — same rule as the To-Do tab: only what's actually urgent */
+  if (typeof piCardHTML === "function") h += piCardHTML();
+  /* dates he'd otherwise carry in his head, then what money is about to leave */
   if (typeof evHomeCardHTML === "function") h += evHomeCardHTML(30);
-  /* what money is about to leave — "so nothing's gonna catch us off guard" (Ray, 2026-08-05) */
   if (typeof calBillsCardHTML === "function") h += calBillsCardHTML(14);
-  /* ⛔ THE FILE HAND-OFF IS NOT A TODAY CARD. Ray, 2026-08-25: "Send me a file doesn't belong on today
-     either." Today is what's happening today; sending me a statement is a Money errand. Moved to Budget,
-     which is also where he'll be standing when he has a statement in his hand (js/79). */
-  h += phQuickCard();
+  h += part("day");
+  h += part("evening");
   h += phLookBackCard();
-  /* ⛔ THE INTERESTS LIST IS NOT A HOME-SCREEN CARD. Ray, 2026-08-25: "we don't need this massive list of
-     things I'm into on the today page. That doesn't make any sense." He's right — it filled the entire
-     right-hand column with a wall of text he already knows about himself. Its real job is to feed the
-     companion's context so it can follow a sentence about Morrowind or Catholicism, and it does that from
-     the record whether or not it is ever drawn. It now lives on Life, where it is editable and out of the
-     way. */
+  h += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="rtEdit(\'\')">＋ Add to your routine</button>';
   return h;
 }
 if (typeof window !== "undefined") {
