@@ -111,6 +111,17 @@ console.log("\n--- ⭐ his file is the source of truth and is never edited ---")
   const orig = fs.readFileSync("/home/rzy/.claude/uploads/18f805d7-7735-4655-82ce-5b7c39964826/b5c826a3-rjworkout.html");
   const hosted = fs.readFileSync(path.join(__dirname, "workout.html"));
   ok("the hosted copy is byte-identical to what he uploaded", Buffer.compare(orig, hosted) === 0);
+  /* ⚠️ THE BACK BAR IS INJECTED ON THE WAY OUT, never written into his file — that is what keeps the
+     byte-identity above true, so he can still drop in a new version of his own app and keep the way back. */
+  ok("the back bar is added at SERVE time, not saved into his file", !/__jsuite_back/.test(hosted.toString("utf8")));
+  ok("...and the server injects it", /__jsuite_back/.test(SV));
+  ok("...before </body> so it lands inside the document", /html\.replace\(\/<\\\/body>\/i, bar \+ "<\/body>"\)/.test(SV) || /<\/body>/.test(SV));
+  ok("...with a fallback if there is no </body>", /\(html \+ bar\)/.test(SV));
+  ok("the ETag describes what is SENT, not the file", /etag2/.test(SV));
+  ok("...and the early 304 is skipped for it", /!_isWorkout && req\.headers\["if-none-match"\]/.test(SV));
+  ok("...with the reason recorded", /would keep being told it's still current/.test(SV));
+  ok("the dead end that prompted it is recorded", /no address\s*\n?\s*bar and often no visible back button/.test(SV) || /no visible back button/.test(SV));
+  ok("only workout.html is rewritten — nothing else served is touched", /Nothing else served here\s*\n?\s*is touched/.test(SV) || /Nothing else served here/.test(SV));
   ok("the bridge only READS his storage key", /localStorage\.getItem\(WK_KEY\)/.test(WK));
   ok("...and only writes it on the one-time import, never over existing data", /if \(!localStorage\.getItem\(WK_KEY\)\)/.test(WK));
   ok("the bridge-not-port decision is recorded", /BRIDGE, NOT PORT/.test(WK));

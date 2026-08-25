@@ -4385,11 +4385,38 @@ const server = http.createServer((req, res) => {
       // heuristically cached old js — which is exactly why a deploy didn't update the app.
       const st = fs.statSync(full);
       const etag = '"' + st.size.toString(16) + "-" + Math.round(st.mtimeMs).toString(16) + '"';
-      if (req.headers["if-none-match"] === etag) { res.writeHead(304, { "Cache-Control": "no-cache", "ETag": etag }); return res.end(); }
+      /* workout.html is rewritten below (the back bar), so its response never matches this file-only ETag —
+         skip the early 304 or a browser holding the pre-bar copy would keep being told it's still current. */
+      const _isWorkout = full === path.join(__dirname, "workout.html");
+      if (!_isWorkout && req.headers["if-none-match"] === etag) { res.writeHead(304, { "Cache-Control": "no-cache", "ETag": etag }); return res.end(); }
       const hdrs = { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "no-cache", "ETag": etag, "X-Content-Type-Options": "nosniff" };
       /* An SVG still renders as an image under this CSP, but nothing inside it can run or phone home.
          Belt (the upload check) and braces (this), because the upload check only sees NEW files. */
       if (ext === ".svg") hdrs["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+      /* ⚠️ THE WAY BACK. Ray, 2026-08-24: "i dont see a way to go back to j suite once i open the workout
+         app." He's right — workout.html is a standalone page, and in an installed PWA there is no address
+         bar and often no visible back button, so opening it was a dead end.
+
+         The bar is INJECTED ON THE WAY OUT, never written into his file. workout.html on disk stays
+         byte-identical to what he uploaded, so he can still improve his own app and drop the new version in
+         without losing this — and without me having merged anything into his code. Nothing else served here
+         is touched. */
+      if (_isWorkout) {
+        const html = fs.readFileSync(full, "utf8");
+        const bar = '<a href="/" id="__jsuite_back" onclick="if(history.length>1&&document.referrer.indexOf(location.host)>=0){history.back();return false}"'
+          + ' style="position:fixed;left:max(12px,env(safe-area-inset-left));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483647;'
+          + 'display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:999px;background:rgba(20,20,20,.94);'
+          + 'border:1px solid #3a3a3a;color:#eee;font:600 14px/1 -apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;'
+          + 'text-decoration:none;box-shadow:0 3px 14px rgba(0,0,0,.5);-webkit-tap-highlight-color:transparent">'
+          + '\u2190 j-Suite</a>';
+        const out = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, bar + "</body>") : (html + bar);
+        const buf = Buffer.from(out, "utf8");
+        /* the ETag must describe what we SEND, or a browser holding the un-barred version keeps it */
+        const etag2 = '"' + buf.length.toString(16) + "-" + Math.round(st.mtimeMs).toString(16) + '-b"';
+        if (req.headers["if-none-match"] === etag2) { res.writeHead(304, { "Cache-Control": "no-cache", "ETag": etag2 }); return res.end(); }
+        res.writeHead(200, Object.assign({}, hdrs, { "ETag": etag2 }));
+        return res.end(buf);
+      }
       res.writeHead(200, hdrs);
       return res.end(fs.readFileSync(full));
     }
