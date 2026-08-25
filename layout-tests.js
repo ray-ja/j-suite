@@ -76,7 +76,15 @@ console.log("\n--- the screenshot harness exists and uses the binary that works 
   ok("shot.js renders against the REAL app.css", /app\.css/.test(SH));
   ok("⭐ it uses chrome-headless-shell, not chrome", /chrome-headless-shell/.test(SH) && /chromium_headless_shell/.test(SH));
   ok("...and records that plain chrome hangs on this box", /still hangs/.test(SH));
-  ok("it defaults to a phone width, where his layout has to work", /arg\("w", "390"\)/.test(SH));
+  ok("it defaults to a phone width, where his layout has to work", /arg\("w", chrome \? "2560" : "390"\)/.test(SH));
+  /* ⭐ Ray, 2026-08-25: "I have a fourteen forty resolution screen. Your screenshots should reflect that."
+     A bare fragment at 1440 is a different width from the same fragment on HIS screen, because .wrap sizes
+     itself from 50vw minus a fixed 224px sidebar. Without the frame the picture is not of his app. */
+  ok("⭐ --chrome renders the real frame: the header and the fixed sidebar", /const chrome = process\.argv\.indexOf\("--chrome"\)/.test(SH) && /<nav>/.test(SH) && /<header>/.test(SH));
+  ok("...and says which mode the shot was taken in, so a picture can't quietly lie", /full app frame/.test(SH) && /fragment only/.test(SH));
+  /* ⚠️ this harness bug made a shot lie about the exact class it was taken to check */
+  ok("⛔ body classes are merged into ONE attribute", !/class="dark"' : ''\) \+ \(arg\("body"/.test(SH) && /body class="' \+ \[dark/.test(SH));
+  ok("...and the reason is recorded", /keeps only the first/.test(SH));
   ok("it renders inside .wrap, or widths would lie", /class="wrap"/.test(SH));
   ok("it exits non-zero on failure so it can gate a commit", /process\.exit\(4\)/.test(SH));
 }

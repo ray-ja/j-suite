@@ -77,6 +77,9 @@ function render(){
   if(typeof applyAccess==="function")applyAccess();   // role-gate: hide nav + coerce TAB to an allowed page
   if(TAB!=="training")TRMOD=null;
   document.body.classList.toggle("wizon",!!WZON);
+  /* the personal Today is a two-column dashboard, not a reading column — it opts out of the global .wrap
+     cap so it can use a wide monitor. Toggled here (not in rToday) so LEAVING the page clears it. */
+  document.body.classList.toggle("wideday",TAB==="today"&&typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg());
   renderNav(); renderSubnav();
   // BLANK-SCREEN GUARD — a blank #view is the cardinal sin (it blanks the tool the owner runs his business on).
   // A screen's render fn can throw on a stale-build device (old cached JS meets new data shape — e.g. the app

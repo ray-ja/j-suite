@@ -167,21 +167,22 @@ function phRender() { const b = document.getElementById("ph-thread"); if (b) { b
 
 /* ---- the talk card: the anchor of this page, works with zero data ---- */
 function phTalkCard() {
-  const saveBtn = PH_THREAD.length
-    ? '<button class="btn ghost sm" style="flex:0 0 auto" onclick="phSaveToJournal()">Save to journal</button>'
-    : '';
+  /* ⛔ NO "Save to journal" BUTTON. Ray, 2026-08-25: "in the text chat, there shouldn't be a save to
+     journal button. That's… those are separate things." Talking to me and keeping a journal are two
+     different acts, and a button that quietly turns one into the other blurs them. The Journal tab is where
+     journal entries are written. */
   const clearBtn = PH_THREAD.length
     ? '<button class="btn ghost sm" style="flex:0 0 auto" onclick="phClear()">Clear</button>'
     : '';
   return '<div class="card" style="border-top:4px solid var(--accent)">'
-    + '<div id="ph-thread" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch">' + phThreadInner() + '</div>'
+    + '<div id="ph-thread" class="ph-thread">' + phThreadInner() + '</div>'
     + '<div class="row" style="gap:6px;margin-top:10px">'
     + '<input id="ph-input" placeholder="Talk, or ask me to add something" autocomplete="off" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\'){event.preventDefault();phSend();}">'
     + '<button class="btn acc" style="flex:0 0 auto;width:auto" onclick="phSend()">Send</button></div>'
     /* it can act now (2026-08-25) and he had no way to know — an empty thread says so once, then gets out
        of the way rather than captioning every screen forever */
     + (PH_THREAD.length ? '' : '<div class="sub" style="white-space:normal;margin-top:8px">Ask me about your list, your bills, your calendar or your workouts — or say “remind me Tuesday to…” and I’ll set it up for you to confirm.</div>')
-    + ((saveBtn || clearBtn) ? '<div class="row" style="gap:6px;margin-top:8px">' + saveBtn + clearBtn + '</div>' : '')
+    + (clearBtn ? '<div class="row" style="gap:6px;margin-top:8px">' + clearBtn + '</div>' : '')
     + (phOnline() ? '' : '<div class="muted" style="font-size:12px;margin-top:6px">Back when you\'re online.</div>')
     + '</div>';
 }
@@ -279,23 +280,8 @@ if (typeof window !== "undefined") window.phCancelAction = function (cid) {
   if (item && item.state === "pending") { item.state = "cancelled"; phSave(); phRender(); }
 };
 
-/* keeping a conversation is HIS choice — venting is not silently filed */
-if (typeof window !== "undefined") window.phSaveToJournal = function () {
-  if (!PH_THREAD.length) return;
-  const body = PH_THREAD
-    .filter(m => m && typeof m.content === "string")                     // skip action cards
-    .map(m => (m.role === "user" ? "Me: " : "— ") + m.content).join("\n\n");
-  const d = D(); if (!d.lifeNotes) d.lifeNotes = [];
-  const n = { id: "life-note-" + (typeof uid === "function" ? uid() : String(Date.now())),
-              date: phToday(), title: "Talked it out", body: body, deleted: false };
-  if (typeof touch === "function") touch(n);
-  d.lifeNotes.push(n);
-  if (typeof save === "function") save();
-  alert("Saved to your journal.");
-  if (typeof render === "function") render();
-};
 if (typeof window !== "undefined") window.phClear = function () {
-  if (!confirm("Clear this conversation? It isn't saved anywhere unless you saved it to your journal.")) return;
+  if (!confirm("Clear this conversation?")) return;
   PH_THREAD = []; phSave(); phRender();
 };
 
@@ -324,18 +310,9 @@ function phInterestsCard() {
     + '<button class="btn ghost sm" style="flex:0 0 auto" onclick="phAddInterest()">Edit</button></div></div>';
 }
 
-/* ---- one older journal entry, resurfaced. Silent until there's something to resurface. ---- */
-function phLookBackCard() {
-  let notes = [];
-  try { notes = (typeof actLifeNotes === "function") ? actLifeNotes() : ((D().lifeNotes || []).filter(n => n && !n.deleted)); } catch (e) { return ""; }
-  const older = notes.filter(n => n.date && n.date < phToday());
-  if (!older.length) return "";
-  const pick = older[Math.floor(older.length / 2)] || older[0];   // stable within a render, not random churn
-  const body = String(pick.body || "").replace(/\s+/g, " ").slice(0, 160);
-  return '<div class="card" style="border-left:4px solid var(--accent);cursor:pointer" onclick="openLifeNote(\'' + pick.id + '\')">'
-    + '<div class="nm" style="font-size:13px">From your journal · ' + esc((typeof fmtDate === "function") ? fmtDate(pick.date) : pick.date) + '</div>'
-    + '<div class="sub" style="white-space:normal;margin-top:3px">' + esc(body) + (body.length >= 160 ? '…' : '') + '</div></div>';
-}
+/* ⛔ phLookBackCard is gone. It resurfaced an old journal entry on Today. Ray, 2026-08-25: "I don't
+   understand what the from your journal box is for. I don't need that there. I don't need a random journal
+   entry on my today page." Today is what's happening today; a paragraph from two weeks ago is not. */
 
 /* phQuickCard is gone. Its three buttons — journal, workout, daily check-in — are routine items now, so
    they sit at the hour of the day he actually does them instead of in a floating row. See js/141. */
@@ -449,7 +426,6 @@ function personalHome() {
   let side = "";
   if (typeof calBillsCardHTML === "function") side += calBillsCardHTML(14);   // what's about to leave
   if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);       // dates he'd carry in his head
-  side += phLookBackCard();                                                    // one older journal entry
   if (side) side = '<div class="secthd"><h2 style="font-size:13px">Money &amp; what\'s coming</h2></div>' + side;
 
   /* ---- RIGHT: what he DOES, in the order he does it ---- */

@@ -27,8 +27,12 @@ function ok(n, c, got) { if (c) { pass++; console.log("  ok  " + n); } else { fa
 function eq(n, g, w) { ok(n, g === w, "got " + JSON.stringify(g) + " want " + JSON.stringify(w)); }
 
 const R = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
+/* ⚠️ STRIP COMMENTS BEFORE ASSERTING ON SOURCE. I have now written three separate tests that passed by
+   matching my own explanatory comment rather than the code — including the comment that says a thing was
+   REMOVED, which of course contains the removed thing's name. Assert against code only. */
+const CODE = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 const SRC = R("js/141-routine.js"), HOME = R("js/122-personal-home.js");
-const TODAYJS = R("js/05-today.js"), CSS = R("app.css");
+const TODAYJS = R("js/05-today.js"), CSS = R("app.css"), ROUTING = R("js/03-routing.js");
 const STATE = R("js/02-state.js"), SERVER = R("sync-server.js"), SHELL = R("Business App (v1).html");
 
 /* ---------- a real sandbox: load the module against a fake store and CALL it ---------- */
@@ -223,7 +227,7 @@ console.log("\n--- ⭐ Today reads as a day, in two columns that mean something 
   /* ⚠️ THE BUG HE SAW: the page was poured into .pgcols — `column-count:2`, a NEWSPAPER flow that fills the
      left column then spills into the right. A page whose point is a sequence got cut at an arbitrary height
      and read down-then-across. "its jumbled right now." */
-  ok("⛔ personal Today is NOT poured into the multicol flow any more", !/pgcols">'\+personalHome/.test(TODAYJS), (TODAYJS.match(/.*pgcols.*personalHome.*/) || [])[0]);
+  ok("⛔ personal Today is NOT poured into the multicol flow any more", !/pgcols/.test(CODE(TODAYJS).match(/personalHome\(\)[\s\S]{0,200}/) || ""), (CODE(TODAYJS).match(/.*pgcols.*personalHome.*/) || [])[0]);
   ok("...and why is recorded where the next person would undo it", /newspaper flow/i.test(TODAYJS));
   ok("the business Today still uses multicol — a stack of unrelated cards is what it's FOR", /pgcols">'\+h\+'/.test(TODAYJS));
 
@@ -258,9 +262,15 @@ console.log("\n--- ⭐ Today reads as a day, in two columns that mean something 
   ok("the greeting still opens the page, above both columns", at("phGreeting") > at("dc-chat") || /phGreeting[\s\S]*daycols/.test(body));
   ok("the routine is seeded before it's drawn", at("rtSeed") < at('part("morning")') && at("rtSeed") > 0);
 
-  ok("⛔ the floating 'Record something' row is gone — those live in the day's order now", !/phQuickCard\(\)/.test(HOME));
+  ok("⛔ the floating 'Record something' row is gone — those live in the day's order now", !/phQuickCard/.test(CODE(HOME)));
   ok("⛔ ...and the interests wall he asked me to remove has not come back", !/interests/i.test(body));
-  ok("⛔ ...nor 'send me a file', which he said doesn't belong on Today", !/send me a file/i.test(HOME));
+  ok("⛔ ...nor 'send me a file', which he said doesn't belong on Today", !/send me a file/i.test(CODE(HOME)));
+  /* ⛔ "I don't need a random journal entry on my today page." */
+  ok("⛔ the resurfaced journal entry is off Today", !/phLookBackCard/.test(CODE(HOME)), (CODE(HOME).match(/.*phLookBackCard.*/) || [])[0]);
+  /* ⛔ "in the text chat, there shouldn't be a save to journal button. those are separate things." */
+  ok("⛔ the chat has no Save-to-journal button", !/Save to journal/i.test(CODE(HOME)), (CODE(HOME).match(/.*[Ss]ave to journal.*/) || [])[0]);
+  ok("...and no writer left behind it", !/phSaveToJournal/.test(CODE(HOME)));
+  ok("...Clear stays, and no longer promises a journal save", /phClear/.test(CODE(HOME)) && !/saved it to your journal/.test(CODE(HOME)));
 
   ["rtPartHTML", "rtJobsTodayHTML", "piCardHTML", "evHomeCardHTML", "calBillsCardHTML", "rtSeed"].forEach(fn => {
     ok(fn + " is called defensively, so a missing module can't blank Today",
@@ -284,7 +294,21 @@ console.log("\n--- the columns are a GRID, and a phone has none ---");
   ok("money sits under it", /\.dc-money\{grid-column:1;grid-row:2\}/.test(CSS));
   ok("⭐ the day owns the right column and spans BOTH rows, so it is never cut in half",
     /\.dc-day *\{grid-column:2;grid-row:1\/span 2\}/.test(CSS));
-  ok("neither column can be squeezed past zero", /minmax\(0,352px\) minmax\(0,1fr\)/.test(CSS));
+  ok("neither column can be squeezed past zero", /minmax\(0,400px\) minmax\(0,1fr\)/.test(CSS));
+
+  /* ⭐ and Today is allowed to USE a big monitor. Ray, on 1440p: "this looks weird on my screen." The
+     global .wrap caps every page at a READING width, which squeezed a two-column dashboard into ~960px
+     and left hundreds of px of dead air either side. */
+  ok("⭐ the personal Today opts out of the global reading-width cap", /body\.wideday \.wrap\{max-width:1560px/.test(CSS));
+  ok("...anchored past the fixed sidebar, centred once there's room", /margin-left:max\(224px,calc\(50vw - 780px\)\)/.test(CSS));
+  ok("⭐ the class is toggled in render(), so LEAVING Today clears it", /classList\.toggle\("wideday",TAB==="today"/.test(ROUTING));
+  ok("...and only for a personal org", /wideday[\s\S]{0,90}orgIsPersonalOrg\(\)/.test(ROUTING));
+
+  /* ⛔ the chat had a scrollbar on a three-message conversation while the column below it sat empty */
+  ok("⛔ the thread is no longer pinned to a short inline max-height", !/max-height:360px/.test(CODE(HOME)));
+  ok("...it takes its size from CSS", /id="ph-thread" class="ph-thread"/.test(CODE(HOME)));
+  ok("⭐ ...and grows into the room a desktop has", /\.ph-thread\{max-height:min\(58vh,620px\)\}/.test(CSS.replace(/\s+/g, " ")) || /max-height:min\(58vh,620px\)/.test(CSS));
+  ok("...while a phone keeps it short so the input stays on screen", /\.ph-thread\{[^}]*max-height:340px/.test(CSS));
   ok("the bug that caused this is recorded in the CSS", /newspaper flow/i.test(CSS) && /down-then-across/i.test(CSS));
 }
 
