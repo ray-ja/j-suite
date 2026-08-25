@@ -196,11 +196,17 @@
   .msgpane{display:flex;flex-direction:column;min-height:0}
   .msgpane-hd{flex:0 0 auto;margin:0 0 6px}
   .msglist{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:8px;padding:4px 2px 10px}
+  /* a short thread sits ON the compose box, the way every chat does — margin-auto on the first row, NOT
+     justify-content:flex-end, which makes overflowing content at the top unreachable in a scroll container */
+  .msglist > *:first-child{margin-top:auto}
   .msgcompose{flex:0 0 auto;border-top:1px solid var(--line);padding-top:8px;background:var(--bg)}
+  /* a thread is a column of text — it reads badly at full desktop width, so hold it to a sane measure */
+  @media(min-width:1180px){ .msgpane{max-width:980px} }
   .msgcompose textarea{flex:1 1 auto;min-height:42px;max-height:120px;resize:none}
   .msgrow{display:flex;align-items:flex-end;gap:6px;max-width:100%}
   .msgrow.me{flex-direction:row-reverse}
-  .msgrow .bubble{max-width:82%;padding:8px 11px;border-radius:15px;background:var(--card);border:1px solid var(--line);box-shadow:var(--sh-xs)}
+  /* 82% of a phone is a bubble; 82% of a 1500px pane is a paragraph stretched across the room. Cap it. */
+  .msgrow .bubble{max-width:min(82%,640px);padding:8px 11px;border-radius:15px;background:var(--card);border:1px solid var(--line);box-shadow:var(--sh-xs)}
   .msgrow.me .bubble{background:var(--accent);color:#fff;border-color:transparent}
   .msgrow.me .bubble a{color:#fff;text-decoration:underline}
   .msg-meta{font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:2px}

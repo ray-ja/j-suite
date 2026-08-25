@@ -229,10 +229,19 @@ if (typeof window !== "undefined") window.phSend = function () {
 function phActionCard(item) {
   const a = item.action || {};
   const when = a.date ? ((typeof fmtDate === "function") ? fmtDate(a.date) : a.date) + (a.time ? " at " + a.time : "") : "";
-  const LBL = { addEvent: ["📅", "Put on your calendar"], addTodo: ["✅", "Add to your to-do list"], addReminder: ["⏰", "Remind you"] };
+  const LBL = { addEvent: ["📅", "Put on your calendar"], addTodo: ["✅", "Add to your to-do list"],
+                addReminder: ["⏰", "Remind you"], addBill: ["💵", "Add to your bills"] };
   const L = LBL[a.kind] || ["•", "Do that"];
-  let inner = '<div class="nm" style="font-size:14px;white-space:normal">' + L[0] + ' ' + esc(a.title || a.text || "") + '</div>'
-    + '<div class="sub" style="white-space:normal">' + esc(L[1]) + (when ? ' · ' + esc(when) : '') + (a.annual ? ' · every year' : '') + '</div>';
+  /* ⭐ a money proposal shows the AMOUNT and whether it repeats, right on the card. He is confirming a claim
+     about what he owes, and "recurring" vs "once" is the difference between $736 and $736 every month. */
+  const headline = (a.kind === "addBill")
+    ? esc(a.name || "") + ' · ' + esc((typeof calMoney === "function") ? calMoney(a.amount) : "$" + a.amount)
+    : esc(a.title || a.text || "");
+  const detail = (a.kind === "addBill")
+    ? (a.recurring ? 'Every month on the ' + esc(String(a.dayOfMonth || 1)) : 'One-time' + (when ? ' · ' + esc(when) : ''))
+    : ((when ? ' · ' + esc(when) : '') + (a.annual ? ' · every year' : ''));
+  let inner = '<div class="nm" style="font-size:14px;white-space:normal">' + L[0] + ' ' + headline + '</div>'
+    + '<div class="sub" style="white-space:normal">' + esc(L[1]) + (a.kind === "addBill" ? ' · ' + detail : detail) + '</div>';
   if (item.state === "pending") {
     inner += '<div class="row" style="gap:8px;margin-top:9px">'
       + '<button class="btn acc" style="flex:1" onclick="phConfirmAction(\'' + item.cid + '\')">Confirm</button>'
@@ -269,6 +278,20 @@ if (typeof window !== "undefined") window.phConfirmAction = function (cid) {
                   fired: false, userId: (me && me.id) || "", deleted: false };
       if (typeof touch === "function") touch(r);
       d.reminders.push(r);
+    } else if (a.kind === "addBill") {
+      if (!Array.isArray(d.budgetBills)) d.budgetBills = [];
+      /* the book a bill lands in: his default (Personal), the same one the Budget page uses. Without a book
+         it would exist but be invisible on every screen that scopes by book. */
+      const bookId = (typeof budgetDefaultBookId === "function") ? budgetDefaultBookId()
+        : (((d.budgetBooks || []).find(function (b) { return b && !b.deleted; }) || {}).id || "");
+      const bill = { id: "bgt-bill-" + (typeof uid === "function" ? uid() : String(Date.now())),
+                     bookId: bookId, name: a.name, amount: a.amount, catId: "",
+                     frequency: a.recurring ? "monthly" : "once",
+                     dueDay: a.recurring ? (a.dayOfMonth || 1) : 1,
+                     nextDue: a.recurring ? "" : (a.date || ""),
+                     autoEstimate: false, active: true, deleted: false };
+      if (typeof touch === "function") touch(bill);
+      d.budgetBills.push(bill);
     } else { item.state = "error"; item.err = "I don\'t know how to do that one."; phSave(); phRender(); return; }
     if (typeof save === "function") save();
     item.state = "done";

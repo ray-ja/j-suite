@@ -1440,12 +1440,20 @@ const PERSONAL_TOOLS = [
       properties: { title: { type: "string" }, due: { type: ["string", "null"] } } } },
   { name: "addReminder", description: "Propose a REMINDER that will message him at a specific day and time. Requires a date. Use when he says 'remind me…'. text = what the reminder should say, in his words.", strict: true,
     input_schema: { type: "object", additionalProperties: false, required: ["text", "date", "time"],
-      properties: { text: { type: "string" }, date: { type: "string" }, time: { type: ["string", "null"] } } } }
+      properties: { text: { type: "string" }, date: { type: "string" }, time: { type: ["string", "null"] } } } },
+  /* ⭐ Ray, 2026-08-25: "i owe 736.24 to JT Jones Propane for our home propane, add that to bills." He asked
+     the box to do it and it correctly said it couldn't — there was no tool. Now there is.
+     ⚠️ ONE-TIME IS THE DEFAULT for a named amount owed. Filing a propane delivery as monthly would claim
+     $736.24 of his money every month forever, in the card he reads each morning. */
+  { name: "addBill", description: "Propose adding a BILL he owes. name = who it's to, short (e.g. 'JT Jones Propane'). amount = the number he said. recurring = true ONLY if he says it repeats every month ('the rent', 'my internet bill'); a one-off amount owed to someone is recurring=false. date = YYYY-MM-DD it is due when recurring is false; if he owes it but never says when, pass today's date; when recurring is true give dayOfMonth (1-28) instead and date may be null. Use when he says he owes money or wants a bill tracked. Do NOT use for something he has already paid — that is an expense, not a bill.", strict: true,
+    input_schema: { type: "object", additionalProperties: false, required: ["name", "amount", "recurring", "date", "dayOfMonth"],
+      properties: { name: { type: "string" }, amount: { type: "number" }, recurring: { type: "boolean" },
+                    date: { type: ["string", "null"] }, dayOfMonth: { type: ["number", "null"] } } } }
 ];
 
 /* validate a personal tool call. Same posture as capParseAction: the model is untrusted, every value is
    re-checked here, and anything that doesn't survive returns null and simply never reaches him. */
-function capParsePersonalAction(name, input) {
+function capParsePersonalAction(name, input, ctx) {
   const inObj = (input && typeof input === "object" && !Array.isArray(input)) ? input : {};
   const str = (v, n) => (typeof v === "string" && v.trim()) ? v.replace(/\s+/g, " ").trim().slice(0, n) : "";
   const isoDate = d => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d : null;
@@ -1465,6 +1473,27 @@ function capParsePersonalAction(name, input) {
     const text = str(inObj.text, 300), date = isoDate(inObj.date);
     if (!text || !date) return null;          // a reminder with no date can never fire
     return { kind: "addReminder", text: text, date: date, time: hhmm(inObj.time) || "09:00" };
+  }
+  if (name === "addBill") {
+    const billName = str(inObj.name, 80);
+    const amount = (typeof inObj.amount === "number" && isFinite(inObj.amount) && inObj.amount > 0)
+      ? Math.round(inObj.amount * 100) / 100 : 0;
+    /* ⚠️ this one touches his money, so the clamps are real. No name, no amount, an implausible amount, or a
+       one-time bill with no date → dropped entirely rather than guessed at. */
+    if (!billName || !amount || amount > 1e6) return null;
+    if (inObj.recurring) {
+      const dom = (typeof inObj.dayOfMonth === "number" && isFinite(inObj.dayOfMonth))
+        ? Math.min(28, Math.max(1, Math.round(inObj.dayOfMonth))) : 1;
+      return { kind: "addBill", name: billName, amount: amount, recurring: true, dayOfMonth: dom, date: null };
+    }
+    /* ⚠️ "i ower 736.24 to JT Jones Propane" — HIS ACTUAL WORDS, and he never said a due date. Dropping the
+       action for that was wrong twice over: it lost the thing he asked for, and because the model had emitted
+       nothing but the tool call, the box answered him with "No response." A debt he states without a date is
+       one he owes NOW, so an undated one-time bill defaults to today rather than vanishing. */
+    const nowIso = (ctx && /^\d{4}-\d{2}-\d{2}$/.test(ctx.todayIso || "")) ? ctx.todayIso : null;
+    const when = isoDate(inObj.date) || nowIso;
+    if (!when) return null;
+    return { kind: "addBill", name: billName, amount: amount, recurring: false, dayOfMonth: null, date: when };
   }
   return null;
 }

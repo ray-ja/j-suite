@@ -985,9 +985,18 @@ var BUDGET_FREQS=[
   {k:"weekly",   label:"Weekly",    perMonth:52/12, perYear:52},
   {k:"monthly",  label:"Monthly",   perMonth:1,     perYear:12},
   {k:"quarterly",label:"Quarterly", perMonth:1/3,   perYear:4},
-  {k:"annual",   label:"Annual",    perMonth:1/12,  perYear:1}
+  {k:"annual",   label:"Annual",    perMonth:1/12,  perYear:1},
+  /* ⭐ ONE-TIME. Ray, 2026-08-25: "i owe 736.24 to JT Jones Propane for our home propane, add that to bills."
+     A propane delivery is a real bill he owes on a real date, and it is not a monthly obligation — filing it
+     as one would have claimed $736.24/month of his money forever, in the money card he reads every morning.
+     perMonth 0 keeps it OUT of the fund-ahead target (that's for recurring commitments) while it still shows
+     in what's due. */
+  {k:"once",     label:"One-time",  perMonth:0,     perYear:0}
 ];
-function budgetFreqMeta(k){ return BUDGET_FREQS.find(function(f){return f.k===k;})||BUDGET_FREQS[1]; }
+/* "yearly" is an older spelling that exists in live data — treat it as annual rather than silently as
+   monthly, which is what the default did (a 12× overstatement in every fund-ahead number). */
+function budgetFreqMeta(k){ if(k==="yearly")k="annual";
+  return BUDGET_FREQS.find(function(f){return f.k===k;})||BUDGET_FREQS[1]; }
 /* a bill's contribution to a SINGLE month's needed-to-fund total (weekly ≈ 4.33×, quarterly ⅓, annual 1/12) */
 function budgetBillMonthlyAmount(b){ return Math.round((+b.amount||0)*budgetFreqMeta(b.frequency).perMonth*100)/100; }
 
@@ -1290,6 +1299,10 @@ function budgetBillRenderDue(freq,dueDay,nextDue){
     var sel=(dueDay!=null&&dueDay!=="")?(+dueDay):0;
     wrap.innerHTML='<label>Due weekday</label><select id="bl_dueday">'
       +DOW.map(function(d,i){return '<option value="'+i+'"'+(sel===i?" selected":"")+'>'+d+'</option>';}).join("")+'</select>';
+  }else if(freq==="once"){
+    /* a one-time bill has exactly one date and no day-of-month at all */
+    wrap.innerHTML='<label>Due date</label><input id="bl_nextdue" type="date" value="'+esc(nextDue||"")+'">'
+      +'<div class="sub" style="margin:4px 0">Shows up once, on that day, then drops off by itself.</div>';
   }else{
     var dd=(dueDay!=null&&dueDay!=="")?(+dueDay):1;
     wrap.innerHTML='<label>Due day of month (1–28)</label><input id="bl_dueday" type="number" inputmode="numeric" min="1" max="28" step="1" value="'+dd+'">'
@@ -1345,6 +1358,8 @@ window.saveBudgetBill=function(id,isNew){
   if(ddEl){ var dv=parseInt(ddEl.value,10); b.dueDay=isNaN(dv)?(b.frequency==="weekly"?0:1):dv; }
   var ndEl=document.getElementById("bl_nextdue");
   b.nextDue=(ndEl&&ndEl.value)?ndEl.value:(b.nextDue||"");
+  /* a one-time bill IS its date — without one it would never appear anywhere, which is worse than refusing */
+  if(b.frequency==="once"&&!b.nextDue){alert("Give the one-time bill a due date.");return;}
   var act=document.getElementById("bl_active"); b.active=act?!!act.checked:true;
   if(b.autoEstimate==null)b.autoEstimate=false;
   b.deleted=false; touch(b); if(isNew)d.budgetBills.push(b);

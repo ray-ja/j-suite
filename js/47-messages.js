@@ -166,7 +166,8 @@ function renderThread(tid) {
   const availHtml = t.availAsk ? msgAvailChips(tid) : "";
   const pendHtml = MSG_PENDING ? `<div class="row" style="gap:8px;margin-bottom:6px;align-items:center"><img src="${(typeof jsUploadUrl === "function") ? jsUploadUrl(MSG_PENDING) : ""}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><span class="sub">photo attached</span><button class="btn ghost sm" onclick="msgClearPhoto()">✕</button></div>` : "";
   view.innerHTML = `<div class="msgpane" id="msgpane">`
-    + `<div class="secthd msgpane-hd"><h2>${esc(threadTitle(t))}</h2><button class="btn ghost sm" onclick="msgBack()">← Inbox</button></div>`
+    + `<div class="secthd msgpane-hd"><h2 class="grow" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(threadTitle(t))}</h2>`
+    + `<button class="btn ghost sm" style="flex:0 0 auto;width:auto" onclick="msgBack()">← Inbox</button></div>`
     + `<div class="msglist" id="msglist">${list}</div>`
     + `<div class="msgcompose">${availHtml}${pendHtml}`
     + `<div class="row" style="gap:8px;align-items:flex-end"><textarea id="msg_reply" placeholder="Write a reply…" rows="1"></textarea>`
@@ -183,8 +184,18 @@ function msgFitPane(toBottom, restoreTop) {
   const pane = document.getElementById("msgpane"); if (!pane) return;
   let reserve = 0;
   try {
+    /* ⚠️ ONLY A BOTTOM BAR EATS VERTICAL SPACE. On a phone the nav is a horizontal bar pinned to the bottom,
+       so its height must be reserved. On a desktop the SAME element is a 224px sidebar running the full
+       height of the window — and reserving that left `innerHeight - top - reserve` deeply negative, so the
+       pane fell back to its 240px floor. Ray, 2026-08-25: "the message page is hardly readable look" — a
+       ~110px scrolling message list on a 1440px-tall screen, with the rest of the page empty beneath it.
+       A nav that spans most of the window's WIDTH is a bottom bar; a narrow tall one is a sidebar. */
     const navEl = document.querySelector("nav");
-    const navH = (navEl && getComputedStyle(navEl).position === "fixed") ? navEl.offsetHeight : 0;
+    let navH = 0;
+    if (navEl && getComputedStyle(navEl).position === "fixed") {
+      const r = navEl.getBoundingClientRect();
+      if (r.width > window.innerWidth * 0.8) navH = r.height;      // horizontal bottom bar → reserve it
+    }
     const padB = parseInt(getComputedStyle(document.body).paddingBottom) || 0;
     reserve = Math.max(navH, padB);
   } catch (e) {}

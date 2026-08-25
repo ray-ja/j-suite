@@ -70,11 +70,30 @@ function calBills() {
     return (D().budgetBills || []).filter(function (b) { return b && !b.deleted && b.active !== false; });
   } catch (e) { return []; }
 }
+/* ⚠️ A BILL'S FREQUENCY IS NOT DECORATION. This used to match on dueDay alone, so EVERY bill landed once a
+   month whatever its frequency said — a quarterly bill appeared monthly, an annual one appeared monthly, and
+   the "next 2 weeks" total on Today was inflated by money that isn't actually due. Ray's own store has a
+   yearly bill (Polk County property tax, nextDue 2027-03-01) that was showing on the 1st of every month.
+
+   Now: one-time and multi-month bills land on their `nextDue` DATE and nowhere else. Monthly and weekly keep
+   their day rule.
+
+   ⚠️ The fallback matters: a non-monthly bill with NO nextDue carries no information about which month it
+   belongs to, so it keeps the old monthly behaviour rather than vanishing. Losing a bill off his radar is
+   worse than showing it too often — but a one-time bill has no fallback, because a one-time bill with no
+   date isn't a date at all. */
 function calBillsOnDay(iso) {
   var dd = +iso.slice(8, 10);
   var y = +iso.slice(0, 4), mo = +iso.slice(5, 7);
   var dim = new Date(y, mo, 0).getDate();
   return calBills().filter(function (b) {
+    var f = String(b.frequency || "monthly");
+    if (f === "once") return b.nextDue === iso;                    // the one day it is ever due
+    if (f !== "monthly" && f !== "weekly" && b.nextDue) return b.nextDue === iso;
+    if (f === "weekly") {
+      var wd = new Date(Date.UTC(y, mo - 1, dd)).getUTCDay();
+      return wd === (((+b.dueDay || 0) % 7) + 7) % 7;
+    }
     var d = Math.min(Math.max(1, +b.dueDay || 1), dim);   // a day-31 bill lands on the 28th in February
     return d === dd;
   });
