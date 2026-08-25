@@ -78,7 +78,11 @@ function actBudgetCats(){ return (D().budgetCats||[]).filter(function(c){return 
 /* transactions in scope, EXCLUDING transfers + card payments (neither counts as income/spending — they only move cash) */
 /* t.pending = a receipt scan (js/121) that has been read but not confirmed yet. Excluded HERE, at the one
    accessor every total/envelope/TBB/tax figure flows through, so an unconfirmed scan can never move a number. */
-function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.pending&&!t.isTransfer&&!t.isCardPayment&&budgetInBook(t);}); }
+/* ⚠️ SPLITS (js/148): a split parent carries the whole payment but NO category — its slices carry the
+   money into the envelopes. Count both and every split is doubled. So income/spending sees the SLICES and
+   skips the parent. The mirror rule lives in acctTx() in js/145, where the BALANCE counts the parent and
+   skips the slices, because the cash left the account exactly once. Change one, check the other. */
+function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.pending&&!t.isTransfer&&!t.isCardPayment&&!t.isSplit&&budgetInBook(t);}); }
 /* transfers + card payments in scope (for the Transactions list display) */
 function actBudgetTransfers(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&(t.isTransfer||t.isCardPayment)&&budgetInBook(t);}); }
 function budgetCat(id){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.id===id;}); }
@@ -354,6 +358,7 @@ function rBudget(){
     +'<button class="subbtn '+(BUDGET_SUB==="tx"?"on":"")+'" onclick="budgetSetSub(\'tx\')">🧾 Transactions</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="bills"?"on":"")+'" onclick="budgetSetSub(\'bills\')">🔁 Bills</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="debts"?"on":"")+'" onclick="budgetSetSub(\'debts\')">💳 Debts</button>'
+    +'<button class="subbtn '+(BUDGET_SUB==="stmt"?"on":"")+'" onclick="budgetSetSub(\'stmt\')">📊 Statements</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tax"?"on":"")+'" onclick="budgetSetSub(\'tax\')">🧮 Tax</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="settings"?"on":"")+'" onclick="budgetSetSub(\'settings\')">⚙️ Settings</button>'
     +'</div>';
@@ -364,6 +369,7 @@ function rBudget(){
   else if(BUDGET_SUB==="tx")budgetRenderTx();
   else if(BUDGET_SUB==="bills")budgetRenderBills();
   else if(BUDGET_SUB==="debts")budgetRenderDebts();
+  else if(BUDGET_SUB==="stmt"&&typeof stmtHTML==="function"){document.getElementById("budget_body").innerHTML=stmtHTML();}
   else if(BUDGET_SUB==="tax")budgetRenderTax();
   else if(BUDGET_SUB==="settings")budgetRenderSettings();
   else budgetRenderMonth();
@@ -871,6 +877,8 @@ window.openBudgetTx=function(id){
     +budgetTxAccountSelect(bid,t.accountId)
     +'<label>Date</label><input id="bt_date" type="date" value="'+(t.date||today())+'">'
     +'<label>Note (optional)</label><input id="bt_note" value="'+esc(t.note||"")+'" placeholder="e.g. groceries, paycheck">'
+    +/* ⭐ one payment, several categories (js/148) — the Lowe's run that is half job materials */
+    +(isNew?"":'<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="closeModal();openSplit(\''+t.id+'\')">'+(t.isSplit?"Edit the split":"🔀 Split into categories")+'</button>')
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetTx(\''+t.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetTx(\''+t.id+'\')">Delete</button>')
   );

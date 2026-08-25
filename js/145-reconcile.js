@@ -28,7 +28,9 @@ function recTx() { try { return recActive(D().budgetTx); } catch (e) { return []
 
 /* every approved transaction belonging to one account — pending rows are not money yet (js/143) */
 function acctTx(acctId) {
-  return recTx().filter(function (t) { return t.accountId === acctId && !t.pending; })
+  /* ⚠️ THE MIRROR OF actBudgetTx (js/79). A split's SLICES are category bookkeeping — the cash left this
+     account once, as the parent. Counting the slices here would debit the account twice over. */
+  return recTx().filter(function (t) { return t.accountId === acctId && !t.pending && !t.parentTxId; })
     .sort(function (a, b) { return String(a.date || "").localeCompare(String(b.date || "")); });
 }
 
