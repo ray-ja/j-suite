@@ -22,10 +22,31 @@ function tpPending() {
   try {
     const org = (typeof S !== "undefined" && S.biz) ? S.biz : "";
     const list = ((S[org] || {}).pendingChanges) || [];
-    return list.filter(function (p) {
+    const live = list.filter(function (p) {
       return p && !p.deleted && p.status === "pending" && p.collection === "todos";
     }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+
+    /* ⚠️ DEDUPE BY WHAT IS BEING PROPOSED, not by proposal id. Before the reconciler learned to suppress
+       what it had already asked (2026-08-25), it queued the same items on consecutive runs — and accepting
+       both copies would have created two identical to-dos, which is the mess this whole feature exists to
+       prevent. Showing one and clearing its twins on accept fixes the queue he already has without anyone
+       hand-editing his data. */
+    const seen = Object.create(null), out = [];
+    live.forEach(function (p) {
+      const k = tpDedupeKey(p);
+      if (seen[k]) { seen[k].push(p); return; }
+      seen[k] = [];
+      p.__twins = seen[k];
+      out.push(p);
+    });
+    return out;
   } catch (e) { return []; }
+}
+/* what a proposal is really about — the same job proposed twice shares a key */
+function tpDedupeKey(p) {
+  if (!p) return "";
+  if (p.type === "create") return "add:" + String((p.after && p.after.title) || "").toLowerCase().trim();
+  return String(p.type) + ":" + String(p.targetId || "");
 }
 function tpCount() { return tpPending().length; }
 
@@ -77,22 +98,36 @@ if (typeof window !== "undefined") {
   /* delegate to the SAME apply path the business approvals screen uses — no second implementation */
   window.tpAccept = function (id) {
     const org = (typeof S !== "undefined" && S.biz) ? S.biz : "";
+    /* clear any duplicate proposals for the same job FIRST, so accepting can't leave a twin behind that
+       would add the identical to-do a second time */
+    const p = tpPending().find(function (x) { return x.id === id; });
+    if (p && p.__twins && typeof apprReject === "function") {
+      p.__twins.forEach(function (t) { try { apprReject(org, t.id); } catch (e) {} });
+    }
     if (typeof apprApprove === "function") apprApprove(org, id);
     else if (typeof render === "function") render();
   };
   window.tpReject = function (id) {
     const org = (typeof S !== "undefined" && S.biz) ? S.biz : "";
+    const p = tpPending().find(function (x) { return x.id === id; });
+    if (p && p.__twins && typeof apprReject === "function") {
+      p.__twins.forEach(function (t) { try { apprReject(org, t.id); } catch (e) {} });   // dismiss the twins too
+    }
     if (typeof apprReject === "function") apprReject(org, id);
     else if (typeof render === "function") render();
   };
   window.tpDismissAll = function () {
     if (!confirm("Dismiss all of these? They won't come back.")) return;
     const org = (typeof S !== "undefined" && S.biz) ? S.biz : "";
-    tpPending().forEach(function (p) { if (typeof apprReject === "function") apprReject(org, p.id); });
+    tpPending().forEach(function (p) {
+      if (typeof apprReject !== "function") return;
+      (p.__twins || []).forEach(function (t) { try { apprReject(org, t.id); } catch (e) {} });   // twins too
+      apprReject(org, p.id);
+    });
     if (typeof render === "function") render();
   };
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { tpTitleOf: tpTitleOf, tpWhyOf: tpWhyOf };
+  module.exports = { tpTitleOf: tpTitleOf, tpWhyOf: tpWhyOf, tpDedupeKey: tpDedupeKey };
 }

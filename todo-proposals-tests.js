@@ -66,6 +66,43 @@ console.log("\n--- ⭐ it reads the CURRENT org, not a hardcoded pair ---");
 ok("the reason js/57 couldn't be used is recorded", /APPR_BIZES = \["obx", "jam"\]/.test(TP));
 ok("js/57 really is hardcoded (the bug this works around still exists)", /const APPR_BIZES = \["obx", "jam"\]/.test(AP));
 
+console.log("\n--- ⭐ the same job proposed twice shows once ---");
+{
+  const dupes = [
+    { id: "a1", status: "pending", collection: "todos", type: "create", createdAt: 300, after: { title: "Fix the lawnmower" }, summary: "Add “Fix the lawnmower” — journal 08-14" },
+    { id: "a2", status: "pending", collection: "todos", type: "create", createdAt: 200, after: { title: "fix the LAWNMOWER" }, summary: "Add “fix the LAWNMOWER” — journal 08-14 again" },
+    { id: "b1", status: "pending", collection: "todos", type: "update", createdAt: 250, targetId: "t9", summary: "Close “X” — done" },
+    { id: "b2", status: "pending", collection: "todos", type: "update", createdAt: 150, targetId: "t9", summary: "Close “X” — done again" },
+    { id: "c1", status: "pending", collection: "todos", type: "create", createdAt: 100, after: { title: "Something else" }, summary: "Add “Something else” — x" }
+  ];
+  const c = ctxWith("mqwvs3mq98pij", { pendingChanges: dupes, todos: [{ id: "t9", title: "X" }] });
+  eq("five proposals, three distinct jobs", c.tpCount(), 3);
+  ok("the newest of each pair is the one shown", c.tpPending().map(p => p.id).indexOf("a1") >= 0 && c.tpPending().map(p => p.id).indexOf("a2") < 0);
+  ok("...matching case-insensitively", c.tpPending().filter(p => /lawnmower/i.test((p.after || {}).title || "")).length === 1);
+  ok("duplicate CLOSES collapse by target too", c.tpPending().filter(p => p.targetId === "t9").length === 1);
+
+  /* accepting must clear the twin, or the same to-do gets added twice */
+  c.__approved.length = 0; c.__rejected.length = 0;
+  c.tpAccept("a1");
+  eq("accepting approves the one", c.__approved.join(","), "mqwvs3mq98pij:a1");
+  eq("...and rejects its twin, so it can't be added again", c.__rejected.join(","), "mqwvs3mq98pij:a2");
+
+  c.__rejected.length = 0;
+  c.tpReject("b1");
+  eq("dismissing one also dismisses its twin", c.__rejected.sort().join(","), "mqwvs3mq98pij:b1,mqwvs3mq98pij:b2");
+
+  c.__rejected.length = 0;
+  c.tpDismissAll();
+  eq("'not now' clears every proposal including twins", c.__rejected.length, 5);
+}
+{
+  const tp = require("./js/137-todo-proposals.js");
+  eq("an add keys on its title", tp.tpDedupeKey({ type: "create", after: { title: "Do X" } }), "add:do x");
+  eq("a close keys on its target", tp.tpDedupeKey({ type: "update", targetId: "t1" }), "update:t1");
+  ok("different jobs don't collide", tp.tpDedupeKey({ type: "create", after: { title: "A" } }) !== tp.tpDedupeKey({ type: "create", after: { title: "B" } }));
+  eq("null is safe", tp.tpDedupeKey(null), "");
+}
+
 console.log("\n--- the card ---");
 {
   const c = ctxWith("mqwvs3mq98pij", SLAB);
