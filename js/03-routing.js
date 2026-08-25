@@ -127,6 +127,12 @@ window.renderRecovery=renderRecovery;
 /* ---------- grouped navigation: ~7 top-level groups + a per-group subnav ---------- */
 const NAV_GROUPS = [
   { key:"today",     label:"Today",     icon:"🧭", tabs:["today"] },
+  /* ⚠️ THE TO-DO GROUP WAS MISSING ENTIRELY. `todo` is routable, has a screen, is in the personal template
+     and the static fallback nav — but no NAV_GROUPS entry listed it, so renderNav() never emitted a button
+     for it and the tab was unreachable from the menu in EVERY org. Ray, 2026-08-25, sent a screenshot of
+     his personal nav with no To-Do in it, the morning after I put his whole day on that list. Placed second,
+     right after Today, because on the personal template it is the screen he was told to look at. */
+  { key:"todo",      label:"To-Do",     icon:"✅", tabs:["todo"] },
   { key:"messages",  label:"Messages",  icon:"💬", tabs:["messages"] },
   // People & Places — the crew directory ("team") + the accounts screen (Customers / Properties / 📍 Places /
   // 📞 Call Lead). The GROUP KEY stays "team" so NAV_LAST state + CREW_PAGES ("team"/"accounts") keep working;

@@ -172,6 +172,17 @@
   .btn.ghost{background:transparent;color:var(--brand-text);border:1.5px solid var(--line);box-shadow:none}
   .btn.ghost:hover{border-color:var(--brand);background:var(--soft);filter:none}
   .btn.sm{width:auto;padding:10px 15px;min-height:40px;font-size:14px}
+  /* ⚠️ A BUTTON BESIDE OTHER CONTENT MUST NOT DEMAND THE WHOLE ROW. `.btn` is width:100% because most of
+     them are full-width block actions — but inside a flex .row that width becomes the flex basis, so even
+     `flex:0 0 auto` makes the button claim 100% and crushes its siblings to nothing. Ray, 2026-08-25, sent a
+     screenshot of exactly that: "Send me a file" rendering ONE CHARACTER PER LINE down the page next to a
+     full-width Upload button. `:not(:only-child)` keeps a lone button in a row full-width, which is what
+     those rows want, and shrinks any button that has something to sit next to.
+     max-width + white-space:normal are the second half of it: `flex:0 0 auto` forbids SHRINKING, so a button
+     whose label is a whole sentence ("✓ Done — no more receipts for this job") still ate the row and crushed
+     its sibling exactly the same way. Capping the share and letting a long label wrap makes the failure
+     impossible rather than merely unlikely. */
+  .row > .btn:not(:only-child){width:auto;max-width:58%;min-width:0;white-space:normal}
   .btn.danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger);box-shadow:none}
   .btn.danger:hover{background:var(--danger-soft);filter:none}
   input,select,textarea{font-family:inherit;font-size:16px;line-height:1.4;width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--card);color:var(--ink);transition:border-color .15s,box-shadow .15s}
