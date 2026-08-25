@@ -512,8 +512,12 @@ console.log("\n--- FILE HAND-OFF (js/127): the door he can actually reach ---");
 
   ok("the module is in the shell",
     fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/127-files.js"') > 0);
-  ok("the card is on the personal home",
-    /pfCardHTML\(\)/.test(fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8")));
+  /* ⚠️ MOVED 2026-08-25 — Ray: "Send me a file doesn't belong on today either." Today is what's happening
+     today; handing me a statement is a Money errand, and Budget is where he'll be standing when he has one.
+     The card must exist SOMEWHERE reachable, which is what this now asserts. */
+  ok("the file card is reachable — on Budget, not Today",
+    /pfCardHTML\(\)/.test(fs.readFileSync(path.join(__dirname, "js", "79-budget.js"), "utf8"))
+    && !/h \+= pfCardHTML\(\)/.test(fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8")));
   ok("collection in server COLLECTIONS", /"personalFiles"/.test(SVX));
   ok("collection in client blank()", /personalFiles:\[\]/.test(STX));
   eq("both load() backfills present", (STX.match(/personalFiles\)\)S\[b\]\.personalFiles=\[\]/g) || []).length, 2);

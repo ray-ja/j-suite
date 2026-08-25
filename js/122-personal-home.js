@@ -342,19 +342,101 @@ function phQuickCard() {
     + '</div>';
 }
 
+/* ---------- TODAY'S PLAN — the actual point of this page ----------------------------------------------
+   Ray, 2026-08-25, defining what Today is for: "Today is for things that I need to know that are happening
+   today, like what needs to get done today… my to do list, essentially. And it should, like, track how I'm
+   doing, and it should carry things over to the next day as long as they're not getting checked off. Don't
+   just make it static."
+
+   ⭐ CARRY-OVER WITH NO MOVING PARTS. A to-do carries `planDate` — the day it was put on the plan. Today
+   shows everything with planDate <= today that isn't done. So an item planned for Monday and not ticked is
+   simply still there on Tuesday, and on Wednesday, without a cron, a migration, or anything running at
+   midnight to shuffle records. The thing that "carries it over" is that nothing ever moved it.
+
+   Items with no planDate at all still appear if they're due today or overdue — a dated commitment is part of
+   today whether or not anyone planned it.
+
+   "Track how I'm doing" = what he ticked off TODAY. A count of things done, never a fraction of a target and
+   never a streak: this is a work list, but it's still his day, and a score is how a list starts nagging. */
+function phPlanItems() {
+  var t = phToday();
+  var all = (typeof actTodo === "function") ? actTodo() : ((D().todos || []).filter(function (x) { return x && !x.deleted; }));
+  var open = all.filter(function (x) { return !x.done; });
+  var plan = open.filter(function (x) {
+    if (x.planDate && String(x.planDate) <= t) return true;      // planned today or an earlier day, still open
+    if (x.due && String(x.due) <= t) return true;                // due today or overdue
+    return false;
+  });
+  /* nothing explicitly planned yet — fall back to the ordered list so the page is never empty and useless */
+  if (!plan.length) plan = open.slice();
+  return (typeof sortTodos === "function") ? sortTodos(plan) : plan;
+}
+function phDoneToday() {
+  var t = phToday();
+  var all = (typeof actTodo === "function") ? actTodo() : ((D().todos || []).filter(function (x) { return x && !x.deleted; }));
+  return all.filter(function (x) {
+    if (!x.done) return false;
+    var when = x.doneAt || x.updatedAt;
+    if (!when) return false;
+    try { var dt = new Date(+when); var p = function (n) { return String(n).padStart(2, "0"); };
+      return (dt.getFullYear() + "-" + p(dt.getMonth() + 1) + "-" + p(dt.getDate())) === t; } catch (e) { return false; }
+  }).length;
+}
+function phPlanCard() {
+  var t = phToday();
+  var list = phPlanItems();
+  var done = phDoneToday();
+  var h = '<div class="secthd"><h2>Today</h2>'
+    + (done ? '<span class="ct">✓ ' + done + ' done</span>' : '') + '</div>';
+  if (!list.length) {
+    return h + '<div class="card"><div class="sub" style="white-space:normal">Nothing on the list. '
+      + 'Add something, or just tell me what you\'re doing and I\'ll put it here.</div></div>';
+  }
+  h += '<div class="card" style="padding:6px 10px">';
+  list.slice(0, 12).forEach(function (td) {
+    var carried = td.planDate && String(td.planDate) < t;
+    var overdue = td.due && String(td.due) < t;
+    h += '<div class="li" style="align-items:flex-start">'
+      + '<input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ' + (td.done ? "checked" : "")
+      + ' onchange="phTickTodo(\'' + td.id + '\')">'
+      + '<div class="grow" style="cursor:pointer" onclick="if(typeof openTodo===\'function\')openTodo(\'' + td.id + '\')">'
+      + '<div class="nm" style="font-size:15px">' + esc(td.title || "(untitled)") + '</div>'
+      + '<div class="sub" style="white-space:normal">'
+      + (overdue ? '<span style="color:var(--danger);font-weight:600">overdue</span> · ' : '')
+      + (carried ? 'carried over · ' : '')
+      + esc(td.notes ? String(td.notes).slice(0, 90) : (td.due ? "due " + ((typeof fmtDate === "function") ? fmtDate(td.due) : td.due) : ""))
+      + '</div></div></div>';
+  });
+  if (list.length > 12) h += '<div class="sub" style="padding:4px 2px">+ ' + (list.length - 12) + ' more on the To-Do tab</div>';
+  return h + '</div>';
+}
+if (typeof window !== "undefined") window.phTickTodo = function (id) {
+  var td = ((D().todos) || []).find(function (x) { return x && x.id === id; });
+  if (!td) return;
+  td.done = !td.done;
+  td.doneAt = td.done ? Date.now() : 0;          // so "done today" can be counted honestly
+  if (typeof touch === "function") touch(td);
+  if (typeof save === "function") save();
+  if (typeof render === "function") render();
+};
+
 /* ---- THE PAGE ---- */
 function personalHome() {
   PH_THREAD = phLoad();
   setTimeout(function () { const b = document.getElementById("ph-thread"); if (b) b.scrollTop = b.scrollHeight; }, 40);
   let h = '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>';
   h += phTalkCard();
+  /* ⭐ THE LIST IS THE PAGE. Everything below it is "what's happening today"; everything that isn't about
+     today belongs on its own tab. */
+  h += phPlanCard();
   /* Dates he'd otherwise be carrying in his head, directly under the talk box — the one place he actually
      lands. Silent when nothing is within 30 days, so it never becomes background noise. */
   if (typeof evHomeCardHTML === "function") h += evHomeCardHTML(30);
   /* what money is about to leave — "so nothing's gonna catch us off guard" (Ray, 2026-08-05) */
   if (typeof calBillsCardHTML === "function") h += calBillsCardHTML(14);
-  /* the file hand-off — he has no access to the workstation, so this is the only door (js/127) */
-  if (typeof pfCardHTML === "function") h += pfCardHTML();
+  /* ⛔ THE FILE HAND-OFF IS NOT A TODAY CARD. Ray, 2026-08-25: "Send me a file doesn't belong on today
+     either." Today is what's happening today; sending me a statement is a Money errand. Moved to Budget,
+     which is also where he'll be standing when he has a statement in his hand (js/79). */
   h += phQuickCard();
   h += phLookBackCard();
   /* ⛔ THE INTERESTS LIST IS NOT A HOME-SCREEN CARD. Ray, 2026-08-25: "we don't need this massive list of

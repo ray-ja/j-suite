@@ -347,7 +347,8 @@ function rBudget(){
     +'<button class="subbtn '+(BUDGET_SUB==="settings"?"on":"")+'" onclick="budgetSetSub(\'settings\')">⚙️ Settings</button>'
     +'</div>';
   /* the Tax sub-tab has its own combined view (one taxpayer) — no per-book bar there */
-  view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+'<div id="budget_body"></div>';
+  var _pf=(typeof pfCardHTML==="function")?pfCardHTML():"";   // the file hand-off, moved off Today
+  view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+_pf+'<div id="budget_body"></div>';
   if(BUDGET_SUB==="tx")budgetRenderTx();
   else if(BUDGET_SUB==="bills")budgetRenderBills();
   else if(BUDGET_SUB==="debts")budgetRenderDebts();
