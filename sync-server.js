@@ -2963,6 +2963,52 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* SCOPED CEO write — POST /api/ceo/todo. Token = CEO_WRITE_TOKEN. Adds TO-DOS and nothing else.
+     Ray, 2026-08-24, at the end of a long night: "please just take control of the to do list… I wanna be
+     able to keep talking to you without losing this kind of context."
+
+     WHY THIS EXISTS RATHER THAN /api/ceo/propose: a proposal is a decision he has to make. He asked to wake
+     up to a LIST, not to a queue of five approvals — the queue is the overwhelm he was describing. So this
+     writes directly, and the safety is structural instead of procedural: it goes through mergeState with
+     ONLY `todos` in the incoming, so it is incapable of touching any other collection, and ids are derived
+     from title+day so re-running it updates rather than duplicating.
+
+     He can delete anything he disagrees with in one tap, which is the right kind of undo for a to-do. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/ceo/todo") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!ceoTokenOk(tok, CEO_WRITE_TOKEN)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    return readBodyUtf8(req, 1e5, (body) => {
+      const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const store = loadStore();
+      const biz = (p && p.biz && orgIdsOf(store).indexOf(p.biz) >= 0) ? p.biz : "";
+      if (!biz) return J(400, { error: "unknown org" });
+      const items = Array.isArray(p.items) ? p.items.slice(0, 40) : [];
+      if (!items.length) return J(400, { error: "no items" });
+      const day = nyParts(new Date()).iso;
+      const recs = [];
+      items.forEach((it) => {
+        const title = String((it && it.title) || "").replace(/\s+/g, " ").trim().slice(0, 200);
+        if (!title) return;
+        /* stable id from the title + the day it was added, so re-running the same plan updates in place */
+        const id = "td_ceo_" + crypto.createHash("sha1").update(biz + "|" + day + "|" + title.toLowerCase()).digest("hex").slice(0, 12);
+        recs.push({
+          id: id, title: title,
+          priority: ["High", "Medium", "Low"].indexOf(String(it.priority)) >= 0 ? it.priority : "Medium",
+          due: /^\d{4}-\d{2}-\d{2}$/.test(String(it.due || "")) ? it.due : "",
+          notes: String((it && it.notes) || "").slice(0, 1000),
+          order: (+it.order || 0),
+          done: false, deleted: false, addedBy: "cap", updatedAt: Date.now()
+        });
+      });
+      if (!recs.length) return J(400, { error: "nothing usable" });
+      const merged = mergeState(store, { [biz]: { todos: recs } });   // ONLY todos in the incoming
+      saveStore(merged);
+      return J(200, { ok: true, biz: biz, added: recs.length, ids: recs.map(r => r.id) });
+    });
+  }
+
   // SCOPED CEO write — POST /api/ceo/propose. Token = CEO_WRITE_TOKEN. Queues an approval (pendingChanges)
   // ONLY — whitelist-enforced, cannot apply or touch any business collection. Owner approves in-app.
   if (req.method === "POST" && (req.url.split("?")[0] === "/api/ceo/propose")) {

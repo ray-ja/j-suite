@@ -7,9 +7,15 @@ function sortTodos(list){return list.slice().sort((a,b)=>{
 function rTodos(){
   const t=today();const list=sortTodos(actTodo());
   const openCt=list.filter(x=>!x.done).length;
-  let h=`<div class="secthd"><h2>To-Do · ${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"}</h2><span class="ct">${openCt} open</span></div>`;
+  /* the heading named only OBX or Jamieson, so the personal org's own list was captioned "Jamieson
+     Automation" — wrong everywhere except two orgs. Use the registry's actual name. */
+  const _orgName=((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).name||(S.biz==="obx"?"OBX Lot Solutions":S.biz);
+  let h=`<div class="secthd"><h2>To-Do · ${esc(_orgName)}</h2><span class="ct">${openCt} open</span></div>`;
   /* what the nightly reconciler noticed in the journal (js/137) — silent when there's nothing pending */
   h+=(typeof tpCardHTML==="function")?tpCardHTML():"";
+  /* URGENT WORK FROM THE OTHER ORGS (js/140) — only on the personal list, only what's actually urgent,
+     so this is the one list Ray has to look at. Silent in a business org and when nothing qualifies. */
+  h+=(typeof piCardHTML==="function")?piCardHTML():"";
   if(!list.length)h+=`<div class="empty"><div class="big">✅</div>No to-dos yet. Tap + to add one.</div>`;
   else h+=`<div class="card">`+list.map(td=>liTodo(td,t)).join("")+`</div>`;
   view.innerHTML=h;
