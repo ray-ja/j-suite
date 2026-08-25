@@ -48,6 +48,17 @@ window.openTodo=function(id){
     <div class="grow"><label>Due date</label><input id="td_due" type="date" value="${td.due||""}"></div></div>
     <label>Assign to</label><select id="td_assignee"><option value="">— unassigned —</option>${users().map(u=>`<option value="${u.id}" ${td.assignee===u.id?"selected":""}>${esc(u.username)}</option>`).join("")}</select>
     <label>Notes</label><textarea id="td_notes">${esc(td.notes||"")}</textarea>
+    <!-- ⭐ HARD DEADLINE — the only thing allowed to escalate. Ray, 2026-08-25, on how compliance should
+         work: escalate on CONSEQUENCE, not on elapsed time. A to-do that slips is a to-do; a to-do with a
+         real external cost on a real date is different, and it has to be marked as such deliberately. It
+         is opt-in precisely so nothing becomes urgent by accident — an urgency rule that fires on its own
+         is how a list turns into a wall (32 items, 2026-08-24). -->
+    <label class="row" style="gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="td_hard" ${td.hardDeadline?"checked":""} style="width:auto" onchange="todoHardToggle(this.checked)"> ⏳ Hard deadline — something outside me closes on this date</label>
+    <div id="td_hardwrap" style="display:${td.hardDeadline?"block":"none"}">
+      <label>What closes, in the world's terms</label>
+      <input id="td_hardwhy" value="${esc(td.deadlineWhy||"")}" placeholder="e.g. competitors take holiday-light deposits in September">
+      <div class="sub" style="margin:4px 0">This is the only kind of item that gets a countdown. It'll say what's about to happen, never that you haven't done it.</div>
+    </div>
     <button class="btn acc" style="margin-top:14px" onclick="saveTodo('${td.id}',${isNew})">Save</button>
     ${!isNew?`<button class="btn ghost sm" style="margin-top:10px;width:100%" onclick="toggleTodo('${td.id}');closeModal()">${td.done?"Mark not done":"Mark done"}</button>
       <button class="btn danger" style="margin-top:10px" onclick="delTodo('${td.id}')">Delete</button>`:""}
@@ -57,11 +68,18 @@ window.saveTodo=function(id,isNew){
   const d=D();let td=isNew?{id,done:false}:d.todos.find(x=>x.id===id);
   td.title=val("td_title");td.priority=val("td_pri");td.due=val("td_due");td.notes=val("td_notes");td.assignee=val("td_assignee");
   if(!td.title){alert("Give the to-do a title.");return;}
+  const _hard=document.getElementById("td_hard");
+  td.hardDeadline=!!(_hard&&_hard.checked);
+  td.deadlineWhy=td.hardDeadline?String(val("td_hardwhy")||"").slice(0,140):"";
+  /* a deadline with no date is not a deadline — refuse rather than file something that can never fire */
+  if(td.hardDeadline&&!td.due){alert("A hard deadline needs a due date.");return;}
   if(typeof submitGuard==="function"&&!submitGuard("saveTodo:"+id))return;   // rapid-tap dupe guard
   touch(td);if(isNew)d.todos.push(td);
   if(typeof logChange==="function")logChange(isNew?"create":"update","todo",td.id,(isNew?"Added to-do ":"Updated to-do ")+(td.title||""));
   save();closeModal();render();
 };
+/* show the "what closes" box only when it's actually a hard deadline */
+window.todoHardToggle=function(on){const w=document.getElementById("td_hardwrap");if(w)w.style.display=on?"block":"none";};
 window.toggleTodo=function(id){const td=D().todos.find(x=>x.id===id);td.done=!td.done;if(typeof logChange==="function")logChange("update","todo",id,(td.done?"Completed to-do ":"Reopened to-do ")+(td.title||""));touch(td);save();render();};
 window.delTodo=function(id){if(!confirm("Delete this to-do?"))return;
   const td=D().todos.find(x=>x.id===id);td.deleted=true;touch(td);if(typeof logChange==="function")logChange("delete","todo",id,"Deleted to-do "+(td.title||""));save();closeModal();render();};

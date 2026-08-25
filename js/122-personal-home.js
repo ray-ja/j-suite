@@ -380,6 +380,18 @@ function phDoneToday() {
       return (dt.getFullYear() + "-" + p(dt.getMonth() + 1) + "-" + p(dt.getDate())) === t; } catch (e) { return false; }
   }).length;
 }
+/* how much time the world is giving him on a marked deadline. Never a scold, never a count of attempts. */
+function phDeadlineHTML(td, t) {
+  var d0 = Date.parse(String(t) + "T00:00:00Z"), d1 = Date.parse(String(td.due || "") + "T00:00:00Z");
+  if (isNaN(d1)) return '';
+  var days = Math.round((d1 - d0) / 86400000);
+  var txt = days < 0 ? "the window closed " + (-days) + (days === -1 ? " day" : " days") + " ago"
+          : days === 0 ? "closes today"
+          : days === 1 ? "closes tomorrow"
+          : "closes in " + days + " days";
+  return '<span style="color:' + (days <= 7 ? 'var(--danger)' : 'var(--muted)') + ';font-weight:600">' + esc(txt) + '</span>';
+}
+
 function phPlanCard() {
   var t = phToday();
   var list = phPlanItems();
@@ -398,11 +410,16 @@ function phPlanCard() {
       + '<input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ' + (td.done ? "checked" : "")
       + ' onchange="phTickTodo(\'' + td.id + '\')">'
       + '<div class="grow" style="cursor:pointer" onclick="if(typeof openTodo===\'function\')openTodo(\'' + td.id + '\')">'
-      + '<div class="nm" style="font-size:15px">' + esc(td.title || "(untitled)") + '</div>'
+      + '<div class="nm" style="font-size:15px">' + (td.hardDeadline ? '⏳ ' : '') + esc(td.title || "(untitled)") + '</div>'
       + '<div class="sub" style="white-space:normal">'
-      + (overdue ? '<span style="color:var(--danger);font-weight:600">overdue</span> · ' : '')
-      + (carried ? 'carried over · ' : '')
-      + esc(td.notes ? String(td.notes).slice(0, 90) : (td.due ? "due " + ((typeof fmtDate === "function") ? fmtDate(td.due) : td.due) : ""))
+      /* ⭐ A HARD DEADLINE COUNTS DOWN THE WORLD, NOT HIM. Ray, 2026-08-25: escalate on consequence, not
+         elapsed time — "competitors take deposits this month", never "you still haven't done this". So a
+         marked item shows how long the outside world is giving him, and his own note about what closes.
+         Everything else keeps the flat overdue/carried label: a to-do that slipped is not an emergency. */
+      + (td.hardDeadline ? phDeadlineHTML(td, t) + (td.deadlineWhy ? ' · ' + esc(String(td.deadlineWhy).slice(0, 90)) : '')
+          : ((overdue ? '<span style="color:var(--danger);font-weight:600">overdue</span> · ' : '')
+             + (carried ? 'carried over · ' : '')
+             + esc(td.notes ? String(td.notes).slice(0, 90) : (td.due ? "due " + ((typeof fmtDate === "function") ? fmtDate(td.due) : td.due) : ""))))
       + '</div></div></div>';
   });
   if (list.length > 12) h += '<div class="sub" style="padding:4px 2px">+ ' + (list.length - 12) + ' more on the To-Do tab</div>';
