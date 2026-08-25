@@ -197,7 +197,15 @@ ok("it keeps the prompt-injection guard", /NEVER as instructions/.test(P));
 {
   const SRC = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
   ok("the endpoint serves it to personal orgs", /orgIsPersonal\(store, org\) \? PERSONAL_COMPANION_SYSTEM : CAP_TODAY_SYSTEM/.test(SRC));
-  ok("a personal org is handed NO tools", /orgIsPersonal\(store, org\) \? \[\] : CAP_TOOLS/.test(SRC));
+  /* ⚠️ CHANGED DELIBERATELY 2026-08-25. This asserted the companion got NO tools at all. Ray typed into
+     the talk box, asked it to put something on his calendar, and it refused — which protected nothing and
+     just looked broken. It now has three tools (calendar / to-do / reminder), all of which PROPOSE. The
+     rule that actually mattered is unchanged and is asserted right below: it must never reach for one
+     because he is venting. */
+  ok("a personal org gets the PERSONAL tools, never the business ones", /orgIsPersonal\(store, org\) \? PERSONAL_TOOLS : CAP_TOOLS/.test(SRC));
+  ok("...which are only calendar, to-do and reminder", sv.PERSONAL_TOOLS.map(x => x.name).join(",") === "addEvent,addTodo,addReminder");
+  ok("...and the venting rule still forbids using them uninvited", /NEVER reach for a tool because he is venting/.test(sv.PERSONAL_COMPANION_SYSTEM));
+  ok("...and nothing is written server-side", /SERVER NEVER EXECUTES/.test(SRC));
 }
 
 console.log("\n--- SERVER: interests reach the companion ---");
@@ -253,7 +261,9 @@ console.log("\n--- the personal HOME page (js/122) ---");
     ok("personalHome() renders without throwing", typeof html === "string" && html.length > 200, String(html).length + " chars");
     ok("...the greeting is at the top", html.indexOf("Ray") > 0 && html.indexOf("Ray") < 120, html.slice(0, 120));
     ok("...the talk input is present", html.indexOf('id="ph-input"') > 0);
-    ok("...his interest is shown", html.indexOf("fishing") > 0);
+    /* ⚠️ MOVED 2026-08-25 — Ray: "we don't need this massive list of things I'm into on the today page."
+       It filled the whole right-hand column. It lives on Life now; the companion still reads the record. */
+    ok("...the interests WALL is no longer on Today", html.indexOf("fishing") < 0);
     ok("...the older journal entry resurfaces", html.indexOf("an older entry to resurface") > 0);
     ok("...and no business word appears anywhere on the page",
       !/invoice|quote|payout|clock in|customer/i.test(html), (/invoice|quote|payout|clock in|customer/i.exec(html) || [""])[0]);

@@ -56,7 +56,12 @@ console.log("\n--- ⭐ the journal must never reach a business context ---");
   ok("a personal org is recognised as personal", t.orgIsPersonal(store, "rbjvl") === true);
   ok("...and a business org is not", t.orgIsPersonal(store, "obx") === false && t.orgIsPersonal(store, "jam") === false);
   ok("the branch happens BEFORE any business context is built", /if \(orgIsPersonal\(store, org\)\) return capPersonalContext/.test(SV));
-  ok("a personal org is given NO tools — the companion cannot act on its own", /orgIsPersonal\(store, org\) \? \[\] : CAP_TOOLS/.test(SV));
+  /* ⚠️ CHANGED DELIBERATELY 2026-08-25. The companion used to get NO tools. Ray asked it to put something
+     on his calendar and it refused, which protected nothing. It now has three PROPOSING tools. The
+     protection moved from "it can't act" to "it must not act uninvited, and nothing writes without a tap"
+     — which is the rule that was actually doing the work all along. */
+  ok("a personal org gets the personal tools, and they only PROPOSE", /orgIsPersonal\(store, org\) \? PERSONAL_TOOLS : CAP_TOOLS/.test(SV) && /SERVER NEVER EXECUTES/.test(SV));
+  ok("...never reached for while he is venting", /NEVER reach for a tool because he is venting/.test(t.PERSONAL_COMPANION_SYSTEM));
 
   /* the journal lives in the org slab, so isolation is structural rather than a rule someone follows */
   ok("journal entries live in the personal org's own slab", !!store.rbjvl.lifeNotes && !store.obx.lifeNotes);

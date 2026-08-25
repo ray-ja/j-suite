@@ -45,7 +45,12 @@ console.log("\n--- ⭐ the journal stays somewhere he can just talk ---");
   /* the structural guarantees, not just the prompt */
   ok("extraction runs as a SECOND pass, after the entry is saved", VJ.indexOf("save();") < VJ.indexOf("jaScan(n.id"));
   ok("...and is wrapped so a failure can never cost the entry", /try \{ jaScan\(n\.id, text\); \} catch/.test(VJ));
-  ok("the companion still gets NO tools", /orgIsPersonal\(store, org\) \? \[\] : CAP_TOOLS/.test(SV));
+  /* ⚠️ CHANGED DELIBERATELY 2026-08-25. The companion used to get NO tools. Ray asked it to put something
+     on his calendar and it refused, which protected nothing. It now has three PROPOSING tools. The
+     protection moved from "it can't act" to "it must not act uninvited, and nothing writes without a tap"
+     — which is the rule that was actually doing the work all along. */
+  ok("the companion's tools are the personal set, not the business one", /orgIsPersonal\(store, org\) \? PERSONAL_TOOLS : CAP_TOOLS/.test(SV));
+  ok("...and it is forbidden to reach for one while he vents", /NEVER reach for a tool because he is venting/.test(t.PERSONAL_COMPANION_SYSTEM));
   ok("the reason the two passes are separate is recorded in the module", /WHEN HE VENTS, LET HIM/.test(JA));
   ok("nothing is written without a tap", /nothing here reaches the calendar, to-dos or reminders without a tap/.test(JA));
 }

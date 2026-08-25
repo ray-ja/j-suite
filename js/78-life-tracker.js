@@ -119,6 +119,9 @@ function lifeRenderToday(){
     +'<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="lifeAddReminder()">＋ Add a reminder</button>';
   }
 
+  /* the interests list (js/122) — moved off Today 2026-08-25 because it dominated the home screen. Still
+     editable, just somewhere it isn't shouting. */
+  if(typeof phInterestsCard==="function")h+=phInterestsCard();
   body.innerHTML=h;
 }
 window.lifeShiftDay=function(delta){

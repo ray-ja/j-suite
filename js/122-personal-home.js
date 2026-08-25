@@ -36,7 +36,9 @@ function phLoad() {
     const me = phMe(), pfx = "ph_talk_" + ((me && me.id) || "anon") + "_", suf = "_" + phToday();
     for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.indexOf(pfx) === 0 && k.slice(-suf.length) !== suf) localStorage.removeItem(k); }
   } catch (e) {}
-  try { const a = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(a) ? a.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string") : []; }
+  /* `action` is a third role (2026-08-25) — a proposed calendar/to-do/reminder card. It has no `content`,
+     so the old filter would have silently dropped every one of them on reload. */
+  try { const a = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(a) ? a.filter(m => m && ((m.role === "action" && m.action) || ((m.role === "user" || m.role === "assistant") && typeof m.content === "string"))) : []; }
   catch (e) { return []; }
 }
 function phSave() { try { localStorage.setItem(phKey(), JSON.stringify(PH_THREAD.slice(-60))); } catch (e) {} }
@@ -154,7 +156,10 @@ function phThreadInner() {
       + 'Nothing you say here goes anywhere else — not to the crew, not into the business. '
       + 'Talk about the day, or something that has nothing to do with work.</div>';
   }
-  PH_THREAD.forEach(m => { h += phBubble(m.role === "user" ? "me" : "them", esc(m.content).replace(/\n/g, "<br>")); });
+  PH_THREAD.forEach(m => {
+    if (m.role === "action") { h += phActionCard(m); return; }          // a card, not a bubble
+    h += phBubble(m.role === "user" ? "me" : "them", esc(m.content).replace(/\n/g, "<br>"));
+  });
   if (PH_BUSY) h += phBubble("them", '<span class="muted">…</span>');
   return h;
 }
@@ -188,7 +193,9 @@ if (typeof window !== "undefined") window.phSend = function () {
     phSave(); inp.value = ""; phRender(); return;
   }
   PH_THREAD.push({ role: "user", content: text }); phSave(); inp.value = ""; PH_BUSY = true; phRender();
-  const hist = PH_THREAD.slice(-14);
+  /* only real conversation turns go to the model — an action card has no `content` and would be a
+     malformed message. It stays in HIS view of the thread, just not in the API payload. */
+  const hist = PH_THREAD.filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string").slice(-14);
   fetch(phBase() + "/api/org-ai/assistant", {
     method: "POST", headers: phHeaders(),
     body: JSON.stringify({ org: (typeof S !== "undefined" ? S.biz : ""), messages: hist })
@@ -197,6 +204,13 @@ if (typeof window !== "undefined") window.phSend = function () {
     .then(res => {
       PH_BUSY = false; const j = res.j || {};
       if (res.ok && typeof j.reply === "string" && j.reply.trim()) PH_THREAD.push({ role: "assistant", content: j.reply.trim() });
+      /* PROPOSED ACTIONS (server tools, 2026-08-25). Nothing is written here — each becomes a card he
+         confirms or cancels, the same path the business Cap has always used. */
+      if (res.ok && Array.isArray(j.actions)) {
+        j.actions.forEach(function (a) {
+          if (a && a.kind) PH_THREAD.push({ role: "action", action: a, state: "pending", cid: "a" + Date.now() + Math.random().toString(36).slice(2, 6) });
+        });
+      }
       else if (res.ok) PH_THREAD.push({ role: "assistant", content: "I'm here." });
       else PH_THREAD.push({ role: "assistant", content: (j.error && /not set up/i.test(j.error)) ? "I'm not switched on yet — an owner can add a key in Admin → Assistant." : "Something went wrong reaching me. Try again in a sec." });
       phSave(); phRender();
@@ -204,10 +218,70 @@ if (typeof window !== "undefined") window.phSend = function () {
     .catch(() => { PH_BUSY = false; PH_THREAD.push({ role: "assistant", content: "Something went wrong reaching me. Try again in a sec." }); phSave(); phRender(); });
 };
 
+/* ---- a proposed action, as a card he taps ----
+   Ray, 2026-08-25: "it told me that it can't add things to my calendar. Can we make it able to do that?"
+   It can now — but it PROPOSES. He confirms. That keeps the one thing that mattered: this box never
+   silently does something to his life because he was thinking out loud in it. */
+function phActionCard(item) {
+  const a = item.action || {};
+  const when = a.date ? ((typeof fmtDate === "function") ? fmtDate(a.date) : a.date) + (a.time ? " at " + a.time : "") : "";
+  const LBL = { addEvent: ["📅", "Put on your calendar"], addTodo: ["✅", "Add to your to-do list"], addReminder: ["⏰", "Remind you"] };
+  const L = LBL[a.kind] || ["•", "Do that"];
+  let inner = '<div class="nm" style="font-size:14px;white-space:normal">' + L[0] + ' ' + esc(a.title || a.text || "") + '</div>'
+    + '<div class="sub" style="white-space:normal">' + esc(L[1]) + (when ? ' · ' + esc(when) : '') + (a.annual ? ' · every year' : '') + '</div>';
+  if (item.state === "pending") {
+    inner += '<div class="row" style="gap:8px;margin-top:9px">'
+      + '<button class="btn acc" style="flex:1" onclick="phConfirmAction(\'' + item.cid + '\')">Confirm</button>'
+      + '<button class="btn ghost" style="flex:1" onclick="phCancelAction(\'' + item.cid + '\')">Cancel</button></div>';
+  } else if (item.state === "done") inner += '<div style="font-size:12px;margin-top:6px;color:var(--accent);font-weight:800">✓ Done</div>';
+  else if (item.state === "cancelled") inner += '<div class="sub" style="margin-top:6px">Cancelled</div>';
+  else if (item.state === "error") inner += '<div style="font-size:12px;margin-top:6px;color:var(--danger)">' + esc(item.err || "Couldn\'t do that") + '</div>';
+  return '<div class="card" style="border-left:4px solid var(--accent);margin:2px 0;padding:10px">' + inner + '</div>';
+}
+
+if (typeof window !== "undefined") window.phConfirmAction = function (cid) {
+  const item = PH_THREAD.find(function (m) { return m && m.cid === cid; });
+  if (!item || item.state !== "pending") return;
+  const a = item.action || {};
+  try {
+    const d = D();
+    if (a.kind === "addEvent") {
+      if (!Array.isArray(d.personalEvents)) d.personalEvents = [];
+      const e = { id: "pev_" + (typeof uid === "function" ? uid() : String(Date.now())), date: a.date, title: a.title,
+                  note: a.time ? ("at " + a.time) : "", annual: !!a.annual, confirmed: true, deleted: false };
+      if (typeof touch === "function") touch(e);
+      d.personalEvents.push(e);
+    } else if (a.kind === "addTodo") {
+      if (!Array.isArray(d.todos)) d.todos = [];
+      const t = { id: (typeof uid === "function" ? uid() : String(Date.now())), title: a.title, priority: "Medium",
+                  due: a.due || "", done: false, notes: "", deleted: false };
+      if (typeof touch === "function") touch(t);
+      d.todos.push(t);
+    } else if (a.kind === "addReminder") {
+      if (!Array.isArray(d.reminders)) d.reminders = [];
+      const me = (typeof curUser === "function") ? curUser() : null;
+      const r = { id: "rm_" + (typeof uid === "function" ? uid() : String(Date.now())), text: a.text,
+                  dueAt: (typeof rmDueAt === "function") ? rmDueAt(a.date, a.time) : 0,
+                  fired: false, userId: (me && me.id) || "", deleted: false };
+      if (typeof touch === "function") touch(r);
+      d.reminders.push(r);
+    } else { item.state = "error"; item.err = "I don\'t know how to do that one."; phSave(); phRender(); return; }
+    if (typeof save === "function") save();
+    item.state = "done";
+  } catch (e) { item.state = "error"; item.err = String((e && e.message) || e).slice(0, 120); }
+  phSave(); phRender();
+};
+if (typeof window !== "undefined") window.phCancelAction = function (cid) {
+  const item = PH_THREAD.find(function (m) { return m && m.cid === cid; });
+  if (item && item.state === "pending") { item.state = "cancelled"; phSave(); phRender(); }
+};
+
 /* keeping a conversation is HIS choice — venting is not silently filed */
 if (typeof window !== "undefined") window.phSaveToJournal = function () {
   if (!PH_THREAD.length) return;
-  const body = PH_THREAD.map(m => (m.role === "user" ? "Me: " : "— ") + m.content).join("\n\n");
+  const body = PH_THREAD
+    .filter(m => m && typeof m.content === "string")                     // skip action cards
+    .map(m => (m.role === "user" ? "Me: " : "— ") + m.content).join("\n\n");
   const d = D(); if (!d.lifeNotes) d.lifeNotes = [];
   const n = { id: "life-note-" + (typeof uid === "function" ? uid() : String(Date.now())),
               date: phToday(), title: "Talked it out", body: body, deleted: false };
@@ -283,11 +357,17 @@ function personalHome() {
   if (typeof pfCardHTML === "function") h += pfCardHTML();
   h += phQuickCard();
   h += phLookBackCard();
-  h += phInterestsCard();
+  /* ⛔ THE INTERESTS LIST IS NOT A HOME-SCREEN CARD. Ray, 2026-08-25: "we don't need this massive list of
+     things I'm into on the today page. That doesn't make any sense." He's right — it filled the entire
+     right-hand column with a wall of text he already knows about himself. Its real job is to feed the
+     companion's context so it can follow a sentence about Morrowind or Catholicism, and it does that from
+     the record whether or not it is ever drawn. It now lives on Life, where it is editable and out of the
+     way. */
   return h;
 }
 if (typeof window !== "undefined") {
   window.personalHome = personalHome;
+  window.phInterestsCard = phInterestsCard;   // the Life tab renders it now, not Today
   window.phInterests = phInterests;
   window.phGreeting = phGreeting;
 }
