@@ -396,6 +396,7 @@ if (typeof window !== "undefined") window.phTickTodo = function (id) {
 };
 
 /* ---- THE PAGE ---- */
+const MC_DAYS_FALLBACK = 14;
 function personalHome() {
   PH_THREAD = phLoad();
   setTimeout(function () { const b = document.getElementById("ph-thread"); if (b) b.scrollTop = b.scrollHeight; }, 40);
@@ -423,10 +424,13 @@ function personalHome() {
   };
 
   /* ---- LEFT: what he looks AT ---- */
-  let side = "";
-  if (typeof calBillsCardHTML === "function") side += calBillsCardHTML(14);   // what's about to leave
-  if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);       // dates he'd carry in his head
-  if (side) side = '<div class="secthd"><h2 style="font-size:13px">Money &amp; what\'s coming</h2></div>' + side;
+  /* balances + the next two weeks of bills (js/142) — built to be SCANNED. Falls back to the calendar's
+     own bills card if that module is missing, so Today can never lose the money block entirely. */
+  let side = (typeof moneyCardHTML === "function") ? moneyCardHTML()
+           : ((typeof calBillsCardHTML === "function") ? calBillsCardHTML(MC_DAYS_FALLBACK) : "");
+  /* dates he'd otherwise carry in his head. No heading — the card already says "Coming up" on itself,
+     and stacking a heading on top of it just says it twice. */
+  if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);
 
   /* ---- RIGHT: what he DOES, in the order he does it ---- */
   let day = part("morning");

@@ -239,9 +239,10 @@ console.log("\n--- ⭐ Today reads as a day, in two columns that mean something 
   ok("⭐ the box he talks to is in the left column", /phTalkCard/.test(chat));
   ok("⭐ ...and the money/dates block is the other left-column row",
     at("calBillsCardHTML") < at('class="dc-chat"') && /side/.test(body.slice(at('class="dc-money"'), at('class="dc-money"') + 60)), body.slice(at('class="dc-money"'), at('class="dc-money"') + 60));
-  ok("bills due are in it", /calBillsCardHTML\(14\)/.test(body));
-  ok("...as is what's coming up", /evHomeCardHTML\(30\)/.test(body));
-  ok("the left block is silent when there is nothing in it", /if \(side\)/.test(body));
+  ok("bills and balances come from the money block (js/142)", /moneyCardHTML\(\)/.test(body));
+  ok("...with the old bills card kept as a fallback, so Today never loses money entirely", /calBillsCardHTML/.test(body));
+  ok("...and what's coming up sits under it", /evHomeCardHTML\(30\)/.test(body));
+  ok("⛔ no second 'Coming up' heading stacked on a card that already says it", (body.match(/Coming up/g) || []).length <= 1, (body.match(/.*Coming up.*/g) || []));
 
   /* ⭐ RIGHT: the day, linear. "make the daily routine stuff linear on the right" */
   ok("⭐ MORNING opens the day", at('day = part("morning")') > 0);
