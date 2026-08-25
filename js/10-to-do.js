@@ -1,8 +1,17 @@
 /* ---------- TO-DO ---------- */
 const PRI_ORDER={High:0,Medium:1,Low:2};
+/* `order` — an explicit sequence, set when a day gets PLANNED rather than just listed (Ray, 2026-08-24:
+   "please just take control of the to do list"). It is a tiebreaker WITHIN a priority band, ahead of the due
+   date: planning a day is deciding what comes first, and without this the plan was silently re-sorted into
+   priority-then-date and the sequence meant nothing. Anything with no order keeps exactly the old behaviour
+   and follows the ordered ones, so no existing list changes shape. */
 function sortTodos(list){return list.slice().sort((a,b)=>{
   if(!!a.done!==!!b.done)return a.done?1:-1;
   if((PRI_ORDER[a.priority]??1)!==(PRI_ORDER[b.priority]??1))return (PRI_ORDER[a.priority]??1)-(PRI_ORDER[b.priority]??1);
+  const ao=+a.order||0, bo=+b.order||0;
+  if(ao&&bo&&ao!==bo)return ao-bo;
+  if(ao!==0&&bo===0)return -1;
+  if(bo!==0&&ao===0)return 1;
   return (a.due||"9999")<(b.due||"9999")?-1:1;});}
 function rTodos(){
   const t=today();const list=sortTodos(actTodo());

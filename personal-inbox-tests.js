@@ -80,6 +80,39 @@ ok("the heading no longer hardcodes two org names", !/S\.biz==="obx"\?"OBX Lot S
 ok("...it uses the registry's real name", /\(\(S\.registry\|\|\[\]\)\.find\(r=>r&&r\.id===S\.biz\)\|\|\{\}\)\.name/.test(TD));
 ok("...and the bug is recorded", /captioned "Jamieson\s*\n?\s*Automation"/.test(TD) || /wrong everywhere except two orgs/.test(TD));
 
+console.log("\n--- ⭐ a PLANNED day keeps its sequence ---");
+{
+  const vm = require("vm"), c = {};
+  vm.createContext(c);
+  vm.runInContext(TD.match(/const PRI_ORDER[\s\S]*?return \(a\.due\|\|"9999"\)<\(b\.due\|\|"9999"\)\?-1:1;\}\);\}/)[0] + ";this.s=sortTodos;", c);
+  const titles = l => c.s(l).map(x => x.title);
+
+  /* the bug this fixes: sortTodos sorted by priority-then-DATE and ignored `order` entirely, so a day I
+     planned 1..7 was silently re-sorted and the sequence meant nothing. */
+  eq("an explicit order is honoured", titles([
+    { title: "c", priority: "High", order: 3 }, { title: "a", priority: "High", order: 1 }, { title: "b", priority: "High", order: 2 }
+  ]).join(""), "abc");
+  eq("...ahead of the due date", titles([
+    { title: "later", priority: "High", order: 1, due: "2026-12-01" }, { title: "sooner", priority: "High", order: 2, due: "2026-08-26" }
+  ]).join(","), "later,sooner");
+  eq("ordered items come before unordered ones in the same band", titles([
+    { title: "unordered", priority: "High", due: "2026-08-26" }, { title: "planned", priority: "High", order: 1 }
+  ]).join(","), "planned,unordered");
+  eq("priority still wins over order — a Low can't jump a High", titles([
+    { title: "low-first", priority: "Low", order: 1 }, { title: "high-later", priority: "High", order: 9 }
+  ]).join(","), "high-later,low-first");
+  eq("done still sinks regardless of order", titles([
+    { title: "done", priority: "High", order: 1, done: true }, { title: "open", priority: "Low", order: 9 }
+  ]).join(","), "open,done");
+  eq("⭐ a list with NO orders behaves exactly as before", titles([
+    { title: "b", priority: "High", due: "2026-09-01" }, { title: "a", priority: "High", due: "2026-08-26" }, { title: "c", priority: "Low" }
+  ]).join(""), "abc");
+  eq("order 0 counts as unset", titles([
+    { title: "zero", priority: "High", order: 0, due: "2026-08-26" }, { title: "one", priority: "High", order: 1 }
+  ]).join(","), "one,zero");
+  ok("why order beats the due date is recorded", /planning a day is deciding what comes first/.test(TD));
+}
+
 console.log("\n--- the scoped to-do write route ---");
 ok("POST /api/ceo/todo exists", /\/api\/ceo\/todo/.test(SV));
 ok("...gated by the CEO write token", /\/api\/ceo\/todo"\)[\s\S]{0,400}ceoTokenOk\(tok, CEO_WRITE_TOKEN\)/.test(SV));
