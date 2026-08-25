@@ -134,6 +134,11 @@ function budgetCardPaymentsFrom(acctId){
 /* LIVE balance of any account. Credit: stored(debt, negative) − charges + payments. Cash: stored − card-payments sourced here. */
 function budgetAccountBalance(a){
   if(!a)return 0;
+  /* ⭐ RECONCILED ACCOUNTS DERIVE THEIR BALANCE (js/145): checkpoint + every approved transaction since.
+     ⚠️ Guarded on balanceDate so an account he has never reconciled behaves EXACTLY as it always has —
+     14 call sites read this function, and changing its meaning for existing records would have silently
+     moved To-Be-Budgeted, every envelope and every cash total in one commit. */
+  if(a.balanceDate&&typeof acctBalanceAt==="function")return acctBalanceAt(a,null);
   var stored=+a.balance||0;
   if(a.type==="credit") return Math.round((stored-budgetCardChargesTotal(a.id)+budgetCardPaymentsTotal(a.id))*100)/100;
   return Math.round((stored-budgetCardPaymentsFrom(a.id))*100)/100;

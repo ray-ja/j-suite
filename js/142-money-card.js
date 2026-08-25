@@ -73,13 +73,18 @@ function mcBalancesHTML() {
     + '<div class="row" style="gap:10px;align-items:stretch">'
     + accts.slice(0, 4).map(function (a) {
         var live = (typeof budgetAccountBalance === "function") ? budgetAccountBalance(a) : (+a.balance || 0);
-        var unset = !(+a.balance);      // see the header: 0 and never-entered are the same record
+        /* ⭐ A RECONCILED ACCOUNT IS NEVER "unset" — even if it derives to exactly zero, that zero is a
+           computed fact with a statement behind it, not a blank field. Only an account with no checkpoint
+           AND no typed balance is unknown, and the fix for that is to reconcile it, not to type a number
+           that is stale the moment it's typed. */
+        var derived = (typeof acctIsDerived === "function") && acctIsDerived(a);
+        var unset = !derived && !(+a.balance);
         return '<div class="grow" style="min-width:0;cursor:pointer" title="' + esc(a.name || "") + '"'
           + ' onclick="mcOpenAccount(\'' + a.id + '\')">'
           + '<div class="sub" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
           + esc(mcAccountLabel(a)) + '</div>'
           + (unset
-              ? '<div class="sub" style="font-size:13px;margin-top:2px;color:var(--accent)">Set&nbsp;balance</div>'
+              ? '<div class="sub" style="font-size:13px;margin-top:2px;color:var(--accent)">Reconcile</div>'
               : '<div class="nm" style="font-size:19px;margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap'
                 + (live < 0 ? ';color:var(--danger)' : '') + '">' + esc(mcRound(live)) + '</div>')
           + '</div>';
@@ -113,17 +118,25 @@ function mcBillsHTML() {
 /* the whole left-column money block, heading included. Silent if he has no budget set up at all. */
 function moneyCardHTML() {
   var bal = mcBalancesHTML();
+  /* the forecast is worth showing even with no accounts yet — it's the prompt to reconcile one */
   var bills = (typeof calBillsDueSoon === "function" && calBillsDueSoon(MC_DAYS).length) ? mcBillsHTML() : "";
   if (!bal && !bills) return "";
+
+  /* ⭐ the forecast sits with the balances, because "what you have" and "what happens next" are one
+     thought. Silent when there is nothing solid to project from. */
+  var flow = (typeof cashflowLineHTML === "function") ? cashflowLineHTML() : "";
   return '<div class="secthd"><h2 style="font-size:13px">Money</h2><div class="grow"></div>'
     + '<button class="btn ghost sm" style="width:auto;flex:0 0 auto;padding:2px 10px;font-size:12px" onclick="mcGoBudget()">Budget</button></div>'
-    + bal + bills;
+    + bal + flow + bills;
 }
 
 if (typeof window !== "undefined") {
   window.moneyCardHTML = moneyCardHTML; window.mcBalancesHTML = mcBalancesHTML; window.mcBillsHTML = mcBillsHTML;
   window.mcAccountLabel = mcAccountLabel; window.mcBillName = mcBillName; window.mcWhen = mcWhen; window.MC_DAYS = MC_DAYS;
   window.mcOpenAccount = function (id) {
+    /* an account with no checkpoint wants reconciling, not a typed number — that's the whole point */
+    var a = (function () { try { return (D().budgetAccounts || []).find(function (x) { return x && x.id === id; }); } catch (e) { return null; } })();
+    if (a && !a.balanceDate && typeof openReconcile === "function") return openReconcile(id);
     if (typeof openBudgetAccount === "function") return openBudgetAccount(id);   // reuse the real editor
     if (typeof navSub === "function") navSub("budget");
   };

@@ -114,8 +114,12 @@ console.log("\n--- ⚠️ balances: never invent one ---");
 
   /* HIS LIVE STATE: three accounts, every balance zero because he has never entered one */
   ok("⛔ it does NOT print $0 as if that were his money", !/\$0/.test(html), html);
-  ok("⭐ ...it says the balance isn't set", (html.match(/Set&nbsp;balance/g) || []).length === 3);
-  ok("...and tapping it opens the real account editor", /mcOpenAccount\('a1'\)/.test(html));
+  /* ⭐ CHANGED 2026-08-25: the prompt is Reconcile, not "Set balance". A balance you type is stale the
+     moment you type it — which is exactly why all three of his accounts sat at zero. Reconciling to a
+     statement gives a dated fact, and everything after it is arithmetic (js/145). */
+  ok("⭐ ...it offers to reconcile the account", (html.match(/Reconcile</g) || []).length === 3, html);
+  ok("⛔ ...and no longer asks him to type a number", !/Set&nbsp;balance/.test(html));
+  ok("...tapping it opens the reconcile dialog", /mcOpenAccount\('a1'\)/.test(html) && /openReconcile/.test(CODE(SRC)));
   ok("the editor is the app's own, not a second one that could drift", /openBudgetAccount/.test(CODE(SRC)));
 
   /* ⭐ the three he named: "obx lot solutions, my personal account, and my business account" */
