@@ -571,6 +571,11 @@ function budgetRenderDebts(){
     +'<div class="sub" style="margin-top:4px">across '+debts.length+' account'+(debts.length===1?'':'s')
     +(minTotal>0?(' · minimum payments '+budgetMoney(minTotal)+'/mo'):'')+'</div></div>';
 
+  /* ⭐ what it COSTS and what extra buys (js/147) — the ordering advice below says which card first, this
+     says how long, how much interest, and what one more slice a month would do. */
+  if(typeof debtPromoHTML==="function")h+=debtPromoHTML();
+  if(typeof debtPlanHTML==="function")h+='<div id="debt_plan">'+debtPlanHTML()+'</div>';
+
   /* snowball (smallest balance first) vs avalanche (highest APR first) ordering suggestion */
   var owed=function(a){ var b=budgetAccountBalance(a); return b<0?-b:0; };
   var withDebt=debts.filter(function(a){return owed(a)>0.005;});
@@ -719,6 +724,11 @@ window.openBudgetAccount=function(id){
     +'<label>APR % (optional)</label><input id="ba_apr" type="number" inputmode="decimal" step="0.01" value="'+esc(a.apr!=null&&a.apr!==""?a.apr:"")+'" placeholder="e.g. 24.99">'
     +'<label>Minimum payment $/mo (optional)</label><input id="ba_minpay" type="number" inputmode="decimal" step="0.01" value="'+esc(a.minPayment!=null&&a.minPayment!==""?a.minPayment:"")+'" placeholder="e.g. 35">'
     +'<label>Credit limit $ (optional)</label><input id="ba_limit" type="number" inputmode="decimal" step="0.01" value="'+esc(a.creditLimit!=null&&a.creditLimit!==""?a.creditLimit:"")+'" placeholder="e.g. 5000">'
+    /* ⚠️ A PROMO RATE IS A DIFFERENT CARD AFTER ITS DATE. His Citi is 0% until 2026-09-24 and 28.24%
+       after — a payoff plan that assumed 0% forever would rank it LAST right as it becomes the most
+       expensive thing he owns. */
+    +'<label>Promo rate ends (optional)</label><input id="ba_promountil" type="date" value="'+esc(a.promoUntil||"")+'">'
+    +'<label>Promo APR % until then</label><input id="ba_promoapr" type="number" inputmode="decimal" step="0.01" value="'+esc(a.promoApr!=null&&a.promoApr!==""?a.promoApr:"")+'" placeholder="0">'
     +'<label class="row" style="gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="ba_debtonly" '+(a.debtOnly?"checked":"")+' style="width:auto"> Debt only — I owe on it but don\'t use it</label>'
     +'<div class="sub" style="margin:2px 0 0">Debt-only cards/loans skip the spending flow — they just show up in <b>Debts</b> to pay down.</div></div>';
   modal(isNew?"Add account":"Edit account",''
@@ -752,8 +762,10 @@ window.saveBudgetAccount=function(id,isNew){
     var apr=parseFloat(val("ba_apr")); a.apr=(isNaN(apr)||apr<0)?"":Math.round(apr*100)/100;
     var mp=parseFloat(val("ba_minpay")); a.minPayment=(isNaN(mp)||mp<0)?"":Math.round(mp*100)/100;
     var cl=parseFloat(val("ba_limit")); a.creditLimit=(isNaN(cl)||cl<0)?"":Math.round(cl*100)/100;
+    a.promoUntil=val("ba_promountil")||"";
+    var pa=parseFloat(val("ba_promoapr")); a.promoApr=(a.promoUntil&&!isNaN(pa)&&pa>=0)?pa:"";
     var dbo=document.getElementById("ba_debtonly"); a.debtOnly=!!(dbo&&dbo.checked);
-  }else{ a.apr=""; a.minPayment=""; a.creditLimit=""; a.debtOnly=false; }   // non-credit never carries debt fields
+  }else{ a.apr=""; a.minPayment=""; a.creditLimit=""; a.debtOnly=false; a.promoUntil=""; a.promoApr=""; }   // non-credit never carries debt fields
   a.deleted=false; touch(a); if(isNew)d.budgetAccounts.push(a);
   /* an active card (credit, not debt-only) needs its auto-managed Payment envelope; a debt-only card retires it */
   if(budgetIsActiveCard(a))ensurePaymentCat(a);
