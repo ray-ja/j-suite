@@ -28,6 +28,7 @@ function eq(n, g, w) { ok(n, g === w, "got " + JSON.stringify(g) + " want " + JS
 
 const R = (f) => fs.readFileSync(path.join(__dirname, f), "utf8");
 const SRC = R("js/141-routine.js"), HOME = R("js/122-personal-home.js");
+const TODAYJS = R("js/05-today.js"), CSS = R("app.css");
 const STATE = R("js/02-state.js"), SERVER = R("sync-server.js"), SHELL = R("Business App (v1).html");
 
 /* ---------- a real sandbox: load the module against a fake store and CALL it ---------- */
@@ -214,31 +215,77 @@ console.log("\n--- tapping an item can open the thing it's about ---");
   ok("...as is the workout app", c.ROUTINE_ACTIONS.some(a => /workout\.html/.test(a.go)));
 }
 
-console.log("\n--- ⭐ Today reads top-to-bottom as a day ---");
+console.log("\n--- ⭐ Today reads as a day, in two columns that mean something ---");
 {
   const body = (HOME.match(/function personalHome\(\)[\s\S]*?\n\}/) || [""])[0];
   const at = (s) => body.indexOf(s);
-  ok("the greeting opens it", at("phGreeting") > 0);
-  ok("...then the box he talks to", at("phTalkCard") > at("phGreeting"));
-  ok('⭐ then MORNING', at('part("morning")') > at("phTalkCard"), body);
-  ok("⭐ then what's on today across the businesses", at("rtJobsTodayHTML") > at('part("morning")'));
+
+  /* ⚠️ THE BUG HE SAW: the page was poured into .pgcols — `column-count:2`, a NEWSPAPER flow that fills the
+     left column then spills into the right. A page whose point is a sequence got cut at an arbitrary height
+     and read down-then-across. "its jumbled right now." */
+  ok("⛔ personal Today is NOT poured into the multicol flow any more", !/pgcols">'\+personalHome/.test(TODAYJS), (TODAYJS.match(/.*pgcols.*personalHome.*/) || [])[0]);
+  ok("...and why is recorded where the next person would undo it", /newspaper flow/i.test(TODAYJS));
+  ok("the business Today still uses multicol — a stack of unrelated cards is what it's FOR", /pgcols">'\+h\+'/.test(TODAYJS));
+
+  ok("Today lays out its own columns", /class="daycols"/.test(body));
+  ok("...three assigned blocks, not a flow", ["dc-chat", "dc-day", "dc-money"].every(c => at('class="' + c + '"') > 0));
+
+  /* ⭐ LEFT: what he looks at. "keep the chat and finance overlook on the left" */
+  const chat = body.slice(at('class="dc-chat"'), at('class="dc-day"'));
+  ok("⭐ the box he talks to is in the left column", /phTalkCard/.test(chat));
+  ok("⭐ ...and the money/dates block is the other left-column row",
+    at("calBillsCardHTML") < at('class="dc-chat"') && /side/.test(body.slice(at('class="dc-money"'), at('class="dc-money"') + 60)), body.slice(at('class="dc-money"'), at('class="dc-money"') + 60));
+  ok("bills due are in it", /calBillsCardHTML\(14\)/.test(body));
+  ok("...as is what's coming up", /evHomeCardHTML\(30\)/.test(body));
+  ok("the left block is silent when there is nothing in it", /if \(side\)/.test(body));
+
+  /* ⭐ RIGHT: the day, linear. "make the daily routine stuff linear on the right" */
+  ok("⭐ MORNING opens the day", at('day = part("morning")') > 0);
+  ok("⭐ then what's on today across the businesses", at("rtJobsTodayHTML") > at('day = part("morning")'));
   ok("then his own plan for the day", at("phPlanCard") > at("rtJobsTodayHTML"));
   ok("then what the businesses need from him", at("piCardHTML") > at("phPlanCard"));
-  ok("then dates and money", at("evHomeCardHTML") > at("piCardHTML") && at("calBillsCardHTML") > at("evHomeCardHTML"));
-  ok('⭐ then DURING THE DAY', at('part("day")') > at("calBillsCardHTML"));
-  ok('⭐ and EVENING last, because that is when evening is', at('part("evening")') > at('part("day")'));
-  ok("the routine is seeded before it's drawn", at("rtSeed") < at('part("morning")') && at("rtSeed") > 0);
+  ok("⭐ then DURING THE DAY", at('part("day")') > at("piCardHTML"));
+  ok("⭐ and EVENING last, because that is when evening is", at('part("evening")') > at('part("day")'));
   ok("he can add to the routine from the page itself", /rtEdit/.test(body));
+
+  /* ⛔ and nothing from the day leaked into the reference column, or it isn't linear any more */
+  const dayBlock = body.slice(at('class="dc-day"'));
+  ["morning", "day", "evening"].forEach(k => ok('the ' + k + ' routine is in the RIGHT column', at('part("' + k + '")') < at('class="dc-chat"') || /day \+?= *part/.test(body)));
+  ok("⛔ no routine part is built into the side block",
+    !/side \+= *part\(/.test(body) && !/side \+= *rtPartHTML/.test(body));
+  ok("⛔ nor the plan, nor the businesses", !/side \+= *phPlanCard/.test(body) && !/side \+= *piCardHTML/.test(body));
+
+  ok("the greeting still opens the page, above both columns", at("phGreeting") > at("dc-chat") || /phGreeting[\s\S]*daycols/.test(body));
+  ok("the routine is seeded before it's drawn", at("rtSeed") < at('part("morning")') && at("rtSeed") > 0);
 
   ok("⛔ the floating 'Record something' row is gone — those live in the day's order now", !/phQuickCard\(\)/.test(HOME));
   ok("⛔ ...and the interests wall he asked me to remove has not come back", !/interests/i.test(body));
   ok("⛔ ...nor 'send me a file', which he said doesn't belong on Today", !/send me a file/i.test(HOME));
 
-  /* every helper it calls is guarded, because Today blanking is the worst failure this page has */
   ["rtPartHTML", "rtJobsTodayHTML", "piCardHTML", "evHomeCardHTML", "calBillsCardHTML", "rtSeed"].forEach(fn => {
     ok(fn + " is called defensively, so a missing module can't blank Today",
       new RegExp('typeof ' + fn + ' [!=]== "function"').test(body), fn);
   });
+}
+
+console.log("\n--- the columns are a GRID, and a phone has none ---");
+{
+  const block = (CSS.match(/\.daycols\{[\s\S]*?\n  \}/) || [""])[0];
+  ok("the rules exist", !!block);
+  ok("⭐ a phone gets one plain column, in DOM order", /\.daycols\{display:flex;flex-direction:column\}/.test(CSS));
+  /* the grid must live INSIDE the wide-screen media query, or a phone gets two columns 195px wide */
+  const wide = (CSS.match(/@media\(min-width:1180px\)\{[\s\S]*?\n  \}/g) || []).find(b => /\.daycols/.test(b)) || "";
+  ok("⭐ ...and columns only appear when there is room for them", /\.daycols\{display:grid/.test(wide), wide.slice(0, 80));
+  ok("...all three cells are placed in that same block", /\.dc-chat/.test(wide) && /\.dc-money/.test(wide) && /\.dc-day/.test(wide));
+  ok("⭐ row 1 hugs the chat and row 2 absorbs the rest, so the left column has no dead gap",
+    /grid-template-rows:auto 1fr/.test(wide));
+  ok("⭐ it's a GRID with assigned cells, not a column-count flow", /\.daycols\{display:grid;grid-template-columns:/.test(CSS) && !/\.daycols\{[^}]*column-count/.test(CSS));
+  ok("chat is the top-left cell", /\.dc-chat *\{grid-column:1;grid-row:1\}/.test(CSS));
+  ok("money sits under it", /\.dc-money\{grid-column:1;grid-row:2\}/.test(CSS));
+  ok("⭐ the day owns the right column and spans BOTH rows, so it is never cut in half",
+    /\.dc-day *\{grid-column:2;grid-row:1\/span 2\}/.test(CSS));
+  ok("neither column can be squeezed past zero", /minmax\(0,352px\) minmax\(0,1fr\)/.test(CSS));
+  ok("the bug that caused this is recorded in the CSS", /newspaper flow/i.test(CSS) && /down-then-across/i.test(CSS));
 }
 
 console.log("\n--- the collection is wired into all three places ---");

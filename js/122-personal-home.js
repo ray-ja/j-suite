@@ -424,38 +424,49 @@ function personalHome() {
   setTimeout(function () { const b = document.getElementById("ph-thread"); if (b) b.scrollTop = b.scrollHeight; }, 40);
   if (typeof rtSeed === "function") rtSeed();
 
-  /* ⭐ TODAY READS AS A DAY, top to bottom. Ray, 2026-08-26: "i want the today page to look more like a
-     routine. in order of morning stuff, like mood journal a quick little note of how i feel and stuff, then
-     workout, then morning tasks like email checks, invoice statuses, etc. i run multiple businesses, today
-     needs to be my one stop shop for what my day looks like."
+  /* ⭐ TODAY IS A DAY, AND ON A WIDE SCREEN IT IS TWO COLUMNS THAT MEAN SOMETHING.
 
-     So the order is the order he described, not a pile of cards sorted by when I happened to build them:
-       talk box  ·  MORNING routine  ·  what's on today across the businesses  ·  the to-do plan  ·
-       what's coming / what's due  ·  DURING THE DAY  ·  EVENING
-     Every section disappears when it's empty, so a quiet day is a short page. */
-  let h = '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>';
-  h += phTalkCard();
+     Ray, 2026-08-25: "keep the chat and finance overlook on the left, make the daily routine stuff linear on
+     the right. its jumbled right now."
 
+     ⚠️ It was jumbled because the whole page was poured into `.pgcols` — `column-count:2`, a NEWSPAPER flow.
+     Multicol fills the left column to the bottom and continues in the right, so the sequence he asked for
+     (morning → the day → evening) got cut at whatever height the break landed on and read down-then-across.
+     Now each block is ASSIGNED its column (.daycols in app.css), and the day is one unbroken run.
+
+       LEFT   the box he talks to  ·  bills due  ·  what's coming up          — reference, not tasks
+       RIGHT  MORNING → on today → his plan → the businesses → DAY → EVENING  — linear, in order
+
+     Every section still disappears when it's empty, so a quiet day is a short page. On a phone there are no
+     columns: chat, then the day, then money — the routine matters more than the balances on a small screen. */
   const part = (k) => {
     if (typeof rtPartHTML !== "function" || typeof ROUTINE_PARTS === "undefined") return "";
     const p = ROUTINE_PARTS.find(function (x) { return x.key === k; });
     return p ? rtPartHTML(p) : "";
   };
 
-  h += part("morning");
-  /* every business's work for today, in one place — the "one stop shop" half of the ask */
-  if (typeof rtJobsTodayHTML === "function") h += rtJobsTodayHTML();
-  h += phPlanCard();
-  /* urgent items from the other orgs (js/140) — same rule as the To-Do tab: only what's actually urgent */
-  if (typeof piCardHTML === "function") h += piCardHTML();
-  /* dates he'd otherwise carry in his head, then what money is about to leave */
-  if (typeof evHomeCardHTML === "function") h += evHomeCardHTML(30);
-  if (typeof calBillsCardHTML === "function") h += calBillsCardHTML(14);
-  h += part("day");
-  h += part("evening");
-  h += phLookBackCard();
-  h += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="rtEdit(\'\')">＋ Add to your routine</button>';
-  return h;
+  /* ---- LEFT: what he looks AT ---- */
+  let side = "";
+  if (typeof calBillsCardHTML === "function") side += calBillsCardHTML(14);   // what's about to leave
+  if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);       // dates he'd carry in his head
+  side += phLookBackCard();                                                    // one older journal entry
+  if (side) side = '<div class="secthd"><h2 style="font-size:13px">Money &amp; what\'s coming</h2></div>' + side;
+
+  /* ---- RIGHT: what he DOES, in the order he does it ---- */
+  let day = part("morning");
+  day += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";     // every business's work today
+  day += phPlanCard();                                                          // his own plan, with carry-over
+  day += (typeof piCardHTML === "function") ? piCardHTML() : "";                // only what's urgent elsewhere
+  day += part("day");
+  day += part("evening");
+  day += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="rtEdit(\'\')">＋ Add to your routine</button>';
+
+  return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>'
+    + '<div class="daycols">'
+    +   '<div class="dc-chat">' + phTalkCard() + '</div>'
+    +   '<div class="dc-day">' + day + '</div>'
+    +   '<div class="dc-money">' + side + '</div>'
+    + '</div>';
 }
 if (typeof window !== "undefined") {
   window.personalHome = personalHome;

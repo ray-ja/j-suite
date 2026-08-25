@@ -346,6 +346,31 @@
     .pgcols>.secthd{-webkit-column-break-after:avoid;break-after:avoid;page-break-after:avoid;margin-top:2px}
     .pgcols>.card,.pgcols>.secthd{-webkit-column-break-inside:avoid;break-inside:avoid}
   }
+  /* ⭐ TODAY, TWO COLUMNS THAT MEAN SOMETHING (js/122). Ray, 2026-08-25: "keep the chat and finance
+     overlook on the left, make the daily routine stuff linear on the right. its jumbled right now."
+
+     ⚠️ IT WAS .pgcols, AND THAT IS THE WHOLE BUG. `column-count:2` is a NEWSPAPER flow — it fills the left
+     column to the bottom, then continues in the right. So a page whose entire point is a sequence (morning →
+     the day → evening) got sliced at whatever height the column happened to break at, and the day read
+     down-then-across. Nobody reads that way. Multicol is right for a stack of unrelated cards, and wrong for
+     anything with an order.
+
+     A real grid instead, with each block ASSIGNED a column. The side is a fixed reasonable reading width;
+     the day takes the rest and stays one unbroken run top to bottom.
+
+     Mobile is plain DOM order — chat, the day, then money — because on a phone the routine matters more than
+     the balances, and the chat is the first thing he touches. */
+  .daycols{display:flex;flex-direction:column}
+  @media(min-width:1180px){
+    /* ⚠️ `grid-template-rows:auto 1fr` matters. Without it the tall right-hand block, spanning both rows,
+       pushes its height into BOTH — leaving a dead gap in the left column between the chat and the money.
+       auto/1fr makes row 1 hug the chat card and row 2 absorb everything else. */
+    .daycols{display:grid;grid-template-columns:minmax(0,352px) minmax(0,1fr);grid-template-rows:auto 1fr;gap:0 28px;align-items:start}
+    .dc-chat {grid-column:1;grid-row:1}
+    .dc-money{grid-column:1;grid-row:2}
+    /* the day spans BOTH rows of the left column, so it is never cut in half */
+    .dc-day  {grid-column:2;grid-row:1/span 2}
+  }
   /* (C) subtle interactive lift on clickable cards — desktop pointer only, so touch is unaffected */
   @media(hover:hover) and (pointer:fine){
     .card[onclick]{cursor:pointer;transition:transform .1s ease,box-shadow .15s ease}

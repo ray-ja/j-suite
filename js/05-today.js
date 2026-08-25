@@ -18,7 +18,10 @@ function rToday(){
      off. Ray, 2026-08-03: "just make it a nice place for me to visit. Make me want to visit it." Gating alone
      left an almost-empty dashboard; this is a page written for someone arriving with nothing logged. */
   if(typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg()&&typeof personalHome==="function"){
-    view.innerHTML='<div class="pgcols">'+personalHome()+'</div>';
+    /* ⚠️ NOT .pgcols. That's `column-count:2` — a newspaper flow that fills one column then spills into the
+       next, which chopped the morning→day→evening sequence at an arbitrary height. personalHome() lays out
+       its own columns (.daycols) so each block lands where it means to. */
+    view.innerHTML=personalHome();
     return;
   }
 
