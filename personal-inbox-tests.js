@@ -23,15 +23,23 @@ const TODAY = "2026-08-25";
 
 console.log("\n--- ⭐ what surfaces is mechanical, never a judgement call ---");
 {
-  eq("overdue surfaces", pi.piUrgent({ due: "2026-08-20" }, TODAY), "overdue");
+  eq("recently overdue surfaces", pi.piUrgent({ due: "2026-08-20" }, TODAY), "overdue");
   eq("due today surfaces", pi.piUrgent({ due: TODAY }, TODAY), "soon");
   eq("due in 7 days surfaces", pi.piUrgent({ due: "2026-09-01" }, TODAY), "soon");
   eq("due in 8 days does NOT", pi.piUrgent({ due: "2026-09-02" }, TODAY), null);
-  eq("high priority surfaces with no date at all", pi.piUrgent({ priority: "High" }, TODAY), "high");
   eq("pinned surfaces", pi.piUrgent({ pin: true }, TODAY), "pinned");
   eq("⭐ merely being OPEN does not surface", pi.piUrgent({ title: "someday" }, TODAY), null);
-  eq("a medium-priority dateless item stays home", pi.piUrgent({ priority: "Medium" }, TODAY), null);
-  eq("a far-future high-priority item still surfaces", pi.piUrgent({ priority: "High", due: "2027-01-01" }, TODAY), "high");
+
+  /* ⚠️ BOTH CALIBRATED AGAINST HIS REAL STORE. The first draft surfaced anything High and treated any past
+     date as overdue — that produced THIRTY-TWO items, which is the wall of everything he asked me to fix. */
+  eq("⭐ High priority ALONE no longer surfaces — the most-abused field on a to-do", pi.piUrgent({ priority: "High" }, TODAY), null);
+  eq("...not even High with a far-future date", pi.piUrgent({ priority: "High", due: "2027-01-01" }, TODAY), null);
+  eq("...but High with a real near date still does, via the date", pi.piUrgent({ priority: "High", due: "2026-08-27" }, TODAY), "soon");
+  eq("⭐ overdue EXPIRES — 3 months past is abandoned, not urgent", pi.piUrgent({ due: "2026-05-01" }, TODAY), null);
+  eq("...30 days overdue still counts", pi.piUrgent({ due: "2026-07-26" }, TODAY), "overdue");
+  eq("...31 days does not", pi.piUrgent({ due: "2026-07-25" }, TODAY), null);
+  eq("a pinned ancient item still surfaces — the explicit escape hatch", pi.piUrgent({ pin: true, due: "2020-01-01" }, TODAY), "pinned");
+  eq("the stale window is configurable", pi.piUrgent({ due: "2026-05-01" }, TODAY, 7, 400), "overdue");
 
   eq("done never surfaces", pi.piUrgent({ due: "2026-08-01", done: true }, TODAY), null);
   eq("...not even pinned", pi.piUrgent({ pin: true, done: true }, TODAY), null);
@@ -39,7 +47,10 @@ console.log("\n--- ⭐ what surfaces is mechanical, never a judgement call ---")
   eq("null is safe", pi.piUrgent(null, TODAY), null);
   eq("a malformed date is ignored, not crashed on", pi.piUrgent({ due: "next tuesday" }, TODAY), null);
   eq("an empty due is ignored", pi.piUrgent({ due: "" }, TODAY), null);
-  eq("pin beats priority in the reason given", pi.piUrgent({ pin: true, priority: "High" }, TODAY), "pinned");
+  eq("pin wins over everything", pi.piUrgent({ pin: true, priority: "High", due: "2026-08-27" }, TODAY), "pinned");
+  ok("the recalibration and why it happened are recorded", /THIRTY-TWO items/.test(PI));
+  ok("...including that High is the most-abused field", /most-abused field/.test(PI));
+  ok("...and that an abandoned task dressed as urgent teaches him to stop reading", /stop reading the list/.test(PI));
   eq("the window is configurable", pi.piUrgent({ due: "2026-09-02" }, TODAY, 30), "soon");
   ok("the mechanical rule is written down", /never a judgement call|deliberately mechanical/.test(PI));
 }
@@ -55,7 +66,9 @@ console.log("\n--- it is a VIEW, not a copy ---");
 
 console.log("\n--- it only exists where he asked for it ---");
 ok("nothing renders in a business org", /if \(!piIsPersonal\(\)\) return "";/.test(PI));
-ok("...and nothing renders when nothing qualifies", /if \(!list\.length\) return "";/.test(PI));
+ok("...and nothing renders when nothing qualifies", /if \(!all\.length\) return "";/.test(PI));
+ok("⭐ the section is capped so a backlog can never flood the one screen he trusts", /PI_MAX = 8/.test(PI) && /all\.slice\(0, PI_MAX\)/.test(PI));
+ok("...and says how many it held back", /\+ ' \+ hidden \+ ' more urgent/.test(PI));
 /* the source escapes the apostrophe (what\'s) — match either form */
 ok("the card says what it is and isn't", /Only what\\?'s urgent shows here/.test(PI));
 ok("it is rendered on the To-Do list", /piCardHTML==="function"\)\?piCardHTML\(\):""/.test(TD));

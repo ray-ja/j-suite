@@ -11,12 +11,23 @@
      and where it isn't in his face.
 
    WHAT COUNTS AS URGENT — deliberately mechanical, so it can't drift into me deciding what matters to him:
-     · overdue                         (a date already passed)
      · due within the next 7 days
-     · High priority
+     · RECENTLY overdue — a date he actually set and just missed (within PI_STALE_DAYS)
      · pinned by hand (todo.pin)
    Everything else stays home. A business item that is merely OPEN is not urgent; that is the whole point
    of not making him dig through four lists.
+
+   ⚠️ TWO CALIBRATIONS LEARNED FROM HIS REAL DATA, not from theory. The first draft of this rule also
+   surfaced anything marked High, and treated any past date as overdue. Run against the live store that
+   produced THIRTY-TWO items — sixteen from OBX, sixteen from Jamieson, several of them duplicates — which
+   is precisely the wall of everything he was describing when he asked for one list.
+
+     · HIGH PRIORITY ALONE NO LONGER SURFACES. It is the most-abused field on a to-do; twelve of those
+       thirty-two were marked High months ago. High + a real date is already caught by the date rules.
+     · OVERDUE EXPIRES. A task three months past its date isn't urgent, it's abandoned, and dressing it up
+       as urgent every morning is how a person learns to stop reading the list.
+
+   And a hard cap on top of both, so no future backlog can ever flood the one screen he trusts.
 
    ⚠️ IT IS A VIEW, NOT A COPY. The record stays in its own org — ticking it here writes to the origin org
    and syncs from there. Copying it would mean two records for one job and one of them going stale, which is
@@ -24,7 +35,9 @@
 
    Only renders in a personal org, so a business org never grows a cross-business inbox it didn't ask for. */
 
-var PI_SOON_DAYS = 7;
+var PI_SOON_DAYS = 7;      // due inside this many days = urgent
+var PI_STALE_DAYS = 30;    // overdue longer than this = abandoned, not urgent
+var PI_MAX = 8;            // never flood the one screen he looks at
 
 function piIsPersonal() { return (typeof orgIsPersonalOrg === "function") ? orgIsPersonalOrg() : false; }
 
@@ -37,16 +50,15 @@ function piOtherOrgs() {
 }
 
 /* the mechanical urgency test — pure, so it is tested by being called */
-function piUrgent(td, todayStr, soonDays) {
+function piUrgent(td, todayStr, soonDays, staleDays) {
   if (!td || td.done || td.deleted) return null;
-  if (td.pin) return "pinned";
-  if (String(td.priority) === "High") return "high";
+  if (td.pin) return "pinned";                       // the explicit escape hatch — always wins
   var due = String(td.due || "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
-  if (due < todayStr) return "overdue";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;   // no date and not pinned → stays home
   var d = new Date(due + "T12:00:00"), t = new Date(todayStr + "T12:00:00");
   var days = Math.round((d - t) / 86400000);
-  return (days >= 0 && days <= (soonDays || PI_SOON_DAYS)) ? "soon" : null;
+  if (days < 0) return (-days <= (staleDays || PI_STALE_DAYS)) ? "overdue" : null;   // expires
+  return (days <= (soonDays || PI_SOON_DAYS)) ? "soon" : null;
 }
 
 /* what surfaces, newest-urgency first */
@@ -60,10 +72,11 @@ function piCrossOrg() {
       out.push({ org: o.id, orgName: o.name, td: td, why: why });
     });
   });
-  var RANK = { overdue: 0, pinned: 1, high: 2, soon: 3 };
-  return out.sort(function (a, b) {
+  var RANK = { overdue: 0, pinned: 1, soon: 2 };
+  out.sort(function (a, b) {
     return (RANK[a.why] - RANK[b.why]) || String(a.td.due || "9999").localeCompare(String(b.td.due || "9999"));
   });
+  return out;
 }
 
 function piWhyLabel(why, td, todayStr) {
@@ -76,8 +89,9 @@ function piWhyLabel(why, td, todayStr) {
 /* ---- the section on the personal to-do list ---- */
 function piCardHTML() {
   if (!piIsPersonal()) return "";
-  var list = piCrossOrg();
-  if (!list.length) return "";
+  var all = piCrossOrg();
+  if (!all.length) return "";
+  var list = all.slice(0, PI_MAX), hidden = all.length - list.length;
   var today_ = (typeof today === "function") ? today() : "";
   var h = '<div class="secthd"><h2 style="font-size:15px">From your businesses</h2><span class="ct">' + list.length + '</span></div>'
     + '<div class="card" style="padding:6px 10px">';
@@ -91,6 +105,7 @@ function piCardHTML() {
       + esc(x.orgName) + ' · ' + esc(piWhyLabel(x.why, x.td, today_)) + '</div></div></div>';
   });
   return h + '</div><div class="sub" style="padding:4px 2px 10px;white-space:normal">'
+    + (hidden ? '+ ' + hidden + ' more urgent · ' : '')
     + 'Only what\'s urgent shows here. Everything else stays on its own business list.</div>';
 }
 
@@ -122,5 +137,5 @@ if (typeof window !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { piUrgent: piUrgent, PI_SOON_DAYS: PI_SOON_DAYS };
+  module.exports = { piUrgent: piUrgent, PI_SOON_DAYS: PI_SOON_DAYS, PI_STALE_DAYS: PI_STALE_DAYS, PI_MAX: PI_MAX };
 }
