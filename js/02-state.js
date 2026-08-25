@@ -81,6 +81,20 @@ function load(){
     r.tabsRepaired=true;
     if(typeof now==="function")r.updatedAt=now();
   });
+
+  /* WORKOUT TAB (js/139), added 2026-08-24 — Ray asked for it as its own tab rather than a card on Life.
+     A template change only affects orgs created AFTER it, so an org that already exists needs its tabs
+     array grown. Scoped to PERSONAL orgs the same way orgIsPersonalOrg() defines one (has life, no jobs),
+     so OBX and Jamieson are never touched. ADDITIVE and ONE-TIME: flagged so that if he later removes the
+     tab it stays removed instead of coming back on every load — the mistake the obx/jam repair above had
+     to be gated against. */
+  (S.registry||[]).forEach(r=>{
+    if(!r||!Array.isArray(r.tabs)||r.workoutTabAdded)return;
+    if(r.tabs.indexOf("life")<0||r.tabs.indexOf("jobs")>=0)return;   // personal orgs only
+    if(r.tabs.indexOf("workout")<0)r.tabs.push("workout");
+    r.workoutTabAdded=true;
+    if(typeof now==="function")r.updatedAt=now();
+  });
   ["obx","jam"].forEach(b=>{
     if(!S[b].todos)S[b].todos=[];
     if(!S[b].mktTracker)S[b].mktTracker=[];

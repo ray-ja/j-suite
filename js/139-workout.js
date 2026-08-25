@@ -156,7 +156,73 @@ function wkCardHTML() {
   return h + '</div>';
 }
 
+/* ---------- THE WORKOUT TAB ----------
+   Ray, 2026-08-24: "can you make / add or show a workout tab?" The Life card is a glance; this is the room.
+   Same mirrored records — sessions, and the weigh-in series — with his own app one tap away. Still a log:
+   no streak, no target, no week-vs-last-week verdict. */
+function rWorkout() {
+  try { wkSync(); } catch (e) {}
+  var logs = actWorkouts().filter(function (w) { return w.kind !== "body"; })
+    .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+  var bodyRec = actWorkouts().find(function (w) { return w.kind === "body"; });
+  var series = (bodyRec && bodyRec.series) || [];
+
+  var h = '<div class="secthd"><h2>🏋️ Workout</h2>'
+    + '<a class="btn acc sm" style="margin-left:auto;text-decoration:none" href="' + WK_URL + '">Open the app</a></div>';
+
+  if (!logs.length && !series.length) {
+    return void (view.innerHTML = h + '<div class="empty"><div class="big">🏋️</div>'
+      + 'Nothing here yet. Your workout app runs from <b>Open the app</b> above — anything you log there shows up here on its own.'
+      + '<br><button class="btn ghost sm" style="margin-top:10px" onclick="wkImport()">Bring my old history over</button></div>');
+  }
+
+  /* body weight — the series he already keeps, shown as a plain list. No trend line, no verdict. */
+  if (series.length) {
+    var latest = series[0];
+    h += '<div class="card"><div class="row" style="align-items:baseline;gap:8px">'
+      + '<div class="grow" style="font-weight:800">Body</div>'
+      + '<div style="font-size:22px;font-weight:800;color:var(--brand-text)">' + esc(latest.weight != null ? latest.weight + " lb" : "—") + '</div></div>'
+      + '<div class="sub">' + esc((typeof fmtDate === "function") ? fmtDate(latest.date) : latest.date)
+      + (latest.bodyFat != null ? ' · ' + esc(latest.bodyFat) + '% body fat' : '') + '</div>';
+    if (series.length > 1) {
+      h += '<div style="margin-top:8px">' + series.slice(1, 6).map(function (e) {
+        return '<div class="li" style="padding:4px 0"><div class="grow"><div class="sub">'
+          + esc((typeof fmtDate === "function") ? fmtDate(e.date) : e.date) + '</div></div>'
+          + '<div class="sub">' + esc(e.weight != null ? e.weight + " lb" : "—")
+          + (e.bodyFat != null ? ' · ' + esc(e.bodyFat) + '%' : '') + '</div></div>';
+      }).join("") + '</div>';
+    }
+    h += '</div>';
+  }
+
+  if (logs.length) {
+    h += '<div class="secthd"><h2 style="font-size:15px">Sessions</h2><span class="ct">' + logs.length + '</span></div>';
+    var month = "";
+    logs.forEach(function (w) {
+      var mk = String(w.date || "").slice(0, 7);
+      if (mk && mk !== month) {
+        month = mk;
+        var dt = new Date(mk + "-01T12:00:00");
+        h += '<div class="sub" style="margin:10px 0 4px;font-weight:700">'
+          + esc(isNaN(dt.getTime()) ? mk : dt.toLocaleDateString([], { month: "long", year: "numeric" })) + '</div>';
+      }
+      h += '<div class="card" style="cursor:pointer;margin-bottom:8px" onclick="wkOpen(\'' + w.id + '\')">'
+        + '<div class="row" style="align-items:baseline;gap:6px">'
+        + '<div class="nm grow">' + esc(w.dayName || w.dayId) + '</div>'
+        + '<div class="sub" style="flex:0 0 auto">' + esc((typeof fmtDate === "function") ? fmtDate(w.date) : w.date) + '</div></div>'
+        + (w.label ? '<div class="sub" style="white-space:normal">' + esc(w.label) + '</div>' : '')
+        + '<div class="sub" style="margin-top:3px">' + w.setCount + ' set' + (w.setCount === 1 ? '' : 's')
+        + (w.volume ? ' · ' + w.volume.toLocaleString() + ' lb moved' : '')
+        + (w.exercises && w.exercises.length ? ' · ' + w.exercises.length + ' exercise' + (w.exercises.length === 1 ? '' : 's') : '')
+        + '</div></div>';
+    });
+  }
+  h += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="wkImport()">Bring older history over</button>';
+  view.innerHTML = h;
+}
+
 if (typeof window !== "undefined") {
+  window.rWorkout = rWorkout;
   window.wkRaw = wkRaw; window.wkSessions = wkSessions; window.wkBody = wkBody;
   window.wkSync = wkSync; window.wkCardHTML = wkCardHTML; window.actWorkouts = actWorkouts;
 

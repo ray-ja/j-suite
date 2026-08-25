@@ -130,6 +130,41 @@ ok("it mirrors on load without him pressing anything", /setTimeout\(function \(\
 ok("there is a one-time carry-over for his old history", /wkImportSave/.test(WK));
 ok("js/139 is registered in the shell", fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/139-workout.js"') > 0);
 
+console.log("\n--- the Workout TAB ---");
+{
+  ok("workout is routable", /"shelf","workout"/.test(fs.readFileSync(path.join(__dirname, "js", "03-routing.js"), "utf8")));
+  const RT = fs.readFileSync(path.join(__dirname, "js", "03-routing.js"), "utf8");
+  ok("...mapped to its screen", /workout:\(typeof rWorkout==="function"\?rWorkout:rToday\)/.test(RT));
+  ok("...has a label and icon", /workout:\{l:"Workout",i:"🏋️"\}/.test(RT));
+  ok("...has a nav group", /key:"workout".*tabs:\["workout"\]/.test(RT));
+  ok("⭐ it is OPT-IN, so OBX and Jamieson never see it", /ORG_OPTIN_TABS = \[[^\]]*"workout"/.test(RT));
+  ok("...and is part of the personal template", /personal: \[[^\]]*"workout"/.test(RT));
+
+  /* the existing personal org needs its tabs array grown — a template only affects orgs made after it */
+  ok("a migration adds the tab to an existing personal org", /workoutTabAdded/.test(ST));
+  ok("...scoped to personal orgs only", /r\.tabs\.indexOf\("life"\)<0\|\|r\.tabs\.indexOf\("jobs"\)>=0\)return/.test(ST));
+  ok("...additive, never removing", /if\(r\.tabs\.indexOf\("workout"\)<0\)r\.tabs\.push\("workout"\)/.test(ST));
+  ok("...and one-time, so removing the tab makes it stay removed", /r\.workoutTabAdded=true/.test(ST));
+
+  /* run the migration for real against the shapes in the live registry */
+  const reg = [
+    { id: "obx", tabs: ["today", "jobs", "life"] },              // has jobs -> not personal
+    { id: "jam", tabs: null },                                    // full template -> untouched
+    { id: "p1", tabs: ["life", "journal", "budget"] },            // personal -> gets it
+    { id: "p2", tabs: ["life", "workout"], workoutTabAdded: true }// already done -> untouched
+  ];
+  reg.forEach(r => {
+    if (!r || !Array.isArray(r.tabs) || r.workoutTabAdded) return;
+    if (r.tabs.indexOf("life") < 0 || r.tabs.indexOf("jobs") >= 0) return;
+    if (r.tabs.indexOf("workout") < 0) r.tabs.push("workout");
+    r.workoutTabAdded = true;
+  });
+  ok("OBX does not get a workout tab", reg[0].tabs.indexOf("workout") < 0, reg[0].tabs);
+  eq("a full-template org is untouched", reg[1].tabs, null);
+  ok("the personal org gets it", reg[2].tabs.indexOf("workout") >= 0, reg[2].tabs);
+  eq("an org already migrated isn't touched twice", reg[3].tabs.length, 2);
+}
+
 console.log("\n--- it logs, it doesn't grade ---");
 {
   /* the RENDERED CARD, not the source — the source comment necessarily names the phrases it forbids,
