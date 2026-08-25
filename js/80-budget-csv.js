@@ -268,18 +268,20 @@ window.budgetCsvCommit=function(){
   });
   var keep=BCSV.parsed.filter(function(r){return !r.skip;});
   if(!keep.length){ alert("Nothing selected to import."); return; }
-  var d=D(); if(!d.budgetTx)d.budgetTx=[];
   var bookId=BCSV.bookId||(typeof budgetDefaultBookId==="function"?budgetDefaultBookId():"");
-  var lastMonth=budgetThisMonth(), n=0;
-  keep.forEach(function(row){
-    var t={ id:"bgt-tx-"+uid(), date:row.date, dir:row.dir, amount:row.amount, bookId:bookId,
-            catId:budgetCat(row.catId)?row.catId:"", note:row.desc||"", imported:true, deleted:false };
-    touch(t); d.budgetTx.push(t); n++;
-    lastMonth=budgetMonthOf(t.date);
-    if(t.catId)budgetMemoRemember(row.desc,t.catId);   // remember this merchant→category for next time
-  });
-  save(); closeModal();
-  BUDGET_SUB="tx"; BUDGET_MONTH=lastMonth; if(bookId)BUDGET_BOOK=bookId; BCSV=null;
+  var lastMonth=budgetThisMonth();
+  keep.forEach(function(row){ lastMonth=budgetMonthOf(row.date); });
+
+  /* ⭐ IMPORT NO LONGER POSTS. Ray, 2026-08-25: "everything needs approvals. like ynab." This used to
+     write straight into budgetTx — which meant a CSV silently moved every envelope the moment it was
+     read. Now it hands the rows to the ledger (js/143), they land PENDING, and they are in no total
+     anywhere until he approves them on the Review tab. One door in, so a bank feed lands the same way. */
+  var res=(typeof ledgerIngest==="function")
+    ? ledgerIngest(keep.map(function(row){ return {date:row.date,dir:row.dir,amount:row.amount,desc:row.desc||"",bookId:bookId}; }),
+                   {source:"csv",bookId:bookId})
+    : {added:0,duplicates:0};
+  closeModal();
+  BUDGET_SUB=res.added?"review":"tx"; BUDGET_MONTH=lastMonth; if(bookId)BUDGET_BOOK=bookId; BCSV=null;
   render();
-  if(typeof toast==="function")toast("Imported "+n+" transaction"+(n===1?"":"s"));
+  if(typeof toast==="function")toast(res.added+" to review"+(res.duplicates?(" · "+res.duplicates+" already here"):""));
 };

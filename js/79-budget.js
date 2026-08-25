@@ -338,7 +338,13 @@ function budgetCatActual(catId,m){
 function rBudget(){
   budgetCurrentBookId();        // clamp selection to a still-existing book
   ensureAllPaymentCats();       // every active credit card has its auto-managed "Payment: <card>" envelope
+  /* ⭐ REVIEW COMES FIRST, and only exists when something is waiting. Ray, 2026-08-25: "everything needs
+     approvals. like ynab." A queue you have to go looking for is a queue that never empties — and until
+     he approves them those rows are in NO total anywhere, so they have to be visible. */
+  var _pend=(typeof ledgerInboxCount==="function")?ledgerInboxCount():0;
+  if(_pend&&BUDGET_SUB==="review"){} else if(!_pend&&BUDGET_SUB==="review")BUDGET_SUB="tx";
   var sub='<div class="subnav">'
+    +(_pend?('<button class="subbtn '+(BUDGET_SUB==="review"?"on":"")+'" onclick="budgetSetSub(\'review\')">📥 Review <span class="badge" style="background:var(--danger);color:#fff;margin-left:4px">'+_pend+'</span></button>'):'')
     +'<button class="subbtn '+(BUDGET_SUB==="month"?"on":"")+'" onclick="budgetSetSub(\'month\')">📅 Month</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="tx"?"on":"")+'" onclick="budgetSetSub(\'tx\')">🧾 Transactions</button>'
     +'<button class="subbtn '+(BUDGET_SUB==="bills"?"on":"")+'" onclick="budgetSetSub(\'bills\')">🔁 Bills</button>'
@@ -349,7 +355,8 @@ function rBudget(){
   /* the Tax sub-tab has its own combined view (one taxpayer) — no per-book bar there */
   var _pf=(typeof pfCardHTML==="function")?pfCardHTML():"";   // the file hand-off, moved off Today
   view.innerHTML=sub+(BUDGET_SUB==="tax"?"":budgetBookBar())+_pf+'<div id="budget_body"></div>';
-  if(BUDGET_SUB==="tx")budgetRenderTx();
+  if(BUDGET_SUB==="review"&&typeof rLedgerReview==="function"){document.getElementById("budget_body").innerHTML=rLedgerReview();}
+  else if(BUDGET_SUB==="tx")budgetRenderTx();
   else if(BUDGET_SUB==="bills")budgetRenderBills();
   else if(BUDGET_SUB==="debts")budgetRenderDebts();
   else if(BUDGET_SUB==="tax")budgetRenderTax();
