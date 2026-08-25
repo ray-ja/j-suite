@@ -176,8 +176,11 @@ function phTalkCard() {
   return '<div class="card" style="border-top:4px solid var(--accent)">'
     + '<div id="ph-thread" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch">' + phThreadInner() + '</div>'
     + '<div class="row" style="gap:6px;margin-top:10px">'
-    + '<input id="ph-input" placeholder="What\'s on your mind?" autocomplete="off" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\'){event.preventDefault();phSend();}">'
+    + '<input id="ph-input" placeholder="Talk, or ask me to add something" autocomplete="off" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\'){event.preventDefault();phSend();}">'
     + '<button class="btn acc" style="flex:0 0 auto;width:auto" onclick="phSend()">Send</button></div>'
+    /* it can act now (2026-08-25) and he had no way to know — an empty thread says so once, then gets out
+       of the way rather than captioning every screen forever */
+    + (PH_THREAD.length ? '' : '<div class="sub" style="white-space:normal;margin-top:8px">Ask me about your list, your bills, your calendar or your workouts — or say “remind me Tuesday to…” and I’ll set it up for you to confirm.</div>')
     + ((saveBtn || clearBtn) ? '<div class="row" style="gap:6px;margin-top:8px">' + saveBtn + clearBtn + '</div>' : '')
     + (phOnline() ? '' : '<div class="muted" style="font-size:12px;margin-top:6px">Back when you\'re online.</div>')
     + '</div>';
@@ -335,10 +338,16 @@ function phLookBackCard() {
 }
 
 /* ---- quick ways in, so the page is never a dead end ---- */
+/* Ray, 2026-08-26: "its not clear what the jounral buttons pertain to." They said "Write something" and
+   "Log the day", which name neither what they capture nor where it lands. Now they say the noun and carry a
+   heading, so it reads as one thing — a place to record what happened — rather than two loose buttons. */
 function phQuickCard() {
-  return '<div class="row" style="gap:8px;margin-bottom:14px">'
-    + '<button class="btn ghost" style="flex:1" onclick="openLifeNote(null)">📓 Write something</button>'
-    + '<button class="btn ghost" style="flex:1" onclick="if(typeof navSub===\'function\')navSub(\'life\')">🌱 Log the day</button>'
+  const wk = (typeof rWorkout === "function" || typeof wkCardHTML === "function");
+  return '<div class="secthd"><h2 style="font-size:13px">Record something</h2></div>'
+    + '<div class="row" style="gap:8px;margin-bottom:14px;align-items:stretch">'
+    + '<button class="btn ghost" style="flex:1" onclick="openLifeNote(null)">📓<br>Journal entry</button>'
+    + (wk ? '<a class="btn ghost" style="flex:1;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center" href="/workout.html">🏋️<br>Workout</a>' : '')
+    + '<button class="btn ghost" style="flex:1" onclick="if(typeof navSub===\'function\')navSub(\'life\')">🌱<br>Daily check-in</button>'
     + '</div>';
 }
 

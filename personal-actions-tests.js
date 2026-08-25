@@ -82,6 +82,50 @@ ok("the renderer draws them as cards, not bubbles", /if \(m\.role === "action"\)
 ok("⭐ only real turns are sent to the model — a card has no content", /m\.role === "user" \|\| m\.role === "assistant"\) && typeof m\.content === "string"\)\.slice\(-14\)/.test(PH));
 ok("saving to the journal skips them instead of writing 'undefined'", /skip action cards/.test(PH));
 
+console.log("\n--- ⭐ what it can SEE, so it can answer instead of refusing ---");
+{
+  const fsx = require("fs");
+  const d = JSON.parse(fsx.readFileSync(path.join(__dirname, "data.json"), "utf8"));
+  const u = (d.users || []).find(x => x && !x.deleted) || { id: "u1" };
+  const ctx = t.capTodayContext(d, "mqwvs3mq98pij", u.id);
+  ok("⭐ it can see his TO-DO LIST — the page the talk box sits on", /HIS TO-DO LIST/.test(ctx));
+  ok("...and which are overdue", /OVERDUE|\[due /.test(ctx));
+  ok("it can see the bills coming", /BILLS DUE IN THE NEXT/.test(ctx));
+  ok("...with real amounts", /\$[\d,]+\.\d\d/.test(ctx));
+  ok("it still sees the calendar", /Coming up/.test(ctx));
+  ok("...and the journal", /Journal/.test(ctx));
+  ok("the context stays bounded as it grows", ctx.length <= 9000, ctx.length);
+
+  /* the money + workout blocks appear only when there IS data — silence beats an empty heading */
+  const empty = t.capTodayContext({ registry: d.registry, users: d.users, mqwvs3mq98pij: { lifeNotes: [] } }, "mqwvs3mq98pij", u.id);
+  ok("no to-dos → no to-do section", !/HIS TO-DO LIST/.test(empty));
+  ok("no bills → no bills section", !/BILLS DUE/.test(empty));
+  ok("no workouts → no workout section", !/RECENT WORKOUTS/.test(empty));
+
+  /* with workouts + spend present, both render */
+  const rich = { registry: d.registry, users: d.users, mqwvs3mq98pij: {
+    lifeNotes: [], workoutLogs: [
+      { id: "w1", date: "2026-08-24", dayName: "Monday", setCount: 12, volume: 8400 },
+      { id: "wk_body", kind: "body", series: [{ date: "2026-08-23", weight: 196, bodyFat: 22 }] }
+    ] } };
+  const rctx = t.capTodayContext(rich, "mqwvs3mq98pij", u.id);
+  ok("workouts appear once mirrored", /RECENT WORKOUTS/.test(rctx) && /Monday/.test(rctx));
+  ok("...with the latest weigh-in", /Latest weigh-in: 196 lb/.test(rctx));
+  ok("⛔ and it is told never to chase him about training", /NEVER chase him about training/.test(rctx));
+  ok("⛔ never to nag about an old to-do", /Never nag about an old one/.test(t.capTodayContext(d, "mqwvs3mq98pij", u.id)));
+}
+
+console.log("\n--- the buttons say what they do ---");
+{
+  ok("the capture row has a heading", /Record something/.test(PH));
+  ok("'Write something' is now 'Journal entry'", /Journal entry/.test(PH) && !/📓 Write something/.test(PH));
+  ok("'Log the day' is now 'Daily check-in'", /Daily check-in/.test(PH) && !/🌱 Log the day/.test(PH));
+  ok("workout capture is right there too", /workout\.html/.test(PH));
+  ok("the reason they were renamed is recorded", /name neither what they capture nor where it lands/.test(PH));
+  ok("the talk box says it can act, once", /Ask me about your list, your bills/.test(PH));
+  ok("...and only on an empty thread", /PH_THREAD\.length \? '' :/.test(PH));
+}
+
 console.log("\n--- the interests wall is off Today ---");
 ok("Today no longer renders it", !/h \+= phInterestsCard\(\);/.test(PH));
 ok("...and the reason is recorded", /NOT A HOME-SCREEN CARD/.test(PH));

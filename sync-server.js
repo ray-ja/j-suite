@@ -1267,7 +1267,92 @@ function capPersonalContext(store, org, acctId, ny, t) {
   const pend = live("budgetTx").filter(x => x.pending).length;
   if (pend) L.push("There " + (pend === 1 ? "is 1 unconfirmed receipt scan" : "are " + pend + " unconfirmed receipt scans") + " waiting to be finished on the Budget page.");
 
-  return L.join("\n").slice(0, 6000);
+  /* ---------- WHAT HE'S ACTUALLY DOING, AND WHAT THINGS COST -------------------------------------------
+     Ray, 2026-08-26: "can I ask it questions about money, the calendar, workouts, etc.? and will it act on
+     them?" It could answer about the calendar, the journal and the shelf, and was blind to everything else —
+     including his TO-DO LIST, which is the whole Today page the talk box now sits on top of. Answering
+     "what should I be doing?" with "I can't see that" is the same broken-feeling refusal as the calendar one.
+
+     Each block is bounded on purpose: model reliability degrades as context grows, well before any hard
+     limit. This adds what he'd actually ask about and nothing else. */
+  {
+    const openTodos = live("todos").filter(x => !x.done);
+    if (openTodos.length) {
+      const byDue = openTodos.slice().sort((a, b) => String(a.due || "9999").localeCompare(String(b.due || "9999")));
+      L.push("");
+      L.push("HIS TO-DO LIST — " + openTodos.length + " open. This is what Today shows him, so you can answer \"what should I be doing\" from it. Never nag about an old one:");
+      byDue.slice(0, 14).forEach(x => {
+        const od = x.due && String(x.due) < t;
+        L.push("  - " + clip(x.title || "", 90)
+          + (x.due ? (od ? "  [OVERDUE " + x.due + "]" : "  [due " + x.due + "]") : "")
+          + (x.priority === "High" ? "  [high]" : ""));
+      });
+    }
+    const rems = live("reminders").filter(r => !r.fired && (+r.dueAt || 0) > 0).sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0));
+    if (rems.length) {
+      L.push("");
+      L.push("REMINDERS he set — these will message him at the time; don't repeat them at him:");
+      rems.slice(0, 6).forEach(r => {
+        let when = "";
+        try { when = new Date(+r.dueAt).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch (e) {}
+        L.push("  - " + clip(r.text || "", 80) + (when ? " — " + when : ""));
+      });
+    }
+  }
+  {
+    /* MONEY — what's about to leave, and what this month has cost. Enough to answer "can I afford X" and
+       "what am I spending on" without pasting his whole ledger into every turn. */
+    const bills = live("budgetBills");
+    if (bills.length) {
+      const day = +t.slice(8, 10);
+      const soon = bills.filter(b => b && +b.amount > 0).map(b => {
+        const dd = +b.dueDay || 0;
+        return { name: b.name || "(bill)", amt: +b.amount || 0, inDays: dd ? ((dd >= day) ? dd - day : (30 - day + dd)) : 99 };
+      }).filter(b => b.inDays <= 21).sort((a, b) => a.inDays - b.inDays);
+      if (soon.length) {
+        L.push("");
+        L.push("BILLS DUE IN THE NEXT 3 WEEKS — $" + soon.reduce((n, b) => n + b.amt, 0).toFixed(2) + " in total:");
+        soon.slice(0, 10).forEach(b => L.push("  - " + clip(b.name, 60) + "  $" + b.amt.toFixed(2) + (b.inDays === 0 ? "  (today)" : "  (in " + b.inDays + "d)")));
+      }
+    }
+    const tx = live("budgetTx").filter(x => String(x.date || "").slice(0, 7) === t.slice(0, 7));
+    if (tx.length) {
+      const catName = {};
+      live("budgetCats").forEach(c => { if (c && c.id) catName[c.id] = c.name || ""; });
+      const spend = {}; let out = 0;
+      tx.forEach(x => {
+        const amt = +x.amount || 0;
+        if (amt >= 0) return;
+        out += -amt;
+        const k = catName[x.catId] || "uncategorised";
+        spend[k] = (spend[k] || 0) + -amt;
+      });
+      if (out > 0) {
+        L.push("");
+        L.push("THIS MONTH SO FAR — $" + out.toFixed(2) + " out across " + tx.length + " transactions. Biggest:");
+        Object.keys(spend).sort((a, b) => spend[b] - spend[a]).slice(0, 6).forEach(k => L.push("  - " + clip(k, 40) + "  $" + spend[k].toFixed(2)));
+      }
+    }
+  }
+  {
+    /* WORKOUTS — mirrored from his own app (js/139), so he can ask "when did I last train legs" without
+       opening it. ⛔ State them as fact; never used to prompt, chase or compare. */
+    const w = live("workoutLogs");
+    const sessions = w.filter(x => x.kind !== "body").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    const body = w.find(x => x.kind === "body");
+    if (sessions.length) {
+      L.push("");
+      L.push("RECENT WORKOUTS (from his own app — state as fact; NEVER chase him about training):");
+      sessions.slice(0, 5).forEach(x => L.push("  - " + (x.date || "") + "  " + clip(x.dayName || "", 24)
+        + (x.setCount ? "  " + x.setCount + " sets" : "") + (x.volume ? ", " + x.volume + " lb" : "")));
+    }
+    if (body && Array.isArray(body.series) && body.series[0]) {
+      const b0 = body.series[0];
+      L.push("Latest weigh-in: " + (b0.weight != null ? b0.weight + " lb" : "—")
+        + (b0.bodyFat != null ? ", " + b0.bodyFat + "% body fat" : "") + " on " + (b0.date || "?") + ".");
+    }
+  }
+  return L.join("\n").slice(0, 9000);
 }
 function capTodayContext(store, org, acctId) {
   store = store || {};
