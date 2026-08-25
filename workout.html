@@ -1,0 +1,2038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RJ's Workout</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏋️</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { font-size: 24px; }
+  body {
+    background: #0a0a0a; color: #e0e0e0; min-height: 100vh;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    padding: 1rem;
+  }
+  .header { position: relative; text-align: center; margin-bottom: 1rem; border-bottom: 2px solid #1a1a1a; padding-bottom: 0.75rem; }
+  .gear-btn {
+    position: absolute; top: 0; right: 0; width: 2.4rem; height: 2.4rem; padding: 0;
+    background: #1a1a1a; color: #888; border: 2px solid #2a2a2a; border-radius: 6px;
+    font-size: 1.2rem; cursor: pointer; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gear-btn:active { background: #2a2a2a; }
+  .title { font-size: 2rem; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: #ff4d4d; margin-bottom: 0.5rem; }
+  .page-tabs { display: flex; gap: 0.5rem; justify-content: center; }
+  .page-tab {
+    padding: 0.4rem 1.2rem; font-size: 0.95rem; font-weight: 700;
+    font-family: inherit; border: 2px solid #222; border-radius: 6px;
+    cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase;
+    background: #141414; color: #666; transition: all 0.15s;
+  }
+  .page-tab.active-workout { background: #ff4d4d; color: #000; border-color: #ff4d4d; }
+  .page-tab.active-progress { background: #7eb8ff; color: #000; border-color: #7eb8ff; }
+  .day-tabs { display: flex; gap: 0.35rem; margin-bottom: 1rem; overflow-x: auto; padding-bottom: 0.25rem; }
+  .day-tab {
+    flex: 1 1 0; min-width: 3.5rem; padding: 0.6rem 0.25rem; font-size: 1.05rem;
+    font-family: inherit; border: 2px solid #1a1a1a; border-radius: 6px;
+    cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em;
+    transition: all 0.15s; background: #141414; color: #888; font-weight: 400; text-align: center;
+  }
+  .day-tab.active { background: #ff4d4d; color: #000; border-color: #ff4d4d; font-weight: 800; }
+  .sunday-tab {
+    flex: 1 1 0; min-width: 3.5rem; padding: 0.6rem 0.25rem; font-size: 1.05rem;
+    font-family: inherit; background: #0d1a0d; color: #2a5a2a; border: 2px solid #1a2a1a;
+    border-radius: 6px; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .day-title { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .label-line { font-size: 1.1rem; color: #ff4d4d; font-weight: 600; }
+  .circuit-row { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
+  .circuit-btn {
+    flex: 1; padding: 0.5rem; font-size: 1.15rem; font-family: inherit;
+    border: 2px solid #1a1a1a; border-radius: 6px; cursor: pointer;
+    background: #0f0f0f; color: #444; font-weight: 400; transition: all 0.15s;
+  }
+  .circuit-btn.active { background: #1a1a2e; color: #7eb8ff; border-color: #3a6baa; font-weight: 800; }
+  .exercise-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .exercise-card { background: #111; border: 2px solid #1c1c1c; border-radius: 8px; padding: 0.75rem 1rem; }
+  /* TOP row: name + inline notes (left), round-by-round summary (top right) */
+  .exercise-top { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .exercise-headline { display: flex; align-items: baseline; gap: 0.7rem; flex-wrap: wrap; min-width: 0; }
+  .exercise-name { font-size: 1.6rem; font-weight: 800; color: #fff; }
+  .exercise-num { color: #ff4d4d; margin-right: 0.4rem; }
+  .exercise-notes { font-size: 0.9rem; color: #666; margin: 0; font-style: italic; }
+  .round-summary { display: flex; gap: 0.75rem; margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .round-summary span { font-size: 0.8rem; color: #333; font-weight: 400; white-space: nowrap; }
+  .round-summary span.active-round { color: #7eb8ff; font-weight: 700; }
+  /* BOTTOM row: controls (left), reorder/edit tools (bottom right) */
+  .exercise-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-top: 0.6rem; }
+  .controls-row { display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap; }
+  .weight-stack { display: flex; flex-direction: column; gap: 0.4rem; }
+  .rep-stack { display: flex; flex-direction: column; gap: 0.4rem; }
+  .rep-range-sub { font-size: 0.85rem; font-weight: 700; color: #5f87b0; text-align: center; letter-spacing: 0.02em; }
+  .control-group { display: flex; align-items: center; gap: 0.4rem; }
+  .control-label { font-size: 1rem; color: #666; width: 3rem; }
+  .inc-btn {
+    width: 2.8rem; height: 2.8rem; font-size: 1.6rem; font-weight: 800;
+    font-family: 'JetBrains Mono', monospace; background: #1a1a1a; color: #ccc;
+    border: 2px solid #2a2a2a; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0;
+  }
+  .inc-btn:active { background: #2a2a2a; }
+  .weight-val { font-size: 2rem; font-weight: 800; color: #ff4d4d; min-width: 4.5rem; text-align: center; }
+  .rep-val { font-size: 2rem; font-weight: 800; color: #7eb8ff; min-width: 3rem; text-align: center; }
+  .unit-label { font-size: 0.9rem; color: #555; }
+  .bw-label { font-size: 1.3rem; color: #444; font-weight: 600; }
+  /* Barbell picture: small color-coded plates mirrored around a center bar, under the weight */
+  .plate-bar { display: flex; align-items: center; justify-content: center; gap: 0.18rem; flex-wrap: nowrap; }
+  .pbar-plate {
+    font-size: 0.78rem; font-weight: 800; line-height: 1; padding: 0.22rem 0.28rem;
+    border: 1px solid; border-radius: 3px; min-width: 1.35rem; text-align: center;
+  }
+  .pbar-rod { width: 1.3rem; height: 0.26rem; background: #666; border-radius: 2px; margin: 0 0.1rem; }
+  .pbar-rod.bar-only { width: 2.6rem; }
+  .pbar-note { font-size: 0.72rem; color: #555; font-style: italic; margin-left: 0.3rem; }
+  .pbar-short { font-size: 0.72rem; color: #ff6b6b; margin-left: 0.3rem; white-space: nowrap; }
+  .reset-btn:hover { background: #222; color: #888; }
+  .auto-save { text-align: center; padding: 0.5rem; color: #1a2a1a; font-size: 0.75rem; letter-spacing: 0.1em; }
+  .progress-title { font-size: 1.4rem; font-weight: 700; color: #fff; margin-bottom: 1rem; text-align: center; }
+  .no-data { text-align: center; padding: 3rem 1rem; color: #555; }
+  .no-data h3 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .no-data p { font-size: 1.1rem; }
+  .chart-container { width: 100%; overflow-x: auto; margin-bottom: 1rem; }
+  .chart-container canvas { display: block; }
+  .lift-cards { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; justify-content: center; }
+  .lift-card { background: #111; border-radius: 6px; padding: 0.4rem 0.8rem; text-align: center; }
+  .lift-card-name { font-size: 0.85rem; font-weight: 700; }
+  .lift-card-val { font-size: 1.3rem; color: #fff; font-weight: 800; }
+  .export-btn {
+    display: block; margin: 1.5rem auto 0; padding: 0.75rem 2rem; font-size: 1.1rem; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace; background: #1a2a1a; color: #4dff91;
+    border: 2px solid #2a4a2a; border-radius: 8px; cursor: pointer;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .export-btn:hover { background: #2a3a2a; }
+  .export-area {
+    width: 100%; height: 200px; background: #111; color: #ccc;
+    border: 1px solid #222; border-radius: 6px; padding: 0.5rem;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; resize: vertical; margin-top: 0.5rem;
+  }
+  .export-hint { font-size: 0.9rem; color: #666; margin-top: 1rem; }
+  .close-export {
+    margin-top: 0.5rem; padding: 0.4rem 1rem; font-size: 0.9rem;
+    font-family: inherit; background: #1a1a1a; color: #666;
+    border: 1px solid #222; border-radius: 4px; cursor: pointer;
+  }
+  .copy-btn {
+    margin-top: 0.5rem; margin-left: 0.5rem; padding: 0.4rem 1rem; font-size: 0.9rem;
+    font-family: inherit; background: #1a2a1a; color: #4dff91;
+    border: 1px solid #2a4a2a; border-radius: 4px; cursor: pointer;
+  }
+  .edit-btn {
+    background: transparent; border: 1px solid #2a2a2a; color: #555;
+    width: 2rem; height: 2rem; border-radius: 4px; cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    padding: 0;
+  }
+  .edit-btn:hover { color: #aaa; border-color: #444; }
+  .rep-range { font-size: 0.9rem; color: #7eb8ff; font-weight: 600; margin-left: 0.5rem; }
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85); display: flex; align-items: center;
+    justify-content: center; z-index: 100; padding: 1rem;
+  }
+  .modal {
+    background: #111; border: 2px solid #2a2a2a; border-radius: 12px;
+    padding: 1.5rem; max-width: 500px; width: 100%;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .modal h3 {
+    font-size: 1.3rem; font-weight: 700; color: #ff4d4d; margin-bottom: 1rem;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .modal-field { margin-bottom: 1rem; }
+  .modal-field label {
+    display: block; font-size: 0.85rem; color: #666; margin-bottom: 0.3rem;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  }
+  .modal-field input, .modal-field textarea {
+    width: 100%; background: #0a0a0a; color: #e0e0e0;
+    border: 2px solid #222; border-radius: 6px;
+    padding: 0.6rem; font-family: inherit; font-size: 1.05rem;
+    box-sizing: border-box;
+  }
+  .modal-field input:focus, .modal-field textarea:focus {
+    outline: none; border-color: #ff4d4d;
+  }
+  .modal-field textarea { resize: vertical; min-height: 60px; }
+  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
+  .modal-btn {
+    flex: 1; padding: 0.75rem; font-size: 1rem; font-weight: 700;
+    font-family: inherit; border-radius: 6px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .modal-btn.save { background: #ff4d4d; color: #000; border: 2px solid #ff4d4d; }
+  .modal-btn.cancel { background: #1a1a1a; color: #888; border: 2px solid #2a2a2a; }
+  .modal-btn.reset { background: #1a1a1a; color: #888; border: 2px solid #2a2a2a; }
+  .modal-field-label-standalone {
+    display: block; font-size: 0.85rem; color: #666; margin-bottom: 0.3rem;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  }
+  .settings-hint { font-size: 0.8rem; color: #555; margin: 0 0 0.75rem; line-height: 1.45; }
+  .plate-rows { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .plate-row { display: flex; align-items: center; gap: 0.5rem; }
+  .plate-row input {
+    width: 4.5rem; background: #0a0a0a; color: #e0e0e0; border: 2px solid #222;
+    border-radius: 6px; padding: 0.5rem; font-family: inherit; font-size: 1rem; box-sizing: border-box;
+  }
+  .plate-row input:focus { outline: none; border-color: #ffb84d; }
+  .plate-row-x, .plate-row-unit { font-size: 0.85rem; color: #666; }
+  .plate-row-del {
+    margin-left: auto; width: 2.2rem; height: 2.2rem; padding: 0; cursor: pointer;
+    background: #1a1a1a; color: #a55; border: 2px solid #2a2a2a; border-radius: 6px; font-size: 0.9rem;
+  }
+  .plate-row-del:active { background: #2a1414; }
+  .plate-add-btn {
+    width: 100%; padding: 0.55rem; cursor: pointer; font-family: inherit; font-weight: 700; font-size: 0.85rem;
+    background: #0d1a0d; color: #4dff91; border: 2px dashed #1a2a1a; border-radius: 6px;
+    letter-spacing: 0.05em;
+  }
+  /* Plan management (settings modal) */
+  .modal-sep { border: none; border-top: 1px solid #222; margin: 1.1rem 0; }
+  .plan-list { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.5rem; }
+  .plan-row { display: flex; align-items: center; gap: 0.4rem; background: #0d0d0d; border: 2px solid #1c1c1c; border-radius: 6px; padding: 0.35rem 0.5rem; }
+  .plan-row.active { border-color: #ff4d4d; background: #150d0d; }
+  .plan-name { flex: 1; text-align: left; background: none; border: none; color: #ccc; font-family: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer; padding: 0.2rem; }
+  .plan-row.active .plan-name { color: #ff8a8a; }
+  .plan-daycount { font-size: 0.7rem; color: #555; font-weight: 400; }
+  .plan-row-actions { display: flex; gap: 0.25rem; }
+  .plan-act { width: 2rem; height: 2rem; padding: 0; cursor: pointer; background: #1a1a1a; color: #888; border: 1px solid #2a2a2a; border-radius: 4px; font-size: 0.85rem; }
+  .plan-act:hover { color: #ccc; border-color: #444; }
+  .plan-act.danger:hover { color: #ff6b6b; border-color: #5a2a2a; }
+  .ht-row { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; }
+  .ht-input { width: 4rem; background: #0a0a0a; color: #e0e0e0; border: 2px solid #222; border-radius: 6px; padding: 0.45rem; font-family: inherit; font-size: 1rem; box-sizing: border-box; }
+  .ht-input:focus { outline: none; border-color: #ff4d4d; }
+  .ht-unit { font-size: 0.85rem; color: #666; }
+  /* Active-plan badge in header */
+  .plan-badge {
+    display: inline-block; margin: 0 auto 0.5rem; padding: 0.2rem 0.7rem; cursor: pointer;
+    background: #150d0d; color: #ff8a8a; border: 1px solid #3a1a1a; border-radius: 999px;
+    font-family: inherit; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.03em;
+  }
+  .plan-badge:hover { border-color: #ff4d4d; }
+  /* Body composition (progression page) */
+  .body-section { margin-bottom: 1.5rem; }
+  .body-stats { display: flex; gap: 0.6rem; margin: 0.6rem 0 1rem; }
+  .body-stat { flex: 1; background: #111; border: 2px solid #1c1c1c; border-radius: 8px; padding: 0.75rem 0.5rem; text-align: center; }
+  .body-stat-num { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .body-stat-label { font-size: 0.75rem; color: #666; margin-top: 0.35rem; }
+  .body-form { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; margin: 0.75rem 0; }
+  .body-input { background: #0a0a0a; color: #e0e0e0; border: 2px solid #222; border-radius: 6px; padding: 0.5rem; font-family: inherit; font-size: 0.95rem; box-sizing: border-box; }
+  .body-input[type=date] { width: 9.5rem; }
+  .body-input[type=number] { width: 7rem; }
+  .body-input:focus { outline: none; border-color: #ff4d4d; }
+  .body-log-btn { padding: 0.5rem 1.1rem; cursor: pointer; background: #1a2a1a; color: #4dff91; border: 2px solid #2a4a2a; border-radius: 6px; font-family: inherit; font-weight: 700; letter-spacing: 0.05em; }
+  .body-log-btn:hover { background: #2a3a2a; }
+  .body-entries { display: flex; flex-direction: column; gap: 0.25rem; }
+  .body-entry { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0.5rem; background: #0d0d0d; border-radius: 4px; }
+  .body-entry-date { font-size: 0.8rem; color: #888; width: 5rem; }
+  .body-entry-val { flex: 1; font-size: 0.9rem; color: #ccc; }
+  .body-entry-del { width: 1.7rem; height: 1.7rem; padding: 0; cursor: pointer; background: #1a1a1a; color: #a55; border: 1px solid #2a2a2a; border-radius: 4px; font-size: 0.75rem; }
+  .day-title-row { display: flex; align-items: center; gap: 0.75rem; }
+  .completion-box {
+    width: 2.4rem; height: 2.4rem; border-radius: 6px;
+    border: 2px solid #2a2a2a; background: #111; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; font-weight: 800; color: #333;
+    font-family: 'JetBrains Mono', monospace; padding: 0;
+    transition: all 0.15s;
+  }
+  .completion-box:hover { border-color: #444; }
+  .completion-box.done { background: #0a2a0a; border-color: #4dff91; color: #4dff91; }
+  .completion-box.skipped { background: #2a0a0a; border-color: #ff4d4d; color: #ff4d4d; }
+  .completion-status {
+    font-size: 0.85rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 4px;
+  }
+  .completion-status.done { background: #0a2a0a; color: #4dff91; border: 1px solid #2a5a2a; }
+  .completion-status.skipped { background: #2a0a0a; color: #ff4d4d; border: 1px solid #5a2a2a; }
+  .day-tab .dot {
+    display: inline-block; width: 0.5rem; height: 0.5rem;
+    border-radius: 50%; margin-left: 0.3rem; vertical-align: middle;
+  }
+  .day-tab .dot.done { background: #4dff91; }
+  .day-tab .dot.skipped { background: #ff4d4d; }
+  .today-marker {
+    display: inline-block; font-size: 0.7rem; font-weight: 800;
+    background: #ff4d4d; color: #000; padding: 0.1rem 0.4rem;
+    border-radius: 3px; margin-left: 0.5rem; vertical-align: middle;
+    letter-spacing: 0.08em;
+  }
+  .rounds-grid { display: flex; flex-direction: column; gap: 0.4rem; }
+  .rounds-grid-header, .rounds-grid-row {
+    display: grid; grid-template-columns: 3rem 1fr 1fr; gap: 0.5rem; align-items: center;
+  }
+  .rounds-grid-header span {
+    font-size: 0.75rem; color: #666; letter-spacing: 0.05em;
+    text-transform: uppercase; font-weight: 600; text-align: center;
+  }
+  .rounds-grid-row input {
+    background: #0a0a0a; color: #e0e0e0; border: 2px solid #222;
+    border-radius: 6px; padding: 0.5rem; font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem; font-weight: 700; text-align: center; width: 100%; box-sizing: border-box;
+  }
+  .rounds-grid-row input:focus { outline: none; border-color: #ff4d4d; }
+  .rounds-grid-label {
+    font-size: 0.9rem; font-weight: 700; color: #7eb8ff;
+    text-align: center; letter-spacing: 0.05em;
+  }
+  .rounds-grid-bw {
+    text-align: center; color: #555; font-size: 0.85rem;
+    font-weight: 600; padding: 0.5rem;
+  }
+  .compliance-section {
+    margin: 2rem 0 1.5rem; padding: 1rem;
+    background: #111; border: 2px solid #1c1c1c; border-radius: 8px;
+  }
+  .compliance-header {
+    text-align: center; font-size: 1.1rem; font-weight: 700;
+    color: #fff; margin-bottom: 0.75rem;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .compliance-big {
+    text-align: center; margin-bottom: 1rem;
+  }
+  .compliance-pct {
+    font-size: 3rem; font-weight: 800; line-height: 1;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .compliance-pct.good { color: #4dff91; }
+  .compliance-pct.ok { color: #ffd44d; }
+  .compliance-pct.bad { color: #ff4d4d; }
+  .compliance-sub {
+    font-size: 0.85rem; color: #666; margin-top: 0.3rem;
+    letter-spacing: 0.05em;
+  }
+  .compliance-breakdown {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .compliance-cell {
+    text-align: center; padding: 0.6rem 0.4rem;
+    background: #0a0a0a; border-radius: 6px; border: 1px solid #1a1a1a;
+  }
+  .compliance-cell-num {
+    font-size: 1.6rem; font-weight: 800; line-height: 1;
+  }
+  .compliance-cell-num.done { color: #4dff91; }
+  .compliance-cell-num.skip { color: #ff4d4d; }
+  .compliance-cell-num.total { color: #ccc; }
+  .compliance-cell-label {
+    font-size: 0.7rem; color: #555; letter-spacing: 0.08em;
+    text-transform: uppercase; margin-top: 0.2rem;
+  }
+  .compliance-by-day {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.4rem;
+    margin-top: 1rem;
+  }
+  .compliance-day-cell {
+    text-align: center; padding: 0.4rem 0.2rem;
+    background: #0a0a0a; border-radius: 4px; border: 1px solid #1a1a1a;
+  }
+  .compliance-day-name {
+    font-size: 0.7rem; color: #666; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .compliance-day-pct {
+    font-size: 1rem; font-weight: 800; margin-top: 0.2rem;
+  }
+  .exercise-header-actions {
+    display: flex; gap: 0.3rem; flex-shrink: 0;
+  }
+  .move-btn {
+    background: transparent; border: 1px solid #2a2a2a; color: #444;
+    width: 1.8rem; height: 2rem; border-radius: 4px; cursor: pointer;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; line-height: 1;
+  }
+  .move-btn:hover { color: #aaa; border-color: #444; }
+  .move-btn.disabled, .move-btn:disabled {
+    opacity: 0.3; cursor: not-allowed;
+  }
+  .move-btn.disabled:hover, .move-btn:disabled:hover {
+    color: #444; border-color: #2a2a2a;
+  }
+  .add-exercise-btn {
+    width: 100%; padding: 0.85rem; margin-top: 1rem; margin-bottom: 2rem;
+    font-size: 1rem; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    background: #0d1a0d; color: #4dff91; border: 2px dashed #2a4a2a;
+    border-radius: 8px; cursor: pointer; letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .add-exercise-btn:hover { background: #1a2a1a; border-style: solid; }
+  .bw-toggle {
+    width: 100%; padding: 0.6rem; font-size: 1rem; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace; border-radius: 6px;
+    cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase;
+    background: #1a1a1a; color: #666; border: 2px solid #2a2a2a;
+  }
+  .bw-toggle.on {
+    background: #0a2a0a; color: #4dff91; border-color: #4dff91;
+  }
+  .modal-btn.delete {
+    background: #2a0a0a; color: #ff4d4d; border: 2px solid #5a2a2a;
+  }
+  .modal-btn.delete:hover { background: #3a1a1a; }
+
+  /* Desktop: name is the biggest element (readable across the room); notes inline next to it,
+     round summary top-right, controls bottom-left with the barbell picture under the weight,
+     reorder tools bottom-right. */
+  @media (min-width: 1050px) {
+    html { font-size: 26px; }
+    body { padding: 1.5rem 2.5rem; }
+    .exercise-card { padding: 0.9rem 1.75rem; }
+    .exercise-name { font-size: 2.4rem; }       /* biggest text on the screen */
+    .rep-range { font-size: 1.05rem; }
+    .exercise-notes { font-size: 1.15rem; }
+    /* keep the round summary pinned top-right as a compact 2x2 grid; headline takes the rest */
+    .exercise-top { flex-wrap: nowrap; align-items: flex-start; }
+    .exercise-headline { flex: 1 1 auto; }
+    .round-summary { flex: 0 0 auto; display: grid; grid-template-columns: auto auto; gap: 0.2rem 0.9rem; justify-items: end; align-content: start; padding-top: 0.4rem; }
+    .round-summary span { font-size: 0.95rem; }
+    /* Fixed widths so the WT and REP columns line up vertically across every row */
+    .control-label { font-size: 1rem; width: 2.4rem; flex: none; }
+    .inc-btn { width: 2.6rem; height: 2.6rem; font-size: 1.6rem; }
+    .weight-val { font-size: 1.9rem; width: 3.4rem; min-width: 3.4rem; }
+    .rep-val { font-size: 1.9rem; width: 2.4rem; min-width: 2.4rem; }
+    .unit-label { font-size: 0.95rem; width: 3.6rem; display: inline-block; }
+    .weight-stack { width: 16rem; flex: none; }
+    .bw-label { width: 16rem; flex: none; display: inline-flex; align-items: center; font-size: 1.5rem; color: #555; }
+    /* barbell picture a touch larger on desktop, still small relative to the name/number */
+    .pbar-plate { font-size: 0.95rem; min-width: 1.7rem; padding: 0.25rem 0.35rem; }
+    .pbar-rod { width: 1.6rem; height: 0.3rem; }
+    .pbar-rod.bar-only { width: 3rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
+
+// Each plan supplies its own days + tracked lifts; DAYS / TRACKED_LIFTS below are rebound
+// to the active plan at runtime (see activatePlan).
+function strengthDays() { return [
+  { id:"mon", day:"Monday", label:"Push — Chest/Shoulders/Triceps", amLabel:"Push Circuit", exercises:[
+    { id:"bench", name:"Barbell Bench Press", dw:135, dr:12, range:"10-12", unit:"lbs", notes:"2 sec down, explode up", bar:true },
+    { id:"inc_press", name:"DB Incline Press", dw:30, dr:15, range:"12-15", unit:"lbs", notes:"30–45° angle" },
+    { id:"shoulder_press", name:"DB Shoulder Press", dw:25, dr:12, range:"10-12", unit:"lbs", notes:"Seated or standing" },
+    { id:"lat_raise_mon", name:"DB Lateral Raise", dw:12, dr:20, range:"15-20", unit:"lbs", notes:"Controlled, no swing" },
+    { id:"diamond_pushup", name:"Diamond Push-Ups", dw:0, dr:15, range:"12-15", unit:"BW", notes:"Hands together, chest to floor" },
+    { id:"plank_mon", name:"Plank Hold", dw:0, dr:60, range:"45-60", unit:"sec", notes:"Full tension — squeeze everything" },
+  ]},
+  { id:"tue", day:"Tuesday", label:"Pull — Back/Biceps", amLabel:"Pull Circuit", exercises:[
+    { id:"bb_row", name:"Barbell Bent-Over Row", dw:135, dr:12, range:"10-12", unit:"lbs", notes:"Pull to lower chest", bar:true },
+    { id:"pullups", name:"Pull-Ups / Inverted Rows", dw:0, dr:10, range:"8-12", unit:"BW", notes:"Full ROM, squeeze back" },
+    { id:"sa_row", name:"Single-Arm DB Row", dw:35, dr:15, range:"12-15", unit:"lbs/ea", notes:"Row to hip, elbow back" },
+    { id:"bicep_curl", name:"DB Bicep Curl", dw:27, dr:15, range:"12-15", unit:"lbs", notes:"Strict form" },
+    { id:"hammer_curl", name:"Hammer Curls", dw:22, dr:20, range:"15-20", unit:"lbs", notes:"Neutral grip" },
+    { id:"face_pull", name:"Face Pull (KB)", dw:20, dr:20, range:"20", unit:"lbs", notes:"Pull to face, external rotation" },
+  ]},
+  { id:"wed", day:"Wednesday", label:"Legs — Squat Focus", amLabel:"Leg Circuit", exercises:[
+    { id:"back_squat", name:"Barbell Back Squat", dw:135, dr:12, range:"10-12", unit:"lbs", notes:"Below parallel depth", bar:true },
+    { id:"goblet_squat_wed", name:"Goblet Squat", dw:45, dr:20, range:"15-20", unit:"lbs KB", notes:"Pause at bottom" },
+    { id:"walking_lunge", name:"Walking Lunges", dw:30, dr:12, range:"12 ea", unit:"lbs KB/ea", notes:"Controlled descent" },
+    { id:"kb_swing_wed", name:"Kettlebell Swings", dw:45, dr:20, range:"20", unit:"lbs KB", notes:"Explosive hip snap" },
+    { id:"sl_rdl", name:"Single-Leg RDL", dw:25, dr:12, range:"10-12 ea", unit:"lbs KB/ea", notes:"Balance + hamstring stretch" },
+    { id:"jump_squat", name:"Jump Squats", dw:0, dr:15, range:"15", unit:"BW", notes:"Explosive, soft landing" },
+  ]},
+  { id:"thu", day:"Thursday", label:"Push — Shoulder Focus", amLabel:"Push Circuit", exercises:[
+    { id:"ohp", name:"Barbell Overhead Press", dw:85, dr:12, range:"10-12", unit:"lbs", notes:"Strict press, lock out", bar:true },
+    { id:"arnold_press", name:"Arnold Press", dw:22, dr:12, range:"10-12", unit:"lbs", notes:"Full rotation, control eccentric" },
+    { id:"front_raise", name:"DB Front Raise", dw:17, dr:15, range:"12-15", unit:"lbs", notes:"Raise to eye level" },
+    { id:"lat_raise_thu", name:"DB Lateral Raise", dw:12, dr:20, range:"15-20", unit:"lbs", notes:"Thumbs slightly down" },
+    { id:"pike_pushup", name:"Pike Push-Ups", dw:0, dr:15, range:"12-15", unit:"BW", notes:"Hips high, shoulders loaded" },
+    { id:"dips", name:"Tricep Dips", dw:0, dr:20, range:"15-20", unit:"BW", notes:"Full ROM" },
+  ]},
+  { id:"fri", day:"Friday", label:"Pull — Deadlift Focus", amLabel:"Pull Circuit", exercises:[
+    { id:"deadlift", name:"Conventional Deadlift", dw:165, dr:10, range:"8-10", unit:"lbs", notes:"Reset each rep, explosive pull", bar:true },
+    { id:"db_rdl", name:"DB Romanian Deadlift", dw:32, dr:15, range:"12-15", unit:"lbs", notes:"Hamstring stretch" },
+    { id:"inv_row_wide", name:"Inverted Row (Wide)", dw:0, dr:15, range:"12-15", unit:"BW", notes:"Pull chest to bar" },
+    { id:"kb_high_pull", name:"KB High Pull", dw:45, dr:15, range:"15", unit:"lbs KB", notes:"Explosive from hips" },
+    { id:"conc_curl", name:"Concentration Curl", dw:27, dr:15, range:"12-15 ea", unit:"lbs/ea", notes:"Squeeze at top" },
+    { id:"farmer_carry", name:"Farmer Carry", dw:35, dr:50, range:"50 yds", unit:"lbs | yds", notes:"Posture perfect" },
+  ]},
+  { id:"sat", day:"Saturday", label:"Legs — Hinge + Unilateral", amLabel:"Leg Circuit", exercises:[
+    { id:"good_morning", name:"Barbell Good Morning", dw:65, dr:15, range:"12-15", unit:"lbs", notes:"Hinge at hips", bar:true },
+    { id:"bss", name:"Bulgarian Split Squat", dw:30, dr:12, range:"10-12 ea", unit:"lbs/ea", notes:"Rear foot elevated" },
+    { id:"kb_swing_sat", name:"Kettlebell Swing", dw:45, dr:25, range:"25", unit:"lbs KB", notes:"KB to eye level" },
+    { id:"goblet_tempo", name:"Goblet Squat (Tempo)", dw:45, dr:15, range:"15", unit:"lbs KB", notes:"3 sec down, 1 sec up" },
+    { id:"sl_glute_bridge", name:"Single-Leg Glute Bridge", dw:0, dr:15, range:"15 ea", unit:"BW/ea", notes:"Hold 2 sec at top" },
+    { id:"jump_lunge", name:"Jump Lunges", dw:0, dr:10, range:"10 ea", unit:"BW/ea", notes:"Explosive, controlled landing" },
+  ]},
+]; }
+
+function strengthLifts() { return [
+  { id:"bench", dayId:"mon", name:"Bench Press", color:"#ff4d4d" },
+  { id:"bb_row", dayId:"tue", name:"Bent-Over Row", color:"#4dff91" },
+  { id:"back_squat", dayId:"wed", name:"Back Squat", color:"#7eb8ff" },
+  { id:"ohp", dayId:"thu", name:"OHP", color:"#ffb84d" },
+  { id:"deadlift", dayId:"fri", name:"Deadlift", color:"#c97eff" },
+  { id:"good_morning", dayId:"sat", name:"Good Morning", color:"#4dd9d9" },
+]; }
+
+// ─── BODYBUILDING PLAN ───────────────────────────────────────────────────────
+// 6-day upper-body hypertrophy split. No legs (un-pear-shape, grow the upper body).
+// One barbell rack/bench configuration per day (no mid-workout rack changes).
+// Equipment: 1 barbell + rack, adjustable bench, DBs 5–25 lb, KBs 10/20/45 lb, pull-up bar + neutral grips.
+// Every day: 4 exercises, the ONE barbell movement first (loaded once, no mid-workout
+// rack/bench changes or plate juggling), then 3 dumbbell/bodyweight accessories. 3 rounds.
+function bodybuildingDays() { return [
+  { id:"mon", day:"Monday", label:"Chest — Flat Bench", exercises:[
+    { id:"bb_bench", name:"Barbell Bench Press", dw:135, dr:9, range:"8-10", unit:"lbs", notes:"Bench flat in rack. 2s down, drive up.", bar:true },
+    { id:"bb_flye", name:"DB Flat Flye", dw:20, dr:14, range:"12-15", unit:"lbs", notes:"Deep stretch, squeeze at top" },
+    { id:"bb_decline", name:"DB Decline Press", dw:25, dr:11, range:"10-12", unit:"lbs", notes:"Bench on decline — hits lower chest" },
+    { id:"bb_pullover", name:"DB Pullover", dw:25, dr:14, range:"12-15", unit:"lbs", notes:"Flat bench, big stretch over the chest" },
+  ]},
+  { id:"tue", day:"Tuesday", label:"Back — Rows & Pull-Ups", exercises:[
+    { id:"bb_row", name:"Barbell Bent-Over Row", dw:135, dr:9, range:"8-10", unit:"lbs", notes:"Bar from floor — no rack. Pull to belly.", bar:true },
+    { id:"bb_pullup", name:"Neutral-Grip Pull-Ups", dw:0, dr:8, range:"6-10", unit:"BW", notes:"Bench moved aside. Full hang to chin." },
+    { id:"bb_sarow", name:"Single-Arm DB Row", dw:25, dr:11, range:"10-12", unit:"lbs/ea", notes:"25s, elbow to hip, full stretch" },
+    { id:"bb_shrug", name:"DB Shrug", dw:25, dr:18, range:"15-20", unit:"lbs", notes:"Hold the squeeze 1s at the top" },
+  ]},
+  { id:"wed", day:"Wednesday", label:"Shoulders — Press & Laterals", exercises:[
+    { id:"bb_ohp", name:"Barbell Overhead Press", dw:85, dr:9, range:"8-10", unit:"lbs", notes:"Standing, bar from rack at shoulder height. Strict.", bar:true },
+    { id:"bb_lat", name:"DB Lateral Raise", dw:15, dr:18, range:"15-20", unit:"lbs", notes:"Lead with elbows, no swing — width" },
+    { id:"bb_reardelt", name:"DB Rear Delt Flye", dw:15, dr:18, range:"15-20", unit:"lbs", notes:"Bent over, squeeze the rear delts" },
+    { id:"bb_lat_burn", name:"Lateral Raise Burnout", dw:10, dr:22, range:"20-25", unit:"lbs", notes:"Light — partials at the end for the pump" },
+  ]},
+  { id:"thu", day:"Thursday", label:"Arms — Biceps & Triceps", exercises:[
+    { id:"bb_curl", name:"Barbell Curl", dw:65, dr:10, range:"8-12", unit:"lbs", notes:"Straight bar, strict — no swing. Only bar move today.", bar:true },
+    { id:"bb_inccurl", name:"Incline DB Curl", dw:20, dr:11, range:"10-12", unit:"lbs", notes:"Bench ~45°, arms back, full stretch" },
+    { id:"bb_ohext", name:"DB Overhead Triceps Ext.", dw:25, dr:13, range:"12-15", unit:"lbs", notes:"One DB, big long-head stretch" },
+    { id:"bb_lyingext", name:"DB Lying Triceps Ext.", dw:20, dr:11, range:"10-12", unit:"lbs", notes:"Lying on flat bench, both DBs — skull crushers, no bar to reload" },
+  ]},
+  { id:"fri", day:"Friday", label:"Upper Chest & Delts — Incline", exercises:[
+    { id:"bb_incline", name:"Incline Barbell Bench Press", dw:95, dr:9, range:"8-10", unit:"lbs", notes:"Bench ~30° in rack. Upper chest.", bar:true },
+    { id:"bb_incflye", name:"Incline DB Flye", dw:20, dr:14, range:"12-15", unit:"lbs", notes:"Same incline bench, deep stretch" },
+    { id:"bb_lat2", name:"DB Lateral Raise", dw:15, dr:18, range:"15-20", unit:"lbs", notes:"Strict — keep building width" },
+    { id:"bb_reardelt2", name:"DB Rear Delt Flye", dw:15, dr:18, range:"15-20", unit:"lbs", notes:"Bent over — rear delts for the 3D look" },
+  ]},
+  { id:"sat", day:"Saturday", label:"Back & Arms — Pump", exercises:[
+    { id:"bb_curl2", name:"Barbell Curl", dw:65, dr:11, range:"10-12", unit:"lbs", notes:"Bar from floor — strict. Only bar move today.", bar:true },
+    { id:"bb_pullup2", name:"Neutral-Grip Pull-Ups", dw:0, dr:8, range:"6-10", unit:"BW", notes:"Lats — full ROM for width" },
+    { id:"bb_sarow2", name:"Single-Arm DB Row", dw:25, dr:11, range:"10-12", unit:"lbs/ea", notes:"Full stretch, controlled" },
+    { id:"bb_hammer2", name:"DB Hammer Curl", dw:25, dr:14, range:"12-15", unit:"lbs", notes:"Finish the arms — squeeze every rep" },
+  ]},
+]; }
+
+// Bump this when the bodybuilding template changes so already-seeded plans refresh on load.
+const BB_STRUCT_VERSION = 3;
+
+function bodybuildingLifts() { return [
+  { id:"bb_bench", dayId:"mon", name:"Bench Press", color:"#ff4d4d" },
+  { id:"bb_row", dayId:"tue", name:"Bent-Over Row", color:"#4dff91" },
+  { id:"bb_ohp", dayId:"wed", name:"Overhead Press", color:"#ffb84d" },
+  { id:"bb_curl", dayId:"thu", name:"Barbell Curl", color:"#c97eff" },
+  { id:"bb_incline", dayId:"fri", name:"Incline Bench", color:"#7eb8ff" },
+]; }
+
+// DAYS / TRACKED_LIFTS point at the ACTIVE plan and are rebound by activatePlan().
+let DAYS = strengthDays();
+let TRACKED_LIFTS = strengthLifts();
+
+let CIRCUITS = 4;   // rounds/sets per exercise — rebound per active plan by activatePlan()
+const WEIGHT_STEP = 2.5;
+const REP_STEP = 1;
+
+// ─── PLATE MATH ──────────────────────────────────────────────────────────────
+// Defaults — used until the user customizes them in Settings (gear icon, top right).
+const DEFAULT_BAR_WEIGHT = 45;                        // 45 lb Olympic bar
+const DEFAULT_PLATES = [                              // size (lbs) + how many you OWN total
+  { size: 45, count: 4 }, { size: 35, count: 2 }, { size: 25, count: 4 },
+  { size: 10, count: 4 }, { size: 5, count: 4 }, { size: 2.5, count: 2 }, { size: 1.25, count: 2 },
+];
+
+// Fewest-plates breakdown for ONE side of the bar, limited to the plates you actually own.
+// Pairs available per side = floor(owned count / 2). Returns { perSide, leftover }, or null
+// when the target is below bar weight. leftover > 0 means it can't be loaded exactly with
+// the plates on hand (ran out, or no combo fits).
+function plateBreakdown(total) {
+  const bar = Number(state.settings.barWeight) || 0;
+  if (total == null || total < bar) return null;
+  let per = (total - bar) / 2;
+  const avail = (state.settings.plates || [])
+    .map(p => ({ size: Number(p.size), pairs: Math.floor((Number(p.count) || 0) / 2) }))
+    .filter(p => p.size > 0 && p.pairs > 0)
+    .sort((a, b) => b.size - a.size);
+  const perSide = [];
+  for (const p of avail) {
+    let used = 0;
+    while (per + 1e-9 >= p.size && used < p.pairs) { perSide.push(p.size); per -= p.size; used++; }
+  }
+  return { perSide, leftover: per > 1e-6 ? per : 0 };
+}
+
+// Trim trailing zeros: 2.5 -> "2.5", 1.25 -> "1.25", 45 -> "45"
+function fmtPlate(n) { return Number(Number(n).toFixed(2)).toString(); }
+
+// Color per plate size, for the little color-coded barbell picture.
+const PLATE_COLORS = {
+  45: "#ff4d4d",    // red
+  35: "#ff9d4d",    // orange
+  25: "#ffd44d",    // yellow
+  10: "#4dff91",    // green
+  5:  "#7eb8ff",    // blue
+  2.5: "#c97eff",   // purple
+  1.25: "#4dd9d9",  // cyan
+};
+function plateColor(size) { return PLATE_COLORS[size] || "#9aa0a6"; }
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+
+let state = {
+  page: "workout",
+  activeDay: 0,
+  activeCircuit: 0,
+  current: buildDefaults(),
+  lastSession: {},
+  history: [],
+  intents: {},
+  overrides: {},
+  completions: {},
+  dayCustomizations: {},  // { dayId: { order: [exId, ...]?, removed: [exId,...]?, custom: { exId: {name,dw,dr,range,unit,notes} }, isBW: { exId: true } } }
+  editingEx: null,
+  showExport: false,
+  settings: { barWeight: DEFAULT_BAR_WEIGHT, plates: DEFAULT_PLATES.map(p => ({ ...p })) },
+  showSettings: false,
+  settingsDraft: null,
+  // Plans (each owns its own workout + tracking); set up during init.
+  plans: {},
+  activePlanId: null,
+  // Body composition — global, tracked across plans.
+  bodyLog: [],
+  heightInches: 74,   // 6'2"
+};
+
+// JS Date.getDay(): 0=Sun, 1=Mon, ... 6=Sat
+// Our DAYS array: 0=Mon, 1=Tue, ... 5=Sat (no Sunday)
+function getTodayDayIndex() {
+  const jsDay = new Date().getDay();
+  if (jsDay === 0) return -1;  // Sunday — no workout
+  return jsDay - 1;  // Mon=0, Sat=5
+}
+
+function todayDateStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Get completion status for a specific day on a specific date
+function getCompletion(dateStr, dayId) {
+  return state.completions?.[dateStr]?.[dayId];
+}
+
+// Compute compliance stats over the last N days.
+// Counts scheduled workout days (Mon–Sat), how many were marked done, how many were skipped.
+// Today and future dates aren't counted as skipped — only days strictly in the past.
+function computeCompliance(days) {
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const start = new Date(now);
+  start.setDate(start.getDate() - days + 1);
+
+  let scheduled = 0, done = 0, skipped = 0;
+  const byDay = {};  // dayId -> { scheduled, done }
+  DAYS.forEach(d => byDay[d.id] = { scheduled: 0, done: 0 });
+
+  for (let d = new Date(start); d <= now; d.setDate(d.getDate() + 1)) {
+    const dStr = d.toISOString().slice(0, 10);
+    const jsDay = d.getDay();
+    if (jsDay === 0) continue;  // Sunday — not a workout day
+    const dayId = DAYS[jsDay - 1].id;
+    const isPast = dStr < today;
+    const wasDone = getCompletion(dStr, dayId) === true;
+    scheduled++;
+    byDay[dayId].scheduled++;
+    if (wasDone) {
+      done++;
+      byDay[dayId].done++;
+    } else if (isPast) {
+      skipped++;
+    }
+    // If it's today and not done, it's pending — not counted as skipped
+  }
+  return { scheduled, done, skipped, byDay, days };
+}
+
+// Get exercise with overrides applied. Resolves custom exercises too.
+function getEx(dayId, exId) {
+  const dayCustom = state.dayCustomizations?.[dayId];
+  // Check if it's a custom exercise
+  if (dayCustom?.custom?.[exId]) {
+    const base = dayCustom.custom[exId];
+    const override = state.overrides?.[dayId]?.[exId] || {};
+    const ex = { ...base, ...override, id: exId, isCustom: true };
+    // Apply isBW override
+    if (dayCustom.isBW?.[exId]) ex.dw = 0;
+    return ex;
+  }
+  // Base exercise
+  const day = DAYS.find(d => d.id === dayId);
+  if (!day) return null;
+  const baseEx = day.exercises.find(e => e.id === exId);
+  if (!baseEx) return null;
+  const override = state.overrides?.[dayId]?.[exId] || {};
+  const ex = { ...baseEx, ...override };
+  if (state.dayCustomizations?.[dayId]?.isBW?.[exId]) ex.dw = 0;
+  return ex;
+}
+
+// Resolve the ordered list of exercises for a day, accounting for removals, custom adds, and ordering.
+function getDayExercises(dayId) {
+  const day = DAYS.find(d => d.id === dayId);
+  if (!day) return [];
+  const dayCustom = state.dayCustomizations?.[dayId] || {};
+  const removed = new Set(dayCustom.removed || []);
+  const customIds = Object.keys(dayCustom.custom || {});
+  // Default order: base exercises minus removed, then custom (appended in insertion order)
+  const defaultOrder = day.exercises.map(e => e.id).filter(id => !removed.has(id)).concat(customIds);
+  // If user reordered, honor that order; only include IDs that still exist
+  let order;
+  if (dayCustom.order && dayCustom.order.length) {
+    const validSet = new Set(defaultOrder);
+    order = dayCustom.order.filter(id => validSet.has(id));
+    // Append any IDs that exist but aren't in the saved order (newly added)
+    defaultOrder.forEach(id => { if (!order.includes(id)) order.push(id); });
+  } else {
+    order = defaultOrder;
+  }
+  return order.map(id => getEx(dayId, id)).filter(Boolean);
+}
+
+// Ensure current[dayId][exId] entries exist for all rounds (creates defaults if missing)
+function ensureExerciseState(dayId, ex) {
+  if (!state.current[dayId]) state.current[dayId] = {};
+  if (!state.current[dayId][ex.id]) {
+    state.current[dayId][ex.id] = {};
+    for (let r = 0; r < CIRCUITS; r++) {
+      state.current[dayId][ex.id][r] = { weight: ex.dw, reps: ex.dr };
+    }
+  }
+}
+
+function buildDefaults(days, nCirc) {
+  const rounds = nCirc || CIRCUITS;
+  const d = {};
+  (days || DAYS).forEach(day => {
+    d[day.id] = {};
+    day.exercises.forEach(ex => {
+      d[day.id][ex.id] = {};
+      for (let r = 0; r < rounds; r++) {
+        d[day.id][ex.id][r] = { weight: ex.dw, reps: ex.dr };
+      }
+    });
+  });
+  return d;
+}
+
+// ─── PLANS ───────────────────────────────────────────────────────────────────
+// A plan owns its workout structure AND its tracking data (current/history/etc),
+// so switching plans swaps everything. Equipment settings and the body log stay global.
+function makePlan(id, name, days, lifts, circuits) {
+  const nCirc = circuits || 4;
+  return {
+    id, name,
+    days,
+    trackedLifts: lifts || [],
+    circuits: nCirc,
+    current: buildDefaults(days, nCirc),
+    lastSession: {},
+    overrides: {},
+    dayCustomizations: {},
+    history: [],
+    completions: {},
+  };
+}
+
+// Point DAYS / TRACKED_LIFTS and the live working state at a plan.
+function activatePlan(id) {
+  const p = state.plans[id];
+  if (!p) return;
+  state.activePlanId = id;
+  DAYS = p.days;
+  TRACKED_LIFTS = p.trackedLifts || [];
+  CIRCUITS = p.circuits || 4;
+  state.current = p.current;
+  state.lastSession = p.lastSession;
+  state.overrides = p.overrides;
+  state.dayCustomizations = p.dayCustomizations;
+  state.history = p.history;
+  state.completions = p.completions;
+}
+
+function switchPlan(id) {
+  if (!state.plans[id] || id === state.activePlanId) { state.showSettings = false; state.settingsDraft = null; render(); return; }
+  activatePlan(id);
+  state.activeDay = getTodayDayIndex() === -1 ? 0 : getTodayDayIndex();
+  state.activeCircuit = 0;
+  state.showSettings = false;
+  state.settingsDraft = null;
+  saveData();
+  render();
+}
+
+// Deep clone a plan's structure + data under a new id/name (a revert point / variant).
+function duplicatePlan(id, newName) {
+  const src = state.plans[id];
+  if (!src) return;
+  let n = 1, newId;
+  do { newId = id + "_copy" + (n > 1 ? n : ""); n++; } while (state.plans[newId]);
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = newId;
+  copy.name = newName || (src.name + " (copy)");
+  state.plans[newId] = copy;
+  saveData();
+}
+
+// ─── BODY COMPOSITION ────────────────────────────────────────────────────────
+function bmiFor(weight) {
+  const h = Number(state.heightInches) || 0;
+  if (!weight || !h) return null;
+  return 703 * weight / (h * h);
+}
+function bmiCategory(bmi) {
+  if (bmi == null) return "";
+  if (bmi < 18.5) return "underweight";
+  if (bmi < 25) return "normal";
+  if (bmi < 30) return "overweight";
+  return "obese";
+}
+function sortedBodyLog() {
+  return [...(state.bodyLog || [])].sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+}
+function logBodyEntry(date, weight, bodyFat, notes) {
+  if (!state.bodyLog) state.bodyLog = [];
+  // One entry per date — replace if the date already exists
+  const existing = state.bodyLog.find(e => e.date === date);
+  const entry = { date, weight: weight || null, bodyFat: (bodyFat || bodyFat === 0) ? bodyFat : null, notes: notes || "" };
+  if (existing) Object.assign(existing, entry);
+  else state.bodyLog.push(entry);
+  saveData();
+}
+function deleteBodyEntry(date) {
+  state.bodyLog = (state.bodyLog || []).filter(e => e.date !== date);
+  saveData();
+}
+
+function getToday() { return new Date().toISOString().slice(0, 10); }
+function formatDate(iso) {
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem("rj-workout-v3");
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return null;
+}
+
+function saveData() {
+  try {
+    localStorage.setItem("rj-workout-v3", JSON.stringify({
+      version: 4,
+      plans: state.plans,              // each plan holds its own current/overrides/history/etc
+      activePlanId: state.activePlanId,
+      settings: state.settings,
+      bodyLog: state.bodyLog,
+      heightInches: state.heightInches,
+    }));
+  } catch (e) { console.error("Save failed:", e); }
+}
+
+let saveTimer = null;
+let historyTimer = null;
+
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveData, 600);
+}
+
+function scheduleHistorySnapshot() {
+  if (historyTimer) clearTimeout(historyTimer);
+  historyTimer = setTimeout(() => {
+    const today = getToday();
+    const daySnapshot = {};
+    DAYS.forEach(day => {
+      const exData = {};
+      const dayExs = getDayExercises(day.id);
+      dayExs.forEach(ex => {
+        if (state.current[day.id]?.[ex.id]) {
+          exData[ex.id] = { ...state.current[day.id][ex.id] };
+        }
+      });
+      daySnapshot[day.id] = exData;
+    });
+    const idx = state.history.findIndex(h => h.date === today);
+    if (idx >= 0) {
+      state.history[idx] = { date: today, days: { ...state.history[idx].days, ...daySnapshot }, intents: JSON.parse(JSON.stringify(state.intents)) };
+    } else {
+      state.history.push({ date: today, days: daySnapshot, intents: JSON.parse(JSON.stringify(state.intents)) });
+    }
+    if (state.history.length > 120) state.history = state.history.slice(-120);
+    saveData();
+  }, 3000);
+}
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
+
+function updateExercise(dayId, exId, round, field, delta) {
+  const step = field === "weight" ? WEIGHT_STEP : REP_STEP;
+  const old = state.current[dayId][exId][round][field];
+  state.current[dayId][exId][round][field] = Math.max(0, old + delta * step);
+  state.lastSession[dayId] = state.current[dayId];
+  scheduleSave();
+  scheduleHistorySnapshot();
+  render();
+}
+
+function openEditModal(dayId, exId) {
+  state.editingEx = { dayId, exId };
+  render();
+}
+
+function closeEditModal() {
+  state.editingEx = null;
+  render();
+}
+
+function saveExerciseEdit(dayId, exId, name, notes, range, unit, modalBW, roundData) {
+  // Determine base/source exercise for diff comparison
+  const dayCustom = state.dayCustomizations?.[dayId];
+  const isCustom = !!dayCustom?.custom?.[exId];
+  const baseEx = isCustom
+    ? dayCustom.custom[exId]
+    : DAYS.find(d => d.id === dayId).exercises.find(e => e.id === exId);
+
+  if (isCustom) {
+    // Custom exercises store their data directly in dayCustomizations.custom
+    state.dayCustomizations[dayId].custom[exId] = {
+      ...state.dayCustomizations[dayId].custom[exId],
+      name, notes, range, unit,
+      dw: modalBW ? 0 : (state.dayCustomizations[dayId].custom[exId].dw || 0),
+    };
+    // Clear any stale overrides (they don't apply to customs)
+    if (state.overrides[dayId]?.[exId]) {
+      delete state.overrides[dayId][exId];
+      if (!Object.keys(state.overrides[dayId]).length) delete state.overrides[dayId];
+    }
+  } else {
+    // Base exercise — store diffs in overrides
+    if (!state.overrides[dayId]) state.overrides[dayId] = {};
+    if (!state.overrides[dayId][exId]) state.overrides[dayId][exId] = {};
+    const ov = state.overrides[dayId][exId];
+    if (name !== baseEx.name) ov.name = name; else delete ov.name;
+    if (notes !== baseEx.notes) ov.notes = notes; else delete ov.notes;
+    if (range !== baseEx.range) ov.range = range; else delete ov.range;
+    if (unit !== baseEx.unit) ov.unit = unit; else delete ov.unit;
+    if (!Object.keys(ov).length) delete state.overrides[dayId][exId];
+    if (!Object.keys(state.overrides[dayId]).length) delete state.overrides[dayId];
+  }
+
+  // Handle BW toggle (applies to both base and custom)
+  toggleExerciseBW(dayId, exId, modalBW);
+
+  // Apply round weight/rep data
+  if (roundData && roundData.length) {
+    let touched = false;
+    if (!state.current[dayId]) state.current[dayId] = {};
+    if (!state.current[dayId][exId]) state.current[dayId][exId] = {};
+    roundData.forEach(rd => {
+      const cur = state.current[dayId][exId][rd.round];
+      if (!cur || cur.weight !== rd.weight || cur.reps !== rd.reps) {
+        state.current[dayId][exId][rd.round] = { weight: rd.weight, reps: rd.reps };
+        touched = true;
+      }
+    });
+    if (touched) {
+      state.lastSession[dayId] = state.current[dayId];
+      scheduleHistorySnapshot();
+    }
+  }
+
+  state.editingEx = null;
+  scheduleSave();
+  render();
+}
+
+function resetExerciseOverride(dayId, exId) {
+  if (state.overrides[dayId]?.[exId]) {
+    delete state.overrides[dayId][exId];
+    if (!Object.keys(state.overrides[dayId]).length) delete state.overrides[dayId];
+  }
+  state.editingEx = null;
+  scheduleSave();
+  render();
+}
+
+// Helper: ensure dayCustomizations[dayId] is initialized
+function ensureDayCustom(dayId) {
+  if (!state.dayCustomizations[dayId]) state.dayCustomizations[dayId] = {};
+  return state.dayCustomizations[dayId];
+}
+
+// Save the current resolved order to state (used before any reorder/add/remove)
+function persistOrder(dayId) {
+  const dc = ensureDayCustom(dayId);
+  if (!dc.order || !dc.order.length) {
+    dc.order = getDayExercises(dayId).map(e => e.id);
+  }
+}
+
+function moveExercise(dayId, exId, direction) {
+  persistOrder(dayId);
+  const dc = state.dayCustomizations[dayId];
+  const idx = dc.order.indexOf(exId);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= dc.order.length) return;
+  [dc.order[idx], dc.order[newIdx]] = [dc.order[newIdx], dc.order[idx]];
+  scheduleSave();
+  render();
+}
+
+function deleteExercise(dayId, exId) {
+  if (!confirm("Delete this exercise from " + DAYS.find(d => d.id === dayId).day + "?")) return;
+  const dc = ensureDayCustom(dayId);
+  // If it's a custom exercise, remove from custom
+  if (dc.custom?.[exId]) {
+    delete dc.custom[exId];
+  } else {
+    // It's a base exercise — mark as removed
+    if (!dc.removed) dc.removed = [];
+    if (!dc.removed.includes(exId)) dc.removed.push(exId);
+  }
+  // Remove from order
+  if (dc.order) dc.order = dc.order.filter(id => id !== exId);
+  // Clean up associated state
+  if (state.current[dayId]?.[exId]) delete state.current[dayId][exId];
+  if (state.overrides[dayId]?.[exId]) {
+    delete state.overrides[dayId][exId];
+    if (!Object.keys(state.overrides[dayId]).length) delete state.overrides[dayId];
+  }
+  if (dc.isBW?.[exId]) delete dc.isBW[exId];
+  state.editingEx = null;
+  scheduleSave();
+  render();
+}
+
+function addExercise(dayId) {
+  const dc = ensureDayCustom(dayId);
+  if (!dc.custom) dc.custom = {};
+  persistOrder(dayId);
+  const newId = "custom_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+  dc.custom[newId] = {
+    name: "New Exercise",
+    dw: 0,
+    dr: 10,
+    range: "10",
+    unit: "BW",
+    notes: "",
+  };
+  if (!dc.order) dc.order = [];
+  dc.order.push(newId);
+  // Initialize state for it
+  if (!state.current[dayId]) state.current[dayId] = {};
+  state.current[dayId][newId] = {};
+  for (let r = 0; r < CIRCUITS; r++) {
+    state.current[dayId][newId][r] = { weight: 0, reps: 10 };
+  }
+  // Open the edit modal so user can fill in details
+  state.editingEx = { dayId, exId: newId };
+  scheduleSave();
+  render();
+}
+
+function toggleExerciseBW(dayId, exId, isBW) {
+  const dc = ensureDayCustom(dayId);
+  if (!dc.isBW) dc.isBW = {};
+  if (isBW) {
+    dc.isBW[exId] = true;
+    // Zero out weights for all rounds
+    if (state.current[dayId]?.[exId]) {
+      for (let r = 0; r < CIRCUITS; r++) {
+        if (state.current[dayId][exId][r]) state.current[dayId][exId][r].weight = 0;
+      }
+    }
+  } else {
+    delete dc.isBW[exId];
+  }
+}
+
+
+// Toggle done ↔ not-done. Empty = skipped (for past dates).
+function cycleCompletion(dateStr, dayId) {
+  if (!state.completions[dateStr]) state.completions[dateStr] = {};
+  const cur = state.completions[dateStr][dayId];
+  if (cur === true) {
+    delete state.completions[dateStr][dayId];
+    if (!Object.keys(state.completions[dateStr]).length) delete state.completions[dateStr];
+  } else {
+    state.completions[dateStr][dayId] = true;
+  }
+  scheduleSave();
+  render();
+}
+
+function exportData() {
+  const exportObj = {
+    exportDate: new Date().toISOString(),
+    currentWeights: {},
+    intents: {},
+    completions: state.completions,
+    history: []
+  };
+  // Current weights
+  DAYS.forEach(d => {
+    const dayExs = getDayExercises(d.id);
+    dayExs.forEach(ex => {
+      const rounds = state.current[d.id]?.[ex.id];
+      if (rounds) {
+        const key = d.day + "_" + ex.name;
+        exportObj.currentWeights[key] = {};
+        for (let r = 0; r < CIRCUITS; r++) {
+          const rd = rounds[r];
+          if (rd) exportObj.currentWeights[key]["R" + (r+1)] = rd.weight + "lbs × " + rd.reps;
+        }
+      }
+    });
+  });
+  // Intents
+  DAYS.forEach(d => {
+    const dayExs = getDayExercises(d.id);
+    dayExs.forEach(ex => {
+      const exIntents = state.intents[d.id]?.[ex.id];
+      if (exIntents) {
+        const key = d.day + "_" + ex.name;
+        const vals = {};
+        for (let r = 0; r < CIRCUITS; r++) {
+          if (exIntents[r]) vals["R" + (r+1)] = exIntents[r];
+        }
+        if (Object.keys(vals).length) exportObj.intents[key] = vals;
+      }
+    });
+  });
+  exportObj.history = state.history.map(h => {
+    const entry = { date: h.date, exercises: {} };
+    DAYS.forEach(d => {
+      if (h.days[d.id]) {
+        const dayExs = getDayExercises(d.id);
+        dayExs.forEach(ex => {
+          const rounds = h.days[d.id][ex.id];
+          if (rounds) {
+            const key = d.day + "_" + ex.name;
+            entry.exercises[key] = {};
+            let maxW = 0;
+            for (let r = 0; r < CIRCUITS; r++) {
+              const rd = rounds[r];
+              if (rd) {
+                entry.exercises[key]["R" + (r+1)] = rd.weight + "lbs × " + rd.reps;
+                if (rd.weight > maxW) maxW = rd.weight;
+              }
+            }
+            entry.exercises[key].maxWeight = maxW;
+          }
+        });
+      }
+    });
+    return entry;
+  });
+  return JSON.stringify(exportObj, null, 2);
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "className") el.className = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2).toLowerCase(), v);
+      else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+      else if (typeof v === "boolean") { if (v) el.setAttribute(k, ""); }  // boolean attrs (disabled, readOnly): only set when true
+      else el.setAttribute(k, v);
+    }
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    if (typeof c === "string" || typeof c === "number") el.appendChild(document.createTextNode(c));
+    else if (Array.isArray(c)) c.forEach(x => x && el.appendChild(x));
+    else el.appendChild(c);
+  }
+  return el;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+
+  const day = DAYS[state.activeDay];
+
+  // Header
+  app.appendChild(h("div", { className: "header" },
+    h("button", {
+      className: "gear-btn",
+      title: "Settings",
+      onClick: () => {
+        state.settingsDraft = {
+          barWeight: state.settings.barWeight,
+          plates: state.settings.plates.map(p => ({ ...p })),
+        };
+        state.showSettings = true;
+        render();
+      },
+    }, "⚙"),
+    h("div", { className: "title" }, "RJ'S WORKOUT"),
+    h("button", {
+      className: "plan-badge", title: "Switch plan in Settings",
+      onClick: () => {
+        state.settingsDraft = { barWeight: state.settings.barWeight, plates: state.settings.plates.map(p => ({ ...p })) };
+        state.showSettings = true;
+        render();
+      },
+    }, (state.plans[state.activePlanId]?.name || "Plan")),
+    h("div", { className: "page-tabs" },
+      h("button", {
+        className: "page-tab" + (state.page === "workout" ? " active-workout" : ""),
+        onClick: () => { state.page = "workout"; state.showExport = false; render(); }
+      }, "WORKOUT"),
+      h("button", {
+        className: "page-tab" + (state.page === "progress" ? " active-progress" : ""),
+        onClick: () => { state.page = "progress"; render(); }
+      }, "PROGRESSION"),
+    )
+  ));
+
+  if (state.page === "progress") {
+    renderProgress(app);
+    return;
+  }
+
+  // Day tabs
+  const todayDateForTabs = todayDateStr();
+  const tabs = h("div", { className: "day-tabs" },
+    DAYS.map((d, i) => {
+      const comp = getCompletion(todayDateForTabs, d.id);
+      const children = [d.day.slice(0, 3)];
+      if (comp === true) children.push(h("span", { className: "dot done" }));
+      return h("button", {
+        className: "day-tab" + (state.activeDay === i ? " active" : ""),
+        onClick: () => { state.activeDay = i; state.activeCircuit = 0; render(); }
+      }, ...children);
+    }),
+    h("div", { className: "sunday-tab" }, "Sun")
+  );
+  app.appendChild(tabs);
+
+  // Day heading + AM/PM
+  const todayDate = todayDateStr();
+  const todayIdx = getTodayDayIndex();
+  const isToday = todayIdx === state.activeDay;
+  const completion = getCompletion(todayDate, day.id);
+  // Only "Done" or unset for today (don't pre-call it skipped before the day's over)
+  const isDone = completion === true;
+  const compIcon = isDone ? "✓" : "";
+  const compClass = isDone ? "done" : "";
+
+  app.appendChild(h("div", { style: { marginBottom: "0.75rem" } },
+    h("div", { className: "day-title-row" },
+      h("button", {
+        className: "completion-box " + compClass,
+        title: isDone ? "Marked done — tap to clear" : "Tap to mark done",
+        onClick: () => cycleCompletion(todayDate, day.id),
+      }, compIcon),
+      h("h2", { className: "day-title" }, day.day),
+      isToday ? h("span", { className: "today-marker" }, "TODAY") : null,
+      isDone ? h("span", { className: "completion-status done" }, "DONE") : null,
+    ),
+    h("p", { className: "label-line" }, day.label)
+  ));
+
+  // Circuit round buttons
+  app.appendChild(h("div", { className: "circuit-row" },
+      Array.from({ length: CIRCUITS }, (_, i) => h("button", {
+        className: "circuit-btn" + (state.activeCircuit === i ? " active" : ""),
+        onClick: () => { state.activeCircuit = i; render(); }
+      }, "R" + (i + 1)))
+    ));
+
+    // Exercises
+    const list = h("div", { className: "exercise-list" });
+    const dayExercises = getDayExercises(day.id);
+    dayExercises.forEach((ex, idx) => {
+      ensureExerciseState(day.id, ex);
+      const rd = state.current[day.id][ex.id][state.activeCircuit] || { weight: ex.dw, reps: ex.dr };
+      const isBW = ex.dw === 0;
+      const isFirst = idx === 0;
+      const isLast = idx === dayExercises.length - 1;
+
+      // Round summary (every exercise — reps-only for bodyweight)
+      let roundSummary = null;
+      {
+        const spans = [];
+        for (let r = 0; r < CIRCUITS; r++) {
+          const rr = state.current[day.id][ex.id][r];
+          if (rr) {
+            const txt = isBW ? ("R" + (r+1) + ":" + rr.reps) : ("R" + (r+1) + ":" + rr.weight + "×" + rr.reps);
+            spans.push(h("span", { className: r === state.activeCircuit ? "active-round" : "" }, txt));
+          }
+        }
+        if (spans.length) roundSummary = h("div", { className: "round-summary" }, spans);
+      }
+
+      // Barbell picture for barbell lifts — color-coded plates mirrored around a center bar
+      let plateBar = null;
+      if (ex.bar && !isBW) {
+        const pb = plateBreakdown(rd.weight);
+        if (pb) {
+          const plateChip = (size) => h("span", {
+            className: "pbar-plate",
+            style: { color: plateColor(size), borderColor: plateColor(size), background: plateColor(size) + "1f" },
+          }, fmtPlate(size));
+          const children = [];
+          if (pb.perSide.length) {
+            // outermost = smallest on the left, mirrored on the right (biggest hug the bar)
+            [...pb.perSide].reverse().forEach(p => children.push(plateChip(p)));
+            children.push(h("span", { className: "pbar-rod", title: "bar" }));
+            pb.perSide.forEach(p => children.push(plateChip(p)));
+          } else {
+            children.push(h("span", { className: "pbar-rod bar-only" }));
+            children.push(h("span", { className: "pbar-note" }, "bar only"));
+          }
+          if (pb.leftover) children.push(h("span", { className: "pbar-short", title: "Can't load this exactly with the plates you own" }, "⚠ +" + fmtPlate(pb.leftover)));
+          plateBar = h("div", { className: "plate-bar", title: "Plates per side" }, ...children);
+        }
+      }
+
+      const card = h("div", { className: "exercise-card" },
+        // TOP: name + inline notes (left), round-by-round summary (top right)
+        h("div", { className: "exercise-top" },
+          h("div", { className: "exercise-headline" },
+            h("span", { className: "exercise-name" },
+              h("span", { className: "exercise-num" }, (idx + 1) + "."),
+              " " + ex.name,
+            ),
+            ex.notes ? h("span", { className: "exercise-notes" }, ex.notes) : null,
+          ),
+          roundSummary,
+        ),
+        // BOTTOM: controls (weight w/ barbell picture under it, then reps) left; reorder/edit bottom-right
+        h("div", { className: "exercise-bottom" },
+          h("div", { className: "controls-row" },
+            !isBW ? h("div", { className: "weight-stack" },
+              h("div", { className: "control-group" },
+                h("span", { className: "control-label" }, "WT"),
+                h("button", { className: "inc-btn", onClick: () => updateExercise(day.id, ex.id, state.activeCircuit, "weight", -1) }, "−"),
+                h("span", { className: "weight-val" }, "" + rd.weight),
+                h("button", { className: "inc-btn", onClick: () => updateExercise(day.id, ex.id, state.activeCircuit, "weight", 1) }, "+"),
+                h("span", { className: "unit-label" }, ex.unit),
+              ),
+              plateBar,
+            ) : h("span", { className: "bw-label" }, "BW"),
+            h("div", { className: "rep-stack" },
+              h("div", { className: "control-group" },
+                h("span", { className: "control-label" }, ex.unit === "sec" ? "SEC" : "REP"),
+                h("button", { className: "inc-btn", onClick: () => updateExercise(day.id, ex.id, state.activeCircuit, "reps", -1) }, "−"),
+                h("span", { className: "rep-val" }, "" + rd.reps),
+                h("button", { className: "inc-btn", onClick: () => updateExercise(day.id, ex.id, state.activeCircuit, "reps", 1) }, "+"),
+              ),
+              ex.range ? h("div", { className: "rep-range-sub", title: "Target rep range" }, "🎯 " + ex.range) : null,
+            ),
+          ),
+          h("div", { className: "exercise-header-actions" },
+            h("button", {
+              className: "move-btn" + (isFirst ? " disabled" : ""),
+              title: "Move up",
+              disabled: isFirst,
+              onClick: () => moveExercise(day.id, ex.id, -1),
+            }, "▲"),
+            h("button", {
+              className: "move-btn" + (isLast ? " disabled" : ""),
+              title: "Move down",
+              disabled: isLast,
+              onClick: () => moveExercise(day.id, ex.id, 1),
+            }, "▼"),
+            h("button", {
+              className: "edit-btn",
+              title: "Edit this exercise",
+              onClick: () => openEditModal(day.id, ex.id),
+            }, "✎"),
+          ),
+        )
+      );
+      list.appendChild(card);
+    });
+    app.appendChild(list);
+
+    // Add Exercise button
+    app.appendChild(h("button", {
+      className: "add-exercise-btn",
+      onClick: () => addExercise(day.id),
+    }, "+ ADD EXERCISE"));
+
+  app.appendChild(h("div", { className: "auto-save" }, "AUTO-SAVING"));
+
+  // Edit modal
+  if (state.editingEx) {
+    renderEditModal(app);
+  }
+
+  // Settings modal
+  if (state.showSettings) {
+    renderSettingsModal(app);
+  }
+}
+
+function renderSettingsModal(app) {
+  const draft = state.settingsDraft;
+
+  const barInput = h("input", { type: "number", step: "0.5", min: "0" });
+  barInput.value = "" + draft.barWeight;
+
+  // Keep refs so we can read all current values before any re-render or commit
+  const sizeInputs = [], countInputs = [];
+  const rows = h("div", { className: "plate-rows" });
+  draft.plates.forEach((p, i) => {
+    const sizeInput = h("input", { type: "number", step: "0.25", min: "0" });
+    sizeInput.value = "" + p.size;
+    sizeInputs[i] = sizeInput;
+    const countInput = h("input", { type: "number", step: "1", min: "0" });
+    countInput.value = "" + p.count;
+    countInputs[i] = countInput;
+    rows.appendChild(h("div", { className: "plate-row" },
+      sizeInput,
+      h("span", { className: "plate-row-x" }, "lb  ×"),
+      countInput,
+      h("span", { className: "plate-row-unit" }, "owned"),
+      h("button", {
+        className: "plate-row-del", title: "Remove this plate size",
+        onClick: () => { sync(); draft.plates.splice(i, 1); render(); },
+      }, "✕"),
+    ));
+  });
+
+  // Pull every input's current value back into the draft (used before re-render / save)
+  function sync() {
+    draft.barWeight = parseFloat(barInput.value) || 0;
+    draft.plates = draft.plates.map((p, i) => ({
+      size: parseFloat(sizeInputs[i].value) || 0,
+      count: parseInt(countInputs[i].value, 10) || 0,
+    }));
+  }
+
+  // ── Plans section ──
+  const planIds = Object.keys(state.plans);
+  const planList = h("div", { className: "plan-list" });
+  planIds.forEach(pid => {
+    const p = state.plans[pid];
+    const isActive = pid === state.activePlanId;
+    const canDelete = planIds.length > 1;
+    planList.appendChild(h("div", { className: "plan-row" + (isActive ? " active" : "") },
+      h("button", {
+        className: "plan-name", title: isActive ? "Current plan" : "Switch to this plan",
+        onClick: () => switchPlan(pid),
+      }, (isActive ? "★ " : "") + p.name + "  ", h("span", { className: "plan-daycount" }, p.days.length + " days")),
+      h("div", { className: "plan-row-actions" },
+        h("button", { className: "plan-act", title: "Rename",
+          onClick: () => { sync(); const nm = prompt("Rename plan:", p.name); if (nm && nm.trim()) { p.name = nm.trim(); saveData(); } render(); } }, "✎"),
+        h("button", { className: "plan-act", title: "Duplicate (make a revert point / variant)",
+          onClick: () => { sync(); duplicatePlan(pid); render(); } }, "⧉"),
+        canDelete ? h("button", { className: "plan-act danger", title: "Delete this plan",
+          onClick: () => { sync(); if (confirm('Delete plan "' + p.name + '"? This removes its workouts and history.')) { delete state.plans[pid]; if (state.activePlanId === pid) activatePlan(Object.keys(state.plans)[0]); saveData(); render(); } } }, "🗑") : null,
+      ),
+    ));
+  });
+
+  // ── Height (for BMI / body stats) ──
+  const heightFtInput = h("input", { type: "number", step: "1", min: "0", className: "ht-input" });
+  const heightInInput = h("input", { type: "number", step: "1", min: "0", max: "11", className: "ht-input" });
+  heightFtInput.value = "" + Math.floor((state.heightInches || 0) / 12);
+  heightInInput.value = "" + ((state.heightInches || 0) % 12);
+  function saveHeight() {
+    const ft = parseInt(heightFtInput.value, 10) || 0;
+    const inch = parseInt(heightInInput.value, 10) || 0;
+    state.heightInches = ft * 12 + inch;
+    saveData();
+  }
+  heightFtInput.onchange = saveHeight;
+  heightInInput.onchange = saveHeight;
+
+  const overlay = h("div", {
+    className: "modal-overlay",
+    onClick: (e) => { if (e.target === overlay) { state.showSettings = false; state.settingsDraft = null; render(); } },
+  },
+    h("div", { className: "modal" },
+      h("h3", null, "Settings"),
+      h("label", { className: "modal-field-label-standalone" }, "Workout plans"),
+      h("p", { className: "settings-hint" }, "Tap a plan to switch to it. Duplicate (⧉) makes a copy you can fall back to before changing things."),
+      planList,
+      h("hr", { className: "modal-sep" }),
+      h("label", { className: "modal-field-label-standalone" }, "Your height"),
+      h("div", { className: "ht-row" },
+        heightFtInput, h("span", { className: "ht-unit" }, "ft"),
+        heightInInput, h("span", { className: "ht-unit" }, "in"),
+        h("span", { className: "settings-hint", style: { margin: "0 0 0 0.5rem" } }, "used for BMI on the Progression page"),
+      ),
+      h("hr", { className: "modal-sep" }),
+      h("label", { className: "modal-field-label-standalone" }, "Barbell & plates"),
+      h("div", { className: "modal-field" },
+        h("label", null, "Bar weight (lbs)"),
+        barInput,
+      ),
+      h("label", { className: "modal-field-label-standalone" }, "Plates you own"),
+      h("p", { className: "settings-hint" }, "Count is the total number of that plate you own. The calculator loads the bar evenly, so it uses them in pairs (2 = one per side)."),
+      rows,
+      h("button", {
+        className: "plate-add-btn",
+        onClick: () => { sync(); draft.plates.push({ size: 0, count: 2 }); render(); },
+      }, "+ ADD PLATE SIZE"),
+      h("div", { className: "modal-actions" },
+        h("button", {
+          className: "modal-btn reset",
+          onClick: () => {
+            state.settingsDraft = { barWeight: DEFAULT_BAR_WEIGHT, plates: DEFAULT_PLATES.map(p => ({ ...p })) };
+            render();
+          },
+        }, "Reset"),
+        h("button", {
+          className: "modal-btn cancel",
+          onClick: () => { state.showSettings = false; state.settingsDraft = null; render(); },
+        }, "Cancel"),
+        h("button", {
+          className: "modal-btn save",
+          onClick: () => {
+            sync();
+            const plates = draft.plates
+              .filter(p => p.size > 0)
+              .sort((a, b) => b.size - a.size);
+            state.settings = { barWeight: draft.barWeight || 0, plates };
+            state.showSettings = false;
+            state.settingsDraft = null;
+            saveData();
+            render();
+          },
+        }, "Save"),
+      ),
+    )
+  );
+  app.appendChild(overlay);
+}
+
+function renderEditModal(app) {
+  const { dayId, exId } = state.editingEx;
+  const ex = getEx(dayId, exId);
+  if (!ex) return;
+  // Track current BW state in modal (starts at the resolved state)
+  let modalBW = ex.dw === 0;
+
+  const nameInput = h("input", { type: "text", value: ex.name });
+  nameInput.value = ex.name;
+  const notesInput = h("textarea", null);
+  notesInput.value = ex.notes || "";
+  const rangeInput = h("input", { type: "text", value: ex.range || "" });
+  rangeInput.value = ex.range || "";
+  const unitInput = h("input", { type: "text", value: ex.unit || "lbs" });
+  unitInput.value = ex.unit || "lbs";
+
+  // Per-round inputs
+  const roundInputs = [];
+  for (let r = 0; r < CIRCUITS; r++) {
+    const rd = state.current[dayId][exId]?.[r] || { weight: ex.dw, reps: ex.dr };
+    const wInput = h("input", { type: "number", step: "0.5", value: rd.weight });
+    wInput.value = rd.weight;
+    const rInput = h("input", { type: "number", step: "1", value: rd.reps });
+    rInput.value = rd.reps;
+    roundInputs.push({ r, wInput, rInput });
+  }
+
+  // Build the rounds grid — will rebuild when BW toggled
+  function buildRoundsGrid() {
+    return h("div", { className: "rounds-grid" },
+      h("div", { className: "rounds-grid-header" },
+        h("span", null, ""),
+        h("span", null, modalBW ? "—" : "WEIGHT"),
+        h("span", null, (unitInput.value || "").toLowerCase().includes("sec") ? "SEC" : "REPS"),
+      ),
+      ...roundInputs.map(({ r, wInput, rInput }) => h("div", { className: "rounds-grid-row" },
+        h("span", { className: "rounds-grid-label" }, "R" + (r + 1)),
+        modalBW ? h("span", { className: "rounds-grid-bw" }, "BW") : wInput,
+        rInput,
+      ))
+    );
+  }
+
+  let roundsGridContainer = h("div", null, buildRoundsGrid());
+
+  // BW toggle
+  const bwToggle = h("button", {
+    className: "bw-toggle" + (modalBW ? " on" : ""),
+    onClick: () => {
+      modalBW = !modalBW;
+      bwToggle.className = "bw-toggle" + (modalBW ? " on" : "");
+      bwToggle.textContent = modalBW ? "BODYWEIGHT — ON" : "BODYWEIGHT — OFF";
+      // Rebuild rounds grid
+      roundsGridContainer.innerHTML = "";
+      roundsGridContainer.appendChild(buildRoundsGrid());
+    },
+  }, modalBW ? "BODYWEIGHT — ON" : "BODYWEIGHT — OFF");
+
+  const overlay = h("div", {
+    className: "modal-overlay",
+    onClick: (e) => { if (e.target === overlay) closeEditModal(); },
+  },
+    h("div", { className: "modal" },
+      h("h3", null, "EDIT EXERCISE"),
+      h("div", { className: "modal-field" },
+        h("label", null, "Name"),
+        nameInput,
+      ),
+      h("div", { className: "modal-field" },
+        h("label", null, "Rep Range (e.g. 10-12 or 15)"),
+        rangeInput,
+      ),
+      h("div", { className: "modal-field" },
+        h("label", null, "Unit (lbs, lbs/ea, lbs KB, sec, BW)"),
+        unitInput,
+      ),
+      h("div", { className: "modal-field" },
+        h("label", null, "Notes / Form Cues"),
+        notesInput,
+      ),
+      h("div", { className: "modal-field" },
+        h("label", null, "Bodyweight Mode"),
+        bwToggle,
+      ),
+      h("div", { className: "modal-field" },
+        h("label", null, "Set Weight & Reps Per Round"),
+        roundsGridContainer,
+      ),
+      h("div", { className: "modal-actions" },
+        h("button", {
+          className: "modal-btn delete",
+          onClick: () => deleteExercise(dayId, exId),
+        }, "Delete"),
+        h("button", {
+          className: "modal-btn cancel",
+          onClick: closeEditModal,
+        }, "Cancel"),
+        h("button", {
+          className: "modal-btn save",
+          onClick: () => {
+            const roundData = roundInputs.map(({ r, wInput, rInput }) => ({
+              round: r,
+              weight: modalBW ? 0 : (parseFloat(wInput.value) || 0),
+              reps: parseInt(rInput.value, 10) || 0,
+            }));
+            saveExerciseEdit(dayId, exId, nameInput.value, notesInput.value, rangeInput.value, unitInput.value, modalBW, roundData);
+          },
+        }, "Save"),
+      ),
+    ),
+  );
+  app.appendChild(overlay);
+}
+
+// ─── PROGRESSION PAGE ────────────────────────────────────────────────────────
+
+function renderCompliance(app) {
+  const stats = computeCompliance(90);  // last 90 days (~3 months)
+
+  // If literally nothing in the window has happened yet, skip showing this section
+  const pastCount = stats.done + stats.skipped;
+  if (pastCount === 0) return;
+
+  const pct = pastCount > 0 ? Math.round((stats.done / pastCount) * 100) : 0;
+  const pctClass = pct >= 80 ? "good" : pct >= 50 ? "ok" : "bad";
+
+  const section = h("div", { className: "compliance-section" },
+    h("div", { className: "compliance-header" }, "WORKOUT COMPLIANCE — LAST 3 MONTHS"),
+    h("div", { className: "compliance-big" },
+      h("div", { className: "compliance-pct " + pctClass }, pct + "%"),
+      h("div", { className: "compliance-sub" },
+        stats.done + " of " + pastCount + " past workouts completed"
+      ),
+    ),
+    h("div", { className: "compliance-breakdown" },
+      h("div", { className: "compliance-cell" },
+        h("div", { className: "compliance-cell-num done" }, "" + stats.done),
+        h("div", { className: "compliance-cell-label" }, "Done"),
+      ),
+      h("div", { className: "compliance-cell" },
+        h("div", { className: "compliance-cell-num skip" }, "" + stats.skipped),
+        h("div", { className: "compliance-cell-label" }, "Skipped"),
+      ),
+      h("div", { className: "compliance-cell" },
+        h("div", { className: "compliance-cell-num total" }, "" + stats.scheduled),
+        h("div", { className: "compliance-cell-label" }, "Scheduled"),
+      ),
+    ),
+    h("div", { className: "compliance-by-day" },
+      ...DAYS.map(d => {
+        const bd = stats.byDay[d.id];
+        const dayPct = bd.scheduled > 0 ? Math.round((bd.done / bd.scheduled) * 100) : 0;
+        const dayClass = dayPct >= 80 ? "good" : dayPct >= 50 ? "ok" : "bad";
+        return h("div", { className: "compliance-day-cell" },
+          h("div", { className: "compliance-day-name" }, d.day.slice(0, 3)),
+          h("div", { className: "compliance-day-pct " + pctClass, style: { color: dayPct >= 80 ? "#4dff91" : dayPct >= 50 ? "#ffd44d" : "#ff4d4d" } },
+            bd.scheduled > 0 ? dayPct + "%" : "—"
+          ),
+        );
+      })
+    ),
+  );
+  app.appendChild(section);
+}
+
+function renderBody(app) {
+  const log = sortedBodyLog();
+  const latest = log[log.length - 1];
+  const first = log[0];
+  const curW = latest ? latest.weight : null;
+  const bmi = curW != null ? bmiFor(curW) : null;
+  const delta = (latest && first && latest.weight != null && first.weight != null) ? (latest.weight - first.weight) : null;
+
+  const section = h("div", { className: "body-section" },
+    h("div", { className: "compliance-header" }, "BODY COMPOSITION"),
+    h("div", { className: "body-stats" },
+      h("div", { className: "body-stat" },
+        h("div", { className: "body-stat-num", style: { color: "#ff4d4d" } }, curW != null ? "" + curW : "—"),
+        h("div", { className: "body-stat-label" }, "lbs now"),
+      ),
+      h("div", { className: "body-stat" },
+        h("div", { className: "body-stat-num", style: { color: "#7eb8ff" } }, bmi != null ? bmi.toFixed(1) : "—"),
+        h("div", { className: "body-stat-label" }, bmi != null ? "BMI · " + bmiCategory(bmi) : "BMI"),
+      ),
+      h("div", { className: "body-stat" },
+        h("div", { className: "body-stat-num", style: { color: delta == null ? "#888" : (delta < 0 ? "#4dff91" : "#ffd44d") } },
+          delta == null ? "—" : (delta > 0 ? "+" : "") + (Math.round(delta * 10) / 10)),
+        h("div", { className: "body-stat-label" }, "lbs since start"),
+      ),
+    ),
+  );
+
+  if (log.length >= 2) {
+    const wrap = h("div", { className: "chart-container" });
+    const canvas = h("canvas", { width: "800", height: "200" });
+    wrap.appendChild(canvas);
+    section.appendChild(wrap);
+    setTimeout(() => drawWeightChart(canvas), 0);
+  }
+
+  // ── Log entry form ──
+  const dateInput = h("input", { type: "date", className: "body-input" });
+  dateInput.value = getToday();
+  const weightInput = h("input", { type: "number", step: "0.1", min: "0", placeholder: "weight", className: "body-input" });
+  const bfInput = h("input", { type: "number", step: "0.1", min: "0", max: "100", placeholder: "body fat %", className: "body-input" });
+  section.appendChild(h("div", { className: "body-form" },
+    dateInput, weightInput, bfInput,
+    h("button", { className: "body-log-btn", onClick: () => {
+      const w = parseFloat(weightInput.value);
+      if (!dateInput.value || isNaN(w)) return;
+      const bf = bfInput.value === "" ? null : parseFloat(bfInput.value);
+      logBodyEntry(dateInput.value, w, bf, "");
+      render();
+    } }, "LOG"),
+  ));
+
+  // ── Recent entries ──
+  if (log.length) {
+    const list = h("div", { className: "body-entries" });
+    [...log].reverse().slice(0, 10).forEach(e => {
+      list.appendChild(h("div", { className: "body-entry" },
+        h("span", { className: "body-entry-date" }, formatDate(e.date)),
+        h("span", { className: "body-entry-val" }, (e.weight != null ? e.weight + " lbs" : "—") + (e.bodyFat != null ? "  ·  " + e.bodyFat + "% bf" : "")),
+        h("button", { className: "body-entry-del", title: "Delete entry", onClick: () => { deleteBodyEntry(e.date); render(); } }, "✕"),
+      ));
+    });
+    section.appendChild(list);
+  }
+
+  app.appendChild(section);
+}
+
+// Simple weight-over-time line chart.
+function drawWeightChart(canvas) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const log = sortedBodyLog().filter(e => e.weight != null);
+  if (log.length < 2) return;
+  const pad = { top: 18, right: 16, bottom: 24, left: 44 };
+  const cw = W - pad.left - pad.right, ch = H - pad.top - pad.bottom;
+  const weights = log.map(e => e.weight);
+  let minV = Math.min(...weights), maxV = Math.max(...weights);
+  const span = maxV - minV || 1;
+  minV -= span * 0.15; maxV += span * 0.15;
+  const yRange = maxV - minV || 1;
+
+  // grid + y labels
+  ctx.strokeStyle = "#1c1c1c"; ctx.fillStyle = "#555";
+  ctx.font = "11px 'JetBrains Mono', monospace"; ctx.textAlign = "right";
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (ch * i) / 4;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    ctx.fillText(Math.round(maxV - (yRange * i) / 4) + "", pad.left - 6, y + 4);
+  }
+  // line
+  const px = i => pad.left + (i / (log.length - 1)) * cw;
+  const py = v => pad.top + ch - ((v - minV) / yRange) * ch;
+  ctx.strokeStyle = "#ff4d4d"; ctx.lineWidth = 2; ctx.beginPath();
+  log.forEach((e, i) => { const x = px(i), y = py(e.weight); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+  ctx.fillStyle = "#ff4d4d";
+  log.forEach((e, i) => { ctx.beginPath(); ctx.arc(px(i), py(e.weight), 3, 0, Math.PI * 2); ctx.fill(); });
+}
+
+function renderProgress(app) {
+  renderBody(app);
+
+  // Show compliance if we have any completion data
+  if (state.completions && Object.keys(state.completions).length > 0) {
+    renderCompliance(app);
+  }
+
+  if (!state.history.length) {
+    app.appendChild(h("div", { className: "no-data" },
+      h("h3", null, "NO LIFT DATA YET"),
+      h("p", null, "Adjust weights in your workouts and progression will show here."),
+    ));
+    renderExportButton(app);
+    return;
+  }
+
+  app.appendChild(h("h2", { className: "progress-title" }, "MAJOR LIFTS — MAX WEIGHT PER DAY"));
+
+  // Canvas chart
+  const chartWrap = h("div", { className: "chart-container" });
+  const canvas = h("canvas", { width: "800", height: "360" });
+  chartWrap.appendChild(canvas);
+  app.appendChild(chartWrap);
+
+  // Draw chart after append
+  setTimeout(() => drawChart(canvas), 0);
+
+  // Lift cards
+  const cards = h("div", { className: "lift-cards" });
+  TRACKED_LIFTS.forEach(tl => {
+    const latest = [...state.history].reverse().find(h => h.days?.[tl.dayId]?.[tl.id]);
+    let maxW = null;
+    if (latest) {
+      const exData = latest.days[tl.dayId][tl.id];
+      for (let r = 0; r < CIRCUITS; r++) {
+        if (exData[r]?.weight > (maxW ?? 0)) maxW = exData[r].weight;
+      }
+    }
+    cards.appendChild(h("div", { className: "lift-card", style: { border: "2px solid " + tl.color + "33" } },
+      h("div", { className: "lift-card-name", style: { color: tl.color } }, tl.name),
+      h("div", { className: "lift-card-val" }, maxW != null ? maxW + " lbs" : "—"),
+    ));
+  });
+  app.appendChild(cards);
+  renderExportButton(app);
+}
+
+function renderExportButton(app) {
+  app.appendChild(h("button", { className: "export-btn", onClick: () => {
+    state.showExport = !state.showExport;
+    render();
+  }}, "EXPORT ALL DATA"));
+
+  if (state.showExport) {
+    const text = exportData();
+    const ta = h("textarea", { className: "export-area", readOnly: true });
+    ta.value = text;
+    app.appendChild(h("p", { className: "export-hint" }, "Copy this JSON and paste it into Claude for analysis:"));
+    app.appendChild(ta);
+    app.appendChild(h("div", { style: { display: "flex", gap: "0.5rem" } },
+      h("button", { className: "copy-btn", onClick: () => { navigator.clipboard.writeText(text); } }, "COPY TO CLIPBOARD"),
+      h("button", { className: "close-export", onClick: () => { state.showExport = false; render(); } }, "CLOSE"),
+    ));
+  }
+}
+
+function drawChart(canvas) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const pad = { top: 30, right: 20, bottom: 50, left: 55 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fillRect(0, 0, W, H);
+
+  // Build data points
+  const data = state.history.map(entry => {
+    const point = { date: formatDate(entry.date) };
+    TRACKED_LIFTS.forEach(tl => {
+      const exData = entry.days?.[tl.dayId]?.[tl.id];
+      if (exData) {
+        let maxW = 0;
+        for (let r = 0; r < CIRCUITS; r++) {
+          if (exData[r]?.weight > maxW) maxW = exData[r].weight;
+        }
+        if (maxW > 0) point[tl.id] = maxW;
+      }
+    });
+    return point;
+  });
+
+  if (data.length === 0) return;
+
+  // Find min/max
+  let minVal = Infinity, maxVal = 0;
+  data.forEach(p => {
+    TRACKED_LIFTS.forEach(tl => {
+      if (p[tl.id] != null) {
+        if (p[tl.id] < minVal) minVal = p[tl.id];
+        if (p[tl.id] > maxVal) maxVal = p[tl.id];
+      }
+    });
+  });
+  if (minVal === Infinity) minVal = 0;
+  const range = maxVal - minVal || 1;
+  minVal = Math.max(0, minVal - range * 0.1);
+  maxVal = maxVal + range * 0.1;
+  const yRange = maxVal - minVal || 1;
+
+  // Grid lines
+  ctx.strokeStyle = "#1a1a1a";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.top + ch - (i / 5) * ch;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+    ctx.fillStyle = "#555"; ctx.font = "11px 'JetBrains Mono', monospace"; ctx.textAlign = "right";
+    ctx.fillText(Math.round(minVal + (i / 5) * yRange), pad.left - 8, y + 4);
+  }
+
+  // X labels
+  ctx.fillStyle = "#555"; ctx.font = "10px 'JetBrains Mono', monospace"; ctx.textAlign = "center";
+  const step = Math.max(1, Math.floor(data.length / 8));
+  data.forEach((p, i) => {
+    if (i % step === 0 || i === data.length - 1) {
+      const x = pad.left + (i / Math.max(1, data.length - 1)) * cw;
+      ctx.save(); ctx.translate(x, pad.top + ch + 15); ctx.rotate(-0.4);
+      ctx.fillText(p.date, 0, 0); ctx.restore();
+    }
+  });
+
+  // Lines
+  TRACKED_LIFTS.forEach(tl => {
+    ctx.strokeStyle = tl.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    let started = false;
+    data.forEach((p, i) => {
+      if (p[tl.id] != null) {
+        const x = pad.left + (i / Math.max(1, data.length - 1)) * cw;
+        const y = pad.top + ch - ((p[tl.id] - minVal) / yRange) * ch;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+
+    // Dots
+    data.forEach((p, i) => {
+      if (p[tl.id] != null) {
+        const x = pad.left + (i / Math.max(1, data.length - 1)) * cw;
+        const y = pad.top + ch - ((p[tl.id] - minVal) / yRange) * ch;
+        ctx.fillStyle = tl.color;
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+  });
+
+  // Legend
+  let lx = pad.left;
+  ctx.font = "11px 'JetBrains Mono', monospace";
+  TRACKED_LIFTS.forEach(tl => {
+    ctx.fillStyle = tl.color;
+    ctx.fillRect(lx, 8, 14, 10);
+    ctx.fillStyle = "#888";
+    ctx.textAlign = "left";
+    ctx.fillText(tl.name, lx + 18, 17);
+    lx += ctx.measureText(tl.name).width + 35;
+  });
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
+function applySavedSettings(s) {
+  if (!s) return;
+  if (typeof s.barWeight === "number") state.settings.barWeight = s.barWeight;
+  if (Array.isArray(s.plates)) state.settings.plates = s.plates;
+}
+
+const saved = loadData();
+if (saved && saved.plans && Object.keys(saved.plans).length) {
+  // Plans-aware format — load directly.
+  state.plans = saved.plans;
+  state.activePlanId = (saved.activePlanId && saved.plans[saved.activePlanId]) ? saved.activePlanId : Object.keys(saved.plans)[0];
+  applySavedSettings(saved.settings);
+  if (Array.isArray(saved.bodyLog)) state.bodyLog = saved.bodyLog;
+  if (typeof saved.heightInches === "number") state.heightInches = saved.heightInches;
+  // Refresh the built-in Bodybuilding template if it's an older version (no real data lost — it's the template).
+  if (state.plans.bb && state.plans.bb.structVersion !== BB_STRUCT_VERSION) {
+    const refreshed = makePlan("bb", state.plans.bb.name || "Bodybuilding (Upper-Focus)", bodybuildingDays(), bodybuildingLifts(), 3);
+    refreshed.structVersion = BB_STRUCT_VERSION;
+    refreshed.history = state.plans.bb.history || [];
+    refreshed.completions = state.plans.bb.completions || {};
+    state.plans.bb = refreshed;
+  }
+} else {
+  // First run on the plans version: any legacy data becomes the "Strength" plan,
+  // then add the new "Bodybuilding" plan and start on it.
+  const strength = makePlan("strength", "Strength (6-Day)", strengthDays(), strengthLifts(), 4);
+  if (saved) {
+    if (saved.current) strength.current = saved.current;
+    if (saved.lastSession) strength.lastSession = saved.lastSession;
+    if (saved.overrides) strength.overrides = saved.overrides;
+    if (saved.completions) strength.completions = saved.completions;
+    if (saved.dayCustomizations) strength.dayCustomizations = saved.dayCustomizations;
+    if (saved.history) strength.history = saved.history;
+    applySavedSettings(saved.settings);
+  }
+  const bb = makePlan("bb", "Bodybuilding (Upper-Focus)", bodybuildingDays(), bodybuildingLifts(), 3);
+  bb.structVersion = BB_STRUCT_VERSION;
+  state.plans = { strength, bb };
+  state.activePlanId = "bb";
+  // Seed body composition with the starting stats.
+  state.bodyLog = [{ date: getToday(), weight: 214, bodyFat: null, notes: "Starting point" }];
+  state.heightInches = 74;  // 6'2"
+}
+
+// Safety net: always have at least one plan.
+if (!Object.keys(state.plans).length) {
+  const strength = makePlan("strength", "Strength (6-Day)", strengthDays(), strengthLifts(), 4);
+  state.plans = { strength };
+  state.activePlanId = "strength";
+}
+
+activatePlan(state.activePlanId);
+saveData();  // persist the migration / seed
+
+// Auto-select today's workout day (Mon=0..Sat=5; Sunday falls back to Monday)
+const todayIdx = getTodayDayIndex();
+state.activeDay = todayIdx === -1 ? 0 : todayIdx;
+render();
+</script>
+</body>
+</html>

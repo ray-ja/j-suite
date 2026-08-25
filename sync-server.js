@@ -293,7 +293,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles", "studioVideos", "catalogSkus", "shiftNotes", "reminders", "billRates"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles", "studioVideos", "catalogSkus", "shiftNotes", "reminders", "billRates", "workoutLogs"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -4371,10 +4371,15 @@ const server = http.createServer((req, res) => {
     // qb-tokens.json, vapid-config.json, .env, sync.env) also live in __dirname, so an open
     // "anything in the dir" serve leaks them. Check the NORMALIZED path so js/../data.json can't sneak in.
     const okDir = [path.join(__dirname,"js")+path.sep, path.join(__dirname,"assets")+path.sep, path.join(__dirname,"uploads")+path.sep].some(d => full.startsWith(d));
-    const okFile = [path.join(__dirname,"app.css"), path.join(__dirname,"sw.js"), path.join(__dirname,"manifest.webmanifest"), path.join(__dirname,"favicon.ico"), path.join(__dirname,"availability-resolve.js")].indexOf(full) >= 0;   // root-level shared resolver loaded by the shell — MUST be served or all availability shows "unset"/gray
+    const okFile = [path.join(__dirname,"app.css"), path.join(__dirname,"sw.js"), path.join(__dirname,"manifest.webmanifest"), path.join(__dirname,"favicon.ico"), path.join(__dirname,"availability-resolve.js"),
+    /* Ray's own workout app (js/139 bridges it). Served from THIS origin on purpose: same origin means
+       the app can read its localStorage and mirror the sessions into j-Suite. It is his own file and only
+       he can put one here — but note that anything served from this origin can read the sync token, so
+       this list stays an explicit allowlist of named files and never becomes "any .html in the folder". */
+    path.join(__dirname,"workout.html")].indexOf(full) >= 0;   // root-level shared resolver loaded by the shell — MUST be served or all availability shows "unset"/gray
     if ((okDir || okFile) && full.startsWith(__dirname) && fs.existsSync(full) && fs.statSync(full).isFile()) {
       const ext = path.extname(full).toLowerCase();
-      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".csv": "text/csv; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
+      const types = { ".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".csv": "text/csv; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".html": "text/html; charset=utf-8" };
       // no-cache = the browser must revalidate before reusing, so a deploy shows up on the next load
       // (no stale code); the ETag makes unchanged files return a fast 304. Without this, browsers
       // heuristically cached old js — which is exactly why a deploy didn't update the app.

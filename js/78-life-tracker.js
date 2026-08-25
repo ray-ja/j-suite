@@ -79,6 +79,9 @@ function lifeRenderToday(){
     +'</div><div class="sub" style="text-align:center;margin-top:6px">'+(typeof DOW!=="undefined"?DOW[dowOf(ds)]+" · ":"")+fmtDate(ds)
     +(ds===today()?' · <b>today</b>':'')+'</div></div>';
   if(typeof stackCardHTML==="function")h+=stackCardHTML();
+  /* WORKOUTS (js/139) — a mirror of his own rjworkout.html, which stays the source of truth. Silent
+     until there's something mirrored, and never a streak or a target. */
+  if(typeof wkCardHTML==="function")h+=wkCardHTML();
 
   /* trackers to log */
   h+='<div class="secthd"><h2>Daily check-in</h2><span class="ct">'+done+'/'+trackers.length+'</span></div>';

@@ -99,7 +99,9 @@ ok("...and the reason is recorded", /inventing a dollar figure would be worse th
 console.log("\n--- wired end to end ---");
 ok("billRates is in blank()", /billRates:\[\]/.test(ST));
 ok("...backfilled on every org slab", (ST.match(/S\[b\]\.billRates/g) || []).length >= 2);
-ok("...and in the server COLLECTIONS", /"reminders", "billRates"\]/.test(SV));
+/* ⚠️ THIRD TIME. shiftNotes, then reminders, now billRates — each asserted it was the LAST entry in
+   COLLECTIONS and each went red the moment the next collection was appended. MEMBERSHIP, never position. */
+ok("...and in the server COLLECTIONS", /const COLLECTIONS = \[[^\]]*"billRates"/.test(SV));
 ok("the clock-in form offers the rate picker", /brPickerHTML\(tcFormCustomerId\(jobId\)/.test(TC));
 ok("the chosen rate is read at clock-in", /val\("tc_rate"\)/.test(TC));
 ok("...passed to the core", /rateModId: _modId/.test(TC));
