@@ -1,13 +1,22 @@
 /* ---------- SHED / STRUCTURE DEMOLITION ESTIMATOR (on-site quoting) ----------
    Tear-down + haul-off pricing for sheds and small outbuildings.
    Cost model (no hourly labor line — crew is paid from the revenue split):
-     cost = C&D disposal (tons × $73.16, first 500 lb free) + round-trip mileage + consumables.
+     cost = C&D disposal (tons × $73.16, EVERY pound billable) + round-trip mileage + consumables.
    Price is set by value bands (footprint) and pushed toward the top by the factors that
    actually make the job harder: shingles, wood floor, anchors, bad access, height, uncleared.
    Drive is static-from-the-property (site + a full dump run, since demo is must-dump). "Review quote →"
    routes through the wizard review for the $45/$30 pay check, the demo market band, and customer linking. */
-var DEMO_TON_FEE   = 73.16;   // mixed C&D, per ton (Dare County transfer — first 500 lb free)
-var DEMO_FREE_LBS  = 500;     // first 500 lb waived
+var DEMO_TON_FEE   = 73.16;   // mixed C&D, per ton (Dare County transfer)
+/* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
+   and shouldn't be in any quote tool."
+   The 500 lb waiver is an ANNUAL RESIDENTIAL allowance — a household's once-a-year cleanout, not something a
+   contractor gets on every load. Subtracting it from a job quote under-costed EVERY C&D dump line by
+   500/2000 × $73.16 = $18.29, silently and in the customer's favour, on every job that hauled.
+   ⚠️ THIS IS THE THIRD TIME THE SAME MISTAKE HAS BEEN CAUGHT (see VEG_FREE below, corrected 2026-07-25, and
+   Dare's free residential yard site that excludes contractor debris). The pattern: a rate sheet written for
+   households gets read as if it applied to the business. If a disposal number is described as free, assume it
+   is free for a RESIDENT and check what the commercial line says before it reaches a quote. */
+
 var DEMO_CONSUM    = 25;      // blades, fuel for saws, bags, fasteners (flat allowance)
 
 /* lbs of debris from footprint + build. Calibrated so a small-medium wood shed lands ~1–2 tons. */
@@ -72,7 +81,7 @@ window.demoCalc=function(){
 
   // --- weight + C&D tipping ---
   const lbs=demoWeight(area,H,roof,floor,anchor), tons=lbs/2000;
-  const billLbs=Math.max(0,lbs-DEMO_FREE_LBS);
+  const billLbs=Math.max(0,lbs);
   const disposal=Math.round(billLbs/2000*DEMO_TON_FEE*100)/100;
   const consum=DEMO_CONSUM+(anchor==="concrete"?15:0);   // extra blades for cutting footings
   // --- STATIC drive from the property address + a FULL dump run (demo is must-dump, can't be stashed) ---
@@ -103,7 +112,7 @@ window.demoCalc=function(){
   if(b)b.innerHTML=`<div style="font-size:13px;line-height:1.85">
       Footprint: <b>${L}×${W} = ${Math.round(area)} sq ft</b> · ${H} ft walls<br>
       Est. debris: <b>${lbs.toLocaleString()} lb (${tons.toFixed(2)} ton)</b><br>
-      C&amp;D tipping (first 500 lb free → ${Math.round(billLbs).toLocaleString()} lb @ $${DEMO_TON_FEE}/ton): <b>${money(disposal)}</b><br>
+      C&amp;D tipping (${Math.round(billLbs).toLocaleString()} lb @ $${DEMO_TON_FEE}/ton): <b>${money(disposal)}</b><br>
       Consumables (blades/fuel/bags): <b>${money(consum)}</b><br>
       🚗 Drive — static (~${dr.miles} mi site + ${DUMPMI} mi dump run): <b>${money(driveCharge)}</b>
     </div>

@@ -76,7 +76,6 @@ function calcQuote(key,inp){
 
 /* COGS_LAYER_V1 — COGS + payment layer, Part 1 (pure logic). Idempotency sentinel; do not duplicate. */
 var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (Dare County C&D, Manns Harbor)
-var DISPOSAL_FREE_LBS     = 500;     // residential free allowance
 var LBS_PER_TON           = 2000;
 var VEG_RATE_PER_TON      = 58.46;   // $/ton brush/veg — Currituck transfer station ($38 / 1,300 lb). NOT free.
 var DISPOSAL_TRIP_MILES   = 55;      // round-trip miles to the transfer station (Point Harbor base → Maple, OSRM)
@@ -89,10 +88,18 @@ var VEG_FREE              = false;   // CORRECTED 2026-07-25: veg is NOT free fo
                                      // (~$58/ton). The free residential yard-waste site explicitly excludes contractor-
                                      // generated and lot-clearing material. Mixed C&D = $73.16/ton, transfer station $94.04.
 function mileageCost(miles){ return Math.round((Math.max(0,+miles||0) * MILEAGE_RATE) * 100) / 100; }
+/* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
+   and shouldn't be in any quote tool."
+   The 500 lb waiver is an ANNUAL RESIDENTIAL allowance — a household's once-a-year cleanout, not something a
+   contractor gets on every load. Subtracting it from a job quote under-costed EVERY C&D dump line by
+   500/2000 × $73.16 = $18.29, silently and in the customer's favour, on every job that hauled.
+   ⚠️ THIS IS THE THIRD TIME THE SAME MISTAKE HAS BEEN CAUGHT (see VEG_FREE below, corrected 2026-07-25, and
+   Dare's free residential yard site that excludes contractor debris). The pattern: a rate sheet written for
+   households gets read as if it applied to the business. If a disposal number is described as free, assume it
+   is free for a RESIDENT and check what the commercial line says before it reaches a quote. */
 function disposalCost(lbs){
   lbs = Math.max(0, +lbs || 0);
-  var billable = Math.max(0, lbs - DISPOSAL_FREE_LBS);
-  return Math.round((billable / LBS_PER_TON) * DISPOSAL_RATE_PER_TON * 100) / 100;
+  return Math.round((lbs / LBS_PER_TON) * DISPOSAL_RATE_PER_TON * 100) / 100;
 }
 function lineFigures(price, cost, qty){
   qty = qty || 1;
@@ -171,7 +178,7 @@ function calcCost(key, inp, costs){
 function vegDisposalCost(lbs){ lbs = Math.max(0, +lbs || 0); return Math.round((lbs / LBS_PER_TON) * VEG_RATE_PER_TON * 100) / 100; }
 function disposalLine(lbs, veg){
   var c = veg ? vegDisposalCost(lbs) : disposalCost(lbs);
-  return { serviceId: "", name: "Dump fee — " + lbs + " lbs " + (veg ? "(brush/veg @ $" + VEG_RATE_PER_TON + "/ton)" : "(mixed C&D, first 500 lbs free)"),
+  return { serviceId: "", name: "Dump fee — " + lbs + " lbs " + (veg ? "(brush/veg @ $" + VEG_RATE_PER_TON + "/ton)" : "(mixed C&D @ $" + DISPOSAL_RATE_PER_TON + "/ton)"),
            unit: "cost", price: 0, qty: 1, cost: c, costLine: true };
 }
 

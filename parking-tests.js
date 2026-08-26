@@ -16,7 +16,7 @@ function ok(name, cond, extra) {
 const R = f => fs.readFileSync(f, "utf8");
 const CODE = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");   // never let a test match its own prose
 
-global.QE = { TAKE_HOME: 45, CREW_FLOOR: 30, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 73.16, VEG_TON: 58.46, FILL_TON: 45, FREE_LBS: 500, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
+global.QE = { TAKE_HOME: 45, CREW_FLOOR: 30, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 73.16, VEG_TON: 58.46, FILL_TON: 45, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
 global.CREW_BANDS = { parking: [79, 400] };
 global.DISPOSAL_TRIP_MILES = 55;
 const P = require("./js/158-parking-lot.js");
@@ -65,13 +65,17 @@ console.log("\n--- ⭐ the disposal question is the margin (CREW SOP 05) ---");
   ok("⭐ we-haul adds real mileage cost", haul.driveMi > dump.driveMi, [dump.driveMi, haul.driveMi]);
   ok("⭐ the WORK price is identical either way — only the disposal changed", dump.work === haul.work, [dump.work, haul.work]);
 
-  /* ⚠️ the honest $0: 100 spaces of normal litter is ~100 lb, well under the 500 lb the station waives */
-  ok("⭐ a light haul tips $0 because of the first-500-lb waiver, not because we hid a fee",
-    haul.lbs < 500 && haul.tip === 0, { lbs: haul.lbs, tip: haul.tip });
+  /* ⛔ NO FREE ALLOWANCE — Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
+     and shouldn't be in any quote tool." It is an ANNUAL RESIDENTIAL waiver, not a per-load contractor one.
+     I had it deducting on every haul, which under-costed the line by up to $18.29 a trip. */
+  ok("⭐⭐ a small haul is NOT free — every pound is billable", haul.lbs < 500 && haul.tip > 0, { lbs: haul.lbs, tip: haul.tip });
+  ok("...priced at the full weight × the C&D rate", Math.abs(haul.tip - haul.lbs / 2000 * 73.16) < 0.02, haul.tip);
   const big = q({ spaces: 400, cond: "event", freq: "once", crew: 2, weHaul: true });
-  ok("...and a genuinely heavy one DOES tip", big.lbs > 500 && big.tip > 0, { lbs: big.lbs, tip: big.tip });
-  ok("...at the C&D rate on the billable pounds only",
-    Math.abs(big.tip - Math.max(0, big.lbs - 500) / 2000 * 73.16) < 0.02, big.tip);
+  ok("...and so is a heavy one, with nothing subtracted first",
+    Math.abs(big.tip - big.lbs / 2000 * 73.16) < 0.02, big.tip);
+  ok("⭐ the $0 that REMAINS is the real one — the customer's dumpster, so there is nothing to tip",
+    dump.tip === 0 && dump.weHaul === false);
+  ok("⚠️ and the correction is recorded where the old rule was", /ANNUAL RESIDENTIAL/.test(PLS));
 }
 
 console.log("\n--- ⭐ recurring: 20% off the work, never off the drive ---");
@@ -196,6 +200,40 @@ function evalFab(tab) {
   const end = RT.indexOf("if(typeof window!==\"undefined\"){ window.fabAction=fabAction;");
   vm.runInContext(RT.slice(start, end) + ";this.fabAction=fabAction;", ctx);
   return ctx.fabAction(tab);
+}
+
+console.log("\n--- ⛔ REPO-WIDE: no quote path may deduct a free allowance ---");
+{
+  /* ⚠️ THIS IS THE THIRD TIME THIS CLASS OF ERROR HAS BEEN CAUGHT — veg-is-free (corrected 2026-07-25), Dare's
+     residential yard site that excludes contractor debris, and now the 500 lb C&D waiver. Every time, a rate
+     sheet written for HOUSEHOLDS was read as if it applied to the business, and every time it under-costed
+     real jobs in the customer's favour. A grep is a blunt guard, but this exact mistake keeps returning through
+     a DIFFERENT file each time, so the guard is repo-wide rather than per-module. */
+  const files = fs.readdirSync("js").filter(f => /\.js$/.test(f)).map(f => "js/" + f).concat(["cogs-payment-layer.js"]);
+  const bad = [];
+  files.forEach(f => {
+    const code = CODE(R(f));
+    if (/FREE_LBS/.test(code)) bad.push(f + ": a FREE_LBS constant");
+    if (/-\s*(DEMO_FREE_LBS|DISPOSAL_FREE_LBS|QE\.FREE_LBS)/.test(code)) bad.push(f + ": subtracts a free allowance");
+  });
+  ok("⭐⭐ nothing in js/ carries a free-pound allowance any more", bad.length === 0, bad);
+
+  const QEC = CODE(R("js/70-quote-engine.js"));
+  ok("⭐ qeTipFee — the helper every estimator routes through — bills the whole weight",
+    /function qeTipFee[\s\S]{0,240}Math\.max\(0, \+lbs \|\| 0\) \/ 2000 \* rate/.test(QEC));
+  ok("⛔ ...and QE no longer exposes a free-pound constant to copy", !/FREE_LBS/.test(QEC));
+  ok("⭐ the demolition estimator bills every pound too", !/DEMO_FREE_LBS/.test(CODE(R("js/30-demolition-estimator.js"))));
+  ok("⭐ so does the COGS layer the wizard uses",
+    !/DISPOSAL_FREE_LBS/.test(CODE(R("js/20-quote-wizard-configurable-sl.js"))));
+
+  /* the crew quote on site FROM THE SOP TEXT — a wrong number there reaches a customer directly */
+  const SOP = R("js/43-crew-sops.js");
+  ok("⭐ the crew SOP no longer tells them 500 lb is free (or that veg is)",
+    !/first 500 lb free/.test(SOP) && !/veg free/.test(SOP));
+  ok("...and says plainly that the free allowances are residential", /free allowances are residential/.test(SOP));
+
+  ok("⭐ CLAUDE.md records the correction, so the next pass doesn't re-derive the old rule",
+    /EVERY POUND IS BILLABLE/.test(R("CLAUDE.md")) && /annual RESIDENTIAL/.test(R("CLAUDE.md")));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");

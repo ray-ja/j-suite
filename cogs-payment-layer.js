@@ -22,18 +22,26 @@
  * this exact token; if it's already present, the patch has been applied — skip,
  * do not paste again. (Paste this whole Part-1 block verbatim, sentinel included.) */
 
-/* Dare County C&D Landfill tipping fee — first 500 lbs residential free. */
+/* Dare County C&D Landfill tipping fee. */
 var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (1603 Cub Rd, Manns Harbor)
-var DISPOSAL_FREE_LBS     = 500;     // residential free allowance
+/* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
+   and shouldn't be in any quote tool."
+   The 500 lb waiver is an ANNUAL RESIDENTIAL allowance — a household's once-a-year cleanout, not something a
+   contractor gets on every load. Subtracting it from a job quote under-costed EVERY C&D dump line by
+   500/2000 × $73.16 = $18.29, silently and in the customer's favour, on every job that hauled.
+   ⚠️ THIS IS THE THIRD TIME THE SAME MISTAKE HAS BEEN CAUGHT (see VEG_FREE below, corrected 2026-07-25, and
+   Dare's free residential yard site that excludes contractor debris). The pattern: a rate sheet written for
+   households gets read as if it applied to the business. If a disposal number is described as free, assume it
+   is free for a RESIDENT and check what the commercial line says before it reaches a quote. */
+
 var LBS_PER_TON           = 2000;
 var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
 
-/* Disposal cost for an estimated load weight (lbs). First 500 lbs free.
- * disposalCost(2500) === 73.16 ; disposalCost(500) === 0 */
+/* Disposal cost for an estimated load weight (lbs) — every pound billable.
+ * disposalCost(2000) === 73.16 ; disposalCost(500) === 18.29 */
 function disposalCost(lbs){
   lbs = Math.max(0, +lbs || 0);
-  var billable = Math.max(0, lbs - DISPOSAL_FREE_LBS);
-  return Math.round((billable / LBS_PER_TON) * DISPOSAL_RATE_PER_TON * 100) / 100;
+  return Math.round((lbs / LBS_PER_TON) * DISPOSAL_RATE_PER_TON * 100) / 100;
 }
 
 /* Cost / Price / Profit$ / Margin% for a single line (qty-aware). */
@@ -131,13 +139,13 @@ function calcCost(key, inp, costs){
 
 /* Build the disposal-cost line the junk helper auto-adds (a COGS line). */
 function disposalLine(lbs){
-  return { serviceId: "", name: "Dump fee — " + lbs + " lbs (Dare C&D, first 500 free)",
+  return { serviceId: "", name: "Dump fee — " + lbs + " lbs (Dare C&D @ $" + DISPOSAL_RATE_PER_TON + "/ton)",
            unit: "cost", price: 0, qty: 1, cost: disposalCost(lbs), costLine: true };
 }
 
 /* node/test export — ignored in the browser */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { DISPOSAL_RATE_PER_TON, DISPOSAL_FREE_LBS, LBS_PER_TON, MARGIN_FLOOR,
+  module.exports = { DISPOSAL_RATE_PER_TON, LBS_PER_TON, MARGIN_FLOOR,
     disposalCost, lineFigures, quoteCogs, belowMarginFloor, pct, COST_DEFAULT, calcCost, disposalLine };
 }
 

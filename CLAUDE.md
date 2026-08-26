@@ -45,7 +45,7 @@ Never commit red. Verify → commit → move on.
 
 ## Domain rules that affect code
 
-- Cost model = hard costs only. Disposal (mixed C&D $73.16/ton, first 500 lb free; rubble transfer station $94.04/ton; veg/brush ~$58-65/ton — NOT free for a contractor, Dare's free residential yard site excludes contractor/lot-clearing debris), mileage at the IRS rate $0.725/mi, materials, equipment rental. No hourly-labor cost line — the owners are paid from a revenue split, not wages, so labor isn't a per-job cost. Show Cost / Price / Profit / Margin with a 35% margin-floor warning.
+- Cost model = hard costs only. Disposal — **EVERY POUND IS BILLABLE; there is no free allowance in a quote** (the 500 lb C&D waiver is an annual RESIDENTIAL one, corrected 2026-08-26; same class of error as the veg one below): mixed C&D $73.16/ton; rubble transfer station $94.04/ton; veg/brush ~$58-65/ton — NOT free for a contractor, Dare's free residential yard site excludes contractor/lot-clearing debris), mileage at the IRS rate $0.725/mi, materials, equipment rental. No hourly-labor cost line — the owners are paid from a revenue split, not wages, so labor isn't a per-job cost. Show Cost / Price / Profit / Margin with a 35% margin-floor warning.
 - Revenue split (for payout/attribution features): 25% tax reserve · 15% business fund · 60% labor pool → 80% field work (split by who worked) / 15% sales credit (originator, logged at booking, 3-month window) / 5% admin (capped $500/mo).
 - Pricing = undercut / value, never premium.
 

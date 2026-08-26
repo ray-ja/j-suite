@@ -27,10 +27,13 @@
    COST MODEL (CLAUDE.md): hard costs only — disposal, mileage, consumables. NO hourly-labor line; the owners
    are paid from the revenue split, not wages. Cost / Price / Profit / Margin with the 35% margin-floor warning.
 
-   ⚠️ AND THE DISPOSAL LINE IS USUALLY $0, HONESTLY. Lot litter is light: even a heavy 200-space pick is a few
-   hundred pounds, under the 500 lb the transfer station waives. Most of the time the customer's own dumpster
-   takes it and there is no dump run at all. The tool says $0 and says why, rather than padding a fee to look
-   thorough. */
+   ⛔ AND THERE IS NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its
+   irrelevant and shouldn't be in any quote tool." The 500 lb waiver is an ANNUAL RESIDENTIAL one — a household
+   cleanout, not something a contractor gets per load. I had it deducting on every haul, which under-costed the
+   line by up to $18.29 a trip. Every pound is billable now.
+   ⭐ The disposal line still reads $0 most of the time — because the SOP's default is that the litter goes in
+   the customer's own dumpster on site, and then there is genuinely nothing to tip and no dump run. That $0 is
+   real; the old one was arithmetic. */
 
 if (typeof window === "undefined") { var window = {}; }   // node test shim (browser: no-op)
 
@@ -110,9 +113,8 @@ function plQuote(inp) {
   /* ⛔ tipping ONLY when we take it away. On the customer's dumpster there is no tip fee and no dump run —
      that is the SOP's own words, and it is the single biggest lever on a small lot's margin. */
   var CD  = (typeof QE !== "undefined") ? QE.CD_TON : 73.16;
-  var FRE = (typeof QE !== "undefined") ? QE.FREE_LBS : 500;
   var MIL = (typeof QE !== "undefined") ? QE.MILEAGE : 0.725;
-  var tip = weHaul ? Math.round(Math.max(0, lbs - FRE) / 2000 * CD * 100) / 100 : 0;
+  var tip = weHaul ? Math.round(lbs / 2000 * CD * 100) / 100 : 0;   /* ⛔ every pound — see the header */
   var consum = Math.round((PL_CONSUM_BASE + spaces * PL_CONSUM_PER_SP) * 100) / 100;
 
   var dr = (typeof inp.drive === "object" && inp.drive) ? inp.drive
@@ -315,7 +317,7 @@ window.plCalc = function () {
       ${q.storeP ? `Storefront / sidewalk ${PL.storeFt} ft @ $${PL_STORE_PER_FT}/ft: <b>${m(q.storeP)}</b><br>` : ""}
       ${q.disc ? `<span style="color:var(--accent)">Recurring contract — 20% off: <b>−${m(q.disc)}</b></span><br>` : ""}
       Debris: <b>${q.lbs.toLocaleString()} lb</b> · ${q.weHaul
-        ? `we haul it — tipping ${q.tip > 0 ? m(q.tip) : "<b>$0</b> (under the first 500 lb, waived)"} + a dump run`
+        ? `we haul it — tipping <b>${m(q.tip)}</b> (${(q.lbs / 2000).toFixed(2)} ton @ $${(typeof QE !== "undefined" ? QE.CD_TON : 73.16)}/ton) + a dump run`
         : `<b>customer's dumpster — $0 to dispose, no dump run</b>`}<br>
       Consumables (bags, gloves): <b>${m(q.consum)}</b><br>
       🚗 Drive: <b>${m(q.driveCharge)}</b> <span class="muted">(${q.driveMi ? "$" + q.driveMi.toFixed(2) + " of it is real mileage cost" : "no mileage cost"})</span>
