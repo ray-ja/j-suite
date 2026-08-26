@@ -52,7 +52,10 @@ async function capRcptRead(receiptId, opts) {
   try {
     const body = { org: S.biz, receiptId: receiptId, jobs: ctx.jobs, cats: ctx.cats };
     if (opts.escalate === true) body.escalate = true;
-    const r = await fetch(base + "/api/org-ai/read-receipt", {
+    /* ⏱ orgAiFetch (js/75), NOT a bare fetch — a bare fetch has no timeout, and this await is the one the whole
+       drain hangs on. See the note there. Falls back to fetch on an old build that predates the helper. */
+    const _f = (typeof orgAiFetch === "function") ? orgAiFetch : fetch;
+    const r = await _f(base + "/api/org-ai/read-receipt", {
       method: "POST",
       headers: (typeof orgAiHeaders === "function") ? orgAiHeaders() : { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -154,6 +157,15 @@ window.capRcptRun = async function (opts) {
   if (_capRcptBusy) return;
   if (!capRcptPending().length) { if (!opts.auto) alert("No needs-review receipts left for Cap to read (Cap skips ones it's already read)."); return; }
   _capRcptBusy = true;
+  /* ⛔⛔ EVERYTHING FROM HERE IS INSIDE try/finally — DO NOT UNWIND IT.
+     Ray, 2026-08-26: "cap is reading 1 of 1, its been there a long time i think its bugged."
+     `_capRcptBusy` used to be cleared by a bare assignment near the bottom. Every early exit reached it, so it
+     looked safe — but a THROW or a never-settling await skipped it, and then the flag was stuck true for the
+     rest of the session. capRcptSweep's very first guard is `if (_capRcptBusy) return`, so from that moment Cap
+     read nothing, ever, and said nothing about it: the only symptom was a progress banner frozen mid-count.
+     ⚠️ A busy flag set outside a finally is a feature with an off switch and no on switch. */
+  let _finished = false;
+  try {
   // FLUSH pending writes to the server FIRST. The blob uploads immediately, but the review RECORD (with its
   // receiptId) rides a debounced save() push — the server's rcptOwnedByOrg guard 404s until that record lands.
   // On a mass upload the drain fires the instant the blobs finish, racing the un-pushed records → every read
@@ -175,6 +187,10 @@ window.capRcptRun = async function (opts) {
     // or a missing key), retry this ONE receipt with the smartest model (Opus) before giving up. So an upload gets
     // read automatically without the owner opening it and tapping "Reread — try harder" (Ray's daily complaint).
     if (!(res && res.suggested) && !(res && res.error === "offline") && !(res && res.status === 400 && /not set up/i.test(res.error || ""))) {
+      /* ⚠️ re-assert the banner BEFORE the second read: this is the longest single step in the drain (a second
+         vision call, on the smartest model), and a progress bar that goes silent for two full read timeouts is
+         indistinguishable from the hang this whole change is about. */
+      if (typeof uploadStatus === "function") uploadStatus("reading", { done: done + 1, total: totalNow }, "trying harder");
       const _esc = await capRcptRead(rec.receiptId, { escalate: true });
       if (_esc && _esc.suggested) res = _esc; else if (_esc && (_esc.error === "offline" || (_esc.status === 400 && /not set up/i.test(_esc.error || "")))) res = _esc;
     }
@@ -203,7 +219,7 @@ window.capRcptRun = async function (opts) {
   // never read again since they already have one). Idempotent; batch-saved with the drain below. Local, no fetch.
   try { autoFiled += capRcptReapplyConfident({ batch: true }); } catch (e) {}
   if ((ok || autoFiled) && typeof save === "function") save();
-  _capRcptBusy = false;
+  _finished = true;                                  // reached the end under our own power — the finally stays quiet
   capRcptSetStatus(capped ? "🤖 Cap read " + done + " — more will read shortly…" : "");
   // Terminal banner (js/104): ✓ only when ≥1 was actually read; capped appends "more will read shortly";
   // key-missing/offline hide gracefully (no false ✓); read-nothing hides (no phantom bar on a 0-unread sweep).
@@ -219,6 +235,17 @@ window.capRcptRun = async function (opts) {
   // safeRender (js/26) — the auto sweep path runs mid-session; a bare render() here would rebuild #view under a
   // focused text field. Falls back to render() where safeRender isn't loaded (tests).
   { const _rr = (typeof safeRender === "function") ? safeRender : (typeof render === "function" ? render : null); if (_rr) _rr(); }
+  } finally {
+    /* ⭐ THE FLAG COMES BACK DOWN NO MATTER WHAT — this is the line that keeps one bad read from disabling Cap. */
+    _capRcptBusy = false;
+    /* ...and if we did NOT get to the end, the banner is still counting a read that will never land. Say so
+       rather than leaving it spinning: a wrong-looking error he can dismiss beats a truthful-looking progress
+       bar that is lying. It auto-dismisses; the next sweep retries. */
+    if (!_finished) {
+      try { capRcptSetStatus(""); } catch (e) {}
+      try { if (typeof uploadStatus === "function") uploadStatus("error", null, "Cap stopped part-way through reading — it'll try again"); } catch (e) {}
+    }
+  }
 };
 
 /* RESUMABLE SWEEP — reads any unread receipts left by an interrupted batch / an app-close, OR ones that arrived
@@ -340,6 +367,7 @@ window.capRcptReread = async function () {
   if (!targets.length) { alert("No needs-review receipts with a photo to reread."); return; }
   if (typeof confirm === "function" && !confirm("Reread " + targets.length + " receipt" + (targets.length > 1 ? "s" : "") + " with the smartest model?\nThat runs " + targets.length + " AI read" + (targets.length > 1 ? "s" : "") + " on this organization's key.")) return;
   _capRcptBusy = true;
+  try {                                              // ⛔ same finally discipline as capRcptRun — see the note there
   try { if (typeof whenSynced === "function") await whenSynced(15000); } catch (e) {}   // flush records first (see capRcptRun)
   const throttle = capRcptThrottleMs();
   let done = 0, updated = 0, autoFiled = 0, skipped = 0, stop = "";
@@ -360,13 +388,13 @@ window.capRcptReread = async function () {
     done++;
     if (i < targets.length - 1 && throttle > 0) await capRcptSleep(throttle);
   }
-  _capRcptBusy = false;
   _capRcptSel = Object.create(null);
   if (typeof uploadStatus === "function") uploadStatus("hide");
   capRcptSetStatus("");
   if (typeof render === "function") render();
   if (stop) alert(stop);
   else capRcptSetStatus("🔁 Reread " + done + " · " + updated + " updated" + (autoFiled ? " · " + autoFiled + " filed" : "") + (skipped ? " · " + skipped + " unreadable" : "") + ".");   // quiet status, not a popup
+  } finally { _capRcptBusy = false; try { if (typeof uploadStatus === "function") uploadStatus("hide"); } catch (e) {} }
 };
 
 /* the Cap card on the Receipts page (owner/admin only). Shows whenever ANY review receipt has a photo — not

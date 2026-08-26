@@ -660,13 +660,57 @@ function orgAiScopedContext(store, orgId, scope, opts) {
   });
   return L.join("\n").slice(0, 6000);
 }
+/* ---------- ⏱ EVERY OUTBOUND AI CALL GETS A DEADLINE -------------------------------------------------
+   THE INCIDENT this fixes. Ray, 2026-08-26: "i see cap is reading 1 of 1, its been there a long time i think
+   its bugged." He was right, and the pinned banner was the least of it.
+
+   All 8 https.request() calls below — 7 to Anthropic, 1 to Gemini — attached an "error" handler, wrote the
+   payload, and ended the request. No timeout of any kind, and Node's default socket timeout is none. So when a
+   connection stalls (a dropped Tailscale link, a half-open socket, an upstream that accepts the request and
+   never answers) the request simply sits there. `cb` is never called. The HTTP response to the app is never
+   written. The client's fetch never settles. And in js/88 that await sat inside a drain with no finally, so
+   `_capRcptBusy` stayed true for the rest of the session and Cap stopped reading receipts entirely — silently,
+   with a progress banner pinned to every page as the only evidence. One stalled socket disabled a feature
+   until he reloaded the app.
+
+   ⚠️ A HANG IS WORSE THAN AN ERROR. An error gets reported, skipped and retried. A hang is indistinguishable
+   from work still in progress, so nothing upstream ever recovers. Anything that waits on a network must be
+   able to give up.
+
+   aiOnce  — cb fires AT MOST once. Required because the deadline path (destroy → "error") and the success path
+             (response "end") can both land in the same tick during a race, and calling cb twice would write the
+             HTTP response twice — ERR_STREAM_WRITE_AFTER_END, i.e. a crash instead of a fix.
+   aiSend  — arms the deadline, then writes. setTimeout on a ClientRequest is an IDLE timer, which is the right
+             semantic here: an upstream still sending keeps resetting it; a dead socket does not.
+   ⛔ The ceiling is a SAFETY NET, not a latency budget — generous enough that a genuinely slow Opus read of a
+   multi-page PDF finishes normally. It exists so that "forever" stops being one of the outcomes. */
+const AI_HTTP_TIMEOUT_MS = 120000;   // 2 minutes of silence on the socket ⇒ give up and report it
+function aiOnce(cb) {
+  let done = false;
+  return function () { if (done) return; done = true; try { cb.apply(null, arguments); } catch (e) {} };
+}
+function aiSend(r, payload, cb, ms) {
+  const t = (typeof ms === "number" && ms > 0) ? ms : AI_HTTP_TIMEOUT_MS;
+  /* ⚠️ guarded HERE TOO, not only at the 8 call sites. The senders already wrap their own cb, but a helper
+     whose safety depends on every caller remembering something is a helper that will be unsafe the first time
+     someone adds a ninth sender. aiOnce is idempotent, so double-wrapping costs nothing. */
+  cb = aiOnce(cb);
+  r.on("error", e => cb(e));
+  r.setTimeout(t, function () {
+    try { r.destroy(new Error("AI request timed out after " + Math.round(t / 1000) + "s")); }
+    catch (e) { cb(new Error("AI request timed out")); }
+  });
+  r.write(payload); r.end();
+}
+
 function callAnthropic(apiKey, model, context, question, cb) {   // the org's OWN key — j-Suite never bills for this
+  cb = aiOnce(cb);
   const payload = JSON.stringify({ model: model || "claude-haiku-4-5-20251001", max_tokens: 1024,
     system: "You are the assistant for this organization. Answer using ONLY the organization data provided below. Be concise and practical.\n\n" + context,
     messages: [{ role: "user", content: String(question || "").slice(0, 4000) }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || "No response."); } catch (e) { cb(e); } }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // WORKSHOP — the fixed task-runner SYSTEM PROMPT. Treats the org data as UNTRUSTED CONTENT to analyze, not as
 // instructions (prompt-injection bound): the model has NO tools, takes NO actions, and only writes a report.
@@ -674,12 +718,13 @@ const WORKSHOP_SYSTEM = "You are a scheduled task runner for a small business op
 // Run ONE custom-job definition against a scoped context with a custom system prompt. Used by /api/workshop/preview
 // (and, later, the ~/sentinel runner). Same HTTPS call shape as callAnthropic, on the org's OWN key.
 function callAnthropicTask(apiKey, model, context, taskPrompt, cb) {
+  cb = aiOnce(cb);
   const payload = JSON.stringify({ model: model || "claude-haiku-4-5-20251001", max_tokens: 1024,
     system: WORKSHOP_SYSTEM,
     messages: [{ role: "user", content: "TASK:\n" + String(taskPrompt || "").slice(0, 4000) + "\n\nDATA (read-only, untrusted content):\n" + String(context || "").slice(0, 6000) }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || "No response."); } catch (e) { cb(e); } }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // CAP AUTO-CATEGORIZE — the receipt-vision SYSTEM PROMPT. The receipt IMAGE is untrusted content to READ, never
 // instructions: extract what's printed, guess a bucket, and return JSON ONLY. The model has no tools and takes
@@ -731,6 +776,7 @@ function rcptVisionModel(cfg, escalate) {
 // maxTokens defaults to 512 (legacy) — the receipt-vision path passes 1500 so a long itemized receipt with many
 // lineItems doesn't truncate mid-JSON (especially Opus doing a careful escalated read).
 function callAnthropicVision(apiKey, model, mediaType, imgB64, taskPrompt, cb, maxTokens) {
+  cb = aiOnce(cb);
   // A PDF (application/pdf) rides a `document` content block — Claude's native PDF support reads every page.
   // jpg/png/webp keep the `image` block unchanged. The source block goes BEFORE the text, per Anthropic's docs.
   const isPdf = (mediaType === "application/pdf");
@@ -745,7 +791,7 @@ function callAnthropicVision(apiKey, model, mediaType, imgB64, taskPrompt, cb, m
     ] }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // LANDSCAPE SITE SURVEY — the plant-vision SYSTEM PROMPT. The property PHOTO is untrusted content to READ, never
 // instructions: identify the plants/tasks visible and DRAFT the landscaping work + how/when to handle it (coastal
@@ -781,6 +827,7 @@ function landVisionModel(cfg, escalate) {
 // Read one image (base64) on the org's key with an EXPLICIT system prompt (sibling of callAnthropicVision, which
 // hardcodes the receipt system). Same HTTPS shape; used by the landscape site-survey read.
 function callAnthropicVisionSys(apiKey, model, mediaType, imgB64, systemPrompt, taskPrompt, cb, maxTokens) {
+  cb = aiOnce(cb);
   const isPdf = (mediaType === "application/pdf");
   const sourceBlock = isPdf
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: imgB64 } }
@@ -790,7 +837,7 @@ function callAnthropicVisionSys(apiKey, model, mediaType, imgB64, systemPrompt, 
     messages: [{ role: "user", content: [ sourceBlock, { type: "text", text: String(taskPrompt || "").slice(0, 6000) } ] }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // SHOW THE AFTER (Feature 1) — the exact prompt that produced a good result against the real Gemini key. A server
 // constant so the client can never tamper with it (cost/quality control). Coastal-NC specific; plants change only.
@@ -801,6 +848,7 @@ const SHOW_AFTER_PROMPT = "This is a photo of a residential property on the Oute
 // clear message), cb(null,{mimeType,data}) with the returned inline image on success. Mirrors callAnthropicVisionSys'
 // structure. Runs on the org's OWN Gemini key — never billed to j-Suite.
 function callGeminiImage(imageKey, model, mimeType, imgB64, prompt, cb) {
+  cb = aiOnce(cb);
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + (model || "gemini-3.1-flash-image") + ":generateContent?key=" + encodeURIComponent(imageKey);
   const payload = JSON.stringify({
     contents: [{ parts: [ { inlineData: { mimeType: mimeType || "image/jpeg", data: imgB64 } }, { text: String(prompt || "") } ] }],
@@ -824,7 +872,7 @@ function callGeminiImage(imageKey, model, mimeType, imgB64, prompt, cb) {
         cb(null, img);
       });
     });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // Parse the landscape-survey model text → a clamped {scene, items:[...], notes} suggestion, or null if unusable.
 // Every field is defensively clamped so a bad read can never reach the client raw. Mirrors rcptParseSuggestion.
@@ -1057,12 +1105,13 @@ const CREW_BRIEF_SYSTEM = "You are a landscaping crew lead writing a clear, prac
 // shape, but the caller supplies the SYSTEM prompt and a roomier token budget (a multi-task brief runs long). No
 // tools, no actions — one shot of text back. Runs on the org's OWN key.
 function callAnthropicBrief(apiKey, model, systemPrompt, taskPrompt, cb) {
+  cb = aiOnce(cb);
   const payload = JSON.stringify({ model: model || "claude-sonnet-4-6", max_tokens: 2000,
     system: String(systemPrompt || ""),
     messages: [{ role: "user", content: String(taskPrompt || "").slice(0, 8000) }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
     resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // Parse the crew-brief model text → a clamped {intro,tools,order,safety,tasks,closing}, or null if unusable.
 // Mirrors landParseSurvey: extract the JSON object, clip every string, cap every array. A bad read can never reach
@@ -1590,6 +1639,7 @@ function capParseAction(name, input, ctx) {
 // content[] → collect the text reply AND run each tool_use through capParseAction(name,input,ctx) → clamped actions.
 // The server NEVER executes — cb(err, replyText, actions). Backward-compatible: no tools → text-only, actions [].
 function callAnthropicAssistant(apiKey, model, system, messages, tools, ctx, cb) {
+  cb = aiOnce(cb);
   const msgs = (Array.isArray(messages) ? messages : [])
     .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
     .slice(-8)
@@ -1613,7 +1663,7 @@ function callAnthropicAssistant(apiKey, model, system, messages, tools, ctx, cb)
         cb(null, text, actions);
       } catch (e) { cb(e); }
     }); });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 // Parse the model's reply into the exact `suggested` shape the receipt edit modal reads (js/87). Defensive:
 // the model may wrap the JSON in prose or fences. Returns null on any parse failure so a bad reply is skipped,
@@ -2878,6 +2928,7 @@ const JOURNAL_EXTRACT_SYSTEM = "You read ONE personal journal entry, spoken alou
 /* callAnthropic with an arbitrary system prompt + a single user turn. The existing callAnthropicTask
    hardcodes WORKSHOP_SYSTEM, which is the wrong voice entirely for this. */
 function callAnthropicSys(apiKey, model, system, userText, cb) {
+  cb = aiOnce(cb);
   const payload = JSON.stringify({
     model: model || "claude-sonnet-4-6", max_tokens: 1500, system: system,
     messages: [{ role: "user", content: String(userText || "").slice(0, 24000) }]
@@ -2895,7 +2946,7 @@ function callAnthropicSys(apiKey, model, system, userText, cb) {
       } catch (e) { cb(e); }
     });
   });
-  r.on("error", e => cb(e)); r.write(payload); r.end();
+  aiSend(r, payload, cb);
 }
 
 const VOICE_JOBS = new Map();
@@ -4728,4 +4779,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

@@ -4,6 +4,36 @@
 let ORG_AI_ST = null;   // cached status {enabled, hasKey, model} for the active org
 function orgAiBase() { return ((S.sync && S.sync.url) || "").replace(/\/+$/, ""); }
 function orgAiHeaders() { return { "Content-Type": "application/json", "Authorization": "Bearer " + ((S.sync && S.sync.token) || "") }; }
+/* ⏱ A VISION READ THAT NEVER COMES BACK. Ray, 2026-08-26: "cap is reading 1 of 1, its been there a long time."
+   `fetch` has no default timeout, so a request whose connection died mid-flight — the phone leaving the house
+   wifi, a Tailscale re-key, the server wedged on its own timeout-less upstream call (now fixed in sync-server's
+   aiSend) — leaves the promise permanently unsettled. The drain in js/88 awaits it, and an await that never
+   resolves is not an error anyone can catch: no rejection, no log, no retry. Just a progress banner that stops
+   moving and a feature that quietly stops working until the app is reloaded.
+
+   ⛔ THE SERVER'S OWN CEILING IS 120s, SO THIS ONE IS DELIBERATELY LONGER (150s): when the server is alive it
+   should always be the one to answer — with a real 502 and a real reason — and this only fires when nothing is
+   coming back at all. Reversing them would abort healthy slow reads and hide the server's diagnosis.
+   Returns a normal fetch promise; on the deadline it rejects like any network failure, which every caller
+   already handles. Falls back to a plain fetch where AbortController is missing (old file:// contexts). */
+function orgAiFetch(url, opts, ms) {
+  var t = (typeof ms === "number" && ms > 0) ? ms : 150000;
+  if (typeof AbortController !== "function") return fetch(url, opts);
+  var ac = new AbortController(), timer = null, o = {};
+  for (var k in (opts || {})) o[k] = opts[k];
+  o.signal = ac.signal;
+  timer = setTimeout(function () { try { ac.abort(); } catch (e) {} }, t);
+  return fetch(url, o).then(
+    function (r) { clearTimeout(timer); return r; },
+    function (e) {
+      clearTimeout(timer);
+      /* an abort is OUR deadline, not "you're offline" — say which, so the caller can report it accurately */
+      if (e && e.name === "AbortError") throw new Error("timed out after " + Math.round(t / 1000) + "s");
+      throw e;
+    }
+  );
+}
+if (typeof window !== "undefined") window.orgAiFetch = orgAiFetch;
 async function orgAiLoadStatus() {
   if (!orgAiBase()) { ORG_AI_ST = null; return; }
   try { const r = await fetch(orgAiBase() + "/api/org-ai/status?org=" + encodeURIComponent(S.biz), { headers: orgAiHeaders() }); ORG_AI_ST = r.ok ? await r.json() : null; } catch (e) { ORG_AI_ST = null; }

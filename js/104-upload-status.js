@@ -16,6 +16,30 @@
   var AUTO_MS = 5000;         // how long the ✓ / ⚠ toast lingers before auto-dismiss
   var _dismissT = null;
 
+  /* ---------- ⏱ WATCHDOG ON THE PROGRESS STATES — the last line of defence -------------------------------
+     Ray, 2026-08-26: "i see cap is reading 1 of 1, its been there a long time i think its bugged."
+     ⬆/🤖 are the only two states with no self-expiry, by design: they end when the caller says they end. That
+     is correct right up until the caller never says anything again — and then this banner, which exists to tell
+     him what is safe to close, is the thing lying to him on every page.
+
+     The real causes are fixed upstream (sync-server aiSend's socket deadline · orgAiFetch's abort · js/88's
+     finally). This is the backstop for the NEXT one: a progress state that has not been re-asserted in
+     WATCHDOG_MS stops claiming to be progress. Every uploadStatus() call re-arms it, so a live drain — which
+     re-asserts before every read, including the slow escalate retry — never trips it.
+     ⚠️ The window is deliberately wider than the longest legitimate silence (one 150s client read deadline),
+     so this can only fire on something genuinely stuck, never on slow-but-working. */
+  var WATCHDOG_MS = 240000;
+  var _watchT = null;
+  function armWatch(state) {
+    if (_watchT) { clearTimeout(_watchT); _watchT = null; }
+    if (state !== "uploading" && state !== "reading") return;   // terminal states have their own auto-dismiss
+    _watchT = setTimeout(function () {
+      /* honest, dismissible, and it disappears on its own — never a silent hide, which would just move the
+         confusion from "why is it stuck" to "where did my upload go" */
+      uploadStatus("error", null, "that stalled — nothing was lost, it'll try again");
+    }, WATCHDOG_MS);
+  }
+
   function mount() {
     try {
       if (typeof document === "undefined" || !document.body) return null;
@@ -54,6 +78,7 @@
   }
 
   function hide() {
+    try { if (_watchT) { clearTimeout(_watchT); _watchT = null; } } catch (e) {}
     try { if (_dismissT) { clearTimeout(_dismissT); _dismissT = null; } var el = document.getElementById("upStatus"); if (el) { el.className = ""; el.style.display = "none"; el.innerHTML = ""; } } catch (e) {}
   }
 
@@ -96,6 +121,7 @@
       el.className = cls + " show";
       el.innerHTML = html;
       if (auto) _dismissT = setTimeout(hide, auto);
+      armWatch(state);          // ⏱ re-armed by every call; only an ABANDONED progress state ever trips it
     } catch (e) {}
   }
 

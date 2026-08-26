@@ -1717,7 +1717,11 @@ console.log("\n— Cap receipt-vision REQUEST SHAPE (callAnthropicVision): PDF �
   const orig = https.request;
   let captured = null;
   // spy: capture the request BODY (what we'd send to Anthropic) without any network I/O
-  https.request = function (url, opts, cb) { return { on: function () { return this; }, write: function (p) { captured = p; }, end: function () {} }; };
+  /* ⚠️ the spy must model a REAL ClientRequest, setTimeout included — aiSend arms a socket deadline on every
+     outbound AI call now (2026-08-26, the "Cap is reading 1 of 1" stall), and a stub that silently lacks the
+     method would either crash the suite or, worse, tempt someone to make aiSend skip the deadline when it's
+     missing. The deadline is the fix; nothing may be allowed to opt out of it. */
+  https.request = function (url, opts, cb) { return { on: function () { return this; }, setTimeout: function () { return this; }, write: function (p) { captured = p; }, end: function () {} }; };
   try {
     t.callAnthropicVision("k", "claude-sonnet-4-6", "application/pdf", "UERGQg==", "read it", function () {}, 1500);
     let body = null; try { body = JSON.parse(captured); } catch (e) {}
@@ -1813,7 +1817,7 @@ ok("photos[] LWW: a newer copy carrying 4 photos wins over the older 3", (phLww.
 (function () {
   const https = require("https");
   const orig = https.request, captured = [];
-  https.request = function () { const req = { on() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };
+  https.request = function () { const req = { on() { return req; }, setTimeout() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };   /* setTimeout: a real ClientRequest has one, and aiSend arms it on every call — see the note at line ~1724 */
   try {
     t.callAnthropicVision("key", t.rcptVisionModel({ model: "claude-haiku-4-5-20251001" }, false), "image/jpeg", "AAAA", "task", function () {}, 1500);
     const dflt = JSON.parse(captured[0] || "{}");
@@ -1846,7 +1850,7 @@ ok("picker: models.receipt (allowlisted) beats legacy cfg.receiptModel", t.rcptV
 (function () {
   const https = require("https");
   const orig = https.request, captured = [];
-  https.request = function () { const req = { on() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };
+  https.request = function () { const req = { on() { return req; }, setTimeout() { return req; }, write(p) { captured.push(p); return true; }, end() {} }; return req; };   /* setTimeout: a real ClientRequest has one, and aiSend arms it on every call — see the note at line ~1724 */
   try {
     t.callAnthropic("key", t.resolveModel({ models: { ask: "claude-opus-4-8" } }, "ask"), "ctx", "q", function () {});
     ok("wire: ask SENDS the resolved picker model (Opus 4.8)", JSON.parse(captured[0] || "{}").model === "claude-opus-4-8", JSON.parse(captured[0] || "{}").model);
