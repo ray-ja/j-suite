@@ -3640,6 +3640,7 @@ const server = http.createServer((req, res) => {
       const itemId = p3 && p3.itemId;
       plaid.plaidSyncItem(itemId, (err, out) => {
         if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
+        plaid.plaidSaveAccounts(itemId, out.accounts);   // so the mapping screen needs no second pull
         const cfg = plaid.plaidCfg(), map = (cfg.items[itemId] || {}).accounts || {};
         const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });

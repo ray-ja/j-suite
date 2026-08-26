@@ -96,6 +96,19 @@ function bankSync(itemId) {
       /* ⚠️ a retracted transaction has to leave the queue, or it waits there forever to be approved */
       var dropped = bankDropRemoved(j.removed || []);
 
+      /* ⛔⛔ DO NOT ADVANCE THE CURSOR IF ANYTHING WAS DROPPED FOR WANT OF A MAPPING. A row whose Plaid
+         account isn't paired to one of his budget accounts is filtered out above — and committing the
+         cursor anyway would tell Plaid "I have those", so they would NEVER be offered again. Silent,
+         permanent loss of real transactions, on the very first sync of a new bank, which is exactly when
+         nothing is mapped yet. Holding the cursor means the same rows simply arrive again once he has
+         paired the accounts. The failure mode has to be a repeat, never a hole. */
+      if (unmapped) {
+        bankRefresh(function () { if (typeof render === "function") render(); });
+        alert(unmapped + " transaction" + (unmapped === 1 ? "" : "s") + " came from an account that isn't paired"
+          + " with one of your accounts yet.\n\nPair them below and hit Get transactions again — nothing was lost.");
+        return;
+      }
+
       fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
         body: JSON.stringify({ itemId: itemId, cursor: j.cursor }) })
         .then(function () { bankRefresh(function () { if (typeof render === "function") render(); }); });
@@ -128,6 +141,34 @@ function bankDropRemoved(ids) {
   return n;
 }
 
+/* ⭐ PAIRING. A bank connection can hold several accounts; each has to be told which of HIS accounts it
+   is, or its transactions have nowhere to land. Drawn from what the bank reported on the last pull, so it
+   needs no extra call. */
+function bankPairHTML(it) {
+  var known = it.known || [];
+  if (!known.length) {
+    return '<div class="sub" style="white-space:normal;margin:2px 0 8px 10px">'
+      + 'Hit <b>Get transactions</b> once and the accounts in this bank will appear here to pair.</div>';
+  }
+  var mine = [];
+  try { mine = (D().budgetAccounts || []).filter(function (a) { return a && !a.deleted; }); } catch (e) {}
+  var map = it.accounts || {};
+  return '<div style="margin:2px 0 10px 10px">' + known.map(function (a) {
+    var sel = map[a.id] || "";
+    return '<div class="row" style="gap:8px;align-items:center;padding:4px 0">'
+      + '<div class="grow" style="min-width:0"><div class="sub">' + esc(a.name)
+      +   (a.mask ? ' ····' + esc(a.mask) : '') + '</div></div>'
+      + '<select style="width:auto;max-width:58%" onchange="bankPair(\'' + esc(it.itemId) + '\',\'' + esc(a.id) + '\',this.value)">'
+      + '<option value="">— not tracked —</option>'
+      + mine.map(function (m) {
+          return '<option value="' + esc(m.id) + '"' + (sel === m.id ? " selected" : "") + '>' + esc(m.name) + '</option>';
+        }).join("")
+      + '</select></div>';
+  }).join("")
+  + '<div class="sub" style="white-space:normal;margin-top:4px">Anything left <i>not tracked</i> is skipped — '
+  + 'its transactions won\'t be pulled in.</div></div>';
+}
+
 /* ---------- the card, on Budget → Settings ---------- */
 function bankCardHTML() {
   var st = BANK_STATUS;
@@ -148,6 +189,7 @@ function bankCardHTML() {
       + '<div class="sub">' + (it.syncedAt ? 'last checked ' + esc(new Date(it.syncedAt).toISOString().slice(0, 10))
                                            : 'never pulled yet') + '</div></div>'
       + '<button class="btn ghost sm" style="flex:0 0 auto;width:auto" onclick="bankSync(\'' + esc(it.itemId) + '\')">Get transactions</button></div>';
+    h += bankPairHTML(it);
   });
   if (!(st.items || []).length) h += '<div class="sub" style="white-space:normal">No banks connected yet.</div>';
 
@@ -162,5 +204,11 @@ function bankCardHTML() {
 
 if (typeof window !== "undefined") {
   window.bankConnect = bankConnect; window.bankSync = bankSync; window.bankRefresh = bankRefresh;
+  window.bankPairHTML = bankPairHTML;
+  window.bankPair = function (itemId, plaidAccountId, budgetAccountId) {
+    fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
+      body: JSON.stringify({ itemId: itemId, map: { plaidAccountId: plaidAccountId, budgetAccountId: budgetAccountId } }) })
+      .then(function () { bankRefresh(function () { if (typeof render === "function") render(); }); });
+  };
   window.bankCardHTML = bankCardHTML; window.bankDropRemoved = bankDropRemoved; window.bankCanLink = bankCanLink;
 }

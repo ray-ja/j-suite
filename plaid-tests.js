@@ -155,6 +155,27 @@ console.log("\n--- the routes ---");
   ok("...and are overridable, since a wrong host is a one-line fix not a rebuild", /c\.host \|\|/.test(R("plaid.js")));
 }
 
+console.log("\n--- ⛔ pairing, and the cursor bug behind it ---");
+{
+  ok("⭐ a bank's accounts are offered for pairing with his own", /bankPairHTML/.test(CODE(CLIENT)));
+  ok("...from what the bank already reported, needing no extra pull", /it\.known/.test(CODE(CLIENT)) && /plaidSaveAccounts/.test(CODE(SRV)));
+  ok("...defaulting to NOT tracked rather than guessing", /not tracked/.test(CLIENT));
+  ok("⛔ the saved account list carries names and masks only", (function () {
+    const src = R("plaid.js").slice(R("plaid.js").indexOf("function plaidSaveAccounts"));
+    return !/balance|available|current|account_number|routing/.test(src.slice(0, 600));
+  })());
+
+  /* ⛔⛔ THE BUG: dropping unmapped rows AND advancing the cursor loses them forever */
+  ok("⭐ the cursor is NOT committed when rows were dropped for want of a pairing",
+    /if \(unmapped\) \{[\s\S]{0,400}return;/.test(CODE(CLIENT)));
+  ok("...and the commit call sits AFTER that guard",
+    CODE(CLIENT).indexOf("if (unmapped)") < CODE(CLIENT).indexOf("/api/plaid/commit"));
+  ok("...so he is told nothing was lost", /nothing was lost/.test(CLIENT));
+  ok("the reason is recorded where someone would 'simplify' it",
+    /would NEVER be offered again/.test(PROSE(R("js/150-bank-link.js"))));
+  ok("⭐ ...naming when it would bite: the first sync of a new bank", /first sync of a new bank/.test(PROSE(CLIENT)));
+}
+
 console.log("\n--- ⚠️ the cursor: a failure must repeat, never skip ---");
 {
   ok("⭐ the cursor is committed by a SEPARATE call, after the rows are saved",

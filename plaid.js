@@ -162,6 +162,19 @@ function plaidCommitCursor(itemId, cursor) {
   plaidSave(c);
   return true;
 }
+/* remember what the bank told us its accounts are called, so the mapping screen can be drawn without
+   forcing another pull. ⛔ Names and masks only — never balances, never numbers. */
+function plaidSaveAccounts(itemId, accounts) {
+  const c = plaidLoad();
+  if (!c.items || !c.items[itemId]) return false;
+  c.items[itemId].known = (accounts || []).map(a => ({
+    id: a.account_id, name: a.name || a.official_name || "Account",
+    mask: a.mask || "", type: a.subtype || a.type || ""
+  }));
+  plaidSave(c);
+  return true;
+}
+
 /* map a Plaid account onto one of his budget accounts, so rows land in the right ledger */
 function plaidMapAccount(itemId, plaidAccountId, budgetAccountId) {
   const c = plaidLoad();
@@ -187,12 +200,13 @@ function plaidStatus() {
       itemId: id, label: c.items[id].label || "Bank",
       linkedAt: c.items[id].linkedAt || 0, syncedAt: c.items[id].syncedAt || 0,
       everSynced: !!c.items[id].cursor,
-      accounts: c.items[id].accounts || {}
+      accounts: c.items[id].accounts || {},
+      known: c.items[id].known || []
     }))
   };
 }
 
 module.exports = {
   PLAID_FILE, PLAID_HOSTS, plaidCfg, plaidReady, plaidCall, plaidLinkToken, plaidExchange,
-  plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave
+  plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave, plaidSaveAccounts
 };
