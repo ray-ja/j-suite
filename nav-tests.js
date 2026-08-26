@@ -316,6 +316,65 @@ console.log("\n--- ⭐ section tabs: splitting a monolith without cutting it ope
   ok("the module is in the shell", /js\/156-section-tabs\.js/.test(SHELL));
 }
 
+console.log("\n--- ⚠️ every nav tab must be in the page registry ---");
+{
+  /* Ray, 2026-08-26: "journal says always on, workout says always on. But that's not true because I'm
+     actually under OBX Lot Solutions, and it doesn't use those."
+
+     ⚠️ THE CAUSE WAS A REGISTRY GAP, NOT A LABEL. ADMIN_PAGES drives BOTH role permissions AND (through
+     ALL_TABS → orgConfigurableTabs) which tools an org may switch on. Eight nav tabs were missing from it,
+     so they could not be permissioned, could not be toggled — and the Menu & tools list, finding nothing
+     configurable under those groups, called them "always on" while they were in fact OFF for that org.
+     A wrong word was the visible symptom of a genuinely unreachable setting. */
+  const ADM = R("js/32-admin.js");
+  const reg = {}; vm.createContext(reg);
+  vm.runInContext(ADM.slice(ADM.indexOf("const ADMIN_PAGES"), ADM.indexOf("\n];", ADM.indexOf("const ADMIN_PAGES")) + 3)
+    + ";this.P=ADMIN_PAGES;", reg);
+  const registered = reg.P.map(p => p.tab);
+
+  const nav = {}; vm.createContext(nav);
+  vm.runInContext(RT.slice(RT.indexOf("const NAV_GROUPS"), RT.indexOf("\n];", RT.indexOf("const NAV_GROUPS")) + 3)
+    + ";this.G=NAV_GROUPS;", nav);
+  const navTabs = [...new Set(nav.G.flatMap(g => g.tabs))];
+
+  /* `admin` is excluded ON PURPOSE — gating it per role would let someone lock the owner out of the very
+     page that fixes it. Everything else must be there. */
+  const EXPECTED_ABSENT = ["admin"];
+  const gap = navTabs.filter(t => registered.indexOf(t) < 0 && EXPECTED_ABSENT.indexOf(t) < 0);
+  ok("⭐ every nav tab is in ADMIN_PAGES, so it can be permissioned and toggled", gap.length === 0, gap);
+  ok("...including the five that were missing", ["journal", "workout", "shelf", "cal", "studio"].every(t => registered.indexOf(t) >= 0));
+  ok("...and the three the cross-check turned up", ["team", "products", "nextcheck"].every(t => registered.indexOf(t) >= 0));
+  ok("⛔ admin stays out, deliberately", registered.indexOf("admin") < 0);
+  ok("...and the reason is recorded", /lock the owner out/.test(PROSE(ADM)));
+
+  /* ⭐ and the consequence: only genuinely core tabs may report "always on" */
+  const core = {}; vm.createContext(core);
+  vm.runInContext(RT.slice(RT.indexOf("const ORG_CORE_TABS"), RT.indexOf("];", RT.indexOf("const ORG_CORE_TABS")) + 2)
+    + ";this.C=ORG_CORE_TABS;", core);
+  const configurable = registered.filter(t => core.C.indexOf(t) < 0);
+  const alwaysOn = nav.G.filter(g => !(g.tabs || []).some(t => configurable.indexOf(t) >= 0)).map(g => g.key);
+  ok("⭐ Journal and Workout are togglable, not 'always on'",
+    alwaysOn.indexOf("journal") < 0 && alwaysOn.indexOf("workout") < 0, alwaysOn);
+  ok("...nor Shelf, Calendar or Studio",
+    ["shelf", "cal", "studio"].every(k => alwaysOn.indexOf(k) < 0), alwaysOn);
+  ok("⭐ only the genuinely core groups say it", alwaysOn.every(k => ["today", "admin", "more"].indexOf(k) >= 0), alwaysOn);
+}
+
+console.log("\n--- ⭐ the permissions matrix ---");
+{
+  const AP = R("js/157-admin-people.js");
+  ok("⭐ roles are a matrix, not a blob per role", /function apMatrix/.test(CODE(AP)));
+  ok("...pages down, roles across", /roles\.map\(function \(r\) \{ return '<th/.test(CODE(AP)));
+  ok("⛔ the owner column is locked", /disabled title="Owner always has full access"/.test(AP));
+  ok("...and both pages AND actions use it", (CODE(AP).match(/apMatrix\(/g) || []).length >= 3);
+  ok("⚠️ it scrolls in its own container, not the page", /overflow-x:auto/.test(CODE(AP)));
+  ok("⛔ deleting a role is kept away from the checkboxes", /Remove a role/.test(AP));
+  ok("⭐ the PIN sits at the TOP of Members", (function () {
+    const a = CODE(R("js/32-admin.js"));
+    return a.indexOf("Admin PIN") < a.indexOf(">Members<");
+  })());
+}
+
 console.log("\n--- it can't throw the app down ---");
 {
   ok("a group that doesn't exist is empty, not a crash", sandbox().navDeepFor("nonsense").length === 0);

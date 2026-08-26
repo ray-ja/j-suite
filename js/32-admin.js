@@ -21,7 +21,20 @@ const ADMIN_PAGES = [
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
   { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
   { tab: "playbook", label: "Playbook" }, { tab: "research", label: "Research" },
-  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "invoices", label: "Invoices" }, { tab: "routes", label: "Routes" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Data" }
+  { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "invoices", label: "Invoices" }, { tab: "routes", label: "Route review" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Settings" },
+  /* ⚠️ THESE FIVE WERE MISSING FROM THE REGISTRY ENTIRELY, and it was not a cosmetic gap. ADMIN_PAGES
+     drives BOTH role permissions AND (via ALL_TABS → orgConfigurableTabs) which tools an org can switch
+     on. Absent from it, journal/workout/shelf/cal/studio could not be permissioned per role, could not be
+     turned on or off per org — and the Menu & tools list, finding no configurable tab under those groups,
+     labelled them "always on" while they were in fact OFF for OBX. Ray spotted exactly that, 2026-08-26:
+     "journal says always on, workout says always on. But that's not true because I'm actually under OBX
+     Lot Solutions, and it doesn't use those." They are opt-in tools (ORG_OPTIN_TABS); they belong here. */
+  { tab: "journal", label: "Journal" }, { tab: "workout", label: "Workout" }, { tab: "shelf", label: "Shelf" },
+  { tab: "cal", label: "Calendar" }, { tab: "studio", label: "Studio" },
+  /* ⚠️ and three more the cross-check turned up — real nav destinations that no role could be granted or
+     denied because the registry had never heard of them. (`admin` stays out on purpose: it is owner-only
+     and gating it per role would let someone lock the owner out of the page that fixes it.) */
+  { tab: "team", label: "People" }, { tab: "products", label: "Products" }, { tab: "nextcheck", label: "Next Check" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew see "pay" (their OWN earnings only — js/86 rPay hard-gates a non-owner/admin to their own userId) but
@@ -517,6 +530,10 @@ function rAdmin() {
   if (owner && typeof bankKeyCard === "function") aiH += bankKeyCard();
   if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
+  /* ⭐ THE PIN GOES FIRST. Ray, 2026-08-26: "move the admin PIN box all the way to the top." It is the lock
+     on the door — it belongs before the list of who is inside, not buried under a permissions matrix. */
+  h += `<div class="card" style="margin-bottom:8px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
+    <div class="row" style="gap:6px;flex:0 0 auto"><button class="btn ghost sm" style="width:auto" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" style="width:auto" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
   h += `<div class="secthd" style="margin-top:0"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;
   else {
@@ -529,10 +546,8 @@ function rAdmin() {
       </select></div>
     <div id="acctlist">${(typeof adminMembersTable === "function") ? adminMembersTable() : adminAccountsHTML()}</div>`;
   }
-  /* roles, collapsed — and the PIN, which is the same subject: who gets in */
+  /* roles as a matrix (js/157) */
   if (typeof adminRolesHTML === "function") h += adminRolesHTML();
-  h += `<div class="card" style="margin-top:10px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
-    <div class="row" style="gap:6px"><button class="btn ghost sm" style="width:auto" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" style="width:auto" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
   /* ⛔ the old always-expanded roles block lived here — every role printing a checkbox per page AND per
      action, permanently open, above the list he came to read. It is rendered collapsed by adminRolesHTML()

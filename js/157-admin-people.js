@@ -101,48 +101,71 @@ function adminMembersTable() {
   return h;
 }
 
-/* ---------- roles, collapsed ---------- */
+/* ---------- ⭐ roles as ONE MATRIX ------------------------------------------------------------------
+   Ray, 2026-08-26, with a screenshot: "this area here that has a ton of checkboxes just in a big blob. Can
+   we make this into a table and clean it up? It's just a big mess."
+
+   It was 37 pages × 5 actions, repeated in full for EVERY role — well over a hundred checkboxes, printed
+   three times, with no way to compare two roles without scrolling between them. The question a permission
+   screen exists to answer is "who can see this page", and that is a matrix: pages down the side, roles
+   across the top, one checkbox per intersection. Same information, a third of the boxes, and the answer is
+   readable along a row.
+
+   ⛔ The owner column is locked. Owner is full access by definition, and a checkbox that cannot be
+   unticked should look like it. */
+function apRoles() { return (typeof allRoles === "function") ? allRoles() : []; }
+function apPages() { return (typeof ADMIN_PAGES !== "undefined") ? ADMIN_PAGES : []; }
+function apActions() { return (typeof ALL_ACTIONS !== "undefined") ? ALL_ACTIONS : []; }
+
+function apMatrix(rows, allows, toggle, title) {
+  var roles = apRoles();
+  if (!rows.length || !roles.length) return "";
+  var h = '<div class="sub" style="font-weight:700;margin:12px 2px 6px">' + esc(title) + '</div>'
+    + '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="otable">'
+    + '<thead><tr><th></th>'
+    + roles.map(function (r) { return '<th style="text-align:center">' + esc(r.label) + '</th>'; }).join("")
+    + '</tr></thead><tbody>';
+  rows.forEach(function (p) {
+    h += '<tr><td>' + esc(p.label) + '</td>'
+      + roles.map(function (r) {
+          var builtin = r.key === "owner";
+          var on = builtin || allows(r.key, p.key);
+          return '<td style="text-align:center">'
+            + '<input type="checkbox" style="width:17px;height:17px" ' + (on ? "checked" : "")
+            + (builtin ? ' disabled title="Owner always has full access"' : '')
+            + ' onchange="' + toggle + '(\'' + esc(r.key) + '\',\'' + esc(p.key) + '\')">'
+            + '</td>';
+        }).join("") + '</tr>';
+  });
+  return h + '</tbody></table></div>';
+}
+
 function adminRolesHTML() {
   if (!(typeof isOwner === "function" && isOwner())) return "";
-  var roles = (typeof allRoles === "function") ? allRoles() : [];
-  var pages = (typeof ADMIN_PAGES !== "undefined") ? ADMIN_PAGES : [];
-  var actions = (typeof ALL_ACTIONS !== "undefined") ? ALL_ACTIONS : [];
-  var h = '<div class="row" style="align-items:center;margin:16px 2px 8px"><div class="grow sub" style="font-weight:700">Roles &amp; permissions</div>'
-    + '<button class="btn ghost sm" style="width:auto" onclick="adminOpenAddRole()">+ Role</button></div>';
+  var roles = apRoles();
+  var h = '<div class="row" style="align-items:center;margin:18px 2px 4px">'
+    + '<div class="grow sub" style="font-weight:700">Roles &amp; permissions</div>'
+    + '<button class="btn ghost sm" style="width:auto" onclick="adminOpenAddRole()">+ Role</button></div>'
+    + '<div class="sub" style="margin:0 2px 6px">Tick what each role can reach. '
+    + roles.filter(function (r) { return r.key !== "owner"; }).length + ' editable role'
+    + (roles.length === 2 ? '' : 's') + ' · Owner always has everything.</div>';
 
-  roles.forEach(function (r) {
-    var builtin = r.key === "owner";
-    /* ⭐ COLLAPSED. Every role used to print a checkbox per page AND per action, always expanded — dozens
-       of boxes above the member list, for a company of two. */
-    var nPages = builtin ? pages.length : pages.filter(function (p) { return (typeof roleAllows === "function") && roleAllows(r.key, p.tab); }).length;
-    h += '<details class="card" style="padding:10px 12px;margin-bottom:6px">'
-      + '<summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">'
-      + '<span class="grow"><span class="nm" style="font-size:15px">' + esc(r.label) + '</span> '
-      + ((typeof roleBadge === "function") ? roleBadge(r.key) : "")
-      + '<div class="sub">' + (builtin ? "Full access · built-in" : (nPages + " of " + pages.length + " pages")) + '</div></span>'
-      + '<span class="sub">▾</span></summary>';
-    if (builtin) {
-      h += '<div class="muted" style="margin-top:10px">Full access — every page and every action, including this panel. Cannot be restricted.</div>';
-    } else {
-      h += '<div class="row" style="justify-content:flex-end;margin-top:8px">'
-        + '<button class="btn danger sm" style="width:auto" onclick="adminDeleteRole(\'' + esc(r.key) + '\')">Delete role</button></div>'
-        + '<div class="sub" style="margin-top:8px;font-weight:600">Pages</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">'
-        + pages.map(function (p) {
-            var on = (typeof roleAllows === "function") && roleAllows(r.key, p.tab);
-            return '<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">'
-              + '<input type="checkbox" style="width:18px;height:18px" ' + (on ? "checked" : "")
-              + ' onchange="adminTogglePage(\'' + esc(r.key) + '\',\'' + p.tab + '\')">' + esc(p.label) + '</label>';
-          }).join("") + '</div>'
-        + '<div class="sub" style="margin-top:12px;font-weight:600">Actions</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">'
-        + actions.map(function (a) {
-            var on = (typeof roleActionAllows === "function") && roleActionAllows(r.key, a.key);
-            return '<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">'
-              + '<input type="checkbox" style="width:18px;height:18px" ' + (on ? "checked" : "")
-              + ' onchange="adminToggleAction(\'' + esc(r.key) + '\',\'' + a.key + '\')">' + esc(a.label) + '</label>';
-          }).join("") + '</div>';
-    }
-    h += '</details>';
-  });
+  h += apMatrix(apPages().map(function (p) { return { key: p.tab, label: p.label }; }),
+    function (rk, tab) { return (typeof roleAllows === "function") && roleAllows(rk, tab); },
+    "adminTogglePage", "Pages");
+  h += apMatrix(apActions().map(function (a) { return { key: a.key, label: a.label }; }),
+    function (rk, ak) { return (typeof roleActionAllows === "function") && roleActionAllows(rk, ak); },
+    "adminToggleAction", "Actions");
+
+  /* deleting a role is rare and destructive — it does not belong among the checkboxes */
+  var del = roles.filter(function (r) { return r.key !== "owner"; });
+  if (del.length) {
+    h += '<div class="sub" style="margin:12px 2px 4px">Remove a role</div><div class="row" style="gap:6px;flex-wrap:wrap">'
+      + del.map(function (r) {
+          return '<button class="btn ghost sm" style="width:auto" onclick="adminDeleteRole(\'' + esc(r.key) + '\')">'
+            + esc(r.label) + ' ✕</button>';
+        }).join("") + '</div>';
+  }
   return h;
 }
 
@@ -207,6 +230,7 @@ function adminMenuToolsCard() {
 
 if (typeof window !== "undefined") {
   window.adminMembersTable = adminMembersTable; window.adminRolesHTML = adminRolesHTML;
+  window.apMatrix = apMatrix; window.apRoles = apRoles;
   window.adminMenuToolsCard = adminMenuToolsCard; window.apMembers = apMembers; window.apGroupTabs = apGroupTabs; window.apName = apName;
 
   window.apSort = function (key) {
