@@ -478,10 +478,11 @@ function rAdmin() {
   }
   const roleOpts = sel => roles.map(r => `<option value="${esc(r.key)}" ${sel === r.key ? "selected" : ""}>${esc(r.label)}</option>`).join("");
 
-  let h = `<div class="secthd"><h2>Admin</h2></div>
-    <p class="muted" style="margin:0 4px 6px">Manage who can sign in, what role they hold, and which tabs each role sees. Roles &amp; access sync to every device.</p>`;
-  h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
-    <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
+  /* ⭐ ONE SECTION FOR ONE SUBJECT. Ray, 2026-08-26: "Move admin PIN to roles and permissions. Also,
+     consolidate members and roles and permissions." Members, the roles that govern them and the PIN that
+     guards the page were three sections all answering "who gets in and what can they touch". The table and
+     the collapsed roles live in js/157. */
+  let h = "";
 
   /* ⭐ REAL SECTIONS, NOT ONE HEAP. Ray, 2026-08-26: "under admin, it's called admin PIN, but it shouldn't
      be called admin PIN… it's where you select the kinds of tools you want, and then the menu order, and
@@ -495,9 +496,12 @@ function rAdmin() {
      ⭐ AND TWO OF THEM LEAVE. He put it plainly: "the vehicles should be under inventory. They shouldn't
      even be in here" and "cards should be under money." They are cards composed by a function, not markup
      welded into this template, so moving them is a call from a different screen — see js/31 and js/40. */
-  const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
-  if (canTools && typeof orgToolsCard === "function") h += `<h2>Tools</h2>` + orgToolsCard();
-  if (canEditNav() && typeof navOrderCard === "function") h += `<h2>Menu order</h2>` + navOrderCard();
+  /* ⭐ MENU + TOOLS ARE ONE LIST (js/157). "You can also consolidate menu order since it has all of the
+     tabs… put a checkbox that lets you turn on and off each one, as well as change the order." They were
+     two screens editing the same menu. orgToolsCard() and navOrderCard() are still defined below —
+     unused now, kept until he's lived with the merged one. */
+  const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));
+  if ((canTools || canEditNav()) && typeof adminMenuToolsCard === "function") h += `<h2>Menu &amp; tools</h2>` + adminMenuToolsCard();
   /* ⛔ vehiclesCard() and adminAllCardsCard() are NOT called here any more — they render on Inventory →
      Vehicles (js/31) and Money → Cash (js/40). Both are still defined here; only the call site moved, so
      there is one definition and no copy to drift. */
@@ -510,7 +514,7 @@ function rAdmin() {
   if (owner && typeof sampleDataCard === "function") aiH += sampleDataCard(); // sample records for testing them
   if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
-  h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
+  h += `<div class="secthd" style="margin-top:0"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;
   else {
     h += `<div class="row" style="gap:8px;margin:0 2px 8px">
@@ -520,33 +524,16 @@ function rAdmin() {
         <option value="role"${ADMIN_SORT === "role" ? " selected" : ""}>By role</option>
         <option value="active"${ADMIN_SORT === "active" ? " selected" : ""}>Active first</option>
       </select></div>
-    <div id="acctlist">${adminAccountsHTML()}</div>`;
+    <div id="acctlist">${(typeof adminMembersTable === "function") ? adminMembersTable() : adminAccountsHTML()}</div>`;
   }
+  /* roles, collapsed — and the PIN, which is the same subject: who gets in */
+  if (typeof adminRolesHTML === "function") h += adminRolesHTML();
+  h += `<div class="card" style="margin-top:10px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
+    <div class="row" style="gap:6px"><button class="btn ghost sm" style="width:auto" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" style="width:auto" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
-  /* ---- roles & page access (role DEFINITIONS are the global registry — owner-only to edit) ---- */
-  if (owner) {
-    h += `<div class="secthd" style="margin-top:18px"><h2>Roles, pages &amp; actions</h2><button class="btn ghost sm" onclick="adminOpenAddRole()">+ Role</button></div>`;
-    roles.forEach(r => {
-      const builtin = r.key === "owner";
-      h += `<div class="card"><div class="row"><div class="grow"><div class="nm">${esc(r.label)} ${roleBadge(r.key)}</div>
-        <div class="sub">${esc(r.key)}${builtin ? " · built-in" : ""}</div></div>
-        ${builtin ? "" : `<button class="btn danger sm" onclick="adminDeleteRole('${esc(r.key)}')">Delete role</button>`}</div>`;
-      if (builtin) { h += `<div class="muted" style="margin-top:8px">Full access — every page + every action, including this Admin panel. Cannot be restricted.</div>`; }
-      else {
-        h += `<div class="sub" style="margin-top:10px;font-weight:600">Pages</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">` + ADMIN_PAGES.map(p => {
-          const on = roleAllows(r.key, p.tab);
-          return `<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">
-            <input type="checkbox" style="width:18px;height:18px" ${on ? "checked" : ""} onchange="adminTogglePage('${esc(r.key)}','${p.tab}')">${esc(p.label)}</label>`;
-        }).join("") + `</div>`;
-        h += `<div class="sub" style="margin-top:12px;font-weight:600">Actions</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px">` + ALL_ACTIONS.map(a => {
-          const on = roleActionAllows(r.key, a.key);
-          return `<label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600;white-space:nowrap">
-            <input type="checkbox" style="width:18px;height:18px" ${on ? "checked" : ""} onchange="adminToggleAction('${esc(r.key)}','${a.key}')">${esc(a.label)}</label>`;
-        }).join("") + `</div>`;
-      }
-      h += `</div>`;
-    });
-  }
+  /* ⛔ the old always-expanded roles block lived here — every role printing a checkbox per page AND per
+     action, permanently open, above the list he came to read. It is rendered collapsed by adminRolesHTML()
+     in js/157, inside the Members section. */
   h += `<h2 style="margin-top:18px">Activity</h2><div class="card"><div id="auditlog" class="sub">Loading recent changes…</div></div>`;
   view.innerHTML = h;
   if (window.loadPresenceUI) setTimeout(loadPresenceUI, 30);

@@ -60,14 +60,13 @@ var NAV_DEEP = [
   { group: "more", tab: "data", sub: "archive",        setter: "secGoDeep", icon: "🗄️", label: "Archive" },
   { group: "more", tab: "data", sub: "security",       setter: "secGoDeep", icon: "🔒", label: "Security" },
 
-  { group: "admin", tab: "admin", sub: "members",            setter: "secGoDeep", icon: "🧑", label: "Members", head: "People" },
-  { group: "admin", tab: "admin", sub: "roles-pages-actions", setter: "secGoDeep", icon: "🎛️", label: "Roles & permissions" },
-  { group: "admin", tab: "admin", sub: "activity",           setter: "secGoDeep", icon: "📜", label: "Activity", head: "Oversight" },
-  /* rAdmin's own <h2>Admin</h2> heads the PIN card — named for what is under it, not what the heading says */
-  { group: "admin", tab: "admin", sub: "admin",              setter: "secGoDeep", icon: "🔒", label: "Admin PIN" },
-  { group: "admin", tab: "admin", sub: "tools",              setter: "secGoDeep", icon: "🧩", label: "Tools", head: "This org" },
-  { group: "admin", tab: "admin", sub: "menu-order",         setter: "secGoDeep", icon: "🧭", label: "Menu order" },
-  { group: "admin", tab: "admin", sub: "ai-tools",           setter: "secGoDeep", icon: "🤖", label: "AI tools" },
+  /* ⭐ FOUR SECTIONS, DOWN FROM SEVEN. Ray, 2026-08-26 consolidated them himself: members + roles +
+     the admin PIN are one subject ("who gets in and what they can touch"), and menu order + tools were
+     two screens editing the same menu. */
+  { group: "admin", tab: "admin", sub: "members",    setter: "secGoDeep", icon: "🧑", label: "Members" },
+  { group: "admin", tab: "admin", sub: "menu-tools", setter: "secGoDeep", icon: "🧭", label: "Menu & tools" },
+  { group: "admin", tab: "admin", sub: "ai-tools",   setter: "secGoDeep", icon: "🤖", label: "AI tools" },
+  { group: "admin", tab: "admin", sub: "activity",   setter: "secGoDeep", icon: "📜", label: "Activity" },
 
   /* BUDGET. Review only exists while something is waiting, so it is filtered at render time. */
   { group: "budget", tab: "budget", sub: "review",   setter: "budgetSetSub", icon: "📥", label: "Review",
