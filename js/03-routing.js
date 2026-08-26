@@ -79,6 +79,12 @@ function render(){
   document.body.classList.toggle("wizon",!!WZON);
   /* the personal Today is a two-column dashboard, not a reading column — it opts out of the global .wrap
      cap so it can use a wide monitor. Toggled here (not in rToday) so LEAVING the page clears it. */
+  /* ⭐ the sidebar now carries every screen of these tabs (js/155), so their in-page button row is a
+     duplicate on desktop. ⚠️ Set ONLY for tabs whose third level is fully registered — hiding the row on a
+     screen the sidebar doesn't cover would make those sub-views unreachable, which is the regression this
+     whole change exists to prevent. */
+  document.body.classList.toggle("navdeep",
+    typeof navDeepCoveredTabs==="function" && navDeepCoveredTabs().indexOf(TAB)>=0);
   document.body.classList.toggle("wideday",TAB==="today"&&typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg());
   renderNav(); renderSubnav();
   // BLANK-SCREEN GUARD — a blank #view is the cardinal sin (it blanks the tool the owner runs his business on).
@@ -228,9 +234,19 @@ function renderNav(){
   nav.innerHTML = navGroupsOrdered().map(g=>{
     const tabs=groupTabs(g); if(!tabs.length) return "";
     const badge = g.key==="messages" ? `<span id="msgbadge" style="display:none;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px"></span>` : "";
-    return `<button data-group="${g.key}" class="${g.key===curKey?"on":""}"><span class="ic">${g.icon}</span>${g.label}${badge}</button>`;
+    /* ⭐ THE CURRENT GROUP OPENS AND SHOWS WHAT IS INSIDE IT (js/155). Ray, 2026-08-26: "if I clicked on a
+       parent tab in the sidebar, it could drop down the major sub tabs… it's way too easy to have things
+       hidden." Level-3 screens (A/R, Statements, Debts…) previously existed only as a variable inside one
+       module and appeared in no menu anywhere. Now they're rows, one click from here, with a live number
+       where there is one to show. Desktop only — the phone nav is a bottom bar with no room to expand. */
+    const deep = (g.key===curKey && typeof navDeepHTML==="function") ? navDeepHTML(g.key) : "";
+    return `<button data-group="${g.key}" class="${g.key===curKey?"on":""}"><span class="ic">${g.icon}</span>${g.label}${badge}</button>`
+      + (deep ? `<div class="navkids">${deep}</div>` : "");
   }).join("");
-  nav.querySelectorAll("button").forEach(b=>b.onclick=()=>navGroup(b.dataset.group));
+  /* ⚠️ scoped to [data-group]: the child rows are also <button>s inside <nav>, and the old selector would
+     have bound navGroup() over their own onclick — every deep link would have bounced back to the group's
+     default screen, which is exactly the bug this feature exists to remove. */
+  nav.querySelectorAll("button[data-group]").forEach(b=>b.onclick=()=>navGroup(b.dataset.group));
   if(typeof updateMsgBadge==="function") updateMsgBadge();
 }
 function renderSubnav(){

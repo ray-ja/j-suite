@@ -391,6 +391,26 @@
   @media(min-width:1180px){
     body.wideday .wrap{max-width:1560px;margin-left:max(224px,calc(50vw - 780px));margin-right:auto}
   }
+  /* ⭐ EXPANDED SIDEBAR CHILDREN (js/155). Only rendered for the open group, and only on desktop — the
+     phone nav is a horizontal bottom bar with nowhere to drop anything down. */
+  .navkids{display:none}
+  @media(min-width:900px){
+    .navkids{display:block;padding:2px 0 6px}
+    nav .navkids button.navsub{display:flex;align-items:center;gap:10px;width:100%;padding:8px 24px 8px 34px;
+      font-size:13.5px;font-weight:500;background:none;border:0;color:var(--muted);text-align:left;cursor:pointer}
+    nav .navkids button.navsub .ic{font-size:14px;flex:0 0 auto}
+    nav .navkids button.navsub:hover{color:var(--ink);background:rgba(127,141,160,.08)}
+    nav .navkids button.navsub.on{color:var(--brand-text);font-weight:700;background:rgba(127,141,160,.10)}
+    /* a live figure pinned to the row — the whole point is that $7.5k is visible without hunting */
+    .navbadge{margin-left:auto;font-size:11px;font-weight:700;color:var(--danger);
+      background:var(--soft);border-radius:9px;padding:1px 7px;font-variant-numeric:tabular-nums}
+    nav .navkids button.navsub.on .navbadge{color:var(--brand-text)}
+    /* ⭐ and the row inside the page goes away, because the sidebar is now saying the same thing. Scoped to
+       body.navdeep (set only for fully-covered tabs) and to a DIRECT child of #view, so no other screen's
+       sub-navigation is touched. */
+    body.navdeep #view > .subnav{display:none}
+    body.navdeep #subnav{display:none}
+  }
   /* (C) subtle interactive lift on clickable cards — desktop pointer only, so touch is unaffected */
   @media(hover:hover) and (pointer:fine){
     .card[onclick]{cursor:pointer;transition:transform .1s ease,box-shadow .15s ease}
