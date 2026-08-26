@@ -86,7 +86,7 @@ function render(){
   document.body.classList.toggle("navdeep",
     typeof navDeepCoveredTabs==="function" && navDeepCoveredTabs().indexOf(TAB)>=0);
   document.body.classList.toggle("wideday",TAB==="today"&&typeof orgIsPersonalOrg==="function"&&orgIsPersonalOrg());
-  renderNav(); renderSubnav();
+  renderNav(); renderSubnav(); if(typeof applyFab==="function")applyFab();   /* the "+" belongs to the screen, not to the app — see FAB_ADD */
   // BLANK-SCREEN GUARD — a blank #view is the cardinal sin (it blanks the tool the owner runs his business on).
   // A screen's render fn can throw on a stale-build device (old cached JS meets new data shape — e.g. the app
   // opened from a push notification that was sent on an OLD build) and, unguarded, leave #view empty → white
@@ -290,7 +290,54 @@ function renderSubnav(){
 }
 window.navGroup=function(key){ const g=NAV_GROUPS.find(x=>x.key===key); if(!g) return; const tabs=groupTabs(g); if(!tabs.length) return; TAB=(NAV_LAST[key]&&tabs.indexOf(NAV_LAST[key])>=0)?NAV_LAST[key]:tabs[0]; window.JOB_OPEN=null; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
 window.navSub=function(t){ NAV_LAST[tabGroup(t).key]=t; TAB=t; window.JOB_OPEN=null; if(t==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };
-document.getElementById("fab").onclick=()=>{
-  if(TAB==="quotes"||TAB==="jobs")openQuote();else if(TAB==="schedule")openJob();else if(TAB==="todo")openTodo();else if(TAB==="plan"){if(PLANSUB==="marketing")openMkt();}else if(TAB==="accounts"){ACCTSUB==="properties"?openProperty():openCustomer();}else if(TAB==="inventory")openInvItem();else if(TAB==="resale"){if(typeof openResale==="function")openResale();}else if(TAB==="admin"){if(typeof adminOpenCreate==="function")adminOpenCreate();}else if(TAB==="finance"){if(typeof openIncome==="function")openIncome();}else if(TAB==="escape"){if(typeof escAddOffSlot==="function")escAddOffSlot();}else if(TAB==="life"){if(typeof lifeFabAdd==="function")lifeFabAdd();}else if(TAB==="budget"){if(typeof budgetFabAdd==="function")budgetFabAdd();}else if(TAB==="receipts"){if(typeof rcptPickFiles==="function")rcptPickFiles();}else if(TAB==="team"){if(typeof teamEditMine==="function")teamEditMine();}else if(TAB==="recurring"){if(typeof recurPlanOpen==="function")recurPlanOpen();}else if(TAB==="map"||TAB==="data"||TAB==="route"||TAB==="leads"||TAB==="training"||TAB==="market"||TAB==="opps"||TAB==="sites"||TAB==="time"||TAB==="messages")return;else openCustomer();
+/* ---------- THE FLOATING "+" — an ALLOW-LIST, not a fallback ------------------------------------------
+   Ray, 2026-08-26: "theres also floating buttons in the bottom right for adding receipts and new leads, we
+   dont need those. we have places for those now."
+
+   ⚠️ THE "NEW LEADS" ONE WAS NOT A FEATURE — IT WAS THE `else`. The old chain named a dozen screens, listed
+   a few more as no-ops, and ended `else openCustomer()`. openCustomer(null) creates a record with
+   status:"Lead". So every screen nobody had thought about — Today, Journal, Workout, Shelf, Calendar,
+   Invoices, My Pay, Next Check, Booking, Playbook, Research — carried a big round "+" that made a new LEAD.
+   On the Journal page. The button wasn't put there for those screens; it just never learned to leave.
+
+   ⭐ SO THE RULE INVERTS: a screen gets the "+" only by naming an action here. Anything unlisted has no
+   button at all, rather than a button that does something from a different part of the app. Adding a screen
+   without adding a row now costs a missing button — visible, harmless — instead of a wrong write.
+   ⛔ And Leads keeps none: it has its own full-width "📞 New call / lead" (js/66), which is the "place for it"
+   he means. Same for receipts (Today's 📸 Snap a receipt + the Receipts screen). */
+const FAB_ADD = {
+  quotes:    ()=>openQuote(),
+  jobs:      ()=>openQuote(),
+  schedule:  ()=>openJob(),
+  todo:      ()=>openTodo(),
+  accounts:  ()=>{ ACCTSUB==="properties" ? openProperty() : openCustomer(); },
+  inventory: ()=>openInvItem(),
+  resale:    ()=>{ if(typeof openResale==="function")openResale(); },
+  admin:     ()=>{ if(typeof adminOpenCreate==="function")adminOpenCreate(); },
+  finance:   ()=>{ if(typeof openIncome==="function")openIncome(); },
+  escape:    ()=>{ if(typeof escAddOffSlot==="function")escAddOffSlot(); },
+  life:      ()=>{ if(typeof lifeFabAdd==="function")lifeFabAdd(); },
+  budget:    ()=>{ if(typeof budgetFabAdd==="function")budgetFabAdd(); },
+  receipts:  ()=>{ if(typeof rcptPickFiles==="function")rcptPickFiles(); },
+  team:      ()=>{ if(typeof teamEditMine==="function")teamEditMine(); },
+  recurring: ()=>{ if(typeof recurPlanOpen==="function")recurPlanOpen(); },
+  /* Plan only adds on its marketing sub-view — so it reports "no action" elsewhere and the button goes away
+     there too, instead of sitting inert. */
+  plan:      ()=>{ if(typeof PLANSUB!=="undefined" && PLANSUB==="marketing") openMkt(); }
 };
+function fabAction(tab){
+  if(tab==="plan") return (typeof PLANSUB!=="undefined" && PLANSUB==="marketing") ? FAB_ADD.plan : null;
+  return FAB_ADD[tab] || null;
+}
+/* called from render() — the button is present only when this screen has something to add */
+function applyFab(){
+  try{
+    const b=document.getElementById("fab"); if(!b) return;
+    const fn=fabAction(TAB);
+    b.style.display = fn ? "" : "none";
+    b.onclick = fn || null;
+  }catch(e){}
+}
+if(typeof window!=="undefined"){ window.fabAction=fabAction; window.applyFab=applyFab; window.FAB_ADD=FAB_ADD; }
+applyFab();
 
