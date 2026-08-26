@@ -65,9 +65,12 @@ function recRow(q, kind) {
 }
 
 function rReceivables() {
+  /* ⭐ what he is ACTUALLY owed, and the drafts to chase it (js/154). Above everything, because it opens
+     with the money that only LOOKS owed — chasing a customer who already paid is the worst outcome here. */
+  var _col = (typeof colOwedHTML === "function") ? colOwedHTML() : "";
   if (!recCanView()) return `<div class="card"><div class="nm">Owner / Admin only</div></div>`;
   const b = recBuckets();
-  let h = `<div class="card"><div class="row" style="gap:14px;flex-wrap:wrap">
+  let h = _col + `<div class="card"><div class="row" style="gap:14px;flex-wrap:wrap">
       <div class="grow"><div class="sub">Owed (outstanding balance)</div><div class="nm" style="font-size:22px;${b.overdue.length ? "color:var(--danger)" : ""}">${money(b.owed)}</div><div class="sub">${b.awaiting.length} invoice(s)${b.overdue.length ? ` · 🔴 ${b.overdue.length} overdue` : ""}</div></div>
       <div class="grow"><div class="sub">Ready to bill (unsent)</div><div class="nm" style="font-size:22px">${money(b.toBill)}</div><div class="sub">${b.unbilled.length} job(s) not invoiced</div></div>
     </div></div>`;
