@@ -72,3 +72,6 @@ org-exports/
 cf-token.txt
 *token*.txt
 *.token
+
+# --- Plaid bank-link credentials + per-item access tokens (server-only; NEVER commit) ---
+plaid-config.json

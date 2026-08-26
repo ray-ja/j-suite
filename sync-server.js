@@ -17,6 +17,7 @@
  */
 const http = require("http");
 const https = require("https");
+const plaid = require("./plaid.js");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -3597,6 +3598,71 @@ const server = http.createServer((req, res) => {
   // prompt + the client conversation in messages + the CAP_TOOLS schema, and returns {reply, actions}. Every action
   // is CLAMPED server-side (capParseAction) against THIS user's real data; the SERVER NEVER EXECUTES — the app reads
   // each action back as a confirm card and only runs the real client fn on a Confirm tap. Still writes NOTHING here.
+  /* ---------- PLAID BANK LINK (plaid.js) ------------------------------------------------------------
+     Ray, 2026-08-25: "plaid sounds fine."
+     ⛔ OWNER ONLY, and the access token never leaves this process. The browser sees a link_token (valid
+     four hours, useless on its own) and nothing else. Transactions land in the ledger PENDING, exactly
+     like a CSV import, so a bank feed still cannot move a number without his approval. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/link-token") {
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    return void plaid.plaidLinkToken(acct.id, (err, j) => {
+      if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message })); }
+      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration }));
+    });
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/exchange") {
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    return void readBodyUtf8(req, 1e4, (body) => {
+      let p2; try { p2 = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      plaid.plaidExchange(p2 && p2.public_token, p2 && p2.label, (err, out) => {
+        if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message })); }
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify(out));
+      });
+    });
+  }
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/plaid/status") {
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify(plaid.plaidStatus()));   // ⛔ contains no access token, by construction
+  }
+  /* pull new transactions. Returns ROWS for the client to hand to ledgerIngest — the server does not
+     write budget data here, so the whole approval path stays exactly where it already is. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/sync") {
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    return void readBodyUtf8(req, 1e4, (body) => {
+      let p3; try { p3 = JSON.parse(body); } catch (e) { p3 = {}; }
+      const itemId = p3 && p3.itemId;
+      plaid.plaidSyncItem(itemId, (err, out) => {
+        if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
+        const cfg = plaid.plaidCfg(), map = (cfg.items[itemId] || {}).accounts || {};
+        const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ itemId: itemId, cursor: out.cursor, rows: rows,
+          removed: out.removed, accounts: (out.accounts || []).map(a => ({ id: a.account_id,
+            name: a.name || a.official_name || "Account", mask: a.mask || "", type: a.type || "" })) }));
+      });
+    });
+  }
+  /* the client calls this only AFTER it has saved the rows — so a failed save simply repeats next time */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/commit") {
+    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    return void readBodyUtf8(req, 1e4, (body) => {
+      let p4; try { p4 = JSON.parse(body); } catch (e) { p4 = {}; }
+      if (p4.map) plaid.plaidMapAccount(p4.itemId, p4.map.plaidAccountId, p4.map.budgetAccountId);
+      if (p4.forget) plaid.plaidForget(p4.itemId);
+      else if (p4.cursor != null) plaid.plaidCommitCursor(p4.itemId, p4.cursor);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+  }
+
   if (req.method === "POST" && req.url.split("?")[0] === "/api/org-ai/assistant") {
     const ip = clientIp(req);
     const rc = rateCheck(ip);

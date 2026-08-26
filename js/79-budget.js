@@ -1408,6 +1408,8 @@ function budgetRenderSettings(){
   var body=document.getElementById("budget_body"); if(!body)return;
   var cats=actBudgetCats();
   var h=budgetBooksSection();
+  /* ⭐ bank connections (js/150) — a linked feed lands in Review, exactly like a CSV import */
+  if(typeof bankCardHTML==="function")h+=bankCardHTML();
   h+='<p class="muted" style="margin:12px 4px 8px;font-size:13px">Set up your spending + income categories. Each spending category is an <b>envelope</b> you assign cash to on the Month tab; an optional monthly <b>goal</b> powers the one-tap fill.'
     +(budgetIsAll()?' Showing categories across <b>all books</b>.':' Showing <b>'+esc(budgetBookName(BUDGET_BOOK))+'</b>.')+'</p>';
   h+='<button class="btn acc" style="width:100%;margin-bottom:10px" onclick="openBudgetCat(null)">＋ New category</button>';
