@@ -24,7 +24,35 @@
 var SEC_SUB = {};                       // tab -> the section title currently showing
 var SEC_SCREENS = ["data", "admin"];    // which screens get split
 
+/* ⭐ THE ORDER THE SECTIONS SHOULD READ IN, which is not the order the template happens to emit them.
+   Ray, 2026-08-26: "make logical groupings and make dropdowns for them." Declaring the order here means
+   both the tab row and the sidebar list can follow it without anyone editing the screen's markup — the
+   same reason this file splits the DOM instead of the source. Anything not listed keeps its DOM position
+   at the end, so a new section can never vanish by being forgotten here. */
+var SEC_ORDER = {
+  data:  ["sync", "appearance", "home-base", "pricing-rates", "job-costs-cogs", "cards", "security", "backups", "archive"],
+  admin: ["members", "roles-pages-actions", "admin", "activity"]
+};
+function secSortGroups(tab, groups) {
+  var want = SEC_ORDER[tab];
+  if (!want) return groups;
+  var rank = function (g) { var i = want.indexOf(g.key); return i < 0 ? 999 : i; };
+  return groups.slice().sort(function (a, b) { return rank(a) - rank(b) || groups.indexOf(a) - groups.indexOf(b); });
+}
+
 function secKey(title) { return String(title || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+
+/* ⭐ A HEADING IS EITHER A BARE <h2> OR THIS APP'S STANDARD HEADING ROW: <div class="secthd"><h2>…</h2>
+   …buttons…</div>. Settings uses the first form, Admin uses the second — so looking only for direct <h2>
+   children found ONE heading on Admin, which failed open and left that screen unsplit while three sidebar
+   links pointed at sections that would never exist. Dead links, silently. */
+function secHeadOf(node) {
+  if (!node) return null;
+  if (node.tagName === "H2") return node;
+  var kids = node.children;
+  if (kids && kids.length && kids[0] && kids[0].tagName === "H2") return kids[0];
+  return null;
+}
 
 /* the visible text of a heading, minus any org name interpolated into it */
 function secTitle(h2) {
@@ -41,20 +69,22 @@ function secSplit(tab) {
     if (view.querySelector("[data-secrow]")) return;              // already split this render
 
     var kids = Array.prototype.slice.call(view.children);
-    var heads = kids.filter(function (n) { return n.tagName === "H2"; });
+    var heads = kids.filter(function (n) { return !!secHeadOf(n); });
     /* ⛔ fail open: nothing to split, or only one section, means leave it alone */
     if (heads.length < 2) return;
 
     var pinned = [], groups = [], cur = null;
     kids.forEach(function (n) {
-      if (n.tagName === "H2") {
-        cur = { title: secTitle(n), key: secKey(secTitle(n)), nodes: [n] };
+      var h = secHeadOf(n);
+      if (h) {
+        cur = { title: secTitle(h), key: secKey(secTitle(h)), nodes: [n], bare: (n === h) };
         groups.push(cur);
       } else if (cur) cur.nodes.push(n);
       else pinned.push(n);                                        // above the first heading
     });
     if (!groups.length) return;
 
+    groups = secSortGroups(tab, groups);
     var want = SEC_SUB[tab];
     if (!groups.some(function (g) { return g.key === want; })) want = groups[0].key;
     SEC_SUB[tab] = want;
@@ -64,10 +94,15 @@ function secSplit(tab) {
       var box = document.createElement("div");
       box.setAttribute("data-sec", g.key);
       box.style.display = (g.key === want) ? "" : "none";
-      g.nodes[0].parentNode.insertBefore(box, g.nodes[0]);
+      /* ⚠️ APPENDED, not inserted where the heading was — the groups have been reordered, so putting each
+         wrapper back at its original position would undo the sort. Only one section is visible at a time,
+         so DOM order is invisible to him either way; it just has to be consistent. */
+      view.appendChild(box);
       g.nodes.forEach(function (n) { box.appendChild(n); });
-      /* the heading is the tab label now — showing it twice is the noise he objected to elsewhere */
-      if (g.nodes[0].tagName === "H2") g.nodes[0].style.display = "none";
+      /* ⚠️ ONLY a BARE heading is hidden. A .secthd row carries buttons — "+ Add member", "+ Helper",
+         "+ Role" — and hiding it to avoid showing the title twice would take those with it. A duplicated
+         word is a nuisance; a missing Add-member button is a broken screen. */
+      if (g.bare) g.nodes[0].style.display = "none";
     });
 
     var row = document.createElement("div");
@@ -92,7 +127,14 @@ function escSec(s) {
 
 if (typeof window !== "undefined") {
   window.secSplit = secSplit; window.SEC_SUB = SEC_SUB; window.SEC_SCREENS = SEC_SCREENS;
-  window.secKey = secKey; window.secTitle = secTitle;
+  window.secKey = secKey; window.secTitle = secTitle; window.secHeadOf = secHeadOf; window.SEC_ORDER = SEC_ORDER; window.secSortGroups = secSortGroups;
+  /* ⭐ the sidebar's deep rows call setter(sub) and may be coming from ANOTHER tab, where this screen has
+     not rendered yet — so this records the choice and re-renders, letting secSplit apply it. secGo below
+     is the in-page version, for when the sections are already on screen. */
+  window.secGoDeep = function (sub) {
+    if (typeof TAB !== "undefined") SEC_SUB[TAB] = sub;
+    if (typeof render === "function") render();
+  };
   window.secGo = function (tab, key) {
     SEC_SUB[tab] = key;
     var view = document.getElementById("view"); if (!view) return;

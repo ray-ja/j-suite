@@ -143,12 +143,23 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
      button row hidden — if EVERY sub-view that screen offers is registered in NAV_DEEP. Adding a screen to
      the sidebar widens what gets hidden, so this is the assertion that stops the next addition silently
      stranding a sub-view. */
-  const CUST = R("js/06-customers.js");
+  const CUST = R("js/06-customers.js"), SET = R("js/26-deep-quote-rate-editor-every.js"), ADM = R("js/32-admin.js");
+  /* ⭐ for the two DOM-split screens the sections come from their <h2> text at runtime, so derive the same
+     keys the same way secKey() does — this is what catches a renamed heading quietly breaking a sidebar
+     link, which no other test could see. */
+  const secKeyOf = t => String(t).split(" — ")[0].trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  /* ⚠️ decode entities — the source says "Roles, pages &amp; actions" but textContent yields "&", so a raw
+     read produced roles-pages-amp-actions and the test disagreed with reality rather than with the code. */
+  const unent = t => t.replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/&[a-z]+;/g, "");
+  const h2sIn = (src, from, to) => [...src.slice(src.indexOf(from), to ? src.indexOf(to) : undefined)
+      .matchAll(/<h2[^>]*>([^<]+)</g)].map(m => secKeyOf(unent(m[1].replace(/\$\{[^}]*\}/g, ""))));
   const screenSubs = {
     finance: [...FIN.matchAll(/finSub\('([a-z]+)'\)/g)].map(m => m[1]),
     budget: [...BUD.matchAll(/budgetSetSub\(\\?'([a-z]+)\\?'\)/g)].map(m => m[1]),
     accounts: [...CUST.matchAll(/ppGo\('accounts','([a-z]+)'\)/g)].map(m => m[1]),
-    team: []
+    team: [],
+    data: h2sIn(SET, "function rData()"),
+    admin: h2sIn(ADM, "function rAdmin()")
   };
   c.navDeepCoveredTabs().forEach(tab => {
     const want = [...new Set(screenSubs[tab] || [])];
@@ -171,7 +182,10 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
   /* ⚠️ a screen NOT in the registry must keep its own row */
   ok("⛔ receipts keeps its own row — nothing of it is registered", c.navDeepCoveredTabs().indexOf("receipts") < 0);
   ok("⛔ so does inventory", c.navDeepCoveredTabs().indexOf("inventory") < 0);
-  ok("⛔ and admin, until its sections are registered", c.navDeepCoveredTabs().indexOf("admin") < 0);
+  /* ⭐ admin and settings ARE covered now — their sections are registered, so their in-page tab row is a
+     duplicate of the sidebar on desktop, exactly like finance and budget. */
+  ok("⭐ settings is covered, so its sections must all be listed", c.navDeepCoveredTabs().indexOf("data") >= 0);
+  ok("⭐ ...and admin", c.navDeepCoveredTabs().indexOf("admin") >= 0);
 }
 
 console.log("\n--- the phone is untouched ---");
@@ -230,8 +244,14 @@ console.log("\n--- ⭐ section tabs: splitting a monolith without cutting it ope
   const c1 = run(S1.view);
   const secs = S1.view.children.filter(x => x.attrs["data-sec"]);
   eq("⭐ Settings splits into its nine sections", secs.length, 9);
-  eq("...keyed readably", secs.map(x => x.attrs["data-sec"]).join(","),
-    "sync,appearance,cards,pricing-rates,job-costs-cogs,home-base,archive,backups,security");
+  /* ⭐ the ORDER is declared in SEC_ORDER, not inherited from whatever order the template emits */
+  eq("...ordered logically, not as the template happens to emit them", secs.map(x => x.attrs["data-sec"]).join(","),
+    "sync,appearance,home-base,pricing-rates,job-costs-cogs,cards,security,backups,archive");
+  ok("⛔ a section missing from SEC_ORDER still appears, at the end", (function () {
+    const X = build(["Sync", "Brand New Thing"], false); run(X.view);
+    const k = X.view.children.filter(y => y.attrs["data-sec"]).map(y => y.attrs["data-sec"]);
+    return k.join() === "sync,brand-new-thing";
+  })());
   eq("⭐ only one is visible", secs.filter(x => x.style.display !== "none").length, 1);
   ok("...the first, by default", secs[0].style.display !== "none");
   const row = S1.view.children.find(x => x.attrs["data-secrow"]);
@@ -259,6 +279,31 @@ console.log("\n--- ⭐ section tabs: splitting a monolith without cutting it ope
   ok("⛔ a screen with no headings is left alone", !none.view.children.some(x => x.attrs["data-secrow"]));
   const notlisted = build(["A", "B"], false); run(notlisted.view, "quotes");
   ok("⛔ a screen that isn't opted in is never touched", !notlisted.view.children.some(x => x.attrs["data-secrow"]));
+
+  /* ⭐ ADMIN'S HEADINGS ARE NESTED in <div class="secthd"><h2>…</h2><button>…</button></div>. Looking only
+     for bare <h2> children found ONE heading there, failed open, and left three sidebar links pointing at
+     sections that would never exist. */
+  const nested = (function () {
+    const view = el("div");
+    ["Admin", "Members", "Activity"].forEach((t, i) => {
+      if (i === 2) { const h = el("h2"); h.textContent = t; view.appendChild(h); }   // Activity is bare
+      else { const row = el("div"); row.className = "secthd";
+             const h = el("h2"); h.textContent = t; row.appendChild(h);
+             const btn = el("button"); btn.textContent = "+ Add member"; row.appendChild(btn);
+             view.appendChild(row); }
+      view.appendChild(el("div"));
+    });
+    return view;
+  })();
+  run(nested, "admin");
+  const nsecs = nested.children.filter(x => x.attrs["data-sec"]);
+  eq("⭐ a heading nested in .secthd is still a section", nsecs.length, 3);
+  eq("...keyed from its text", nsecs.map(x => x.attrs["data-sec"]).sort().join(), "activity,admin,members");
+  /* ⚠️ and the buttons in that row must survive */
+  const memberRow = nsecs.find(x => x.attrs["data-sec"] === "members").children[0];
+  ok("⛔ a .secthd heading row is NOT hidden — it carries the Add-member button", memberRow.style.display !== "none");
+  ok("...and that button is still in it", memberRow.children.some(k => k.tagName === "BUTTON"));
+  ok("the reason is recorded", /a missing Add-member button is a broken screen/.test(PROSE(SEC)));
   ok("⭐ and any error leaves the page as rendered", /catch \(e\) \{ \/\* ⛔ fail open/.test(SEC));
   ok("the reason for the DOM-not-source approach is recorded", /loses their backups page/.test(PROSE(SEC)));
 

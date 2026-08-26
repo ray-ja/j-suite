@@ -1,7 +1,7 @@
 /* ---------- MAP (satellite lot estimator + lead pins) ---------- */
 let MAP=null,MAP_MODE="draw",MPOLY=[],MCOUNT=[],MSQFT=325,MPOLYL=null,MCOUNTL=null,MPINL=null;
 function rMap(){
-  view.innerHTML=`<div class="secthd"><h2>Map · quote &amp; leads</h2></div>
+  view.innerHTML=`<div class="secthd"><h2>Map · every place &amp; property</h2></div>
     <div class="maptop"><input id="map_search" placeholder="Search an address…" style="flex:1;min-width:140px" onkeydown="if(event.key==='Enter')mapSearch()"><button class="btn ghost sm" onclick="mapSearch()">Go</button></div>
     <div class="maptop">
       <button class="subbtn on" id="mb_draw" onclick="setMapMode('draw')">▱ Draw lot</button>
@@ -11,6 +11,7 @@ function rMap(){
     </div>
     <div class="maptop"><label style="margin:0">Sq ft / space</label><input id="map_sqft" type="number" value="${MSQFT}" style="width:80px" onchange="MSQFT=parseFloat(this.value)||325;mapRecalc()"><span class="muted">~325 incl. drive aisles</span></div>
     <div id="map"></div>
+    <div id="map_legend" class="sub" style="margin-top:6px"></div>
     <div class="card" id="map_res" style="margin-top:10px"><span class="muted">Pick "Draw lot", then tap the corners of a parking lot on the satellite view — it estimates the number of spaces and quotes it. Or drop pins to map leads.</span></div>
     <p class="muted" style="margin-top:8px">Ownership lookup: <a href="https://gis.darenc.com/" target="_blank" rel="noopener">Dare County GIS</a> · <a href="https://www.maps.arcgis.com/" target="_blank" rel="noopener">Currituck GIS</a>. The map needs an internet connection.</p>`;
   setTimeout(initMap,40);
@@ -62,9 +63,48 @@ window.quoteLot=function(spaces){
   TAB="quotes";render();
   openQuote(null,"",[{serviceId:"",name:"Parking-lot cleanup — "+spaces+" spaces",unit:"quote",price:price,qty:1}]);
 };
-function renderPlaces(){if(!MPINL)return;MPINL.clearLayers();(D().places||[]).filter(p=>!p.deleted).forEach(addPlaceMarker);}
+/* ⭐ EVERYTHING ON ONE MAP. Ray, 2026-08-26: "the map page should be under reference and it should show
+   the location of every place and property." It only ever drew `places` — his customers' properties, which
+   are the addresses he actually drives to, were not on it at all.
+
+   ⚠️ AND IT DIDN'T CHECK COORDINATES. His "Transfer Station - Currituck" has lat:null; L.marker([null,null])
+   throws "Invalid LatLng", and one bad record would take the whole marker layer down with it — every pin
+   gone, no error he'd ever see. Three of his records have no coordinates today. They are now counted and
+   reported under the map rather than silently dropped or allowed to break it. */
+function mapHasLL(x){ return x && isFinite(+x.lat) && isFinite(+x.lng) && !(+x.lat===0 && +x.lng===0); }
+function mapMissing(){
+  var a=(D().places||[]).filter(p=>p&&!p.deleted&&!mapHasLL(p)).length;
+  var b=(D().properties||[]).filter(p=>p&&!p.deleted&&!mapHasLL(p)).length;
+  return a+b;
+}
+function renderPlaces(){
+  if(!MPINL)return; MPINL.clearLayers();
+  var pts=[];
+  (D().places||[]).filter(p=>p&&!p.deleted&&mapHasLL(p)).forEach(function(p){ addPlaceMarker(p); pts.push([+p.lat,+p.lng]); });
+  (D().properties||[]).filter(p=>p&&!p.deleted&&mapHasLL(p)).forEach(function(p){ addPropMarker(p); pts.push([+p.lat,+p.lng]); });
+  /* ⭐ frame everything he owns rather than a hardcoded view of the Outer Banks */
+  try{ if(pts.length>1&&MAP) MAP.fitBounds(pts,{padding:[40,40],maxZoom:15});
+       else if(pts.length===1&&MAP) MAP.setView(pts[0],14); }catch(e){}
+  var note=document.getElementById("map_legend");
+  if(note){
+    var miss=mapMissing();
+    note.innerHTML='<span style="color:#4da3ff">●</span> places &nbsp; <span style="color:#ffd24d">●</span> customer properties'
+      + (miss? ' &nbsp;·&nbsp; <span class="muted">'+miss+' without coordinates '+(miss===1?"isn't":"aren't")+' shown</span>' : '');
+  }
+}
 function addPlaceMarker(p){
-  L.marker([p.lat,p.lng]).addTo(MPINL).bindPopup("<b>"+esc(p.name)+"</b>"+(p.owner?"<br>"+esc(p.owner):"")+(p.notes?"<br>"+esc(p.notes):"")+'<br><a href="#" onclick="delPlace(\''+p.id+'\');return false">remove</a>');
+  L.circleMarker([+p.lat,+p.lng],{radius:7,color:"#4da3ff",fillColor:"#4da3ff",fillOpacity:.85,weight:2})
+   .addTo(MPINL).bindPopup("<b>"+esc(p.name||"Place")+"</b>"+(p.category?"<br>"+esc(p.category):"")+(p.address?"<br>"+esc(p.address):"")+'<br><a href="#" onclick="delPlace(\''+p.id+'\');return false">remove</a>');
+}
+/* a customer's property — the addresses he actually drives to */
+function addPropMarker(p){
+  var who="";
+  try{
+    var ids=(p.customerIds||[]).filter(Boolean);
+    who=ids.map(function(id){ return (typeof custName==="function")?custName(id):""; }).filter(Boolean).join(", ");
+  }catch(e){}
+  L.circleMarker([+p.lat,+p.lng],{radius:7,color:"#ffd24d",fillColor:"#ffd24d",fillOpacity:.85,weight:2})
+   .addTo(MPINL).bindPopup("<b>"+esc(p.label||"Property")+"</b>"+(who?"<br>"+esc(who):"")+(p.address?"<br>"+esc(p.address):""));
 }
 function addPlacePrompt(latlng){
   const name=prompt("Property / lead name:");if(!name)return;

@@ -162,7 +162,7 @@ const NAV_GROUPS = [
      sales route planner, and then it looks like there's two versions of that." Renamed in
      TAB_META so they read as different, and placed beside Schedule and Time where the day's
      driving belongs. Map comes too — it is where the pins the planner uses get dropped. */
-  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time","route","routes","map"] },
+  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time","route","routes"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale"] },
@@ -196,10 +196,14 @@ const NAV_GROUPS = [
   /* ⚠️ To-Do was in here AND a top-level tab — Ray: "it looks like to do is under data, but then
      to do is also its own tab. To do shouldn't be under data." And this group was called "Data"
      while the Settings screen's tab is ALSO `data`, so one word meant two things in one menu. */
-  { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research"] },
+  /* ⭐ MAP LIVES HERE. Ray, 2026-08-26: "the map page should be under reference and it should show
+     the location of every place and property." It is a reference view of where everything is — not
+     a thing you do on a job. */
+  { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research","map"] },
   /* "Misc" is where things go to be lost. These are all one thing: planning the business. */
   { key:"grow",      label:"Growth",    icon:"📈", tabs:["plan","market","opps","sites","buildplan","training"] },
-  { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
+  /* approvals folded in — it is oversight, and it was a tab with no menu of its own */
+  { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin","approvals"] },
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {

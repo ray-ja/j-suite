@@ -46,6 +46,26 @@ var NAV_DEEP = [
   { group: "team", tab: "accounts", sub: "properties", setter: "ppGoDeep", icon: "🏠", label: "Properties" },
   { group: "team", tab: "accounts", sub: "places",     setter: "ppGoDeep", icon: "📍", label: "Places" },
 
+  /* ⭐ SETTINGS + ADMIN, LISTED. Ray, 2026-08-26: "we can't have all those unlisted sub pages. make
+     logical groupings and make dropdowns for them." These are the sections js/156 splits out of two
+     monolithic screens; registering them here is what turns them from tabs you have to be on the page to
+     see into destinations in the sidebar. `head` starts a labelled group in the list. */
+  { group: "more", tab: "data", sub: "sync",           setter: "secGoDeep", icon: "🔄", label: "Sync", head: "This device" },
+  { group: "more", tab: "data", sub: "appearance",     setter: "secGoDeep", icon: "🎨", label: "Appearance" },
+  { group: "more", tab: "data", sub: "cards",          setter: "secGoDeep", icon: "💳", label: "My cards" },
+  { group: "more", tab: "data", sub: "home-base",      setter: "secGoDeep", icon: "📍", label: "Home base", head: "This business" },
+  { group: "more", tab: "data", sub: "pricing-rates",  setter: "secGoDeep", icon: "🏷️", label: "Pricing rates" },
+  { group: "more", tab: "data", sub: "job-costs-cogs", setter: "secGoDeep", icon: "🧮", label: "Job costs" },
+  { group: "more", tab: "data", sub: "backups",        setter: "secGoDeep", icon: "💾", label: "Backups", head: "Data & safety" },
+  { group: "more", tab: "data", sub: "archive",        setter: "secGoDeep", icon: "🗄️", label: "Archive" },
+  { group: "more", tab: "data", sub: "security",       setter: "secGoDeep", icon: "🔒", label: "Security" },
+
+  { group: "admin", tab: "admin", sub: "members",            setter: "secGoDeep", icon: "🧑", label: "Members", head: "People" },
+  { group: "admin", tab: "admin", sub: "roles-pages-actions", setter: "secGoDeep", icon: "🎛️", label: "Roles & permissions" },
+  { group: "admin", tab: "admin", sub: "activity",           setter: "secGoDeep", icon: "📜", label: "Activity", head: "Oversight" },
+  /* rAdmin's own <h2>Admin</h2> heads the PIN card — named for what is under it, not what the heading says */
+  { group: "admin", tab: "admin", sub: "admin",              setter: "secGoDeep", icon: "🔒", label: "Admin PIN" },
+
   /* BUDGET. Review only exists while something is waiting, so it is filtered at render time. */
   { group: "budget", tab: "budget", sub: "review",   setter: "budgetSetSub", icon: "📥", label: "Review",
     only: function () { return (typeof ledgerInboxCount === "function") && ledgerInboxCount() > 0; } },
@@ -117,6 +137,7 @@ function navDeepCurrent() {
     if (TAB === "budget" && typeof BUDGET_SUB !== "undefined") return "budget/" + BUDGET_SUB;
     if (TAB === "team") return "team/";
     if (TAB === "accounts" && typeof ACCTSUB !== "undefined") return "accounts/" + ACCTSUB;
+    if ((TAB === "data" || TAB === "admin") && typeof SEC_SUB !== "undefined") return TAB + "/" + (SEC_SUB[TAB] || "");
   } catch (e) {}
   return "";
 }
@@ -148,13 +169,18 @@ function navDeepHTML(groupKey) {
   if (!list.length) return "";
   if (navDeepRedundant(groupKey, list)) return "";      // ⭐ see navDeepRedundant
   var cur = navDeepCurrent();
+  var lastHead = "";
   return list.map(function (d) {
+    /* ⭐ a small label starts each logical group — "This device", "This business", "Data & safety" — so a
+       long list reads as sections rather than as one undifferentiated column of buttons. */
+    var head = (d.head && d.head !== lastHead) ? ('<div class="navhead">' + esc(d.head) + '</div>') : "";
+    if (d.head) lastHead = d.head;
     var key = d.tab + "/" + (d.sub || "");
     var badge = NAV_BADGES[key] ? NAV_BADGES[key]() : "";
     var isCur = d.plain ? (typeof TAB !== "undefined" && TAB === d.tab) : (cur === key);
     var go = d.plain ? ('navSub(\'' + d.tab + '\')')
                      : ('navDeepGo(\'' + d.tab + '\',\'' + d.sub + '\',\'' + d.setter + '\')');
-    return '<button class="navsub' + (isCur ? " on" : "") + '"'
+    return head + '<button class="navsub' + (isCur ? " on" : "") + '"'
       + ' data-deep="' + esc(key) + '"'
       + ' onclick="' + go + '">'
       + '<span class="ic">' + d.icon + '</span>' + esc(d.label)
