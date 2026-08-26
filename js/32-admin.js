@@ -483,14 +483,32 @@ function rAdmin() {
   h += `<div class="card" style="margin-bottom:6px"><div class="row"><div class="grow"><div class="nm" style="font-size:15px">🔒 Admin PIN</div><div class="sub">${me && me.adminPin ? "On — Admin asks for a PIN each session" : "Off — anyone on your unlocked phone can open Admin"}</div></div>
     <div class="row" style="gap:6px"><button class="btn ghost sm" onclick="adminSetPin()">${me && me.adminPin ? "Change" : "Set PIN"}</button>${me && me.adminPin ? `<button class="btn ghost sm" onclick="adminRemovePin()">Remove</button>` : ""}</div></div></div>`;
 
+  /* ⭐ REAL SECTIONS, NOT ONE HEAP. Ray, 2026-08-26: "under admin, it's called admin PIN, but it shouldn't
+     be called admin PIN… it's where you select the kinds of tools you want, and then the menu order, and
+     then vehicles, cards… this is still a little bit of a mess."
+
+     He was right and the cause was mechanical: every one of these cards was appended with no <h2> of its
+     own, so the section splitter (js/156) swept them ALL under the page's first heading — "Admin" — and the
+     sidebar honestly labelled that heap after the one card it could name. A heading each turns them into
+     the separate, findable sections they always were.
+
+     ⭐ AND TWO OF THEM LEAVE. He put it plainly: "the vehicles should be under inventory. They shouldn't
+     even be in here" and "cards should be under money." They are cards composed by a function, not markup
+     welded into this template, so moving them is a call from a different screen — see js/31 and js/40. */
   const canTools = owner || ((typeof canDo === "function") && canDo("edit-tools"));   // module toggles: owner OR manager-tier
-  if (canTools && typeof orgToolsCard === "function") h += orgToolsCard();   // per-org tool visibility
-  if (canEditNav() && typeof navOrderCard === "function") h += navOrderCard();   // per-org left-nav GROUP order (owner/manager)
-  if (canManageVehicles() && typeof vehiclesCard === "function") h += vehiclesCard();   // managed company-truck list (owner/settings-manager)
-  if (typeof adminAllCardsCard === "function") h += adminAllCardsCard();   // 💳 Cards — ONE consolidated table: every member's personal last-4s + company cards + unassigned-on-receipts (rows reuse the js/94 ops; owner/manager-visible, cross-user writes owner-only) — js/105
-  if (owner && typeof sampleDataCard === "function") h += sampleDataCard();   // Load/Clear obvious SAMPLE records for the enabled org tools (owner-only)
-  if (owner && typeof orgAiCard === "function") h += orgAiCard();   // per-org AI assistant setup — owner-only (holds the API key / secrets)
-  if (typeof workshopCard === "function") h += workshopCard();   // WORKSHOP: user-defined scheduled AI tasks — owner/admin (self-gates finance/broadcast/propose to owner)
+  if (canTools && typeof orgToolsCard === "function") h += `<h2>Tools</h2>` + orgToolsCard();
+  if (canEditNav() && typeof navOrderCard === "function") h += `<h2>Menu order</h2>` + navOrderCard();
+  /* ⛔ vehiclesCard() and adminAllCardsCard() are NOT called here any more — they render on Inventory →
+     Vehicles (js/31) and Money → Cash (js/40). Both are still defined here; only the call site moved, so
+     there is one definition and no copy to drift. */
+
+  /* AI tools — his grouping: "your scheduled AI tasks, that should be separate under, like, AI tools. Same
+     with the lot solutions assistant… Sample data should be somewhere else, maybe also under AI tools." */
+  let aiH = "";
+  if (owner && typeof orgAiCard === "function") aiH += orgAiCard();          // the assistant's setup + key
+  if (typeof workshopCard === "function") aiH += workshopCard();             // scheduled AI tasks
+  if (owner && typeof sampleDataCard === "function") aiH += sampleDataCard(); // sample records for testing them
+  if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:6px"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
   if (!accs.length) h += `<div class="card"><div class="muted">No members yet. Tap “+ Add member”.</div></div>`;

@@ -202,8 +202,10 @@ const NAV_GROUPS = [
   { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research","map"] },
   /* "Misc" is where things go to be lost. These are all one thing: planning the business. */
   { key:"grow",      label:"Growth",    icon:"📈", tabs:["plan","market","opps","sites","buildplan","training"] },
-  /* approvals folded in — it is oversight, and it was a tab with no menu of its own */
-  { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin","approvals"] },
+  /* ⛔ approvals is NOT a tab. Ray, 2026-08-26: "it doesn't even need a tab. It just needs to be a box on
+     today that's always there." The screen stays routable so any existing link still works — it just isn't
+     something he has to go and find. */
+  { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {

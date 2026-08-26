@@ -151,8 +151,11 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
   /* ⚠️ decode entities — the source says "Roles, pages &amp; actions" but textContent yields "&", so a raw
      read produced roles-pages-amp-actions and the test disagreed with reality rather than with the code. */
   const unent = t => t.replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/&[a-z]+;/g, "");
-  const h2sIn = (src, from, to) => [...src.slice(src.indexOf(from), to ? src.indexOf(to) : undefined)
-      .matchAll(/<h2[^>]*>([^<]+)</g)].map(m => secKeyOf(unent(m[1].replace(/\$\{[^}]*\}/g, ""))));
+  /* ⚠️ strip comments FIRST. A comment explaining that these cards had "no <h2> of its own" contains the
+     literal string <h2>, and the extractor happily read the prose as a section name. Fourth time this
+     session that matching raw source has found my own writing instead of the code. */
+  const h2sIn = (src0, from, to) => { const src = CODE(src0); return [...src.slice(src.indexOf(from), to ? src.indexOf(to) : undefined)
+      .matchAll(/<h2[^>]*>([^<]+)</g)].map(m => secKeyOf(unent(m[1].replace(/\$\{[^}]*\}/g, "")))); };
   const screenSubs = {
     finance: [...FIN.matchAll(/finSub\('([a-z]+)'\)/g)].map(m => m[1]),
     budget: [...BUD.matchAll(/budgetSetSub\(\\?'([a-z]+)\\?'\)/g)].map(m => m[1]),

@@ -25,12 +25,20 @@ function rToday(){
     return;
   }
 
-  // 0) Approvals waiting (admin only) — above everything
+  /* ⭐ 0) APPROVALS — A PERMANENT BOX, NOT A TAB. Ray, 2026-08-26: "Approvals needs to go under today.
+     Because if Cap needs to do something, we don't wanna wait on it… it doesn't even need a tab. It just
+     needs to be a box on today that's always there."
+
+     ⚠️ It used to render ONLY when something was pending, which is why he never learned the queue existed:
+     a box that appears and disappears teaches nothing, and a proposal could sit for days behind a tab he
+     had no reason to open. Always drawn now, so it is a place he knows — quiet when empty, and the empty
+     state is deliberately one flat line rather than a card competing for attention. */
   if(owner && todayHas("approvals") && typeof apprPending==="function"){
     const _pend=apprPending();
-    if(_pend.length){
-      h+=`<div class="secthd"><h2>📥 Approvals waiting</h2><span class="ct">${_pend.length}</span></div><div class="card" style="border-left:4px solid var(--accent)">`+_pend.map(x=>{const pc=x.pc;return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(pc.summary||pc.collection||"Change")}</div><div class="sub">Cap wants your okay · ${esc(pc.collection||"")}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn acc sm" onclick="apprApprove('${x.biz}','${pc.id}')">✓</button><button class="btn ghost sm" onclick="apprReject('${x.biz}','${pc.id}')">✕</button></div></div>`;}).join("")+`</div>`;
-    }
+    h+=`<div class="secthd"><h2>📥 Approvals</h2>${_pend.length?`<span class="ct">${_pend.length}</span>`:""}</div>`;
+    h+= _pend.length
+      ? `<div class="card" style="border-left:4px solid var(--accent)">`+_pend.map(x=>{const pc=x.pc;return `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">${esc(pc.summary||pc.collection||"Change")}</div><div class="sub">Cap wants your okay · ${esc(pc.collection||"")}</div></div><div class="row" style="gap:6px;flex:0 0 auto"><button class="btn acc sm" onclick="apprApprove('${x.biz}','${pc.id}')">✓</button><button class="btn ghost sm" onclick="apprReject('${x.biz}','${pc.id}')">✕</button></div></div>`;}).join("")+`</div>`
+      : `<div class="card" style="padding:10px 14px"><div class="sub">Nothing waiting for your okay.</div></div>`;
   }
 
   // 0.5) New-crew quick-start — first-login dismissible checklist (js/86). Shows until done/dismissed.

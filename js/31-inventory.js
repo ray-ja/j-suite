@@ -394,7 +394,11 @@ function invRenderVehicles(){
   var canAdmin=(typeof canManageVehicles==="function")&&canManageVehicles();
 
   var h='<div class="secthd"><h2>🚚 Vehicles</h2><span class="ct">'+(invVeh.length+reg.length)+'</span></div>';
-  h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">Every driveable asset in one place — <b>inventory vehicles</b> (add/edit here) and the <b>company trucks</b> managed in Admin. The <b>driver</b> picks one of these at clock-in.</p>';
+  /* ⭐ MANAGED HERE TOO, NOT IN ADMIN. Ray, 2026-08-26: "honestly, the vehicles should be under inventory.
+     They shouldn't even be in here." This screen already LISTED the company trucks while the only way to
+     EDIT them was a card buried on the Admin page — see one place, change it in another. vehiclesCard()
+     (js/32) is appended below, so seeing and managing are finally the same screen. Called, not copied. */
+  h+='<p class="muted" style="margin:0 4px 8px;font-size:13px">Every driveable asset in one place — <b>inventory vehicles</b> and the <b>company trucks + trailers</b>, both added and edited right here. The <b>driver</b> picks one of these at clock-in.</p>';
   h+='<button class="btn ghost" style="width:calc(100% - 8px);margin:0 4px 10px" onclick="tcAddMyVehicle(false)">🚗 ＋ Add my vehicle (for clock-in)</button>';
 
   h+='<div class="secthd"><h2>Inventory vehicles</h2><span class="ct">'+invVeh.length+'</span></div>';
@@ -415,6 +419,10 @@ function invRenderVehicles(){
   if(!regCompany.length)h+='<div class="empty" style="margin:0 4px">No company-owned trucks or trailers yet.'+(canAdmin?' Add them in Admin.':'')+'</div>';
   else h+='<div class="card" style="padding:6px 10px">'+regCompany.map(invRegTruckRow).join("")+'</div>';
   h+='<p class="muted" style="margin:8px 4px;font-size:12.5px">Company trucks are managed by the owner/admin in <b>Admin</b> — shown here read-only so every vehicle + its plate is visible in one place.</p>';
+  /* ⭐ the company-truck manager, moved out of Admin (see the note above). Appended last so the list he
+     came here to read stays at the top. */
+  if((typeof canManageVehicles==="function")&&canManageVehicles()&&typeof vehiclesCard==="function")
+    h+=vehiclesCard();
   body.innerHTML=h;
 }
 /* an editable inventory vehicle row — personal vs company marked clearly, plate/owner/location surfaced */

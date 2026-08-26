@@ -65,6 +65,9 @@ var NAV_DEEP = [
   { group: "admin", tab: "admin", sub: "activity",           setter: "secGoDeep", icon: "📜", label: "Activity", head: "Oversight" },
   /* rAdmin's own <h2>Admin</h2> heads the PIN card — named for what is under it, not what the heading says */
   { group: "admin", tab: "admin", sub: "admin",              setter: "secGoDeep", icon: "🔒", label: "Admin PIN" },
+  { group: "admin", tab: "admin", sub: "tools",              setter: "secGoDeep", icon: "🧩", label: "Tools", head: "This org" },
+  { group: "admin", tab: "admin", sub: "menu-order",         setter: "secGoDeep", icon: "🧭", label: "Menu order" },
+  { group: "admin", tab: "admin", sub: "ai-tools",           setter: "secGoDeep", icon: "🤖", label: "AI tools" },
 
   /* BUDGET. Review only exists while something is waiting, so it is filtered at render time. */
   { group: "budget", tab: "budget", sub: "review",   setter: "budgetSetSub", icon: "📥", label: "Review",

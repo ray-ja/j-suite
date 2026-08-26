@@ -121,7 +121,13 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 Job P&L</button>
     <button class="subbtn ${FINSUB === "analysis" ? "on" : ""}" onclick="finSub('analysis')">📈 Analysis</button></div>`;
   if (FINSUB === "overview" && typeof rFinOverview === "function") { view.innerHTML = sub + '<div class="pgcols">' + rFinOverview() + '</div>'; return; }
-  if (FINSUB === "cash" && typeof rFinCash === "function") { view.innerHTML = sub + rFinCash(); return; }
+  /* ⭐ CARDS LIVE UNDER MONEY. Ray, 2026-08-26: "cards should be under money. Yeah. That makes more sense."
+     Composed by adminAllCardsCard() (js/105) — called, not copied. */
+  if (FINSUB === "cash" && typeof rFinCash === "function") {
+    view.innerHTML = sub + rFinCash()
+      + ((typeof adminAllCardsCard === "function") ? adminAllCardsCard() : "");
+    return;
+  }
   if (FINSUB === "paybacks" && typeof instPageHTML === "function") { view.innerHTML = sub + instPageHTML(); return; }
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }

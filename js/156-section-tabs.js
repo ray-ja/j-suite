@@ -31,7 +31,7 @@ var SEC_SCREENS = ["data", "admin"];    // which screens get split
    at the end, so a new section can never vanish by being forgotten here. */
 var SEC_ORDER = {
   data:  ["sync", "appearance", "home-base", "pricing-rates", "job-costs-cogs", "cards", "security", "backups", "archive"],
-  admin: ["members", "roles-pages-actions", "admin", "activity"]
+  admin: ["members", "roles-pages-actions", "tools", "menu-order", "ai-tools", "admin", "activity"]
 };
 function secSortGroups(tab, groups) {
   var want = SEC_ORDER[tab];
