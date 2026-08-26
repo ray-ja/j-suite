@@ -3603,64 +3603,72 @@ const server = http.createServer((req, res) => {
      ⛔ OWNER ONLY, and the access token never leaves this process. The browser sees a link_token (valid
      four hours, useless on its own) and nothing else. Transactions land in the ledger PENDING, exactly
      like a CSV import, so a bank feed still cannot move a number without his approval. */
-  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/link-token") {
-    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
-    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-    return void plaid.plaidLinkToken(acct.id, (err, j) => {
-      if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message })); }
+  /* ---------- PLAID BANK LINK (plaid.js) ------------------------------------------------------------
+     ⭐ PER-ORG. Ray, 2026-08-26: "it should be by organization." Every route carries an org and is checked
+     against THIS user's membership, so one org's bank connections are unreachable from another.
+     ⛔ Reads need membership; anything that WRITES a credential or a connection needs ownership.
+     ⛔ The access token never leaves this process; the browser sees a four-hour link_token and nothing more.
+     Transactions still land PENDING, exactly like a CSV — a bank feed cannot move a number on its own. */
+  if (req.url.split("?")[0].indexOf("/api/plaid/") === 0) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const acct = apiAccount(tok);
+    const route = req.url.split("?")[0].slice("/api/plaid/".length);
+    const deny = (code, msg) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: msg })); };
+
+    if (req.method === "GET" && route === "status") {
+      const org = q.searchParams.get("org") || "";
+      if (!acct || orgsForUser(loadStore(), acct).indexOf(org) < 0) return void deny(403, "forbidden");
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-      res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration }));
-    });
-  }
-  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/exchange") {
-    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
-    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-    return void readBodyUtf8(req, 1e4, (body) => {
-      let p2; try { p2 = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
-      plaid.plaidExchange(p2 && p2.public_token, p2 && p2.label, (err, out) => {
-        if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message })); }
+      return void res.end(JSON.stringify(plaid.plaidStatus(org)));   // ⛔ contains no key, by construction
+    }
+
+    return void readBodyUtf8(req, 2e4, (body) => {
+      let p2; try { p2 = JSON.parse(body || "{}"); } catch (e) { return deny(400, "bad json"); }
+      const org = p2 && p2.org;
+      const store = loadStore();
+      if (!acct || !org) return void deny(403, "forbidden");
+      /* ⚠️ ownership, not membership: these all create or spend a credential */
+      if (!writerOwnsOrg(store, acct.id, org)) return void deny(403, "owner only");
+
+      if (route === "config") {
+        plaid.plaidSetConfig(org, p2);
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify(out));
-      });
-    });
-  }
-  if (req.method === "GET" && req.url.split("?")[0] === "/api/plaid/status") {
-    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
-    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify(plaid.plaidStatus()));   // ⛔ contains no access token, by construction
-  }
-  /* pull new transactions. Returns ROWS for the client to hand to ledgerIngest — the server does not
-     write budget data here, so the whole approval path stays exactly where it already is. */
-  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/sync") {
-    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
-    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-    return void readBodyUtf8(req, 1e4, (body) => {
-      let p3; try { p3 = JSON.parse(body); } catch (e) { p3 = {}; }
-      const itemId = p3 && p3.itemId;
-      plaid.plaidSyncItem(itemId, (err, out) => {
-        if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
-        plaid.plaidSaveAccounts(itemId, out.accounts);   // so the mapping screen needs no second pull
-        const cfg = plaid.plaidCfg(), map = (cfg.items[itemId] || {}).accounts || {};
-        const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({ itemId: itemId, cursor: out.cursor, rows: rows,
-          removed: out.removed, accounts: (out.accounts || []).map(a => ({ id: a.account_id,
-            name: a.name || a.official_name || "Account", mask: a.mask || "", type: a.type || "" })) }));
-      });
-    });
-  }
-  /* the client calls this only AFTER it has saved the rows — so a failed save simply repeats next time */
-  if (req.method === "POST" && req.url.split("?")[0] === "/api/plaid/commit") {
-    const acct = apiAccount((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
-    if (!acct) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
-    return void readBodyUtf8(req, 1e4, (body) => {
-      let p4; try { p4 = JSON.parse(body); } catch (e) { p4 = {}; }
-      if (p4.map) plaid.plaidMapAccount(p4.itemId, p4.map.plaidAccountId, p4.map.budgetAccountId);
-      if (p4.forget) plaid.plaidForget(p4.itemId);
-      else if (p4.cursor != null) plaid.plaidCommitCursor(p4.itemId, p4.cursor);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+        return void res.end(JSON.stringify(plaid.plaidStatus(org)));
+      }
+      if (route === "link-token") {
+        return void plaid.plaidLinkToken(org, acct.id, (err, j) => {
+          if (err) return void deny(400, err.message);
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration }));
+        });
+      }
+      if (route === "exchange") {
+        return void plaid.plaidExchange(org, p2.public_token, p2.label, (err, out) => {
+          if (err) return void deny(400, err.message);
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify(out));
+        });
+      }
+      if (route === "sync") {
+        return void plaid.plaidSyncItem(org, p2.itemId, (err, out) => {
+          if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
+          plaid.plaidSaveAccounts(org, p2.itemId, out.accounts);
+          const cfg = plaid.plaidCfg(org), map = (cfg.items[p2.itemId] || {}).accounts || {};
+          const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({ itemId: p2.itemId, cursor: out.cursor, rows: rows, removed: out.removed,
+            accounts: (out.accounts || []).map(a => ({ id: a.account_id, name: a.name || a.official_name || "Account", mask: a.mask || "", type: a.type || "" })) }));
+        });
+      }
+      if (route === "commit") {
+        if (p2.map) plaid.plaidMapAccount(org, p2.itemId, p2.map.plaidAccountId, p2.map.budgetAccountId);
+        if (p2.forget) plaid.plaidForget(org, p2.itemId);
+        else if (p2.cursor != null) plaid.plaidCommitCursor(org, p2.itemId, p2.cursor);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return void res.end(JSON.stringify({ ok: true }));
+      }
+      return void deny(404, "unknown plaid route");
     });
   }
 

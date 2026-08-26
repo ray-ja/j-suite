@@ -33,8 +33,9 @@ function bankLoadPlaid(cb) {
   document.head.appendChild(s);
 }
 
+function bankOrg() { try { return S.biz; } catch (e) { return ""; } }
 function bankRefresh(cb) {
-  fetch(bankApiBase() + "/api/plaid/status", { headers: bankHeaders() })
+  fetch(bankApiBase() + "/api/plaid/status?org=" + encodeURIComponent(bankOrg()), { headers: bankHeaders() })
     .then(function (r) { return r.json(); })
     .then(function (j) { BANK_STATUS = j; if (cb) cb(j); })
     .catch(function () { BANK_STATUS = { ready: false, items: [] }; if (cb) cb(BANK_STATUS); });
@@ -46,7 +47,7 @@ function bankConnect() {
     alert("Bank linking needs the app open over its https address, not from a file.");
     return;
   }
-  fetch(bankApiBase() + "/api/plaid/link-token", { method: "POST", headers: bankHeaders(), body: "{}" })
+  fetch(bankApiBase() + "/api/plaid/link-token", { method: "POST", headers: bankHeaders(), body: JSON.stringify({ org: bankOrg() }) })
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j || !j.link_token) throw new Error(j && j.error ? j.error : "no link token");
@@ -57,7 +58,7 @@ function bankConnect() {
           onSuccess: function (publicToken, meta) {
             var label = (meta && meta.institution && meta.institution.name) || "Bank";
             fetch(bankApiBase() + "/api/plaid/exchange", { method: "POST", headers: bankHeaders(),
-              body: JSON.stringify({ public_token: publicToken, label: label }) })
+              body: JSON.stringify({ org: bankOrg(), public_token: publicToken, label: label }) })
               .then(function (r) { return r.json(); })
               .then(function (out) {
                 if (out && out.error) { alert(out.error); return; }
@@ -79,7 +80,7 @@ function bankConnect() {
    time — the failure mode is a repeat, which the externalId dedupe absorbs, rather than a silent hole. */
 function bankSync(itemId) {
   if (typeof ledgerIngest !== "function") return;
-  fetch(bankApiBase() + "/api/plaid/sync", { method: "POST", headers: bankHeaders(), body: JSON.stringify({ itemId: itemId }) })
+  fetch(bankApiBase() + "/api/plaid/sync", { method: "POST", headers: bankHeaders(), body: JSON.stringify({ org: bankOrg(), itemId: itemId }) })
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (j && j.error) {
@@ -110,7 +111,7 @@ function bankSync(itemId) {
       }
 
       fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
-        body: JSON.stringify({ itemId: itemId, cursor: j.cursor }) })
+        body: JSON.stringify({ org: bankOrg(), itemId: itemId, cursor: j.cursor }) })
         .then(function () { bankRefresh(function () { if (typeof render === "function") render(); }); });
 
       var msg = res.added + " to review";
@@ -169,6 +170,34 @@ function bankPairHTML(it) {
   + 'its transactions won\'t be pulled in.</div></div>';
 }
 
+/* ⭐ THE KEY GOES IN HERE, NOT INTO A FILE ON A SERVER. Ray, 2026-08-26: "Just make an interface in the
+   app where I can give you the plaid key… All the keys should be transmittable through the app. And it
+   should be by organization."
+
+   Modelled on the Anthropic key card (js/75) deliberately — that pattern already exists in this app, and a
+   second, subtly different one is a thing to get wrong later. ⛔ The key is write-only: it posts to the
+   server and is never returned, so this card can say whether one is set and never what it is. */
+function bankKeyCard() {
+  var st = BANK_STATUS;
+  if (!st) { bankRefresh(function () { if (typeof render === "function") render(); }); }
+  var org = (typeof orgName === "function") ? orgName(bankOrg()) : bankOrg();
+  var ready = !!(st && st.ready), env = (st && st.env) || "sandbox";
+  return '<div class="card"><div class="nm" style="font-size:15px">🏦 Bank feed (Plaid) · ' + esc(org) + '</div>'
+    + '<div class="sub" style="margin-bottom:8px">'
+    + (ready ? '✓ Set up — running against <b>' + esc(env) + '</b>'
+             : 'Not set up for this organization yet.') + '</div>'
+    + '<div class="row" style="gap:6px;flex-wrap:wrap">'
+    +   '<button class="btn ghost sm" style="width:auto" onclick="bankSetKey()">🔑 ' + (ready ? "Replace keys" : "Set keys") + '</button>'
+    +   '<button class="btn ghost sm" style="width:auto" onclick="bankSetEnv()">Environment: ' + esc(env) + '</button>'
+    + '</div>'
+    + '<div class="sub" style="white-space:normal;margin-top:8px;font-size:12px;line-height:1.45">'
+    + 'From <b>dashboard.plaid.com → Team Settings → Keys</b>. ⚠️ The <b>secret is different per environment</b> — '
+    + 'a Sandbox secret will not work in Production, and that is the usual first stumble. '
+    + '<b>Sandbox</b> connects to fake test banks; <b>Production</b> connects to your real ones. '
+    + 'Keys are stored server-side for this organization only and are never shown again after saving.</div>'
+    + '</div>';
+}
+
 /* ---------- the card, on Budget → Settings ---------- */
 function bankCardHTML() {
   var st = BANK_STATUS;
@@ -177,8 +206,8 @@ function bankCardHTML() {
     return h + '<div class="sub">Checking…</div></div>'; }
 
   if (!st.ready) {
-    return h + '<div class="sub" style="white-space:normal">Not set up on the server yet. '
-      + 'It needs a Plaid client ID and secret in <b>plaid-config.json</b> — that file is gitignored and never leaves this machine.</div></div>';
+    return h + '<div class="sub" style="white-space:normal">No Plaid keys for this organization yet — '
+      + 'add them under <b>Admin → AI tools</b>.</div></div>';
   }
   if (st.env === "sandbox") {
     h += '<div class="sub" style="white-space:normal;margin-bottom:8px">Running against Plaid\'s <b>sandbox</b> — '
@@ -204,10 +233,39 @@ function bankCardHTML() {
 
 if (typeof window !== "undefined") {
   window.bankConnect = bankConnect; window.bankSync = bankSync; window.bankRefresh = bankRefresh;
-  window.bankPairHTML = bankPairHTML;
+  window.bankPairHTML = bankPairHTML; window.bankKeyCard = bankKeyCard; window.bankOrg = bankOrg;
+
+  window.bankSetKey = function () {
+    var cid = prompt("Plaid client_id for " + ((typeof orgName === "function") ? orgName(bankOrg()) : bankOrg()) + ":");
+    if (cid === null) return;
+    var sec = prompt("Plaid secret (for the environment you picked):");
+    if (sec === null) return;
+    if (!String(cid).trim() || !String(sec).trim()) { alert("Both values are needed."); return; }
+    fetch(bankApiBase() + "/api/plaid/config", { method: "POST", headers: bankHeaders(),
+      body: JSON.stringify({ org: bankOrg(), clientId: String(cid).trim(), secret: String(sec).trim() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.error) { alert(j.error); return; }
+        BANK_STATUS = j;
+        if (typeof toast === "function") toast("Plaid keys saved for this organization");
+        if (typeof render === "function") render();
+      })
+      .catch(function (e) { alert("Couldn't save: " + (e.message || e)); });
+  };
+  window.bankSetEnv = function () {
+    var cur = (BANK_STATUS && BANK_STATUS.env) || "sandbox";
+    var next = cur === "production" ? "sandbox" : "production";
+    if (!confirm("Switch this organization's bank feed to " + next + "?\n\n"
+      + (next === "production" ? "Production connects to your REAL bank accounts. You'll need your production secret — it is a different value from the sandbox one."
+                               : "Sandbox connects to fake test banks only."))) return;
+    fetch(bankApiBase() + "/api/plaid/config", { method: "POST", headers: bankHeaders(),
+      body: JSON.stringify({ org: bankOrg(), env: next }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { BANK_STATUS = j; if (typeof render === "function") render(); });
+  };
   window.bankPair = function (itemId, plaidAccountId, budgetAccountId) {
     fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
-      body: JSON.stringify({ itemId: itemId, map: { plaidAccountId: plaidAccountId, budgetAccountId: budgetAccountId } }) })
+      body: JSON.stringify({ org: bankOrg(), itemId: itemId, map: { plaidAccountId: plaidAccountId, budgetAccountId: budgetAccountId } }) })
       .then(function () { bankRefresh(function () { if (typeof render === "function") render(); }); });
   };
   window.bankCardHTML = bankCardHTML; window.bankDropRemoved = bankDropRemoved; window.bankCanLink = bankCanLink;

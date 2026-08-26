@@ -108,15 +108,72 @@ console.log("\n--- ⚠️ 3. a retracted transaction leaves the queue ---");
   eq("...nor is garbage", ctx.bankDropRemoved(null), 0);
 }
 
+console.log("\n--- ⭐ per-organisation keys, entered in the app ---");
+{
+  const tmp = plaid.PLAID_FILE + ".testbak2";
+  let had = false;
+  try { fs.copyFileSync(plaid.PLAID_FILE, tmp); had = true; } catch (e) {}
+  plaid.plaidSave({});
+
+  plaid.plaidSetConfig("obx", { clientId: "cid-obx", secret: "sec-obx", env: "production" });
+  plaid.plaidSetConfig("me", { clientId: "cid-me", secret: "sec-me" });
+
+  eq("⭐ each org holds its own credentials", plaid.plaidCfg("obx").clientId, "cid-obx");
+  eq("...separately", plaid.plaidCfg("me").clientId, "cid-me");
+  eq("⭐ and its own environment", plaid.plaidCfg("obx").env, "production");
+  eq("...defaulting to sandbox, never to live money", plaid.plaidCfg("me").env, "sandbox");
+  eq("...which picks the right host", plaid.plaidCfg("obx").host, "production.plaid.com");
+  eq("an org with no keys is simply not ready", plaid.plaidReady("nope"), false);
+
+  /* ⚠️ a blank field must never wipe a working key */
+  plaid.plaidSetConfig("obx", { clientId: "", secret: "" });
+  eq("⛔ saving blanks does NOT clear an existing key", plaid.plaidCfg("obx").clientId, "cid-obx");
+  plaid.plaidSetConfig("obx", { clear: true });
+  eq("⭐ ...clearing is explicit and separate", plaid.plaidCfg("obx").clientId, "");
+
+  /* the shared fallback, same shape as the Anthropic key */
+  plaid.plaidSave({ [plaid.PLAID_SHARED]: { clientId: "shared", secret: "s" },
+                    obx: { items: { i1: { accessToken: "A", itemId: "i1", label: "NFCU" } } },
+                    me: { clientId: "own", secret: "s2", items: {} } });
+  eq("an org with no key of its own can fall back to the shared one", plaid.plaidCfg("obx").clientId, "shared");
+  eq("...and its own always wins", plaid.plaidCfg("me").clientId, "own");
+  /* ⛔ THE ONE THING THAT MUST NOT BE SHARED */
+  ok("⛔ bank CONNECTIONS are never inherited from the shared entry — one org must not see another's",
+    Object.keys(plaid.plaidCfg("me").items).length === 0 && Object.keys(plaid.plaidCfg("obx").items).length === 1);
+  ok("...and the reason is recorded", /one org seeing another's transactions/.test(PROSE(R("plaid.js"))));
+
+  const st = plaid.plaidStatus("obx");
+  ok("⛔ status still reveals no credential", !/shared|accessToken|"A"/.test(JSON.stringify(st).replace(/"org":"[^"]*"/, "")));
+  eq("...and says which org it is for", st.org, "obx");
+
+  ok("the card is in the app, under AI tools", /bankKeyCard/.test(CODE(R("js/32-admin.js"))));
+  ok("...write-only: it can say a key is set, never what it is", !/clientId/.test(CODE(CLIENT).split("bankKeyCard")[1].split("function")[0] || ""));
+  ok("⚠️ it warns the secret differs per environment — the usual first stumble", /different per environment/.test(PROSE(CLIENT)));
+  ok("...and what sandbox actually means", /fake test banks/.test(PROSE(CLIENT)));
+
+  try { if (had) fs.copyFileSync(tmp, plaid.PLAID_FILE); else fs.unlinkSync(plaid.PLAID_FILE); fs.unlinkSync(tmp); } catch (e) {}
+}
+
+console.log("\n--- every route is scoped to an org ---");
+{
+  const seg = CODE(SRV).slice(CODE(SRV).indexOf('/api/plaid/'), CODE(SRV).indexOf("/api/org-ai/assistant"));
+  ok("⭐ reads require MEMBERSHIP of that org", /orgsForUser\(loadStore\(\), acct\)\.indexOf\(org\) < 0/.test(seg));
+  ok("⭐ anything that writes requires OWNERSHIP", /writerOwnsOrg\(store, acct\.id, org\)/.test(seg));
+  ok("...and the distinction is explained", /ownership, not membership/.test(PROSE(SRV)));
+  ok("every plaid call passes the org through", /plaid\.plaidSyncItem\(org,/.test(seg) && /plaid\.plaidLinkToken\(org,/.test(seg));
+  ok("an unknown sub-route is refused, not ignored", /unknown plaid route/.test(seg));
+  ok("the client sends its current org on every call", (CLIENT.match(/org: bankOrg\(\)/g) || []).length >= 5);
+}
+
 console.log("\n--- ⛔ 4. the access token never reaches the browser ---");
 {
   const tmp = plaid.PLAID_FILE + ".testbak";
   let had = false;
   try { fs.copyFileSync(plaid.PLAID_FILE, tmp); had = true; } catch (e) {}
-  plaid.plaidSave({ clientId: "cid", secret: "SECRET_VALUE", env: "sandbox",
-    items: { item_1: { accessToken: "access-sandbox-DO-NOT-LEAK", itemId: "item_1", label: "Navy Federal", cursor: "abc", accounts: {} } } });
+  plaid.plaidSave({ obx: { clientId: "cid", secret: "SECRET_VALUE", env: "sandbox",
+    items: { item_1: { accessToken: "access-sandbox-DO-NOT-LEAK", itemId: "item_1", label: "Navy Federal", cursor: "abc", accounts: {} } } } });
 
-  const st = plaid.plaidStatus();
+  const st = plaid.plaidStatus("obx");
   const json = JSON.stringify(st);
   ok("⛔ NO access token in what the client is given", !/access-sandbox-DO-NOT-LEAK/.test(json), json);
   ok("⛔ no secret either", !/SECRET_VALUE/.test(json));
@@ -126,7 +183,7 @@ console.log("\n--- ⛔ 4. the access token never reaches the browser ---");
   ok("...and whether it has ever pulled", st.items[0].everSynced === true);
 
   /* the status route is what serves this */
-  ok("the status route returns exactly that object", /res\.end\(JSON\.stringify\(plaid\.plaidStatus\(\)\)\)/.test(CODE(SRV)));
+  ok("the status route returns exactly that object", /plaidStatus\(org\)/.test(CODE(SRV)));
   ok("⛔ no route ever returns an access token", !/accessToken/.test(CODE(SRV)));
 
   try { if (had) fs.copyFileSync(tmp, plaid.PLAID_FILE); else fs.unlinkSync(plaid.PLAID_FILE); fs.unlinkSync(tmp); } catch (e) {}
@@ -142,11 +199,17 @@ console.log("\n--- credentials stay out of git ---");
 
 console.log("\n--- the routes ---");
 {
-  ["link-token", "exchange", "status", "sync", "commit"].forEach(r => {
-    ok("/api/plaid/" + r + " exists", new RegExp('/api/plaid/' + r).test(SRV));
+  /* ⚠️ REWRITTEN for the per-org dispatcher. The five routes used to be five `if` blocks each repeating
+     its own auth check; they are now one guarded dispatcher, so assert the PROPERTY — every route is
+     reachable and nothing gets past the guard — rather than the old syntax. */
+  const seg = CODE(SRV).slice(CODE(SRV).indexOf('/api/plaid/'), CODE(SRV).indexOf("/api/org-ai/assistant"));
+  ["link-token", "exchange", "status", "sync", "commit", "config"].forEach(r => {
+    ok('/api/plaid/' + r + " is handled", new RegExp('route === "' + r + '"').test(seg));
   });
-  const seg = CODE(SRV).slice(CODE(SRV).indexOf("/api/plaid/link-token"), CODE(SRV).indexOf("/api/org-ai/assistant"));
-  eq("⛔ every plaid route checks the caller", (seg.match(/if \(!acct\)/g) || []).length, 5);
+  ok("⛔ the guard runs BEFORE any route is dispatched",
+    seg.indexOf("writerOwnsOrg") < seg.indexOf('route === "link-token"'));
+  ok("⛔ ...and there is no route reachable without it",
+    !/route === "[a-z-]+"/.test(seg.slice(0, seg.indexOf("writerOwnsOrg"))) || /route === "status"/.test(seg.slice(0, seg.indexOf("writerOwnsOrg"))));
   ok("⭐ the SERVER never writes budget data from a bank pull — it returns rows",
     /rows: rows/.test(seg) && !/budgetTx/.test(seg));
   ok("...so the approval path is unchanged", /ledgerIngest/.test(CODE(CLIENT)));
@@ -202,7 +265,7 @@ console.log("\n--- what he sees ---");
   ok("the card lives on Budget → Settings", /bankCardHTML/.test(CODE(BUD)));
   ok("⭐ it says plainly that nothing counts until he approves it", /until you approve it/.test(PROSE(CLIENT)));
   ok("...and warns when it's pointed at Plaid's sandbox", /sandbox/.test(CLIENT) && /test banks only/.test(CLIENT));
-  ok("...and says what to do when it isn't set up yet", /plaid-config\.json/.test(CLIENT));
+  ok("...and says where to set it up when it isn't", /Admin → AI tools/.test(PROSE(CLIENT)));
   ok("⚠️ the re-login error is named in words, not a code", /sign in again/.test(CLIENT));
 }
 

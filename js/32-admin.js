@@ -512,6 +512,9 @@ function rAdmin() {
   if (owner && typeof orgAiCard === "function") aiH += orgAiCard();          // the assistant's setup + key
   if (typeof workshopCard === "function") aiH += workshopCard();             // scheduled AI tasks
   if (owner && typeof sampleDataCard === "function") aiH += sampleDataCard(); // sample records for testing them
+  /* ⭐ every key this org needs, entered in the app and stored per-org. Ray, 2026-08-26: "It should be
+     under the AI tools thing. All the keys should be transmittable through the app." */
+  if (owner && typeof bankKeyCard === "function") aiH += bankKeyCard();
   if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   h += `<div class="secthd" style="margin-top:0"><h2 style="margin:0">Members</h2><span style="display:flex;gap:6px"><button class="btn ghost sm" onclick="adminAddHelperOpen()">+ Helper (no login)</button><button class="btn acc sm" onclick="adminOpenCreate()">+ Add member</button></span></div>`;
