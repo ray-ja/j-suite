@@ -172,7 +172,7 @@ window.capRcptRun = async function (opts) {
   // "not found." whenSynced() force-fires the queued push and waits for it, so the records exist before we read.
   try { if (typeof whenSynced === "function") await whenSynced(15000); } catch (e) {}
   const throttle = capRcptThrottleMs();
-  let done = 0, ok = 0, autoFiled = 0, skipped = 0, keyMissing = false, offline = false, capped = false;
+  let done = 0, ok = 0, autoFiled = 0, skipped = 0, tooLong = 0, keyMissing = false, offline = false, capped = false;
   while (true) {
     const pending = capRcptPending();
     if (!pending.length) break;                       // drained — nothing unread remains
@@ -211,6 +211,10 @@ window.capRcptRun = async function (opts) {
       if (typeof save === "function") save();          // persist as we go → resumable across an app-close
     } else if (res && res.status === 400 && /not set up/i.test(res.error || "")) { keyMissing = true; break; }
     else if (res && res.error === "offline") { offline = true; break; }   // connectivity gone — stop churning; the sweep resumes on reconnect
+    /* ⚠️ "too long" is its OWN outcome, not a blurry photo. A statement whose read overran the token budget
+       comes back skip:"too-long" — telling him it was unreadable would send him to re-photograph a PDF that is
+       perfectly legible. Both still skip for this session (no retry-loop), they just get counted apart. */
+    else if (res && res.skip && res.reason === "too-long") { tooLong++; _capRcptSkip[rec.id] = 1; }
     else { skipped++; _capRcptSkip[rec.id] = 1; }      // parse/unreadable error → skip THIS session, keep draining the rest (no retry-loop)
     done++;
     if (capRcptPending().length && done < CAP_RCPT_CEILING && throttle > 0) await capRcptSleep(throttle);
@@ -231,7 +235,7 @@ window.capRcptRun = async function (opts) {
     } catch (e) {}
   }
   if (keyMissing) { if (!opts.auto) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant, then try again."); }
-  else if (!opts.auto) { capRcptSetStatus("🤖 Read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · " + autoFiled + " filed for review" : "") + (skipped ? " · " + skipped + " skipped" : "") + "."); }   // quiet status, not a popup — receipts are handled in the Receipts area, no need to interrupt with a message
+  else if (!opts.auto) { capRcptSetStatus("🤖 Read " + ok + " receipt" + (ok === 1 ? "" : "s") + (autoFiled ? " · " + autoFiled + " filed for review" : "") + (skipped ? " · " + skipped + " skipped" : "") + (tooLong ? " · " + tooLong + " too long to read in one pass" : "") + "."); }   // quiet status, not a popup — receipts are handled in the Receipts area, no need to interrupt with a message
   // safeRender (js/26) — the auto sweep path runs mid-session; a bare render() here would rebuild #view under a
   // focused text field. Falls back to render() where safeRender isn't loaded (tests).
   { const _rr = (typeof safeRender === "function") ? safeRender : (typeof render === "function" ? render : null); if (_rr) _rr(); }
@@ -317,7 +321,8 @@ window.capRcptOne = async function () {
   // ACCURATE errors — every failure used to collapse to one vague "try again in a moment," so a real problem was
   // indistinguishable from a transient one. Surface what the server actually said, keyed off status.
   const st = res && res.status;
-  if (res && res.skip) alert("Cap read it but couldn't make out the details — fill it in by hand.");
+  if (res && res.skip && res.reason === "too-long") alert("Cap read this one but it has more transactions than fit in a single pass — split the file into fewer pages and upload again.");
+  else if (res && res.skip) alert("Cap read it but couldn't make out the details — fill it in by hand.");
   else if (st === 400 && /not set up/i.test(res.error || "")) alert("Cap needs this organization's Anthropic API key. Set it in Admin → Assistant.");
   else if (res && res.error === "offline") alert("You're offline — Cap needs a connection to read receipts.");
   else if (st === 404) alert("That receipt hasn't finished syncing to the server yet. Give it a few seconds and tap Reread again.");

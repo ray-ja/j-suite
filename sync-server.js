@@ -685,6 +685,12 @@ function orgAiScopedContext(store, orgId, scope, opts) {
    ⛔ The ceiling is a SAFETY NET, not a latency budget — generous enough that a genuinely slow Opus read of a
    multi-page PDF finishes normally. It exists so that "forever" stops being one of the outcomes. */
 const AI_HTTP_TIMEOUT_MS = 120000;   // 2 minutes of silence on the socket ⇒ give up and report it
+/* ⭐ THE RECEIPT READ'S OUTPUT BUDGET. Was 1500, which is ample for a store receipt and NOT ENOUGH FOR A
+   STATEMENT — and statements are precisely what the transactions[] fan-out exists to handle, so the cap was
+   defeating the feature it was sized before. A month of card activity is ~40 transactions × ~80 tokens.
+   ⛔ Raising a max_tokens ceiling costs nothing on a normal receipt: output tokens are billed as GENERATED,
+   not as reserved. The ceiling is a runaway guard, not a budget to spend. */
+const RCPT_VISION_MAX_TOKENS = 8000;
 function aiOnce(cb) {
   let done = false;
   return function () { if (done) return; done = true; try { cb.apply(null, arguments); } catch (e) {} };
@@ -790,7 +796,7 @@ function callAnthropicVision(apiKey, model, mediaType, imgB64, taskPrompt, cb, m
       { type: "text", text: String(taskPrompt || "").slice(0, 4000) }
     ] }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
-    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || "", { truncated: jj.stop_reason === "max_tokens" }); } catch (e) { cb(e); } }); });
   aiSend(r, payload, cb);
 }
 // LANDSCAPE SITE SURVEY — the plant-vision SYSTEM PROMPT. The property PHOTO is untrusted content to READ, never
@@ -836,7 +842,7 @@ function callAnthropicVisionSys(apiKey, model, mediaType, imgB64, systemPrompt, 
     system: String(systemPrompt || ""),
     messages: [{ role: "user", content: [ sourceBlock, { type: "text", text: String(taskPrompt || "").slice(0, 6000) } ] }] });
   const r = https.request("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json", "content-length": Buffer.byteLength(payload) } },
-    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || ""); } catch (e) { cb(e); } }); });
+    resp => { let d = ""; resp.on("data", c => d += c); resp.on("end", () => { try { const jj = JSON.parse(d); cb(null, (jj.content && jj.content[0] && jj.content[0].text) || (jj.error && ("AI error: " + (jj.error.message || jj.error.type))) || "", { truncated: jj.stop_reason === "max_tokens" }); } catch (e) { cb(e); } }); });
   aiSend(r, payload, cb);
 }
 // SHOW THE AFTER (Feature 1) — the exact prompt that produced a good result against the real Gemini key. A server
@@ -3415,13 +3421,24 @@ const server = http.createServer((req, res) => {
       // SERVER-AUTHORITATIVE model choice — Sonnet 4.6 for every read (never cfg.model=Haiku), Opus 4.8 on escalate.
       // Only the strictly-validated boolean p.escalate reaches rcptVisionModel; a free-form model string is ignored.
       const rcptModel = rcptVisionModel(cfg, p && p.escalate === true);
-      callAnthropicVision(cfg.apiKey, rcptModel, mediaType, imgB64, task, (err, text) => {
+      callAnthropicVision(cfg.apiKey, rcptModel, mediaType, imgB64, task, (err, text, meta) => {
         if (err) { res.writeHead(502, { "Content-Type": "application/json" }); return res.end('{"error":"AI request failed"}'); }
         const suggested = rcptParseSuggestion(text, cats, jobIds);
-        if (!suggested) { res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ skip: true, reason: "unparseable" })); }
+        if (!suggested) {
+          /* ⚠️ "TOO LONG" IS NOT "UNREADABLE", AND CONFLATING THEM COSTS A RECEIPT.
+             Ray's one stuck receipt (2026-08-26) was a 3-page Square Checking statement. The read WORKED — the
+             model came back with a full transactions[] — but it ran past the token cap, so the JSON never closed,
+             the parse returned null, and the drain filed it as "unparseable" and skipped it. Being skipped is
+             sticky, and re-reading only made it worse: the escalate retry asks the SMARTEST model, which writes
+             MORE, so it truncated at the same place. That receipt could never be read, and nothing said so —
+             it had sat unread since 2026-08-11. Report the two cases separately so the app can tell him which. */
+          const reason = (meta && meta.truncated) ? "too-long" : "unparseable";
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          return res.end(JSON.stringify({ skip: true, reason: reason }));
+        }
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
         res.end(JSON.stringify({ suggested: suggested }));
-      }, 1500);   // roomy token budget so a long itemized receipt doesn't truncate mid-JSON
+      }, RCPT_VISION_MAX_TOKENS);
     });
     return;
   }
@@ -4779,4 +4796,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

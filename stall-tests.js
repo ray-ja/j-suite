@@ -217,6 +217,31 @@ console.log("\n--- ⏱ orgAiFetch: the client gives up too ---");
         ok("⭐ capRcptRead goes through orgAiFetch", /typeof orgAiFetch === "function"\) \? orgAiFetch : fetch/.test(CAPC));
         ok("...and still works on a build without it", /: fetch;/.test(CAPC));
 
+        console.log("\n--- ⭐ the SECOND bug: a statement that was too long to read, forever ---");
+        {
+          /* ⚠️ THIS IS WHY THE RECEIPT HAD SAT SINCE 2026-08-11. The read succeeded — a 3-page Square Checking
+             statement, 24 transactions — but it overran the 1500-token cap, so the JSON never closed, the parse
+             returned null, and it was filed as "unparseable" and skipped. Skipping is sticky, and the escalate
+             retry made it WORSE: the smartest model writes more, so it truncated at the same wall. The cap was
+             sized before the transactions[] fan-out existed, and was quietly defeating it. */
+          const T = require("./sync-server.js");
+          ok("⭐ the receipt budget fits a month of card activity, not just a store receipt",
+            T.RCPT_VISION_MAX_TOKENS >= 6000, T.RCPT_VISION_MAX_TOKENS);
+          ok("⛔ the old 1500 cap is gone from the read-receipt endpoint",
+            !/}, 1500\);/.test(SRVC) && /RCPT_VISION_MAX_TOKENS\);/.test(SRVC));
+          ok("⭐ truncation is detected at the source (stop_reason), not guessed from the text",
+            (SRVC.match(/truncated: jj\.stop_reason === "max_tokens"/g) || []).length === 2,
+            (SRVC.match(/truncated: jj\.stop_reason === "max_tokens"/g) || []).length);
+          ok("⭐ and reported as ITS OWN reason — 'too long' is not 'unreadable'",
+            /\(meta && meta\.truncated\) \? "too-long" : "unparseable"/.test(SRVC));
+          ok("⚠️ the client counts it apart, so he isn't told to re-photograph a legible PDF",
+            /res\.reason === "too-long"/.test(CAPC) && /tooLong\+\+/.test(CAPC));
+          ok("...and the single-receipt reread says what to actually do about it",
+            /split the file into fewer pages/.test(CAP));
+          ok("⚠️ why a bigger ceiling is free is written down (billed as generated, not reserved)",
+            /billed as GENERATED/.test(SRV));
+        }
+
         console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
         if (fail) process.exit(1);
       });
