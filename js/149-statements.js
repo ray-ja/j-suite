@@ -129,7 +129,9 @@ function stmtHTML() {
   if (!pl) return "";
   var cf = stmtCashFlow(bookId, r);
 
-  var h = '<div class="row" style="gap:6px;margin-bottom:10px">'
+  /* ⭐ every entity in one block, above the single-book statement (js/151) */
+  var every = (typeof uniAllEntitiesHTML === "function") ? uniAllEntitiesHTML(r) : "";
+  var h = every + '<div class="row" style="gap:6px;margin-bottom:10px">'
     + ["month", "quarter", "year"].map(function (k) {
         return '<button class="btn ' + (STMT_PERIOD === k ? "acc" : "ghost") + ' sm" style="flex:1"'
           + ' onclick="stmtSetPeriod(\'' + k + '\')">' + esc(k[0].toUpperCase() + k.slice(1)) + '</button>';
