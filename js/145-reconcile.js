@@ -29,7 +29,11 @@ function recTx() { try { return recActive(D().budgetTx); } catch (e) { return []
 /* every approved transaction belonging to one account — pending rows are not money yet (js/143) */
 function acctTx(acctId) {
   /* ⚠️ THE MIRROR OF actBudgetTx (js/79). A split's SLICES are category bookkeeping — the cash left this
-     account once, as the parent. Counting the slices here would debit the account twice over. */
+     account once, as the parent. Counting the slices here would debit the account twice over.
+     ⭐ AND NOTE WHAT IS *NOT* FILTERED: a MATCHED row (js/152) stays. actBudgetTx skips it because the
+     business record already counts the expense — but the cash genuinely left this bank account, so the
+     balance must include it. Adding `!t.matchedTo` here would make every reconciliation drift by the
+     amount of every matched purchase, quietly, forever. */
   return recTx().filter(function (t) { return t.accountId === acctId && !t.pending && !t.parentTxId; })
     .sort(function (a, b) { return String(a.date || "").localeCompare(String(b.date || "")); });
 }

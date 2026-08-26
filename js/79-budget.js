@@ -82,7 +82,11 @@ function actBudgetCats(){ return (D().budgetCats||[]).filter(function(c){return 
    money into the envelopes. Count both and every split is doubled. So income/spending sees the SLICES and
    skips the parent. The mirror rule lives in acctTx() in js/145, where the BALANCE counts the parent and
    skips the slices, because the cash left the account exactly once. Change one, check the other. */
-function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.pending&&!t.isTransfer&&!t.isCardPayment&&!t.isSplit&&budgetInBook(t);}); }
+/* ⚠️ MATCHED ROWS (js/152): a bank row linked to an expense he already logged is the CASH CONFIRMATION
+   of that record, not a second expense. Counted here it doubles the purchase. ⭐ But acctTx() in js/145
+   must still count it — the cash really did leave the bank. Third time this shape appears; get the
+   balance side backwards and his reconciliation drifts by every matched purchase, silently, forever. */
+function actBudgetTx(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&!t.pending&&!t.isTransfer&&!t.isCardPayment&&!t.isSplit&&!(t.matchedTo&&t.matchedTo.id)&&budgetInBook(t);}); }
 /* transfers + card payments in scope (for the Transactions list display) */
 function actBudgetTransfers(){ return (D().budgetTx||[]).filter(function(t){return !t.deleted&&(t.isTransfer||t.isCardPayment)&&budgetInBook(t);}); }
 function budgetCat(id){ return (D().budgetCats||[]).filter(function(c){return !c.deleted;}).find(function(c){return c.id===id;}); }

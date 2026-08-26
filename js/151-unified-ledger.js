@@ -62,7 +62,10 @@ function uniOrgRows(orgId, from, to) {
        though — pending isn't money, transfers and card payments aren't income or spending, and a split
        parent defers to its slices. If those rules change in js/79, they change here too. */
     var bt = (D().budgetTx || []).filter(function (t) {
-      return t && !t.deleted && !t.pending && !t.isTransfer && !t.isCardPayment && !t.isSplit;
+      /* ⚠️ and a MATCHED row (js/152) is skipped here too — the business record it points at is already
+         in this same list, from the expenses/jobExpenses branches below. */
+      return t && !t.deleted && !t.pending && !t.isTransfer && !t.isCardPayment && !t.isSplit
+        && !(t.matchedTo && t.matchedTo.id);
     });
     bt.forEach(function (t) {
       if (!uniIn(t.date, from, to)) return;

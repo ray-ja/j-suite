@@ -63,9 +63,13 @@ function lrRow(t) {
     + (why ? '<div class="sub" style="white-space:normal;margin-top:4px">' + esc(why) + '</div>' : '')
     + (lrName(t) !== (t.note || "") ? '<div class="sub" style="white-space:normal;margin-top:2px;font-size:11px;opacity:.65">'
         + esc(String(t.note || "").slice(0, 90)) + '</div>' : '')
-    + (moves
+    /* ⭐ a bank row that is already recorded elsewhere (js/152) — offered before he picks a category */
+    + ((typeof matchRowHTML === "function") ? matchRowHTML(t) : "")
+    + ((typeof matchIsMatched === "function" && matchIsMatched(t))
+        ? ''
+        : (moves
         ? '<div class="sub" style="margin-top:6px">Won\'t count as income or spending.</div>'
-        : '<select id="lrcat_' + t.id + '" style="margin-top:8px">' + lrCatOptions(t) + '</select>')
+        : '<select id="lrcat_' + t.id + '" style="margin-top:8px">' + lrCatOptions(t) + '</select>'))
     + '<div class="row" style="gap:6px;margin-top:8px">'
     +   '<button class="btn acc sm" style="flex:1" onclick="lrApprove(\'' + t.id + '\')">Approve</button>'
     +   '<button class="btn ghost sm" style="flex:0 0 auto;width:auto" onclick="lrReject(\'' + t.id + '\')">Not mine</button>'

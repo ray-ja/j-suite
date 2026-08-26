@@ -50,6 +50,9 @@ function finPLLine(label, cents, opt){ opt = opt || {};
 }
 
 function rFinOverview(){
+  /* ⭐ who pays him, and whether the jobs paid (js/153) — the two truths the app could never state */
+  var _ci = ((typeof ciConcentrationHTML === "function") ? ciConcentrationHTML() : "")
+          + ((typeof ciEstActualHTML === "function") ? ciEstActualHTML() : "");
   const ym = finMonth(), pl = finPeriodPL(ym);
   // A/R snapshot (invoiced, unpaid) — inline so there's no cross-module coupling
   const arQuotes = (D().quotes || []).filter(q => q && !q.deleted && q.invoiced && !q.paid);
@@ -104,6 +107,7 @@ function rFinOverview(){
     <div class="li"><div class="grow"><div class="nm">🏢 Business fund (this period)</div><div class="sub">15% of revenue, before mileage/expenses</div></div><b>${fm(Math.round(pl.revenue * 0.15))}</b></div></div>`;
 
   h += `<button class="btn ghost" style="width:100%;margin-top:12px" onclick="finExportCSV('${ym}')">⬇ Export ${esc(finMonthLabel(ym))} (CSV)</button>`;
+  h += _ci;
   return h;
 }
 
