@@ -139,7 +139,25 @@ console.log("\n--- ⛔ 2. the click binding must not swallow the children ---");
 console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
 {
   const c = sandbox();
-  eq("only finance and budget are declared fully covered", c.navDeepCoveredTabs().sort().join(), "budget,finance");
+  /* ⭐ THE INVARIANT, not a hardcoded list: a tab may only be declared "covered" — and so have its in-page
+     button row hidden — if EVERY sub-view that screen offers is registered in NAV_DEEP. Adding a screen to
+     the sidebar widens what gets hidden, so this is the assertion that stops the next addition silently
+     stranding a sub-view. */
+  const CUST = R("js/06-customers.js");
+  const screenSubs = {
+    finance: [...FIN.matchAll(/finSub\('([a-z]+)'\)/g)].map(m => m[1]),
+    budget: [...BUD.matchAll(/budgetSetSub\(\\?'([a-z]+)\\?'\)/g)].map(m => m[1]),
+    accounts: [...CUST.matchAll(/ppGo\('accounts','([a-z]+)'\)/g)].map(m => m[1]),
+    team: []
+  };
+  c.navDeepCoveredTabs().forEach(tab => {
+    const want = [...new Set(screenSubs[tab] || [])];
+    const have = c.NAV_DEEP.filter(d => d.tab === tab).map(d => d.sub);
+    const gap = want.filter(x => have.indexOf(x) < 0);
+    ok("⭐ '" + tab + "' is covered, so every one of its sub-views IS registered", gap.length === 0, gap);
+  });
+  ok("...and a tab nobody registered is never claimed as covered",
+    c.navDeepCoveredTabs().every(t => screenSubs[t] !== undefined), c.navDeepCoveredTabs());
   ok("⭐ the in-page row is hidden ONLY for covered tabs", /navDeepCoveredTabs\(\)\.indexOf\(TAB\)>=0/.test(CODE(RT)));
   ok("...via a body class, so nothing else is touched", /classList\.toggle\("navdeep"/.test(CODE(RT)));
   ok("⭐ the CSS is scoped to a DIRECT child of #view", /body\.navdeep #view > \.subnav\{display:none\}/.test(CSS));
@@ -151,8 +169,9 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
   ok("the regression risk is documented", /would make those sub-views unreachable/.test(PROSE(RT)));
 
   /* ⚠️ a screen NOT in the registry must keep its own row */
-  ok("⛔ accounts is not claimed as covered", c.navDeepCoveredTabs().indexOf("accounts") < 0);
-  ok("⛔ nor receipts", c.navDeepCoveredTabs().indexOf("receipts") < 0);
+  ok("⛔ receipts keeps its own row — nothing of it is registered", c.navDeepCoveredTabs().indexOf("receipts") < 0);
+  ok("⛔ so does inventory", c.navDeepCoveredTabs().indexOf("inventory") < 0);
+  ok("⛔ and admin, until its sections are registered", c.navDeepCoveredTabs().indexOf("admin") < 0);
 }
 
 console.log("\n--- the phone is untouched ---");
@@ -162,6 +181,91 @@ console.log("\n--- the phone is untouched ---");
   ok("the reason is recorded", /bottom bar with nowhere to drop anything down/.test(PROSE(CSS)));
   ok("the module is in the shell", /js\/155-nav-deep\.js/.test(SHELL));
   ok("...after the screens whose numbers it shows", SHELL.indexOf("154-collections") < SHELL.indexOf("155-nav-deep"));
+}
+
+console.log("\n--- ⭐ section tabs: splitting a monolith without cutting it open ---");
+{
+  const SEC = R("js/156-section-tabs.js");
+  /* ⚠️ a DOM stub that implements nextSibling — the first one didn't, so it could not detect whether the
+     tab row landed above or below the pinned content, which is the one ordering that matters here. */
+  function el(tag) {
+    const n = { tagName: tag.toUpperCase(), children: [], style: {}, attrs: {}, textContent: "", className: "", innerHTML: "", parentNode: null,
+      appendChild(c) { if (c.parentNode) c.parentNode.remove(c); this.children.push(c); c.parentNode = this; },
+      remove(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); },
+      insertBefore(c, ref) { if (c.parentNode) c.parentNode.remove(c);
+        const i = ref ? this.children.indexOf(ref) : -1;
+        if (i < 0) this.children.push(c); else this.children.splice(i, 0, c);
+        c.parentNode = this; },
+      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k] || null; },
+      querySelector(sel) { return this.children.find(c => c.attrs[sel.replace(/[\[\]]/g, "")] != null) || null; },
+      /* ⚠️ secGo drives everything through querySelectorAll — a stub returning [] made the switch
+         untestable, and the assertion passed/failed for the wrong reason either way. */
+      querySelectorAll(sel) {
+        const attr = sel.replace(/[\[\]]/g, "").split(" ")[0];
+        const out = [];
+        const walk = n => n.children.forEach(c => { if (c.attrs[attr] != null) out.push(c); walk(c); });
+        walk(this);
+        return out;
+      },
+      get nextSibling() { const p = this.parentNode; if (!p) return null;
+        const i = p.children.indexOf(this); return (i >= 0 && i + 1 < p.children.length) ? p.children[i + 1] : null; } };
+    return n;
+  }
+  function build(headings, withPin) {
+    const view = el("div");
+    const pin = withPin ? el("div") : null;
+    if (pin) view.appendChild(pin);
+    headings.forEach(t => { const h = el("h2"); h.textContent = t; view.appendChild(h); view.appendChild(el("div")); });
+    return { view, pin };
+  }
+  function run(view, tab) {
+    const ctx = { console, window: {}, document: { getElementById: id => id === "view" ? view : null, createElement: el } };
+    vm.createContext(ctx); vm.runInContext(SEC, ctx); Object.assign(ctx, ctx.window);
+    ctx.secSplit(tab || "data");
+    return ctx;
+  }
+
+  const S1 = build(["Sync", "Appearance", "Cards", "Pricing rates", "Job costs (COGS)",
+                    "Home base — OBX Lot Solutions", "Archive", "Backups", "Security"], true);
+  const c1 = run(S1.view);
+  const secs = S1.view.children.filter(x => x.attrs["data-sec"]);
+  eq("⭐ Settings splits into its nine sections", secs.length, 9);
+  eq("...keyed readably", secs.map(x => x.attrs["data-sec"]).join(","),
+    "sync,appearance,cards,pricing-rates,job-costs-cogs,home-base,archive,backups,security");
+  eq("⭐ only one is visible", secs.filter(x => x.style.display !== "none").length, 1);
+  ok("...the first, by default", secs[0].style.display !== "none");
+  const row = S1.view.children.find(x => x.attrs["data-secrow"]);
+  ok("a tab row is created", !!row);
+  ok("...listing every section", (row.innerHTML.match(/subbtn/g) || []).length === 9);
+  /* ⚠️ THE ORDERING THAT MATTERS: on Settings the pinned card is the error log; on Admin it's the PIN gate */
+  ok("⭐ content above the first heading stays PINNED, above the tabs",
+    S1.view.children.indexOf(S1.pin) === 0 && S1.view.children.indexOf(row) === 1,
+    { pin: S1.view.children.indexOf(S1.pin), row: S1.view.children.indexOf(row) });
+  ok("...and is never hidden", S1.pin.style.display !== "none");
+
+  c1.secGo("data", "backups");
+  const after = S1.view.children.filter(x => x.attrs["data-sec"]);
+  ok("⛔ the active tab is found by a data attribute, not by parsing its onclick string",
+    /data-seckey/.test(CODE(SEC)) && !/getAttribute\("onclick"\)/.test(CODE(SEC)));
+  ok("⭐ switching shows only the chosen one",
+    after.filter(x => x.style.display !== "none").length === 1
+    && after.find(x => x.attrs["data-sec"] === "backups").style.display !== "none");
+  eq("...and the choice is remembered", c1.SEC_SUB.data, "backups");
+
+  /* ⛔ FAIL OPEN — the whole reason for splitting the DOM instead of the source */
+  const one = build(["Only one"], false); run(one.view);
+  ok("⛔ a single-section screen is left completely alone", !one.view.children.some(x => x.attrs["data-secrow"]));
+  const none = build([], false); run(none.view);
+  ok("⛔ a screen with no headings is left alone", !none.view.children.some(x => x.attrs["data-secrow"]));
+  const notlisted = build(["A", "B"], false); run(notlisted.view, "quotes");
+  ok("⛔ a screen that isn't opted in is never touched", !notlisted.view.children.some(x => x.attrs["data-secrow"]));
+  ok("⭐ and any error leaves the page as rendered", /catch \(e\) \{ \/\* ⛔ fail open/.test(SEC));
+  ok("the reason for the DOM-not-source approach is recorded", /loses their backups page/.test(PROSE(SEC)));
+
+  ok("only Settings and Admin are opted in", c1.SEC_SCREENS.join() === "data,admin");
+  ok("it is called after the screen renders, inside the blank-screen guard",
+    /_screen\(\);[\s\S]{0,400}secSplit\(TAB\)/.test(CODE(RT)));
+  ok("the module is in the shell", /js\/156-section-tabs\.js/.test(SHELL));
 }
 
 console.log("\n--- it can't throw the app down ---");

@@ -27,6 +27,9 @@ function ppSubnav(tabs){
 window.ppSubnav=ppSubnav;
 // merged-row click: People → team tab; an account sub-view → set ACCTSUB then route to the accounts tab.
 window.ppGo=function(tab,sub){ if(tab==="accounts"&&sub)ACCTSUB=sub; if(typeof navSub==="function")navSub(tab); };
+/* the sidebar's deep rows (js/155) call every setter as setter(sub) — this adapts ppGo, which needs the
+   tab too. Kept here beside ppGo so the two can't drift apart. */
+window.ppGoDeep=function(sub){ ppGo(sub?"accounts":"team", sub||""); };
 window.switchAcct=function(s){ACCTSUB=s;render();};
 function rAccounts(){if(ACCTSUB==="properties")return rProperties();if(ACCTSUB==="places"&&typeof rPlaces==="function")return rPlaces();return rCustomers();}
 /* PURE results-list HTML (empty / "No matches" / card grid) — kept pure so the SEARCH keystroke path can

@@ -37,6 +37,15 @@ var NAV_DEEP = [
   { group: "money", tab: "finance", sub: "pl",       setter: "finSub", icon: "💹", label: "Job P&L" },
   { group: "money", tab: "finance", sub: "analysis", setter: "finSub", icon: "📈", label: "Analysis" },
 
+  /* ⭐ PEOPLE & PLACES. Ray, 2026-08-26: "you get the people and places, and it drops down to customers,
+     but it should have customers, properties and places." It showed one row because `accounts` is one TAB
+     whose three views live in ACCTSUB — level three again, invisible again. ppGo() is the screen's own
+     setter, so the same rule applies: go through it, never write ACCTSUB. */
+  { group: "team", tab: "team",     sub: "",           setter: "ppGoDeep", icon: "👥", label: "People" },
+  { group: "team", tab: "accounts", sub: "customers",  setter: "ppGoDeep", icon: "🧑", label: "Customers" },
+  { group: "team", tab: "accounts", sub: "properties", setter: "ppGoDeep", icon: "🏠", label: "Properties" },
+  { group: "team", tab: "accounts", sub: "places",     setter: "ppGoDeep", icon: "📍", label: "Places" },
+
   /* BUDGET. Review only exists while something is waiting, so it is filtered at render time. */
   { group: "budget", tab: "budget", sub: "review",   setter: "budgetSetSub", icon: "📥", label: "Review",
     only: function () { return (typeof ledgerInboxCount === "function") && ledgerInboxCount() > 0; } },
@@ -106,8 +115,23 @@ function navDeepCurrent() {
   try {
     if (TAB === "finance" && typeof FINSUB !== "undefined") return "finance/" + FINSUB;
     if (TAB === "budget" && typeof BUDGET_SUB !== "undefined") return "budget/" + BUDGET_SUB;
+    if (TAB === "team") return "team/";
+    if (TAB === "accounts" && typeof ACCTSUB !== "undefined") return "accounts/" + ACCTSUB;
   } catch (e) {}
   return "";
+}
+
+/* ⭐ A LONE CHILD THAT REPEATS ITS PARENT IS NOISE. Ray, 2026-08-26: "on the today page, there are no
+   subpages. So it doesn't need to say today on the subpage today… If it's the only page, just leave it as
+   the only page." Today, To-Do and Messages each have exactly one destination with the same name as the
+   group — a dropdown there adds a click and says nothing. */
+function navDeepRedundant(groupKey, list) {
+  if (list.length !== 1) return false;
+  var g = (typeof NAV_GROUPS !== "undefined") ? NAV_GROUPS.find(function (x) { return x.key === groupKey; }) : null;
+  if (!g) return false;
+  var a = String(list[0].label || "").toLowerCase().replace(/[^a-z]/g, "");
+  var b = String(g.label || "").toLowerCase().replace(/[^a-z]/g, "");
+  return a === b;
 }
 
 /* ⭐ GO. Through the screen's own setter, never by writing its variable. */
@@ -122,6 +146,7 @@ function navDeepGo(tab, sub, setter) {
 function navDeepHTML(groupKey) {
   var list = navDeepFor(groupKey);
   if (!list.length) return "";
+  if (navDeepRedundant(groupKey, list)) return "";      // ⭐ see navDeepRedundant
   var cur = navDeepCurrent();
   return list.map(function (d) {
     var key = d.tab + "/" + (d.sub || "");
@@ -141,7 +166,7 @@ function navDeepHTML(groupKey) {
 if (typeof window !== "undefined") {
   window.NAV_DEEP = NAV_DEEP; window.navDeepFor = navDeepFor; window.navDeepHTML = navDeepHTML;
   window.navDeepGo = navDeepGo; window.navDeepCurrent = navDeepCurrent; window.navdMoney = navdMoney;
-  window.navDeepCoveredTabs = navDeepCoveredTabs;
+  window.navDeepCoveredTabs = navDeepCoveredTabs; window.navDeepRedundant = navDeepRedundant;
   window.NAV_BADGES = NAV_BADGES;
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { NAV_DEEP: NAV_DEEP };

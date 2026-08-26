@@ -94,7 +94,12 @@ function render(){
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
   var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),journal:(typeof rJournal==="function"?rJournal:rToday),shelf:(typeof rShelf==="function"?rShelf:rToday),workout:(typeof rWorkout==="function"?rWorkout:rToday),cal:(typeof rCal==="function"?rCal:rToday),studio:(typeof rStudio==="function"?rStudio:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday),products:(typeof rProducts==="function"?rProducts:rToday)}[TAB])||rToday;
-  try{ _screen(); }
+  try{ _screen();
+    /* ⭐ split a monolithic screen into section tabs AFTER it has rendered (js/156). Inside the try, so a
+       failure here lands in the same blank-screen guard as any other render fault — and secSplit itself
+       fails open, leaving the long page rather than an empty one. */
+    if(typeof secSplit==="function") secSplit(TAB);
+  }
   catch(_e1){
     try{ if(typeof console!=="undefined"&&console.error)console.error("render("+TAB+") threw:",_e1); }catch(_){}
     if(_screen!==rToday){ try{ TAB="today"; rToday(); } catch(_e2){ renderRecovery(_e2); } }   // fall back to Today
@@ -151,8 +156,13 @@ const NAV_GROUPS = [
   // WORK — the day-to-day field bucket: 🧾 Jobs table + 📅 Schedule (calendar, hosts the crew job page) + ⏱️ Time
   // (clock-in/out + hours/miles). Ray OK'd folding Jobs in here (2026-07-16) instead of its own top-level menu;
   // this collapses three separate menus (schedule/time/jobsview) into one.
-  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time"] },
-  { key:"receipts",  label:"Receipts",  icon:"📸", tabs:["receipts"] },   // OWN top-level tab (crew-visible entry point to snap/upload receipts; page self-gates finance to owner/admin)
+  /* ⭐ BOTH ROUTE SCREENS LIVE HERE NOW, and they were two different things both called "Route":
+     `route` PLANS a loop (the one with the saved shop/warehouse stops); `routes` REVIEWS the GPS
+     actually driven. Ray, 2026-08-26: "route shouldn't be under miscellaneous… there's, like, a
+     sales route planner, and then it looks like there's two versions of that." Renamed in
+     TAB_META so they read as different, and placed beside Schedule and Time where the day's
+     driving belongs. Map comes too — it is where the pins the planner uses get dropped. */
+  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time","route","routes","map"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale"] },
@@ -174,19 +184,30 @@ const NAV_GROUPS = [
   // template — the content operation is work, and the personal org was cleared of work for a reason.
   { key:"studio",    label:"Studio",    icon:"🎬", tabs:["studio"] },
   { key:"budget",    label:"Budget",    icon:"💵", tabs:["budget"] },
-  { key:"invoices",  label:"Invoices",  icon:"💳", tabs:["invoices"] },   // OWN top-level menu (Ray: invoices is its own tab, not folded under Money)
-  { key:"money",     label:"Money",     icon:"💰", tabs:["nextcheck","finance","pay","routes"] },
-  { key:"ref",       label:"Data",      icon:"🗂️", tabs:["playbook","todo","research"] },
-  { key:"grow",      label:"Misc",      icon:"🧩", tabs:["plan","market","opps","sites","buildplan","training","map","route"] },
+  /* ⭐ MONEY IS ONE PLACE NOW. Ray, 2026-08-26: "can we marry invoices and money though?"
+     and "receipts should probably be under money."
+     ⚠️ THIS REVERSES AN EARLIER INSTRUCTION OF HIS, recorded on the line this replaces:
+     "Ray: invoices is its own tab, not folded under Money". He changed his mind after seeing
+     what it caused — Invoices said $4,873 owed while A/R said $7,487, the same money from two
+     angles with nothing explaining the gap. Keeping the old note here so the reversal is
+     visible rather than looking like drift.
+     Route review moved out to Work, where the driving lives. */
+  { key:"money",     label:"Money",     icon:"💰", tabs:["nextcheck","finance","invoices","receipts","pay"] },
+  /* ⚠️ To-Do was in here AND a top-level tab — Ray: "it looks like to do is under data, but then
+     to do is also its own tab. To do shouldn't be under data." And this group was called "Data"
+     while the Settings screen's tab is ALSO `data`, so one word meant two things in one menu. */
+  { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research"] },
+  /* "Misc" is where things go to be lost. These are all one thing: planning the business. */
+  { key:"grow",      label:"Growth",    icon:"📈", tabs:["plan","market","opps","sites","buildplan","training"] },
   { key:"admin",     label:"Admin",     icon:"🛡️", tabs:["admin"] },
   { key:"more",      label:"Settings",  icon:"⚙️", tabs:["data"] }
 ];
 const TAB_META = {
   today:{l:"Today",i:"🧭"}, leads:{l:"Leads",i:"📞"}, quotes:{l:"Quotes",i:"🧾"}, recurring:{l:"Recurring",i:"🔁"}, jobs:{l:"Jobs",i:"🧾"}, booking:{l:"Booking",i:"🎟️"}, schedule:{l:"Schedule",i:"📅"}, time:{l:"Time",i:"⏱️"}, map:{l:"Map",i:"🗺️"},
-  accounts:{l:"Customers",i:"👥"}, route:{l:"Route",i:"🚗"}, messages:{l:"Messages",i:"💬"},
+  accounts:{l:"Customers",i:"👥"}, route:{l:"Route planner",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, invoices:{l:"Invoices",i:"💳"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Data",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Routes",i:"🗺️"}, products:{l:"Products",i:"🏷️"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Settings",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Route review",i:"🗺️"}, products:{l:"Products",i:"🏷️"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.
