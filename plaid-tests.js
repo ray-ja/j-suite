@@ -299,5 +299,29 @@ console.log("\n--- ⭐ keys are VERIFIED on save, not just stored ---");
   ok("⚠️ the cross-reference to the shared rule is recorded", /SAME DEADLINE RULE AS EVERY OTHER OUTBOUND CALL/.test(PJ));
 }
 
+console.log("\n--- ⛔ setting up and using it must be the same screen ---");
+{
+  /* 2026-08-27: Ray saved his Plaid keys on OBX and they verified against production in 218ms — and then
+     there was nowhere to go. `budget` is in ORG_OPTIN_TABS and OBX does not have it enabled, while the
+     ＋ Connect a bank list rendered ONLY from the Budget screen. Two screens apart, and one of them did not
+     exist in the org he had just set up. A setup flow that dead-ends after the hard part is worse than one
+     that never started, because he has no way to tell whether the keys took. */
+  const ADM = CODE(R("js/32-admin.js"));
+  ok("⭐ the key card and the connect card are on the same screen",
+    /bankKeyCard\(\)/.test(ADM) && /bankCardHTML\(\)/.test(ADM));
+  ok("...in that order — keys first, then what they unlock",
+    ADM.indexOf("bankKeyCard()") < ADM.indexOf("bankCardHTML()"));
+  ok("⭐ Budget keeps its copy, so the two can't drift apart",
+    /bankCardHTML==="function"/.test(CODE(R("js/79-budget.js"))));
+  ok("⚠️ and why is recorded", /ORG_OPTIN_TABS tab that OBX does not have enabled/.test(R("js/32-admin.js")));
+
+  /* the reachability rule this came from, checked directly rather than by memory */
+  const RT = R("js/03-routing.js");
+  const optin = (RT.match(/const ORG_OPTIN_TABS = \[([^\]]*)\]/) || [, ""])[1];
+  ok("⚠️ budget IS opt-in, so no org gets it by default", /"budget"/.test(optin), optin);
+  ok("⭐ admin is CORE, so the bank cards are reachable in every org",
+    /const ORG_CORE_TABS = \[[^\]]*"admin"/.test(RT));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

@@ -528,6 +528,14 @@ function rAdmin() {
   /* ⭐ every key this org needs, entered in the app and stored per-org. Ray, 2026-08-26: "It should be
      under the AI tools thing. All the keys should be transmittable through the app." */
   if (owner && typeof bankKeyCard === "function") aiH += bankKeyCard();
+  /* ⛔ AND THE CONNECT BUTTON HAS TO BE REACHABLE FROM THE SAME PLACE. 2026-08-27: Ray put his Plaid keys on
+     OBX — and `budget` is an ORG_OPTIN_TABS tab that OBX does not have enabled, while bankCardHTML() (the
+     ＋ Connect a bank list) was rendered ONLY from the Budget screen. So the keys verified fine and there was
+     no way to reach the next step, in the org he'd just set up. Setting up a thing and using it were two
+     screens apart, and one of them didn't exist on that org.
+     ⭐ Rendered here too, right under the keys, so keys → connect → pair is one continuous flow in EVERY org.
+     Budget keeps its copy — same function, same state, so the two can't drift. */
+  if (owner && typeof bankCardHTML === "function") aiH += bankCardHTML();
   if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   /* ⭐ THE PIN GOES FIRST. Ray, 2026-08-26: "move the admin PIN box all the way to the top." It is the lock
