@@ -116,7 +116,9 @@ function pgGroupHTML(g) {
         + (skipped ? 'opacity:.4' : '') + '">'
         + '<input type="checkbox" style="width:auto;flex:0 0 auto" ' + (skipped ? '' : 'checked')
         +   ' onclick="pgSkip(\'' + esc(t.id) + '\',!this.checked)" title="Include in this group">'
-        + '<div class="grow" style="min-width:0"><div class="sub">' + esc(t.date || '') + ' · ' + esc((t.note || '').slice(0, 46)) + '</div></div>'
+        + '<div class="grow" style="min-width:0"><div class="sub">' + esc(t.date || '') + ' · ' + esc((t.note || '').slice(0, 46))
+        +   (t.detail ? '<div style="color:var(--accent);white-space:normal">' + esc(String(t.detail).slice(0, 70)) + '</div>' : '')
+        + '</div></div>'
         + '<div class="nm" style="font-variant-numeric:tabular-nums;flex:0 0 auto">'
         +   ((t.dir || 'out') === 'in' ? '+' : '−') + pgMoney(t.amount) + '</div>'
         + '</div>';

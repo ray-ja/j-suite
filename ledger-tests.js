@@ -122,9 +122,30 @@ console.log("\n--- ⭐ 2. it learns from his decisions, never from its own guess
   eq("⭐ ...and restarts the count, so it stops sounding confident about what he just rejected", st.p.budgetMemo[0].hits, 1);
   eq("still one rule for this payee, not two fighting", st.p.budgetMemo.length, 1);
 
-  ok("⭐ learning is called from approve and nowhere else",
-    (CODE(LEDGER).match(/ledgerLearn\(/g) || []).length === 2, (CODE(LEDGER).match(/.*ledgerLearn\(.*/g) || []));
-  ok("⛔ ...specifically, ledgerIngest never calls it", !/ledgerLearn/.test(CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerIngest"), CODE(LEDGER).indexOf("function ledgerInbox"))));
+  /* ⚠️ THE INVARIANT IS "ONLY FROM HIS DECISIONS", NOT "ONLY FROM approve()". It said the latter until
+     2026-08-27, when ledgerBackfillMemo was added — which learns from ALREADY-APPROVED rows, i.e. the very
+     same source of truth, just ones that arrived before this screen existed. Restated so it still forbids
+     the thing that matters: learning from a GUESS. */
+  ok("⭐ learning happens in exactly two places", (CODE(LEDGER).match(/ledgerLearn\(/g) || []).length === 3,
+    (CODE(LEDGER).match(/.*ledgerLearn\(.*/g) || []));
+  ok("⛔ ...ledgerIngest never calls it — an import is not a decision",
+    !/ledgerLearn/.test(CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerIngest"), CODE(LEDGER).indexOf("function ledgerInbox"))));
+  ok("⛔ ...nor does ledgerSuggest — a guess must never teach itself",
+    !/ledgerLearn/.test(CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerSuggest"), CODE(LEDGER).indexOf("function ledgerDupKey"))));
+  ok("⭐ the backfill reads ONLY approved rows carrying his own category",
+    /rows = ledgerTx\(\)\.filter\(function \(t\) \{\s*return !t\.pending && t\.catId/.test(CODE(LEDGER)));
+  ok("⛔ ...and never touches a transaction — rules only", (function () {
+    var b = CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerBackfillMemo"), CODE(LEDGER).indexOf("function ledgerResuggest"));
+    return !/t\.catId\s*=|t\.pending\s*=|t\.amount\s*=/.test(b);
+  })());
+
+  /* ⭐ re-asking after learning: suggestions may be rewritten, decisions may not */
+  ok("⭐ ledgerResuggest touches PENDING rows only",
+    /ledgerTx\(\)\.filter\(function \(t\) \{ return t\.pending; \}\)/.test(CODE(LEDGER)));
+  ok("⛔ ...and never writes a real category, only the suggestion", (function () {
+    var b = CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerResuggest"), CODE(LEDGER).indexOf("function ledgerApprove"));
+    return /t\.suggestedCatId = next/.test(b) && !/[^t]t\.catId\s*=/.test(b);
+  })());
 }
 
 console.log("\n--- ⭐ 3. cash basis: the same dollar must not be counted twice ---");

@@ -228,5 +228,124 @@ console.log("\n--- ⭐ money that names one of his own accounts ---");
   ok("⚠️ the ambiguity rule is written down", /Ambiguous names are refused outright/.test(R("js/143-ledger.js")));
 }
 
+console.log("\n--- ⭐⭐ he had already answered most of this ---");
+{
+  /* Ray, 2026-08-27: "we need to automate as much as possible I don't have time to be an accountant too."
+     ⚠️ HE HAD ALREADY FILED 263 TRANSACTIONS AND THE LEARNING TABLE HELD ZERO RULES — rules are only written
+     on approval, and that history predates this screen. 263 answers, unused, while the queue asked again.
+     ⚠️ AND EVEN TAUGHT, MOST STILL COULDN'T FIRE: a statement writes "POS Debit - Debit Card 9185
+     Transaction 06-02-26 Wal-Mart #2" and Plaid writes "Walmart", so the rule keys on "transaction wal mart"
+     and the incoming row asks for "walmart". Backfill alone answered 43 of 276; with the fuzzy fallback, 141. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    budgetCats: [{ id: "c-groc", name: "Groceries", deleted: false }, { id: "c-home", name: "Home & hardware", deleted: false }],
+    budgetAccounts: ACCTS, budgetMemo: [], budgetBills: [], budgetBooks: [{ id: "b", name: "P", deleted: false }],
+    budgetTx: [
+      /* his history, in statement-speak, already filed */
+      tx({ date: "2026-06-02", amount: 23.13, note: "POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2", pending: false, catId: "c-groc" }),
+      tx({ date: "2026-06-09", amount: 41.02, note: "POS Debit - Debit Card 9185 Transaction 06-09-26 Wal-Mart #2", pending: false, catId: "c-groc" }),
+      tx({ date: "2026-06-15", amount: 88.00, note: "POS Debit - Debit Card 9185 Transaction 06-15-26 The Home Depot", pending: false, catId: "c-home" }),
+      /* what Plaid just delivered, in Plaid-speak, waiting */
+      tx({ date: "2026-08-20", amount: 12.00, note: "Walmart" }),
+      tx({ date: "2026-08-21", amount: 30.00, note: "The Home Depot" }),
+      tx({ date: "2026-08-22", amount: 9.00, note: "Somewhere brand new" })
+    ] } };
+  const c = mk(store, "p");
+  c.budgetCatName = id => ((store.p.budgetCats || []).find(x => x && x.id === id) || {}).name || "";
+
+  ok("⛔ nothing is learned to begin with", c.ledgerRules().length === 0);
+  const b = c.ledgerBackfillMemo();
+  ok("⭐⭐ his own filed history becomes rules", c.ledgerRules().length > 0, b);
+  ok("⛔ ...and the backfill touched no transaction", store.p.budgetTx.every(t => t.pending !== undefined) &&
+    store.p.budgetTx[3].catId === "" && store.p.budgetTx[3].pending === true);
+
+  /* ⭐⭐ THE FUZZY FALLBACK — the rule was learned under statement-speak and the row speaks Plaid */
+  const g1 = c.ledgerSuggest({ date: "2026-08-20", amount: 12, dir: "out", desc: "Walmart", accountId: "chk" });
+  ok("⭐⭐ 'Walmart' finds the rule learned from 'POS Debit … Wal-Mart #2'", g1.catId === "c-groc", g1);
+  ok("...at MEDIUM confidence, because it matched the merchant and not the key", g1.confidence === "medium", g1.confidence);
+  ok("...and says so, quoting how his bank wrote it then", /wrote it differently/.test(g1.why), g1.why);
+  const g2 = c.ledgerSuggest({ date: "2026-08-21", amount: 30, dir: "out", desc: "The Home Depot", accountId: "chk" });
+  ok("⭐ same for Home Depot", g2.catId === "c-home");
+  const g3 = c.ledgerSuggest({ date: "2026-08-22", amount: 9, dir: "out", desc: "Somewhere brand new", accountId: "chk" });
+  ok("⛔ a genuinely new payee is still unknown — the fallback is not a wildcard", !g3.catId, g3);
+
+  /* ⭐ re-asking rewrites the stale suggestions already sitting on the queue */
+  ok("stale to begin with", store.p.budgetTx[3].suggestedCatId === "");
+  const r = c.ledgerResuggest();
+  ok("⭐⭐ re-asking updates rows that were ingested before it learned", store.p.budgetTx[3].suggestedCatId === "c-groc", r);
+  ok("⛔ ...but never writes a real category", store.p.budgetTx[3].catId === "" && store.p.budgetTx[3].pending === true);
+  ok("⛔ ...and never revisits an APPROVED row — that is his decision",
+    store.p.budgetTx[0].catId === "c-groc" && store.p.budgetTx[0].pending === false);
+  ok("⭐ it is idempotent", c.ledgerResuggest().changed === 0);
+}
+
+console.log("\n--- 📦 an order history says what the charge was ---");
+{
+  /* 27 rows saying only "Amazon", $1,543.73, one of them $358.19. No categorising by payee will ever
+     separate a drill bit from a birthday present; the order history is the only place the answer lives. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    budgetCats: CATS, budgetAccounts: ACCTS, budgetMemo: [], budgetBills: [], budgetBooks: [{ id: "b", name: "P", deleted: false }],
+    budgetTx: [
+      tx({ id: "a1", date: "2026-08-13", amount: 358.19, note: "Amazon" }),
+      tx({ id: "a2", date: "2026-08-09", amount: 74.69, note: "Amazon" }),
+      tx({ id: "w1", date: "2026-08-12", amount: 8.53, note: "Wawa" })
+    ] } };
+  const c = mk(store, "p");
+  vm.runInContext(R("js/80-budget-csv.js"), c);
+  vm.runInContext(R("js/162-order-import.js"), c);
+
+  const csv = ['"Order Date","Order ID","Product Name","Total Owed","Ship Date"',
+    '"2026-08-11","114-1","DEWALT 20V MAX Cordless Drill/Driver Kit","358.19","2026-08-13"',
+    '"2026-08-08","114-2","Gorilla Heavy Duty Double Sided Tape","74.69","2026-08-09"',
+    '"2026-08-01","114-3","Something never charged","19.99","2026-08-02"'].join("\n");
+  const p = c.oiParse(csv);
+  ok("⭐ columns are found by what they ARE, not by this year's Amazon header names",
+    p.cols.date === 0 && p.cols.desc === 2 && p.cols.amount === 3 && p.cols.order === 1, p.cols);
+  ok("...three orders read", p.rows.length === 3);
+
+  /* the header names Amazon used BEFORE the current export */
+  const older = c.oiFindCols(["Order Date", "Order ID", "Title", "Item Total"]);
+  ok("⭐ and the previous layout still maps", older.date === 0 && older.desc === 2 && older.amount === 3, older);
+  ok("⛔ 'Order Date' is not stolen as the description column", older.desc !== 0);
+
+  const m = c.oiMatch(p.rows, "Amazon");
+  ok("⭐ two orders find their charge across a two-day despatch gap", m.pairs.length === 2, m.pairs.length);
+  ok("⭐ the order that never got charged is reported, not invented", m.unmatched.length === 1);
+  ok("⛔ a Wawa row is never touched by an Amazon import",
+    !m.pairs.some(x => x.tx.id === "w1"));
+
+  const n = c.oiApply(m.pairs);
+  ok("⭐⭐ the charge now says what it was", n === 2 && /DEWALT/.test(store.p.budgetTx[0].detail), store.p.budgetTx[0].detail);
+  ok("...and keeps the order number", store.p.budgetTx[0].orderRef === "114-1");
+  ok("⛔⛔ IT WRITES detail, NEVER note — the payee key, the learning table and the grouping all depend on it",
+    store.p.budgetTx[0].note === "Amazon");
+  ok("⛔ NO TRANSACTION WAS CREATED — the bank already told us the money moved", store.p.budgetTx.length === 3);
+  ok("⛔ no amount, category or pending state changed",
+    store.p.budgetTx[0].amount === 358.19 && store.p.budgetTx[0].catId === "" && store.p.budgetTx[0].pending === true);
+  ok("⭐ grouping still sees one Amazon payee, not two", (function () {
+    const gs = c.pgGroups().filter(g => g.label === "Amazon");
+    return gs.length === 1 && gs[0].n === 2;
+  })());
+
+  /* ⛔ one order claims one charge — Amazon splits orders across shipments */
+  const store2 = { registry: [{ id: "p", name: "P" }], p: {
+    budgetCats: CATS, budgetAccounts: ACCTS, budgetMemo: [], budgetBills: [], budgetBooks: [{ id: "b", name: "P", deleted: false }],
+    budgetTx: [tx({ id: "s1", date: "2026-08-10", amount: 20, note: "Amazon" }),
+               tx({ id: "s2", date: "2026-08-10", amount: 20, note: "Amazon" })] } };
+  const c2 = mk(store2, "p");
+  vm.runInContext(R("js/80-budget-csv.js"), c2); vm.runInContext(R("js/162-order-import.js"), c2);
+  const m2 = c2.oiMatch([{ date: "2026-08-10", amount: 20, desc: "First thing", order: "o1" },
+                         { date: "2026-08-10", amount: 20, desc: "Second thing", order: "o2" }], "Amazon");
+  c2.oiApply(m2.pairs);
+  ok("⭐⭐ two same-amount orders take one charge each, not both the same one",
+    store2.p.budgetTx[0].detail !== store2.p.budgetTx[1].detail
+    && store2.p.budgetTx[0].detail && store2.p.budgetTx[1].detail,
+    [store2.p.budgetTx[0].detail, store2.p.budgetTx[1].detail]);
+
+  ok("⚠️ a date it can't read is refused rather than guessed", c.oiDate("not a date") === "");
+  ok("⭐ but the common shapes all work",
+    c.oiDate("2026-08-13") === "2026-08-13" && c.oiDate("08/13/2026") === "2026-08-13");
+  ok("⛔ an amount is read as a positive magnitude", c.oiMoney("$-358.19") === 358.19 && c.oiMoney("") === 0);
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

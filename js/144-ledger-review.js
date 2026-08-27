@@ -55,6 +55,9 @@ function lrRow(t) {
        able to check what he is approving against his statement, so nothing is hidden, only demoted. */
     +   '<div class="grow" style="min-width:0"><div class="nm" style="font-size:15px;white-space:normal">'
     +     esc(lrName(t)) + '</div>'
+    /* ⭐ what it actually WAS, when an order history told us (js/162). "Amazon $358.19" is unfileable;
+       "Amazon · DeWalt 20V Max drill kit" files itself. */
+    +   (t.detail ? '<div class="sub" style="white-space:normal;color:var(--accent)">' + esc(String(t.detail).slice(0, 90)) + '</div>' : '')
     +   '<div class="sub">' + esc(lrDate(t.date)) + ' · ' + badge + '</div></div>'
     +   '<div class="nm" style="flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:16px'
     +     (t.dir === "in" ? ';color:var(--accent)' : '') + '">' + (t.dir === "in" ? "+" : "−") + esc(lrMoney(t.amount)) + '</div>'
@@ -110,6 +113,30 @@ function rLedgerReview() {
     + '</div>'
     + '<div class="sub" style="white-space:normal;margin-top:8px">None of this is in your budget yet.</div></div>';
 
+  /* ⭐⭐ USE WHAT HE HAS ALREADY DECIDED. Ray, 2026-08-27: "we need to automate as much as possible I don't
+     have time to be an accountant too." He had already categorised 263 transactions — and the learning table
+     had ZERO rules in it, because rules are only written on approval and that history predates the ledger.
+     263 answers he'd already given, sitting unused while this screen asked him again.
+     Measured: backfilling them and re-asking answers 141 of the 276 unplaced rows, 51%, in one tap. */
+  var _unlearned = 0;
+  try {
+    _unlearned = (typeof ledgerRules === "function" && !ledgerRules().length && typeof ledgerTx === "function")
+      ? ledgerTx().filter(function (t) { return !t.pending && t.catId && !t.isTransfer && !t.isCardPayment; }).length : 0;
+  } catch (e) {}
+  /* ⭐ ORDER HISTORY (js/162) — the only place that knows what an "Amazon" charge actually was. */
+  h += '<input type="file" id="oi_file" accept=".csv,text/csv" style="display:none" '
+    + 'onchange="oiHandleFile(this.files &amp;&amp; this.files[0]); this.value=\'\'">'
+    + '<button class="btn ghost" style="width:100%;margin-bottom:10px" onclick="oiPickFile()">'
+    + '\ud83d\udce6 Import an order history (Amazon, Home Depot\u2026) \u2014 says what each charge was</button>';
+
+  if (_unlearned > 20) {
+    h += '<div class="card" style="border-left:4px solid #1e9e5a"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">'
+      + '<div class="grow" style="white-space:normal"><b>You\'ve already filed ' + _unlearned + ' transactions</b>'
+      + '<div class="sub">I never learned from them — those rules only get written when you approve something here, '
+      + 'and that history came in before this screen existed. Let me read them and re-check everything waiting.</div></div>'
+      + '<button class="btn sm" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff" onclick="lrLearnFromHistory()">Use my history</button>'
+      + '</div></div>';
+  }
   h += lrGroup("Recognized", known,
     "I've seen these payees before, or they just move cash between your own accounts.",
     known.length > 1 ? "Approve all " + known.length + " recognized" : "");
@@ -135,6 +162,17 @@ function rLedgerReview() {
 if (typeof window !== "undefined") {
   window.rLedgerReview = rLedgerReview; window.lrRecognized = lrRecognized; window.lrRow = lrRow;
   window.lrName = lrName;
+
+  /* one tap: learn from his own filed history, then re-ask for every row still waiting */
+  window.lrLearnFromHistory = function () {
+    var b = (typeof ledgerBackfillMemo === "function") ? ledgerBackfillMemo() : { rules: 0 };
+    var r = (typeof ledgerResuggest === "function") ? ledgerResuggest() : { gained: 0 };
+    if (typeof toast === "function") {
+      toast(b.rules + " payee rule" + (b.rules === 1 ? "" : "s") + " learned · "
+        + r.gained + " waiting transaction" + (r.gained === 1 ? "" : "s") + " now recognised");
+    }
+    if (typeof render === "function") render();
+  };
 
   window.lrApprove = function (id) {
     var sel = document.getElementById("lrcat_" + id);

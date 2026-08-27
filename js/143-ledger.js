@@ -262,6 +262,36 @@ function ledgerSuggest(row) {
       " as " + ((typeof budgetCatName === "function") ? budgetCatName(rule.catId) : "that");
     return out;
   }
+  /* ⭐⭐ THE RULE MAY EXIST UNDER A DIFFERENT WORDING. Ray, 2026-08-27: "we need to automate as much as
+     possible I don't have time to be an accountant too."
+
+     ⚠️ HE HAD ALREADY ANSWERED MOST OF THESE AND THE APP COULDN'T HEAR IT. His 263 statement rows say
+     Walmart → Groceries (10×), Home Depot → Home & hardware (5×), BP → Everyday spending (6×), unanimous
+     every time. But a statement writes "POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2" and
+     Plaid writes "Walmart", so the rule is keyed "transaction wal mart" and the incoming row asks for
+     "walmart". Two sources, same merchant, keys that can never meet. The knowledge was there and unreachable.
+
+     So when the exact key misses, compare against what the rule was LEARNED FROM (lastDesc) with the same
+     payee test that reconciles statement rows to bank rows. ⛔ Confidence is "medium", not "high": it is a
+     genuine match on the merchant but not on the key, and the difference should show on screen. */
+  var fuzzy = null;
+  if (!key) fuzzy = null;
+  else {
+    var desc0 = String(row.desc || row.note || "");
+    fuzzy = ledgerRules().find(function (m) {
+      if (!ledgerCatOk(m.catId) || !m.lastDesc) return false;
+      return ledgerSamePayee(m.lastDesc, desc0);
+    }) || null;
+  }
+  if (fuzzy) {
+    out.catId = fuzzy.catId; out.ruleId = fuzzy.id; out.confidence = "medium";
+    out.seen = +fuzzy.hits || 0;
+    out.why = "you've filed " + (out.seen > 1 ? out.seen + " of these" : "one like this") + " as "
+      + ((typeof budgetCatName === "function") ? budgetCatName(fuzzy.catId) : "that")
+      + " — your bank wrote it differently then (\u201c" + String(fuzzy.lastDesc).slice(0, 32) + "\u201d)";
+    return out;
+  }
+
   var loose = key ? ledgerRules().find(function (m) { return m.key && key.indexOf(m.key) === 0 && ledgerCatOk(m.catId); }) : null;
   if (loose) {
     out.catId = loose.catId; out.ruleId = loose.id; out.confidence = "medium";
@@ -479,6 +509,52 @@ function ledgerLearn(desc, catId) {
   return m;
 }
 
+/* ⭐⭐ TEACH THE APP WHAT HE HAS ALREADY DECIDED. The learning table is only ever written on approval, so
+   history that arrived before the ledger existed — Ray's 263 categorised statement rows — taught it nothing.
+   That is 263 answers he already gave, sitting unused while the review screen asked him again.
+
+   Runs oldest-first so his MOST RECENT decision about a payee is the one that sticks. Skips transfers and
+   card payments (they carry no category by design). Idempotent: re-running just re-confirms the same rules.
+   ⛔ Writes rules only — never touches a transaction, a category or an amount. */
+function ledgerBackfillMemo() {
+  var n = 0, before = ledgerRules().length;
+  try {
+    var rows = ledgerTx().filter(function (t) {
+      return !t.pending && t.catId && !t.isTransfer && !t.isCardPayment && (t.note || "");
+    }).sort(function (a, b) { return String(a.date || "").localeCompare(String(b.date || "")); });
+    rows.forEach(function (t) { if (ledgerLearn(t.note, t.catId)) n++; });
+    if (n && typeof save === "function") save();
+  } catch (e) {}
+  return { taught: n, rules: ledgerRules().length, wasRules: before };
+}
+
+/* ⭐ RE-ASK FOR EVERY WAITING ROW. A suggestion is stamped once, at ingest — which is right for the steady
+   state and wrong the moment the app learns something new. After a backfill, or after he categorises a payee
+   he has thirty more of, every row already in the queue still carries the guess made before that.
+   ⛔ PENDING ROWS ONLY, and it only ever rewrites the SUGGESTION. An approved row is his decision and is
+   never revisited; the category on a pending row stays empty either way. */
+function ledgerResuggest() {
+  var changed = 0, gained = 0;
+  try {
+    ledgerTx().filter(function (t) { return t.pending; }).forEach(function (t) {
+      var had = !!(t.suggestedCatId || t.suggestTransfer || t.suggestCardPayment);
+      var g = ledgerSuggest({ date: t.date, amount: t.amount, dir: t.dir, desc: t.note, accountId: t.accountId, id: t.id });
+      var next = ledgerCatOk(g.catId) ? g.catId : "";
+      if (next === t.suggestedCatId && !!g.isTransfer === !!t.suggestTransfer
+          && !!g.isCardPayment === !!t.suggestCardPayment) return;
+      t.suggestedCatId = next;
+      t.suggestTransfer = !!g.isTransfer;
+      t.suggestCardPayment = !!g.isCardPayment;
+      t.suggestion = { confidence: g.confidence, why: g.why, ruleId: g.ruleId, seen: g.seen };
+      changed++;
+      if (!had && (next || g.isTransfer || g.isCardPayment)) gained++;
+      if (typeof touch === "function") touch(t);
+    });
+    if (changed && typeof save === "function") save();
+  } catch (e) {}
+  return { changed: changed, gained: gained };
+}
+
 /* approve one row. `over` may carry his corrections: { catId, dir, amount, date, isTransfer, isCardPayment } */
 function ledgerApprove(id, over) {
   over = over || {};
@@ -554,7 +630,7 @@ function ledgerInboxTotals() {
   return { in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100, unrecognized: unknown };
 }
 
-if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee; window.ledgerFindOwnAccount = ledgerFindOwnAccount;
+if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee; window.ledgerFindOwnAccount = ledgerFindOwnAccount; window.ledgerBackfillMemo = ledgerBackfillMemo; window.ledgerResuggest = ledgerResuggest;
   window.ledgerIngest = ledgerIngest; window.ledgerSuggest = ledgerSuggest;
   window.ledgerInbox = ledgerInbox; window.ledgerInboxCount = ledgerInboxCount;
   window.ledgerInboxTotals = ledgerInboxTotals;
