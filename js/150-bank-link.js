@@ -254,9 +254,21 @@ if (typeof window !== "undefined") {
   window.bankPairHTML = bankPairHTML; window.bankKeyCard = bankKeyCard; window.bankOrg = bankOrg;
 
   window.bankSetKey = function () {
-    var cid = prompt("Plaid client_id for " + ((typeof orgName === "function") ? orgName(bankOrg()) : bankOrg()) + ":");
+    /* ⛔ NAME THE ORG AND MAKE HIM AGREE TO IT. Ray, 2026-08-27: "oh my bad those keys should have gone on
+       the personal page." He'd just entered a live PRODUCTION Plaid credential against OBX. The card had the
+       org name in its heading and that wasn't enough — of course it wasn't: he came here to type a key, not
+       to audit which organisation he happened to be standing in.
+
+       ⚠️ Keys are per-org for a real reason: whichever org holds them is the one whose books a linked bank
+       feeds. Getting it wrong doesn't fail — it succeeds, into the wrong ledger. So the destination is
+       confirmed BEFORE the secret is asked for, while changing your mind is still free. */
+    var orgLabel = (typeof orgName === "function") ? orgName(bankOrg()) : bankOrg();
+    if (!confirm("Save Plaid keys to " + orgLabel + "?\n\n"
+      + "Whichever organization holds the keys is the one a linked bank's transactions land in. "
+      + "If these belong somewhere else, switch organization first — nothing is saved yet.")) return;
+    var cid = prompt("Plaid client_id for " + orgLabel + ":");
     if (cid === null) return;
-    var sec = prompt("Plaid secret (for the environment you picked):");
+    var sec = prompt("Plaid secret for " + orgLabel + " (the one matching the environment you picked):");
     if (sec === null) return;
     if (!String(cid).trim() || !String(sec).trim()) { alert("Both values are needed."); return; }
     fetch(bankApiBase() + "/api/plaid/config", { method: "POST", headers: bankHeaders(),

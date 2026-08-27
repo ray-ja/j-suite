@@ -323,5 +323,20 @@ console.log("\n--- ⛔ setting up and using it must be the same screen ---");
     /const ORG_CORE_TABS = \[[^\]]*"admin"/.test(RT));
 }
 
+console.log("\n--- ⛔ a key lands in an ORG, and that has to be a decision ---");
+{
+  /* Ray, 2026-08-27: "oh my bad those keys should have gone on the personal page." He had just entered a live
+     production credential against OBX. The org name was already in the card's heading — and that was never
+     going to be enough, because he came to type a key, not to audit which org he was standing in.
+     ⚠️ Getting it wrong does not fail. It succeeds, into the wrong ledger. */
+  const BL = R("js/150-bank-link.js"), BLC = CODE(BL);
+  ok("⭐ the destination org is confirmed by name", /confirm\("Save Plaid keys to " \+ orgLabel/.test(BLC));
+  ok("⭐ ...BEFORE the secret is asked for, while changing your mind is free",
+    BLC.indexOf("confirm(\"Save Plaid keys to") < BLC.indexOf("prompt(\"Plaid client_id"));
+  ok("⭐ and it says what the choice actually controls", /transactions land in/.test(BL));
+  ok("...and that nothing has been saved yet", /nothing is saved yet/.test(BL));
+  ok("⭐ the secret prompt names the org too", /Plaid secret for " \+ orgLabel/.test(BLC));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
