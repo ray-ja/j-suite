@@ -187,5 +187,57 @@ console.log("\n--- wiring ---");
     !/\.push\(|save\(\)|touch\(/.test(CODE(SRC).replace(/openBudgetAccount/g, "")));
 }
 
+/* ---------- ⭐⭐ WHICH FOUR BALANCES, AND WHAT THEY ARE CALLED --------------------------------------------
+   Ray, 2026-08-27: "under money it says personal · Jamieson · OBX · personal… there's two personals, so I
+   don't know what the two personals were for… I would like to see Brooke's checking. It should go personal
+   checking, Brooke's checking, JA, and DYAD."
+
+   ⚠️ WHY IT PRINTED "PERSONAL" TWICE: the label was DERIVED from the account's book, and after the bank link
+   his personal book held fifteen accounts. Two of the first four shared a book, so the card showed the same
+   word over two different numbers with nothing to tell them apart. Pinning is now explicit and his. */
+console.log("\n--- ⭐⭐ pinned accounts, his labels, his order ---");
+{
+  const s = store();
+  s.p.budgetAccounts = [
+    { id: "a1", bookId: "bk-personal", name: "RJ’s Checking ····5377", type: "checking", balance: 502.12, balanceDate: "2026-08-25", order: 0, todayShow: true, todayLabel: "Personal", todayOrder: 1 },
+    { id: "a2", bookId: "bk-personal", name: "Brooke’s Checking ····9652", type: "checking", balance: 46.85, balanceDate: "2026-08-25", order: 5, todayShow: true, todayLabel: "Brooke", todayOrder: 2 },
+    { id: "a3", bookId: "bk-jam", name: "Jamieson — Business Checking ····5509", type: "checking", balance: 385.37, balanceDate: "2026-08-25", order: 9, todayShow: true, todayLabel: "JA", todayOrder: 3 },
+    { id: "a4", bookId: "bk-obx", name: "Square — OBX Lot Solutions", type: "checking", balance: 1056.99, balanceDate: "2026-08-25", order: 2, todayShow: true, todayLabel: "DYAD", todayOrder: 4 },
+    { id: "a5", bookId: "bk-personal", name: "RJ’s Savings ····0301", type: "savings", balance: 5.03, order: 1 },
+    { id: "a6", bookId: "bk-personal", name: "Truck loan ····6172", type: "loan", balance: -16158.36, order: 3 }
+  ];
+  const c = sandbox(s);
+  const got = c.mcAccounts().map(a => c.mcAccountLabel(a));
+  ok("⭐ exactly the four he named, in the order he named them",
+    JSON.stringify(got) === JSON.stringify(["Personal", "Brooke", "JA", "DYAD"]), got);
+  ok("⛔ no two columns share a label any more", new Set(got).size === got.length, got);
+  ok("⛔ an unpinned account stays off the card — savings and the truck loan are not morning numbers",
+    c.mcAccounts().every(a => a.id !== "a5" && a.id !== "a6"));
+  const html = c.mcBalancesHTML();
+  ok("...and the card prints his short names, not the bank's", /Personal/.test(html) && /DYAD/.test(html) && !/····5377<\/div>/.test(html));
+  ok("⭐ the bank's real name survives as the tooltip, so a wrong pin is visible", /title="RJ’s Checking ····5377"/.test(html));
+
+  /* ⛔ position, not sort order: todayOrder drives it, NOT the account's own `order` (which is 0,5,9,2 here
+     and would have produced Personal · DYAD · Brooke · JA). */
+  ok("⛔ todayOrder decides position, not the account's list order",
+    c.mcAccounts()[1].id === "a2" && c.mcAccounts()[3].id === "a4");
+}
+
+console.log("\n--- ⛔ the fallback, for a store with nothing pinned ---");
+{
+  const s = store();
+  s.p.budgetAccounts.push(
+    { id: "loan1", bookId: "bk-personal", name: "Minivan loan ····1319", type: "loan", balance: -16898.66, order: 3 },
+    { id: "card1", bookId: "bk-personal", name: "NFCU Visa ····6154", type: "credit", balance: -23644.53, order: 4 });
+  const c = sandbox(s);
+  /* ⚠️ acctIsCash lives in js/79, which this sandbox does not load — so this asserts the SAFE FALLBACK path
+     inside mcAccounts(). It still has to drop the credit card; the loan is the case js/79 catches. */
+  ok("⛔ a credit card is never one of the four morning balances",
+    c.mcAccounts().every(a => a.id !== "card1"), c.mcAccounts().map(a => a.name));
+  ok("⭐ and the fallback is capped at what fits", c.mcAccounts().length >= 3);
+  ok("⛔ the fallback asks js/79 what counts as cash rather than re-deciding it",
+    /acctIsCash/.test(CODE(SRC)));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

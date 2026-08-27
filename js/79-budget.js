@@ -151,12 +151,35 @@ function budgetAccountBalance(a){
   if(a.type==="credit") return Math.round((stored-budgetCardChargesTotal(a.id)+budgetCardPaymentsTotal(a.id))*100)/100;
   return Math.round((stored-budgetCardPaymentsFrom(a.id))*100)/100;
 }
-/* SPENDABLE cash in scope = Σ LIVE balances of NON-credit accounts. Credit-card debt is NOT spendable cash; it is
+/* ---------- ⭐⭐ WHAT COUNTS AS CASH — AN ALLOWLIST, NOT AN EXCEPTION LIST -------------------------------
+   Ray, 2026-08-27, reading the money card: "it says a negative thirty six thousand over the next six weeks.
+   uh, that doesn't make any sense. I mean, I have my guaranteed rent income, and I don't have thirty six
+   thousand dollars worth of bills over six weeks anyways."
+
+   ⚠️ HE WAS RIGHT AND THE BILLS WERE NEVER THE PROBLEM. Measured on his live store: the 45-day forecast
+   found $12,979 of bills against $12,422 of income — a true net of −$557. The −$36,054 was the STARTING
+   BALANCE: cash was defined as `type !== "credit"`, so his Minivan loan (−$16,898.66) and Truck loan
+   (−$16,158.36) were added up as though they were money in the bank. $33,057 of car debt, counted as cash.
+
+   ⛔ SO THE TEST IS NOW AN ALLOWLIST. "Not a credit card" was only ever right by accident — it was true of
+   every type that existed when it was written, and the moment Plaid brought in `loan` accounts it silently
+   became wrong in the worst possible direction, inflating his cash on the screen he reads every morning.
+   An allowlist fails the safe way instead: a type nobody has thought of yet is NOT spendable cash until
+   someone decides it is, so the next new account type can't repeat this.
+
+   ⚠️ AND THE SAME GAP RAN THE OTHER WAY. budgetTotalDebt counted only `credit`, so the identical $33,057 was
+   also MISSING from his total debt — understating what he owes while overstating what he has. One gap, two
+   wrong numbers, pointing opposite ways. */
+var ACCT_CASH_TYPES={checking:1,savings:1,cash:1};
+var ACCT_DEBT_TYPES={credit:1,loan:1};
+function acctIsCash(a){ return !!(a&&ACCT_CASH_TYPES[a.type||"checking"]); }
+function acctIsDebt(a){ return !!(a&&ACCT_DEBT_TYPES[a.type]); }
+/* SPENDABLE cash in scope = Σ LIVE balances of CASH accounts. Credit-card debt is NOT spendable cash; it is
    represented entirely by its Payment envelope (YNAB model) — so it never inflates To-Be-Budgeted. */
-function budgetTotalCash(){ return Math.round(actBudgetAccounts().filter(function(a){return a.type!=="credit";})
+function budgetTotalCash(){ return Math.round(actBudgetAccounts().filter(acctIsCash)
   .reduce(function(s,a){return s+budgetAccountBalance(a);},0)*100)/100; }
-/* total DEBT in scope = Σ |live balance| of every credit account (active cards + debtOnly), as a positive number */
-function budgetTotalDebt(){ return Math.round(actBudgetAccounts().filter(function(a){return a.type==="credit";})
+/* total DEBT in scope = Σ |live balance| of every card AND loan (active cards + debtOnly), as a positive number */
+function budgetTotalDebt(){ return Math.round(actBudgetAccounts().filter(acctIsDebt)
   .reduce(function(s,a){ var b=budgetAccountBalance(a); return s+(b<0?-b:0); },0)*100)/100; }
 /* allocation record for a cat+month (book implied by the cat) */
 function budgetAllocRec(catId,m){ return (D().budgetBudgets||[]).filter(function(x){return !x.deleted;})
@@ -217,11 +240,16 @@ function budgetPaymentEnvelopeAvailable(cardId){
   return Math.round(v*100)/100;
 }
 
+/* ⚠️ `loan` WAS MISSING FROM THIS LIST ENTIRELY. Plaid brought in his Minivan and Truck loans typed "loan",
+   a value the app had never heard of — and acctTypeMeta() falls back to ACCT_TYPES()[0], so the Budget page
+   labelled a $16,898 car loan "🏦 Checking". A type that exists in the data and not in the vocabulary is how
+   a wrong label looks completely ordinary. */
 function ACCT_TYPES(){ return [
   {k:"checking",label:"Checking",icon:"🏦"},
   {k:"savings", label:"Savings", icon:"🐖"},
   {k:"cash",    label:"Cash",    icon:"💵"},
-  {k:"credit",  label:"Credit card",icon:"💳"}
+  {k:"credit",  label:"Credit card",icon:"💳"},
+  {k:"loan",    label:"Loan",    icon:"🚗"}
 ]; }
 function acctTypeMeta(k){ return ACCT_TYPES().find(function(t){return t.k===k;})||ACCT_TYPES()[0]; }
 
@@ -566,7 +594,10 @@ function budgetPaymentEnvelopesCard(m){
 /* ---------- DEBTS — payoff view: every credit + debtOnly account, total debt, utilization, snowball/avalanche ---------- */
 function budgetRenderDebts(){
   var body=document.getElementById("budget_body"); if(!body)return;
-  var debts=actBudgetAccounts().filter(function(a){return a.type==="credit";});
+  /* ⛔ acctIsDebt, so this LIST matches the total above it. Cards and loans both. A car loan with no APR
+     sorts last in the avalanche (js/147 reads `+a.apr||0`) rather than breaking it — right, since a 5% auto
+     loan genuinely is the last thing you'd overpay while a 24.99% card is open. */
+  var debts=actBudgetAccounts().filter(acctIsDebt);
   var h='';
   if(!debts.length){
     h+='<div class="empty"><div class="big">💳</div>No credit cards or debts yet. On the <b>Month</b> tab (Accounts) add a <b>Credit card</b> — a card you <b>use</b> gets the full YNAB payment flow; tick <b>Debt only</b> for a card/loan you just owe on and want to pay down.</div>';
@@ -646,7 +677,8 @@ function budgetPayoffMonths(balance,aprPct,monthly){
    the card's Payment envelope). Stored as a budgetTx isCardPayment:true {accountId:<source>, cardId:<card>, dir:out}. ---------- */
 window.openCardPayment=function(cardId){
   var card=budgetAccount(cardId); if(!card){ alert("Card not found."); return; }
-  var sources=actBudgetAccounts().filter(function(a){return a.type!=="credit"&&!a.deleted;});
+  /* ⛔ a payment comes FROM cash — you cannot pay a Visa out of a car loan */
+  var sources=actBudgetAccounts().filter(function(a){return acctIsCash(a)&&!a.deleted;});
   if(!sources.length){ alert("Add a checking/savings/cash account first — that's where the payment comes from."); return; }
   var owed=-budgetAccountBalance(card); if(owed<0)owed=0;
   var setAside=budgetIsActiveCard(card)?budgetPaymentEnvelopeAvailable(cardId):null;
@@ -751,6 +783,15 @@ window.openBudgetAccount=function(id){
     +(live!=null?('<div class="sub" style="margin:4px 0">Live balance (after logged charges/payments): <b style="color:'+(live<0?"var(--danger)":"var(--ok,#1b7f4d)")+'">'+budgetMoney(live)+'</b></div>'):'')
     +creditBox
     +'<label>Last 4 (optional)</label><input id="ba_mask" value="'+esc(a.mask||"")+'" placeholder="1234" maxlength="4" inputmode="numeric">'
+    /* ⭐ WHICH BALANCES HE SEES EVERY MORNING, DECIDED HERE. The Today money card used to guess — first four
+       accounts by order, each labelled after its book — which printed "PERSONAL" twice once his personal book
+       held fifteen accounts. This is the same choice, made once, by the person who knows the answer. */
+    +'<label style="margin-top:10px"><input type="checkbox" id="ba_today" style="width:auto;margin-right:6px"'+(a.todayShow?" checked":"")+'>Show on the Today money card</label>'
+    +'<div class="row" style="gap:8px">'
+    +  '<div class="grow"><label>Short name there</label><input id="ba_todaylabel" value="'+esc(a.todayLabel||"")+'" placeholder="e.g. Personal · Brooke · JA · DYAD" maxlength="12"></div>'
+    +  '<div style="flex:0 0 84px"><label>Position</label><input id="ba_todayorder" type="number" step="1" value="'+esc(a.todayOrder!=null&&a.todayOrder!==""?a.todayOrder:"")+'" placeholder="1"></div>'
+    +'</div>'
+    +'<div class="sub" style="margin:2px 0 0">Left to right, lowest number first. Keep the short name under ~12 characters — four of these share one row.</div>'
     +'<button class="btn acc" style="margin-top:12px" onclick="saveBudgetAccount(\''+a.id+'\','+isNew+')">Save</button>'
     +(isNew?"":'<button class="btn danger" style="margin-top:10px" onclick="delBudgetAccount(\''+a.id+'\')">Delete account</button>')
   );
@@ -776,6 +817,10 @@ window.saveBudgetAccount=function(id,isNew){
     var pa=parseFloat(val("ba_promoapr")); a.promoApr=(a.promoUntil&&!isNaN(pa)&&pa>=0)?pa:"";
     var dbo=document.getElementById("ba_debtonly"); a.debtOnly=!!(dbo&&dbo.checked);
   }else{ a.apr=""; a.minPayment=""; a.creditLimit=""; a.debtOnly=false; a.promoUntil=""; a.promoApr=""; }   // non-credit never carries debt fields
+  /* the Today money card: shown, called what, in what position */
+  var tsh=document.getElementById("ba_today"); a.todayShow=!!(tsh&&tsh.checked);
+  a.todayLabel=(val("ba_todaylabel")||"").slice(0,12);
+  var tord=parseFloat(val("ba_todayorder")); a.todayOrder=isNaN(tord)?"":tord;
   a.deleted=false; touch(a); if(isNew)d.budgetAccounts.push(a);
   /* an active card (credit, not debt-only) needs its auto-managed Payment envelope; a debt-only card retires it */
   if(budgetIsActiveCard(a))ensurePaymentCat(a);

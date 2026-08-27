@@ -211,5 +211,71 @@ console.log("\n--- the money card uses it ---");
   ok("reconcile loads before the forecast that reads its balances", SHELL.indexOf("145-reconcile") < SHELL.indexOf("146-cashflow"));
 }
 
+/* ---------- ⭐⭐ A CAR LOAN IS NOT CASH ------------------------------------------------------------------
+   Ray, 2026-08-27, reading the money card: "it says a negative thirty six thousand over the next six weeks.
+   uh, that doesn't make any sense. I mean, I have my guaranteed rent income, and I don't have thirty six
+   thousand dollars worth of bills over six weeks anyways."
+
+   ⚠️ HE WAS RIGHT AND THE BILLS WERE NEVER THE PROBLEM. Measured on his live store the day he said it: the
+   45-day forecast found $12,979 of bills against $12,422 of income — a true net of −$557. The −$36,054 was
+   the STARTING BALANCE. Cash was defined as `type !== "credit"`, so his Minivan loan (−$16,898.66) and Truck
+   loan (−$16,158.36) were summed as money in the bank: $33,057 of car debt counted as cash.
+
+   ⛔ THE TEST IS NOW AN ALLOWLIST, and that is the whole point. "Not a credit card" was true of every type
+   that existed when it was written and became wrong the instant Plaid introduced one that didn't. An
+   allowlist fails safe: an unknown type is not spendable until someone says it is.
+
+   ⚠️ AND THE SAME GAP RAN BOTH WAYS — budgetTotalDebt counted only `credit`, so the identical $33,057 was
+   also MISSING from what he owes. One gap, two numbers, wrong in opposite directions. */
+console.log("\n--- ⭐⭐ loans are debt, not cash (the −$36,054 that wasn't real) ---");
+{
+  const st = base();
+  st.p.budgetAccounts = [
+    { id: "a_chk",  bookId: "bk", name: "RJ’s Checking",  type: "checking", balance: 502.12 },
+    { id: "a_sav",  bookId: "bk", name: "RJ’s Savings",   type: "savings",  balance: 5.03 },
+    { id: "a_cash", bookId: "bk", name: "Wallet",         type: "cash",     balance: 40 },
+    { id: "a_visa", bookId: "bk", name: "NFCU Visa",      type: "credit",   balance: -23644.53 },
+    { id: "a_van",  bookId: "bk", name: "Minivan loan",   type: "loan",     balance: -16898.66 },
+    { id: "a_trk",  bookId: "bk", name: "Truck loan",     type: "loan",     balance: -16158.36 }
+  ];
+  const c = sandbox(st);
+
+  eq("⭐⭐ cash is checking + savings + cash, and nothing else", c.acctTotalCash(), 547.15);
+  eq("...budgetTotalCash agrees — one rule, not two", c.budgetTotalCash(), 547.15);
+  ok("⛔ neither car loan is counted as money he has",
+    c.acctTotalCash() > 0 && c.acctTotalCash() < 1000, c.acctTotalCash());
+  eq("⭐ and the $33,057 shows up where it belongs — total debt", c.budgetTotalDebt(), 56701.55);
+
+  ok("⭐ checking · savings · cash are cash", ["checking", "savings", "cash"].every(t => c.acctIsCash({ type: t })));
+  ok("⛔ credit and loan are not", !c.acctIsCash({ type: "credit" }) && !c.acctIsCash({ type: "loan" }));
+  ok("⛔⛔ AN UNKNOWN TYPE IS NOT CASH — this is the whole reason it's an allowlist. `loan` was once unknown "
+    + "too, and being permissive about it cost him a $36,000 lie on his morning screen",
+    !c.acctIsCash({ type: "brokerage" }) && !c.acctIsCash({ type: "mortgage" }) && !c.acctIsCash({ type: "hsa" }));
+  ok("⚠️ a legacy account with NO type is still cash — it always was, and re-typing every old record is not "
+    + "something a bug fix gets to demand", c.acctIsCash({ name: "old", balance: 5 }));
+  ok("⭐ `loan` is in the account-type vocabulary now — acctTypeMeta falls back to ACCT_TYPES()[0], so a "
+    + "missing entry labelled his $16,898 truck loan '🏦 Checking'", c.acctTypeMeta("loan").label === "Loan");
+
+  /* ⭐ AND THE FORECAST THAT STARTS FROM IT. This is the number he actually read. */
+  st.p.budgetBills = [{ id: "b1", name: "Rent", amount: 300, dueDay: 5, active: true }];
+  const f = c.cashflowForecast(45);
+  eq("⭐⭐ the forecast opens from real cash, not from cash minus the cars", f.start, 547.15);
+  ok("⛔ it never opens at the loan-inflated figure", f.start !== -31050.64 && f.low.balance > -30000, f);
+}
+
+console.log("\n--- ⛔ a reconciled car loan is not a 'starting point' for a cash forecast ---");
+{
+  const st = base();
+  st.p.budgetAccounts = [
+    { id: "a_chk", bookId: "bk", name: "Checking", type: "checking", balance: 0 },
+    { id: "a_trk", bookId: "bk", name: "Truck loan", type: "loan", balance: -16158.36, balanceDate: "2026-08-25" }
+  ];
+  const c = sandbox(st);
+  ok("⛔ knowing exactly what he owes on the truck says nothing about whether he can pay Tuesday's bills",
+    c.cfHasStartingPoint() === false);
+  st.p.budgetAccounts[0].balanceDate = "2026-08-25";
+  ok("⭐ ...but a reconciled checking account is one", c.cfHasStartingPoint() === true);
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

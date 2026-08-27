@@ -92,7 +92,12 @@ ok("cal has a screen", /cal:\(typeof rCal==="function"\?rCal:rToday\)/.test(R));
 ok("cal has TAB_META", /cal:\{l:"Calendar"/.test(R));
 ok("cal is a nav group", /key:"cal"[\s\S]{0,80}tabs:\["cal"\]/.test(R));
 ok("cal is OPT-IN (never on OBX/Jamieson)", /ORG_OPTIN_TABS = \[[^\]]*"cal"/.test(R));
-ok("the personal template includes it", /personal: \["life","journal","shelf","cal","budget","todo","messages"\]/.test(R));
+/* ⚠️ ASSERT THE FACT, NOT THE WHOLE LINE. This matched the personal tab list verbatim, so it broke the day
+   "workout" was added — a passing test would have required editing this file for every unrelated tab. What it
+   is actually defending is that `cal` reaches the personal template at all. */
+ok("the personal template includes it",
+  /personal: \[[^\]]*"cal"[^\]]*\]/.test(R) && /personal: \[[^\]]*"budget"[^\]]*\]/.test(R),
+  (R.match(/personal: \[[^\]]*\]/) || [""])[0]);
 ok("the module is in the shell",
   fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8").indexOf('src="js/126-calendar.js"') > 0);
 ok("the home page shows what's close", /evHomeCardHTML\(30\)/.test(fs.readFileSync(path.join(__dirname, "js", "122-personal-home.js"), "utf8")));
@@ -102,11 +107,16 @@ console.log("\n--- the companion is TOLD the dates ---");
   const PERSONAL_TABS = ["life", "journal", "shelf", "cal", "budget", "todo", "messages"];
   const iso = new Date().toISOString().slice(0, 10);
   const yr = +iso.slice(0, 4);
+  const inTenDays = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
   const store = {
     registry: [{ id: "p", name: "RBJVL", tabs: PERSONAL_TABS }],
     users: [{ id: "u1", username: "Ray" }],
     p: { personalEvents: [
-      { id: "e1", date: (yr - 2) + "-08-16", annual: true, title: "Wife's birthday", note: "wants floats for the sound", confirmed: true },
+      /* ⚠️ A DATE THAT MOVES WITH TODAY, NOT A HARD-CODED 16 AUGUST. This was pinned to Brooke's real
+         birthday, so the assertion only held for the ~45 days before it and started failing the moment the
+         day passed — a test that reports a bug once a year and is silent the rest of the time is worse than
+         no test. Ten days out is inside the 45-day window on ANY day of the year. */
+      { id: "e1", date: (yr - 2) + inTenDays.slice(4), annual: true, title: "Wife's birthday", note: "wants floats for the sound", confirmed: true },
       { id: "e2", date: iso, title: "Something today", confirmed: true },
       { id: "e3", date: (yr + 3) + "-01-01", title: "Far future", confirmed: true },
       { id: "e4", date: iso, title: "Maybe this", confirmed: false },

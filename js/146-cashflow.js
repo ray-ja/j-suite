@@ -176,8 +176,10 @@ function cashflowForecast(days) {
    statement, or a balance he typed himself. Until then it says what it needs instead of guessing. */
 function cfHasStartingPoint() {
   try {
+    /* ⛔ a reconciled CAR LOAN is not a starting point for a cash forecast — same allowlist as the total */
+    var isCash = (typeof acctIsCash === "function") ? acctIsCash : function (a) { return a.type !== "credit"; };
     return cfActive(D().budgetAccounts).some(function (a) {
-      return a.type !== "credit" && (a.balanceDate || (+a.balance || 0) !== 0);
+      return isCash(a) && (a.balanceDate || (+a.balance || 0) !== 0);
     });
   } catch (e) { return false; }
 }

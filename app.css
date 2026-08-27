@@ -497,11 +497,37 @@
 .tcal-d.tcal-now{outline:2px solid var(--accent)}
 .tcal-num{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1}
 .tcal-now .tcal-num{color:var(--accent);font-weight:800}
-.tcal-pill{display:flex;gap:6px;align-items:baseline;font-size:11px;line-height:1.3;
+/* ⚠️ flex-start, not baseline — with a two-line title, baseline alignment drags the amount down beside the
+   SECOND line and "$4.8k" floats away from the bill it belongs to.
+   ⭐ AND IT WRAPS. A month cell is ~60px wide; "Iowa mortgage" and "$2.4k" cannot share that row. With
+   flex-wrap the amount drops to its own line exactly when there isn't room, so a wide calendar keeps them
+   side by side and a narrow one still reads. */
+.tcal-pill{display:flex;flex-wrap:wrap;gap:0 6px;align-items:flex-start;font-size:11px;line-height:1.3;
+  margin-bottom:2px;
   border-left:3px solid var(--pc,var(--accent));padding-left:4px;border-radius:2px;
   background:color-mix(in srgb, var(--pc,var(--accent)) 12%, transparent)}
-.tcal-pt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tcal-pr{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700;opacity:.9}
+/* ⭐ IT WRAPS NOW. Ray, 2026-08-27: "it looks like the text doesn't wrap well. it doesn't do a next line
+   break. I'm looking under today where it says truck registration, and the description just cuts off. can't
+   see the rest of it."
+   ⚠️ LAST TIME I REMOVED A 26-CHARACTER CAP IN JS AND CALLED IT FIXED — but the cell still refused to use a
+   second line, so "⚠️ Truck registration — DUE THIS MONTH" ellipsised at the width instead of at 26
+   characters. Same symptom, second cause: nowrap. A month cell is not a spreadsheet column; it has vertical
+   room and the point of putting words in it was that he can READ them.
+   ⛔ Clamped to THREE lines, not unlimited — one long to-do must not push a whole week's rows down the page.
+   ⚠️ Two wasn't enough for the very item he pointed at: "⚠️ Truck registration — DUE THIS MONTH" clipped to
+   "…— DU…" in a 100px cell. He asked for this twice and said plainly "it's just gonna have to be bigger",
+   so the cell grows to fit rather than the text shrinking to fit the cell. Only cells with a long title get
+   taller; the full text is still the tooltip.
+
+   ⚠️⚠️ AND `overflow-wrap:anywhere` WAS A DISASTER — CAUGHT IN A SCREENSHOT, NOT IN THE MARKUP. It drops the
+   title's min-content width to a SINGLE CHARACTER, so in a 60px month cell the amount won a tug-of-war for
+   the row and "Iowa mortgage · $2.4k" rendered as "I" over "c". Strictly worse than the ellipsis I was
+   replacing. `break-word` only breaks a word that genuinely cannot fit, and the 56px flex-basis above gives
+   the title a floor to stand on — below that the amount wraps away instead of squeezing it. */
+.tcal-pt{flex:1 1 56px;min-width:0;overflow:hidden;white-space:normal;overflow-wrap:break-word;
+  line-height:1.25;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+/* margin-left:auto keeps the amount hard right whether it shares the title's line or wraps below it */
+.tcal-pr{flex:0 0 auto;margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;opacity:.9}
 .tcal-more{font-size:10px;color:var(--muted);padding-left:4px}
 
 .tcal-dh{font-weight:700;font-size:13.5px;margin-bottom:6px}
@@ -599,6 +625,18 @@
 .mo-unsent{background:rgba(224,168,0,.18);color:#e0a800;font-weight:700}
 .mo-unbilled{white-space:normal;color:#e0a800;padding-top:4px}
 .mo-rent .mo-val{color:#1e9e5a}
+.mo-earned .mo-val{color:#1e9e5a}
+/* the two invoice groups — a heading with its own subtotal, so each is one readable job */
+.mo-invhd{padding:4px 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.mo-unsent-hd{color:#e0a800;font-weight:700}
+.mo-sent-hd{color:var(--muted);font-weight:700}
+.mo-age{color:var(--muted);font-size:11px}
+/* ⭐ the subtraction he was doing in his head — stated, and stated as conditional */
+.mo-net{margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(30,158,90,.10);
+  border-left:3px solid #1e9e5a;font-size:12.5px}
+.mo-net .mo-val{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;color:#1e9e5a}
+.mo-net-bad{background:rgba(232,104,63,.10);border-left-color:var(--danger)}
+.mo-net-bad .mo-val{color:var(--danger)}
 
 /* ---------- THE ROUTINE, DONE IN PLACE (js/166) -----------------------------------------------------
    Ray, 2026-08-27: "the checkboxes are kinda big and ugly… they're not lined up right, and they're very

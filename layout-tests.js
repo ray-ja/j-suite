@@ -89,5 +89,60 @@ console.log("\n--- the screenshot harness exists and uses the binary that works 
   ok("it exits non-zero on failure so it can gate a commit", /process\.exit\(4\)/.test(SH));
 }
 
+/* ---------- ⭐ THE THINGS HE COULD SEE ON TODAY ----------------------------------------------------------
+   Ray, 2026-08-27, reading it line by line. Three separate complaints, three different causes, all of them
+   layout rather than data. */
+console.log("\n--- ⭐ Today, read line by line ---");
+{
+  const CAL126 = fs.readFileSync(path.join(__dirname, "js", "126-calendar.js"), "utf8");
+  const RI = fs.readFileSync(path.join(__dirname, "js", "166-routine-inline.js"), "utf8");
+  const STRIP = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  /* 1. ⚠️ "where it says coming up water park, there's, like, an entire screen's worth of space between
+        water park and in seven days." The LABEL carried `grow`, so flexbox pushed the countdown to the far
+        right edge of a wide column. Two facts that only mean something together, flung apart by a class. */
+  const card = (STRIP(CAL126).match(/function evHomeCardHTML[\s\S]*?\n}/) || [""])[0];
+  ok("⚠️ the event label no longer grows — that one class put a screen between 'Waterpark' and 'in 7 days'",
+    !/class="grow"[^>]*>' \+ esc\(evLabel/.test(card) && /flex:0 1 auto/.test(card), card.slice(0, 300));
+  ok("⭐ a trailing spacer absorbs the slack instead, so the two stay side by side at any width",
+    /<div class="grow"><\/div>/.test(card));
+  /* 2. ⛔ "it doesn't even need an open button because the calendar's here, and it takes you to the same page" */
+  ok("⛔ and the duplicate Open button is gone — the Calendar block already goes to that exact screen",
+    !/>Open</.test(card), card);
+  const TCAL = fs.readFileSync(path.join(__dirname, "js", "163-today-calendar.js"), "utf8");
+  ok("⛔ ...the Calendar block still has its one", /navSub\(\\?'cal\\?'\)[^>]*>Open</.test(TCAL), TCAL.slice(0, 0));
+
+  /* 3. ⚠️ "the text doesn't wrap well. it doesn't do a next line break… the description just cuts off."
+        LAST TIME I removed a 26-character cap in JS and called this fixed — but the cell was still nowrap,
+        so it ellipsised at the width instead. Same symptom, second cause. */
+  const pt = (CSS.match(/\.tcal-pt\{[^}]*\}/) || [""])[0];
+  const pill = (CSS.match(/\.tcal-pill\{[^}]*\}/) || [""])[0];
+  ok("⚠️ the month-cell label wraps now — removing the JS character cap was only half of it",
+    /white-space:normal/.test(pt) && !/white-space:nowrap/.test(pt), pt);
+  /* ⚠️ THREE, not two. I shipped two and screenshotted it: "⚠️ Truck registration — DUE THIS MONTH" — the
+     very item he pointed at — still clipped to "— DU…". He said "it's just gonna have to be bigger", so the
+     cell grows rather than the text shrinking. Still clamped, so one long to-do can't push a week down. */
+  ok("⛔ ...clamped to three lines — enough for the item he complained about, still bounded",
+    /-webkit-line-clamp:3/.test(pt), pt);
+  ok("⚠️⚠️ NOT overflow-wrap:anywhere — it drops min-content to ONE CHARACTER and 'Iowa mortgage' rendered "
+    + "as 'I' over 'c' in a 60px cell. Caught in a screenshot, invisible in the markup",
+    !/overflow-wrap:anywhere/.test(pt) && /overflow-wrap:break-word/.test(pt), pt);
+  ok("⭐ ...and the title has a flex-basis floor, so the amount wraps away instead of squeezing it to nothing",
+    /flex:1 1 56px/.test(pt) && /flex-wrap:wrap/.test(pill), pt);
+  ok("⛔ ...and there is still no character cap in the JS", !/slice\(0,\s*\d+\)/.test(
+    (STRIP(fs.readFileSync(path.join(__dirname, "js", "163-today-calendar.js"), "utf8"))
+      .match(/function tcalShort[\s\S]*?\n}/) || [""])[0]));
+  ok("⚠️ the amount aligns to the FIRST line — baseline alignment drags '$4.8k' down beside the second",
+    /align-items:flex-start/.test(pill), pill);
+
+  /* 4. ⛔ "under workout it says 'open it to see today's day' — that doesn't even make any sense." */
+  /* ⚠️ STRIP(RI), not RI — the comment three lines up quotes the exact string this asserts is gone, so the
+     un-stripped version fails against my own prose. I have made this mistake before; hence CODE()/STRIP(). */
+  ok("⛔ the workout row no longer tells him to open the app to find out what the app should be telling him",
+    !/open it to see today/.test(STRIP(RI)));
+  ok("⭐ ...but it still names the lift when it knows it, and still says rest day",
+    /ri-lift/.test(STRIP(RI)) && /rest day/.test(STRIP(RI)));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

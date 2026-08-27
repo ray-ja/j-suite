@@ -107,10 +107,15 @@ function reconcileApply(acctId, iso, statementBalance) {
 }
 
 /* total spendable cash across non-credit accounts, using derived balances where they exist */
+/* ⛔ CASH IS AN ALLOWLIST (acctIsCash, js/79) — NOT "anything that isn't a credit card".
+   ⚠️ This function opened the cash-flow forecast at −$31,050.64 because his two car loans passed the
+   `type !== "credit"` test and were summed as though they were money in the bank. See the write-up at
+   acctIsCash(); the fallback below keeps the old behaviour only if js/79 somehow isn't loaded. */
 function acctTotalCash() {
   var accts = [];
   try { accts = recActive(D().budgetAccounts); } catch (e) { return 0; }
-  return Math.round(accts.filter(function (a) { return a.type !== "credit"; })
+  var isCash = (typeof acctIsCash === "function") ? acctIsCash : function (a) { return a.type !== "credit"; };
+  return Math.round(accts.filter(isCash)
     .reduce(function (s, a) { return s + acctLive(a); }, 0) * 100) / 100;
 }
 

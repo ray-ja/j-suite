@@ -35,8 +35,19 @@ function colBooked(q, d) {
 
 /* ⭐ THE TRUTH. Whichever record shows MORE money received is the one to believe — a payment that exists
    in either place is a payment that happened, and only one of them being written down is a bookkeeping
-   gap, not evidence he wasn't paid. */
+   gap, not evidence he wasn't paid.
+
+   ⭐⭐ AND `q.paid` IS A THIRD RECORD OF THE SAME FACT. Ray, 2026-08-27: "stuff that's already paid is on
+   here. I don't wanna see invoices that are already paid."
+   ⚠️ MEASURED: eight of his quotes carry paid:true. Seven also have a payment or an income row, so they
+   already netted to zero and the bug was invisible. The eighth — Christina Brodeur, $290, marked paid on
+   the invoice screen and never entered anywhere else — sat in his receivables at full value, and would have
+   done forever. `invMarkPaid` (js/46) sets exactly this flag and stamps paidDate; quoteStage reads it and
+   returns "paid". Every other screen in the app already believes it. A/R was the one that didn't.
+   ⛔ Marked paid means paid IN FULL — that is what the button says and what the PAID stamp on the invoice
+   means. A partial payment is logged as a payment, which is the branch above. */
 function colBalance(q, d) {
+  if (q && q.paid) return 0;
   return colRound(Math.max(0, colTotal(q) - Math.max(colLogged(q), colBooked(q, d))));
 }
 /* the quotes where the two records disagree — money he has that his A/R says he hasn't */

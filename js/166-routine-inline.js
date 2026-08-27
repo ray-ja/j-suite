@@ -78,10 +78,16 @@ function riNextWorkout() {
   } catch (e) { return null; }
 }
 
+/* ⛔ SAY THE LIFT OR SAY NOTHING. Ray, 2026-08-27: "under workout it says 'open it to see today's day' —
+   that doesn't even make any sense. that doesn't belong there."
+   ⚠️ He is right, and it was filler I wrote for the case where the plan can't be read. It told him to open
+   the app in order to learn something the app was supposed to be telling him — a label apologising for
+   itself. When the lift is known it is worth a line; when it isn't, the button already says "Open workout"
+   and that is the whole message. */
 function riWorkoutHTML(r) {
   var w = riNextWorkout();
   return '<div class="ri-line">'
-    + (!w ? '<span class="sub">open it to see today\'s day</span>'
+    + (!w ? ''
         : w.rest ? '<span class="sub">rest day — nothing programmed</span>'
         : '<span class="ri-lift">' + esc(w.lift || w.day || "") + '</span>'
           + (w.label ? '<span class="sub"> · ' + esc(w.label) + '</span>' : ''))

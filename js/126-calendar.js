@@ -134,16 +134,27 @@ if (typeof window !== "undefined") { window.calBillsOnDay = calBillsOnDay; windo
 function evHomeCardHTML(within) {
   var up = evUpcoming(within == null ? 30 : within);
   if (!up.length) return "";
-  return '<div class="card"><div class="row" style="gap:8px;align-items:flex-start">'
-    + '<div class="grow"><div class="nm">📅 Coming up</div>'
+  /* ⛔ THE COUNTDOWN SITS NEXT TO THE THING IT COUNTS. Ray, 2026-08-27: "where it says coming up water park,
+     there's, like, an entire screen's worth of space between water park and in seven days."
+     ⚠️ MY BUG, AND A ONE-CLASS ONE. The label carried `grow`, so on a wide column flexbox pushed the
+     countdown to the far right edge and he had to track 700px of empty card to pair "Waterpark" with "in 7
+     days". Two facts that only mean something together must not be flung apart by the layout. The label now
+     takes its own width and a trailing spacer absorbs the slack, so they stay side by side at any size.
+
+     ⛔ AND NO "Open" BUTTON. Ray: "it doesn't even need an open button because the calendar's here, and it
+     takes you to the same page." Right — the Calendar block on Today already has one and it goes to the
+     identical screen. Two buttons to one place is one button too many. */
+  return '<div class="card"><div class="nm">📅 Coming up</div>'
     + up.slice(0, 5).map(function (e) {
         var d = evDaysAway(e), soon = d <= 7;
-        return '<div class="row" style="gap:6px;align-items:baseline;margin-top:5px">'
-          + '<div class="grow" style="font-size:13.5px' + (soon ? ';font-weight:700' : '') + '">' + esc(evLabel(e)) + '</div>'
-          + '<div class="sub" style="flex:0 0 auto;font-size:11.5px' + (soon ? ';color:var(--danger);font-weight:700' : '') + '">' + esc(evCountdown(e)) + '</div></div>'
+        return '<div class="row" style="gap:8px;align-items:baseline;margin-top:5px">'
+          + '<div style="flex:0 1 auto;min-width:0;font-size:13.5px;overflow-wrap:anywhere'
+          +   (soon ? ';font-weight:700' : '') + '">' + esc(evLabel(e)) + '</div>'
+          + '<div class="sub" style="flex:0 0 auto;font-size:11.5px' + (soon ? ';color:var(--danger);font-weight:700' : '') + '">' + esc(evCountdown(e)) + '</div>'
+          + '<div class="grow"></div></div>'
           + (e.note ? '<div class="sub" style="white-space:normal;font-size:11.5px;margin-top:1px">' + esc(e.note) + '</div>' : '');
       }).join("")
-    + '</div><button class="btn ghost sm" style="flex:0 0 auto" onclick="if(typeof navSub===\'function\')navSub(\'cal\')">Open</button></div></div>';
+    + '</div>';
 }
 
 /* ---- MONTH VIEW ------------------------------------------------------------------------------------

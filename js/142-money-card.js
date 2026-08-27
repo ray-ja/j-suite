@@ -26,22 +26,49 @@
 
 var MC_DAYS = 14;   // "over the next 2 weeks", in his words
 
+/* ---------- ⭐⭐ WHICH ACCOUNTS, AND WHAT THEY ARE CALLED — HIS CHOICE, NOT A DERIVATION ------------------
+   Ray, 2026-08-27: "under money it says personal · Jamieson · OBX · personal. okay, yeah, there's two
+   personals, so I don't know what the two personals were for… I would like to see Brooke's checking. It
+   should go personal checking, Brooke's checking, JA, and DYAD."
+
+   ⚠️ TWO "PERSONAL" COLUMNS BECAUSE THE LABEL WAS DERIVED FROM THE BOOK. Fifteen accounts now live in his
+   personal book — his checking, Brooke's checking, both savings, five cards, two car loans — and the card
+   took the first four by `order` and named each one after the book it sat in. Two of the four were personal,
+   so it printed "PERSONAL" twice with two different numbers under it and no way to tell which was which.
+   The derivation was fine when there were three accounts in three books; it stopped meaning anything the
+   moment a book held more than one.
+
+   ⭐ SO PINNING IS EXPLICIT. `todayShow` says it belongs here, `todayLabel` is what it's called, `todayOrder`
+   is where it sits — stored on the account, editable in the account dialog, and synced like any other field.
+   ⛔ NOT hard-coded to his four accounts. I know the answer he wants today; hard-coding it means he cannot
+   change it in six months without me, and this is exactly the kind of thing that changes.
+   ⚠️ The fallback for a store with nothing pinned is now CASH accounts only (js/79 acctIsCash) — a card or a
+   car loan is not a balance you check in the morning, and before this the fallback would happily have shown
+   him the truck loan as one of his four "money" columns. */
 function mcAccounts() {
-  try {
-    return (D().budgetAccounts || []).filter(function (a) { return a && !a.deleted && !a.debtOnly; })
-      .sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
-  } catch (e) { return []; }
+  var all = [];
+  try { all = (D().budgetAccounts || []).filter(function (a) { return a && !a.deleted; }); } catch (e) { return []; }
+  var pinned = all.filter(function (a) { return a.todayShow; });
+  if (pinned.length) {
+    return pinned.sort(function (a, b) {
+      return (+a.todayOrder || 0) - (+b.todayOrder || 0) || String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  }
+  var isCash = (typeof acctIsCash === "function") ? acctIsCash : function (a) { return a.type !== "credit"; };
+  return all.filter(function (a) { return isCash(a) && !a.debtOnly; })
+    .sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 }
-/* he calls them "obx lot solutions", "my personal account", "my business account" — which is exactly what
-   the BOOK each account belongs to is named. Use that, and keep the bank's own name as the tooltip. */
+/* his own short name wins. Failing that the BOOK name, which is how he refers to them out loud — and
+   failing that the bank's name. The full name is always the tooltip. */
 function mcAccountLabel(a) {
+  if (a && a.todayLabel) return String(a.todayLabel);
   var name = "";
   try {
     var b = (D().budgetBooks || []).find(function (x) { return x && !x.deleted && x.id === a.bookId; });
     if (b && b.name) name = b.name;
   } catch (e) {}
   if (!name) name = String(a.name || "Account").split("—")[0].trim();
-  /* three columns on a 400px card leave ~110px each. "Jamieson Automation" ellipsised to "JAMIESON AUTO…"
+  /* four columns on a 400px card leave ~90px each. "Jamieson Automation" ellipsised to "JAMIESON AUTO…"
      is worse than useless, so a long label drops to its first word — which is how he says them out loud
      anyway ("Jamieson", "OBX"). */
   return (name.length > 11) ? name.split(/[\s—-]+/)[0] : (name || "Account");

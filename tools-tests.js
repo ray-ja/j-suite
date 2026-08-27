@@ -810,7 +810,42 @@ console.log("\n--- 💵 the month ahead ---");
     owed.rows.length === 2 && owed.rows[0].name === "Mike Green");
   ok("⭐ uninvoiced sorts FIRST, because that is his move and not theirs", owed.rows[0].invoiced === false);
   ok("...and the card prints each one", /mo-invrow/.test(c4.monthOutlookHTML()));
-  ok("...tagging which have been sent", /not invoiced/.test(c4.monthOutlookHTML()));
+  /* ⚠️ SUPERSEDED, NOT DELETED. This asserted a per-row "not invoiced" TAG. Ray, 2026-08-27: "only the ones
+     I haven't sent yet where the job's done but I haven't sent the invoice. Or the ones where I'm awaiting
+     payment." So the tag became two GROUP HEADINGS with their own subtotals — the same distinction, made
+     structural instead of decorative. The information it was protecting is still asserted, harder. */
+  const hGrp = c4.monthOutlookHTML();
+  ok("⭐⭐ the two invoice groups are headings with their own subtotals, not per-row tags",
+    /Not invoiced yet/.test(hGrp) && /Waiting on payment/.test(hGrp), hGrp.slice(0, 200));
+  ok("⭐ the unsent group carries its own total ($2,324) so it reads as one job to do",
+    /mo-unsent-hd[^]*?\$2,?324\.00/.test(hGrp));
+  ok("⭐ ...and the waiting group carries the other ($6,492)", /mo-sent-hd[^]*?\$6,?492\.00/.test(hGrp));
+
+  /* ⭐⭐ THE DIFFERENCE, STATED. Ray: "I'm not seeing the actual difference between anticipated income and
+     bills due." Expected in here is $8,816 of invoices against a single $3,750 bill → +$5,066. */
+  ok("⭐⭐ the card does the subtraction he was doing in his head", /mo-net/.test(hGrp) && /If all of that arrives/.test(hGrp));
+  ok("⭐ ...and gets it right: $8,816 expected against $3,750 of bills", /\+\$5,?066\.00/.test(hGrp), hGrp.slice(-500));
+  ok("⛔ ...and says it is conditional, because he was explicit that expected income can't be relied on",
+    /only if everyone pays|still short, even if everyone pays/.test(hGrp));
+
+  /* ⛔⛔ A PAID INVOICE IS NOT A RECEIVABLE. Ray: "stuff that's already paid is on here." His live store had
+     Christina Brodeur at $290 marked paid on the invoice screen with no payment row behind it, sitting in
+     A/R at full value. colBalance now believes q.paid, which is what every other screen already did. */
+  const { c: cPaid, store: sPaid } = mkMo();
+  sPaid.p.quotes = [
+    { id: "qp1", cust: "Christina Brodeur", date: "2026-06-23", total: 290, finalPrice: 290,
+      invoiced: true, paid: true, payments: [], deleted: false },
+    { id: "qp2", cust: "Mike Green", date: "2026-07-01", total: 1160, finalPrice: 1160,
+      invoiced: true, payments: [], deleted: false }
+  ];
+  vm.runInContext(R("js/151-unified-ledger.js"), cPaid);
+  vm.runInContext(R("js/154-collections.js"), cPaid);
+  vm.runInContext(R("js/165-month-outlook.js"), cPaid);
+  const owedPaid = cPaid.moOwed();
+  ok("⛔⛔ a quote marked paid leaves A/R even with no payment row behind it",
+    owedPaid.total === 1160 && owedPaid.rows.every(r => r.name !== "Christina Brodeur"), owedPaid);
+  ok("⛔ ...and the unpaid one is untouched", owedPaid.rows.length === 1 && owedPaid.rows[0].amount === 1160);
+  ok("⛔ ...and it never reaches the card", !/Brodeur/.test(cPaid.monthOutlookHTML()));
   ok("⚠️ the field is `age`, not `days` — an undefined there would zero every overdue figure forever",
     /\+x\.age \|\| 0/.test(CODE(R("js/165-month-outlook.js"))));
   const h4 = c4.monthOutlookHTML();
