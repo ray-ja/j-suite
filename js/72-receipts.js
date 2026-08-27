@@ -1221,6 +1221,24 @@ function rReceipts() {
 
   if (reviewCount) h += `<div class="card" style="border-left:4px solid var(--accent)"><b>🕓 ${reviewCount} receipt${reviewCount > 1 ? "s" : ""} need${reviewCount > 1 ? "" : "s"} review</b> — untagged uploads. Tap one to set vendor, amount, type &amp; job.</div>`;
   if (typeof capRcptButtonHTML === "function") h += capRcptButtonHTML();   // 🤖 Cap: categorize needs-review (owner/admin only)
+  /* ⭐ TIE RECEIPTS TO THE BANK ROWS THEY PROVE (js/161). Ray, 2026-08-27: "if i upload a receipt we should
+     tie it to the transaction too." Measured on his data before building: 14 of 15 receipts with an amount
+     and a date match a real bank row on exact cents within three days. Only the unambiguous ones are tied in
+     bulk — where two rows could fit, picking one would be a coin toss wearing a tick. */
+  if (typeof rtAllSpendRows === "function") {
+    try {
+      const _rows = rtAllSpendRows();
+      const _untied = rcptColl().filter(r => r && !r.deleted && !r.txId && +r.amount && r.date);
+      let _sure = 0, _maybe = 0;
+      _untied.forEach(r => { const b = rtBest(r, _rows); if (b && b.confident) _sure++; else if (b) _maybe++; });
+      if (_sure || _maybe) {
+        h += `<div class="card" style="border-left:4px solid #4da3ff"><div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="grow" style="white-space:normal"><b>🔗 ${_sure + _maybe} receipt${(_sure + _maybe) > 1 ? "s" : ""} match a bank transaction</b>
+          <div class="sub">Tying them keeps the photo with the money: the bank row gets its proof, and the receipt gets the date it actually cleared.${_maybe ? ` ${_maybe} ${_maybe > 1 ? "have" : "has"} more than one candidate and stay${_maybe > 1 ? "" : "s"} for you to pick.` : ""}</div></div>
+          ${_sure ? `<button class="btn sm" style="background:#4da3ff;border-color:#4da3ff;color:#0b1220" onclick="rtTieAllConfident()">🔗 Tie the ${_sure} certain one${_sure > 1 ? "s" : ""}</button>` : ""}</div></div>`;
+      }
+    } catch (e) { /* a matching panel must never take the receipts screen down */ }
+  }
   // ✓ FILE ALL N CONFIDENT (Phase B) — every review row Cap is confident about (rcptSuggestionOneTapOk) files in
   // one tap through the SAME spine funnel; low-confidence ones stay in the queue. Owner/admin only.
   if (rcptFinFull()) {

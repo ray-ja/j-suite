@@ -114,8 +114,21 @@ function rLedgerReview() {
     "I've seen these payees before, or they just move cash between your own accounts.",
     known.length > 1 ? "Approve all " + known.length + " recognized" : "");
   /* ⛔ deliberately NO bulk button on this group */
-  h += lrGroup("New payees", unknown,
-    "First time I've seen these. Pick a category and I'll remember it for next time.", "");
+  /* ⭐ BY PAYEE FIRST (js/160). On a first sync the recognised group is nearly empty and this one holds
+     everything — 276 rows on Ray's, from about forty payees. Grouping them turns the pile into forty
+     considered decisions instead of 276 identical ones, and each decision teaches a rule, so the row-by-row
+     list below shrinks every time it's used. The flat list stays underneath for the ones that genuinely need
+     handling individually. */
+  var _pg = (typeof pgSectionHTML === "function") ? pgSectionHTML() : "";
+  if (_pg) {
+    h += _pg;
+    h += '<div class="secthd"><h2 style="font-size:13px">…or one at a time</h2><div class="grow"></div>'
+      + '<span class="ct">' + unknown.length + '</span></div>';
+    h += unknown.map(lrRow).join("");
+  } else {
+    h += lrGroup("New payees", unknown,
+      "First time I've seen these. Pick a category and I'll remember it for next time.", "");
+  }
   return h;
 }
 

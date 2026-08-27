@@ -158,18 +158,49 @@ function ledgerFindTransfer(row, within) {
   }) || null;
 }
 
+/* ⭐ DOES THIS ROW NAME ONE OF HIS OWN ACCOUNTS? Money that mentions another of his accounts by name is
+   almost always moving between his own pockets — and neither leg is income or spending.
+
+   ⚠️ THIS USED TO ONLY LOOK AT CREDIT CARDS, AND THAT MISSED THE BIGGEST ONE ON HIS FIRST PULL.
+   $11,401.97 of Square payouts landed in his business checking described "Square Inc Square Inc ACH CREDIT".
+   The revenue was ALREADY counted when customers paid into Square — the 58 rows on that account — so
+   approving these as income would have booked the same money twice. Square is not a credit card, so the
+   type filter skipped it. The rule was never about cards; it is about a row naming an account he owns.
+
+   ⛔ THE NAME MUST IDENTIFY EXACTLY ONE ACCOUNT. He has FIVE accounts starting "Navy Federal", so a row
+   mentioning "NAVY FCU" points at all of them and therefore at none — and a genuine Navy Federal FEE would
+   be silently excluded from spending if that counted as a match. Ambiguous names are refused outright; only
+   a distinctive one (square, chase, discover, citi, venmo) can carry this. A mask is unambiguous by nature. */
+function ledgerFindOwnAccount(row) {
+  var desc = String(row.desc || row.note || "").toLowerCase();
+  if (!desc) return null;
+  var accts = ledgerAccounts().filter(function (a) { return a && a.id !== row.accountId; });
+  var firstWord = function (a) {
+    return String(a.name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").trim().split(/\s+/)[0] || "";
+  };
+  /* a mask is specific enough on its own */
+  var byMask = accts.find(function (a) { return a.mask && String(a.mask).length >= 4 && desc.indexOf(String(a.mask)) >= 0; });
+  if (byMask) return byMask;
+  var hit = null, seen = 0;
+  accts.forEach(function (a) {
+    var nm = firstWord(a);
+    if (!nm || nm.length < 4) return;
+    if (desc.indexOf(nm) < 0) return;
+    /* count how many DISTINCT names matched — two different accounts sharing one name is ambiguity */
+    if (!hit || firstWord(hit) !== nm) { seen++; hit = a; }
+  });
+  if (seen !== 1) return null;
+  /* and that one name must belong to exactly one account, not five that share it */
+  var nm = firstWord(hit);
+  var sharing = accts.filter(function (a) { return firstWord(a) === nm; });
+  return sharing.length === 1 ? hit : null;
+}
+
 /* a payment to one of his own credit cards — moves cash to the card, is not spending */
 function ledgerFindCardPayment(row) {
   if ((row.dir || "out") !== "out") return null;
-  var desc = String(row.desc || row.note || "").toLowerCase();
-  if (!desc) return null;
-  return ledgerAccounts().find(function (a) {
-    if (a.type !== "credit") return false;
-    var nm = String(a.name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").trim().split(/\s+/)[0];
-    var byName = nm && nm.length >= 4 && desc.indexOf(nm) >= 0;
-    var byMask = a.mask && desc.indexOf(String(a.mask)) >= 0;
-    return !!(byName || byMask);
-  }) || null;
+  var a = ledgerFindOwnAccount(row);
+  return (a && a.type === "credit") ? a : null;
 }
 
 /* a recurring bill he already told us about, landing at about the right amount */
@@ -207,6 +238,17 @@ function ledgerSuggest(row) {
   if (card) {
     out.isCardPayment = true; out.confidence = "high";
     out.why = "looks like a payment to your " + (card.name || "card") + " — moves cash to the card, not spending";
+    return out;
+  }
+
+  /* ⭐ any OTHER account of his named in the description — a Square payout into checking, a Venmo cash-out.
+     Treated as a transfer, because that is what it is: his money arriving from somewhere he already counted
+     it. Marked as a suggestion like everything else; he can reject it and it becomes ordinary income. */
+  var own = ledgerFindOwnAccount(row);
+  if (own) {
+    out.isTransfer = true; out.confidence = "high";
+    out.why = "names your own " + (own.name || "account") + " — this is money moving between your accounts, "
+            + "so counting it here would count it twice";
     return out;
   }
 
@@ -512,7 +554,7 @@ function ledgerInboxTotals() {
   return { in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100, unrecognized: unknown };
 }
 
-if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee;
+if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee; window.ledgerFindOwnAccount = ledgerFindOwnAccount;
   window.ledgerIngest = ledgerIngest; window.ledgerSuggest = ledgerSuggest;
   window.ledgerInbox = ledgerInbox; window.ledgerInboxCount = ledgerInboxCount;
   window.ledgerInboxTotals = ledgerInboxTotals;
