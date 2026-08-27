@@ -61,9 +61,18 @@ function colDaysOld(dateStr) {
 /* ---------- what is genuinely owed ---------- */
 function colOwed() {
   var d = D();
+  var t = (typeof today === "function") ? today() : "";
   return colActive(d.quotes).map(function (q) {
     var bal = colBalance(q, d);
     if (bal <= 0.5) return null;
+    /* ⛔⛔ WORK NOT YET DONE IS NOT A RECEIVABLE. Found 2026-08-27 while itemising his A/R: the largest
+       "owed to you" line was $6,492 from a RECURRING occurrence dated 2026-09-23 — a landscaping visit a
+       month in the future. Nobody owes money for a job that hasn't happened, and counting it inflated his
+       receivables by 46% on the screen he'd use to decide who to chase.
+       ⭐ Removing it brings the total to $7,487, which is exactly the figure reconciled from his records
+       back in July — an independent check that this is the right cut, not a convenient one.
+       ⚠️ Strictly future only: a job dated TODAY has been done and is properly owed. */
+    if (t && String(q.date || "") > t) return null;
     var age = colDaysOld(q.date);
     return { id: q.id, customerId: q.customerId,
       name: q.cust || ((typeof custName === "function") ? custName(q.customerId) : "") || "—",

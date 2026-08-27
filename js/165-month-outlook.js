@@ -111,9 +111,38 @@ function moTypicalMonth() {
   } catch (e) { return null; }
 }
 
+/* ⭐ RENT COLLECTION IS ITS OWN LINE. Ray, 2026-08-27: "rent collection is separate line."
+   And it genuinely is a different KIND of money: an invoice is a one-off he has to chase, rent is a standing
+   arrangement that has arrived eight months running on the 28th–30th. Lumping them into one "expected
+   income" number would let the reliable thing flatter the unreliable one.
+   ⛔ Read from what has ACTUALLY LANDED, not from the lease: the median of past receipts, on the median day
+   they arrived. If a tenant has been paying $2,520 rather than $2,795, this says $2,520. */
+function moRentDue() {
+  try {
+    var cats = moActive(D().budgetCats).filter(function (c) { return /rent received|rental income/i.test(c.name || ""); });
+    if (!cats.length) return null;
+    var ids = {}; cats.forEach(function (c) { ids[c.id] = 1; });
+    var got = moActive(D().budgetTx).filter(function (t) {
+      return !t.pending && (t.dir || "out") === "in" && !t.isTransfer && ids[t.catId];
+    }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+    if (got.length < 3) return null;                      // three arrivals before calling it a pattern
+    var recent = got.slice(-6);
+    var amts = recent.map(function (t) { return +t.amount || 0; }).sort(function (a, b) { return a - b; });
+    var days = recent.map(function (t) { return +String(t.date).slice(8, 10); }).sort(function (a, b) { return a - b; });
+    var amount = amts[Math.floor(amts.length / 2)];
+    var day = days[Math.floor(days.length / 2)];
+    var last = got[got.length - 1].date;
+    /* next occurrence on/after today */
+    var t = moToday(), y = +t.slice(0, 4), m = +t.slice(5, 7), dom = +t.slice(8, 10);
+    if (dom > day) { m++; if (m > 12) { m = 1; y++; } }
+    var next = y + "-" + String(m).padStart(2, "0") + "-" + String(Math.min(day, 28)).padStart(2, "0");
+    return { amount: Math.round(amount * 100) / 100, day: day, next: next, last: last, n: got.length };
+  } catch (e) { return null; }
+}
+
 /* ⭐ MONEY OWED TO HIM, from every org that keeps invoices. Read-only, cross-org via uniInOrg. */
 function moOwed() {
-  var total = 0, count = 0, overdue = 0, unbilled = 0, unbilledN = 0;
+  var total = 0, count = 0, overdue = 0, unbilled = 0, unbilledN = 0, all = [];
   try {
     var orgs = (typeof uniOrgs === "function") ? uniOrgs() : [];
     orgs.forEach(function (o) {
@@ -129,6 +158,14 @@ function moOwed() {
              theirs. Worth far more on this card than a 30-day bucket. */
           return { sum: rows.reduce(function (s, x) { return s + (+x.balance || 0); }, 0),
                    n: rows.length,
+                   /* ⭐ ITEMISED. Ray, 2026-08-27: "for expected income can you separate it by invoice with a
+                      total?" A single "owed to you" figure is a mood, not information — $13,979 across six
+                      invoices is six different conversations, and which of them he has not even SENT is the
+                      part he can act on this morning. */
+                   rows: rows.map(function (x) {
+                     return { name: x.name || "—", amount: +x.balance || 0, age: +x.age || 0,
+                              invoiced: x.action !== "invoice", org: o.name || o.id, id: x.id };
+                   }),
                    unbilled: rows.filter(function (x) { return x.action === "invoice"; })
                                  .reduce(function (s, x) { return s + (+x.balance || 0); }, 0),
                    unbilledN: rows.filter(function (x) { return x.action === "invoice"; }).length,
@@ -136,11 +173,17 @@ function moOwed() {
                             .reduce(function (s, x) { return s + (+x.balance || 0); }, 0) };
         } catch (e) { return null; }
       }) : null;
-      if (got) { total += got.sum; count += got.n; overdue += got.late; unbilled += got.unbilled; unbilledN += got.unbilledN; }
+      if (got) { total += got.sum; count += got.n; overdue += got.late; unbilled += got.unbilled;
+                 unbilledN += got.unbilledN; all = all.concat(got.rows || []); }
     });
   } catch (e) {}
+  /* uninvoiced first — that is his move, not theirs — then biggest */
+  all.sort(function (a, b) {
+    if (a.invoiced !== b.invoiced) return a.invoiced ? 1 : -1;
+    return b.amount - a.amount;
+  });
   return { total: Math.round(total * 100) / 100, count: count, overdue: Math.round(overdue * 100) / 100,
-           unbilled: Math.round(unbilled * 100) / 100, unbilledN: unbilledN };
+           unbilled: Math.round(unbilled * 100) / 100, unbilledN: unbilledN, rows: all };
 }
 
 function moRow(label, value, note, cls) {
@@ -177,11 +220,31 @@ function monthOutlookHTML() {
     /* ⭐⭐ SPLIT BY WHOSE MOVE IT IS. "not invoiced" is money he hasn't asked for — his to fix today.
        "waiting" is money he has asked for — theirs. Lumping them into one "owed" number hides the half he
        can act on this morning. */
-    var note = owed.count + " unpaid · not counted below, because being owed money isn't having it";
-    if (owed.unbilled > 0) note += " · " + moMoney(owed.unbilled) + " never invoiced ("
-      + owed.unbilledN + " job" + (owed.unbilledN === 1 ? "" : "s") + ") — nobody has asked for that yet";
-    if (owed.overdue > 0) note += " · " + moMoney(owed.overdue) + " invoiced over 30 days ago";
-    h += moRow("Owed to you", "+" + moMoney(owed.total), note, "mo-owed");
+    h += moRow("Owed to you", "+" + moMoney(owed.total),
+      owed.count + " invoice" + (owed.count === 1 ? "" : "s") + " · not counted below, because being owed "
+      + "money isn't having it", "mo-owed");
+    /* ⭐ one line per invoice, uninvoiced first, so it is six conversations rather than one mood */
+    h += '<div class="mo-inv">' + owed.rows.slice(0, 8).map(function (r) {
+      return '<div class="row mo-invrow" style="gap:8px;align-items:baseline">'
+        + '<div class="grow" style="min-width:0">' + esc(r.name)
+        + (r.invoiced
+            ? '<span class="mo-tag mo-sent">sent' + (r.age ? ' · ' + r.age + 'd' : '') + '</span>'
+            : '<span class="mo-tag mo-unsent">not invoiced</span>')
+        + '</div><div class="mo-invamt">' + esc(moMoney(r.amount)) + '</div></div>';
+    }).join("")
+    + (owed.rows.length > 8 ? '<div class="sub" style="padding-left:2px">+' + (owed.rows.length - 8) + ' more</div>' : '')
+    + (owed.unbilled > 0
+        ? '<div class="sub mo-unbilled">' + moMoney(owed.unbilled) + ' of that has never been invoiced — '
+          + 'nobody has been asked for it yet.</div>'
+        : '')
+    + '</div>';
+  }
+
+  /* ⭐ rent is a standing arrangement, not an invoice — its own line, on its own evidence */
+  var rent = moRentDue();
+  if (rent) {
+    h += moRow("Rent collection", "+" + moMoney(rent.amount),
+      "due " + rent.next + " · " + rent.n + " received so far, last on " + rent.last, "mo-rent");
   }
 
   /* ⭐⭐ THE FLAG. "it should flag if cash is lower than expected expenses for the month."

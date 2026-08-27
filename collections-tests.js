@@ -220,5 +220,31 @@ console.log("\n--- wiring ---");
     /Nothing outstanding/.test(sandbox({ biz: "x", registry: [], x: { quotes: [], income: [], customers: [], followUps: [] } }).colOwedHTML()), true);
 }
 
+console.log("\n--- ⛔⛔ work not yet done is not a receivable ---");
+{
+  /* Found 2026-08-27 while itemising his A/R for the month-ahead card: the LARGEST "owed to you" line was
+     $6,492 from a recurring occurrence dated 2026-09-23 — a landscaping visit a month in the FUTURE. Nobody
+     owes money for a job that hasn't happened, and counting it inflated his receivables by 46% on the very
+     screen he'd use to decide who to chase.
+     ⭐ Removing it brought his total to $7,487 — exactly the figure reconciled from his records in July.
+     An independent check that this is the right cut rather than a convenient one. */
+  const S = { biz: "obx", registry: [{ id: "obx", name: "OBX" }], obx: {
+    customers: [], income: [], quotes: [
+      { id: "past",   cust: "Mike Green", date: "2026-07-16", total: 2324, finalPrice: 2324, invoiced: false, payments: [], deleted: false },
+      /* TODAY here is 2026-08-26, the suite's fixed date */
+      { id: "today",  cust: "Someone",    date: "2026-08-26", total: 500,  finalPrice: 500,  invoiced: true,  payments: [], deleted: false },
+      { id: "future", cust: "Mike Green", date: "2026-09-23", total: 6492, finalPrice: 6492, invoiced: false, payments: [], deleted: false }
+    ] } };
+  const c = sandbox(S);
+  const owed = c.colOwed();
+  const ids = owed.map(x => x.id);
+  ok("⛔⛔ a job dated a month out is NOT owed", ids.indexOf("future") < 0, ids);
+  ok("⭐ work already done still is", ids.indexOf("past") >= 0);
+  ok("⚠️ and a job dated TODAY counts — it has happened", ids.indexOf("today") >= 0, ids);
+  ok("⭐ so the total is the real one", c.colTotalOwed() === 2824, c.colTotalOwed());
+  ok("⚠️ the reason is recorded where someone would undo it",
+    /WORK NOT YET DONE IS NOT A RECEIVABLE/.test(require("fs").readFileSync("js/154-collections.js", "utf8")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

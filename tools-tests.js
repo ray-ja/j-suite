@@ -559,8 +559,11 @@ console.log("\n--- 📅 the calendar on Today ---");
   ok("⛔ a bill is a FORECAST — nothing about it is booked", !/budgetTx|ledgerIngest/.test(CODE(R("js/163-today-calendar.js"))));
 
   const all = c.tcalHTML();
-  ok("⭐ the header totals the next two weeks of bills, where the money card used to say it",
-    /bills? in the next two weeks/.test(all), all.slice(0, 300));
+  /* ⛔ SUPERSEDED 2026-08-27. This asserted the calendar header totals two weeks of bills — which I put
+     there, and then Ray rightly said "we dont need that we have a money area now". The total lives in the
+     outlook card; the calendar's job is WHEN, not how much. */
+  ok("⛔ the calendar header does NOT total the bills — that belongs to the money card",
+    !/in the next two weeks/.test(CODE(all)));
   ok("⭐ and there is a colour key, because colour-coding you have to guess at is decoration", /tcal-key/.test(all));
   ok("⛔ the money card no longer duplicates the bill list", /typeof tcalHTML === "function"\) \? ""/.test(CODE(R("js/142-money-card.js"))));
   /* ⚠️ SUPERSEDED 2026-08-27 by the movable layout (js/164): Today is no longer a fixed arrangement at all,
@@ -742,10 +745,22 @@ console.log("\n--- 💵 the month ahead ---");
   vm.runInContext(R("js/151-unified-ledger.js"), c4);
   vm.runInContext(R("js/154-collections.js"), c4);
   vm.runInContext(R("js/165-month-outlook.js"), c4);
+  /* ⚠️ a DISTINCT amount — my first go used $6,492 for both the past and the future quote, so the assertion
+     could not tell which one survived and reported a passing filter as a failure. */
+  s4.p.quotes.push({ id: "q3", cust: "Mike Green", date: "2026-09-23", total: 7777, finalPrice: 7777,
+    invoiced: false, payments: [], deleted: false });   /* a recurring visit a month out */
   const owed = c4.moOwed();
   ok("⭐ it reads what he is owed", owed.total === 8816, owed);
   ok("⭐⭐ and splits it by WHOSE MOVE IT IS — $2,324 nobody has invoiced yet",
     owed.unbilled === 2324 && owed.unbilledN === 1, owed);
+  /* ⛔⛔ found while itemising: the biggest "owed" line was a job dated a MONTH OUT */
+  ok("⛔⛔ work not yet done is not counted as owed — a job dated a MONTH OUT was his largest 'receivable'",
+    owed.rows.every(r => r.amount !== 7777) && owed.total === 8816, owed.rows.map(r => r.amount));
+  ok("⭐⭐ it is ITEMISED, one line per invoice — six conversations, not one mood",
+    owed.rows.length === 2 && owed.rows[0].name === "Mike Green");
+  ok("⭐ uninvoiced sorts FIRST, because that is his move and not theirs", owed.rows[0].invoiced === false);
+  ok("...and the card prints each one", /mo-invrow/.test(c4.monthOutlookHTML()));
+  ok("...tagging which have been sent", /not invoiced/.test(c4.monthOutlookHTML()));
   ok("⚠️ the field is `age`, not `days` — an undefined there would zero every overdue figure forever",
     /\+x\.age \|\| 0/.test(CODE(R("js/165-month-outlook.js"))));
   const h4 = c4.monthOutlookHTML();
@@ -753,10 +768,46 @@ console.log("\n--- 💵 the month ahead ---");
     /isn't having it/.test(h4) && /short by/.test(h4));
   ok("⭐ ...though it does say the money owed would cover the gap, if it arrives", /if it arrives/.test(h4));
 
+  /* ⭐ RENT IS ITS OWN LINE — "rent collection is separate line". A standing arrangement that has arrived
+     eight months running is a different kind of money from an invoice he has to chase; lumping them lets the
+     reliable thing flatter the unreliable one. */
+  const { c: c5, store: s5 } = mkMo();
+  ["2026-04-30", "2026-05-28", "2026-06-30", "2026-07-30"].forEach((d, i) => {
+    s5.p.budgetTx.push({ id: "r" + i, accountId: "chk", date: d, amount: 2795, dir: "in",
+      catId: "c_rentinc", pending: false, deleted: false });
+  });
+  s5.p.budgetCats.push({ id: "c_rentinc", name: "Rent received", deleted: false });
+  vm.runInContext(R("js/165-month-outlook.js"), c5);
+  const rent = c5.moRentDue();
+  ok("⭐ rent is read from what ACTUALLY LANDED, not from the lease", rent && rent.amount === 2795, rent);
+  ok("⭐ ...on the day it actually tends to arrive", rent.day >= 28, rent.day);
+  ok("⭐ and it gets its own line, apart from the invoices", /Rent collection/.test(c5.monthOutlookHTML()));
+  const { c: c6, store: s6 } = mkMo();
+  s6.p.budgetCats.push({ id: "c_rentinc", name: "Rent received", deleted: false });
+  s6.p.budgetTx.push({ id: "one", accountId: "chk", date: "2026-07-30", amount: 2795, dir: "in",
+    catId: "c_rentinc", pending: false, deleted: false });
+  vm.runInContext(R("js/165-month-outlook.js"), c6);
+  ok("⛔ one or two payments is not a pattern — it stays silent rather than promising rent",
+    c6.moRentDue() === null);
+
   /* the balance anchor's sign — the most dangerous number in the app to get backwards */
   ok("⛔⛔ a credit account carries NEGATIVE balance — $23,644 of Visa debt must never read as cash on hand",
     store.p.budgetAccounts[3].balance < 0);
   ok("⭐ and cash-on-hand only ever looks at a checking account", a.type === "checking");
+}
+
+console.log("\n--- ⛔ one number, one place ---");
+{
+  /* Ray, 2026-08-27: "the line above the calendar says bills due in the next two weeks. we dont need that we
+     have a money area now." My mistake twice over — I moved that total OFF the money card onto the calendar,
+     then built a money card that says it properly. Two places saying the same thing is how they disagree. */
+  const t = R("js/163-today-calendar.js");
+  /* ⚠️ CODE(), not the raw file — the comment recording WHY quotes him saying it, and a test that matched
+     its own explanatory prose would pass forever regardless of the code. */
+  ok("⛔ the calendar header no longer totals the bills", !/in the next two weeks/.test(CODE(t)));
+  ok("⭐ the calendar still shows WHEN each one lands", /kind: "bill"/.test(CODE(t)));
+  ok("⭐ and the outlook card is where the total lives", /Bills due in 30 days/.test(R("js/165-month-outlook.js")));
+  ok("⚠️ the duplication is written down so it isn't re-added", /Two places saying the same thing/.test(t));
 }
 
 console.log("\n--- 🎨 colour says what kind of thing it is ---");

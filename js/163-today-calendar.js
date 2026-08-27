@@ -234,19 +234,14 @@ function tcalDayHTML(iso, label) {
 
 function tcalHTML() {
   var t = tcalToday();
-  /* ⭐ two weeks of bills, totalled, where the old money card used to say it — same number, now attached to
-     the thing that shows WHEN. */
-  var soon = 0, n = 0;
-  try {
-    for (var i = 0; i < 14; i++) {
-      tcalItemsFor(tcalShift(t, i)).forEach(function (x) { if (x.kind === "bill") { soon += x.amount; n++; } });
-    }
-  } catch (e) {}
+  /* ⛔ THE TWO-WEEK BILL TOTAL IS GONE FROM HERE. Ray, 2026-08-27: "the line above the calendar says bills
+     due in the next two weeks. we dont need that we have a money area now." He is right, and it was my
+     mistake twice over: I moved that number OFF the money card onto the calendar, then built a money card
+     that says it properly. Two places saying the same thing is how they start disagreeing. The calendar
+     shows WHEN each bill lands; the outlook card says what they add up to. One job each. */
   return '<div class="card tcal">'
     + '<div class="row" style="align-items:baseline;gap:10px;flex-wrap:wrap">'
     +   '<div class="nm" style="font-size:15px">📅 Calendar</div>'
-    +   (n ? '<div class="sub">' + n + ' bill' + (n === 1 ? '' : 's') + ' in the next two weeks · <b>'
-          + esc(tcalAmt(soon)) + '</b></div>' : '')
     +   '<div class="grow"></div>'
     +   '<div class="sub tcal-key">'
     +     '<i style="background:#e8683f"></i>bill <i style="background:#1e9e5a"></i>job '

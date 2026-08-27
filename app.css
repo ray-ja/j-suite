@@ -590,3 +590,13 @@
 .mo-bar>i{display:block;height:100%;background:#e8683f}
 .mo-ok{margin-top:10px;padding:8px 11px;border-radius:8px;background:rgba(30,158,90,.10);
   border-left:3px solid #1e9e5a;font-size:12.5px}
+
+/* itemised invoices inside the month-ahead card (js/165) */
+.mo-inv{padding:2px 0 6px}
+.mo-invrow{padding:3px 0;font-size:12.5px}
+.mo-invamt{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:600}
+.mo-tag{font-size:10px;padding:1px 5px;border-radius:4px;margin-left:6px;white-space:nowrap}
+.mo-sent{background:rgba(255,255,255,.07);color:var(--muted)}
+.mo-unsent{background:rgba(224,168,0,.18);color:#e0a800;font-weight:700}
+.mo-unbilled{white-space:normal;color:#e0a800;padding-top:4px}
+.mo-rent .mo-val{color:#1e9e5a}
