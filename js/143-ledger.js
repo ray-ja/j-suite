@@ -137,7 +137,19 @@ function ledgerFindTransfer(row, within) {
   var amt = Math.round(Math.abs(+row.amount || 0) * 100);
   if (!amt) return null;
   return ledgerTx().find(function (t) {
-    if (t.pending || t.id === row.id) return false;
+    /* ⭐⭐ PENDING ROWS COUNT AS CANDIDATES. Ray, 2026-08-27: "you should be able to catch the transactions
+       moving between accounts, thats actually good for reconciliation."
+
+       ⚠️ THIS USED TO SKIP THEM, AND THAT BROKE THE ONE CASE THAT MATTERS MOST. A bank pull delivers BOTH
+       legs of a transfer in the same batch, and everything in a batch lands pending. So every candidate mate
+       was pending, every candidate was skipped, and the very first import — the one carrying months of
+       history and every internal transfer in it — detected exactly zero. Verified against the real shape
+       before changing it: $412.55 out of checking and $412.55 into the card, same day, ingested together,
+       both came back suggestTransfer:false.
+
+       Pairing against a pending row is right, because this produces a SUGGESTION, not a fact. Nothing is
+       counted either way until he approves it, and approving one leg flags the other. */
+    if (t.id === row.id) return false;
     if (Math.round(Math.abs(+t.amount || 0) * 100) !== amt) return false;
     if ((t.dir || "out") === (row.dir || "out")) return false;              // must be the opposite leg
     if (row.accountId && t.accountId && t.accountId === row.accountId) return false;   // and a different account
@@ -279,6 +291,34 @@ function ledgerIngest(rows, opts) {
     d.budgetTx.push(t);
     added.push(t.id);
   });
+  /* ⭐⭐ SECOND PASS: THE EARLIER LEG NEVER SEES THE LATER ONE. Suggestions are computed as each row is
+     ingested, so in a batch containing both halves of a transfer only the SECOND half can spot the first —
+     the first was suggested against a ledger the second hadn't joined yet. Ray would then scan Review and
+     find one leg flagged and its twin apparently ordinary, which reads as the detection being unreliable
+     rather than order-dependent.
+
+     So once everything is in, re-ask for every row that came out unflagged. Cheap (only unflagged rows,
+     only against the ledger that now exists) and it makes the pair visible from BOTH sides, which is the
+     whole point of tracking both accounts. ⛔ Still only a suggestion — nothing is counted until approved. */
+  if (added.length) {
+    var byId = {};
+    d.budgetTx.forEach(function (t) { if (added.indexOf(t.id) >= 0) byId[t.id] = t; });
+    added.forEach(function (id) {
+      var t = byId[id];
+      if (!t || t.suggestTransfer || t.suggestCardPayment) return;
+      var mate = ledgerFindTransfer(t);
+      if (!mate) return;
+      t.suggestTransfer = true;
+      t.suggestion = {
+        confidence: "high",
+        why: "looks like a transfer between your own accounts — the matching "
+           + ((mate.dir || "out") === "in" ? "deposit" : "withdrawal") + " came in on the same pull, dated " + (mate.date || "?"),
+        ruleId: "transfer", seen: 0
+      };
+      t.suggestedCatId = "";
+      if (typeof touch === "function") touch(t);
+    });
+  }
   if (added.length && typeof save === "function") save();
   return { added: added.length, ids: added, duplicates: dupes, source: src };
 }
@@ -327,7 +367,12 @@ function ledgerApprove(id, over) {
   if (over.amount != null && +over.amount > 0) t.amount = Math.round(Math.abs(+over.amount) * 100) / 100;
   if (over.date) t.date = String(over.date);
 
-  t.isTransfer = (over.isTransfer !== undefined) ? !!over.isTransfer : !!t.suggestTransfer;
+  /* ⛔ DO NOT CLOBBER A FLAG THE OTHER LEG ALREADY SET. When the first leg was approved it reached across
+     and marked this one isTransfer + transferId. Recomputing from `suggestTransfer` here would throw that
+     away — and suggestTransfer is often false on the second leg precisely because its partner was still
+     pending when it was ingested. The pair would silently come apart at the moment he finished approving it,
+     and one side would go back to counting as spending. His own override still wins over everything. */
+  t.isTransfer = (over.isTransfer !== undefined) ? !!over.isTransfer : (!!t.isTransfer || !!t.suggestTransfer);
   t.isCardPayment = (over.isCardPayment !== undefined) ? !!over.isCardPayment : !!t.suggestCardPayment;
   /* a transfer or card payment is cash moving between his own pockets — it carries no category, and
      forcing one on it is how the same dollar ends up counted as spending twice */

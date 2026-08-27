@@ -175,17 +175,22 @@ function bankDropRemoved(ids) {
    The mask and the balance are the only things that tell the twins apart, and the Visa has no mask, so on
    that one the balance is the only thing. Both now show on every row.
 
-   ⛔ AND A LOAN IS NOT A SPENDING ACCOUNT. The car payment already leaves his checking account and gets
-   counted there. Pulling the loan's own transactions too would count the same money twice — so loans
-   default to NOT tracked and say why, rather than sitting in the list looking like an oversight. He can
-   still pair one deliberately.
+   ⭐⭐ TRACK ALL OF THEM. Ray, 2026-08-27: "i want you to keep and track all of them. you should be able to
+   catch the transactions moving between accounts, thats actually good for reconciliation."
+
+   He is right and this reverses what I shipped yesterday. I had loans defaulting to untracked, reasoning
+   that the car payment already leaves checking and counting the loan side too would double it. That is only
+   true if the two sides are never connected. They ARE: the ledger pairs opposite legs of the same movement
+   (ledgerFindTransfer, js/143) and marks both isTransfer, which excludes them from income and spending while
+   still moving both balances. So the second side is not a double-count — it is the CHECK on the first.
+   ⛔ Tracking one side of a transfer is what actually loses information: the money looks like it left.
 
    Grouped by what the account IS, because that is what decides how it should be treated. */
 
 var BANK_GROUPS = [
   { key: "cash",   label: "Checking &amp; savings", hint: "the money moving in and out — these are what a budget is made of" },
-  { key: "credit", label: "Credit cards",           hint: "purchases here are real spending; the payment from checking is a transfer, not a second expense" },
-  { key: "loan",   label: "Loans",                  hint: "⛔ left untracked on purpose — the payment is already counted where it leaves your checking account" },
+  { key: "credit", label: "Credit cards",           hint: "purchases here are real spending; paying the card off from checking is matched as a transfer, not counted twice" },
+  { key: "loan",   label: "Loans",                  hint: "worth tracking: the payment leaving checking and arriving at the loan get matched to each other, so the balance comes down and nothing is counted twice" },
   { key: "other",  label: "Other",                  hint: "" }
 ];
 /* ⚠️ READS type AND subtype, AND TOLERATES THE OLD COLLAPSED SHAPE. Records stored before 2026-08-27 kept
@@ -263,7 +268,11 @@ function bankPairHTML(it) {
         + '</select></div>';
     });
   });
-  h += '<div class="sub" style="white-space:normal;margin-top:8px">Anything left <i>don\'t import</i> is skipped '
+  h += '<div class="sub" style="white-space:normal;margin-top:8px"><b>Pair all of them if you can.</b> When both '
+    + 'sides of a movement are tracked — money leaving checking and landing on the card or the loan — they get '
+    + 'matched to each other and counted once, not twice. Tracking only one side is what makes money look like '
+    + 'it left when it only moved rooms.</div>'
+    + '<div class="sub" style="white-space:normal;margin-top:4px">Anything left <i>don\'t import</i> is skipped '
     + 'entirely — no transactions, no balance. You can come back and pair it later; nothing is lost by waiting.</div></div>';
   return h;
 }

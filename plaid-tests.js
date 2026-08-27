@@ -429,8 +429,16 @@ console.log("\n--- 🏦 seven accounts, three names: the pairing screen ---");
   ok("⭐⭐ and the balance, which on the maskless Visa is the ONLY discriminator",
     /502\.12/.test(html) && /46\.85/.test(html) && /23,644\.53/.test(html));
   ok("⛔ the maskless Visa says so rather than showing a blank", /no number shown/.test(html));
-  ok("⭐ loans are flagged as already counted on the checking side",
-    /already counted where it leaves your checking account/.test(html));
+  /* ⚠️ REVERSED 2026-08-27 BY RAY, AND HE WAS RIGHT. This asserted the opposite yesterday — that loans were
+     left untracked because the car payment already leaves checking and counting the loan side too would
+     double it. That is only true if the two sides are never connected. They ARE: ledgerFindTransfer pairs
+     opposite legs and marks both isTransfer, which keeps them out of income and spending while still moving
+     both balances. So the second side isn't a double-count, it's the CHECK on the first — and tracking only
+     one side is what actually loses information, because the money looks like it left. */
+  ok("⭐ loans are worth tracking, and it says why", /worth tracking/.test(html) && /nothing is counted twice/.test(html));
+  ok("⛔ the old 'leave loans untracked' guidance is gone", !/left untracked on purpose/.test(html));
+  ok("⭐ and the screen asks him to pair all of them", /Pair all of them if you can/.test(html));
+  ok("...explaining that one-sided tracking is the lossy option", /only moved rooms/.test(html));
   ok("⛔ nothing is pre-paired — every row defaults to don't import", !/selected/.test(html));
   ok("⭐ each row offers to create the matching account inline", (html.match(/__new__/g) || []).length === 7,
     (html.match(/__new__/g) || []).length);

@@ -310,5 +310,77 @@ console.log("\n--- wiring ---");
   ok("a bank feed has a door to come in through", /"bank"/.test(LEDGER) && /externalId/.test(CODE(LEDGER)));
 }
 
+console.log("\n--- ⭐⭐ both legs of a transfer, from one bank pull ---");
+{
+  /* Ray, 2026-08-27: "i want you to keep and track all of them. you should be able to catch the transactions
+     moving between accounts, thats actually good for reconciliation."
+
+     ⚠️ IT DIDN'T. ledgerFindTransfer skipped pending rows — and a bank pull delivers BOTH legs in the same
+     batch, where everything lands pending. So every candidate mate was pending, every one was skipped, and
+     the FIRST import (the one carrying months of history and every internal transfer in it) detected zero.
+     Reproduced before fixing: $412.55 out of checking and $412.55 into the card, same day, same batch, both
+     came back suggestTransfer:false. */
+  const mk = () => {
+    const vm = require("vm"), c = { console }; c.window = c;
+    const D = { budgetTx: [], budgetCats: [], budgetMemo: [], budgetBills: [],
+      budgetBooks: [{ id: "bk1", name: "Personal", deleted: false }],
+      budgetAccounts: [
+        { id: "chk", name: "EveryDay Checking", type: "checking", deleted: false },
+        { id: "visa", name: "Visa", type: "credit", deleted: false },
+        { id: "loan", name: "Used Vehicle Loan", type: "loan", deleted: false },
+        { id: "sav", name: "Share Savings", type: "savings", deleted: false }] };
+    c.D = () => D; c.uid = () => "u" + Math.floor(Math.random() * 1e9);
+    c.now = () => 1756252800000; c.today = () => "2026-08-27";
+    c.touch = o => { o.updatedAt = 1756252800000; }; c.save = () => {};
+    vm.createContext(c);
+    vm.runInContext(require("fs").readFileSync("js/143-ledger.js", "utf8"), c);
+    return { c, D };
+  };
+
+  const { c, D } = mk();
+  c.ledgerIngest([
+    { externalId: "a", date: "2026-08-05", amount: 412.55, dir: "out", desc: "NFCU LOAN PMT", accountId: "chk" },
+    { externalId: "b", date: "2026-08-05", amount: 412.55, dir: "in",  desc: "AUTO LOAN PAYMENT", accountId: "loan" },
+    { externalId: "e", date: "2026-08-14", amount: 64.03,  dir: "out", desc: "LOWES #1234 KITTY HAWK NC", accountId: "visa" },
+    { externalId: "f", date: "2026-08-15", amount: 25.00,  dir: "out", desc: "TRANSFER TO SAVINGS", accountId: "chk" },
+    { externalId: "g", date: "2026-08-15", amount: 25.00,  dir: "in",  desc: "TRANSFER FROM CHECKING", accountId: "sav" }
+  ], { source: "bank" });
+  const by = x => D.budgetTx.find(t => t.externalId === x);
+
+  ok("⭐⭐ the LATER leg spots its partner", by("b").suggestTransfer === true);
+  ok("⭐⭐ and so does the EARLIER one — the back-fill pass, or half of every pair looks ordinary",
+    by("a").suggestTransfer === true);
+  ok("...same for a plain savings transfer, both ways",
+    by("f").suggestTransfer === true && by("g").suggestTransfer === true);
+  ok("⛔ a REAL purchase on the card is not swept up in it", by("e").suggestTransfer === false);
+  ok("...and still gets its own honest suggestion", /new payee/.test(by("e").suggestion.why));
+  ok("⚠️ the back-filled reason says where the partner came from", /came in on the same pull/.test(by("a").suggestion.why));
+  ok("⛔ nothing is counted yet — every row is still pending", D.budgetTx.every(t => t.pending === true));
+
+  c.ledgerApprove(by("a").id);
+  ok("⭐ approving one leg reaches across and flags the other", by("b").isTransfer === true);
+  ok("...with a shared transferId", !!by("a").transferId && by("a").transferId === by("b").transferId);
+  c.ledgerApprove(by("b").id);
+  ok("⭐⭐ approving the SECOND leg does not undo the pairing", by("b").isTransfer === true && by("a").isTransfer === true,
+    JSON.stringify({ a: by("a").isTransfer, b: by("b").isTransfer }));
+  ok("...and they still share one id", by("a").transferId === by("b").transferId);
+  ok("⛔ neither leg carries a category — that is how one dollar becomes two",
+    by("a").catId === "" && by("b").catId === "");
+
+  const { c: c2, D: D2 } = mk();
+  c2.ledgerIngest([
+    { externalId: "x", date: "2026-08-05", amount: 50, dir: "out", desc: "MOVE", accountId: "chk" },
+    { externalId: "y", date: "2026-08-05", amount: 50, dir: "in",  desc: "MOVE", accountId: "sav" }
+  ], { source: "bank" });
+  const rowX = D2.budgetTx.find(t => t.externalId === "x");
+  c2.ledgerApprove(rowX.id, { isTransfer: false, catId: "" });
+  ok("⭐ he can overrule it — an explicit false stays false", rowX.isTransfer === false);
+
+  ok("⚠️ the pending-blindness is written down where it would be reinstated",
+    /PENDING ROWS COUNT AS CANDIDATES/.test(require("fs").readFileSync("js/143-ledger.js", "utf8")));
+  ok("⛔ and the clobber that came apart on the second approval",
+    /DO NOT CLOBBER A FLAG THE OTHER LEG ALREADY SET/.test(require("fs").readFileSync("js/143-ledger.js", "utf8")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
