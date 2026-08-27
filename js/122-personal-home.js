@@ -471,8 +471,12 @@ function personalHome() {
      then I can just try a few different ways to do it." He has told me where these blocks go four times and
      been right each time — the lesson is not the arrangement, it is that I keep guessing at something he can
      settle in ten seconds if the app lets him. ◀ ▲ ▼ ▶ on each block, saved per device. */
+  /* ⭐ "an edit button along the top somewhere" (Ray, 2026-08-27) — it goes in the greeting row, which is the
+     top of Today, and the layout module owns the button because it owns the mode. */
   if (typeof tlTodayHTML === "function") {
-    return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>' + tlTodayHTML();
+    return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2><div class="grow"></div>'
+      + (typeof tlEditBtnHTML === "function" ? tlEditBtnHTML() : "")
+      + '</div>' + tlTodayHTML();
   }
 
   /* ⛔ fallback for a build without js/164 — Today must never come up empty */

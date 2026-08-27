@@ -652,14 +652,50 @@ console.log("\n--- 🧩 Today, arranged by him ---");
     /2\.4fr/.test(tracks(c.tlTodayHTML())), { before: fresh, after: tracks(c.tlTodayHTML()) });
   ok("⚠️ the null round-trip is written down", /isFinite\(\+null\)/.test(R("js/164-today-layout.js")));
   c.tlReset();
-  ok("⭐ each block carries its move handle", (html.match(/tl-handle/g) || []).length === 5);
-  /* ⛔ SUPERSEDED. Ray: "we dont need this — Use ◀ ▲ ▼ ▶ on any block to rearrange this page." He is right:
-     the arrows are on every block already, so a caption explaining them is a sentence he reads past every
-     morning to reach his own day. Reset moved onto the handle, where the controls it undoes live. */
-  ok("⛔ no instruction footer", !/rearrange this page/.test(html));
-  ok("⭐ reset is a control on the handle instead", /onclick="tlReset\(\)"/.test(html));
+  /* ⭐⭐ SUPERSEDED 2026-08-27 — THE CONTROLS ARE A MODE NOW. Ray: "can we make an edit button along the top
+     somewhere that exposes the moving and resizing controls rather than always showing them"
+     ⚠️ This used to assert the handles are on every block ALWAYS. I built them that way so he could find
+     them, which optimised for the one morning he rearranges and ignored the several hundred where he just
+     wants to read his day. The assertion now runs both ways round: nothing in the default view, everything
+     once he asks for it. */
+  ok("⛔⛔ NOTHING to move or resize until he asks — six buttons per block is six buttons of noise on the "
+    + "screen whose whole job is telling him what to do today",
+    !/tl-handle/.test(html) && !/tlMove\(/.test(html) && !/tlWide\(/.test(html) && !/tlReset\(\)/.test(html));
+  ok("⭐ ...and the blocks themselves are all still there — it hides the CONTROLS, not the page",
+    ["<CAL>", "<CHAT>", "<MONEY>", "<COMING>", "<PART>"].every(x => html.indexOf(x) >= 0));
+  ok("⭐ the button says what it does before it's pressed", /✎ Edit layout/.test(c.tlEditBtnHTML()));
+
+  c.tlEditToggle();
+  const edit = c.tlTodayHTML();
+  ok("⭐⭐ one tap brings back every control", (edit.match(/tl-handle/g) || []).length === 5
+    && (edit.match(/tlMove\(/g) || []).length === 20 && (edit.match(/tlWide\(/g) || []).length === 10,
+    { handles: (edit.match(/tl-handle/g) || []).length, move: (edit.match(/tlMove\(/g) || []).length });
+  ok("⭐ ...and the button flips to Done, so it is a mode and not a one-way door", /✓ Done/.test(c.tlEditBtnHTML()));
+  ok("⭐ the grid says it is being edited, so the blocks can show they're movable", /tl-editing/.test(edit));
+  ok("⭐ reset is a control on the handle", /onclick="tlReset\(\)"/.test(edit));
   ok("⛔ and the handle carries NO label — every card already says what it is one line below",
-    !/tl-name/.test(html) && !/tl-name/.test(R("app.css")));
+    !/tl-name/.test(edit) && !/tl-name/.test(R("app.css")));
+  /* ⛔ SUPERSEDED EARLIER. Ray: "we dont need this — Use ◀ ▲ ▼ ▶ on any block to rearrange this page." */
+  ok("⛔ no instruction footer, in either mode", !/rearrange this page/.test(html) && !/rearrange this page/.test(edit));
+
+  /* ⛔ the mode must not eat the thing it exists to enable */
+  c.tlMove("money", "left");
+  ok("⭐ moving still works inside the mode", c.tlLayout().money.col === 1);
+  c.tlWide("money", 1);
+  ok("⭐ ...and so does resizing", c.tlLayout().money.w === 1.2, c.tlLayout().money);
+  c.tlReset();
+  ok("⛔ ↩ resets the LAYOUT and leaves him in edit mode — being thrown out of the mode by the undo button "
+    + "would mean re-entering it to try the next arrangement", /✓ Done/.test(c.tlEditBtnHTML())
+    && c.tlLayout().money.col === 2);
+  c.tlEditToggle();
+  ok("⭐ Done puts the controls away again", !/tl-handle/.test(c.tlTodayHTML()) && /✎ Edit layout/.test(c.tlEditBtnHTML()));
+
+  /* ⛔ a button that switches on a mode with nothing in it is worse than no button */
+  ok("⛔ the Edit button hides below 1180px, where the handles are display:none anyway",
+    /\.tl-editbtn\{display:none\}/.test(R("app.css")) && /\.tl-editbtn\{display:inline-flex\}/.test(R("app.css")));
+  ok("⭐ it sits along the top, in the greeting row", /tlEditBtnHTML/.test(CODE(R("js/122-personal-home.js"))));
+  ok("⛔ the mode is NOT remembered across reloads — the arrangement persists, the mode doesn't",
+    !/tl_edit|TL_EDIT[^;]*localStorage/.test(CODE(R("js/164-today-layout.js"))));
 
   /* moving */
   c.tlMove("chat", "left");
@@ -699,8 +735,12 @@ console.log("\n--- 🧩 Today, arranged by him ---");
   ok("⛔ one column on a phone", /\.tl-grid\{display:flex;flex-direction:column/.test(css));
   ok("⛔ and no move handles there — a control offering a column that doesn't exist is a lie",
     /\.tl-handle\{display:none\}/.test(css));
-  ok("⭐ the handles are always visible on desktop, not hover-only — he has to be able to FIND this",
-    /\.tl-handle\{display:flex;[^}]*opacity:\.4/.test(css));
+  /* ⚠️ SUPERSEDED 2026-08-27. This asserted the handles sit at 40% opacity permanently — a compromise that
+     existed ONLY because they lived on the page all the time and had to stay quiet while doing so. The Edit
+     button now answers "can he find this", so inside the mode they can simply be legible. */
+  ok("⭐ inside the mode the handles are properly visible, not a 40% compromise",
+    /\.tl-handle\{display:flex;[^}]*opacity:\.85/.test(css), (css.match(/\.tl-handle\{display:flex;[^}]*\}/) || [])[0]);
+  ok("⭐ ...and the block shows it is movable while the mode is on", /\.tl-editing \.tl-block\{outline:/.test(css));
   ok("⭐ and Today finally uses the whole screen", /body\.wideday \.wrap\{max-width:none/.test(css));
   /* ⚠️ SUPERSEDED 2026-08-27. This asserted a hard-coded track list per column count — which is exactly the
      bug: it tied width to POSITION, so moving the calendar to the middle squeezed it. The track list is now

@@ -557,6 +557,15 @@
 .tl-col{min-width:0;display:flex;flex-direction:column}
 .tl-block{min-width:0}
 .tl-handle{display:none}
+/* ⛔ THE EDIT BUTTON HIDES WHERE THE CONTROLS DO. Below 1180px there is one column and .tl-handle is
+   display:none, so offering "Edit layout" there would be a button that switches on a mode with nothing in
+   it. A control that does nothing is worse than a missing one — it makes him wonder what he did wrong. */
+.tl-editbtn{display:none}
+@media(min-width:1180px){
+  .tl-editbtn{display:inline-flex}
+  /* on = it reads as engaged, not as another idle button in the header */
+  .tl-editbtn.on{color:var(--accent);border-color:var(--accent)}
+}
 @media(min-width:1180px){
   /* the wide column carries the calendar; the other two are for lists and cards */
   /* ⚠️ THE TRACK LIST COMES FROM THE CONTENT, NOT FROM THE POSITION. It used to be hard-coded per column
@@ -566,12 +575,16 @@
   .tl-grid{display:grid;gap:0 22px;align-items:start;
     grid-template-columns:var(--tl-cols, repeat(auto-fit, minmax(0,1fr)))}
   .tl-block{position:relative}
-  /* ⛔ ALWAYS VISIBLE, NOT HOVER-REVEALED. He asked for this and has to be able to FIND it; a control that
-     only exists while the mouse is over it is a control he will forget he has. Quiet at 40%, full on hover.
-     It also reserves its own row, so the buttons never float over the top of the card beneath them. */
+  /* ⭐ IN EDIT MODE THEY ARE FULLY VISIBLE. They only exist at all while the mode is on (js/164 doesn't build
+     them otherwise), so there is nothing left to be shy about — the 40%-until-hover treatment was for when
+     they lived on the page permanently and had to stay quiet.
+     It still reserves its own row, so the buttons never float over the top of the card beneath them. */
   .tl-handle{display:flex;align-items:center;gap:2px;justify-content:flex-end;
-    opacity:.4;transition:opacity .12s;margin:0 0 3px;padding-top:2px}
+    opacity:.85;transition:opacity .12s;margin:0 0 3px;padding-top:2px}
   .tl-block:hover .tl-handle{opacity:1}
+  /* ⭐ and the blocks say they're movable while he's moving them — a dashed edge is the affordance the
+     permanent handles used to be, and it costs nothing when the mode is off */
+  .tl-editing .tl-block{outline:1px dashed var(--line);outline-offset:6px;border-radius:4px}
   /* the handle is controls only — every card already says what it is, one line below */
   .tl-handle{justify-content:flex-end}
   .tl-handle button{border:1px solid var(--line);background:var(--card);color:var(--muted);

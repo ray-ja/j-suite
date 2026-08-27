@@ -112,6 +112,29 @@ function tlRoutineHTML() {
   return h;
 }
 
+/* ---------- ⭐⭐ THE CONTROLS ARE A MODE, NOT FURNITURE ----------------------------------------------------
+   Ray, 2026-08-27: "can we make an edit button along the top somewhere that exposes the moving and resizing
+   controls rather than always showing them"
+
+   ⭐ HE IS RIGHT AND I HAD THE TRADE-OFF BACKWARDS. I made the handles permanent so he could FIND them —
+   reasoning about the one morning he wants to rearrange and ignoring the several hundred where he just wants
+   to read his day. Six buttons on every block is six buttons of noise on a screen whose entire job is telling
+   him what to do today, and he has now rearranged this page enough times to know where the controls are.
+
+   ⛔ THE MODE IS DELIBERATELY NOT REMEMBERED. It resets on reload, because leaving it on is a way to be stuck
+   in a state you didn't ask for — and the arrangement itself already persists, which is the thing that
+   actually matters. Turning it on costs one tap.
+
+   ⚠️ AND IT IS NOT SHOWN WHERE IT WOULD DO NOTHING. Below 1180px there is one column and the handles are
+   display:none, so the button hides with them rather than offering a mode that changes nothing. */
+var TL_EDIT = false;
+
+function tlEditBtnHTML() {
+  return '<button class="btn ghost sm tl-editbtn' + (TL_EDIT ? ' on' : '') + '"'
+    + ' style="width:auto;flex:0 0 auto;padding:2px 10px;font-size:12px"'
+    + ' onclick="tlEditToggle()">' + (TL_EDIT ? '✓ Done' : '✎ Edit layout') + '</button>';
+}
+
 /* ⛔ the handle is TINY and only on desktop — on a phone everything is one column and moving a block between
    columns that don't exist would be a control that lies. */
 function tlHandle(b, lay) {
@@ -148,7 +171,9 @@ function tlTodayHTML() {
   var body = live.map(function (c) {
     return '<div class="tl-col tl-col-' + c.i + '">'
       + c.items.map(function (x) {
-          return '<div class="tl-block">' + tlHandle(x.b, lay) + x.html + '</div>';
+          /* ⛔ the handle isn't hidden with CSS — it isn't BUILT unless he's editing. Nothing to tab into,
+             nothing to mis-tap on a card he's only reading. */
+          return '<div class="tl-block">' + (TL_EDIT ? tlHandle(x.b, lay) : "") + x.html + '</div>';
         }).join("")
       + '</div>';
   }).join("");
@@ -169,7 +194,8 @@ function tlTodayHTML() {
     return "minmax(0," + (Math.round((w || 1) * 100) / 100) + "fr)";
   }).join(" ");
 
-  return '<div class="tl-grid tl-live-' + live.length + '" style="--tl-cols:' + esc(widths) + '"'
+  return '<div class="tl-grid tl-live-' + live.length + (TL_EDIT ? ' tl-editing' : '')
+    + '" style="--tl-cols:' + esc(widths) + '"'
     + ' data-cols="' + live.map(function (c) { return c.i; }).join(",") + '">'
     + body + '</div>';
   /* ⛔ THE INSTRUCTION LINE IS GONE. Ray, 2026-08-27: "we dont need this" — and he is right. The arrows sit
@@ -180,6 +206,12 @@ function tlTodayHTML() {
 if (typeof window !== "undefined") {
   window.tlTodayHTML = tlTodayHTML; window.tlLayout = tlLayout; window.tlBlocks = tlBlocks;
   window.tlRoutineHTML = tlRoutineHTML; window.tlSave = tlSave; window.TL_DEFAULT = TL_DEFAULT;
+  window.tlEditBtnHTML = tlEditBtnHTML;
+
+  window.tlEditToggle = function () {
+    TL_EDIT = !TL_EDIT;
+    if (typeof render === "function") render();
+  };
 
   window.tlMove = function (key, dir) {
     var lay = tlLayout();
