@@ -219,6 +219,38 @@ function ledgerFindBill(row) {
   }) || null;
 }
 
+/* ⛔⛔ A STRICTER TEST, FOR LOOKUPS THAT HAVE NOTHING ELSE HOLDING THEM DOWN.
+   ledgerSamePayee is used to reconcile a statement row to a bank row — and there it is ALREADY anchored by
+   exact cents, exact date, same account and same direction, so a loose payee test costs nothing.
+   ⚠️ A MEMO LOOKUP HAS NO SUCH ANCHOR, and the loose test was catastrophic there: "ACH Transaction - IDAHO
+   HOUSING" matched a Groceries rule, "Intl Transaction Fee Visa" matched a Groceries rule — both on the
+   shared word "transaction". Found while tiering Ray's 332 rows for auto-approval, before approving any of
+   them. I was one step from filing his mortgage payment as groceries because two bank descriptions both
+   contained a word every bank description contains.
+
+   So strip what every row has in common — the processor verbiage and the card/reference digits — and require
+   what REMAINS to match. What is left of "ACH Transaction - IDAHO HOUSING MTGPMT" is "idahohousingmtgpmt";
+   of "POS Debit - ... Wal-Mart #2" it is "walmart". Those are merchants, and merchants are the thing a rule
+   is actually about. */
+var LEDGER_BOILER = /\b(pos|debit|credit|card|ach|transaction|trans|purchase|payment|pmt|transfer|trf|tfr|online|recurring|intl|international|fee|visa|mastercard|check|chk|withdrawal|deposit|from|to|other|inc|llc|the|www|com)\b/g;
+function ledgerMerchantSame(a, b) {
+  var strip = function (x) {
+    return String(x || "").toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\b\d[\d]*\b/g, " ")        // card numbers, dates, reference ids — never identify a merchant
+      .replace(LEDGER_BOILER, " ")
+      .replace(/\s+/g, "");
+  };
+  var A = strip(a), B = strip(b);
+  if (A.length < 4 || B.length < 4) return false;
+  if (A.indexOf(B) >= 0 || B.indexOf(A) >= 0) return true;
+  var short = A.length <= B.length ? A : B, long = A.length <= B.length ? B : A;
+  for (var i = 0; i + 6 <= short.length; i++) {
+    if (long.indexOf(short.substr(i, 6)) >= 0) return true;
+  }
+  return false;
+}
+
 /* ⭐ THE SUGGESTION. Returns { catId, confidence, why, ruleId, isTransfer, isCardPayment }.
    confidence is "high" | "medium" | "none" — never a percentage, because a percentage on a guess about
    his money reads as a measurement and this is not one. */
@@ -280,7 +312,7 @@ function ledgerSuggest(row) {
     var desc0 = String(row.desc || row.note || "");
     fuzzy = ledgerRules().find(function (m) {
       if (!ledgerCatOk(m.catId) || !m.lastDesc) return false;
-      return ledgerSamePayee(m.lastDesc, desc0);
+      return ledgerMerchantSame(m.lastDesc, desc0);   /* ⛔ the STRICT one — see the note above it */
     }) || null;
   }
   if (fuzzy) {
@@ -555,6 +587,90 @@ function ledgerResuggest() {
   return { changed: changed, gained: gained };
 }
 
+/* ---------- ⭐⭐ AUTO-APPROVE, FOR THE FIRST IMPORT ONLY ------------------------------------------------
+   Ray, 2026-08-27: "for this initial import I'm not approving anything, you can and I'll review the ones
+   you're unsure of only. going forward we can have it all approved by me."
+
+   A bounded delegation, so the bar has to be one I can defend line by line. Three tiers qualify, and every
+   one of them is either mechanical or HIS OWN PREVIOUS DECISION — never my opinion about his money:
+
+     1. a transfer whose opposite leg is present. Arithmetic, not judgement.
+     2. a payment to one of his own cards, matched by a name that identifies exactly one account.
+     3. a payee his own filed history is UNANIMOUS about — Wawa→Everyday 25×, Home Depot→Home & hardware 20×,
+        Walmart→Groceries 8×. Filing those the way he has always filed them is not a guess.
+
+   ⛔ ANYTHING ELSE IS LEFT PENDING. If his history disagrees with itself about a payee, or there is no
+   history at all, I do not have an answer — I have a preference, and it is not my money. 143 of his 332
+   stayed behind on exactly that rule.
+
+   ⛔ AND SOMETHING HAS TO BE LEFT AFTER THE BANK VERBIAGE. MEASURED, not guessed — his real descriptions
+   strip to: wawa(4) lowes(5) target(6) amazon(6) walmart(7) navyfcu(7) homedepot(9), against "POS Debit -
+   Visa Check Card 9185"→"" , "Intl Transaction Fee Visa"→"" , "Pos Debit- 9185 9185 1 Mon"→"mon". The line
+   falls cleanly at FOUR: every real merchant is above it and every content-free description below.
+   ⚠️ My first attempt used six and silently dropped Wawa and Lowe's — 36 of his rows — which is exactly the
+   kind of threshold that looks careful and quietly does harm. bp(2) is the one real casualty: a two-letter
+   merchant cannot be matched by substring safely, so BP costs him one manual decision.
+
+   ⭐ EVERY ROW IS STAMPED autoApproved + autoReason, so he can find all of them, read why, and undo the lot
+   in one call. An automatic decision he cannot see or reverse would be a worse deal than doing it himself. */
+function ledgerAutoStrip(desc) {
+  return String(desc || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b\d[\d]*\b/g, " ").replace(LEDGER_BOILER, " ").replace(/\s+/g, "");
+}
+/* what his own filed history says about this payee: {n, cats, top} */
+function ledgerHistoryFor(desc) {
+  var hits = ledgerTx().filter(function (t) {
+    return !t.pending && t.catId && !t.isTransfer && !t.isCardPayment && ledgerMerchantSame(t.note, desc);
+  });
+  var by = {};
+  hits.forEach(function (t) { by[t.catId] = (by[t.catId] || 0) + 1; });
+  var keys = Object.keys(by).sort(function (a, b) { return by[b] - by[a]; });
+  return { n: hits.length, cats: keys.length, top: keys[0] || "", topN: by[keys[0]] || 0 };
+}
+function ledgerAutoApprove() {
+  var out = { transfers: 0, cardPayments: 0, learned: 0, left: 0, byCat: {} };
+  try {
+    ledgerTx().filter(function (t) { return t.pending; }).forEach(function (t) {
+      if (t.suggestTransfer) {
+        if (ledgerApprove(t.id, { isTransfer: true, catId: "" })) { t.autoApproved = true; t.autoReason = "both sides of this transfer are here"; out.transfers++; }
+        return;
+      }
+      if (t.suggestCardPayment) {
+        if (ledgerApprove(t.id, { isCardPayment: true, catId: "" })) { t.autoApproved = true; t.autoReason = "a payment to your own card"; out.cardPayments++; }
+        return;
+      }
+      var merch = ledgerAutoStrip(t.note);
+      if (merch.length < 4) { out.left++; return; }               // see the note above — measured, not picked
+      var h = ledgerHistoryFor(t.note);
+      if (h.n === 0 || h.cats !== 1 || !ledgerCatOk(h.top)) { out.left++; return; }
+      if (ledgerApprove(t.id, { catId: h.top })) {
+        t.autoApproved = true;
+        t.autoReason = "you have filed " + h.n + " of these as "
+          + ((typeof budgetCatName === "function") ? budgetCatName(h.top) : "that") + ", every time";
+        out.learned++;
+        var nm = (typeof budgetCatName === "function") ? budgetCatName(h.top) : h.top;
+        out.byCat[nm] = (out.byCat[nm] || 0) + 1;
+      } else out.left++;
+    });
+    if (typeof save === "function") save();
+  } catch (e) {}
+  return out;
+}
+/* ⭐ ONE CALL PUTS IT ALL BACK. Only rows this stamped; his own approvals are never touched. */
+function ledgerUndoAuto() {
+  var n = 0;
+  try {
+    ledgerTx().filter(function (t) { return t.autoApproved && !t.pending; }).forEach(function (t) {
+      t.pending = true; t.catId = ""; t.isTransfer = false; t.isCardPayment = false;
+      t.autoApproved = false; t.autoReason = "";
+      if (typeof touch === "function") touch(t);
+      n++;
+    });
+    if (n && typeof save === "function") save();
+  } catch (e) {}
+  return n;
+}
+
 /* approve one row. `over` may carry his corrections: { catId, dir, amount, date, isTransfer, isCardPayment } */
 function ledgerApprove(id, over) {
   over = over || {};
@@ -630,7 +746,7 @@ function ledgerInboxTotals() {
   return { in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100, unrecognized: unknown };
 }
 
-if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee; window.ledgerFindOwnAccount = ledgerFindOwnAccount; window.ledgerBackfillMemo = ledgerBackfillMemo; window.ledgerResuggest = ledgerResuggest;
+if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee; window.ledgerFindOwnAccount = ledgerFindOwnAccount; window.ledgerBackfillMemo = ledgerBackfillMemo; window.ledgerResuggest = ledgerResuggest; window.ledgerMerchantSame = ledgerMerchantSame; window.ledgerAutoApprove = ledgerAutoApprove; window.ledgerUndoAuto = ledgerUndoAuto; window.ledgerHistoryFor = ledgerHistoryFor; window.ledgerAutoStrip = ledgerAutoStrip;
   window.ledgerIngest = ledgerIngest; window.ledgerSuggest = ledgerSuggest;
   window.ledgerInbox = ledgerInbox; window.ledgerInboxCount = ledgerInboxCount;
   window.ledgerInboxTotals = ledgerInboxTotals;

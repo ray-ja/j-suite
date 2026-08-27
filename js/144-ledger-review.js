@@ -91,8 +91,57 @@ function lrGroup(title, list, hint, bulkLabel) {
   return h + list.map(lrRow).join("");
 }
 
+/* ---------- ⭐ WHAT WAS FILED AUTOMATICALLY, WEAKEST EVIDENCE FIRST ------------------------------------
+   Ray, 2026-08-27: "you can [approve] and I'll review the ones you're unsure of only."
+
+   ⚠️ THAT DEAL ONLY WORKS IF HE CAN SEE WHAT I DID. 202 of his rows were filed without him, on three
+   defensible tiers — but "defensible" is my word, and the whole arrangement collapses if checking my work
+   means scrolling his entire ledger. So they are listed here, sorted by HOW THIN THE EVIDENCE WAS: the
+   eight backed by a single previous filing come first, the fifty-three mechanical transfers last, because
+   that is the order in which he would find a mistake.
+   ⛔ Collapsed by default. It is a receipt, not a to-do. */
+var LR_AUTO_OPEN = false;
+function lrAutoRows() {
+  try {
+    return ledgerTx().filter(function (t) { return t.autoApproved && !t.pending; })
+      .map(function (t) {
+        var m = /filed (\d+) of these/.exec(t.autoReason || "");
+        /* a transfer is arithmetic, so it ranks strongest; otherwise the count of past filings */
+        var strength = m ? +m[1] : (t.isTransfer || t.isCardPayment ? 9999 : 0);
+        return { t: t, strength: strength };
+      })
+      .sort(function (a, b) { return a.strength - b.strength || (+b.t.amount || 0) - (+a.t.amount || 0); });
+  } catch (e) { return []; }
+}
+function lrAutoHTML() {
+  var rows = lrAutoRows();
+  if (!rows.length) return "";
+  var thin = rows.filter(function (r) { return r.strength <= 1; }).length;
+  var h = '<div class="card" style="border-left:4px solid var(--soft)">'
+    + '<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap">'
+    + '<div class="grow" style="white-space:normal"><b>' + rows.length + ' filed automatically</b>'
+    + '<div class="sub">Transfers with both sides present, payments to your own cards, and payees you have '
+    + 'always filed the same way.' + (thin ? ' ' + thin + ' rested on a single earlier filing — those are listed first.' : '') + '</div></div>'
+    + '<button class="btn ghost sm" style="width:auto" onclick="lrAutoToggle()">' + (LR_AUTO_OPEN ? 'Hide' : 'Check them') + '</button>'
+    + '</div>';
+  if (LR_AUTO_OPEN) {
+    h += '<div style="margin-top:8px;max-height:420px;overflow-y:auto">' + rows.slice(0, 220).map(function (r) {
+      var t = r.t;
+      return '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">'
+        + '<div class="grow" style="min-width:0"><div class="sub">' + esc(lrDate(t.date)) + ' · ' + esc(lrName(t)) + '</div>'
+        + '<div class="sub" style="white-space:normal;opacity:.7">' + esc(t.autoReason || '') + '</div></div>'
+        + '<div class="nm" style="flex:0 0 auto;font-variant-numeric:tabular-nums">'
+        + ((t.dir || 'out') === 'in' ? '+' : '−') + esc(lrMoney(t.amount)) + '</div></div>';
+    }).join("")
+    + '</div><button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="lrUndoAuto()">'
+    + '↩ Put all ' + rows.length + ' back for me to approve myself</button>';
+  }
+  return h + '</div>';
+}
+
 function rLedgerReview() {
   var inbox = (typeof ledgerInbox === "function") ? ledgerInbox() : [];
+  var _auto = (typeof lrAutoHTML === "function") ? lrAutoHTML() : "";
   if (!inbox.length) {
     return '<div class="empty"><div class="big">✅</div>Nothing waiting.'
       + '<div class="sub" style="white-space:normal;margin-top:6px">Imported transactions land here first. '
@@ -111,7 +160,7 @@ function rLedgerReview() {
     +   '<div class="grow"><div class="sub" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px">Money out</div>'
     +     '<div class="nm" style="font-size:20px;font-variant-numeric:tabular-nums">' + esc(lrMoney(tot.out)) + '</div></div>'
     + '</div>'
-    + '<div class="sub" style="white-space:normal;margin-top:8px">None of this is in your budget yet.</div></div>';
+    + '<div class="sub" style="white-space:normal;margin-top:8px">None of this is in your budget yet.</div></div>' + _auto;
 
   /* ⭐⭐ USE WHAT HE HAS ALREADY DECIDED. Ray, 2026-08-27: "we need to automate as much as possible I don't
      have time to be an accountant too." He had already categorised 263 transactions — and the learning table
@@ -123,6 +172,8 @@ function rLedgerReview() {
     _unlearned = (typeof ledgerRules === "function" && !ledgerRules().length && typeof ledgerTx === "function")
       ? ledgerTx().filter(function (t) { return !t.pending && t.catId && !t.isTransfer && !t.isCardPayment; }).length : 0;
   } catch (e) {}
+  h += _auto;
+
   /* ⭐ ORDER HISTORY (js/162) — the only place that knows what an "Amazon" charge actually was. */
   h += '<input type="file" id="oi_file" accept=".csv,text/csv" style="display:none" '
     + 'onchange="oiHandleFile(this.files &amp;&amp; this.files[0]); this.value=\'\'">'
@@ -171,6 +222,16 @@ if (typeof window !== "undefined") {
       toast(b.rules + " payee rule" + (b.rules === 1 ? "" : "s") + " learned · "
         + r.gained + " waiting transaction" + (r.gained === 1 ? "" : "s") + " now recognised");
     }
+    if (typeof render === "function") render();
+  };
+
+  window.lrAutoToggle = function () { LR_AUTO_OPEN = !LR_AUTO_OPEN; if (typeof render === "function") render(); };
+  window.lrUndoAuto = function () {
+    var n = lrAutoRows().length;
+    if (typeof confirm === "function" && !confirm("Put all " + n + " back into the queue for you to approve yourself?\n\n"
+      + "Nothing is deleted — they return exactly as they arrived.")) return;
+    var done = (typeof ledgerUndoAuto === "function") ? ledgerUndoAuto() : 0;
+    if (typeof toast === "function") toast(done + " returned to the queue");
     if (typeof render === "function") render();
   };
 

@@ -143,7 +143,9 @@ console.log("\n--- ⭐ 2. it learns from his decisions, never from its own guess
   ok("⭐ ledgerResuggest touches PENDING rows only",
     /ledgerTx\(\)\.filter\(function \(t\) \{ return t\.pending; \}\)/.test(CODE(LEDGER)));
   ok("⛔ ...and never writes a real category, only the suggestion", (function () {
-    var b = CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerResuggest"), CODE(LEDGER).indexOf("function ledgerApprove"));
+    /* ⚠️ bound the slice by the NEXT function, not by one several definitions away — ledgerAutoApprove was
+       inserted between these two and dragged its (legitimate) writes into the window under test. */
+    var b = CODE(LEDGER).slice(CODE(LEDGER).indexOf("function ledgerResuggest"), CODE(LEDGER).indexOf("function ledgerAutoStrip"));
     return /t\.suggestedCatId = next/.test(b) && !/[^t]t\.catId\s*=/.test(b);
   })());
 }

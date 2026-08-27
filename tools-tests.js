@@ -347,5 +347,126 @@ console.log("\n--- 📦 an order history says what the charge was ---");
   ok("⛔ an amount is read as a positive magnitude", c.oiMoney("$-358.19") === 358.19 && c.oiMoney("") === 0);
 }
 
+console.log("\n--- ⭐⭐ auto-approve: a bar I can defend line by line ---");
+{
+  /* Ray, 2026-08-27: "for this initial import I'm not approving anything, you can and I'll review the ones
+     you're unsure of only." A bounded delegation — so every tier is either arithmetic or HIS OWN previous
+     decision, never my opinion about his money. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    budgetCats: [{ id: "c-ev", name: "Everyday spending", deleted: false },
+                 { id: "c-groc", name: "Groceries", deleted: false }],
+    budgetAccounts: [{ id: "chk", name: "RJ Checking", type: "checking", deleted: false },
+                     { id: "sav", name: "RJ Savings", type: "savings", deleted: false },
+                     { id: "visa", name: "Chase card", type: "credit", deleted: false }],
+    budgetMemo: [], budgetBills: [], budgetBooks: [{ id: "b", name: "P", deleted: false }],
+    budgetTx: [
+      /* his filed history: Wawa is always Everyday; Target he has filed BOTH ways */
+      tx({ date: "2026-06-01", amount: 8, note: "POS Debit - Debit Card 9185 Transaction Wawa 800", pending: false, catId: "c-ev" }),
+      tx({ date: "2026-06-05", amount: 9, note: "POS Debit - Debit Card 9185 Transaction Wawa 800", pending: false, catId: "c-ev" }),
+      tx({ date: "2026-06-08", amount: 40, note: "POS Debit - Debit Card 9185 Transaction Target T-1", pending: false, catId: "c-ev" }),
+      tx({ date: "2026-06-12", amount: 50, note: "POS Debit - Debit Card 9185 Transaction Target T-1", pending: false, catId: "c-groc" }),
+      /* waiting */
+      tx({ id: "w", date: "2026-08-20", amount: 7.10, note: "Wawa" }),
+      tx({ id: "tg", date: "2026-08-20", amount: 33.00, note: "Target" }),
+      tx({ id: "new", date: "2026-08-21", amount: 12.00, note: "Vulcan Mideast" }),
+      tx({ id: "thin", date: "2026-08-21", amount: 5.00, note: "POS Debit - Visa Check Card 9185" }),
+      /* a transfer with both legs, and a card payment */
+      tx({ id: "x1", date: "2026-08-22", amount: 100, note: "Transfer to savings", accountId: "chk" }),
+      tx({ id: "x2", date: "2026-08-22", amount: 100, note: "Transfer from checking", accountId: "sav", dir: "in" }),
+      tx({ id: "cp", date: "2026-08-23", amount: 250, note: "CHASE CREDIT CRD AUTOPAY", accountId: "chk" })
+    ] } };
+  const c = mk(store, "p");
+  c.budgetCatName = id => ((store.p.budgetCats || []).find(x => x && x.id === id) || {}).name || "";
+  c.ledgerBackfillMemo(); c.ledgerResuggest();
+  const R2 = c.ledgerAutoApprove();
+  const get = id => store.p.budgetTx.find(t => t.id === id);
+
+  ok("⭐ a transfer with both legs present is approved — arithmetic, not judgement",
+    !get("x1").pending && !get("x2").pending && get("x1").isTransfer && get("x2").isTransfer, R2);
+  ok("⭐ a payment to his own card too", !get("cp").pending && get("cp").isCardPayment);
+  ok("⭐⭐ a payee his history is UNANIMOUS about is filed the way he always files it",
+    !get("w").pending && get("w").catId === "c-ev");
+  ok("⛔⛔ a payee his history DISAGREES about is left for him — I have a preference, not an answer",
+    get("tg").pending === true && get("tg").catId === "");
+  ok("⛔ a payee with no history at all is left", get("new").pending === true);
+  ok("⛔ and a description that strips to NOTHING is left — a match on nothing is a coincidence",
+    get("thin").pending === true);
+  /* ⚠️ measured: the real merchants strip to wawa(4) lowes(5) target(6) homedepot(9); the content-free ones
+     to "" and "mon". My first threshold was 6 and silently dropped Wawa and Lowe's — 36 of his rows. */
+  ok("⭐ but a SHORT real merchant survives the floor", c.ledgerAutoStrip("Wawa") === "wawa" && c.ledgerAutoStrip("Lowe's") === "lowes");
+  ok("⛔ while bank verbiage strips to nothing at all",
+    c.ledgerAutoStrip("POS Debit - Visa Check Card 9185") === "" && c.ledgerAutoStrip("Intl Transaction Fee Visa") === "");
+  ok("⭐ the counts are reported honestly", R2.transfers === 2 && R2.cardPayments === 1 && R2.learned === 1 && R2.left >= 3, R2);
+  ok("⭐ and what it filed, by category", R2.byCat["Everyday spending"] === 1, R2.byCat);
+
+  /* ⭐ every automatic decision is visible and reversible */
+  ok("⭐⭐ each auto-approved row is stamped", get("w").autoApproved === true && !!get("w").autoReason);
+  ok("...with a reason in his own terms", /filed 2 of these as Everyday spending, every time/.test(get("w").autoReason), get("w").autoReason);
+  ok("⛔ a row HE approved is never stamped", store.p.budgetTx[0].autoApproved !== true);
+
+  const n = c.ledgerUndoAuto();
+  ok("⭐⭐ one call puts every automatic decision back", n === 4 && get("w").pending === true && get("x1").pending === true, n);
+  ok("...clearing what it set", get("w").catId === "" && get("x1").isTransfer === false && !get("w").autoApproved);
+  ok("⛔⛔ and his OWN approvals survive the undo untouched",
+    store.p.budgetTx[0].pending === false && store.p.budgetTx[0].catId === "c-ev");
+}
+
+console.log("\n--- ⛔ the strict merchant test (a loose one nearly filed his mortgage as groceries) ---");
+{
+  const c = mk({ registry: [{ id: "p", name: "P" }], p: { budgetTx: [], budgetCats: [], budgetAccounts: [],
+    budgetMemo: [], budgetBills: [], budgetBooks: [] } }, "p");
+  const M = c.ledgerMerchantSame;
+  ok("⭐ same merchant, different wording, still matches",
+    M("POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2", "Walmart")
+    && M("POS Debit - Debit Card 9185 Transaction The Home Depot", "The Home Depot")
+    && M("Wawa Chesapeake VA", "Wawa"));
+  /* ⚠️ every one of these WAS a false match under the loose test used for duplicate detection — which is
+     safe there only because it is anchored by exact cents, exact date, account and direction. A memo lookup
+     has no anchor at all. */
+  ok("⛔⛔ 'ACH Transaction - IDAHO HOUSING' no longer matches a Wal-Mart rule on the word 'transaction'",
+    !M("ACH Transaction - IDAHO HOUSING MTGPMT", "POS Debit - Debit Card 9185 Transaction Wal-Mart #2"));
+  ok("⛔ nor does 'Intl Transaction Fee Visa'",
+    !M("Intl Transaction Fee Visa", "POS Debit - Debit Card 9185 Transaction Wal-Mart"));
+  ok("⛔ nor two different ACH payees to each other",
+    !M("ACH Transaction - Ashley Belvin", "ACH Transaction - IDAHO HOUSING"));
+  ok("⛔ nor a loan transfer to a checking transfer",
+    !M("Transfer To Loan -1319", "Transfer From Checking"));
+  ok("⚠️ a two-letter merchant is refused rather than risked — BP costs one manual decision", !M("Bp#hanover", "BP"));
+  ok("⚠️ the reason the loose one is still right for duplicate detection is recorded",
+    /anchored by\s*\n?\s*exact cents/.test(R("js/143-ledger.js")) || /ALREADY anchored by/.test(R("js/143-ledger.js")));
+}
+
+console.log("\n--- ⭐ automation he can check and reverse ---");
+{
+  /* "you can [approve] and I'll review the ones you're unsure of only." ⚠️ THAT DEAL ONLY WORKS IF HE CAN
+     SEE WHAT I DID — and checking my work must not mean scrolling his whole ledger. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    budgetCats: [{ id: "c-ev", name: "Everyday spending", deleted: false }],
+    budgetAccounts: ACCTS, budgetMemo: [], budgetBills: [], budgetBooks: [{ id: "b", name: "P", deleted: false }],
+    budgetTx: [
+      tx({ id: "strong", date: "2026-08-01", amount: 10, note: "Wawa", pending: false, catId: "c-ev",
+        autoApproved: true, autoReason: "you have filed 25 of these as Everyday spending, every time" }),
+      tx({ id: "thin", date: "2026-08-02", amount: 6.94, note: "7-Eleven", pending: false, catId: "c-ev",
+        autoApproved: true, autoReason: "you have filed 1 of these as Everyday spending, every time" }),
+      tx({ id: "xfer", date: "2026-08-03", amount: 100, note: "Transfer", pending: false, isTransfer: true,
+        autoApproved: true, autoReason: "both sides of this transfer are here" }),
+      tx({ id: "his", date: "2026-08-04", amount: 20, note: "Target", pending: false, catId: "c-ev" })
+    ] } };
+  const c = mk(store, "p");
+  c.lrDate = d => d; c.lrMoney = n => "$" + n;
+  const rows = c.lrAutoRows();
+  ok("⭐ only rows the app filed appear — his own approvals are not on trial", rows.length === 3,
+    rows.map(r => r.t.id));
+  ok("⭐⭐ WEAKEST EVIDENCE FIRST — the single-filing one is at the top, where a mistake would be",
+    rows[0].t.id === "thin", rows.map(r => r.t.id));
+  ok("...and the mechanical transfer is last", rows[rows.length - 1].t.id === "xfer");
+  const html = c.lrAutoHTML();
+  ok("⭐ it says how many, and how many rested on thin evidence", /3 filed automatically/.test(html) && /1 rested on a single earlier filing/.test(html));
+  ok("⛔ collapsed by default — it is a receipt, not a to-do", !/7-Eleven/.test(html));
+  c.lrAutoToggle();
+  ok("⭐ opening it shows each row WITH the reason", /filed 1 of these/.test(c.lrAutoHTML()));
+  ok("⭐ and offers to put them all back", /Put all 3 back/.test(c.lrAutoHTML()));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
