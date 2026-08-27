@@ -105,10 +105,18 @@ function rtPartHTML(part) {
          it everywhere would have traded his annoyance for someone else's mis-tap. */
       + '<input type="checkbox" class="rt-box"' + (done ? " checked" : "")
       + ' onchange="rtTick(\'' + r.id + '\')">'
-      + '<div class="grow"' + (go ? ' style="cursor:pointer" onclick="' + go + '"' : '') + '>'
+      /* ⛔ NO WHOLE-ROW onclick WHEN THE ROW HAS ITS OWN CONTROLS. A textarea inside a div that navigates on
+         click means every tap into the box also leaves the page. The label alone stays clickable. */
+      + '<div class="grow">'
+      + (go && !((typeof riExtraHTML === "function") && riExtraHTML(r, done))
+          ? '<span style="cursor:pointer" onclick="' + go + '">' : '<span>')
       + '<div class="nm" style="font-size:15px' + (done ? ';color:var(--muted);text-decoration:line-through' : '') + '">'
-      + esc(r.label || "") + '</div>'
+      + esc(r.label || "") + '</div></span>'
       + (r.hint && !done ? '<div class="sub" style="white-space:normal">' + esc(r.hint) + '</div>' : '')
+      /* ⭐ THE ITEM DOES ITS OWN JOB HERE (js/166) — the mood note is written in the row that asks for it,
+         the workout row says what today's lift is and opens the app, the journal takes his voice. A routine
+         item that sends him elsewhere has already cost him the thing it was for. */
+      + ((typeof riExtraHTML === "function") ? riExtraHTML(r, done) : "")
       + '</div></div>';
   });
   return h + '</div>';

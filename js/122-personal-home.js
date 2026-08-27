@@ -178,6 +178,14 @@ function phTalkCard() {
     + '<div id="ph-thread" class="ph-thread">' + phThreadInner() + '</div>'
     + '<div class="row" style="gap:6px;margin-top:10px">'
     + '<input id="ph-input" placeholder="Talk, or ask me to add something" autocomplete="off" style="flex:1;min-width:0" onkeydown="if(event.key===\'Enter\'){event.preventDefault();phSend();}">'
+    /* ⭐ TALK TO IT. Ray, 2026-08-27: "if I was able to talk to the message thing that we have in top right.
+       I do everything at voice to text that I can." The dictation engine (js/68) already exists and already
+       writes into whatever field has focus — it just had no way in from here except the floating button,
+       which only appears once a field is focused and is easy to miss.
+       ⛔ Hidden where the browser can't do speech recognition, rather than offered and then failing. */
+    + ((typeof riTalk === "function" && (window.SpeechRecognition || window.webkitSpeechRecognition))
+        ? '<button class="btn ghost" style="flex:0 0 auto;width:auto" title="Talk instead of typing" '
+          + 'onclick="riTalk(\'ph-input\')">🎤</button>' : '')
     + '<button class="btn acc" style="flex:0 0 auto;width:auto" onclick="phSend()">Send</button></div>'
     /* it can act now (2026-08-25) and he had no way to know — an empty thread says so once, then gets out
        of the way rather than captioning every screen forever */

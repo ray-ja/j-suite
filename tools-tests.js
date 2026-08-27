@@ -871,5 +871,87 @@ console.log("\n--- 🎨 colour says what kind of thing it is ---");
   })());
 }
 
+console.log("\n--- ✍️ the routine does its own job, in place ---");
+{
+  /* Ray, 2026-08-27, going through Today line by line: "let me fill out the how are you feeling box right
+     there in place… Once I fill it out, the lid would disappear." · "click on a button right there where it
+     says workout to actually access my workout app… tell me what kind of major lift today is." · "I tend to
+     do them using voice. I just like to talk."
+     ⭐ The principle: a routine item that sends him somewhere else has already cost him the thing it was for. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    routineItems: [
+      { id: "r1", key: "feel", part: "morning", action: "journal", label: "How are you feeling?", order: 10, deleted: false },
+      { id: "r2", key: "workout", part: "morning", action: "workout", label: "Workout", order: 20, deleted: false },
+      { id: "r3", key: "email", part: "morning", action: "", label: "Check email", order: 30, deleted: false },
+      { id: "r4", key: "journal", part: "evening", action: "journal", label: "Journal entry", order: 10, deleted: false }
+    ],
+    lifeNotes: [], budgetTx: [], budgetAccounts: [], budgetCats: [], budgetMemo: [], budgetBills: [], budgetBooks: [] } };
+  const c = mk(store, "p");
+  c.today = () => "2026-08-27";
+  c.vjSecure = () => true; c.vjBarHTML = () => "<RECORDER>";
+  c.localStorage = { getItem: k => k === "rj-workout-v3" ? JSON.stringify({ activePlanId: "p1", plans: [{ id: "p1",
+      days: [{ id: "d1", day: "Push", label: "chest", exercises: [{ id: "e1", name: "Bench press" }] },
+             { id: "d2", day: "Pull", label: "back + arms", exercises: [{ id: "e3", name: "Deadlift" }] }],
+      history: [{ date: "2026-08-25", days: { d1: { e1: [{ weight: 185, reps: 5 }] } } }] }] }) : null,
+    setItem() {}, removeItem() {} };
+  ["js/139-workout.js", "js/141-routine.js", "js/166-routine-inline.js"].forEach(f => { try { vm.runInContext(R(f), c); } catch (e) {} });
+
+  /* ⭐ the workout row knows what today is */
+  const w = c.riNextWorkout();
+  ok("⭐⭐ it reads the NEXT day from his own history — he pushed last, so today is pull",
+    w && w.day === "Pull" && w.lift === "Deadlift", w);
+  ok("⛔ and returns null rather than guessing when there is no plan", (function () {
+    const c2 = mk(store, "p"); c2.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+    ["js/139-workout.js", "js/166-routine-inline.js"].forEach(f => { try { vm.runInContext(R(f), c2); } catch (e) {} });
+    return c2.riNextWorkout() === null;
+  })());
+
+  const morning = c.rtPartHTML({ key: "morning", label: "Morning" });
+  ok("⭐ the mood row carries its own box to write in", /ri_mood_r1/.test(morning));
+  ok("⭐ the workout row names the lift and opens the app",
+    /Deadlift/.test(morning) && /riWorkoutGo/.test(morning));
+  ok("⛔ a plain item stays a plain item — no box, no button", (function () {
+    const row = morning.slice(morning.indexOf("Check email"));
+    return !/ri-ta|ri-go/.test(row);
+  })());
+  const evening = c.rtPartHTML({ key: "evening", label: "Evening" });
+  ok("⭐ the journal row takes his voice", /RECORDER/.test(evening) && /riTalk/.test(evening));
+  ok("⭐ ...and a Talk button on the box itself", /🎤 Talk/.test(evening));
+
+  /* ⛔ writing IS doing */
+  c.document = { getElementById: id => id === "ri_mood_r1" ? { value: "slept badly, coffee helping" } : null };
+  c.riMoodSave("r1", "ri_mood_r1");
+  ok("⭐⭐ saving writes the note", store.p.lifeNotes.length === 1 && /slept badly/.test(store.p.lifeNotes[0].body));
+  ok("⭐ dated today", store.p.lifeNotes[0].date === "2026-08-27");
+  ok("⭐ and tagged, so a day's mood and journal stay distinct", store.p.lifeNotes[0].kind === "mood");
+  ok("⭐⭐ AND TICKS THE ITEM — the writing is the work, there is no second confirmation to forget",
+    store.p.routineItems[0].doneOn === "2026-08-27", store.p.routineItems[0].doneOn);
+  ok("⛔ a ticked item collapses — the box disappears once it's filled in",
+    !/ri_mood_r1/.test(c.rtPartHTML({ key: "morning", label: "Morning" })));
+
+  /* ⛔ empty input must not create an empty note */
+  c.document = { getElementById: () => ({ value: "   ", focus() {} }) };
+  c.riJournalSave("r4", "x");
+  ok("⛔ an empty box saves nothing and ticks nothing",
+    store.p.lifeNotes.length === 1 && !store.p.routineItems[3].doneOn);
+
+  /* ⚠️ the row-level navigation had to go where the row has its own controls */
+  const rt = CODE(R("js/141-routine.js"));
+  ok("⚠️⚠️ no whole-row onclick when the row contains a textarea — every tap into the box would have "
+    + "navigated away", /riExtraHTML\(r, done\)\s*\)/.test(rt) && !/<div class="grow"' \+ \(go \?/.test(rt));
+
+  /* the checkbox */
+  const css = R("app.css");
+  ok("⭐ the tick is styled, not the browser default", /\.rt-box\{-webkit-appearance:none/.test(css));
+  ok("⭐ and the check mark is DRAWN, not a font glyph — that is what 'not lined up right' was",
+    /\.rt-box:checked::after\{content:""/.test(css));
+  ok("⛔ still a real tap target on a phone", /\.rt-box\{[^}]*width:18px/.test(css));
+
+  /* two items removed, both because the app already surfaces them */
+  ok("⭐ Cap's chat can be talked to", /riTalk\(\\?'ph-input\\?'\)/.test(R("js/122-personal-home.js")));
+  ok("⛔ ...and the mic is hidden where the browser can't do speech",
+    /SpeechRecognition \|\| window\.webkitSpeechRecognition/.test(R("js/122-personal-home.js")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
