@@ -659,5 +659,127 @@ console.log("\n--- 🧩 Today, arranged by him ---");
   ok("⛔ ...with a fallback, so Today can never come up empty", /fallback for a build without js\/164/.test(R("js/122-personal-home.js")));
 }
 
+console.log("\n--- 💵 the month ahead ---");
+{
+  /* Ray, 2026-08-27: "expected spending for the month based on history and bills… versus how much cash is on
+     hand in personal account? Well, like, LITERALLY my personal checking. not the business accounts." Then:
+     "expected income shouldnt be relied upon though sometimes people are very late to pay. it should flag if
+     cash is lower than expected expenses for the month." */
+  const mkMo = (over) => {
+    const store = { registry: [{ id: "p", name: "P" }], p: Object.assign({
+      budgetBooks: [{ id: "bk", name: "Personal", kind: "personal", linkedOrgId: "", deleted: false },
+                    { id: "bz", name: "OBX", kind: "business", linkedOrgId: "obx", deleted: false }],
+      budgetAccounts: [
+        { id: "chk", name: "RJ’s Checking ····5377", type: "checking", bookId: "bk", balance: 502.12, balanceDate: "2026-08-27", deleted: false },
+        { id: "chk2", name: "Brooke’s Checking", type: "checking", bookId: "bk", balance: 46.85, balanceDate: "2026-08-27", deleted: false },
+        { id: "biz", name: "Square — OBX", type: "checking", bookId: "bz", balance: 1056.99, balanceDate: "2026-08-27", deleted: false },
+        { id: "visa", name: "Visa", type: "credit", bookId: "bk", balance: -23644.53, balanceDate: "2026-08-27", deleted: false }],
+      budgetBills: [{ id: "b1", name: "Rent — Ashley Belvin", amount: 3750, frequency: "monthly", dueDay: 13, active: true, deleted: false }],
+      budgetTx: [], budgetCats: [], budgetMemo: [], quotes: [], todos: [], personalEvents: [], jobs: []
+    }, over || {}) };
+    /* three complete months of spending on his checking + one on the business account */
+    ["2026-05", "2026-06", "2026-07"].forEach((m, i) => {
+      store.p.budgetTx.push({ id: "t" + i, accountId: "chk", date: m + "-10", amount: [8000, 11000, 9000][i],
+        dir: "out", pending: false, deleted: false });
+    });
+    store.p.budgetTx.push({ id: "tb", accountId: "biz", date: "2026-06-10", amount: 50000, dir: "out", pending: false, deleted: false });
+    store.p.budgetTx.push({ id: "tx", accountId: "chk", date: "2026-06-11", amount: 4000, dir: "out", pending: false, isTransfer: true, deleted: false });
+    const c = mk(store, "p");
+    c.today = () => "2026-08-27";
+    ["js/79-budget.js", "js/145-reconcile.js", "js/163-today-calendar.js", "js/165-month-outlook.js"]
+      .forEach(f => { try { vm.runInContext(R(f), c); } catch (e) {} });
+    return { c, store };
+  };
+  const { c, store } = mkMo();
+
+  const a = c.moPersonalAccount();
+  ok("⭐⭐ it picks the checking account he ACTUALLY USES, by transaction count", a && a.id === "chk", a && a.id);
+  ok("⛔⛔ NOT the business account — he said 'literally my personal checking'", a.bookId === "bk");
+  const cash = c.moCashOnHand();
+  ok("⭐ cash is that one account, not a total", cash.balance === 502.12, cash.balance);
+  ok("⛔ ...so the $1,056.99 business balance is nowhere in it", cash.balance !== 502.12 + 1056.99);
+  ok("⭐ and the card names which account, so a wrong guess is visible not silent",
+    /In RJ’s Checking/.test(c.monthOutlookHTML()));
+
+  /* ⛔ unknown is not zero */
+  const { c: c2 } = mkMo();
+  c2.D().budgetAccounts[0].balanceDate = "";
+  ok("⛔⛔ no anchor means NOT RECONCILED, never $0.00 — a claim vs the truth", c2.moCashOnHand() === null);
+  ok("...and the card says so instead of a number", /not reconciled/.test(c2.monthOutlookHTML()));
+  ok("⛔⛔ and NO SHORTFALL WARNING fires from a missing balance — that would be a bug wearing a warning",
+    !/short by/.test(c2.monthOutlookHTML()));
+
+  const typ = c.moTypicalMonth();
+  ok("⭐ a typical month is the MEDIAN of complete months", typ.median === 9000, typ);
+  ok("⛔ ...so one $11,000 month doesn't drag it up the way a mean would", typ.median !== (8000 + 11000 + 9000) / 3);
+  ok("⛔ this month is excluded — half a month would read as a windfall", typ.months.indexOf("2026-08") < 0, typ.months);
+  ok("⛔ the business account's $50,000 is not his personal spending", typ.median < 50000);
+  ok("⛔ and a TRANSFER is not spending", typ.median === 9000);
+
+  const bills = c.moBillsAhead(30);
+  ok("⭐ bills ahead are counted once each", bills.length === 1 && bills[0].amount === 3750, bills.length);
+
+  const html = c.monthOutlookHTML();
+  ok("⚠️⚠️ bills and 'a typical month' are shown SEPARATELY and never summed — the bills are inside the "
+    + "median, and adding them would double-count every one", /don't add them together/.test(html));
+
+  /* ⛔ the flag */
+  /* ⚠️ assert the ARITHMETIC, not a percentage copied off his live card — this fixture has one $3,750 bill
+     against $502.12, so 13% is right here and 5% is right there. A hard-coded number would have made this
+     test a note about one afternoon. */
+  ok("⭐⭐ it flags when cash is under the bills ahead", /short by <b>\$3,?247\.88<\/b>/.test(html)
+    && /covers <b>13%<\/b>/.test(html), html.slice(-260));
+  const { c: c3 } = mkMo();
+  c3.D().budgetAccounts[0].balance = 99999;
+  ok("⛔ ...and says so plainly when he is covered", /Covers the next 30 days/.test(c3.monthOutlookHTML()));
+
+  /* ⛔ owed money is never treated as held money */
+  const { c: c4, store: s4 } = mkMo();
+  s4.p.quotes = [
+    { id: "q1", cust: "Mike Green", date: "2026-05-01", total: 6492, finalPrice: 6492, invoiced: true, payments: [], deleted: false },
+    { id: "q2", cust: "Mike Green", date: "2026-07-01", total: 2324, finalPrice: 2324, invoiced: false, payments: [], deleted: false }
+  ];
+  vm.runInContext(R("js/151-unified-ledger.js"), c4);
+  vm.runInContext(R("js/154-collections.js"), c4);
+  vm.runInContext(R("js/165-month-outlook.js"), c4);
+  const owed = c4.moOwed();
+  ok("⭐ it reads what he is owed", owed.total === 8816, owed);
+  ok("⭐⭐ and splits it by WHOSE MOVE IT IS — $2,324 nobody has invoiced yet",
+    owed.unbilled === 2324 && owed.unbilledN === 1, owed);
+  ok("⚠️ the field is `age`, not `days` — an undefined there would zero every overdue figure forever",
+    /\+x\.age \|\| 0/.test(CODE(R("js/165-month-outlook.js"))));
+  const h4 = c4.monthOutlookHTML();
+  ok("⛔⛔ EXPECTED INCOME IS NOT ADDED TO CASH — 'sometimes people are very late to pay'",
+    /isn't having it/.test(h4) && /short by/.test(h4));
+  ok("⭐ ...though it does say the money owed would cover the gap, if it arrives", /if it arrives/.test(h4));
+
+  /* the balance anchor's sign — the most dangerous number in the app to get backwards */
+  ok("⛔⛔ a credit account carries NEGATIVE balance — $23,644 of Visa debt must never read as cash on hand",
+    store.p.budgetAccounts[3].balance < 0);
+  ok("⭐ and cash-on-hand only ever looks at a checking account", a.type === "checking");
+}
+
+console.log("\n--- 🎨 colour says what kind of thing it is ---");
+{
+  const css = R("app.css");
+  ok("⭐ routine, to-do, bill and job each have a colour", /rt-kind-routine/.test(css) && /rt-kind-todo/.test(css)
+    && /rt-kind-bill/.test(css) && /rt-kind-job/.test(css));
+  ok("⛔⛔ and they are the CALENDAR's colours — orange is a bill on both surfaces, amber a to-do, green a "
+    + "job. A second colour language for the same four things would be worse than none",
+    /rt-kind-bill\s*\{border-left-color:#e8683f/.test(css) && /rt-kind-todo\s*\{border-left-color:#e0a800/.test(css)
+    && /rt-kind-job\s*\{border-left-color:#1e9e5a/.test(css));
+  ok("⭐ the routine's own colour is the quiet one — it is the rhythm, not the news",
+    /rt-kind-routine\{border-left-color:#5b6b8c/.test(css));
+  ok("⭐ bills that leave today are IN the day list now", /function rtBillsTodayHTML/.test(CODE(R("js/141-routine.js"))));
+  ok("⛔ ...and are NOT tickable — a bill is money leaving, not a task he performs",
+    !/rtTick/.test(CODE(R("js/141-routine.js")).slice(
+      CODE(R("js/141-routine.js")).indexOf("function rtBillsTodayHTML"),
+      CODE(R("js/141-routine.js")).indexOf("function rtJobsTodayHTML"))));
+  ok("⭐ today and tomorrow sit ABOVE the months now", (function () {
+    const t = CODE(R("js/163-today-calendar.js"));
+    return t.indexOf('tcal-days-top') < t.indexOf('"tcal-months"');
+  })());
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

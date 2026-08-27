@@ -41,6 +41,9 @@ function tlBlocks() {
         return (typeof calBillsCardHTML === "function")
           ? calBillsCardHTML(typeof MC_DAYS_FALLBACK !== "undefined" ? MC_DAYS_FALLBACK : 14) : "";
       } },
+    /* ⭐ what he has vs what is leaving vs what might arrive (js/165) — sits with the money, because
+       "how much is there" and "how much is going" are one thought */
+    { key: "outlook",  label: "The month ahead", html: function () { return (typeof monthOutlookHTML === "function") ? monthOutlookHTML() : ""; } },
     { key: "coming",   label: "Coming up", html: function () { return (typeof evHomeCardHTML === "function") ? evHomeCardHTML(30) : ""; } }
   ];
 }
@@ -49,7 +52,8 @@ function tlBlocks() {
    genuinely needs width; Cap sits top-right where he asked for it; the routine runs down the middle where a
    sequence reads as a sequence; money and dates stack in the narrow right column. */
 var TL_DEFAULT = { calendar: { col: 0, order: 0 }, routine: { col: 1, order: 0 },
-                   chat: { col: 2, order: 0 }, money: { col: 2, order: 1 }, coming: { col: 2, order: 2 } };
+                   chat: { col: 2, order: 0 }, outlook: { col: 2, order: 1 },
+                   money: { col: 2, order: 2 }, coming: { col: 2, order: 3 } };
 
 function tlLayout() {
   var out = {};
@@ -79,6 +83,7 @@ function tlRoutineHTML() {
     return p ? rtPartHTML(p) : "";
   };
   var h = part("morning");
+  h += (typeof rtBillsTodayHTML === "function") ? rtBillsTodayHTML() : "";   /* what leaves the account today */
   h += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";
   h += (typeof phPlanCard === "function") ? phPlanCard() : "";
   h += (typeof piCardHTML === "function") ? piCardHTML() : "";

@@ -406,8 +406,10 @@ function phPlanCard() {
   list.slice(0, 12).forEach(function (td) {
     var carried = td.planDate && String(td.planDate) < t;
     var overdue = td.due && String(td.due) < t;
-    h += '<div class="li" style="align-items:flex-start">'
-      + '<input type="checkbox" style="width:22px;height:22px;flex:0 0 auto" ' + (td.done ? "checked" : "")
+    /* ⭐ amber: something that has to happen TODAY, as opposed to the routine's grey. Same colour the
+       calendar uses for a to-do, so one thing means one thing across the app. */
+    h += '<div class="li rt-li rt-kind-todo" style="align-items:flex-start">'
+      + '<input type="checkbox" class="rt-box" ' + (td.done ? "checked" : "")
       + ' onchange="phTickTodo(\'' + td.id + '\')">'
       + '<div class="grow" style="cursor:pointer" onclick="if(typeof openTodo===\'function\')openTodo(\'' + td.id + '\')">'
       + '<div class="nm" style="font-size:15px">' + (td.hardDeadline ? '⏳ ' : '') + esc(td.title || "(untitled)") + '</div>'

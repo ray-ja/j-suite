@@ -91,7 +91,12 @@ function rtPartHTML(part) {
   items.forEach(function (r) {
     var done = rtDone(r);
     var go = rtAction(r);
-    h += '<div class="li" style="align-items:flex-start">'
+    /* ⭐ COLOUR SAYS WHAT KIND OF THING IT IS. Ray, 2026-08-27: "can we color code it? to where stuff that's,
+       like, routine everyday morning stuff is a specific color versus important things that need to be done
+       that day or different color versus bills that get paid that day."
+       ⛔ The colours match the CALENDAR's, deliberately — orange is a bill on both surfaces, amber is a
+       to-do on both. A second colour language for the same four things would be worse than none. */
+    h += '<div class="li rt-li rt-kind-routine" style="align-items:flex-start">'
       /* ⚠️ SIZED BY DEVICE, BECAUSE BOTH COMPLAINTS ARE RIGHT. Ray, 2026-08-27: "the checkboxes are way too
          big on the routine thing" — said on a 1440p screen, where 22px made the box the largest thing in the
          card and read as the point of it. But a test already asserted they are thumb-sized on a phone, and
@@ -105,6 +110,36 @@ function rtPartHTML(part) {
       + esc(r.label || "") + '</div>'
       + (r.hint && !done ? '<div class="sub" style="white-space:normal">' + esc(r.hint) + '</div>' : '')
       + '</div></div>';
+  });
+  return h + '</div>';
+}
+
+/* ⭐⭐ BILLS THAT GET PAID TODAY, IN THE DAY LIST. He asked for them by name, and they were nowhere on this
+   column — a bill leaving the account today is one of the few things on a day he genuinely cannot move.
+   ⛔ Read-only and NOT tickable: a bill is a forecast of money leaving, not a task he performs. Ticking it
+   would imply he'd done something, and the thing that marks a bill paid is the transaction arriving. */
+function rtBillsTodayHTML() {
+  var t = rtToday();
+  var due = [];
+  try {
+    (D().budgetBills || []).forEach(function (b) {
+      if (!b || b.deleted || b.active === false) return;
+      if (typeof budgetBillNextDue !== "function" || budgetBillNextDue(b, t) !== t) return;
+      due.push(b);
+    });
+  } catch (e) {}
+  if (!due.length) return "";
+  var total = due.reduce(function (a, b) { return a + (+b.amount || 0); }, 0);
+  var m = function (n) { try { return (typeof money === "function") ? money(n) : "$" + Math.round(n); } catch (e) { return "$" + n; } };
+  var h = '<div class="secthd"><h2 style="font-size:13px">Leaving your account today</h2>'
+    + '<div class="grow"></div><span class="ct">' + m(total) + '</span></div>'
+    + '<div class="card" style="padding:6px 10px">';
+  due.forEach(function (b) {
+    h += '<div class="li rt-li rt-kind-bill" style="align-items:baseline">'
+      + '<div class="grow" style="min-width:0"><div class="nm" style="font-size:14px">'
+      + esc((typeof tcalBillName === "function") ? tcalBillName(b.name) : b.name) + '</div></div>'
+      + '<div class="nm" style="flex:0 0 auto;font-variant-numeric:tabular-nums">' + esc(m(+b.amount || 0)) + '</div>'
+      + '</div>';
   });
   return h + '</div>';
 }
@@ -139,7 +174,7 @@ function rtJobsTodayHTML() {
   return h + '</div>';
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined") { window.rtBillsTodayHTML = rtBillsTodayHTML;
   window.actRoutine = actRoutine; window.rtSeed = rtSeed; window.rtPartHTML = rtPartHTML;
   window.rtJobsTodayHTML = rtJobsTodayHTML; window.ROUTINE_PARTS = ROUTINE_PARTS; window.rtDone = rtDone;
   window.ROUTINE_ACTIONS = ROUTINE_ACTIONS; window.rtAction = rtAction;

@@ -253,8 +253,11 @@ function tcalHTML() {
     +     '<i style="background:#7c5cff"></i>personal <i style="background:#e0a800"></i>to-do</div>'
     +   '<button class="btn ghost sm" style="width:auto" onclick="navSub(\'cal\')">Open</button>'
     + '</div>'
+    /* ⭐ TODAY AND TOMORROW FIRST. Ray, 2026-08-27: "let's move the today and tomorrow to the top… above the
+       calendar. since that's more important than what's coming up in the next few days." Right — the months
+       are orientation, the two days are the thing he acts on, and orientation was sitting on top of it. */
+    + '<div class="tcal-days tcal-days-top">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
     + '<div class="tcal-months">' + tcalMonthHTML(tcalMonthKey(t)) + tcalMonthHTML(tcalAddMonths(tcalMonthKey(t), 1)) + '</div>'
-    + '<div class="tcal-days">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
     + '</div>';
 }
 
