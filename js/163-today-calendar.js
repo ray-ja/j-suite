@@ -61,9 +61,15 @@ function tcalClock(mins) {
 function tcalBillName(n) {
   return String(n || "Bill").replace(/\s*\(.*$/, "").replace(/\s+[—–-]\s+.*$/, "").trim().slice(0, 22) || "Bill";
 }
-function tcalShort(n, max) {
-  var s2 = String(n || "").replace(/\s*\(.*$/, "").trim();
-  return s2.length > (max || 20) ? s2.slice(0, (max || 20) - 1) + "…" : s2;
+/* ⛔ NO CHARACTER CAP. Ray, 2026-08-27: "why does the text get truncated so early on the calendar block?"
+   Because I was cutting it at 26 characters in JavaScript — a number that knows nothing about how wide the
+   cell actually is. "Truck registration — DUE THIS MONTH" became "Truck registration — D…" in a cell with
+   room for half as much again, and it would have been just as wrong on a narrower one.
+   ⭐ CSS already truncates by WIDTH (.tcal-pt has overflow:hidden + text-overflow:ellipsis), which is the
+   only measure that knows the answer. Strip the parenthetical, hand over the whole name, let the box decide.
+   The full text stays in the title attribute either way. */
+function tcalShort(n) {
+  return String(n || "").replace(/\s*\(.*$/, "").trim();
 }
 function tcalAmt(v) {
   var n = Math.round(Math.abs(+v || 0));
@@ -166,7 +172,7 @@ function tcalMonthHTML(ym) {
       /* ⭐ the AMOUNT is the point of a bill on a calendar — "Rent" tells him nothing he didn't know */
       var right = x.kind === "bill" ? tcalAmt(x.amount) : (x.mins != null ? tcalClock(x.mins) : "");
       h += '<div class="tcal-pill" style="--pc:' + x.color + '" title="' + esc(x.title + (right ? " · " + right : "")) + '">'
-        + '<span class="tcal-pt">' + esc(tcalShort(x.title, 26)) + '</span>'
+        + '<span class="tcal-pt">' + esc(tcalShort(x.title)) + '</span>'
         + (right ? '<span class="tcal-pr">' + esc(right) + '</span>' : '')
         + '</div>';
     });
@@ -248,16 +254,23 @@ function tcalHTML() {
     +     '<i style="background:#7c5cff"></i>personal <i style="background:#e0a800"></i>to-do</div>'
     +   '<button class="btn ghost sm" style="width:auto" onclick="navSub(\'cal\')">Open</button>'
     + '</div>'
-    /* ⭐ TODAY AND TOMORROW FIRST. Ray, 2026-08-27: "let's move the today and tomorrow to the top… above the
-       calendar. since that's more important than what's coming up in the next few days." Right — the months
-       are orientation, the two days are the thing he acts on, and orientation was sitting on top of it. */
-    + '<div class="tcal-days tcal-days-top">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
     + '<div class="tcal-months">' + tcalMonthHTML(tcalMonthKey(t)) + tcalMonthHTML(tcalAddMonths(tcalMonthKey(t), 1)) + '</div>'
     + '</div>';
 }
 
+/* ⭐ TODAY AND TOMORROW ARE THEIR OWN BLOCK. Ray, 2026-08-27: "the today / tomorrow section should be its
+   own block, not inside calendar." He is right and it is not just tidiness — they answer different
+   questions on different timescales, they want different widths, and while they were welded together he
+   could not put the hours where he wanted them and the months somewhere else. */
+function tcalDaysHTML() {
+  var t = tcalToday();
+  return '<div class="card tcal">'
+    + '<div class="tcal-days">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
+    + '</div>';
+}
+
 if (typeof window !== "undefined") {
-  window.tcalHTML = tcalHTML; window.tcalItemsFor = tcalItemsFor; window.tcalDayHTML = tcalDayHTML;
+  window.tcalHTML = tcalHTML; window.tcalDaysHTML = tcalDaysHTML; window.tcalItemsFor = tcalItemsFor; window.tcalDayHTML = tcalDayHTML;
   window.tcalMonthHTML = tcalMonthHTML; window.tcalMins = tcalMins; window.tcalClock = tcalClock;
   window.tcalShift = tcalShift; window.tcalBillName = tcalBillName; window.tcalShort = tcalShort; window.tcalAmt = tcalAmt; window.tcalAddMonths = tcalAddMonths; window.tcalToday = tcalToday;
   /* ⛔ a calendar sends him to the screen that OWNS the record — it never edits one itself */

@@ -531,7 +531,6 @@
 .tl-col{min-width:0;display:flex;flex-direction:column}
 .tl-block{min-width:0}
 .tl-handle{display:none}
-.tl-hint{display:none}
 @media(min-width:1180px){
   /* the wide column carries the calendar; the other two are for lists and cards */
   /* ⚠️ THE TRACK LIST COMES FROM THE CONTENT, NOT FROM THE POSITION. It used to be hard-coded per column
@@ -547,14 +546,13 @@
   .tl-handle{display:flex;align-items:center;gap:2px;justify-content:flex-end;
     opacity:.4;transition:opacity .12s;margin:0 0 3px;padding-top:2px}
   .tl-block:hover .tl-handle{opacity:1}
-  .tl-handle .tl-name{margin-right:auto;font-size:11px;color:var(--muted);letter-spacing:.3px;
-    text-transform:uppercase;padding-left:2px}
+  /* the handle is controls only — every card already says what it is, one line below */
+  .tl-handle{justify-content:flex-end}
   .tl-handle button{border:1px solid var(--line);background:var(--card);color:var(--muted);
     border-radius:5px;font-size:11px;line-height:1;padding:3px 6px;cursor:pointer}
   .tl-handle button:hover:not([disabled]){color:var(--ink);border-color:var(--accent)}
   .tl-handle button[disabled]{opacity:.3;cursor:default}
   .tl-handle button.tl-w{margin-left:4px;font-weight:700}
-  .tl-hint{display:block;margin-top:10px;opacity:.55;font-size:12px}
 }
 /* ⭐ AND TODAY TAKES THE WHOLE SCREEN. The 1560px cap left 440px empty on his monitor — the exact dead
    air he screenshotted. Still left-anchored past the fixed sidebar, still gutter-ed on the right. */

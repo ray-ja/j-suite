@@ -573,10 +573,15 @@ console.log("\n--- 📅 the calendar on Today ---");
     /calendar: \{ col: 0/.test(R("js/164-today-layout.js")) && /tlTodayHTML/.test(CODE(R("js/122-personal-home.js"))));
   ok("⚠️ the routine tick shrinks on a desktop but stays thumb-sized on a phone",
     /class="rt-box"/.test(R("js/141-routine.js")) && /min-width:900px\)\s*\{\s*\.rt-box\{width:16px/.test(R("app.css")));
-  /* ⚠️ match the closing quote — "tcal-days" (the container) contains "tcal-day" and inflates a loose count */
-  ok("⭐⭐ two days and two months, as asked", (all.match(/class="tcal-day"/g) || []).length === 2
-    && (all.match(/class="tcal-m"/g) || []).length === 2,
+  /* ⚠️ SUPERSEDED 2026-08-27. Ray: "the today / tomorrow section should be its own block, not inside
+     calendar." So the calendar card is the two MONTHS, and the day views are their own block — a different
+     question on a different timescale, wanting a different width. */
+  ok("⭐ the calendar card is the two months", (all.match(/class="tcal-m"/g) || []).length === 2
+    && (all.match(/class="tcal-day"/g) || []).length === 0,
     { days: (all.match(/class="tcal-day"/g) || []).length, months: (all.match(/class="tcal-m"/g) || []).length });
+  const daysCard = c.tcalDaysHTML();
+  ok("⭐⭐ and today + tomorrow stand alone", (daysCard.match(/class="tcal-day"/g) || []).length === 2
+    && !/tcal-m"/.test(daysCard));
   ok("⭐ and it is on Today", /tcalHTML/.test(CODE(R("js/122-personal-home.js"))));
   ok("⛔ READ-ONLY — it links out, it never edits", !/ledgerApprove|\.deleted\s*=|save\(\)/.test(CODE(R("js/163-today-calendar.js"))));
   ok("⭐ events gained an OPTIONAL time, so an existing birthday still works untouched",
@@ -648,7 +653,13 @@ console.log("\n--- 🧩 Today, arranged by him ---");
   ok("⚠️ the null round-trip is written down", /isFinite\(\+null\)/.test(R("js/164-today-layout.js")));
   c.tlReset();
   ok("⭐ each block carries its move handle", (html.match(/tl-handle/g) || []).length === 5);
-  ok("⭐ and the page says how to use them", /rearrange this page/.test(html));
+  /* ⛔ SUPERSEDED. Ray: "we dont need this — Use ◀ ▲ ▼ ▶ on any block to rearrange this page." He is right:
+     the arrows are on every block already, so a caption explaining them is a sentence he reads past every
+     morning to reach his own day. Reset moved onto the handle, where the controls it undoes live. */
+  ok("⛔ no instruction footer", !/rearrange this page/.test(html));
+  ok("⭐ reset is a control on the handle instead", /onclick="tlReset\(\)"/.test(html));
+  ok("⛔ and the handle carries NO label — every card already says what it is one line below",
+    !/tl-name/.test(html) && !/tl-name/.test(R("app.css")));
 
   /* moving */
   c.tlMove("chat", "left");
@@ -938,27 +949,50 @@ console.log("\n--- ✍️ the routine does its own job, in place ---");
   ok("⚠️ the correction is recorded", /I HAD THIS WRONG/.test(R("js/166-routine-inline.js")));
 
   const morning = c.rtPartHTML({ key: "morning", label: "Morning" });
-  ok("⭐ the mood row carries its own box to write in", /ri_mood_r1/.test(morning));
+  ok("⭐ the mood row carries its own box to write in", /ri_short_r1/.test(morning));
   ok("⭐ the workout row names the lift and opens the app",
     /Deadlift/.test(morning) && /riWorkoutGo/.test(morning));
   ok("⛔ a plain item stays a plain item — no box, no button", (function () {
     const row = morning.slice(morning.indexOf("Check email"));
     return !/ri-ta|ri-go/.test(row);
   })());
+  /* ⭐ THE JOURNAL IS NOT AN EVENING THING. Ray: "journal entry doesnt have to be an evening thing. its just
+     a once a day thing. sometimes i do it at lunch." So the row is identified by its KEY, not by which part
+     of the day it happens to sit in — the moment he moves it to lunch, a part-based rule breaks. */
+  store.p.routineItems.push({ id: "r5", key: "journal", part: "day", action: "journal",
+    label: "Journal", order: 10, deleted: false });
+  const daytime = c.rtPartHTML({ key: "day", label: "During the day" });
+  ok("⭐⭐ the journal renders wherever in the day it sits", /ri_jrnl_r5/.test(daytime));
+  ok("⭐ and takes his voice — the real recorder", /RECORDER/.test(daytime));
+  ok("⛔⛔ ONE Talk button, not two. 'theres two large talk buttons on the journal entry area though we dont "
+    + "need both' — the recorder already has one, and it is the better one",
+    (daytime.match(/🎤 Talk/g) || []).length === 0);
+  /* ...but a device with no recorder still gets a way to dictate */
+  const noRec = (function () {
+    const c9 = mk(store, "p"); c9.today = () => "2026-08-27";
+    c9.vjSecure = () => true; c9.vjBarHTML = undefined;
+    ["js/139-workout.js", "js/141-routine.js", "js/166-routine-inline.js"].forEach(f => { try { vm.runInContext(R(f), c9); } catch (e) {} });
+    return c9.rtPartHTML({ key: "day", label: "During the day" });
+  })();
+  ok("⭐ ...and without the recorder it falls back to plain dictation", /🎤 Talk/.test(noRec));
+
+  /* ⭐ the end-of-day REVIEW is a separate, shorter thing */
+  store.p.routineItems.push({ id: "r6", key: "review", part: "evening", action: "journal",
+    label: "How did the day go?", order: 10, deleted: false });
   const evening = c.rtPartHTML({ key: "evening", label: "Evening" });
-  ok("⭐ the journal row takes his voice", /RECORDER/.test(evening) && /riTalk/.test(evening));
-  ok("⭐ ...and a Talk button on the box itself", /🎤 Talk/.test(evening));
+  ok("⭐ the evening review is its own short box, not the long-form journal",
+    /ri_short_r6/.test(evening) && !/ri_jrnl_r6/.test(evening));
 
   /* ⛔ writing IS doing */
-  c.document = { getElementById: id => id === "ri_mood_r1" ? { value: "slept badly, coffee helping" } : null };
-  c.riMoodSave("r1", "ri_mood_r1");
+  c.document = { getElementById: id => id === "ri_short_r1" ? { value: "slept badly, coffee helping" } : null };
+  c.riMoodSave("r1", "ri_short_r1");
   ok("⭐⭐ saving writes the note", store.p.lifeNotes.length === 1 && /slept badly/.test(store.p.lifeNotes[0].body));
   ok("⭐ dated today", store.p.lifeNotes[0].date === "2026-08-27");
   ok("⭐ and tagged, so a day's mood and journal stay distinct", store.p.lifeNotes[0].kind === "mood");
   ok("⭐⭐ AND TICKS THE ITEM — the writing is the work, there is no second confirmation to forget",
     store.p.routineItems[0].doneOn === "2026-08-27", store.p.routineItems[0].doneOn);
   ok("⛔ a ticked item collapses — the box disappears once it's filled in",
-    !/ri_mood_r1/.test(c.rtPartHTML({ key: "morning", label: "Morning" })));
+    !/ri_short_r1/.test(c.rtPartHTML({ key: "morning", label: "Morning" })));
 
   /* ⛔ empty input must not create an empty note */
   c.document = { getElementById: () => ({ value: "   ", focus() {} }) };

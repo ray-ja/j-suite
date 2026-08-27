@@ -36,6 +36,11 @@ function tlBlocks() {
        back to "I…". Width is a property of the CONTENT, not of where the content happens to sit: a month
        grid needs seven readable columns wherever he puts it, and a checklist doesn't stop being a checklist
        in the wide slot. A column now takes the width of the hungriest block in it. */
+    /* ⭐ the two day views are their OWN block. Ray, 2026-08-27: "the today / tomorrow section should be its
+       own block, not inside calendar." Right, and not just tidiness: they answer a different question on a
+       different timescale, they want a different width, and welded together he could not put the hours where
+       he wanted them and the months somewhere else. */
+    { key: "days",     label: "Today & tomorrow", w: 1.6, html: function () { return (typeof tcalDaysHTML === "function") ? tcalDaysHTML() : ""; } },
     { key: "calendar", label: "Calendar",  w: 2.4, html: function () { return (typeof tcalHTML === "function") ? tcalHTML() : ""; } },
     { key: "chat",     label: "Cap",       w: 1,   html: function () { return (typeof phTalkCard === "function") ? phTalkCard() : ""; } },
     { key: "routine",  label: "Your day",  w: 1.2, html: function () { return (typeof tlRoutineHTML === "function") ? tlRoutineHTML() : ""; } },
@@ -58,7 +63,7 @@ function tlBlocks() {
 /* ⭐ THE DEFAULT. Calendar takes the wide left column because a month grid is the one thing here that
    genuinely needs width; Cap sits top-right where he asked for it; the routine runs down the middle where a
    sequence reads as a sequence; money and dates stack in the narrow right column. */
-var TL_DEFAULT = { calendar: { col: 0, order: 0 }, routine: { col: 1, order: 0 },
+var TL_DEFAULT = { days: { col: 0, order: 0 }, calendar: { col: 0, order: 1 }, routine: { col: 1, order: 0 },
                    chat: { col: 2, order: 0 }, outlook: { col: 2, order: 1 },
                    money: { col: 2, order: 2 }, coming: { col: 2, order: 3 } };
 
@@ -111,13 +116,18 @@ function tlRoutineHTML() {
    columns that don't exist would be a control that lies. */
 function tlHandle(b, lay) {
   var p = lay[b.key];
-  return '<div class="tl-handle"><span class="tl-name">' + esc(b.label) + '</span>'
+  /* ⛔ NO LABEL. Ray, 2026-08-27: "the small gray text like your day, calendar, cap, money, etc. are all
+     redundant and we dont need them." Right — every one of those cards already says what it is in its own
+     heading, one line below. The handle only has to be controls. */
+  return '<div class="tl-handle">'
     + '<button title="Move left"  onclick="tlMove(\'' + b.key + '\',\'left\')"'  + (p.col === 0 ? ' disabled' : '') + '>◀</button>'
     + '<button title="Move up"    onclick="tlMove(\'' + b.key + '\',\'up\')">▲</button>'
     + '<button title="Move down"  onclick="tlMove(\'' + b.key + '\',\'down\')">▼</button>'
     + '<button title="Move right" onclick="tlMove(\'' + b.key + '\',\'right\')"' + (p.col === TL_COLS - 1 ? ' disabled' : '') + '>▶</button>'
     + '<button title="Narrower" class="tl-w" onclick="tlWide(\'' + b.key + '\',-1)">–</button>'
     + '<button title="Wider" class="tl-w" onclick="tlWide(\'' + b.key + '\',1)">+</button>'
+    /* ⭐ reset lives with the controls it undoes, not in a permanent footer */
+    + '<button title="Put the whole page back the way it was" class="tl-w" onclick="tlReset()">↩</button>'
     + '</div>';
 }
 
@@ -161,9 +171,10 @@ function tlTodayHTML() {
 
   return '<div class="tl-grid tl-live-' + live.length + '" style="--tl-cols:' + esc(widths) + '"'
     + ' data-cols="' + live.map(function (c) { return c.i; }).join(",") + '">'
-    + body + '</div>'
-    + '<div class="sub tl-hint">Use ◀ ▲ ▼ ▶ on any block to rearrange this page. '
-    + '<a href="#" onclick="tlReset();return false">Put it back the way it was</a></div>';
+    + body + '</div>';
+  /* ⛔ THE INSTRUCTION LINE IS GONE. Ray, 2026-08-27: "we dont need this" — and he is right. The arrows sit
+     on every block already, so a caption explaining them is a sentence he reads past every morning to get to
+     his own day. Reset moved onto the handle itself (↩), where the other layout controls are. */
 }
 
 if (typeof window !== "undefined") {

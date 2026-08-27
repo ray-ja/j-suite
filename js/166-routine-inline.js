@@ -89,29 +89,52 @@ function riWorkoutHTML(r) {
     + '</div>';
 }
 
-/* ---------- 3. the journal, spoken ---------- */
+/* ---------- 3. the journal — long-form, spoken, and NOT an evening thing ----------
+   Ray, 2026-08-27: "journal entry doesnt have to be an evening thing. its just a once a day thing.
+   sometimes i do it at lunch… journal is just long form how i feel or what im thinking about."
+   ⛔ ONE TALK BUTTON, NOT TWO. "theres two large talk buttons on the journal entry area though we dont need
+   both." The recorder bar (js/131) already has one, and it is the better one — it records properly and
+   transcribes on this machine. The little browser-dictation button was a second door to the same room. */
 function riJournalHTML(r) {
   var id = "ri_jrnl_" + r.id;
+  var rec = (typeof vjBarHTML === "function" && typeof vjSecure === "function" && vjSecure());
   var h = '<div class="ri-inline">';
-  /* ⭐ the real voice recorder (js/131) if this device can do it — his own words, transcribed on the box's
-     GPU, audio never leaving the house. Falls back to typing, which is what the textarea is for either way. */
-  if (typeof vjBarHTML === "function" && typeof vjSecure === "function" && vjSecure()) h += vjBarHTML();
-  h += '<textarea id="' + id + '" class="ri-ta" rows="3" placeholder="how the day actually went"></textarea>'
+  if (rec) h += vjBarHTML();
+  h += '<textarea id="' + id + '" class="ri-ta" rows="3" placeholder="what you\'re thinking about"></textarea>'
     + '<div class="row" style="gap:6px;margin-top:6px">'
-    +   ((typeof vjSecure === "function" && vjSecure())
+    /* only offer the small dictation button when the real recorder ISN'T here */
+    +   ((!rec && typeof vjSecure === "function" && vjSecure())
         ? '<button class="btn ghost sm" style="width:auto" onclick="riTalk(\'' + esc(id) + '\')">🎤 Talk</button>' : '')
     +   '<button class="btn acc sm" style="flex:1" onclick="riJournalSave(\'' + esc(r.id) + '\',\'' + esc(id) + '\')">Save entry</button>'
     + '</div></div>';
   return h;
 }
 
-/* ⭐ what an item renders BELOW its label, if anything. Keyed on the item's own `action`, so it follows him
-   if he reorders or renames things. */
+/* ⭐ a short written box — the morning "how are you feeling" and the end-of-day review are the same shape:
+   a line or two, typed or dictated, that ticks the item when saved. */
+function riShortHTML(r, placeholder, button) {
+  var id = "ri_short_" + r.id;
+  return '<div class="ri-inline">'
+    + '<textarea id="' + id + '" class="ri-ta" rows="2" placeholder="' + esc(placeholder) + '"></textarea>'
+    + '<div class="row" style="gap:6px;margin-top:6px">'
+    +   ((typeof vjSecure === "function" && vjSecure())
+        ? '<button class="btn ghost sm" style="width:auto" onclick="riTalk(\'' + esc(id) + '\')">🎤 Talk</button>' : '')
+    +   '<button class="btn acc sm" style="flex:1" onclick="riMoodSave(\'' + esc(r.id) + '\',\'' + esc(id) + '\')">' + esc(button) + '</button>'
+    + '</div></div>';
+}
+function riMoodHTML(r)   { return riShortHTML(r, "how you woke up — a line is plenty", "Save"); }
+function riReviewHTML(r) { return riShortHTML(r, "how the day actually went", "Save"); }
+
+/* ⭐ WHAT AN ITEM RENDERS BELOW ITS LABEL. Keyed on the item's own `key` first — "feel", "journal",
+   "review" — so it stays right wherever in the day he moves it. ⛔ NOT on which PART it's in: the journal
+   was identified by sitting in the evening, and the moment he moves it to lunch that breaks. */
 function riExtraHTML(r, done) {
   if (done) return "";                                   // finished items collapse to a struck-through line
+  var k = String((r && r.key) || "").toLowerCase();
   var a = (r && r.action) || "";
-  if (a === "journal" && r.part === "morning") return riMoodHTML(r);
-  if (a === "journal") return riJournalHTML(r);
+  if (k === "feel") return riMoodHTML(r);
+  if (k === "review" || k === "dayreview") return riReviewHTML(r);
+  if (k === "journal" || a === "journal") return riJournalHTML(r);
   if (a === "workout") return riWorkoutHTML(r);
   return "";
 }
@@ -119,6 +142,7 @@ function riExtraHTML(r, done) {
 if (typeof window !== "undefined") {
   window.riExtraHTML = riExtraHTML; window.riNextWorkout = riNextWorkout;
   window.riMoodHTML = riMoodHTML; window.riJournalHTML = riJournalHTML; window.riWorkoutHTML = riWorkoutHTML;
+  window.riReviewHTML = riReviewHTML; window.riShortHTML = riShortHTML;
 
   window.riWorkoutGo = function () {
     try { location.href = (typeof WK_URL !== "undefined" ? WK_URL : "/workout.html"); } catch (e) {}
