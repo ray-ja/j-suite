@@ -246,12 +246,93 @@ function ledgerSuggest(row) {
 function ledgerDupKey(r) {
   return String(r.date || "") + "|" + Math.round(Math.abs(+r.amount || 0) * 100) + "|" + ledgerKey(r.desc || r.note || "");
 }
-function ledgerIsDuplicate(row) {
-  /* ⭐ externalId first. A bank feed re-sends the same transaction on every poll, and the amount+date+payee
-     key WILL collide legitimately (two $4.50 coffees on the same day at the same shop are two coffees).
-     Only fall back to the fuzzy key when the source gave us no id of its own. */
+/* ⛔⛔ THE SAME TRANSACTION, ARRIVING FROM A SECOND SOURCE, WITH AN ID THIS TIME.
+   Found 2026-08-27, before Ray's first Plaid pull, not after. He has 263 transactions imported from Navy
+   Federal STATEMENTS — none of which carry an externalId, because a PDF hasn't got one — and 84 of them fall
+   inside the window Plaid was about to return. The old rule was "if the incoming row has an id, only compare
+   it against rows that also have an id". Statement rows have none, so not one of those 84 could ever match,
+   and two months of his real spending would have been counted twice. Silently, in the direction of looking
+   poorer than he is, in the numbers he is about to make decisions from.
+
+   ⭐ SO AN ID-LESS HISTORICAL ROW CAN CLAIM AN INCOMING ONE — and when it does it ADOPTS the id, which is
+   what makes this a one-time reconciliation rather than a fuzzy match repeated forever. Next sync, that same
+   transaction matches by id on the fast, exact path.
+
+   ⚠️ ONE-TO-ONE, VIA `claimed`. The original comment's worry is real: two $4.50 coffees on the same day at
+   the same shop are two coffees, not a duplicate. So each historical row may absorb AT MOST ONE incoming
+   row. Two identical statement rows absorb two Plaid rows; one statement row absorbs one and the second
+   Plaid row is correctly added as new. */
+/* ⭐ DO TWO DESCRIPTIONS NAME THE SAME PURCHASE? Only ever asked about rows that ALREADY agree on account,
+   date and exact amount — so this is the last guard against a coincidence, not the matcher itself.
+
+   ⚠️ IT HAS TO SURVIVE HOW A BANK STATEMENT IS WRITTEN. Navy Federal's PDF says
+       "POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2"
+   where Plaid says just "Walmart". Same purchase; a normalised whole-string compare shares almost nothing.
+   Measured on Ray's real data: whole-string matching caught 33 of 84 genuine overlaps and would have
+   double-counted the other 51.
+
+   Strip to letters and digits — "wal-mart #2" and "Walmart" both become walmart-ish — then accept either a
+   containment or ANY common run of 8+ characters. That last part is what catches
+       "ACH Transaction - IDAHO HOUSING MTGPMT 38356154 ACH DEBIT"
+       "Paid To - Idaho Housing Mtgpmt Chk 12400005"
+   which share "idahohousingmtgpmt" and no common prefix at all. ⛔ 8 is deliberate: shorter starts matching
+   things like "transact" that appear in every row of a statement. */
+function ledgerSamePayee(a, b) {
+  var A = String(a || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  var B = String(b || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!A || !B) return false;
+  if (A.indexOf(B) >= 0 || B.indexOf(A) >= 0) return true;
+
+  /* ⛔ DROP WHAT THEY SHARE AT THE FRONT FIRST. Two DIFFERENT purchases off the same statement read
+       "POS Debit - Debit Card 9185 Transaction 06-02-26 Lowes"
+       "POS Debit - Debit Card 9185 Transaction 06-02-26 Wendys"
+     and share forty characters of boilerplate — enough to satisfy any common-run test and silently swallow a
+     real transaction. A shared PREFIX is exactly what boilerplate is, so remove it and compare what is left:
+     "lowes" vs "wendys" → no match, correctly. It costs nothing on the pairs that matter, because a Plaid
+     description and a statement line start differently ("walmart" vs "posdebit…"), so their common prefix is
+     empty and both strings survive intact. */
+  /* ⚠️ 20, NOT 8 — MEASURED, NOT PICKED. A shared opening only counts as boilerplate when it is longer than
+     any real phrase. At 8 this also swallowed "Transfer from…" (12 chars), which is MEANINGFUL: it wrongly
+     split four of Ray's real transfers — "Transfer from THEMEFORGE LLC TFR FR OTHER" against his statement's
+     "Transfer From Checking", $11,600 between them, which would have double-counted straight onto his
+     balances. At 20 the statement's 38-character "POS Debit - Debit Card 9185 Transaction 06-02-26" prefix
+     is still stripped and Lowes-vs-Wendys is still correctly rejected. 84 of 84 overlaps matched, 0 false. */
+  var pre = 0, cap = Math.min(A.length, B.length);
+  while (pre < cap && A.charAt(pre) === B.charAt(pre)) pre++;
+  if (pre >= 20) { A = A.slice(pre); B = B.slice(pre); if (!A || !B) return false; }
+
+  var short = A.length <= B.length ? A : B, long = A.length <= B.length ? B : A;
+  if (long.indexOf(short) >= 0) return true;
+  for (var i = 0; i + 8 <= short.length; i++) {
+    if (long.indexOf(short.substr(i, 8)) >= 0) return true;
+  }
+  return false;
+}
+
+function ledgerIsDuplicate(row, claimed) {
   if (row.externalId) {
-    return ledgerTx().some(function (t) { return t.externalId && t.externalId === row.externalId; });
+    var byId = ledgerTx().some(function (t) { return t.externalId && t.externalId === row.externalId; });
+    if (byId) return true;                       // the feed re-sent it — the ordinary case
+    /* account + date + exact cents must agree, then the payee test above decides */
+    var cents = Math.round(Math.abs(+row.amount || 0) * 100);
+    var mate = ledgerTx().find(function (t) {
+      if (t.externalId) return false;              // already has an id → not an unmatched historical row
+      if (claimed && claimed[t.id]) return false;  // already spoken for by an earlier row in this batch
+      if (String(t.date || "") !== String(row.date || "")) return false;
+      if (Math.round(Math.abs(+t.amount || 0) * 100) !== cents) return false;
+      if (row.accountId && t.accountId && t.accountId !== row.accountId) return false;
+      if ((t.dir || "out") !== (row.dir || "out")) return false;
+      return ledgerSamePayee(t.note || t.desc, row.desc || row.note);
+    });
+    if (mate) {
+      /* the two sources agree — stamp the id so this is settled for good, and note where it came from */
+      mate.externalId = row.externalId;
+      mate.reconciledFrom = row.source || "bank";
+      if (claimed) claimed[mate.id] = true;
+      if (typeof touch === "function") touch(mate);
+      return true;
+    }
+    return false;
   }
   var k = ledgerDupKey(row);
   return ledgerTx().some(function (t) { return !t.externalId && ledgerDupKey(t) === k; });
@@ -264,9 +345,10 @@ function ledgerIngest(rows, opts) {
   var bookId = opts.bookId || (typeof budgetDefaultBookId === "function" ? budgetDefaultBookId() : "");
   var added = [], dupes = 0;
 
+  var claimed = {};        /* historical rows already matched in THIS batch — keeps the match one-to-one */
   (rows || []).forEach(function (r) {
     if (!r || !r.date || !(+r.amount)) return;
-    if (ledgerIsDuplicate(r)) { dupes++; return; }
+    if (ledgerIsDuplicate(r, claimed)) { dupes++; return; }
     var s = ledgerSuggest(r);
     var t = {
       id: "bgt-tx-" + (typeof uid === "function" ? uid() : String(Date.now()) + Math.random().toString(36).slice(2, 6)),
@@ -430,7 +512,7 @@ function ledgerInboxTotals() {
   return { in: Math.round(inn * 100) / 100, out: Math.round(out * 100) / 100, unrecognized: unknown };
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined") { window.ledgerSamePayee = ledgerSamePayee;
   window.ledgerIngest = ledgerIngest; window.ledgerSuggest = ledgerSuggest;
   window.ledgerInbox = ledgerInbox; window.ledgerInboxCount = ledgerInboxCount;
   window.ledgerInboxTotals = ledgerInboxTotals;

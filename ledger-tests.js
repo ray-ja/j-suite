@@ -382,5 +382,98 @@ console.log("\n--- ⭐⭐ both legs of a transfer, from one bank pull ---");
     /DO NOT CLOBBER A FLAG THE OTHER LEG ALREADY SET/.test(require("fs").readFileSync("js/143-ledger.js", "utf8")));
 }
 
+console.log("\n--- ⛔ the same purchase, arriving twice from two sources ---");
+{
+  /* ⚠️ CAUGHT BEFORE RAY'S FIRST PLAID PULL, NOT AFTER. He has 263 transactions imported from Navy Federal
+     STATEMENTS — none carrying an externalId, because a PDF hasn't got one — and 84 of them fall inside the
+     window Plaid was about to return. The old rule was "if the incoming row has an id, only compare it to
+     rows that also have an id." Statement rows have none, so not one of those 84 could match, and two months
+     of his real spending would have been counted TWICE — silently, in the direction of looking poorer than
+     he is, in the numbers he is about to make decisions from. */
+  const vm = require("vm"), fs = require("fs");
+  const mk = (hist) => {
+    const c = { console }; c.window = c;
+    const D = { budgetTx: hist, budgetCats: [], budgetMemo: [], budgetBills: [],
+      budgetBooks: [{ id: "bk1", name: "Personal", deleted: false }],
+      budgetAccounts: [{ id: "chk", name: "Checking", type: "checking", deleted: false },
+                       { id: "sav", name: "Savings", type: "savings", deleted: false }] };
+    c.D = () => D; c.uid = () => "u" + Math.floor(Math.random() * 1e9);
+    c.now = () => 1756252800000; c.today = () => "2026-08-27";
+    c.touch = o => { o.updatedAt = 1756252800000; }; c.save = () => {};
+    vm.createContext(c); vm.runInContext(fs.readFileSync("js/143-ledger.js", "utf8"), c);
+    return { c, D };
+  };
+  const stmt = (id, date, amount, note) => ({ id, accountId: "chk", date, amount, dir: "out", note,
+    source: "nfcu-stmt", pending: false, deleted: false, catId: "" });
+
+  /* ⭐ THE PAYEE TEST, ON HIS ACTUAL STRINGS. Whole-string matching caught 33 of 84 overlaps; these are the
+     three shapes that made up the other 51. */
+  const { c } = mk([]);
+  const same = c.ledgerSamePayee;
+  ok("⭐⭐ 'Walmart' matches 'POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2'",
+    same("Walmart", "POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2"));
+  ok("⭐⭐ the ACH pair, which share no prefix at all — only 'idahohousingmtgpmt' in the middle",
+    same("ACH Transaction - IDAHO HOUSING MTGPMT 38356154 ACH DEBIT", "Paid To - Idaho Housing Mtgpmt Chk 12400005"));
+  ok("⭐ a truncated merchant name still matches",
+    same("Cke Noosa Scoops K Kill Devil", "POS Debit- Debit Card 9185 05-29-26 Cke*noosa Scoops K Kill"));
+  ok("⛔ two genuinely different merchants do NOT match", !same("Walmart", "Harris Teeter"));
+  ok("⛔ ...and statement boilerplate alone is not enough to match on",
+    !same("POS Debit - Debit Card 9185 Transaction 06-02-26 Lowes", "POS Debit - Debit Card 9185 Transaction 06-02-26 Wendys"));
+  ok("⚠️ the 8-char run threshold is deliberate", /8 is deliberate/.test(fs.readFileSync("js/143-ledger.js", "utf8")));
+  /* ⚠️ AND THE BOILERPLATE THRESHOLD WAS MEASURED, NOT PICKED. At 8, "Transfer from…" (12 chars) counted as
+     boilerplate and wrongly split four of his REAL transfers — "Transfer from THEMEFORGE LLC TFR FR OTHER"
+     against "Transfer From Checking", $11,600 between them, landing straight on his balances. */
+  ok("⭐⭐ 'Transfer from THEMEFORGE LLC TFR FR OTHER' matches 'Transfer From Checking'",
+    same("Transfer from THEMEFORGE LLC TFR FR OTHER", "Transfer From Checking"));
+  ok("...and the reverse direction too", same("Transfer to THEMEFORGE LLC TRF TO OTHER", "Transfer To Checking"));
+  ok("⚠️ 20 is the boilerplate threshold, and the measurement behind it is recorded",
+    /20, NOT 8 — MEASURED, NOT PICKED/.test(fs.readFileSync("js/143-ledger.js", "utf8")));
+  ok("empty descriptions never match", !same("", "anything") && !same("x", ""));
+
+  /* ⭐ ADOPTION: the historical row takes the id, so this is settled once rather than re-guessed forever */
+  const hist = [stmt("h1", "2026-06-03", 23.13, "POS Debit - Debit Card 9185 Transaction 06-02-26 Wal-Mart #2")];
+  const { c: c2, D: D2 } = mk(hist);
+  const r1 = c2.ledgerIngest([{ externalId: "plaid-1", date: "2026-06-03", amount: 23.13, dir: "out", desc: "Walmart", accountId: "chk" }], { source: "bank" });
+  ok("⭐⭐ the statement row claims the Plaid row — not counted twice", r1.added === 0 && r1.duplicates === 1,
+    JSON.stringify(r1));
+  ok("⭐⭐ ...and ADOPTS its id, so the next sync matches on the exact path", D2.budgetTx[0].externalId === "plaid-1");
+  ok("...noting where the reconciliation came from", D2.budgetTx[0].reconciledFrom === "bank");
+  ok("⛔ the ledger did not grow", D2.budgetTx.length === 1);
+
+  /* re-running the same pull must now be a plain id match, not a second fuzzy one */
+  const r2 = c2.ledgerIngest([{ externalId: "plaid-1", date: "2026-06-03", amount: 23.13, dir: "out", desc: "Walmart", accountId: "chk" }], { source: "bank" });
+  ok("⭐ a repeat pull is an exact-id duplicate", r2.added === 0 && r2.duplicates === 1 && D2.budgetTx.length === 1);
+
+  /* ⚠️ ONE-TO-ONE: two identical coffees are two coffees */
+  const { c: c3, D: D3 } = mk([stmt("c1", "2026-06-04", 4.50, "COFFEE SHOP"), stmt("c2", "2026-06-04", 4.50, "COFFEE SHOP")]);
+  const r3 = c3.ledgerIngest([
+    { externalId: "p-a", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "chk" },
+    { externalId: "p-b", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "chk" }
+  ], { source: "bank" });
+  ok("⭐⭐ two identical historical rows absorb two identical incoming rows — one each",
+    r3.added === 0 && r3.duplicates === 2 && D3.budgetTx.length === 2, JSON.stringify(r3));
+  ok("...and each got a DIFFERENT id", D3.budgetTx[0].externalId !== D3.budgetTx[1].externalId);
+
+  /* and when there is only ONE historical coffee, the second real coffee is genuinely new */
+  const { c: c4, D: D4 } = mk([stmt("c1", "2026-06-04", 4.50, "COFFEE SHOP")]);
+  const r4 = c4.ledgerIngest([
+    { externalId: "q-a", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "chk" },
+    { externalId: "q-b", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "chk" }
+  ], { source: "bank" });
+  ok("⭐⭐ one historical row absorbs one; the second is correctly ADDED, not swallowed",
+    r4.added === 1 && r4.duplicates === 1 && D4.budgetTx.length === 2, JSON.stringify(r4));
+
+  /* the guards that stop a coincidence being treated as a match */
+  const { c: c5, D: D5 } = mk([stmt("d1", "2026-06-04", 4.50, "COFFEE SHOP")]);
+  c5.ledgerIngest([{ externalId: "z1", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "sav" }], { source: "bank" });
+  ok("⛔ a different ACCOUNT is never a match, however alike", D5.budgetTx.length === 2);
+  const { c: c6, D: D6 } = mk([stmt("e1", "2026-06-04", 4.50, "COFFEE SHOP")]);
+  c6.ledgerIngest([{ externalId: "z2", date: "2026-06-04", amount: 4.50, dir: "in", desc: "Coffee Shop", accountId: "chk" }], { source: "bank" });
+  ok("⛔ nor the opposite direction — a refund is not the purchase", D6.budgetTx.length === 2);
+  const { c: c7, D: D7 } = mk([stmt("f1", "2026-06-04", 4.51, "COFFEE SHOP")]);
+  c7.ledgerIngest([{ externalId: "z3", date: "2026-06-04", amount: 4.50, dir: "out", desc: "Coffee Shop", accountId: "chk" }], { source: "bank" });
+  ok("⛔ nor a one-cent difference", D7.budgetTx.length === 2);
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
