@@ -3731,7 +3731,16 @@ const server = http.createServer((req, res) => {
           const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
           res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
           res.end(JSON.stringify({ itemId: p2.itemId, cursor: out.cursor, rows: rows, removed: out.removed,
-            accounts: (out.accounts || []).map(a => ({ id: a.account_id, name: a.name || a.official_name || "Account", mask: a.mask || "", type: a.type || "" })) }));
+            /* ⚠️ SUBTYPE AND BALANCE ARE NOT DECORATION. Navy Federal returned Ray TWO accounts called
+               "EveryDay Checking", TWO called "Share Savings" and TWO called "Used Vehicle Loan" — his and
+               his wife's. The NAME distinguishes none of them. Mask and balance are the only things that do,
+               and the Visa comes back with mask:null, so balance is sometimes the only one. Subtype is what
+               separates a loan (payments already counted on the checking side) from a card (real spending). */
+            accounts: (out.accounts || []).map(a => ({
+              id: a.account_id, name: a.name || a.official_name || "Account",
+              mask: a.mask || "", type: a.type || "", subtype: a.subtype || "",
+              balance: (a.balances && a.balances.current != null) ? a.balances.current : null
+            })) }));
         });
       }
       if (route === "commit") {

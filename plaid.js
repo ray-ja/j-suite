@@ -245,9 +245,16 @@ function plaidSaveAccounts(orgId, itemId, accounts) {
   const all = plaidLoad();
   const c = all[orgId] || {};
   if (!c.items || !c.items[itemId]) return false;
+  /* ⚠️ THIS USED TO COLLAPSE SUBTYPE INTO TYPE (`type: a.subtype || a.type`), so a credit card persisted as
+     type:"credit card" and a checking account as type:"checking" — while Plaid's own `type` is "credit" and
+     "depository". The stored shape therefore disagreed with the live one, and anything grouping by type saw
+     almost every account as "other". Keep BOTH fields, exactly as Plaid names them.
+     ⭐ balance is kept because Navy Federal sent Ray two "EveryDay Checking", two "Share Savings" and two
+     "Used Vehicle Loan" — and the Visa with no mask at all. Name alone identifies none of them. */
   c.items[itemId].known = (accounts || []).map(a => ({
     id: a.account_id, name: a.name || a.official_name || "Account",
-    mask: a.mask || "", type: a.subtype || a.type || ""
+    mask: a.mask || "", type: a.type || "", subtype: a.subtype || "",
+    balance: (a.balances && a.balances.current != null) ? a.balances.current : null
   }));
   plaidSave(all);
   return true;

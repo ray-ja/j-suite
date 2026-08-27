@@ -222,11 +222,21 @@ console.log("\n--- ⛔ pairing, and the cursor bug behind it ---");
 {
   ok("⭐ a bank's accounts are offered for pairing with his own", /bankPairHTML/.test(CODE(CLIENT)));
   ok("...from what the bank already reported, needing no extra pull", /it\.known/.test(CODE(CLIENT)) && /plaidSaveAccounts/.test(CODE(SRV)));
-  ok("...defaulting to NOT tracked rather than guessing", /not tracked/.test(CLIENT));
-  ok("⛔ the saved account list carries names and masks only", (function () {
+  ok("...defaulting to NOT importing rather than guessing", /don\\'t import/.test(CLIENT));
+  /* ⛔ THE LINE THAT STILL HOLDS: no account or routing numbers, ever. That is the real privacy boundary and
+     nothing needs them.
+     ⚠️ RELAXED 2026-08-27 FOR BALANCE, DELIBERATELY. Navy Federal sent two accounts called "EveryDay
+     Checking", two called "Share Savings" and two called "Used Vehicle Loan" — the balance is one of only two
+     things that tells them apart, and the Visa has no mask at all, so on that one it is the only thing. It
+     has to survive a page load or the pairing screen goes ambiguous again the moment he navigates away.
+     The file already holds long-lived access tokens, is mode 600 and gitignored, so a balance is not an
+     escalation — but a STALE balance reading as current would be, which is why the screen dates it. */
+  ok("⛔ no account or routing numbers are ever stored", (function () {
     const src = R("plaid.js").slice(R("plaid.js").indexOf("function plaidSaveAccounts"));
-    return !/balance|available|current|account_number|routing/.test(src.slice(0, 600));
+    return !/account_number|routing|available/.test(src.slice(0, 900));
   })());
+  ok("⭐ the stored balance is shown DATED, so it can't be misread as live",
+    /Balances shown are from the/.test(CLIENT) && /not as a live figure/.test(CLIENT));
 
   /* ⛔⛔ THE BUG: dropping unmapped rows AND advancing the cursor loses them forever */
   ok("⭐ the cursor is NOT committed when rows were dropped for want of a pairing",
@@ -373,6 +383,81 @@ console.log("\n--- ⛔ an <h2> inside a section becomes a SUB-TAB (js/156) ---")
 
   ok("⚠️ the trap is written down where the next card gets added", /becomes a section of its own/.test(R("js/150-bank-link.js")));
   ok("⭐ and js/156 is the thing that makes it true", /secHeadOf/.test(CODE(R("js/156-section-tabs.js"))));
+}
+
+console.log("\n--- 🏦 seven accounts, three names: the pairing screen ---");
+{
+  /* Ray, 2026-08-27: "it grabbed a bunch of my navy federal accounts like my wifes and my car loans all of
+     which is fine but you may need to organize a bit."
+     ⚠️ WHAT NAVY FEDERAL ACTUALLY SENT — verified against his live item, not imagined:
+        EveryDay Checking ····5377 $502.12   ·   EveryDay Checking ····9652 $46.85
+        Share Savings     ····0301 $5.03     ·   Share Savings     ····3621 $5.01
+        Used Vehicle Loan ····1319 $16,898   ·   Used Vehicle Loan ····6172 $16,158
+        Visa Signature cashRewards Plus — mask NULL — $23,644
+     Three names for seven accounts. Mask and balance are the only discriminators, and the Visa has no mask. */
+  const vm = require("vm");
+  const ctx = { console }; ctx.window = ctx;
+  ctx.esc = x => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  ctx.money = n => "$" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  ctx.S = { biz: "o", sync: { url: "https://x", token: "t" } };
+  ctx.orgName = () => "RBJVL";
+  ctx.location = { protocol: "https:", origin: "https://x" };
+  ctx.document = { getElementById: () => null, createElement: () => ({ style: {}, setAttribute() {} }) };
+  ctx.fetch = () => new Promise(() => {});
+  ctx.D = () => ({
+    budgetAccounts: [{ id: "bgt-acct-nfcu-personal", bookId: "bk1", name: "Navy Federal — checking", deleted: false }],
+    budgetBooks: [{ id: "bk1", name: "Personal", deleted: false }, { id: "bk2", name: "OBX Lot Solutions", deleted: false }]
+  });
+  vm.createContext(ctx);
+  vm.runInContext(R("js/150-bank-link.js"), ctx);
+
+  const KNOWN = [
+    { id: "a1", name: "EveryDay Checking", mask: "5377", type: "depository", subtype: "checking", balance: 502.12 },
+    { id: "a2", name: "EveryDay Checking", mask: "9652", type: "depository", subtype: "checking", balance: 46.85 },
+    { id: "a3", name: "Share Savings", mask: "0301", type: "depository", subtype: "savings", balance: 5.03 },
+    { id: "a4", name: "Share Savings", mask: "3621", type: "depository", subtype: "savings", balance: 5.01 },
+    { id: "a5", name: "Visa Signature cashRewards Plus", mask: "", type: "credit", subtype: "credit card", balance: 23644.53 },
+    { id: "a6", name: "Used Vehicle Loan", mask: "1319", type: "loan", subtype: "loan", balance: 16898.66 },
+    { id: "a7", name: "Used Vehicle Loan", mask: "6172", type: "loan", subtype: "loan", balance: 16158.36 }
+  ];
+  const html = ctx.bankPairHTML({ itemId: "i1", known: KNOWN, accounts: {} });
+
+  ok("⭐ grouped by what the account IS", /Checking &amp; savings/.test(html) && /Credit cards/.test(html) && /Loans/.test(html));
+  ok("...with a count per group", /Checking &amp; savings<\/b>? ?<span[^>]*>\(4\)/.test(html) || /\(4\)/.test(html));
+  ok("⭐⭐ every row carries the mask, because the NAMES COLLIDE",
+    /5377/.test(html) && /9652/.test(html) && /0301/.test(html) && /3621/.test(html) && /1319/.test(html) && /6172/.test(html));
+  ok("⭐⭐ and the balance, which on the maskless Visa is the ONLY discriminator",
+    /502\.12/.test(html) && /46\.85/.test(html) && /23,644\.53/.test(html));
+  ok("⛔ the maskless Visa says so rather than showing a blank", /no number shown/.test(html));
+  ok("⭐ loans are flagged as already counted on the checking side",
+    /already counted where it leaves your checking account/.test(html));
+  ok("⛔ nothing is pre-paired — every row defaults to don't import", !/selected/.test(html));
+  ok("⭐ each row offers to create the matching account inline", (html.match(/__new__/g) || []).length === 7,
+    (html.match(/__new__/g) || []).length);
+  ok("⭐ existing accounts show which book they're in, so the twins can't be mixed up", /\(Personal\)/.test(html));
+
+  /* grouping itself, including the OLD collapsed shape that a bank linked before today still has on disk */
+  const g = ctx.bankGroupOf;
+  ok("⭐ live shape groups right", g(KNOWN[0]) === "cash" && g(KNOWN[4]) === "credit" && g(KNOWN[5]) === "loan");
+  ok("⭐⭐ the OLD collapsed shape (type:'credit card' / 'checking') still groups right — no re-sync needed",
+    g({ type: "credit card" }) === "credit" && g({ type: "checking" }) === "cash" && g({ type: "savings" }) === "cash");
+  ok("⛔ something unrecognised lands in Other, never silently in spending", g({ type: "brokerage" }) === "other");
+
+  /* and the storage bug that would have made all of the above group as "other" */
+  const PJC = CODE(R("plaid.js"));
+  ok("⭐ plaidSaveAccounts keeps type AND subtype, not one collapsed into the other",
+    /type: a\.type \|\| ""/.test(PJC) && /subtype: a\.subtype \|\| ""/.test(PJC));
+  ok("⭐ ...and the balance", /balances && a\.balances\.current/.test(PJC));
+  ok("⚠️ the collapse and why it mattered is written down", /collapse subtype into type|COLLAPSE SUBTYPE INTO TYPE/i.test(R("plaid.js")));
+
+  /* the inline account it creates must be a normal budgetAccounts record, with a stable id */
+  const BL = CODE(R("js/150-bank-link.js"));
+  ok("⭐ a created account gets a DERIVED id, so re-pairing can't duplicate it",
+    /"bgt-acct-plaid-" \+ String\(plaidAccountId\)/.test(BL));
+  ok("⭐ it asks which BOOK — that's what keeps his wife's money out of the business numbers",
+    /Which set of books does it belong to/.test(R("js/150-bank-link.js")));
+  ok("⭐ and it saves through the normal path so it syncs like any other record",
+    /d\.budgetAccounts\.push\(rec\)/.test(BL) && /typeof save === "function"/.test(BL));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");

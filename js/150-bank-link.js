@@ -162,29 +162,110 @@ function bankDropRemoved(ids) {
 /* ⭐ PAIRING. A bank connection can hold several accounts; each has to be told which of HIS accounts it
    is, or its transactions have nowhere to land. Drawn from what the bank reported on the last pull, so it
    needs no extra call. */
+/* ---------- PAIRING SEVEN ACCOUNTS THAT SHARE THREE NAMES -------------------------------------------
+   Ray, 2026-08-27: "it grabbed a bunch of my navy federal accounts like my wifes and my car loans all of
+   which is fine but you may need to organize a bit."
+
+   ⚠️ WHAT NAVY FEDERAL ACTUALLY SENT: seven accounts, under three distinct names —
+       EveryDay Checking ····5377 $502.12      EveryDay Checking ····9652 $46.85
+       Share Savings     ····0301 $5.03        Share Savings     ····3621 $5.01
+       Used Vehicle Loan ····1319 $16,898      Used Vehicle Loan ····6172 $16,158
+       Visa Signature cashRewards Plus — NO MASK AT ALL — $23,644
+   A flat list of seven dropdowns labelled by name would have offered him the same words three times over.
+   The mask and the balance are the only things that tell the twins apart, and the Visa has no mask, so on
+   that one the balance is the only thing. Both now show on every row.
+
+   ⛔ AND A LOAN IS NOT A SPENDING ACCOUNT. The car payment already leaves his checking account and gets
+   counted there. Pulling the loan's own transactions too would count the same money twice — so loans
+   default to NOT tracked and say why, rather than sitting in the list looking like an oversight. He can
+   still pair one deliberately.
+
+   Grouped by what the account IS, because that is what decides how it should be treated. */
+
+var BANK_GROUPS = [
+  { key: "cash",   label: "Checking &amp; savings", hint: "the money moving in and out — these are what a budget is made of" },
+  { key: "credit", label: "Credit cards",           hint: "purchases here are real spending; the payment from checking is a transfer, not a second expense" },
+  { key: "loan",   label: "Loans",                  hint: "⛔ left untracked on purpose — the payment is already counted where it leaves your checking account" },
+  { key: "other",  label: "Other",                  hint: "" }
+];
+/* ⚠️ READS type AND subtype, AND TOLERATES THE OLD COLLAPSED SHAPE. Records stored before 2026-08-27 kept
+   `type: subtype || type`, so an existing item on disk may carry type:"credit card" or type:"checking" where
+   Plaid's own type is "credit"/"depository". Matching on either means a bank linked before this change groups
+   correctly without needing a re-sync — and an unrecognised value lands in "Other" rather than being silently
+   filed as spending. */
+function bankGroupOf(a) {
+  var t = String((a && a.type) || "").toLowerCase();
+  var st = String((a && a.subtype) || "").toLowerCase();
+  var both = t + " " + st;
+  if (/\bloan\b|mortgage|student|auto/.test(both)) return "loan";
+  if (t === "credit" || /credit card|paypal credit|line of credit/.test(both)) return "credit";
+  if (t === "depository" || /checking|savings|money market|cd\b|cash management/.test(both)) return "cash";
+  return "other";
+}
+/* the twins problem in one string: never show a name without whatever distinguishes it */
+function bankAcctLabel(a) {
+  var bits = [];
+  if (a.mask) bits.push("····" + a.mask);
+  else bits.push("no number shown");
+  if (a.subtype && String(a.subtype).toLowerCase() !== "loan") bits.push(esc(a.subtype));
+  return bits.join(" · ");
+}
+function bankMoney(n) {
+  if (n == null || !isFinite(n)) return "";
+  try { return (typeof money === "function") ? money(n) : ("$" + Math.round(n).toLocaleString()); }
+  catch (e) { return "$" + Math.round(n); }
+}
+
 function bankPairHTML(it) {
   var known = it.known || [];
   if (!known.length) {
     return '<div class="sub" style="white-space:normal;margin:2px 0 8px 10px">'
       + 'Hit <b>Get transactions</b> once and the accounts in this bank will appear here to pair.</div>';
   }
-  var mine = [];
-  try { mine = (D().budgetAccounts || []).filter(function (a) { return a && !a.deleted; }); } catch (e) {}
+  var mine = [], books = {};
+  try {
+    mine = (D().budgetAccounts || []).filter(function (a) { return a && !a.deleted; });
+    (D().budgetBooks || []).forEach(function (b) { if (b && !b.deleted) books[b.id] = b.name; });
+  } catch (e) {}
   var map = it.accounts || {};
-  return '<div style="margin:2px 0 10px 10px">' + known.map(function (a) {
-    var sel = map[a.id] || "";
-    return '<div class="row" style="gap:8px;align-items:center;padding:4px 0">'
-      + '<div class="grow" style="min-width:0"><div class="sub">' + esc(a.name)
-      +   (a.mask ? ' ····' + esc(a.mask) : '') + '</div></div>'
-      + '<select style="width:auto;max-width:58%" onchange="bankPair(\'' + esc(it.itemId) + '\',\'' + esc(a.id) + '\',this.value)">'
-      + '<option value="">— not tracked —</option>'
-      + mine.map(function (m) {
-          return '<option value="' + esc(m.id) + '"' + (sel === m.id ? " selected" : "") + '>' + esc(m.name) + '</option>';
-        }).join("")
-      + '</select></div>';
-  }).join("")
-  + '<div class="sub" style="white-space:normal;margin-top:4px">Anything left <i>not tracked</i> is skipped — '
-  + 'its transactions won\'t be pulled in.</div></div>';
+
+  var h = '<div style="margin:2px 0 10px 10px">';
+  /* ⚠️ SAY WHEN THE BALANCES ARE FROM. They are stored from the last pull so the accounts stay tellable-apart
+     between visits (two "EveryDay Checking" with no other difference) — which means on any later page load
+     they are HISTORICAL. A number that looks live and isn't is worse than no number, so it is dated once here
+     rather than left to be assumed current. */
+  h += '<div class="sub" style="white-space:normal;margin:2px 0 6px;opacity:.75">Balances shown are from the '
+    + 'last check' + (it.syncedAt ? ' (' + esc(new Date(it.syncedAt).toISOString().slice(0, 10)) + ')' : '')
+    + ' — they are here to tell same-named accounts apart, not as a live figure.</div>';
+  BANK_GROUPS.forEach(function (g) {
+    var rows = known.filter(function (a) { return bankGroupOf(a) === g.key; });
+    if (!rows.length) return;
+    h += '<div class="sub" style="font-weight:700;margin:10px 0 2px">' + g.label
+      + ' <span style="font-weight:400;opacity:.7">(' + rows.length + ')</span></div>';
+    if (g.hint) h += '<div class="sub" style="white-space:normal;margin-bottom:4px;opacity:.8">' + g.hint + '</div>';
+    rows.forEach(function (a) {
+      var sel = map[a.id] || "";
+      h += '<div class="row" style="gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line)">'
+        + '<div class="grow" style="min-width:0">'
+        +   '<div style="font-weight:600;font-size:13.5px">' + esc(a.name) + '</div>'
+        +   '<div class="sub" style="font-variant-numeric:tabular-nums">' + bankAcctLabel(a)
+        +     (a.balance != null ? ' · <b>' + bankMoney(a.balance) + '</b>' : '') + '</div>'
+        + '</div>'
+        + '<select style="width:auto;max-width:56%" onchange="bankPair(\'' + esc(it.itemId) + '\',\'' + esc(a.id) + '\',this.value)">'
+        + '<option value="">— don\'t import —</option>'
+        + mine.map(function (m) {
+            var bk = books[m.bookId] ? (" (" + books[m.bookId] + ")") : "";
+            return '<option value="' + esc(m.id) + '"' + (sel === m.id ? " selected" : "") + '>' + esc(m.name + bk) + '</option>';
+          }).join("")
+        /* ⭐ he has three budget accounts and this bank sent seven. Making the other four by hand, in another
+           screen, matching them back up by memory, is where a pairing job gets abandoned half-done. */
+        + '<option value="__new__">＋ Create an account for this…</option>'
+        + '</select></div>';
+    });
+  });
+  h += '<div class="sub" style="white-space:normal;margin-top:8px">Anything left <i>don\'t import</i> is skipped '
+    + 'entirely — no transactions, no balance. You can come back and pair it later; nothing is lost by waiting.</div></div>';
+  return h;
 }
 
 /* ⭐ THE KEY GOES IN HERE, NOT INTO A FILE ON A SERVER. Ray, 2026-08-26: "Just make an interface in the
@@ -327,10 +408,68 @@ if (typeof window !== "undefined") {
         if (typeof render === "function") render();
       });
   };
+  /* ⭐ CREATE THE MATCHING ACCOUNT RIGHT HERE. He has three budget accounts; Navy Federal sent seven. Sending
+     him to another screen to make four records and then match them back up from memory is exactly where a
+     pairing job gets abandoned half-finished — and a half-paired bank is the one state that loses rows,
+     because the cursor can't be committed until every row has somewhere to go. */
   window.bankPair = function (itemId, plaidAccountId, budgetAccountId) {
+    if (budgetAccountId === "__new__") {
+      var made = bankCreateAccountFor(itemId, plaidAccountId);
+      if (!made) { if (typeof render === "function") render(); return; }   // cancelled → redraw so the select snaps back
+      budgetAccountId = made;
+    }
     fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
       body: JSON.stringify({ org: bankOrg(), itemId: itemId, map: { plaidAccountId: plaidAccountId, budgetAccountId: budgetAccountId } }) })
       .then(function () { bankRefresh(function () { if (typeof render === "function") render(); }); });
   };
+
+  /* makes a budgetAccounts record in the SAME shape js/79 makes them ({id,bookId,name,type,balance,deleted,
+     updatedAt}) and saves through the normal path, so it syncs and migrates like any other. Returns its id.
+     ⚠️ The BOOK matters more than the name: it is what keeps his wife's checking, the Iowa rental and the
+     two businesses out of each other's numbers. So it is asked, defaulted to Personal, never guessed. */
+  function bankCreateAccountFor(itemId, plaidAccountId) {
+    try {
+      var st = BANK_STATUS || {}, it = (st.items || []).filter(function (x) { return x.itemId === itemId; })[0] || {};
+      var a = (it.known || []).filter(function (x) { return x.id === plaidAccountId; })[0] || {};
+      var suggested = a.name + (a.mask ? " ····" + a.mask : "");
+      var name = prompt("Name this account as you want to see it in your budget:\n\n"
+        + "(Navy Federal sent two called \"" + (a.name || "this") + "\" — the last four digits and the balance "
+        + "are what tell them apart.)", suggested);
+      if (name === null || !String(name).trim()) return "";
+
+      var books = [];
+      try { books = (D().budgetBooks || []).filter(function (b) { return b && !b.deleted; }); } catch (e) {}
+      var bookId = books.length ? books[0].id : "";
+      if (books.length > 1) {
+        var pick = prompt("Which set of books does it belong to?\n\n"
+          + books.map(function (b, i) { return (i + 1) + ". " + b.name; }).join("\n")
+          + "\n\nEnter a number:", "1");
+        if (pick === null) return "";
+        var n = parseInt(pick, 10);
+        if (!(n >= 1 && n <= books.length)) { alert("That wasn't one of the numbers — nothing created."); return ""; }
+        bookId = books[n - 1].id;
+      }
+
+      var grp = bankGroupOf(a);
+      var rec = {
+        id: "bgt-acct-plaid-" + String(plaidAccountId).slice(-12),   /* ⭐ stable + derived → re-pairing the same
+                                                                        Plaid account can never make a duplicate */
+        bookId: bookId,
+        name: String(name).trim().slice(0, 80),
+        type: grp === "credit" ? "credit" : grp === "loan" ? "loan" : (a.subtype === "savings" ? "savings" : "checking"),
+        balance: 0,
+        deleted: false
+      };
+      var d = D();
+      d.budgetAccounts = d.budgetAccounts || [];
+      var existing = d.budgetAccounts.filter(function (x) { return x && x.id === rec.id; })[0];
+      if (existing) { existing.deleted = false; existing.name = rec.name; existing.bookId = rec.bookId; if (typeof touch === "function") touch(existing); }
+      else { if (typeof touch === "function") touch(rec); d.budgetAccounts.push(rec); }
+      if (typeof save === "function") save();
+      if (typeof toast === "function") toast("Created “" + rec.name + "”");
+      return rec.id;
+    } catch (e) { alert("Couldn't create that account: " + ((e && e.message) || e)); return ""; }
+  }
+  window.bankCreateAccountFor = bankCreateAccountFor;
   window.bankCardHTML = bankCardHTML; window.bankDropRemoved = bankDropRemoved; window.bankCanLink = bankCanLink;
 }
