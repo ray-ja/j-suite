@@ -55,6 +55,21 @@ function tcalClock(mins) {
   return h12 + (mm ? ":" + String(mm).padStart(2, "0") : "") + ap;
 }
 
+/* ⛔ SUCCINCT. "Iowa mortgage (Johnston, IA rental)" in a calendar cell is a wall; "Iowa mortgage" is the
+   same information at a glance. Drop the parenthetical and anything after a dash — a bill's own name already
+   leads with the thing it is. */
+function tcalBillName(n) {
+  return String(n || "Bill").replace(/\s*\(.*$/, "").replace(/\s+[—–-]\s+.*$/, "").trim().slice(0, 22) || "Bill";
+}
+function tcalShort(n, max) {
+  var s2 = String(n || "").replace(/\s*\(.*$/, "").trim();
+  return s2.length > (max || 20) ? s2.slice(0, (max || 20) - 1) + "…" : s2;
+}
+function tcalAmt(v) {
+  var n = Math.round(Math.abs(+v || 0));
+  return n >= 1000 ? "$" + (n / 1000).toFixed(n % 1000 >= 100 ? 1 : 0) + "k" : "$" + n;
+}
+
 /* ---------- everything happening on a given day, from every org ---------- */
 function tcalItemsFor(iso) {
   var out = [];
@@ -73,6 +88,21 @@ function tcalItemsFor(iso) {
     (D().todos || []).forEach(function (t) {
       if (!t || t.deleted || t.done || t.due !== iso) return;
       out.push({ kind: "todo", title: t.title || "To-do", mins: tcalMins(t.time), confirmed: true, tab: "todo", color: "#e0a800" });
+    });
+  } catch (e) {}
+  /* ⭐⭐ BILLS ARE CALENDAR ITEMS. Ray, 2026-08-27: "we have the bills coming up over the next two weeks.
+     Can we just build those into the calendar?… the bills should be built into it with their values showing."
+     He is right that they were in the wrong place: a bill IS a dated thing with a time cost, and keeping it
+     in a separate list meant checking two surfaces to answer one question — what is coming.
+     ⛔ A bill is a FORECAST, not a posted transaction. It is drawn so he can see it coming; nothing here
+     books anything, and budgetBillNextDue (js/79) stays the single source of when. */
+  try {
+    (D().budgetBills || []).forEach(function (b) {
+      if (!b || b.deleted || b.active === false) return;
+      if (typeof budgetBillNextDue !== "function") return;
+      if (budgetBillNextDue(b, iso) !== iso) return;      // due on exactly this day
+      out.push({ kind: "bill", title: tcalBillName(b.name), amount: +b.amount || 0,
+        mins: null, confirmed: true, tab: "budget", color: "#e8683f" });
     });
   } catch (e) {}
   /* ⭐ jobs, from every org he runs — his day is not one business */
@@ -111,24 +141,37 @@ function tcalMonthCounts(ym) {
   return counts;
 }
 
-/* ---------- month grid ---------- */
+/* ---------- month grid — READ IT, don't decode it ------------------------------------------------------
+   Ray, 2026-08-27: "i dont wanna have just dots for events coming up. That's not gonna help me remember…
+   I wanna be able to read what's actually coming up. It's just gonna have to be bigger."
+
+   ⚠️ HE IS RIGHT AND THE DOTS WERE A COP-OUT. A dot says "something happens"; the entire question is WHAT.
+   So each day carries up to three short labels, colour-coded by kind, with a bill's amount on it — and the
+   card moved to FULL WIDTH on Today, because seven columns of readable text does not fit in a sidebar and
+   pretending otherwise is how you end up with dots again. */
 function tcalMonthHTML(ym) {
   var today = tcalToday(), counts = tcalMonthCounts(ym), days = tcalDaysIn(ym);
   var lead = tcalDow(ym + "-01");
   var h = '<div class="tcal-m"><div class="tcal-mh">' + esc(tcalMonthName(ym)) + '</div>'
     + '<div class="tcal-grid">'
-    + ["S","M","T","W","T","F","S"].map(function (d) { return '<div class="tcal-dow">' + d + '</div>'; }).join("");
-  for (var i = 0; i < lead; i++) h += '<div></div>';
+    + ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(function (d) { return '<div class="tcal-dow">' + d + '</div>'; }).join("");
+  for (var i = 0; i < lead; i++) h += '<div class="tcal-d tcal-pad"></div>';
   for (var d = 1; d <= days; d++) {
     var iso = ym + "-" + String(d).padStart(2, "0");
     var items = counts[iso] || [];
-    var cls = "tcal-d" + (iso === today ? " tcal-now" : "") + (items.length ? " tcal-has" : "");
-    var tip = items.slice(0, 4).map(function (x) { return x.title; }).join(" · ");
-    h += '<div class="' + cls + '"' + (tip ? ' title="' + esc(tip) + '"' : '') + '>'
-      + '<span>' + d + '</span>'
-      + (items.length ? '<i class="tcal-dots">' + items.slice(0, 3).map(function (x) {
-          return '<b style="background:' + x.color + '"></b>'; }).join("") + '</i>' : '')
-      + '</div>';
+    var past = iso < today;
+    var cls = "tcal-d" + (iso === today ? " tcal-now" : "") + (past ? " tcal-past" : "");
+    h += '<div class="' + cls + '"><span class="tcal-num">' + d + '</span>';
+    items.slice(0, 4).forEach(function (x) {
+      /* ⭐ the AMOUNT is the point of a bill on a calendar — "Rent" tells him nothing he didn't know */
+      var right = x.kind === "bill" ? tcalAmt(x.amount) : (x.mins != null ? tcalClock(x.mins) : "");
+      h += '<div class="tcal-pill" style="--pc:' + x.color + '" title="' + esc(x.title + (right ? " · " + right : "")) + '">'
+        + '<span class="tcal-pt">' + esc(tcalShort(x.title, 26)) + '</span>'
+        + (right ? '<span class="tcal-pr">' + esc(right) + '</span>' : '')
+        + '</div>';
+    });
+    if (items.length > 4) h += '<div class="tcal-more">+' + (items.length - 4) + ' more</div>';
+    h += '</div>';
   }
   return h + '</div></div>';
 }
@@ -191,18 +234,34 @@ function tcalDayHTML(iso, label) {
 
 function tcalHTML() {
   var t = tcalToday();
+  /* ⭐ two weeks of bills, totalled, where the old money card used to say it — same number, now attached to
+     the thing that shows WHEN. */
+  var soon = 0, n = 0;
+  try {
+    for (var i = 0; i < 14; i++) {
+      tcalItemsFor(tcalShift(t, i)).forEach(function (x) { if (x.kind === "bill") { soon += x.amount; n++; } });
+    }
+  } catch (e) {}
   return '<div class="card tcal">'
-    + '<div class="row" style="align-items:baseline"><div class="nm" style="font-size:15px">📅 Calendar</div>'
-    + '<div class="grow"></div><button class="btn ghost sm" style="width:auto" onclick="navSub(\'cal\')">Open</button></div>'
-    + '<div class="tcal-days">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
+    + '<div class="row" style="align-items:baseline;gap:10px;flex-wrap:wrap">'
+    +   '<div class="nm" style="font-size:15px">📅 Calendar</div>'
+    +   (n ? '<div class="sub">' + n + ' bill' + (n === 1 ? '' : 's') + ' in the next two weeks · <b>'
+          + esc(tcalAmt(soon)) + '</b></div>' : '')
+    +   '<div class="grow"></div>'
+    +   '<div class="sub tcal-key">'
+    +     '<i style="background:#e8683f"></i>bill <i style="background:#1e9e5a"></i>job '
+    +     '<i style="background:#7c5cff"></i>personal <i style="background:#e0a800"></i>to-do</div>'
+    +   '<button class="btn ghost sm" style="width:auto" onclick="navSub(\'cal\')">Open</button>'
+    + '</div>'
     + '<div class="tcal-months">' + tcalMonthHTML(tcalMonthKey(t)) + tcalMonthHTML(tcalAddMonths(tcalMonthKey(t), 1)) + '</div>'
+    + '<div class="tcal-days">' + tcalDayHTML(t, "Today") + tcalDayHTML(tcalShift(t, 1), "Tomorrow") + '</div>'
     + '</div>';
 }
 
 if (typeof window !== "undefined") {
   window.tcalHTML = tcalHTML; window.tcalItemsFor = tcalItemsFor; window.tcalDayHTML = tcalDayHTML;
   window.tcalMonthHTML = tcalMonthHTML; window.tcalMins = tcalMins; window.tcalClock = tcalClock;
-  window.tcalShift = tcalShift; window.tcalAddMonths = tcalAddMonths; window.tcalToday = tcalToday;
+  window.tcalShift = tcalShift; window.tcalBillName = tcalBillName; window.tcalShort = tcalShort; window.tcalAmt = tcalAmt; window.tcalAddMonths = tcalAddMonths; window.tcalToday = tcalToday;
   /* ⛔ a calendar sends him to the screen that OWNS the record — it never edits one itself */
   window.tcalGo = function (tab, org) {
     try {

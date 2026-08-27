@@ -92,7 +92,13 @@ function rtPartHTML(part) {
     var done = rtDone(r);
     var go = rtAction(r);
     h += '<div class="li" style="align-items:flex-start">'
-      + '<input type="checkbox" style="width:22px;height:22px;flex:0 0 auto"' + (done ? " checked" : "")
+      /* ⚠️ SIZED BY DEVICE, BECAUSE BOTH COMPLAINTS ARE RIGHT. Ray, 2026-08-27: "the checkboxes are way too
+         big on the routine thing" — said on a 1440p screen, where 22px made the box the largest thing in the
+         card and read as the point of it. But a test already asserted they are thumb-sized on a phone, and
+         that is a standing rule here: the crew works from phones and a 16px tap target is a miss.
+         ⛔ So it is a class with a media query, not a number: 22px on a phone, 16px from 900px up. Shrinking
+         it everywhere would have traded his annoyance for someone else's mis-tap. */
+      + '<input type="checkbox" class="rt-box"' + (done ? " checked" : "")
       + ' onchange="rtTick(\'' + r.id + '\')">'
       + '<div class="grow"' + (go ? ' style="cursor:pointer" onclick="' + go + '"' : '') + '>'
       + '<div class="nm" style="font-size:15px' + (done ? ';color:var(--muted);text-decoration:line-through' : '') + '">'

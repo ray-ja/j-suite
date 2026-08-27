@@ -472,9 +472,8 @@ function personalHome() {
      this month + next, and also 2x day view showing times for things happening today and tomorrow."
      It goes in the MONEY column rather than the day column on purpose: the right-hand column is what he
      looks AT, and the middle column is the order he DOES things in. A calendar is reference, not a step. */
-  if (typeof tcalHTML === "function") side += tcalHTML();
-  /* the flat "coming up" list stays underneath — it reaches 30 days out, past the two months' detail, and
-     it is the one that surfaces a birthday eleven days away without him counting squares. */
+  /* the flat "coming up" list stays in the side column — it reaches 30 days out, past the two months the
+     calendar draws, and surfaces a birthday eleven days away without him counting squares. */
   if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);
 
   /* ---- RIGHT: what he DOES, in the order he does it ---- */
@@ -486,7 +485,14 @@ function personalHome() {
   day += part("evening");
   day += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="rtEdit(\'\')">＋ Add to your routine</button>';
 
+  /* ⭐ THE CALENDAR IS FULL WIDTH, ABOVE THE COLUMNS. Ray, 2026-08-27: "I wanna be able to read what's
+     actually coming up. It's just gonna have to be bigger." Seven columns of readable text will not fit in
+     a sidebar — that constraint is precisely what forced dots, and dots were the thing he rejected. It goes
+     first because the shape of the next two months is what he opens Today to see. */
+  var cal = (typeof tcalHTML === "function") ? tcalHTML() : "";
+
   return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>'
+    + cal
     + '<div class="daycols">'
     +   '<div class="dc-chat">' + phTalkCard() + '</div>'
     +   '<div class="dc-day">' + day + '</div>'

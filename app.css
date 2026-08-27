@@ -466,14 +466,42 @@
   .lockbanner .btn{width:auto;flex:0 0 auto}
 
 /* ---------- CALENDAR ON TODAY (js/163) ------------------------------------------------------------
-   Two day columns and two month grids. ⚠️ Mobile-first: on a phone everything stacks to one column,
-   because two side-by-side day views at 390px would be two unreadable ones. */
-.tcal-days{display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px}
-.tcal-months{display:grid;grid-template-columns:1fr;gap:12px;margin-top:14px}
-@media(min-width:760px){
+   ⚠️ FULL WIDTH, NOT A SIDEBAR CARD. Ray, 2026-08-27: "I wanna be able to read what's actually coming
+   up. It's just gonna have to be bigger." Seven columns of readable text do not fit in a 420px column —
+   that constraint is exactly what produced dots in the first place. */
+/* ⛔⛔ THE MONTHS STACK, THEY DO NOT SIT SIDE BY SIDE. Two months across 1500px leaves each day cell 78px,
+   which truncated "Iowa mortgage" to "Iow…" and "Car loan" to "Car l…" — the exact failure he rejected dots
+   for. Stacked, a cell is ~165px and the name fits whole. A month grid needs WIDTH, and there is only one
+   screen's worth to give it. The two DAY views still pair up: they are lists, and lists read fine narrow. */
+.tcal-months{display:grid;grid-template-columns:1fr;gap:18px;margin-top:12px}
+.tcal-days{display:grid;grid-template-columns:1fr;gap:14px;margin-top:16px;
+  padding-top:14px;border-top:1px solid var(--line)}
+@media(min-width:900px){
   .tcal-days{grid-template-columns:1fr 1fr}
-  .tcal-months{grid-template-columns:1fr 1fr}
 }
+.tcal-key{display:flex;align-items:center;gap:5px;font-size:11px;flex-wrap:wrap}
+.tcal-key>i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-left:6px}
+.tcal-key>i:first-child{margin-left:0}
+
+.tcal-m{min-width:0}
+.tcal-mh{font-weight:700;font-size:14px;margin-bottom:6px}
+.tcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.tcal-dow{font-size:10.5px;color:var(--muted);text-align:center;padding-bottom:3px;letter-spacing:.3px}
+/* ⭐ tall enough for three labels — a day cell that can only hold a dot is a day cell that says nothing */
+.tcal-d{min-height:70px;border-radius:6px;background:var(--soft);padding:3px 4px 4px;
+  display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.tcal-d.tcal-pad{background:transparent}
+.tcal-d.tcal-past{opacity:.45}
+.tcal-d.tcal-now{outline:2px solid var(--accent)}
+.tcal-num{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1}
+.tcal-now .tcal-num{color:var(--accent);font-weight:800}
+.tcal-pill{display:flex;gap:6px;align-items:baseline;font-size:11px;line-height:1.3;
+  border-left:3px solid var(--pc,var(--accent));padding-left:4px;border-radius:2px;
+  background:color-mix(in srgb, var(--pc,var(--accent)) 12%, transparent)}
+.tcal-pt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tcal-pr{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700;opacity:.9}
+.tcal-more{font-size:10px;color:var(--muted);padding-left:4px}
+
 .tcal-dh{font-weight:700;font-size:13.5px;margin-bottom:6px}
 /* min-height so an empty strip still reserves its row and the two hour grids line up */
 .tcal-allday{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:24px}
@@ -487,13 +515,7 @@
   border-radius:5px;padding:3px 7px;font-size:12px;cursor:pointer;line-height:1.3;white-space:normal;
   box-sizing:border-box;z-index:1}
 .tcal-ev b{font-variant-numeric:tabular-nums}
-.tcal-m{min-width:0}
-.tcal-mh{font-weight:700;font-size:13px;margin-bottom:4px}
-.tcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.tcal-dow{font-size:10px;color:var(--muted);text-align:center;padding-bottom:2px}
-.tcal-d{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  font-size:12px;border-radius:5px;font-variant-numeric:tabular-nums;color:var(--muted)}
-.tcal-d.tcal-has{color:var(--ink);font-weight:600;background:var(--soft)}
-.tcal-d.tcal-now{outline:2px solid var(--accent);color:var(--ink);font-weight:800}
-.tcal-dots{display:flex;gap:2px;margin-top:1px;height:4px}
-.tcal-dots>b{width:4px;height:4px;border-radius:50%;display:block}
+
+/* routine tick — thumb-sized on a phone, modest on a desktop (js/141) */
+.rt-box{width:22px;height:22px;flex:0 0 auto}
+@media(min-width:900px){ .rt-box{width:16px;height:16px} }

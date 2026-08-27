@@ -527,11 +527,48 @@ console.log("\n--- 📅 the calendar on Today ---");
   const m = c.tcalMonthHTML("2026-08");
   ok("⭐ the month grid names itself", /August 2026/.test(m));
   ok("⭐ today is marked", /tcal-now/.test(m));
-  ok("⭐ days with something on them get a dot", /tcal-dots/.test(m));
+  /* ⛔⛔ NO MORE DOTS. Ray, 2026-08-27: "i dont wanna have just dots for events coming up. That's not gonna
+     help me remember… I wanna be able to read what's actually coming up." A dot says something happens; the
+     entire question is WHAT. */
+  ok("⛔⛔ the dots are gone", !/tcal-dots/.test(m) && !/tcal-dots/.test(R("js/163-today-calendar.js")));
+  ok("⭐⭐ a day carries readable labels instead", /tcal-pill/.test(m) && /Vera/.test(m));
+  ok("⭐ colour-coded by kind", /--pc:#/.test(m));
+  ok("⛔ and a day with more than four says how many it is hiding", /tcal-more|tcal-pill/.test(m));
   ok("⛔ and the leading blanks line the 1st up under the right weekday",
-    (m.match(/<div><\/div>/g) || []).length === c.tcalDow("2026-08-01"), c.tcalDow("2026-08-01"));
+    (m.match(/tcal-pad/g) || []).length === c.tcalDow("2026-08-01"),
+    { pads: (m.match(/tcal-pad/g) || []).length, dow: c.tcalDow("2026-08-01") });
+
+  /* ⭐⭐ BILLS ARE ON THE CALENDAR NOW. "we have the bills coming up over the next two weeks. Can we just
+     build those into the calendar?… the bills should be built into it with their values showing." */
+  store.p.budgetBills = [
+    { id: "b1", name: "Iowa mortgage (Johnston, IA rental)", amount: 2413, frequency: "monthly",
+      dueDay: 1, active: true, deleted: false },
+    { id: "b2", name: "Car loan — NFCU", amount: 476.26, frequency: "monthly", dueDay: 16, active: true, deleted: false },
+    { id: "b3", name: "Switched off", amount: 99, frequency: "monthly", dueDay: 5, active: false, deleted: false }
+  ];
+  vm.runInContext(R("js/79-budget.js"), c);
+  const sep1 = c.tcalItemsFor("2026-09-01");
+  ok("⭐⭐ a bill lands on the day it is due", sep1.some(x => x.kind === "bill" && /Iowa mortgage/.test(x.title)), sep1.map(x => x.title));
+  ok("⭐⭐ carrying its amount", (sep1.find(x => x.kind === "bill") || {}).amount === 2413);
+  ok("⛔ an INACTIVE bill is not drawn", !c.tcalItemsFor("2026-09-05").some(x => x.kind === "bill"));
+  ok("⛔ and it does not land on a day it is not due", !c.tcalItemsFor("2026-09-02").some(x => x.kind === "bill"));
+  ok("⭐ the name is made succinct — a parenthetical is a wall in a calendar cell",
+    c.tcalBillName("Iowa mortgage (Johnston, IA rental)") === "Iowa mortgage"
+    && c.tcalBillName("Car loan — NFCU") === "Car loan");
+  ok("⭐ amounts read short: $2.4k, not $2,413", c.tcalAmt(2413) === "$2.4k" && c.tcalAmt(476.26) === "$476" && c.tcalAmt(650) === "$650");
+  ok("⛔ a bill is a FORECAST — nothing about it is booked", !/budgetTx|ledgerIngest/.test(CODE(R("js/163-today-calendar.js"))));
 
   const all = c.tcalHTML();
+  ok("⭐ the header totals the next two weeks of bills, where the money card used to say it",
+    /bills? in the next two weeks/.test(all), all.slice(0, 300));
+  ok("⭐ and there is a colour key, because colour-coding you have to guess at is decoration", /tcal-key/.test(all));
+  ok("⛔ the money card no longer duplicates the bill list", /typeof tcalHTML === "function"\) \? ""/.test(CODE(R("js/142-money-card.js"))));
+  ok("⭐ the calendar is full width on Today, not in the side column", (function () {
+    const ph = CODE(R("js/122-personal-home.js"));
+    return /var cal = \(typeof tcalHTML/.test(ph) && ph.indexOf("+ cal") < ph.indexOf('daycols');
+  })());
+  ok("⚠️ the routine tick shrinks on a desktop but stays thumb-sized on a phone",
+    /class="rt-box"/.test(R("js/141-routine.js")) && /min-width:900px\)\s*\{\s*\.rt-box\{width:16px/.test(R("app.css")));
   /* ⚠️ match the closing quote — "tcal-days" (the container) contains "tcal-day" and inflates a loose count */
   ok("⭐⭐ two days and two months, as asked", (all.match(/class="tcal-day"/g) || []).length === 2
     && (all.match(/class="tcal-m"/g) || []).length === 2,

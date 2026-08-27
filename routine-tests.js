@@ -133,7 +133,13 @@ console.log("\n--- rendering: a routine item shows what it is, and what's left -
   ok("a hint explains an item that needs explaining", /who&#39;s paid, who hasn&#39;t/.test(html) || /who's paid/.test(html));
   ok("the workout item opens the workout app", /workout\.html/.test(html));
   ok("the mood note opens a journal entry", /openLifeNote/.test(html));
-  ok("checkboxes are thumb-sized on a phone", /width:22px;height:22px/.test(html));
+  /* ⚠️ RESTATED 2026-08-27, NOT DROPPED. Ray: "the checkboxes are way too big on the routine thing" — true
+     on his 1440p screen, where 22px was the largest thing in the card. Also true that a 16px tap target is a
+     miss on a phone, which is what this test was protecting. So the size moved into a class with a media
+     query: 22px on a phone, 16px from 900px up. The rule is still enforced, just where it now lives. */
+  ok("the tick is a class, not a hard-coded size", /class="rt-box"/.test(html));
+  ok("⭐ thumb-sized on a phone", /\.rt-box\{width:22px;height:22px/.test(R("app.css")));
+  ok("⭐ ...and modest on a desktop", /min-width:900px\)\s*\{\s*\.rt-box\{width:16px/.test(R("app.css")));
 
   c.actRoutine().forEach(r => { if (r.part === "morning") c.rtTick(r.id); });
   html = c.rtPartHTML(morning);

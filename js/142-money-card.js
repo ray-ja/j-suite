@@ -118,8 +118,12 @@ function mcBillsHTML() {
 /* the whole left-column money block, heading included. Silent if he has no budget set up at all. */
 function moneyCardHTML() {
   var bal = mcBalancesHTML();
-  /* the forecast is worth showing even with no accounts yet — it's the prompt to reconcile one */
-  var bills = (typeof calBillsDueSoon === "function" && calBillsDueSoon(MC_DAYS).length) ? mcBillsHTML() : "";
+  /* ⛔ THE TWO-WEEK BILL LIST MOVED TO THE CALENDAR (js/163). Ray, 2026-08-27: "we have the bills coming up
+     over the next two weeks. Can we just build those into the calendar?" He was right — a bill is a dated
+     thing, and keeping it in its own list meant two surfaces answering one question. It is shown here ONLY
+     as a fallback for a build without the calendar module, so Today can never silently lose the forecast. */
+  var bills = (typeof tcalHTML === "function") ? ""
+            : ((typeof calBillsDueSoon === "function" && calBillsDueSoon(MC_DAYS).length) ? mcBillsHTML() : "");
   if (!bal && !bills) return "";
 
   /* ⭐ the forecast sits with the balances, because "what you have" and "what happens next" are one
