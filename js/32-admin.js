@@ -535,7 +535,7 @@ function rAdmin() {
      screens apart, and one of them didn't exist on that org.
      ⭐ Rendered here too, right under the keys, so keys → connect → pair is one continuous flow in EVERY org.
      Budget keeps its copy — same function, same state, so the two can't drift. */
-  if (owner && typeof bankCardHTML === "function") aiH += bankCardHTML();
+  if (owner && typeof bankCardHTML === "function") aiH += bankCardHTML({ bare: true });   /* ⛔ bare: an <h2> here would become its own Admin sub-tab (js/156 splits on h2) — that is exactly how "I dont see connect a bank" happened */
   if (aiH) h += `<h2>AI tools</h2>` + aiH;
   /* ---- accounts (searchable + sortable + collapsed rows for scale) ---- */
   /* ⭐ THE PIN GOES FIRST. Ray, 2026-08-26: "move the admin PIN box all the way to the top." It is the lock

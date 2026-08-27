@@ -308,9 +308,9 @@ console.log("\n--- ⛔ setting up and using it must be the same screen ---");
      that never started, because he has no way to tell whether the keys took. */
   const ADM = CODE(R("js/32-admin.js"));
   ok("⭐ the key card and the connect card are on the same screen",
-    /bankKeyCard\(\)/.test(ADM) && /bankCardHTML\(\)/.test(ADM));
+    /bankKeyCard\(\)/.test(ADM) && /bankCardHTML\(/.test(ADM));
   ok("...in that order — keys first, then what they unlock",
-    ADM.indexOf("bankKeyCard()") < ADM.indexOf("bankCardHTML()"));
+    ADM.indexOf("bankKeyCard()") < ADM.indexOf("bankCardHTML("));
   ok("⭐ Budget keeps its copy, so the two can't drift apart",
     /bankCardHTML==="function"/.test(CODE(R("js/79-budget.js"))));
   ok("⚠️ and why is recorded", /ORG_OPTIN_TABS tab that OBX does not have enabled/.test(R("js/32-admin.js")));
@@ -336,6 +336,43 @@ console.log("\n--- ⛔ a key lands in an ORG, and that has to be a decision ---"
   ok("⭐ and it says what the choice actually controls", /transactions land in/.test(BL));
   ok("...and that nothing has been saved yet", /nothing is saved yet/.test(BL));
   ok("⭐ the secret prompt names the org too", /Plaid secret for " \+ orgLabel/.test(BLC));
+}
+
+console.log("\n--- ⛔ an <h2> inside a section becomes a SUB-TAB (js/156) ---");
+{
+  /* Ray, 2026-08-27: "i dont see connect a bank." He was on Admin → AI tools, where I had put the card the
+     day before. It was there — as its OWN sub-tab, several clicks away at the end of the row.
+     ⚠️ js/156 splits Admin and Settings by walking their <h2> elements. So a card that emits a heading and is
+     rendered INSIDE another section does not join that section; it silently becomes one, and being absent
+     from SEC_ORDER it sorts to rank 999 — last. I wrote that splitter and then fed it a heading without
+     thinking about what that means. */
+  const vm = require("vm");
+  const ctx = { console };
+  ctx.window = ctx;
+  ctx.esc = x => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  ctx.S = { biz: "mqwvs3mq98pij", sync: { url: "https://app.jsuite.dev", token: "t" } };
+  ctx.orgName = id => "RBJVL";
+  ctx.location = { protocol: "https:", origin: "https://app.jsuite.dev" };
+  ctx.document = { getElementById: () => null, createElement: () => ({ style: {}, setAttribute() {} }) };
+  ctx.fetch = () => new Promise(() => {});
+  vm.createContext(ctx);
+  vm.runInContext(R("js/150-bank-link.js"), ctx);
+  ctx.BANK_STATUS = { ready: true, env: "production", org: "mqwvs3mq98pij", items: [], verified: true };
+
+  const bare = ctx.bankCardHTML({ bare: true });
+  const full = ctx.bankCardHTML();
+  ok("⭐⭐ bare emits NO <h2>, so it stays inside the section it was placed in", !/<h2/.test(bare));
+  ok("⛔ ...while the standalone form still has its heading for the Budget screen", /<h2>Bank connections<\/h2>/.test(full));
+  ok("⭐⭐ and the button he was looking for is actually in the bare card", /Connect a bank/.test(bare), bare.slice(0, 120));
+  ok("⭐ Admin passes bare:true", /bankCardHTML\(\{ bare: true \}\)/.test(CODE(R("js/32-admin.js"))));
+
+  /* the whole AI-tools section must contain exactly ONE heading — its own */
+  const section = "<h2>AI tools</h2>" + ctx.bankKeyCard() + bare;
+  ok("⭐⭐ the AI tools section has exactly one <h2> — extra ones would each become a tab",
+    (section.match(/<h2/g) || []).length === 1, (section.match(/<h2/g) || []).length);
+
+  ok("⚠️ the trap is written down where the next card gets added", /becomes a section of its own/.test(R("js/150-bank-link.js")));
+  ok("⭐ and js/156 is the thing that makes it true", /secHeadOf/.test(CODE(R("js/156-section-tabs.js"))));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");

@@ -217,9 +217,20 @@ function bankKeyCard() {
 }
 
 /* ---------- the card, on Budget → Settings ---------- */
-function bankCardHTML() {
+/* ⚠️ `opts.bare` OMITS THE <h2>, AND THAT IS NOT COSMETIC. js/156 splits the Admin and Settings screens into
+   sub-tabs BY WALKING THEIR <h2> ELEMENTS. So a card that emits its own heading and is rendered INSIDE another
+   section doesn't join that section — it silently becomes a section of its own, and (being absent from
+   SEC_ORDER) sorts to the far end of the sub-tab row.
+
+   Ray, 2026-08-27: "i dont see connect a bank." He was on Admin → AI tools, where I had just put this card;
+   it had been split out into its own tab several clicks away. I wrote the splitter and then fed it a heading
+   without thinking about what that means. ⛔ Anything rendered inside an existing section passes bare:true. */
+function bankCardHTML(opts) {
+  opts = opts || {};
   var st = BANK_STATUS;
-  var h = '<div class="secthd"><h2>Bank connections</h2></div><div class="card">';
+  var h = opts.bare
+    ? '<div class="card" style="margin-top:8px"><div class="nm" style="font-size:15px">Bank connections</div>'
+    : '<div class="secthd"><h2>Bank connections</h2></div><div class="card">';
   if (!st) { bankRefresh(function () { if (typeof render === "function") render(); });
     return h + '<div class="sub">Checking…</div></div>'; }
 
