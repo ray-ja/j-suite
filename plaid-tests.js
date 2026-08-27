@@ -222,7 +222,8 @@ console.log("\n--- ⛔ pairing, and the cursor bug behind it ---");
 {
   ok("⭐ a bank's accounts are offered for pairing with his own", /bankPairHTML/.test(CODE(CLIENT)));
   ok("...from what the bank already reported, needing no extra pull", /it\.known/.test(CODE(CLIENT)) && /plaidSaveAccounts/.test(CODE(SRV)));
-  ok("...defaulting to NOT importing rather than guessing", /don\\'t import/.test(CLIENT));
+  ok("...defaulting to no decision rather than guessing — and a guess about which of two identically-named\n     accounts is his wife's is exactly the guess not to make",
+    /— not decided yet —/.test(CLIENT));
   /* ⛔ THE LINE THAT STILL HOLDS: no account or routing numbers, ever. That is the real privacy boundary and
      nothing needs them.
      ⚠️ RELAXED 2026-08-27 FOR BALANCE, DELIBERATELY. Navy Federal sent two accounts called "EveryDay
@@ -466,6 +467,43 @@ console.log("\n--- 🏦 seven accounts, three names: the pairing screen ---");
     /Which set of books does it belong to/.test(R("js/150-bank-link.js")));
   ok("⭐ and it saves through the normal path so it syncs like any other record",
     /d\.budgetAccounts\.push\(rec\)/.test(BL) && /typeof save === "function"/.test(BL));
+}
+
+console.log("\n--- ⛔ 'declined' and 'undecided' are different answers ---");
+{
+  /* ⚠️ FOUND WHILE WIRING RAY'S SEVEN ACCOUNTS, 2026-08-27. The client refuses to advance the cursor while
+     any row lands unmapped — correct, because committing it would tell Plaid "I have those" and lose them.
+     But with only ONE unmapped state, deliberately declining an account DEADLOCKED the feed: the same rows
+     arrived on every pull forever and the bank could never finish syncing. The dropdown offered "don't
+     import" as though it were a choice; it was a trap. */
+  const P = require("./plaid.js");
+  ok("⭐ there is an explicit decline value", P.PLAID_IGNORE === "__ignore__");
+
+  const tx = id => ({ transaction_id: "t" + id, date: "2026-08-05", amount: 10, name: "X", account_id: id });
+  const map = { paired: "bgt-acct-1", declined: P.PLAID_IGNORE };
+  const rPaired = P.plaidToRow(tx("paired"), map);
+  const rDeclined = P.plaidToRow(tx("declined"), map);
+  const rUnknown = P.plaidToRow(tx("never-seen"), map);
+
+  ok("⭐ a paired account resolves to its budget account", rPaired.accountId === "bgt-acct-1" && rPaired.ignored === false);
+  ok("⭐⭐ a DECLINED account yields no accountId but IS flagged ignored",
+    rDeclined.accountId === "" && rDeclined.ignored === true);
+  ok("⛔ ...and the sentinel never leaks into accountId as if it were a real account",
+    rDeclined.accountId !== P.PLAID_IGNORE);
+  ok("⭐ an UNDECIDED account is unmapped and NOT ignored — it still holds the cursor",
+    rUnknown.accountId === "" && rUnknown.ignored === false);
+
+  const BL = CODE(R("js/150-bank-link.js"));
+  ok("⭐⭐ the client subtracts declined rows before deciding to hold the cursor",
+    /var declined = \(j\.rows \|\| \[\]\)\.filter\(function \(r\) \{ return !r\.accountId && r\.ignored; \}\)\.length;/.test(BL)
+    && /var unmapped = \(j\.rows \|\| \[\]\)\.length - rows\.length - declined;/.test(BL));
+  ok("⛔ the cursor guard itself is untouched — undecided rows still stop it",
+    /if \(unmapped\) \{[\s\S]{0,400}return;/.test(BL));
+  ok("⭐ the dropdown separates the two answers",
+    /— not decided yet —/.test(BL) && /Never import this one/.test(BL));
+  ok("...and says what each one does", /holds the\s*'\s*\+\s*'sync/.test(R("js/150-bank-link.js")) || /holds the/.test(R("js/150-bank-link.js")));
+  ok("⚠️ the deadlock is written down where someone would collapse the states again",
+    /deadlock/.test(R("plaid.js")) && /DIFFERENT ANSWERS/.test(R("plaid.js")));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");

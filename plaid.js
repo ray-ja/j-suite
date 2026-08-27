@@ -38,6 +38,7 @@ const https = require("https");
 const PLAID_FILE = path.join(__dirname, "plaid-config.json");
 const PLAID_HOSTS = { sandbox: "sandbox.plaid.com", production: "production.plaid.com" };
 const PLAID_SHARED = "_shared";
+const PLAID_IGNORE = "__ignore__";   /* a deliberately declined account — see plaidToRow */
 
 /* ⭐ PER-ORGANISATION, AND ENTERED IN THE APP. Ray, 2026-08-26: "Just make an interface in the app where I
    can give you the plaid key… All the keys should be transmittable through the app. and it should be by
@@ -194,7 +195,15 @@ function plaidToRow(t, accountMap) {
     dir: amt > 0 ? "out" : "in",
     amount: Math.abs(amt),
     desc: String(t.merchant_name || t.name || "").slice(0, 200),
-    accountId: (accountMap && accountMap[t.account_id]) || "",
+    accountId: (accountMap && accountMap[t.account_id] !== PLAID_IGNORE) ? ((accountMap && accountMap[t.account_id]) || "") : "",
+    /* ⛔ "I DON'T WANT THIS ACCOUNT" AND "I HAVEN'T DECIDED YET" ARE DIFFERENT ANSWERS. The client refuses to
+       advance the cursor while any row lands unmapped — correct, because committing it would tell Plaid
+       "I have those" and lose them forever. But with only one unmapped state, deliberately declining an
+       account deadlocked the feed: the same rows arrived on every pull, forever, and the bank could never
+       finish syncing. So a declined account is marked, and its rows are reported separately from undecided
+       ones. Ray, 2026-08-27, has one account he hasn't named yet — this is the difference between waiting
+       for him and being stuck on him. */
+    ignored: !!(accountMap && accountMap[t.account_id] === PLAID_IGNORE),
     plaidAccountId: t.account_id
   };
 }
@@ -293,7 +302,7 @@ function plaidStatus(orgId) {
   };
 }
 
-module.exports = { plaidVerify,
+module.exports = { plaidVerify, PLAID_IGNORE,
   PLAID_FILE, PLAID_HOSTS, plaidCfg, plaidReady, plaidCall, plaidLinkToken, plaidExchange,
   plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave, plaidSaveAccounts, plaidSetConfig, PLAID_SHARED
 };

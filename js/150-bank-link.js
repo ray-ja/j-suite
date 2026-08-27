@@ -107,7 +107,11 @@ function bankSync(itemId) {
         return;
       }
       var rows = (j.rows || []).filter(function (r) { return r.accountId; });
-      var unmapped = (j.rows || []).length - rows.length;
+      /* ⛔ ONLY *UNDECIDED* ROWS HOLD THE CURSOR. A row from an account he explicitly declined is skipped on
+         purpose and must not block the feed — otherwise "don't import" is a deadlock rather than a choice,
+         and the same rows arrive on every pull forever while the bank never finishes syncing. */
+      var declined = (j.rows || []).filter(function (r) { return !r.accountId && r.ignored; }).length;
+      var unmapped = (j.rows || []).length - rows.length - declined;
       var res = { added: 0, duplicates: 0 };
       if (rows.length) res = ledgerIngest(rows, { source: "bank" });
 
@@ -134,7 +138,7 @@ function bankSync(itemId) {
       var msg = res.added + " to review";
       if (res.duplicates) msg += " · " + res.duplicates + " already here";
       if (dropped) msg += " · " + dropped + " withdrawn by the bank";
-      if (unmapped) msg += " · " + unmapped + " from an unmatched account";
+      if (declined) msg += " · " + declined + " skipped (accounts you chose not to track)";
       if (typeof toast === "function") toast(msg);
       if (typeof BUDGET_SUB !== "undefined" && res.added) BUDGET_SUB = "review";
     })
@@ -257,7 +261,8 @@ function bankPairHTML(it) {
         +     (a.balance != null ? ' · <b>' + bankMoney(a.balance) + '</b>' : '') + '</div>'
         + '</div>'
         + '<select style="width:auto;max-width:56%" onchange="bankPair(\'' + esc(it.itemId) + '\',\'' + esc(a.id) + '\',this.value)">'
-        + '<option value="">— don\'t import —</option>'
+        + '<option value="">— not decided yet —</option>'
+        + '<option value="__ignore__"' + (sel === "__ignore__" ? " selected" : "") + '>⊘ Never import this one</option>'
         + mine.map(function (m) {
             var bk = books[m.bookId] ? (" (" + books[m.bookId] + ")") : "";
             return '<option value="' + esc(m.id) + '"' + (sel === m.id ? " selected" : "") + '>' + esc(m.name + bk) + '</option>';
@@ -272,8 +277,10 @@ function bankPairHTML(it) {
     + 'sides of a movement are tracked — money leaving checking and landing on the card or the loan — they get '
     + 'matched to each other and counted once, not twice. Tracking only one side is what makes money look like '
     + 'it left when it only moved rooms.</div>'
-    + '<div class="sub" style="white-space:normal;margin-top:4px">Anything left <i>don\'t import</i> is skipped '
-    + 'entirely — no transactions, no balance. You can come back and pair it later; nothing is lost by waiting.</div></div>';
+    + '<div class="sub" style="white-space:normal;margin-top:4px">Anything left <i>not decided yet</i> holds the '
+    + 'sync — the same transactions simply arrive again next time, so nothing is ever lost by waiting. Pick '
+    + '<i>⊘ Never import this one</i> for an account you genuinely don\'t want, and the feed stops waiting on it.'
+    + '</div></div>';
   return h;
 }
 
