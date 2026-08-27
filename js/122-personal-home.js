@@ -468,8 +468,13 @@ function personalHome() {
      own bills card if that module is missing, so Today can never lose the money block entirely. */
   let side = (typeof moneyCardHTML === "function") ? moneyCardHTML()
            : ((typeof calBillsCardHTML === "function") ? calBillsCardHTML(MC_DAYS_FALLBACK) : "");
-  /* dates he'd otherwise carry in his head. No heading — the card already says "Coming up" on itself,
-     and stacking a heading on top of it just says it twice. */
+  /* ⭐ THE CALENDAR (js/163). Ray, 2026-08-27: "i need my calendar on today page, i need month view showing
+     this month + next, and also 2x day view showing times for things happening today and tomorrow."
+     It goes in the MONEY column rather than the day column on purpose: the right-hand column is what he
+     looks AT, and the middle column is the order he DOES things in. A calendar is reference, not a step. */
+  if (typeof tcalHTML === "function") side += tcalHTML();
+  /* the flat "coming up" list stays underneath — it reaches 30 days out, past the two months' detail, and
+     it is the one that surfaces a birthday eleven days away without him counting squares. */
   if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);
 
   /* ---- RIGHT: what he DOES, in the order he does it ---- */

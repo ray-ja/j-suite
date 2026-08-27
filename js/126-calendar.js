@@ -329,6 +329,16 @@ if (typeof window !== "undefined") window.openEvent = function (id) {
     + '<label style="margin-top:0">What is it?</label><input id="ev_title" value="' + esc(e.title || "") + '" placeholder="e.g. Jess\'s birthday" autocomplete="off" '
     + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveEvent(\'' + (e.id || "") + '\');}">'
     + '<label>Date</label><input id="ev_date" type="date" value="' + esc(evNextISO(e) || e.date || "") + '">'
+    /* ⭐ OPTIONAL TIMES. Ray, 2026-08-27, asked for a day view "showing times" — and nothing in this app
+       carried one, so every record was all-day and a day view would have been a list with extra lines.
+       ⛔ Both fields stay optional forever: a birthday has no time and must never need editing to keep
+       working. Blank means all-day, and js/163 pins those above the hours where they belong. */
+    + '<div class="row" style="gap:8px">'
+    +   '<div class="grow"><label>Starts <span class="sub">(optional)</span></label>'
+    +     '<input id="ev_time" type="time" value="' + esc(e.time || "") + '"></div>'
+    +   '<div class="grow"><label>Ends <span class="sub">(optional)</span></label>'
+    +     '<input id="ev_end" type="time" value="' + esc(e.endTime || "") + '"></div>'
+    + '</div>'
     + '<label>Note</label><input id="ev_note" value="' + esc(e.note || "") + '" placeholder="optional — e.g. wants floats for the sound" autocomplete="off" '
     + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveEvent(\'' + (e.id || "") + '\');}">'
     + '<label class="toggle" style="margin-top:10px"><input type="checkbox" id="ev_annual" ' + (e.annual ? "checked" : "") + '> Repeats every year</label>'
@@ -346,6 +356,8 @@ if (typeof window !== "undefined") window.saveEvent = function (id) {
   if (!e) { e = { id: "pev_" + (typeof uid === "function" ? uid() : String(Date.now())) }; d.personalEvents.push(e); }
   e.title = title.slice(0, 80);
   e.date = g("ev_date") || ((typeof today === "function") ? today() : "");
+  e.time = g("ev_time") || "";            // blank = all-day, which is most of them
+  e.endTime = g("ev_end") || "";
   e.note = g("ev_note").slice(0, 160);
   e.annual = ck("ev_annual");
   e.confirmed = !ck("ev_unsure");

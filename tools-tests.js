@@ -468,5 +468,79 @@ console.log("\n--- ⭐ automation he can check and reverse ---");
   ok("⭐ and offers to put them all back", /Put all 3 back/.test(c.lrAutoHTML()));
 }
 
+console.log("\n--- 📅 the calendar on Today ---");
+{
+  /* Ray, 2026-08-27: "i need my calendar on today page, i need month view showing this month + next, and
+     also 2x day view showing times for things happening today and tomorrow." */
+  const store = {
+    registry: [{ id: "p", name: "Personal" }, { id: "obx", name: "OBX Lot Solutions" }],
+    p: { personalEvents: [
+          { id: "e1", date: "2026-08-27", title: "Vera — dentist", time: "14:00", confirmed: true, deleted: false },
+          { id: "e2", date: "2026-08-27", title: "Party", annual: false, confirmed: false, deleted: false },
+          { id: "b1", date: "1999-08-28", title: "Brooke’s birthday", annual: true, confirmed: true, deleted: false }],
+        todos: [{ id: "t1", title: "Send the invoice", due: "2026-08-27", done: false, deleted: false },
+                { id: "t2", title: "Done already", due: "2026-08-27", done: true, deleted: false }],
+        jobs: [], budgetTx: [], budgetAccounts: [], budgetCats: [], budgetMemo: [], budgetBills: [], budgetBooks: [] },
+    obx: { jobs: [{ id: "j1", date: "2026-08-28", title: "Mike Green walkthrough", time: "08:30", endTime: "09:15", deleted: false }],
+           personalEvents: [], todos: [], budgetTx: [], budgetAccounts: [], budgetCats: [], budgetMemo: [], budgetBills: [], budgetBooks: [] } };
+  const c = mk(store, "p");
+  c.today = () => "2026-08-27";
+  vm.runInContext(R("js/126-calendar.js"), c);
+  vm.runInContext(R("js/163-today-calendar.js"), c);
+
+  /* date maths, which is where a calendar quietly goes wrong */
+  ok("⭐ tomorrow is tomorrow, across a month end too",
+    c.tcalShift("2026-08-27", 1) === "2026-08-28" && c.tcalShift("2026-08-31", 1) === "2026-09-01");
+  ok("⭐ next month rolls the year", c.tcalAddMonths("2026-12", 1) === "2027-01" && c.tcalAddMonths("2026-08", 1) === "2026-09");
+  ok("⭐ month lengths, February included", c.tcalDaysIn("2026-02") === 28 && c.tcalDaysIn("2028-02") === 29 && c.tcalDaysIn("2026-08") === 31);
+  ok("⭐ times parse both ways", c.tcalMins("14:00") === 840 && c.tcalMins("8:30") === 510 && c.tcalMins("9am") === 540);
+  ok("⛔⛔ an UNREADABLE time is all-day, NOT midnight — a birthday must never be drawn at 12am",
+    c.tcalMins("") === null && c.tcalMins("whenever") === null && c.tcalMins(undefined) === null);
+  ok("⭐ and the clock reads back in plain English", c.tcalClock(840) === "2pm" && c.tcalClock(510) === "8:30am" && c.tcalClock(0) === "12am");
+
+  const t = c.tcalItemsFor("2026-08-27");
+  ok("⭐ today gathers events and to-dos", t.length === 3, t.map(x => x.title));
+  ok("⛔ a DONE to-do is not on the calendar", !t.some(x => /Done already/.test(x.title)));
+  ok("⭐⭐ all-day items sort ABOVE timed ones", t[0].mins === null && t[t.length - 1].mins === 840);
+  ok("⭐ an unconfirmed event stays marked unconfirmed", t.some(x => x.title === "Party" && x.confirmed === false));
+
+  const tm = c.tcalItemsFor("2026-08-28");
+  ok("⭐⭐ IT CROSSES ORGS — an OBX job shows on his personal Today",
+    tm.some(x => x.kind === "job" && /Mike Green/.test(x.title)), tm.map(x => x.kind + ":" + x.title));
+  ok("⛔ ...and S.biz is put back afterwards", c.S.biz === "p");
+  ok("⭐ an annual birthday rolls forward to this year", tm.some(x => /Brooke/.test(x.title)));
+
+  const dayT = c.tcalDayHTML("2026-08-27", "Today");
+  const dayM = c.tcalDayHTML("2026-08-28", "Tomorrow");
+  ok("⭐ the timed items are drawn with their times", /2pm<\/b> Vera/.test(dayT.replace(/<b>/g, "<b>")) || /2pm/.test(dayT));
+  ok("⛔⛔ BOTH columns render the all-day strip even when empty — otherwise one column's 9am sits beside "
+    + "the other's 10am and the whole thing reads wrong at a glance",
+    (dayT.match(/tcal-allday/g) || []).length === 1 && (dayM.match(/tcal-allday/g) || []).length === 1);
+  ok("⭐ a block uses min-height so a long title isn't cut in half", /min-height:/.test(dayT) && !/;height:\d/.test(dayT));
+
+  /* the window must stretch rather than clip */
+  const early = c.tcalDayHTML("2026-08-27", "x");
+  ok("⚠️ the default window is drawn", /7am/.test(early) && /8pm/.test(early));
+  store.p.personalEvents.push({ id: "e9", date: "2026-08-27", title: "Very early", time: "05:00", confirmed: true, deleted: false });
+  ok("⭐⭐ a 5am item WIDENS the window rather than falling off the top", /5am/.test(c.tcalDayHTML("2026-08-27", "x")));
+
+  const m = c.tcalMonthHTML("2026-08");
+  ok("⭐ the month grid names itself", /August 2026/.test(m));
+  ok("⭐ today is marked", /tcal-now/.test(m));
+  ok("⭐ days with something on them get a dot", /tcal-dots/.test(m));
+  ok("⛔ and the leading blanks line the 1st up under the right weekday",
+    (m.match(/<div><\/div>/g) || []).length === c.tcalDow("2026-08-01"), c.tcalDow("2026-08-01"));
+
+  const all = c.tcalHTML();
+  /* ⚠️ match the closing quote — "tcal-days" (the container) contains "tcal-day" and inflates a loose count */
+  ok("⭐⭐ two days and two months, as asked", (all.match(/class="tcal-day"/g) || []).length === 2
+    && (all.match(/class="tcal-m"/g) || []).length === 2,
+    { days: (all.match(/class="tcal-day"/g) || []).length, months: (all.match(/class="tcal-m"/g) || []).length });
+  ok("⭐ and it is on Today", /tcalHTML/.test(CODE(R("js/122-personal-home.js"))));
+  ok("⛔ READ-ONLY — it links out, it never edits", !/ledgerApprove|\.deleted\s*=|save\(\)/.test(CODE(R("js/163-today-calendar.js"))));
+  ok("⭐ events gained an OPTIONAL time, so an existing birthday still works untouched",
+    /id="ev_time"/.test(R("js/126-calendar.js")) && /e\.time = g\("ev_time"\) \|\| ""/.test(R("js/126-calendar.js")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
