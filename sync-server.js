@@ -3701,8 +3701,13 @@ const server = http.createServer((req, res) => {
 
       if (route === "config") {
         plaid.plaidSetConfig(org, p2);
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        return void res.end(JSON.stringify(plaid.plaidStatus(org)));
+        /* ⭐ verify before answering — a wrong-environment secret is the documented first stumble, and saying
+           "saved ✓" to one is how he loses an evening. The save already happened; this only decides the words. */
+        return void plaid.plaidVerify(org, acct.id, (e, v) => {
+          const st = plaid.plaidStatus(org);
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify(Object.assign(st, v || {})));
+        });
       }
       if (route === "link-token") {
         return void plaid.plaidLinkToken(org, acct.id, (err, j) => {

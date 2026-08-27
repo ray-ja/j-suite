@@ -269,5 +269,35 @@ console.log("\n--- what he sees ---");
   ok("⚠️ the re-login error is named in words, not a code", /sign in again/.test(CLIENT));
 }
 
+console.log("\n--- ⭐ keys are VERIFIED on save, not just stored ---");
+{
+  /* Ray is setting these up for real (2026-08-27). The card already warns that the secret differs per
+     environment and calls it "the usual first stumble" — and then the save didn't check. Warning about a
+     mistake without testing for it is the worst of both: he reads the warning, believes he got it right,
+     sees "Saved ✓", and finds out at Connect-a-bank with an opaque error, by which point the wrong secret is
+     the last thing he'd suspect. */
+  const PJ = R("plaid.js"), PJC = CODE(PJ);
+  const SRVC = CODE(R("sync-server.js"));
+  const BL = R("js/150-bank-link.js"), BLC = CODE(BL);
+
+  ok("⭐ there is a verify step", /function plaidVerify/.test(PJC));
+  ok("⭐ it probes with link/token/create — free, creates nothing, exercises id+secret+env together",
+    /function plaidVerify[\s\S]{0,400}plaidLinkToken/.test(PJC));
+  ok("⛔ it NEVER blocks the save — the keys are stored either way",
+    /plaid\.plaidSetConfig\(org, p2\);[\s\S]{0,340}plaidVerify/.test(SRVC));
+  ok("⭐ INVALID_API_KEYS is translated into the thing he'd have to go and do",
+    /INVALID_API_KEYS/.test(PJ) && /DIFFERENT value per/.test(PJ));
+  ok("...and a Transactions-not-enabled account is named as that, not as bad keys", /PRODUCTS_NOT_SUPPORTED/.test(PJ));
+  ok("⭐ the card reports verified rather than claiming 'saved' on its own",
+    /verified/.test(BLC) && /did not accept them/.test(BL));
+  ok("⚠️ switching environment re-checks too — that IS the moment a good secret stops being valid",
+    /j\.ready && !j\.verified/.test(BLC));
+
+  /* the same timeout-less https.request that pinned "Cap is reading 1 of 1" was in this file too */
+  ok("⏱ plaidCall has a socket deadline", /req\.setTimeout\(PLAID_TIMEOUT_MS/.test(PJC));
+  ok("⛔ ...and cb can't fire twice when the deadline races the response", /cb = plaidOnce\(cb\)/.test(PJC));
+  ok("⚠️ the cross-reference to the shared rule is recorded", /SAME DEADLINE RULE AS EVERY OTHER OUTBOUND CALL/.test(PJ));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

@@ -84,9 +84,21 @@ function plaidSetConfig(orgId, patch) {
   return true;
 }
 
+/* ⏱ SAME DEADLINE RULE AS EVERY OTHER OUTBOUND CALL (sync-server's aiSend, 2026-08-26 — "Cap is reading
+   1 of 1"). A local copy rather than an import because sync-server requires THIS file, so reaching back for
+   the shared helper would be circular. The rule is what matters: a request with no timeout can leave a
+   promise unsettled forever, and an unsettled promise is not an error anybody can catch or retry.
+   ⛔ cb fires at most once — the deadline path (destroy → "error") and the response path can race. */
+const PLAID_TIMEOUT_MS = 60000;
+function plaidOnce(cb) {
+  let done = false;
+  return function () { if (done) return; done = true; try { cb.apply(null, arguments); } catch (e) {} };
+}
+
 /* one POST to Plaid. Credentials go in the BODY (the docs allow either; body keeps them out of any
    header-logging middleware). */
 function plaidCall(orgId, endpoint, body, cb) {
+  cb = plaidOnce(cb);
   const c = plaidCfg(orgId);
   if (!c.clientId || !c.secret) return void setImmediate(() => cb(new Error("Plaid is not set up on this server")));
   const payload = JSON.stringify(Object.assign({ client_id: c.clientId, secret: c.secret }, body || {}));
@@ -107,7 +119,38 @@ function plaidCall(orgId, endpoint, body, cb) {
       });
     });
   req.on("error", e => cb(e));
+  req.setTimeout(PLAID_TIMEOUT_MS, () => {
+    try { req.destroy(new Error("Plaid didn't respond within " + Math.round(PLAID_TIMEOUT_MS / 1000) + "s")); }
+    catch (e) { cb(new Error("Plaid didn't respond")); }
+  });
   req.write(payload); req.end();
+}
+
+/* ---------- ⭐ VERIFY THE KEYS THE MOMENT THEY'RE SAVED ------------------------------------------------
+   The card already warns that "the secret is different per environment — that is the usual first stumble."
+   Warning about a mistake and then not checking for it is the worst of both: he reads the warning, believes
+   he got it right, sees "Saved ✓", and finds out ten minutes later when Connect-a-bank fails with something
+   opaque, by which time the wrong secret is the last thing he'd suspect.
+
+   /link/token/create is the right probe: it costs nothing, creates nothing that persists, and exercises
+   EXACTLY the three things that can be wrong — client_id, secret, and which environment they belong to.
+   ⛔ It never blocks the save. The keys are stored either way; this only decides what we tell him. */
+function plaidVerify(orgId, userId, cb) {
+  if (!plaidReady(orgId)) return void setImmediate(() => cb(null, { verified: false, reason: "no keys yet" }));
+  plaidLinkToken(orgId, userId, (err) => {
+    if (!err) return cb(null, { verified: true });
+    /* Plaid's own code, translated into the thing he'd actually have to go and do */
+    const code = err.plaidCode || "";
+    const env = plaidCfg(orgId).env;
+    let reason = err.message || "couldn't reach Plaid";
+    if (code === "INVALID_API_KEYS")
+      reason = "Plaid rejected these keys for the " + env + " environment. The secret is a DIFFERENT value per "
+             + "environment — check you copied the " + env + " one, not the other.";
+    else if (code === "INVALID_CLIENT_ID") reason = "That client_id isn't recognised — recheck it in the dashboard.";
+    else if (code === "ADDITIONAL_CONSENT_REQUIRED" || code === "PRODUCTS_NOT_SUPPORTED")
+      reason = "The keys work, but this Plaid account isn't enabled for Transactions yet: " + err.message;
+    cb(null, { verified: false, reason: reason, code: code });
+  });
 }
 
 /* ---------- the connect flow ---------- */
@@ -243,7 +286,7 @@ function plaidStatus(orgId) {
   };
 }
 
-module.exports = {
+module.exports = { plaidVerify,
   PLAID_FILE, PLAID_HOSTS, plaidCfg, plaidReady, plaidCall, plaidLinkToken, plaidExchange,
   plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave, plaidSaveAccounts, plaidSetConfig, PLAID_SHARED
 };

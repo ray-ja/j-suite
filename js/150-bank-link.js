@@ -247,7 +247,15 @@ if (typeof window !== "undefined") {
       .then(function (j) {
         if (j && j.error) { alert(j.error); return; }
         BANK_STATUS = j;
-        if (typeof toast === "function") toast("Plaid keys saved for this organization");
+        /* ⭐ the server just tried the keys for real. Say which happened — "saved" on its own is a claim we
+           haven't earned, and the failure it hides (a sandbox secret in production) looks like anything but
+           a wrong secret when it finally surfaces at Connect-a-bank. */
+        if (j && j.verified) {
+          if (typeof toast === "function") toast("✓ Keys saved and verified against Plaid " + (j.env || ""));
+        } else {
+          alert("Saved, but Plaid did not accept them:\n\n" + ((j && j.reason) || "couldn't verify")
+            + "\n\nFix them and set them again — nothing will connect until this passes.");
+        }
         if (typeof render === "function") render();
       })
       .catch(function (e) { alert("Couldn't save: " + (e.message || e)); });
@@ -261,7 +269,16 @@ if (typeof window !== "undefined") {
     fetch(bankApiBase() + "/api/plaid/config", { method: "POST", headers: bankHeaders(),
       body: JSON.stringify({ org: bankOrg(), env: next }) })
       .then(function (r) { return r.json(); })
-      .then(function (j) { BANK_STATUS = j; if (typeof render === "function") render(); });
+      .then(function (j) {
+        BANK_STATUS = j;
+        /* ⚠️ switching environment re-checks the SAME stored secret against the NEW environment — which is
+           exactly when it stops being valid. Better he hears it now than at Connect-a-bank. */
+        if (j && j.ready && !j.verified) {
+          alert("Switched to " + next + ", but the stored secret isn't valid there:\n\n" + ((j && j.reason) || "")
+            + "\n\nSet the " + next + " secret with 🔑 Replace keys.");
+        }
+        if (typeof render === "function") render();
+      });
   };
   window.bankPair = function (itemId, plaidAccountId, budgetAccountId) {
     fetch(bankApiBase() + "/api/plaid/commit", { method: "POST", headers: bankHeaders(),
