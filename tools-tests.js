@@ -563,10 +563,11 @@ console.log("\n--- 📅 the calendar on Today ---");
     /bills? in the next two weeks/.test(all), all.slice(0, 300));
   ok("⭐ and there is a colour key, because colour-coding you have to guess at is decoration", /tcal-key/.test(all));
   ok("⛔ the money card no longer duplicates the bill list", /typeof tcalHTML === "function"\) \? ""/.test(CODE(R("js/142-money-card.js"))));
-  ok("⭐ the calendar is full width on Today, not in the side column", (function () {
-    const ph = CODE(R("js/122-personal-home.js"));
-    return /var cal = \(typeof tcalHTML/.test(ph) && ph.indexOf("+ cal") < ph.indexOf('daycols');
-  })());
+  /* ⚠️ SUPERSEDED 2026-08-27 by the movable layout (js/164): Today is no longer a fixed arrangement at all,
+     so "the calendar is in the wide column" is now the DEFAULT rather than the structure. Asserted where it
+     actually lives, in TL_DEFAULT, instead of by reading personalHome's markup. */
+  ok("⭐ the calendar defaults to the wide column, and Today is arranged by him now",
+    /calendar: \{ col: 0/.test(R("js/164-today-layout.js")) && /tlTodayHTML/.test(CODE(R("js/122-personal-home.js"))));
   ok("⚠️ the routine tick shrinks on a desktop but stays thumb-sized on a phone",
     /class="rt-box"/.test(R("js/141-routine.js")) && /min-width:900px\)\s*\{\s*\.rt-box\{width:16px/.test(R("app.css")));
   /* ⚠️ match the closing quote — "tcal-days" (the container) contains "tcal-day" and inflates a loose count */
@@ -577,6 +578,85 @@ console.log("\n--- 📅 the calendar on Today ---");
   ok("⛔ READ-ONLY — it links out, it never edits", !/ledgerApprove|\.deleted\s*=|save\(\)/.test(CODE(R("js/163-today-calendar.js"))));
   ok("⭐ events gained an OPTIONAL time, so an existing birthday still works untouched",
     /id="ev_time"/.test(R("js/126-calendar.js")) && /e\.time = g\("ev_time"\) \|\| ""/.test(R("js/126-calendar.js")));
+}
+
+console.log("\n--- 🧩 Today, arranged by him ---");
+{
+  /* Ray, 2026-08-27, on a 2000px screen with 440px of dead air: "let's use our space more effectively…
+     I wanna be able to see it all on one screen. Maybe you can make it, like, draggable, and then I can just
+     try a few different ways to do it."
+     ⚠️ HE HAS TOLD ME WHERE THESE BLOCKS GO FOUR TIMES AND BEEN RIGHT EACH TIME. The lesson is not the
+     arrangement, it is that I keep guessing at something he can settle in ten seconds if the app lets him. */
+  const store = { registry: [{ id: "p", name: "P" }], p: {
+    personalEvents: [], todos: [], jobs: [], budgetBills: [], budgetTx: [], budgetAccounts: [],
+    budgetCats: [], budgetMemo: [], budgetBooks: [] } };
+  const c = mk(store, "p");
+  const mem = {};
+  c.localStorage = { getItem: k => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = v; }, removeItem: k => { delete mem[k]; } };
+  c.phMe = () => ({ id: "u1" });
+  /* stub the five blocks so we're testing the LAYOUT, not what happens to be in it today */
+  c.tcalHTML = () => "<CAL>"; c.phTalkCard = () => "<CHAT>"; c.moneyCardHTML = () => "<MONEY>";
+  c.evHomeCardHTML = () => "<COMING>"; c.rtPartHTML = () => "<PART>"; c.ROUTINE_PARTS = [{ key: "morning" }];
+  c.rtJobsTodayHTML = () => ""; c.phPlanCard = () => ""; c.piCardHTML = () => "";
+  vm.runInContext(R("js/164-today-layout.js"), c);
+
+  const d = c.tlLayout();
+  ok("⭐ the default puts the calendar in the wide column", d.calendar.col === 0);
+  ok("⭐ ...Cap where he asked for it, top right", d.chat.col === 2 && d.chat.order === 0);
+  ok("⭐ ...the routine down the middle, where a sequence reads as a sequence", d.routine.col === 1);
+  ok("⭐ ...money and dates stacked under Cap", d.money.col === 2 && d.coming.col === 2 && d.money.order < d.coming.order);
+
+  let html = c.tlTodayHTML();
+  ok("⭐ all five blocks are drawn", ["<CAL>", "<CHAT>", "<MONEY>", "<COMING>", "<PART>"].every(x => html.indexOf(x) >= 0));
+  ok("⭐ three columns", /tl-live-3/.test(html));
+  ok("⭐ each block carries its move handle", (html.match(/tl-handle/g) || []).length === 5);
+  ok("⭐ and the page says how to use them", /rearrange this page/.test(html));
+
+  /* moving */
+  c.tlMove("chat", "left");
+  ok("⭐⭐ ◀ moves a block a column left", c.tlLayout().chat.col === 1);
+  ok("⭐ ...and it lands at the BOTTOM of its new column, where a dropped thing would land",
+    c.tlLayout().chat.order > c.tlLayout().routine.order, { chat: c.tlLayout().chat, routine: c.tlLayout().routine });
+  c.tlMove("chat", "up");
+  ok("⭐⭐ ▲ swaps with the neighbour IN THAT COLUMN", c.tlLayout().chat.order < c.tlLayout().routine.order);
+  c.tlMove("chat", "up");
+  ok("⛔ ...and going up from the top is a no-op, not a wrap-around", c.tlLayout().chat.order < c.tlLayout().routine.order);
+  c.tlMove("calendar", "left");
+  ok("⛔ nor can a block leave the left edge", c.tlLayout().calendar.col === 0);
+  c.tlMove("money", "right");
+  ok("⛔ nor the right edge", c.tlLayout().money.col === 2);
+
+  ok("⭐ the arrangement persists", (function () {
+    const raw = mem[Object.keys(mem)[0]];
+    return raw && JSON.parse(raw).chat.col === 1;
+  })());
+  ok("⚠️ ...PER DEVICE, in localStorage — a three-column layout for a 2000px monitor is not the one he wants "
+    + "on a phone, and syncing it would spoil one every time he touched the other",
+    /localStorage/.test(CODE(R("js/164-today-layout.js"))) && !/budget|D\(\)\./.test(CODE(R("js/164-today-layout.js")).slice(
+      CODE(R("js/164-today-layout.js")).indexOf("function tlSave"),
+      CODE(R("js/164-today-layout.js")).indexOf("function tlRoutineHTML"))));
+
+  c.tlReset();
+  ok("⭐ and he can put it back", c.tlLayout().chat.col === 2);
+
+  /* ⛔ a block with nothing to say must not hold a column open — that IS the dead air he screenshotted */
+  c.moneyCardHTML = () => ""; c.evHomeCardHTML = () => ""; c.phTalkCard = () => "";
+  html = c.tlTodayHTML();
+  ok("⛔⛔ an empty column collapses instead of reserving width", /tl-live-2/.test(html), html.slice(0, 80));
+  ok("...and the blocks that do have something still render", html.indexOf("<CAL>") >= 0 && html.indexOf("<PART>") >= 0);
+
+  /* mobile */
+  const css = R("app.css");
+  ok("⛔ one column on a phone", /\.tl-grid\{display:flex;flex-direction:column/.test(css));
+  ok("⛔ and no move handles there — a control offering a column that doesn't exist is a lie",
+    /\.tl-handle\{display:none\}/.test(css));
+  ok("⭐ the handles are always visible on desktop, not hover-only — he has to be able to FIND this",
+    /\.tl-handle\{display:flex;[^}]*opacity:\.4/.test(css));
+  ok("⭐ and Today finally uses the whole screen", /body\.wideday \.wrap\{max-width:none/.test(css));
+  ok("⭐ the calendar column is widened to the measured 2.4fr", /tl-live-3\{grid-template-columns:minmax\(0,2\.4fr\)/.test(css));
+
+  ok("⭐ personalHome delegates to it", /tlTodayHTML/.test(CODE(R("js/122-personal-home.js"))));
+  ok("⛔ ...with a fallback, so Today can never come up empty", /fallback for a build without js\/164/.test(R("js/122-personal-home.js")));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");

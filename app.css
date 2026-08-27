@@ -519,3 +519,42 @@
 /* routine tick — thumb-sized on a phone, modest on a desktop (js/141) */
 .rt-box{width:22px;height:22px;flex:0 0 auto}
 @media(min-width:900px){ .rt-box{width:16px;height:16px} }
+
+/* ---------- TODAY, ARRANGED (js/164) ----------------------------------------------------------------
+   Ray, 2026-08-27, on a 2000px screen with 440px of dead air: "let's use our space more effectively…
+   I wanna be able to see it all on one screen."
+   ⚠️ Mobile is ONE column and plain DOM order — three columns at 390px is three unreadable ones, and the
+   move handles are hidden there because a control that offers a column which doesn't exist is a lie. */
+.tl-grid{display:flex;flex-direction:column;gap:0}
+.tl-col{min-width:0;display:flex;flex-direction:column}
+.tl-block{min-width:0}
+.tl-handle{display:none}
+.tl-hint{display:none}
+@media(min-width:1180px){
+  /* the wide column carries the calendar; the other two are for lists and cards */
+  .tl-grid{display:grid;gap:0 22px;align-items:start}
+  .tl-grid.tl-live-1{grid-template-columns:minmax(0,1fr)}
+  .tl-grid.tl-live-2{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+  /* ⚠️ the wide column is 2.4 of 4.35, ~1020px at 1900 — a month cell of ~145px, which is where "Iowa
+     mortgage $2.4k" stops truncating. Measured against his real bills, not chosen for tidiness. */
+  .tl-grid.tl-live-3{grid-template-columns:minmax(0,2.4fr) minmax(0,1fr) minmax(0,0.95fr)}
+  .tl-block{position:relative}
+  /* ⛔ ALWAYS VISIBLE, NOT HOVER-REVEALED. He asked for this and has to be able to FIND it; a control that
+     only exists while the mouse is over it is a control he will forget he has. Quiet at 40%, full on hover.
+     It also reserves its own row, so the buttons never float over the top of the card beneath them. */
+  .tl-handle{display:flex;align-items:center;gap:2px;justify-content:flex-end;
+    opacity:.4;transition:opacity .12s;margin:0 0 3px;padding-top:2px}
+  .tl-block:hover .tl-handle{opacity:1}
+  .tl-handle .tl-name{margin-right:auto;font-size:11px;color:var(--muted);letter-spacing:.3px;
+    text-transform:uppercase;padding-left:2px}
+  .tl-handle button{border:1px solid var(--line);background:var(--card);color:var(--muted);
+    border-radius:5px;font-size:11px;line-height:1;padding:3px 6px;cursor:pointer}
+  .tl-handle button:hover:not([disabled]){color:var(--ink);border-color:var(--accent)}
+  .tl-handle button[disabled]{opacity:.3;cursor:default}
+  .tl-hint{display:block;margin-top:10px;opacity:.55;font-size:12px}
+}
+/* ⭐ AND TODAY TAKES THE WHOLE SCREEN. The 1560px cap left 440px empty on his monitor — the exact dead
+   air he screenshotted. Still left-anchored past the fixed sidebar, still gutter-ed on the right. */
+@media(min-width:1180px){
+  body.wideday .wrap{max-width:none;margin-left:236px;margin-right:28px}
+}

@@ -457,48 +457,38 @@ function personalHome() {
 
      Every section still disappears when it's empty, so a quiet day is a short page. On a phone there are no
      columns: chat, then the day, then money — the routine matters more than the balances on a small screen. */
+  /* ⭐ THE ARRANGEMENT IS HIS NOW (js/164). Ray, 2026-08-27: "maybe you can make it, like, draggable, and
+     then I can just try a few different ways to do it." He has told me where these blocks go four times and
+     been right each time — the lesson is not the arrangement, it is that I keep guessing at something he can
+     settle in ten seconds if the app lets him. ◀ ▲ ▼ ▶ on each block, saved per device. */
+  if (typeof tlTodayHTML === "function") {
+    return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>' + tlTodayHTML();
+  }
+
+  /* ⛔ fallback for a build without js/164 — Today must never come up empty */
   const part = (k) => {
     if (typeof rtPartHTML !== "function" || typeof ROUTINE_PARTS === "undefined") return "";
     const p = ROUTINE_PARTS.find(function (x) { return x.key === k; });
     return p ? rtPartHTML(p) : "";
   };
-
-  /* ---- LEFT: what he looks AT ---- */
-  /* balances + the next two weeks of bills (js/142) — built to be SCANNED. Falls back to the calendar's
-     own bills card if that module is missing, so Today can never lose the money block entirely. */
   let side = (typeof moneyCardHTML === "function") ? moneyCardHTML()
            : ((typeof calBillsCardHTML === "function") ? calBillsCardHTML(MC_DAYS_FALLBACK) : "");
-  /* ⭐ THE CALENDAR (js/163). Ray, 2026-08-27: "i need my calendar on today page, i need month view showing
-     this month + next, and also 2x day view showing times for things happening today and tomorrow."
-     It goes in the MONEY column rather than the day column on purpose: the right-hand column is what he
-     looks AT, and the middle column is the order he DOES things in. A calendar is reference, not a step. */
-  /* the flat "coming up" list stays in the side column — it reaches 30 days out, past the two months the
-     calendar draws, and surfaces a birthday eleven days away without him counting squares. */
   if (typeof evHomeCardHTML === "function") side += evHomeCardHTML(30);
-
-  /* ---- RIGHT: what he DOES, in the order he does it ---- */
   let day = part("morning");
-  day += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";     // every business's work today
-  day += phPlanCard();                                                          // his own plan, with carry-over
-  day += (typeof piCardHTML === "function") ? piCardHTML() : "";                // only what's urgent elsewhere
-  day += part("day");
-  day += part("evening");
+  day += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";
+  day += phPlanCard();
+  day += (typeof piCardHTML === "function") ? piCardHTML() : "";
+  day += part("day") + part("evening");
   day += '<button class="btn ghost sm" style="width:100%;margin-top:6px" onclick="rtEdit(\'\')">＋ Add to your routine</button>';
-
-  /* ⭐ THE CALENDAR IS FULL WIDTH, ABOVE THE COLUMNS. Ray, 2026-08-27: "I wanna be able to read what's
-     actually coming up. It's just gonna have to be bigger." Seven columns of readable text will not fit in
-     a sidebar — that constraint is precisely what forced dots, and dots were the thing he rejected. It goes
-     first because the shape of the next two months is what he opens Today to see. */
-  var cal = (typeof tcalHTML === "function") ? tcalHTML() : "";
-
   return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>'
-    + cal
+    + ((typeof tcalHTML === "function") ? tcalHTML() : "")
     + '<div class="daycols">'
     +   '<div class="dc-chat">' + phTalkCard() + '</div>'
     +   '<div class="dc-day">' + day + '</div>'
     +   '<div class="dc-money">' + side + '</div>'
     + '</div>';
 }
+
 if (typeof window !== "undefined") {
   window.personalHome = personalHome;
   window.phInterestsCard = phInterestsCard;   // the Life tab renders it now, not Today
