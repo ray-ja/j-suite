@@ -534,12 +534,12 @@
 .tl-hint{display:none}
 @media(min-width:1180px){
   /* the wide column carries the calendar; the other two are for lists and cards */
-  .tl-grid{display:grid;gap:0 22px;align-items:start}
-  .tl-grid.tl-live-1{grid-template-columns:minmax(0,1fr)}
-  .tl-grid.tl-live-2{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
-  /* ⚠️ the wide column is 2.4 of 4.35, ~1020px at 1900 — a month cell of ~145px, which is where "Iowa
-     mortgage $2.4k" stops truncating. Measured against his real bills, not chosen for tidiness. */
-  .tl-grid.tl-live-3{grid-template-columns:minmax(0,2.4fr) minmax(0,1fr) minmax(0,0.95fr)}
+  /* ⚠️ THE TRACK LIST COMES FROM THE CONTENT, NOT FROM THE POSITION. It used to be hard-coded per column
+     count — column 0 always wide — so moving the calendar to the middle squeezed it into a 1fr slot and
+     truncated every bill name. js/164 now emits --tl-cols from the widest block in each column, so the
+     calendar takes ~2.4fr wherever he puts it. The fallback keeps equal columns if the variable is missing. */
+  .tl-grid{display:grid;gap:0 22px;align-items:start;
+    grid-template-columns:var(--tl-cols, repeat(auto-fit, minmax(0,1fr)))}
   .tl-block{position:relative}
   /* ⛔ ALWAYS VISIBLE, NOT HOVER-REVEALED. He asked for this and has to be able to FIND it; a control that
      only exists while the mouse is over it is a control he will forget he has. Quiet at 40%, full on hover.
@@ -553,6 +553,7 @@
     border-radius:5px;font-size:11px;line-height:1;padding:3px 6px;cursor:pointer}
   .tl-handle button:hover:not([disabled]){color:var(--ink);border-color:var(--accent)}
   .tl-handle button[disabled]{opacity:.3;cursor:default}
+  .tl-handle button.tl-w{margin-left:4px;font-weight:700}
   .tl-hint{display:block;margin-top:10px;opacity:.55;font-size:12px}
 }
 /* ⭐ AND TODAY TAKES THE WHOLE SCREEN. The 1560px cap left 440px empty on his monitor — the exact dead

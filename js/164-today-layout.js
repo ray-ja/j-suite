@@ -29,13 +29,20 @@ function tlKey() {
 /* every block Today can show. `html` is called at render; a block that returns "" simply isn't drawn. */
 function tlBlocks() {
   return [
-    { key: "calendar", label: "Calendar",  html: function () { return (typeof tcalHTML === "function") ? tcalHTML() : ""; } },
-    { key: "chat",     label: "Cap",       html: function () { return (typeof phTalkCard === "function") ? phTalkCard() : ""; } },
-    { key: "routine",  label: "Your day",  html: function () { return (typeof tlRoutineHTML === "function") ? tlRoutineHTML() : ""; } },
+    /* ⚠️ `w` IS HOW MUCH WIDTH THIS BLOCK NEEDS, AND IT TRAVELS WITH THE BLOCK.
+       Ray, 2026-08-27: "i wanted to move the calendar to be centered but it did this because i cant resize
+       anything." My bug entirely — the column widths were tied to POSITION (column 0 was always the wide
+       one), so moving the calendar into the middle handed it the narrow slot and squeezed "Iowa mortgage"
+       back to "I…". Width is a property of the CONTENT, not of where the content happens to sit: a month
+       grid needs seven readable columns wherever he puts it, and a checklist doesn't stop being a checklist
+       in the wide slot. A column now takes the width of the hungriest block in it. */
+    { key: "calendar", label: "Calendar",  w: 2.4, html: function () { return (typeof tcalHTML === "function") ? tcalHTML() : ""; } },
+    { key: "chat",     label: "Cap",       w: 1,   html: function () { return (typeof phTalkCard === "function") ? phTalkCard() : ""; } },
+    { key: "routine",  label: "Your day",  w: 1.2, html: function () { return (typeof tlRoutineHTML === "function") ? tlRoutineHTML() : ""; } },
     /* ⛔ THE FALLBACK CHAIN STAYS. moneyCardHTML is itself a newer card; if that module is ever missing,
        Today drops back to the calendar's own bills card rather than losing the money block entirely. Three
        tests were asserting this before the layout rewrite and they were right to. */
-    { key: "money",    label: "Money",     html: function () {
+    { key: "money",    label: "Money",     w: 1, html: function () {
         var m = (typeof moneyCardHTML === "function") ? moneyCardHTML() : "";
         if (m) return m;
         return (typeof calBillsCardHTML === "function")
@@ -43,8 +50,8 @@ function tlBlocks() {
       } },
     /* ⭐ what he has vs what is leaving vs what might arrive (js/165) — sits with the money, because
        "how much is there" and "how much is going" are one thought */
-    { key: "outlook",  label: "The month ahead", html: function () { return (typeof monthOutlookHTML === "function") ? monthOutlookHTML() : ""; } },
-    { key: "coming",   label: "Coming up", html: function () { return (typeof evHomeCardHTML === "function") ? evHomeCardHTML(30) : ""; } }
+    { key: "outlook",  label: "The month ahead", w: 1.05, html: function () { return (typeof monthOutlookHTML === "function") ? monthOutlookHTML() : ""; } },
+    { key: "coming",   label: "Coming up", w: 0.9, html: function () { return (typeof evHomeCardHTML === "function") ? evHomeCardHTML(30) : ""; } }
   ];
 }
 
@@ -65,7 +72,14 @@ function tlLayout() {
       var d = TL_DEFAULT[b.key] || { col: 0, order: 9 };
       out[b.key] = {
         col: (s && isFinite(+s.col)) ? Math.max(0, Math.min(TL_COLS - 1, +s.col)) : d.col,
-        order: (s && isFinite(+s.order)) ? +s.order : d.order
+        order: (s && isFinite(+s.order)) ? +s.order : d.order,
+        /* ⭐ HIS OWN WIDTH, IF HE HAS SET ONE. Ray: "i cant resize anything." The content weight below is a
+           good default, not a verdict — clamped so a column can never be squeezed to nothing or eat the row.
+           ⚠️ `!= null && > 0`, NOT isFinite ALONE. A block with no override saves w:null, and isFinite(+null)
+           is TRUE because +null is 0 — so every unset width round-tripped back as the 0.6 minimum and flattened
+           every column to the same size. Caught by a test that moved a block twice and watched 2.4fr become
+           1fr; the arithmetic was right and the falsy-check was not. */
+        w: (s && s.w != null && isFinite(+s.w) && +s.w > 0) ? Math.max(0.6, Math.min(4, +s.w)) : null
       };
     });
   } catch (e) {
@@ -102,6 +116,8 @@ function tlHandle(b, lay) {
     + '<button title="Move up"    onclick="tlMove(\'' + b.key + '\',\'up\')">▲</button>'
     + '<button title="Move down"  onclick="tlMove(\'' + b.key + '\',\'down\')">▼</button>'
     + '<button title="Move right" onclick="tlMove(\'' + b.key + '\',\'right\')"' + (p.col === TL_COLS - 1 ? ' disabled' : '') + '>▶</button>'
+    + '<button title="Narrower" class="tl-w" onclick="tlWide(\'' + b.key + '\',-1)">–</button>'
+    + '<button title="Wider" class="tl-w" onclick="tlWide(\'' + b.key + '\',1)">+</button>'
     + '</div>';
 }
 
@@ -127,7 +143,24 @@ function tlTodayHTML() {
       + '</div>';
   }).join("");
 
-  return '<div class="tl-grid tl-live-' + live.length + '" data-cols="' + live.map(function (c) { return c.i; }).join(",") + '">'
+  /* ⭐ THE COLUMN TAKES THE WIDTH OF ITS HUNGRIEST BLOCK. Emitted inline rather than as a CSS class, because
+     the answer depends on where HE put things and CSS cannot know that. A column of ordinary cards is 1fr;
+     put the calendar in it and it becomes 2.4fr, wherever "it" is. */
+  var widths = live.map(function (c) {
+    /* ⚠️ START AT 0, NOT 1. Starting at 1 floored every column there, so the "narrower" button did nothing
+       at all below 1fr — the value moved in storage and the layout never changed, which reads as a broken
+       button rather than a clamp. The real minimum is the 0.6 clamp in tlWide, and it belongs in one place. */
+    var w = 0;
+    c.items.forEach(function (x) {
+      /* his override wins over the block's own appetite */
+      var bw = (lay[x.b.key] && lay[x.b.key].w) || +x.b.w || 1;
+      if (bw > w) w = bw;
+    });
+    return "minmax(0," + (Math.round((w || 1) * 100) / 100) + "fr)";
+  }).join(" ");
+
+  return '<div class="tl-grid tl-live-' + live.length + '" style="--tl-cols:' + esc(widths) + '"'
+    + ' data-cols="' + live.map(function (c) { return c.i; }).join(",") + '">'
     + body + '</div>'
     + '<div class="sub tl-hint">Use ◀ ▲ ▼ ▶ on any block to rearrange this page. '
     + '<a href="#" onclick="tlReset();return false">Put it back the way it was</a></div>';
@@ -135,7 +168,7 @@ function tlTodayHTML() {
 
 if (typeof window !== "undefined") {
   window.tlTodayHTML = tlTodayHTML; window.tlLayout = tlLayout; window.tlBlocks = tlBlocks;
-  window.tlRoutineHTML = tlRoutineHTML; window.TL_DEFAULT = TL_DEFAULT;
+  window.tlRoutineHTML = tlRoutineHTML; window.tlSave = tlSave; window.TL_DEFAULT = TL_DEFAULT;
 
   window.tlMove = function (key, dir) {
     var lay = tlLayout();
@@ -156,6 +189,18 @@ if (typeof window !== "undefined") {
       var here = Object.keys(lay).filter(function (k) { return k !== key && lay[k].col === p.col; });
       p.order = here.length ? Math.max.apply(null, here.map(function (k) { return lay[k].order; })) + 1 : 0;
     }
+    tlSave(lay);
+    if (typeof render === "function") render();
+  };
+
+  /* ⭐ RESIZE. Steps of 0.2fr, clamped 0.6–4. ⛔ Stored per BLOCK, not per column, so a width he set on the
+     calendar follows it when he moves it — the same reason the defaults are content-based. */
+  window.tlWide = function (key, dir) {
+    var lay = tlLayout(), p = lay[key]; if (!p) return;
+    var blocks = tlBlocks(), b = null;
+    blocks.forEach(function (x) { if (x.key === key) b = x; });
+    var cur = p.w || (b && +b.w) || 1;
+    p.w = Math.max(0.6, Math.min(4, Math.round((cur + dir * 0.2) * 100) / 100));
     tlSave(lay);
     if (typeof render === "function") render();
   };

@@ -612,6 +612,41 @@ console.log("\n--- 🧩 Today, arranged by him ---");
   let html = c.tlTodayHTML();
   ok("⭐ all five blocks are drawn", ["<CAL>", "<CHAT>", "<MONEY>", "<COMING>", "<PART>"].every(x => html.indexOf(x) >= 0));
   ok("⭐ three columns", /tl-live-3/.test(html));
+
+  /* ⭐⭐ WIDTH FOLLOWS THE CONTENT, NOT THE POSITION. Ray, 2026-08-27: "i wanted to move the calendar to be
+     centered but it did this because i cant resize anything." My bug entirely — the track list was hard-coded
+     per column count, so column 0 was always the wide one and moving the calendar to the middle squeezed it
+     into a 1fr slot and truncated every bill name again. */
+  const tracks = h => (/--tl-cols:([^"]+)"/.exec(h) || [])[1] || "";
+  ok("⭐ the calendar's column is the wide one by default", /^minmax\(0,2\.4fr\)/.test(tracks(html)), tracks(html));
+  c.tlMove("calendar", "right");
+  ok("⭐⭐ and it stays wide when he MOVES it — the width travels with the block",
+    /minmax\(0,2\.4fr\)/.test(tracks(c.tlTodayHTML())), tracks(c.tlTodayHTML()));
+  ok("...in its NEW column, not the old one", tracks(c.tlTodayHTML()).indexOf("2.4fr") > 0, tracks(c.tlTodayHTML()));
+  c.tlMove("calendar", "left");
+
+  /* ⭐ and he can resize, which is the thing he said he couldn't do */
+  const before = tracks(c.tlTodayHTML());
+  c.tlWide("calendar", 1);
+  ok("⭐⭐ + makes a block wider", tracks(c.tlTodayHTML()) !== before && /2\.6fr/.test(tracks(c.tlTodayHTML())),
+    tracks(c.tlTodayHTML()));
+  c.tlWide("calendar", -1);
+  ok("⭐ − puts it back", /2\.4fr/.test(tracks(c.tlTodayHTML())));
+  for (let i = 0; i < 40; i++) c.tlWide("calendar", 1);
+  ok("⛔ clamped so one block can never eat the row", /4fr/.test(tracks(c.tlTodayHTML())) && !/[5-9]\d*fr/.test(tracks(c.tlTodayHTML())));
+  for (let i = 0; i < 60; i++) c.tlWide("calendar", -1);
+  ok("⛔ ...nor be squeezed to nothing", /0\.6fr/.test(tracks(c.tlTodayHTML())));
+
+  /* ⚠️⚠️ THE BUG THIS TEST CAUGHT. An unset width saves as w:null, and isFinite(+null) is TRUE because +null
+     is 0 — so every default round-tripped back as the 0.6 minimum and flattened all three columns to the same
+     size. The arithmetic was right; the falsy-check was not. */
+  c.tlReset();
+  const fresh = tracks(c.tlTodayHTML());
+  c.tlMove("routine", "left"); c.tlMove("routine", "right");   // a round-trip through save/load
+  ok("⭐⭐ a saved layout with no width overrides still respects the content weights",
+    /2\.4fr/.test(tracks(c.tlTodayHTML())), { before: fresh, after: tracks(c.tlTodayHTML()) });
+  ok("⚠️ the null round-trip is written down", /isFinite\(\+null\)/.test(R("js/164-today-layout.js")));
+  c.tlReset();
   ok("⭐ each block carries its move handle", (html.match(/tl-handle/g) || []).length === 5);
   ok("⭐ and the page says how to use them", /rearrange this page/.test(html));
 
@@ -656,7 +691,11 @@ console.log("\n--- 🧩 Today, arranged by him ---");
   ok("⭐ the handles are always visible on desktop, not hover-only — he has to be able to FIND this",
     /\.tl-handle\{display:flex;[^}]*opacity:\.4/.test(css));
   ok("⭐ and Today finally uses the whole screen", /body\.wideday \.wrap\{max-width:none/.test(css));
-  ok("⭐ the calendar column is widened to the measured 2.4fr", /tl-live-3\{grid-template-columns:minmax\(0,2\.4fr\)/.test(css));
+  /* ⚠️ SUPERSEDED 2026-08-27. This asserted a hard-coded track list per column count — which is exactly the
+     bug: it tied width to POSITION, so moving the calendar to the middle squeezed it. The track list is now
+     emitted from the content (asserted above); the CSS only has to consume it. */
+  ok("⭐ the track list comes from the content, not from a hard-coded column count",
+    /grid-template-columns:var\(--tl-cols/.test(css) && !/tl-live-3\{grid-template-columns/.test(css));
 
   ok("⭐ personalHome delegates to it", /tlTodayHTML/.test(CODE(R("js/122-personal-home.js"))));
   ok("⛔ ...with a fallback, so Today can never come up empty", /fallback for a build without js\/164/.test(R("js/122-personal-home.js")));
