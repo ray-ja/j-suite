@@ -18,7 +18,19 @@ var PLAID_CDN = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
 var BANK_STATUS = null;
 
 function bankApiBase() { return (typeof phBase === "function") ? phBase() : (location.origin || ""); }
-function bankToken() { try { return (typeof syncToken === "function") ? syncToken() : (localStorage.getItem("jsuite_token") || ""); } catch (e) { return ""; } }
+/* ⛔⛔ THE TOKEN IS S.sync.token. NOTHING ELSE. Ray, 2026-08-27: "I put in the client ID, and then it says
+   put in the secret… It said forbidden. So neither one works anyways."
+
+   ⚠️ IT WAS NEVER PLAID, AND IT WAS NEVER THE KEYS. This used to read `syncToken()` with a localStorage
+   fallback — and `syncToken` DOES NOT EXIST ANYWHERE IN THIS APP, nor does anything ever write a
+   "jsuite_token" key. I invented two accessors that sounded plausible and never once called them against a
+   live server. So bankToken() returned "" every time, every request went out as `Authorization: Bearer `,
+   the server resolved no account, and the guard answered 403 "forbidden" before Plaid was ever contacted.
+   The bank feed could not have worked a single time, for anybody, since the day it was written.
+
+   ⭐ Every other module reads the token the same way (js/26, js/32, js/111, js/122): S.sync.token. There was
+   a working convention sitting right there and I didn't use it. */
+function bankToken() { try { return (typeof S !== "undefined" && S.sync && S.sync.token) || ""; } catch (e) { return ""; } }
 function bankHeaders() { return { "Content-Type": "application/json", "Authorization": "Bearer " + bankToken() }; }
 
 /* ⚠️ over file:// there is no origin to call and no https to load Link from */
@@ -37,8 +49,13 @@ function bankOrg() { try { return S.biz; } catch (e) { return ""; } }
 function bankRefresh(cb) {
   fetch(bankApiBase() + "/api/plaid/status?org=" + encodeURIComponent(bankOrg()), { headers: bankHeaders() })
     .then(function (r) { return r.json(); })
-    .then(function (j) { BANK_STATUS = j; if (cb) cb(j); })
-    .catch(function () { BANK_STATUS = { ready: false, items: [] }; if (cb) cb(BANK_STATUS); });
+    .then(function (j) {
+      /* ⚠️ "not set up" and "not allowed to ask" are different problems wearing the same empty card. Keep the
+         error so the card can say which — this is what let a pure auth failure read as missing keys. */
+      BANK_STATUS = (j && j.error) ? { ready: false, items: [], error: j.error } : j;
+      if (cb) cb(BANK_STATUS);
+    })
+    .catch(function (e) { BANK_STATUS = { ready: false, items: [], error: (e && e.message) || "couldn't reach the server" }; if (cb) cb(BANK_STATUS); });
 }
 
 /* ---------- connect ---------- */
@@ -185,6 +202,7 @@ function bankKeyCard() {
   return '<div class="card"><div class="nm" style="font-size:15px">🏦 Bank feed (Plaid) · ' + esc(org) + '</div>'
     + '<div class="sub" style="margin-bottom:8px">'
     + (ready ? '✓ Set up — running against <b>' + esc(env) + '</b>'
+             : (st && st.error) ? '<span style="color:var(--danger)">⚠ ' + esc(st.error) + '</span>'
              : 'Not set up for this organization yet.') + '</div>'
     + '<div class="row" style="gap:6px;flex-wrap:wrap">'
     +   '<button class="btn ghost sm" style="width:auto" onclick="bankSetKey()">🔑 ' + (ready ? "Replace keys" : "Set keys") + '</button>'
@@ -270,6 +288,12 @@ if (typeof window !== "undefined") {
       body: JSON.stringify({ org: bankOrg(), env: next }) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        /* ⛔ SAY WHEN IT DIDN'T WORK. Ray: "I tried in the app to change the environment in the sandbox, but
+           that button doesn't do anything. I click on it. It doesn't do anything." It was taking the same 403
+           as everything else — but unlike bankSetKey this handler never looked at j.error, so a hard failure
+           was indistinguishable from a no-op. A button that fails silently is worse than one that errors: it
+           sends him hunting for the bug in the wrong place. */
+        if (j && j.error) { alert("Couldn't switch environment: " + j.error); return; }
         BANK_STATUS = j;
         /* ⚠️ switching environment re-checks the SAME stored secret against the NEW environment — which is
            exactly when it stops being valid. Better he hears it now than at Connect-a-bank. */

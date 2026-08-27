@@ -129,5 +129,77 @@ const routeBlock = (R.match(/const ROUTE_TABS=\[[^\]]*\];/) || [""])[0];
 const noRoute = uniq.filter(t => routeBlock.indexOf('"' + t + '"') < 0);
 ok("every nav tab is in ROUTE_TABS (deep links + notifications)", noRoute.length === 0, noRoute.join(", "));
 
+/* ---------- ⛔ NO PHANTOM HELPERS ------------------------------------------------------------------------
+   THE INCIDENT. Ray, 2026-08-27, setting up Plaid: "I put in the client ID... It said forbidden. So neither
+   one works anyways." Nothing was wrong with his keys. js/150 read its auth token via
+       (typeof syncToken === "function") ? syncToken() : localStorage.getItem("jsuite_token")
+   and NEITHER EXISTS — `syncToken` is defined nowhere in this app and nothing ever writes "jsuite_token".
+   I invented two accessors that sounded like they should exist, guarded them with a typeof so they failed
+   silently, and never called them against a live server. Result: every Plaid request went out with an empty
+   bearer, the server resolved no account, and answered 403 "forbidden" before Plaid was ever contacted. The
+   bank feed had never worked once, for anybody, since the day it was written.
+
+   ⚠️ THE `typeof X === "function"` GUARD IS WHAT MADE IT INVISIBLE. That idiom is used correctly all over
+   this app for genuinely optional modules — but on a name that never exists it converts a loud ReferenceError
+   into a silent wrong answer. So the guard itself has to be checked: if code asks "is X a function", X must be
+   something that could BE a function somewhere.
+
+   This walks every guarded name in js/ and fails if nothing in js/ (or the known browser/CDN globals) defines
+   it. Cheap, and it catches the whole class rather than this one instance. */
+console.log("\n--- no module may call a helper that does not exist ---");
+{
+  const EXTERNAL = new Set([
+    "L", "Plaid", "fetch", "AbortController", "requestAnimationFrame", "structuredClone",
+    "IntersectionObserver", "ResizeObserver", "MutationObserver", "BroadcastChannel", "Notification",
+    "SpeechRecognition", "webkitSpeechRecognition", "MediaRecorder", "confirm", "alert", "prompt",
+    "require", "importScripts", "define", "module", "process",
+    "setTimeout", "clearTimeout", "setInterval", "clearInterval", "Blob", "FileReader", "URL",
+    "localStorage", "sessionStorage", "navigator", "matchMedia", "queueMicrotask"
+  ]);
+  const all = jsFiles.map(f => fs.readFileSync(path.join(__dirname, f), "utf8"));
+  const joined = all.join("\n");
+  /* every name this codebase defines, in any of the shapes it uses */
+  const defined = new Set();
+  const collect = (re, g) => { let m; while ((m = re.exec(joined))) defined.add(m[g]); };
+  collect(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(/g, 1);
+  collect(/\bwindow\.([A-Za-z_$][\w$]*)\s*=/g, 1);
+  collect(/\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function|\()/g, 1);
+  collect(/\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=/g, 1);
+  /* ⚠️ a CALLBACK PARAMETER is not a phantom — `function foo(afterCreate)` then `typeof afterCreate ===
+     "function"` is the correct way to make a callback optional, and the whole app uses it. Collect every
+     parameter name so the guard only fires on a name nothing anywhere could supply. */
+  collect(/\bfunction\s*[A-Za-z_$][\w$]*?\s*\(([^)]*)\)/g, 1);
+  const params = new Set();
+  let pm; const pre = /\bfunction\s*[A-Za-z_$]*\s*\(([^)]*)\)/g;
+  while ((pm = pre.exec(joined))) pm[1].split(",").forEach(a => {
+    const n = a.trim().replace(/=.*$/, "").trim();
+    if (/^[A-Za-z_$][\w$]*$/.test(n)) params.add(n);
+  });
+  params.forEach(n => defined.add(n));
+
+  const phantoms = [];
+  jsFiles.forEach((f, i) => {
+    const re = /typeof\s+([A-Za-z_$][\w$]*)\s*===?\s*["']function["']/g;
+    let m;
+    while ((m = re.exec(all[i]))) {
+      const name = m[1];
+      if (defined.has(name) || EXTERNAL.has(name)) continue;
+      phantoms.push(f + " → " + name + "()");
+    }
+  });
+  ok("⭐⭐ every guarded helper is defined somewhere (no invented accessors)", phantoms.length === 0,
+    phantoms.join(" · "));
+
+  /* and the specific one, named, so the fix can't quietly regress */
+  const bank = fs.readFileSync(path.join(__dirname, "js/150-bank-link.js"), "utf8");
+  ok("⛔ js/150 no longer calls the non-existent syncToken()", !/typeof syncToken/.test(bank));
+  ok("⭐ it reads the token the way every other module does — S.sync.token",
+    /function bankToken\(\)[\s\S]{0,200}S\.sync && S\.sync\.token/.test(bank));
+  ok("⚠️ and the 403 it caused is written down", /answered 403 "forbidden" before Plaid/.test(bank) || /403 "forbidden"/.test(bank));
+  ok("⭐ the environment button reports a failure instead of doing nothing",
+    /Couldn't switch environment: /.test(bank));
+  ok("⭐ a status error reads as 'not allowed', not as 'no keys yet'", /not allowed to ask/.test(bank));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
