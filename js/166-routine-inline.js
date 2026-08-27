@@ -30,9 +30,16 @@ function riMoodHTML(r) {
 }
 
 /* ---------- 2. the workout, with what today actually is ---------- */
-/* ⭐ WHICH DAY IS NEXT, from his own history. The plan is a rotation; the next day is the one after whatever
-   he logged last. ⛔ Returns null rather than guessing when there's no plan or no history — "Workout" alone
-   is honest, "Bench day" when it isn't is worse than saying nothing. */
+/* ⭐ WHICH DAY IS TODAY — AND HIS PLAN ANSWERS THAT DIRECTLY.
+   ⚠️ I HAD THIS WRONG. My first version walked a rotation from his last logged session, which is how you'd
+   read a programme that has no calendar attached. His does: reading workout.html, the days are keyed
+   mon · tue · wed · thu · fri · sat, each already named ("Pull — Deadlift Focus"). So today's lift is simply
+   today's weekday, and it is right whether or not he logged anything yesterday — which is exactly when a
+   rotation guess would drift and start naming the wrong lift with total confidence.
+   ⛔ Sunday isn't in the plan, so Sunday is a rest day and says so.
+   ⛔ Falls back to the rotation only for a plan whose days AREN'T weekdays, and to null when there's no plan
+   at all — "Workout" alone is honest; "Bench day" when it isn't is worse than saying nothing. */
+var RI_DOW = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 function riNextWorkout() {
   try {
     var raw = (typeof wkRaw === "function") ? wkRaw() : null;
@@ -40,30 +47,44 @@ function riNextWorkout() {
     var days = (typeof wkPlanDays === "function") ? wkPlanDays(raw) : [];
     if (!days.length) return null;
     var sessions = (typeof wkSessions === "function") ? wkSessions(raw) : [];
-    var idx = 0;
-    if (sessions.length) {
-      var lastId = sessions[0].dayId;
-      var at = -1;
-      days.forEach(function (d, i) { if (d.id === lastId) at = i; });
-      idx = (at >= 0) ? (at + 1) % days.length : 0;
+    var lastDate = sessions.length ? sessions[0].date : "";
+
+    /* is this a weekday-keyed plan? */
+    var byId = {};
+    days.forEach(function (d) { byId[String(d.id || "").toLowerCase()] = d; });
+    var weekdayPlan = RI_DOW.some(function (k) { return !!byId[k]; });
+
+    var d = null;
+    if (weekdayPlan) {
+      var t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+      var dow = new Date(t + "T12:00:00").getDay();
+      d = byId[RI_DOW[dow]] || null;
+      if (!d) return { rest: true, day: "", label: "", lift: "", lastDate: lastDate };   // not in the plan = rest
+    } else {
+      var idx = 0;
+      if (sessions.length) {
+        var at = -1;
+        days.forEach(function (x, i) { if (x.id === sessions[0].dayId) at = i; });
+        idx = (at >= 0) ? (at + 1) % days.length : 0;
+      }
+      d = days[idx];
     }
-    var d = days[idx];
     if (!d) return null;
-    /* the "major lift" is the first exercise on the day — that is how a programme is written: the big
-       compound leads, accessories follow. Not a guess about which is heaviest. */
+    /* the "major lift" is the FIRST exercise on the day — that is how a programme is written: the big
+       compound leads and the accessories follow. Not a guess about which is heaviest. */
     var first = (d.exercises || [])[0];
-    return { day: d.day || d.id, label: d.label || "", lift: first ? (first.name || "") : "",
-             lastDate: sessions.length ? sessions[0].date : "" };
+    return { rest: false, day: d.day || d.id, label: d.label || "",
+             lift: first ? (first.name || "") : "", lastDate: lastDate };
   } catch (e) { return null; }
 }
 
 function riWorkoutHTML(r) {
   var w = riNextWorkout();
   return '<div class="ri-line">'
-    + (w
-        ? '<span class="ri-lift">' + esc(w.lift || w.day || "") + '</span>'
-          + (w.label ? '<span class="sub"> · ' + esc(w.label) + '</span>' : '')
-        : '<span class="sub">open it to see today\'s day</span>')
+    + (!w ? '<span class="sub">open it to see today\'s day</span>'
+        : w.rest ? '<span class="sub">rest day — nothing programmed</span>'
+        : '<span class="ri-lift">' + esc(w.lift || w.day || "") + '</span>'
+          + (w.label ? '<span class="sub"> · ' + esc(w.label) + '</span>' : ''))
     + '<button class="btn acc sm ri-go" onclick="riWorkoutGo()">Open workout</button>'
     + '</div>';
 }

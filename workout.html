@@ -14,9 +14,48 @@
     font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
     padding: 1rem;
   }
-  .header { position: relative; text-align: center; margin-bottom: 1rem; border-bottom: 2px solid #1a1a1a; padding-bottom: 0.75rem; }
+  /* ⭐ ROOM FOR THE WAY BACK. Ray, 2026-08-27: "can you put the back button to go back to j suite? Can you
+     put a top left and make it way bigger? and also, like, make it color like a logo."
+     ⚠️ The title is centred and absolutely-positioned buttons sit on top of it, so the header needs real
+     padding on both sides or a big left button lands on "RJ'S WORKOUT" the moment the screen narrows. */
+  /* ⚠️ A GRID, NOT THREE ABSOLUTE BOXES. Padding the centred title away from an absolutely-positioned
+     button is a guess about how wide the button is, and it was wrong the moment the back button got big —
+     "RJ'S WORKOUT" wrapped onto two lines. Real columns can't collide: the mark takes the left, the gear
+     takes the right, and the title gets whatever is actually left over. */
+  /* ⚠️ THE BACK BUTTON GETS ITS OWN ROW. Two tries at putting it beside the title failed the same way: this
+     app's content column is ~660px, and a centred 2rem letter-spaced title plus a big button on the left
+     simply does not fit — "RJ'S WORKOUT" wrapped onto two lines both times. Squeezing the button to make it
+     fit would undo the thing he asked for. So: mark top-left and gear top-right on their own line, title
+     underneath with the full width. Nothing has to be guessed about anything else's size. */
+  .header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center;
+            row-gap: 0.6rem; column-gap: 0.75rem; text-align: center;
+            margin-bottom: 1rem; border-bottom: 2px solid #1a1a1a; padding-bottom: 0.75rem; }
+  .header .jsuite-back { grid-column: 1; grid-row: 1; justify-self: start; }
+  .header .gear-btn    { grid-column: 3; grid-row: 1; }
+  .header .title       { grid-column: 1 / -1; grid-row: 2; margin-bottom: 0; }
+  .header .plan-badge  { grid-column: 1 / -1; grid-row: 3; justify-self: center; }
+  .header .page-tabs   { grid-column: 1 / -1; grid-row: 4; }
+  /* ⭐ THE J-SUITE MARK, IN J-SUITE'S COLOUR — the ◆ and the #6faa2f green the app's own logo uses, so it
+     reads as "back to that app" and not as another button belonging to this one. This app is red; that is
+     the point of making the door a different colour from the room. */
+  .jsuite-back {
+    height: 3.4rem; padding: 0 1.15rem;
+    display: flex; align-items: center; gap: 0.5rem;
+    background: #1a2a10; color: #8fd14a; border: 2px solid #6faa2f; border-radius: 10px;
+    font-size: 1.15rem; font-weight: 800; letter-spacing: 0.04em; cursor: pointer;
+    text-decoration: none; line-height: 1; font-family: inherit;
+  }
+  .jsuite-back:active { background: #24401a; }
+  .jsuite-back .dia { font-size: 1.7rem; line-height: 1; }
+  .jsuite-back .lbl { text-transform: none; }
+  @media (max-width: 520px) {
+    /* on a phone the word goes and the mark stays — still a 3rem target, still obviously the way out */
+    .jsuite-back { padding: 0 0.7rem; }
+    .jsuite-back .lbl { display: none; }
+    .header .title { font-size: 1.4rem; letter-spacing: 0.08em; }
+  }
   .gear-btn {
-    position: absolute; top: 0; right: 0; width: 2.4rem; height: 2.4rem; padding: 0;
+    width: 2.4rem; height: 2.4rem; padding: 0;
     background: #1a1a1a; color: #888; border: 2px solid #2a2a2a; border-radius: 6px;
     font-size: 1.2rem; cursor: pointer; line-height: 1;
     display: flex; align-items: center; justify-content: center;
@@ -1188,6 +1227,11 @@ function render() {
 
   // Header
   app.appendChild(h("div", { className: "header" },
+    /* ⭐ back to j-Suite. A plain <a>, not an onClick — middle-click, long-press and "open in new tab" all
+       work, and it still goes somewhere if the script has fallen over. */
+    h("a", { className: "jsuite-back", href: "/", title: "Back to j-Suite" },
+      h("span", { className: "dia" }, "◆"),
+      h("span", { className: "lbl" }, "j-Suite")),
     h("button", {
       className: "gear-btn",
       title: "Settings",

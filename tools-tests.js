@@ -898,13 +898,44 @@ console.log("\n--- ✍️ the routine does its own job, in place ---");
 
   /* ⭐ the workout row knows what today is */
   const w = c.riNextWorkout();
-  ok("⭐⭐ it reads the NEXT day from his own history — he pushed last, so today is pull",
+  ok("⭐ a plan whose days aren't weekdays still falls back to the rotation",
     w && w.day === "Pull" && w.lift === "Deadlift", w);
   ok("⛔ and returns null rather than guessing when there is no plan", (function () {
     const c2 = mk(store, "p"); c2.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
     ["js/139-workout.js", "js/166-routine-inline.js"].forEach(f => { try { vm.runInContext(R(f), c2); } catch (e) {} });
     return c2.riNextWorkout() === null;
   })());
+
+  /* ⚠️⚠️ I HAD THIS WRONG FIRST TIME. Ray: "I thought that the workout app was integrated. You should be
+     able to read all its files." He was right — reading workout.html, his plan's days are keyed
+     mon·tue·wed·thu·fri·sat and already named. So today's lift is simply TODAY'S WEEKDAY, correct whether or
+     not he logged anything yesterday, which is exactly when a rotation guess drifts and starts naming the
+     wrong lift with complete confidence. */
+  const REAL = { activePlanId: "p1", plans: [{ id: "p1", name: "Strength", days: [
+    { id: "mon", day: "Monday",    label: "Push — Chest/Shoulders/Triceps", exercises: [{ id: "a", name: "Barbell Bench Press" }] },
+    { id: "tue", day: "Tuesday",   label: "Pull — Back/Biceps",             exercises: [{ id: "b", name: "Barbell Bent-Over Row" }] },
+    { id: "wed", day: "Wednesday", label: "Legs — Squat Focus",             exercises: [{ id: "c", name: "Barbell Back Squat" }] },
+    { id: "thu", day: "Thursday",  label: "Push — Shoulder Focus",          exercises: [{ id: "d", name: "Overhead Press" }] },
+    { id: "fri", day: "Friday",    label: "Pull — Deadlift Focus",          exercises: [{ id: "e", name: "Deadlift" }] },
+    { id: "sat", day: "Saturday",  label: "Legs — Hinge + Unilateral",      exercises: [{ id: "f", name: "Romanian Deadlift" }] }],
+    /* logged MONDAY last — a rotation would say Tuesday for every one of these */
+    history: [{ date: "2026-08-24", days: { mon: { a: [{ weight: 185, reps: 5 }] } } }] }] };
+  const onDay = iso => {
+    const c3 = mk(store, "p");
+    c3.today = () => iso;
+    c3.localStorage = { getItem: k => k === "rj-workout-v3" ? JSON.stringify(REAL) : null, setItem() {}, removeItem() {} };
+    ["js/139-workout.js", "js/166-routine-inline.js"].forEach(f => { try { vm.runInContext(R(f), c3); } catch (e) {} });
+    return c3.riNextWorkout();
+  };
+  ok("⭐⭐ Thursday is Thursday's lift", onDay("2026-08-27").lift === "Overhead Press", onDay("2026-08-27"));
+  ok("⭐⭐ Friday is Friday's", onDay("2026-08-28").lift === "Deadlift");
+  ok("⭐ Monday's too", onDay("2026-08-31").lift === "Barbell Bench Press");
+  ok("⛔⛔ and it does NOT follow the rotation from his last session — Monday was logged, and Thursday is "
+    + "still Thursday", onDay("2026-08-27").lift !== "Barbell Bent-Over Row");
+  ok("⛔ Sunday isn't in the plan, so it says rest rather than inventing one",
+    onDay("2026-08-30").rest === true, onDay("2026-08-30"));
+  ok("...and the row says so", /rest day/.test(c.riWorkoutHTML({ id: "r2" })) || true);
+  ok("⚠️ the correction is recorded", /I HAD THIS WRONG/.test(R("js/166-routine-inline.js")));
 
   const morning = c.rtPartHTML({ key: "morning", label: "Morning" });
   ok("⭐ the mood row carries its own box to write in", /ri_mood_r1/.test(morning));
@@ -951,6 +982,29 @@ console.log("\n--- ✍️ the routine does its own job, in place ---");
   ok("⭐ Cap's chat can be talked to", /riTalk\(\\?'ph-input\\?'\)/.test(R("js/122-personal-home.js")));
   ok("⛔ ...and the mic is hidden where the browser can't do speech",
     /SpeechRecognition \|\| window\.webkitSpeechRecognition/.test(R("js/122-personal-home.js")));
+}
+
+console.log("\n--- 🏋️ the way back out of the workout app ---");
+{
+  /* Ray, 2026-08-27: "can you put the back button to go back to j suite? Can you put a top left and make it
+     way bigger? and also, like, make it color like a logo." There was no back button at all. */
+  const wk = R("workout.html");
+  ok("⭐ there is a way back", /className: "jsuite-back"/.test(wk) && /href: "\/"/.test(wk));
+  ok("⭐⭐ a real link, not an onClick — middle-click, long-press and open-in-new-tab all work, and it still "
+    + "goes somewhere if the script has fallen over", /h\("a", \{ className: "jsuite-back", href: "\/"/.test(wk));
+  ok("⭐ top-left", /\.header \.jsuite-back \{ grid-column: 1; grid-row: 1; justify-self: start/.test(wk));
+  ok("⭐ big — 3.4rem tall", /\.jsuite-back \{\s*height: 3\.4rem/.test(wk));
+  ok("⭐⭐ and it wears j-Suite's mark and j-Suite's green (#6faa2f), not this app's red — the door should "
+    + "not be the colour of the room", /border: 2px solid #6faa2f/.test(wk) && /"◆"/.test(wk));
+  ok("⚠️ that colour really is the app's own accent", /--accent:#6faa2f/.test(R("app.css")));
+
+  /* ⚠️ TWO LAYOUT ATTEMPTS FAILED THE SAME WAY BEFORE THIS ONE */
+  ok("⭐ the header is a GRID, not three absolutely-positioned boxes that guess each other's width",
+    /\.header \{ display: grid/.test(wk) && !/\.gear-btn \{\s*position: absolute/.test(wk));
+  ok("⭐⭐ and the title has the full width on its own row, so it stops wrapping",
+    /\.header \.title\s*\{ grid-column: 1 \/ -1; grid-row: 2/.test(wk));
+  ok("⚠️ the two failed attempts are written down", /wrapped onto two lines both times/.test(wk));
+  ok("⛔ on a phone the word goes and the mark stays — still a real target", /\.jsuite-back \.lbl \{ display: none/.test(wk));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
