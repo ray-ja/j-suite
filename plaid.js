@@ -176,7 +176,15 @@ function plaidExchange(orgId, publicToken, label, cb) {
     c.items[j.item_id] = { accessToken: j.access_token, itemId: j.item_id,
       label: String(label || "Bank").slice(0, 60), cursor: "", linkedAt: Date.now(), accounts: {} };
     plaidSave(all);
-    cb(null, { itemId: j.item_id });
+    /* ⭐ ASK FOR THE ACCOUNTS RIGHT NOW. Pairing used to depend on a sync having happened first — so a
+       freshly linked bank showed an empty pairing list and the only way forward was to pull transactions
+       for accounts you had no way to pair yet. Ray connected six banks and every one of them was blank.
+       /accounts/get is the authoritative list and costs nothing; it belongs at link time. ⛔ Failure here is
+       NOT an error — the item is already linked and a later sync still fills it in. */
+    plaidCall(orgId, "/accounts/get", { access_token: j.access_token }, (e2, acc) => {
+      if (!e2 && acc && Array.isArray(acc.accounts)) plaidSaveAccounts(orgId, j.item_id, acc.accounts);
+      cb(null, { itemId: j.item_id });
+    });
   });
 }
 
@@ -260,13 +268,38 @@ function plaidSaveAccounts(orgId, itemId, accounts) {
      almost every account as "other". Keep BOTH fields, exactly as Plaid names them.
      ⭐ balance is kept because Navy Federal sent Ray two "EveryDay Checking", two "Share Savings" and two
      "Used Vehicle Loan" — and the Visa with no mask at all. Name alone identifies none of them. */
-  c.items[itemId].known = (accounts || []).map(a => ({
-    id: a.account_id, name: a.name || a.official_name || "Account",
-    mask: a.mask || "", type: a.type || "", subtype: a.subtype || "",
-    balance: (a.balances && a.balances.current != null) ? a.balances.current : null
-  }));
+  /* ⛔⛔ MERGE, NEVER REPLACE. This used to overwrite `known` wholesale with whatever the caller passed —
+     and the caller was a /transactions/sync response, whose `accounts` array carries only the accounts that
+     page touched. Ray's Navy Federal has 7 accounts; one sync came back with 4, and the other 3 VANISHED
+     from the pairing screen while still being paired underneath. An account list is a property of the ITEM,
+     not of a transactions page, so a partial answer may add and update but must never remove. */
+  const prev = c.items[itemId].known || [];
+  const byId = {};
+  prev.forEach(k => { if (k && k.id) byId[k.id] = k; });
+  (accounts || []).forEach(a => {
+    if (!a || !a.account_id) return;
+    byId[a.account_id] = {
+      id: a.account_id, name: a.name || a.official_name || "Account",
+      mask: a.mask || "", type: a.type || "", subtype: a.subtype || "",
+      balance: (a.balances && a.balances.current != null) ? a.balances.current
+             : (byId[a.account_id] ? byId[a.account_id].balance : null)
+    };
+  });
+  c.items[itemId].known = Object.keys(byId).map(k => byId[k]);
   plaidSave(all);
   return true;
+}
+
+/* ⭐ RE-ASK an already-linked item for its accounts. Repairs items linked before accounts were fetched at
+   link time, and picks up an account opened at the bank since. Read-only; writes only the `known` list. */
+function plaidRefreshAccounts(orgId, itemId, cb) {
+  const c = plaidCfg(orgId), it = c.items[itemId];
+  if (!it || !it.accessToken) return void setImmediate(() => cb(new Error("no such bank connection")));
+  plaidCall(orgId, "/accounts/get", { access_token: it.accessToken }, (err, j) => {
+    if (err) return cb(err);
+    plaidSaveAccounts(orgId, itemId, (j && j.accounts) || []);
+    cb(null, { count: ((j && j.accounts) || []).length });
+  });
 }
 
 /* map a Plaid account onto one of his budget accounts, so rows land in the right ledger */
@@ -302,7 +335,7 @@ function plaidStatus(orgId) {
   };
 }
 
-module.exports = { plaidVerify, PLAID_IGNORE,
+module.exports = { plaidVerify, PLAID_IGNORE, plaidRefreshAccounts,
   PLAID_FILE, PLAID_HOSTS, plaidCfg, plaidReady, plaidCall, plaidLinkToken, plaidExchange,
   plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave, plaidSaveAccounts, plaidSetConfig, PLAID_SHARED
 };

@@ -228,8 +228,12 @@ function bankMoney(n) {
 function bankPairHTML(it) {
   var known = it.known || [];
   if (!known.length) {
-    return '<div class="sub" style="white-space:normal;margin:2px 0 8px 10px">'
-      + 'Hit <b>Get transactions</b> once and the accounts in this bank will appear here to pair.</div>';
+    /* ⛔ NEVER TELL HIM TO PULL TRANSACTIONS FIRST. That was the old instruction, and it was backwards: the
+       rows would arrive with nowhere to go, get held back, and he'd be asked to pair accounts he still
+       couldn't see. Accounts are fetched at link time now — this is the repair path for a bank linked
+       before that, and for an account opened since. */
+    return '<div class="sub" style="white-space:normal;margin:2px 0 8px 10px">No accounts listed yet — '
+      + '<a href="#" onclick="bankRefreshAccounts(\'' + esc(it.itemId) + '\');return false">ask this bank again</a>.</div>';
   }
   var mine = [], books = {};
   try {
@@ -487,5 +491,17 @@ if (typeof window !== "undefined") {
     } catch (e) { alert("Couldn't create that account: " + ((e && e.message) || e)); return ""; }
   }
   window.bankCreateAccountFor = bankCreateAccountFor;
+  window.bankRefreshAccounts = function (itemId) {
+    fetch(bankApiBase() + "/api/plaid/refresh-accounts", { method: "POST", headers: bankHeaders(),
+      body: JSON.stringify({ org: bankOrg(), itemId: itemId }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.error) { alert(j.error); return; }
+        BANK_STATUS = j;
+        if (typeof toast === "function") toast("Found " + (j.count || 0) + " account" + (j.count === 1 ? "" : "s"));
+        if (typeof render === "function") render();
+      })
+      .catch(function (e) { alert("Couldn't ask the bank: " + ((e && e.message) || e)); });
+  };
   window.bankCardHTML = bankCardHTML; window.bankDropRemoved = bankDropRemoved; window.bankCanLink = bankCanLink;
 }

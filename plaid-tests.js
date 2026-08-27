@@ -506,5 +506,60 @@ console.log("\n--- ⛔ 'declined' and 'undecided' are different answers ---");
     /deadlock/.test(R("plaid.js")) && /DIFFERENT ANSWERS/.test(R("plaid.js")));
 }
 
+console.log("\n--- ⛔ an account list belongs to the ITEM, not to a transactions page ---");
+{
+  /* Ray connected six more banks, 2026-08-27, and every one showed an empty pairing list. Navy Federal —
+     the one bank that HAD synced — showed 4 accounts while 7 were paired underneath.
+     ⚠️ TWO CAUSES, ONE WRONG IDEA. `known` was only ever written by a /transactions/sync response, and that
+     response's `accounts` array carries only the accounts THAT PAGE touched. So: a bank that had never
+     synced listed nothing, and a partial page silently DELETED the accounts it didn't mention. The old UI
+     even told him to "hit Get transactions once and the accounts will appear" — backwards, because the rows
+     then arrive with nowhere to go and are held back while he's asked to pair accounts he can't see. */
+  const PJ = R("plaid.js"), PJC = CODE(PJ);
+  ok("⭐⭐ accounts are fetched at LINK time", /plaidCall\(orgId, "\/accounts\/get"[\s\S]{0,200}plaidSaveAccounts/.test(PJC));
+  ok("⛔ ...and a failure there is not an error — the item is already linked",
+    /if \(!e2 && acc && Array\.isArray\(acc\.accounts\)\)/.test(PJC));
+  ok("⭐⭐ plaidSaveAccounts MERGES — a partial page can add or update, never remove",
+    /const prev = c\.items\[itemId\]\.known \|\| \[\];/.test(PJC) && /byId\[a\.account_id\] = \{/.test(PJC));
+  ok("...and a merge that omits a balance keeps the one it had",
+    /byId\[a\.account_id\] \? byId\[a\.account_id\]\.balance : null/.test(PJC));
+  ok("⭐ there is a repair path for banks linked before this", /function plaidRefreshAccounts/.test(PJC));
+  ok("...routed and reachable", /route === "refresh-accounts"/.test(CODE(R("sync-server.js")))
+    && /bankRefreshAccounts/.test(CODE(R("js/150-bank-link.js"))));
+  ok("⛔ the empty list no longer tells him to pull transactions first",
+    !/accounts in this bank will appear here to pair/.test(R("js/150-bank-link.js")));
+  ok("⚠️ and why that instruction was backwards is recorded", /rows would arrive with nowhere to go/.test(R("js/150-bank-link.js")));
+
+  /* the merge, exercised rather than grepped */
+  const os = require("os"), fsx = require("fs"), pathx = require("path");
+  const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), "plaidmerge-"));
+  const cfgFile = pathx.join(dir, "plaid-config.json");
+  fsx.writeFileSync(cfgFile, JSON.stringify({ o: { clientId: "c", secret: "s", env: "sandbox",
+    items: { it1: { accessToken: "t", itemId: "it1", cursor: "", accounts: {}, known: [] } } } }));
+  const vm2 = require("vm");
+  const mod = { exports: {} };
+  const ctx2 = { module: mod, exports: mod.exports, require, __dirname: dir, console, process, setImmediate, Buffer };
+  vm2.createContext(ctx2);
+  vm2.runInContext(PJ, ctx2);
+  const M = mod.exports;
+  const full = [
+    { account_id: "A", name: "EveryDay Checking", mask: "5377", type: "depository", subtype: "checking", balances: { current: 502.12 } },
+    { account_id: "B", name: "Share Savings", mask: "0301", type: "depository", subtype: "savings", balances: { current: 5.03 } },
+    { account_id: "C", name: "Used Vehicle Loan", mask: "1319", type: "loan", subtype: "loan", balances: { current: 16898.66 } }
+  ];
+  M.plaidSaveAccounts("o", "it1", full);
+  let known = M.plaidCfg("o").items.it1.known;
+  ok("⭐ a full list lands", known.length === 3, known.length);
+
+  /* now the partial page that used to wipe the rest */
+  M.plaidSaveAccounts("o", "it1", [{ account_id: "A", name: "EveryDay Checking", mask: "5377", type: "depository", subtype: "checking", balances: { current: 480.00 } }]);
+  known = M.plaidCfg("o").items.it1.known;
+  ok("⭐⭐ a PARTIAL page does not delete the other two — this is the bug he hit", known.length === 3, known.length);
+  ok("...the mentioned one is updated", known.find(k => k.id === "A").balance === 480);
+  ok("...and the unmentioned ones keep their balances",
+    known.find(k => k.id === "B").balance === 5.03 && known.find(k => k.id === "C").balance === 16898.66);
+  try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

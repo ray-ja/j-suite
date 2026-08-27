@@ -3723,6 +3723,13 @@ const server = http.createServer((req, res) => {
           res.end(JSON.stringify(out));
         });
       }
+      if (route === "refresh-accounts") {
+        return void plaid.plaidRefreshAccounts(org, p2.itemId, (err, out) => {
+          if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message })); }
+          res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify(Object.assign({ ok: true }, out, plaid.plaidStatus(org))));
+        });
+      }
       if (route === "sync") {
         return void plaid.plaidSyncItem(org, p2.itemId, (err, out) => {
           if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
