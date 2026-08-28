@@ -142,7 +142,7 @@ function spCalc(sp){
   const FILL   = (typeof QE!=="undefined"?QE.FILL_TON:45);
   const CD     = (typeof QE!=="undefined"?QE.CD_TON:90);
   const FLOOR  = (typeof QE!=="undefined"?QE.MARGIN_FLOOR:0.35);
-  const DUMPMI = (typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);
+  const DUMPMI = (typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14);
   const dr = (typeof wizSiteDriveRT==="function") ? wizSiteDriveRT() : {rt:20,min:30};
   const driveCharge = Math.round(dr.rt*MIL + 2*(dr.min/60)*LOADED), driveMileage = Math.round(dr.rt*MIL);
   const cplx = Math.max(1, sp.complexity || 1);   // 1 straight path · 1.25 curves/tie-ins · 1.5 hard access

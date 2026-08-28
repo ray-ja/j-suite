@@ -75,14 +75,14 @@ function calcQuote(key,inp){
 }
 
 /* COGS_LAYER_V1 — COGS + payment layer, Part 1 (pure logic). Idempotency sentinel; do not duplicate. */
-/* ⭐ SWITCHED 2026-08-28 to the close station Ray found — 15 min from base, replacing the 55-mile Maple
+/* ⭐ SWITCHED 2026-08-28 to SOUNDSIDE RECYCLING (7565 Caratoke Hwy, Jarvisburg, NC 27947) — 7 mi from base, replacing the 55-mile Maple
    round trip. His sheet: C&D $90/ton · yard waste $75/ton · dirty concrete $90/ton. Higher per ton, but at
    a 3,600 lb trailer cap the uplift maxes at ~$30/load while the short run returns ~$25-30 of mileage plus
    an hour — the close station wins every run. (Old: C&D $73.16 Dare Manns Harbor · veg $58.46 Currituck.) */
 var DISPOSAL_RATE_PER_TON = 90;      // $/ton C&D — the close station (Ray's printed sheet, 2026-08-28)
 var LBS_PER_TON           = 2000;
 var VEG_RATE_PER_TON      = 75;      // $/ton yard waste — same station. NOT free.
-var DISPOSAL_TRIP_MILES   = 20;      // ⚠️ round-trip ESTIMATE from "15 minutes away" — confirm actual miles + station name with Ray
+var DISPOSAL_TRIP_MILES   = 14;      // round trip — Soundside Recycling, 7565 Caratoke Hwy, Jarvisburg (7 mi one-way from base; Ray, 2026-08-28)
 var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
 var MILEAGE_RATE          = 0.725;   // $/mi round-trip vehicle cost — 2026 IRS rate 72.5¢ (absorbs fuel; no separate gas line, no hourly wage)
 var MILEAGE_RATE_LABEL    = "72.5¢"; // display form (avoids $0.725 rounding to $0.72)

@@ -87,8 +87,8 @@ window.demoCalc=function(){
   // --- STATIC drive from the property address + a FULL dump run (demo is must-dump, can't be stashed) ---
   const crew=window._demoCrew||2;
   const dr=(typeof wizDriveCharge==="function")?wizDriveCharge(crew):{charge:0,miles:0,min:0};
-  const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED=(typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75), DUMPMI=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);
-  const dumpRun=Math.round(DUMPMI*MIL+(80/60)*LOADED);
+  const MIL=(typeof QE!=="undefined"?QE.MILEAGE:0.725), LOADED=(typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75), DUMPMI=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14);
+  const dumpRun=Math.round(DUMPMI*MIL+(50/60)*LOADED);   // 50 min/run at Soundside (was 80 for Maple)
   const driveCharge=dr.charge+dumpRun, driveMileage=Math.round((dr.miles+DUMPMI)*MIL);
   const cost=Math.round((disposal+consum+driveMileage)*100)/100;   // hard cost = tipping + consumables + drive mileage (no labor line)
 

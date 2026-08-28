@@ -119,7 +119,7 @@ function plQuote(inp) {
 
   var dr = (typeof inp.drive === "object" && inp.drive) ? inp.drive
          : (typeof wizDriveCharge === "function") ? wizDriveCharge(crew) : { charge: 0, miles: 0, min: 0 };
-  var DUMPMI = (typeof DISPOSAL_TRIP_MILES !== "undefined") ? DISPOSAL_TRIP_MILES : 55;
+  var DUMPMI = (typeof DISPOSAL_TRIP_MILES !== "undefined") ? DISPOSAL_TRIP_MILES : 14;
   var LOADED = (typeof QE !== "undefined") ? QE.TAKE_HOME / QE.FIELD_SPLIT : 93.75;
   var dumpRun = weHaul ? Math.round(DUMPMI * MIL + (80 / 60) * LOADED) : 0;
   var driveCharge = (dr.charge || 0) + dumpRun;

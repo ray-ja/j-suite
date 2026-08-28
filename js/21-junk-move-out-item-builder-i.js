@@ -18,8 +18,9 @@ const JUNK_TRAILER_CUFT=250;   // level-full, the honest planning number
 const JUNK_TRAILER_HEAPED=325; // realistically heaped with bulky junk
 const JUNK_CARGO_LB=3600;      // cargo weight cap (trailer + truck rating) — dirt/sand/rock stay off, per the haul rules
 const JUNK_MAXLOAD=JUNK_TRAILER_CUFT;  // cu ft we can pull in ONE dump run
-/* one full dump run's cost — the 55-mi round trip: mileage + 80 min of drive time at $45/hr-loaded ($93.75/hr) */
-function junkDumpRunCost(){ const mi=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55); return mi*QE.MILEAGE + (80/60)*(QE.TAKE_HOME/QE.FIELD_SPLIT); }
+/* one full dump run's cost — Soundside is 7 mi away: 14-mi RT mileage + 50 min (30 drive + ~20 at the scale/tip)
+   at $45/hr-loaded ($93.75/hr). Was 80 min for the 55-mi Maple run — the close station gives back half an hour per run. */
+function junkDumpRunCost(){ const mi=(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14); return mi*QE.MILEAGE + (50/60)*(QE.TAKE_HOME/QE.FIELD_SPLIT); }
 /* this job's SHARE of a dump run, amortized by volume — junk is stashed + batched, so we always dump a full load */
 function junkDumpAmort(cuft){ return JUNK_MAXLOAD>0 ? (cuft/JUNK_MAXLOAD)*junkDumpRunCost() : 0; }
 /* TRAILER LOADS this job needs, by whichever limit binds first — volume or weight. Returns the real trip count
@@ -43,8 +44,9 @@ function junkHaulSuggest(c){
   if(t<=2.2)return{method:"trailer",label:cap.tripsUp+" trailer loads",note:"multi-trip job"+wtNote};
   return{method:"rolloff",label:cap.tripsUp+" trailer loads — consider a roll-off",note:"whole-house volume; a dumpster may beat "+cap.tripsUp+" trips"+wtNote};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
-const JUNK_CD_TON=120;   // heavy/C&D disposal CHARGE to the customer — our station now bills us $90/ton (2026-08-28, was $73-94)
-                         // ⚠️ RAY: at $90 cost this passthrough margin is down to 33% (was 64%) — revisit with the dump-ticket pricing model
+const JUNK_CD_TON=120;   // heavy/C&D disposal CHARGE to the customer — Soundside bills us $90/ton (2026-08-28)
+                         // ⭐ KEPT at $120 by Ray's call, 2026-08-28: "we dont need to reduce prices that were already in line
+                         //    with national and local levels." The spread (~$30/ton) is margin, and it is deliberate.
 /* per-ITEM disposal fee. "cd" (heavy/construction debris) is weight-based; everything else is a flat fee. Fixes the old "+$undefined". */
 function junkItemFee(it){ const fl=it&&it[4]; if(!fl)return 0; if(fl==="cd")return Math.round(it[3]/2000*JUNK_CD_TON); return JUNK_FEE[fl]||0; }
 const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line
@@ -119,7 +121,7 @@ function junkDriveCharge(crew){
 /* the engine object for the take-home CHECK: loading person-hours + auto drive + the known dump run */
 function junkEngineObj(c){
   const crew=WZ.junkCrew||2,mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
-  return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55),dumpHrs:80/60,materials:(c.special||0)};
+  return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14),dumpHrs:50/60,materials:(c.special||0)};
 }
 function wizJunkUI(){
   if(!WZ.junk)WZ.junk=[];
