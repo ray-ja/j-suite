@@ -553,6 +553,32 @@
    I wanna be able to see it all on one screen."
    ⚠️ Mobile is ONE column and plain DOM order — three columns at 390px is three unreadable ones, and the
    move handles are hidden there because a control that offers a column which doesn't exist is a lie. */
+/* ---------- TODAY ON A PHONE (js/167) — its own page, not the desktop one squeezed ----------------------
+   Ray, 2026-08-27: "the mobile and desktop should just have different pages honestly theres no decent
+   middleground." ⚠️ The breakpoint below must stay in step with TM_BP in js/167 — the JS picks the page and
+   the CSS styles it, and if they disagree by a pixel one renders under the other's rules. */
+.tm-agenda{padding:10px 14px 12px}
+.tm-day{margin-top:10px}
+.tm-day:first-of-type{margin-top:6px}
+.tm-dh{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);
+  font-weight:700;padding-bottom:3px;border-bottom:1px solid var(--line)}
+/* ⛔ align-items:flex-start and a wrapping title — the same lesson as the month cell: a phone row has
+   vertical room and no business ellipsising a to-do it could simply wrap. */
+.tm-item{display:flex;gap:10px;align-items:flex-start;padding:7px 0 7px 8px;
+  border-left:3px solid var(--pc,var(--accent));margin-top:5px;border-radius:0 4px 4px 0;
+  background:color-mix(in srgb, var(--pc,var(--accent)) 9%, transparent);cursor:pointer}
+.tm-it{flex:1 1 auto;min-width:0;font-size:14px;line-height:1.3;white-space:normal;overflow-wrap:break-word}
+.tm-ir{flex:0 0 auto;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;
+  color:var(--muted);padding-top:1px}
+/* the single hour view sits in a normal card; it never needs the two-up grid the desktop uses */
+.tm-today .tcal-day{width:100%}
+/* ⭐ FOUR BALANCES GO 2×2 ON A PHONE. Across 390px each column is ~85px and "Personal" truncates to
+   "PERSO…" — a label you have to decode is not a label. Same numbers, same labels, different shape. */
+@media(max-width:640px){
+  .mc-bals{display:grid;grid-template-columns:1fr 1fr;gap:12px 10px}
+  .mc-div{display:none}
+}
+
 .tl-grid{display:flex;flex-direction:column;gap:0}
 .tl-col{min-width:0;display:flex;flex-direction:column}
 .tl-block{min-width:0}

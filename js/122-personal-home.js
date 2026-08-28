@@ -471,6 +471,14 @@ function personalHome() {
      then I can just try a few different ways to do it." He has told me where these blocks go four times and
      been right each time — the lesson is not the arrangement, it is that I keep guessing at something he can
      settle in ten seconds if the app lets him. ◀ ▲ ▼ ▶ on each block, saved per device. */
+  /* ⭐⭐ TWO PAGES, NOT ONE RESPONSIVE ONE. Ray, 2026-08-27: "the mobile and desktop should just have
+     different pages honestly theres no decent middleground." He is right — the month grid and the movable
+     three-column layout have no honest phone version, and responsive CSS was making it look like they did.
+     ⛔ The fork is HERE and only here: one line choosing a composition. Both branches call the same cards
+     (js/167 explains why that matters). */
+  if (typeof tmIsPhone === "function" && tmIsPhone() && typeof tmTodayHTML === "function") {
+    return '<div class="secthd"><h2>' + esc(phGreeting()) + '</h2></div>' + tmTodayHTML();
+  }
   /* ⭐ "an edit button along the top somewhere" (Ray, 2026-08-27) — it goes in the greeting row, which is the
      top of Today, and the layout module owns the button because it owns the mode. */
   if (typeof tlTodayHTML === "function") {

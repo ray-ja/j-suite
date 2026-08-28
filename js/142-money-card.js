@@ -96,8 +96,11 @@ function mcBillName(name) {
 function mcBalancesHTML() {
   var accts = mcAccounts();
   if (!accts.length) return "";
+  /* ⚠️ `mc-bals` is the hook for the phone page (js/167). Four balances across 390px leaves ~85px each and
+     "Personal" renders as "PERSO…" — so on a phone this becomes a 2×2 grid instead. A class, not a second
+     function: the numbers and the labels are identical, only the shape changes. */
   return '<div class="card" style="padding:12px 14px">'
-    + '<div class="row" style="gap:10px;align-items:stretch">'
+    + '<div class="row mc-bals" style="gap:10px;align-items:stretch">'
     + accts.slice(0, 4).map(function (a) {
         var live = (typeof budgetAccountBalance === "function") ? budgetAccountBalance(a) : (+a.balance || 0);
         /* ⭐ A RECONCILED ACCOUNT IS NEVER "unset" — even if it derives to exactly zero, that zero is a
@@ -115,7 +118,7 @@ function mcBalancesHTML() {
               : '<div class="nm" style="font-size:19px;margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap'
                 + (live < 0 ? ';color:var(--danger)' : '') + '">' + esc(mcRound(live)) + '</div>')
           + '</div>';
-      }).join('<div style="flex:0 0 1px;background:var(--line)"></div>')
+      }).join('<div class="mc-div" style="flex:0 0 1px;background:var(--line)"></div>')
     + '</div></div>';
 }
 

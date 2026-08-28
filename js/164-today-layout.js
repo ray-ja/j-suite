@@ -94,8 +94,13 @@ function tlLayout() {
 }
 function tlSave(layout) { try { localStorage.setItem(tlKey(), JSON.stringify(layout)); } catch (e) {} }
 
-/* the routine column, assembled exactly as it was — one sequence, top to bottom */
-function tlRoutineHTML() {
+/* the routine column, assembled exactly as it was — one sequence, top to bottom.
+   ⭐ `opts.jobs === false` drops today's job list, for a caller that is already showing the day by the hour.
+   ⛔ AN OPTION, NOT A SECOND COPY. The phone page (js/167) needs the same sequence minus one card; giving it
+   its own assembled version would mean every future change to the routine had to be made twice, and the day
+   one of them was missed is the day the two pages start disagreeing about his morning. */
+function tlRoutineHTML(opts) {
+  opts = opts || {};
   var part = function (k) {
     if (typeof rtPartHTML !== "function" || typeof ROUTINE_PARTS === "undefined") return "";
     var p = ROUTINE_PARTS.filter(function (x) { return x.key === k; })[0];
@@ -103,7 +108,7 @@ function tlRoutineHTML() {
   };
   var h = part("morning");
   h += (typeof rtBillsTodayHTML === "function") ? rtBillsTodayHTML() : "";   /* what leaves the account today */
-  h += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";
+  if (opts.jobs !== false) h += (typeof rtJobsTodayHTML === "function") ? rtJobsTodayHTML() : "";
   h += (typeof phPlanCard === "function") ? phPlanCard() : "";
   h += (typeof piCardHTML === "function") ? piCardHTML() : "";
   h += part("day");

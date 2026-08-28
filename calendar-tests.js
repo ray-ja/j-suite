@@ -105,9 +105,16 @@ ok("the home page shows what's close", /evHomeCardHTML\(30\)/.test(fs.readFileSy
 console.log("\n--- the companion is TOLD the dates ---");
 {
   const PERSONAL_TABS = ["life", "journal", "shelf", "cal", "budget", "todo", "messages"];
-  const iso = new Date().toISOString().slice(0, 10);
+  /* ⚠️⚠️ LOCAL DATE, NOT toISOString(). The code under test builds "today" from getFullYear/getMonth/getDate
+     (js/02 today(), and capTodayContext stamps America/New_York) — all LOCAL. toISOString() is UTC, so from
+     8pm EDT onwards the fixture called tomorrow "today" and the assertion failed for four hours every
+     evening. It passed all day and broke after dinner, which is the worst way for a test to be wrong.
+     ⛔ One local-date helper, used for every date in this fixture. */
+  const localISO = (ms) => { const d = new Date(ms == null ? Date.now() : ms);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  const iso = localISO();
   const yr = +iso.slice(0, 4);
-  const inTenDays = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+  const inTenDays = localISO(Date.now() + 10 * 86400000);
   const store = {
     registry: [{ id: "p", name: "RBJVL", tabs: PERSONAL_TABS }],
     users: [{ id: "u1", username: "Ray" }],

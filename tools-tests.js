@@ -1116,5 +1116,115 @@ console.log("\n--- 🏋️ the way back out of the workout app ---");
   ok("⛔ on a phone the word goes and the mark stays — still a real target", /\.jsuite-back \.lbl \{ display: none/.test(wk));
 }
 
+/* ---------- ⭐⭐ TODAY IS TWO PAGES NOW (js/167) ----------------------------------------------------------
+   Ray, 2026-08-27: "the mobile and desktop should just have different pages honestly theres no decent
+   middleground."
+
+   He is right about the two blocks that don't survive a narrow screen — the month grid (seven columns of
+   readable text, 50px per cell at 390px) and the movable three-column layout (arrows pointing at columns
+   that aren't there). Responsive CSS was making those two look as though they'd survived.
+
+   ⛔⛔ WHAT THESE TESTS EXIST TO STOP IS THE OBVIOUS FAILURE OF A SECOND PAGE: two copies of the same card
+   drifting apart until they disagree about his money and he can't tell which one is lying. The phone page
+   must call the SAME functions. It gets a different ARRANGEMENT, not a different implementation. */
+console.log("\n--- ⭐⭐ the phone page: a different arrangement, not a second app ---");
+{
+  const MOB = R("js/167-today-mobile.js");
+  const mkPhone = (wide, todayIso, items) => {
+    const c = { console, esc: s => String(s == null ? "" : s), render: () => {}, navSub: () => {} };
+    c.window = c;
+    c.matchMedia = () => ({ matches: !!wide, addEventListener() {}, addListener() {} });
+    c.tcalToday = () => todayIso;
+    c.tcalShift = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    c.tcalDow = iso => new Date(iso + "T00:00:00Z").getUTCDay();
+    c.tcalItemsFor = iso => (items || {})[iso] || [];
+    c.tcalDayHTML = (iso, l) => '<div class="tcal-day">' + l + " " + iso + "</div>";
+    c.tcalClock = m => m + "m"; c.tcalAmt = v => "$" + v;
+    c.phTalkCard = () => "<CHAT>"; c.moneyCardHTML = () => "<MONEY>"; c.monthOutlookHTML = () => "<OUTLOOK>";
+    c.tlRoutineHTML = o => "<ROUTINE jobs=" + (o && o.jobs === false ? "off" : "on") + ">";
+    vm.createContext(c);
+    vm.runInContext(MOB, c);
+    Object.assign(c, c.window);
+    return c;
+  };
+  const JOB = [{ kind: "job", title: "Mike Green — walkthrough", mins: 540, color: "#1e9e5a", tab: "schedule" }];
+  const BILL = [{ kind: "bill", title: "Iowa mortgage", amount: 4826, mins: null, color: "#e8683f", tab: "budget" }];
+
+  /* ⚠️ THE BREAKPOINT IS ONE NUMBER. If JS and CSS disagree by a pixel there is a window where the desktop
+     page renders under phone rules. Asserted against app.css itself, not against a copy of the number. */
+  const cssBp = /@media\(min-width:(\d+)px\)\{\s*\/\*[^]*?\.tl-grid\{display:grid/.exec(R("app.css"));
+  ok("⚠️⚠️ the JS breakpoint IS the CSS breakpoint — read out of app.css, not restated here",
+    !!cssBp && +cssBp[1] === mkPhone(false, "2026-08-27", {}).TM_BP, { css: cssBp && cssBp[1], js: mkPhone(false, "2026-08-27", {}).TM_BP });
+  ok("⭐ matchMedia, not innerWidth — the CSS boundary is a media query, so ask the same engine the same "
+    + "question rather than a number that differs by a scrollbar", /matchMedia/.test(CODE(MOB)) && !/innerWidth/.test(CODE(MOB)));
+  ok("⭐ narrow is the phone page", mkPhone(false, "2026-08-27", {}).tmIsPhone() === true);
+  ok("⭐ wide is not", mkPhone(true, "2026-08-27", {}).tmIsPhone() === false);
+  ok("⭐ the fork is one line in personalHome, and only there",
+    /tmIsPhone\(\) && typeof tmTodayHTML/.test(CODE(R("js/122-personal-home.js"))));
+
+  /* ⛔⛔ THE ANTI-FORK ASSERTIONS. The phone page composes; it must not re-implement. */
+  const phone = mkPhone(false, "2026-08-27", { "2026-08-27": JOB, "2026-08-28": BILL });
+  const ph = phone.tmTodayHTML();
+  ok("⛔⛔ every card is the SAME function the desktop calls — chat, routine, money, outlook",
+    ["<CHAT>", "<MONEY>", "<OUTLOOK>"].every(x => ph.indexOf(x) >= 0) && /<ROUTINE/.test(ph), ph.slice(0, 160));
+  ok("⛔⛔ ...and the module contains NO card logic of its own — no balances, no bills, no A/R. The day it "
+    + "grows its own copy is the day the two pages start disagreeing about his money",
+    !/budgetAccounts|budgetBills|colOwed|acctBalanceAt|budgetTx/.test(CODE(MOB)));
+  ok("⛔ it reads the calendar through tcalItemsFor, so the phone sees the SAME cross-org items — a phone "
+    + "page quietly showing fewer things than the desktop would be worse than no phone page",
+    /tcalItemsFor/.test(CODE(MOB)));
+
+  /* ⛔ the two blocks that have no honest phone version */
+  ok("⛔ no month grid on a phone — 7 columns at 390px is 50px a cell, which is dots again with extra steps",
+    !/tcalHTML|tcal-m/.test(CODE(MOB)) && !/tcal-m"/.test(ph));
+  ok("⛔ and no layout controls — one column has exactly one arrangement, so arrows would move nothing",
+    !/tl-handle/.test(ph) && !/tlMove|tlWide|tlEditBtn/.test(CODE(MOB)));
+
+  /* ⭐ the agenda that replaces the grid */
+  ok("⭐ the agenda is there instead", /tm-agenda/.test(ph));
+  const ag = phone.tmAgendaHTML(21);
+  ok("⛔ it starts at TOMORROW — today is the hour view above, and listing it twice is two surfaces "
+    + "answering one question", !/2026-08-27/.test(ag) && /Tomorrow/.test(ag));
+  /* ⚠️ MY FIRST VERSION OF THIS WAS A TAUTOLOGY — `A && B === false || A` reduces to plain `A`, so it
+     asserted the amount twice and the time not at all, and passed. Both halves are checked here, on one
+     agenda that contains one of each. */
+  const mixed = mkPhone(false, "2026-08-27", { "2026-08-28": BILL, "2026-08-29": JOB }).tmAgendaHTML(21);
+  ok("⭐ a bill carries its amount", /\$4826/.test(mixed), mixed.slice(0, 240));
+  ok("⭐ ...and a timed job carries its time", /540m/.test(mixed), mixed.slice(-240));
+  ok("⭐ ...each on its own day heading", (mixed.match(/tm-dh/g) || []).length === 2);
+  ok("⭐ an empty stretch says so rather than rendering nothing",
+    /Nothing on the calendar/.test(mkPhone(false, "2026-08-27", {}).tmAgendaHTML(21)));
+  ok("⭐ items link back to the screen that owns them — read-only, like the desktop calendar",
+    /tcalGo\(/.test(ag) && !/\.deleted\s*=|save\(\)/.test(CODE(MOB)));
+
+  /* ⛔ THE EMPTY HOUR CARD. On the desktop an empty panel keeps the two day views aligned — a real reason
+     there. On a phone it is the FIRST thing he sees, and 120px announcing an absence is the worst possible
+     use of the top of a small screen. */
+  ok("⛔ nothing on today = no hour card at all", !/tcal-day/.test(mkPhone(false, "2026-08-27", {}).tmTodayHTML()));
+  ok("⭐ ...but it is there the moment the day has something in it", /tcal-day/.test(ph));
+
+  /* ⭐ the shared-composition refactor that made this possible without a copy */
+  ok("⭐⭐ the phone asks the routine to drop today's jobs, because the hours above already show them — an "
+    + "OPTION on the one function, not a second assembled copy", /<ROUTINE jobs=off>/.test(ph));
+  ok("⭐ ...and the desktop still gets them", /opts\.jobs !== false/.test(CODE(R("js/164-today-layout.js"))));
+
+  /* ⚠️ crossing the breakpoint has to re-render, or he lands on the wrong page after a rotate */
+  ok("⚠️ rotating the phone re-renders", /addEventListener\("change"/.test(CODE(MOB)) && /render\(\)/.test(CODE(MOB)));
+  ok("⛔⛔ ...and the listener is bound ONCE. render() runs on every interaction; binding per render would "
+    + "stack thousands of listeners and fire a re-render for each on the first resize", /_tmBound/.test(CODE(MOB)));
+
+  /* ⚠️ a module that isn't in the shell is a module that doesn't exist — and its absence would fail SILENTLY
+     here, because personalHome guards on `typeof tmTodayHTML === "function"` and would just serve the desktop
+     page on a phone forever. */
+  const shellHtml = R("Business App (v1).html");
+  ok("⭐ the module is registered in the shell, after the cards it composes",
+    /js\/167-today-mobile\.js/.test(shellHtml)
+    && shellHtml.indexOf("122-personal-home") < shellHtml.indexOf("167-today-mobile")
+    && shellHtml.indexOf("165-month-outlook") < shellHtml.indexOf("167-today-mobile"));
+  ok("⭐ four balances go 2×2 on a phone — across 390px 'Personal' truncates to 'PERSO…', and a label you "
+    + "have to decode is not a label", /\.mc-bals\{display:grid;grid-template-columns:1fr 1fr/.test(R("app.css"))
+    && /mc-bals/.test(R("js/142-money-card.js")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
