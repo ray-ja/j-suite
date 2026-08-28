@@ -406,17 +406,27 @@ function phPlanCard() {
   var done = phDoneToday();
   var h = '<div class="secthd"><h2>Today</h2>'
     + (done ? '<span class="ct">✓ ' + done + ' done</span>' : '') + '</div>';
+  /* ⭐ the search/add box goes at the BOTTOM in both branches (js/168) — "at the bottom something that lets
+     me search / add a new one". An empty list is exactly when he most needs it, so it is not a special case. */
+  var addBox = (typeof ttdSearchHTML === "function") ? ttdSearchHTML() : "";
+  var undoRow = (typeof ttdUndoHTML === "function") ? ttdUndoHTML() : "";
   if (!list.length) {
-    return h + '<div class="card"><div class="sub" style="white-space:normal">Nothing on the list. '
-      + 'Add something, or just tell me what you\'re doing and I\'ll put it here.</div></div>';
+    return h + '<div class="card" style="padding:6px 10px">' + undoRow
+      + '<div class="sub" style="white-space:normal;padding:6px 2px">Nothing on the list. '
+      + 'Add something below, or just tell me what you\'re doing and I\'ll put it here.</div>'
+      + addBox + '</div>';
   }
-  h += '<div class="card" style="padding:6px 10px">';
+  h += '<div class="card" style="padding:6px 10px">' + undoRow;
   list.slice(0, 12).forEach(function (td) {
     var carried = td.planDate && String(td.planDate) < t;
     var overdue = td.due && String(td.due) < t;
     /* ⭐ amber: something that has to happen TODAY, as opposed to the routine's grey. Same colour the
        calendar uses for a to-do, so one thing means one thing across the app. */
-    h += '<div class="li rt-li rt-kind-todo" style="align-items:flex-start">'
+    /* ⭐ draggable onto the calendar (js/168). The gesture is desktop-only by nature; the 📅 button in the
+       controls does the same job everywhere, which is why the drag is allowed to be a bonus. */
+    h += '<div class="li rt-li rt-kind-todo ttd-row" style="align-items:flex-start" draggable="true"'
+      + ' ondragstart="if(typeof ttdDragStart===\'function\')ttdDragStart(event,\'' + td.id + '\')"'
+      + ' ondragend="if(typeof ttdDragEnd===\'function\')ttdDragEnd()">'
       + '<input type="checkbox" class="rt-box" ' + (td.done ? "checked" : "")
       + ' onchange="phTickTodo(\'' + td.id + '\')">'
       + '<div class="grow" style="cursor:pointer" onclick="if(typeof openTodo===\'function\')openTodo(\'' + td.id + '\')">'
@@ -430,10 +440,17 @@ function phPlanCard() {
           : ((overdue ? '<span style="color:var(--danger);font-weight:600">overdue</span> · ' : '')
              + (carried ? 'carried over · ' : '')
              + esc(td.notes ? String(td.notes).slice(0, 90) : (td.due ? "due " + ((typeof fmtDate === "function") ? fmtDate(td.due) : td.due) : ""))))
-      + '</div></div></div>';
+      /* ⭐ show WHEN he has planned it, when that isn't today — otherwise the date he just set is invisible */
+      + (td.planDate && String(td.planDate) > t ? ' · planned ' + esc(td.planDate) : '')
+      + '</div></div>'
+      + ((typeof ttdRowCtrlHTML === "function") ? ttdRowCtrlHTML(td) : "")
+      + '</div>'
+      /* ⚠️ OUTSIDE the .li, not inside it. The row is a flex line; a full-width date panel dropped in as a
+         fourth flex child sits beside the title instead of under it. */
+      + ((typeof ttdDateRowHTML === "function") ? ttdDateRowHTML(td) : "");
   });
   if (list.length > 12) h += '<div class="sub" style="padding:4px 2px">+ ' + (list.length - 12) + ' more on the To-Do tab</div>';
-  return h + '</div>';
+  return h + addBox + '</div>';
 }
 if (typeof window !== "undefined") window.phTickTodo = function (id) {
   var td = ((D().todos) || []).find(function (x) { return x && x.id === id; });

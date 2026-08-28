@@ -553,6 +553,49 @@
    I wanna be able to see it all on one screen."
    ⚠️ Mobile is ONE column and plain DOM order — three columns at 390px is three unreadable ones, and the
    move handles are hidden there because a control that offers a column which doesn't exist is a lie. */
+/* ---------- TODAY'S LIST, MADE WORKABLE (js/168) --------------------------------------------------------
+   Search/add at the bottom, a date panel per row, delete-with-undo, and drag onto the calendar. */
+.ttd-ctl{flex:0 0 auto;display:flex;gap:2px;align-items:center;padding-top:2px}
+.ttd-ctl button{border:1px solid transparent;background:none;color:var(--muted);border-radius:5px;
+  font-size:13px;line-height:1;padding:4px 6px;cursor:pointer;width:auto}
+.ttd-ctl button:hover{color:var(--ink);border-color:var(--line);background:var(--soft)}
+/* ⛔ the delete goes red only on hover — a permanently red ✕ on every row reads as an alarm about the list */
+.ttd-ctl button.ttd-x:hover{color:var(--danger);border-color:var(--danger)}
+.ttd-dates{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:2px 0 10px 34px}
+.ttd-chip{border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;
+  font-size:12px;line-height:1;padding:5px 10px;cursor:pointer;width:auto}
+.ttd-chip:hover{color:var(--ink);border-color:var(--accent)}
+.ttd-chip.on{color:var(--accent);border-color:var(--accent);font-weight:700}
+.ttd-date{width:auto;padding:4px 6px;font-size:12px}
+.ttd-due{font-size:11.5px;color:var(--muted)}
+
+.ttd-add{padding:8px 2px 4px;border-top:1px solid var(--line);margin-top:4px}
+.ttd-in{width:100%;font-size:14px;padding:9px 10px}
+.ttd-res:empty{display:none}
+.ttd-res{margin-top:6px;display:flex;flex-direction:column;gap:2px}
+.ttd-r{display:flex;gap:10px;align-items:baseline;padding:7px 9px;border-radius:6px;cursor:pointer;
+  border:1px solid transparent}
+.ttd-r:hover{background:var(--soft)}
+/* ⭐ the highlighted row is what Enter takes — it has to be obvious which one that is */
+.ttd-r.sel{background:var(--soft);border-color:var(--accent)}
+.ttd-r.off{opacity:.45;cursor:default}
+.ttd-r.off:hover{background:none}
+.ttd-rt{flex:1 1 auto;min-width:0;font-size:14px;white-space:normal;overflow-wrap:break-word}
+.ttd-rm{flex:0 0 auto;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.ttd-new .ttd-rt{color:var(--accent);font-weight:600}
+
+.ttd-undo{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:7px 9px;
+  margin:4px 0;border-radius:6px;background:rgba(232,104,63,.12);border-left:3px solid var(--danger);
+  font-size:12.5px;white-space:normal}
+.ttd-undo button{flex:0 0 auto;width:auto;border:1px solid var(--danger);background:none;color:var(--danger);
+  border-radius:5px;font-size:12px;padding:4px 10px;cursor:pointer;font-weight:700}
+
+/* ⭐ while a to-do is in the air, every day of the calendar says it will take it */
+.ttd-row{cursor:grab}
+body.ttd-dragging .tcal-d{outline:1px dashed var(--line);outline-offset:-2px}
+body.ttd-dragging .tcal-d.ttd-over{outline:2px solid var(--accent);outline-offset:-2px;
+  background:color-mix(in srgb, var(--accent) 14%, transparent)}
+
 /* ---------- TODAY ON A PHONE (js/167) — its own page, not the desktop one squeezed ----------------------
    Ray, 2026-08-27: "the mobile and desktop should just have different pages honestly theres no decent
    middleground." ⚠️ The breakpoint below must stay in step with TM_BP in js/167 — the JS picks the page and

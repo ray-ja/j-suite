@@ -1226,5 +1226,185 @@ console.log("\n--- ⭐⭐ the phone page: a different arrangement, not a second 
     && /mc-bals/.test(R("js/142-money-card.js")));
 }
 
+/* ---------- ⭐⭐ TODAY'S LIST, MADE WORKABLE (js/168) -----------------------------------------------------
+   Ray, 2026-08-27: search/add at the bottom, dates on the items already there, drag onto the calendar if
+   possible, "and I need to be able to delete them without actually checking them off."
+
+   ⭐⭐ THE ONE THING THESE TESTS EXIST TO PROTECT: scheduling writes `planDate` and NEVER `due`. `due` is a
+   deadline — a fact about the world, the thing hardDeadline counts down. `planDate` is the day he intends to
+   do it, and "sometimes I gotta rearrange things" is always that one. If a drag rewrote `due`, moving a
+   to-do off a busy Tuesday would silently move a real deadline. */
+console.log("\n--- ⭐⭐ the to-do list on Today: search, schedule, delete ---");
+{
+  const TTD = R("js/168-today-todo.js");
+  const mkTtd = (todos, planItems) => {
+    const els = {};
+    const c = { console, esc: s => String(s == null ? "" : s).replace(/"/g, "&quot;"),
+      today: () => "2026-08-27", uid: () => "u1", touch: r => { r.updatedAt = 1; return r; },
+      save: () => { c._saves = (c._saves || 0) + 1; }, render: () => { c._renders = (c._renders || 0) + 1; },
+      logChange: (a, b, id, msg) => { (c._log = c._log || []).push(a + "|" + msg); },
+      toast: m => { c._toast = m; }, alert: m => { c._alert = m; }, setTimeout: () => {},
+      document: { getElementById: id => (els[id] || (els[id] = { value: "", innerHTML: "", focus() {}, setSelectionRange() {} })),
+                  body: { classList: { add() {}, remove() {} } } } };
+    c.window = c;
+    c.D = () => ({ todos: todos });
+    c.actTodo = () => todos.filter(x => x && !x.deleted);
+    if (planItems) c.phPlanItems = () => planItems(todos);
+    vm.createContext(c);
+    vm.runInContext(TTD, c);
+    Object.assign(c, c.window);
+    return c;
+  };
+  const seed = () => ([
+    { id: "t1", title: "Fix the lawnmower", done: false, deleted: false },
+    { id: "t2", title: "Truck registration", due: "2026-08-31", hardDeadline: true, deleted: false, done: false },
+    { id: "t3", title: "Call the tyre shop", done: false, deleted: false },
+    { id: "t4", title: "Old finished thing", done: true, deleted: false }
+  ]);
+
+  /* ⛔⛔ THE DEADLINE IS SACRED */
+  {
+    const td = seed(), c = mkTtd(td, () => []);
+    c.ttdSchedule("t2", "2026-09-03");
+    const truck = td.find(x => x.id === "t2");
+    ok("⭐⭐ scheduling sets planDate", truck.planDate === "2026-09-03");
+    ok("⛔⛔ ...and NEVER touches `due`. A drag that moved a hard deadline off a busy day would move the "
+      + "date the world actually closes on", truck.due === "2026-08-31" && truck.hardDeadline === true, truck);
+    ok("⛔ the module writes planDate and never assigns due", /\.planDate\s*=/.test(CODE(TTD)) && !/\.due\s*=/.test(CODE(TTD)));
+    c.ttdSchedule("t2", "");
+    ok("⭐ clearing the date unschedules it and still leaves the deadline", truck.planDate === "" && truck.due === "2026-08-31");
+  }
+
+  /* ⭐ SEARCH → SLOT IN */
+  {
+    const td = seed(), c = mkTtd(td, () => []);
+    c.ttdInput("lawn");
+    ok("⭐ typing searches his list", c.ttdMatches("lawn").length === 1 && c.ttdMatches("lawn")[0].id === "t1");
+    ok("⛔ a finished to-do is not a search result", c.ttdMatches("finished").length === 0);
+    ok("⭐ the first result is highlighted, so Enter has an obvious target", /ttd-r sel/.test(c.ttdResultsHTML()));
+    c.ttdKey({ key: "Enter", preventDefault() {} });
+    ok("⭐⭐ Enter slots the highlighted one onto today", td.find(x => x.id === "t1").planDate === "2026-08-27");
+    ok("⭐ ...and clears the box so he can type the next one", c.ttdResultsHTML() === "");
+  }
+
+  /* ⭐ ENTER ON SOMETHING THAT DOESN'T EXIST CREATES IT — "I can just hit enter and create it" */
+  {
+    const td = seed(), c = mkTtd(td, () => []);
+    c.ttdInput("Order trailer tie-downs");
+    ok("⭐ with no match, the create row is the highlighted one", /ttd-new[^]*sel|sel[^]*ttd-new/.test(c.ttdResultsHTML()));
+    c.ttdKey({ key: "Enter", preventDefault() {} });
+    const made = td.find(x => x.title === "Order trailer tie-downs");
+    ok("⭐⭐ Enter creates it", !!made, td.map(x => x.title));
+    ok("⭐ ...on today, open, with a sane default priority",
+      made && made.planDate === "2026-08-27" && made.done === false && made.priority === "Medium", made);
+    ok("⭐ ...and it is saved and logged like any other record",
+      c._saves > 0 && (c._log || []).some(l => /^create\|/.test(l)));
+    /* ⛔ the one case worth refusing */
+    const n = td.length;
+    c.ttdInput("Order trailer tie-downs");
+    c.ttdKey({ key: "Enter", preventDefault() {} });
+    ok("⛔ an EXACT title never creates a second copy — it slots the existing one in instead", td.length === n, td.length);
+    ok("⛔ ...and no create row is offered for an exact duplicate",
+      (function () { c.ttdInput("Order trailer tie-downs"); return !/ttd-new/.test(c.ttdResultsHTML()); })());
+  }
+
+  /* ⚠️ "ALREADY ON TODAY" IS ASKED, NOT RE-DERIVED */
+  {
+    const td = seed();
+    /* his real situation: nothing planned, so phPlanItems' FALLBACK shows every open item */
+    const c = mkTtd(td, ts => ts.filter(x => !x.done && !x.deleted));
+    c.ttdInput("lawn");
+    const r = c.ttdResultsHTML();
+    ok("⚠️⚠️ an item already on the card says so instead of offering to slot it in again — my first version "
+      + "restated phPlanItems' rule and missed its fallback branch, on his real list",
+      /already on today/.test(r) && !/ttdPick/.test(r), r);
+    ok("⛔ ...and it asks the function rather than copying the rule", /phPlanItems/.test(CODE(TTD)));
+    const c2 = mkTtd(td, () => []);
+    c2.ttdInput("lawn");
+    ok("⭐ an item NOT on the card is pickable", /ttdPick/.test(c2.ttdResultsHTML()));
+  }
+
+  /* ⛔ DELETE IS NOT DONE */
+  {
+    const td = seed(), c = mkTtd(td, () => []);
+    c.ttdDelete("t3");
+    const gone = td.find(x => x.id === "t3");
+    ok("⛔⛔ deleting marks it deleted and leaves `done` alone — they are different claims about the same "
+      + "task, and one of them would be a lie", gone.deleted === true && gone.done === false, gone);
+    ok("⭐ it is a SOFT delete, like everything else in this app", td.some(x => x.id === "t3"));
+    ok("⭐ no confirm dialog — the action is fast and already recoverable", !/confirm\(/.test(CODE(TTD)));
+    ok("⭐ an Undo row appears in the card, not a toast that vanishes in three seconds",
+      /ttd-undo/.test(c.ttdUndoHTML()) && /Call the tyre shop/.test(c.ttdUndoHTML()));
+    c.ttdUndo();
+    ok("⭐⭐ ...and Undo actually brings it back", gone.deleted === false && c.ttdUndoHTML() === "");
+    ok("⭐ both the delete and the restore are in the changelog",
+      (c._log || []).some(l => /^delete\|/.test(l)) && (c._log || []).some(l => /Restored/.test(l)));
+  }
+
+  /* ⭐ DRAG ONTO THE CALENDAR — the bonus path, with a full non-drag equivalent */
+  {
+    const td = seed(), c = mkTtd(td, () => []);
+    const ev = payload => ({ preventDefault() {}, currentTarget: { classList: { remove() {} } },
+                             dataTransfer: { getData: () => payload } });
+    c.ttdDrop(ev("todo:t1"), "2026-09-08");
+    ok("⭐⭐ dropping a to-do on a day plans it for that day", td.find(x => x.id === "t1").planDate === "2026-09-08");
+    ok("⛔ ...through the same ttdSchedule the 📅 button uses, so there is one write path", /ttdSchedule\(raw\.slice/.test(TTD));
+    c.ttdDrop(ev("something-else"), "2026-12-25");
+    ok("⛔ a payload that isn't a to-do is ignored, not coerced into one",
+      td.find(x => x.id === "t1").planDate === "2026-09-08");
+    ok("⭐ the calendar's day cells accept the drop", /ondrop="if\(typeof ttdDrop/.test(R("js/163-today-calendar.js")));
+    ok("⚠️ and it is written down that drag is desktop-only and the 📅 button is the real path",
+      /HTML5 drag doesn't fire from touch/.test(TTD));
+  }
+
+  /* ⚠️⚠️ THE CALENDAR HAD TO LEARN THE SAME FIELD, or the drag would look like a delete */
+  {
+    const c = { console, esc: s => String(s == null ? "" : s) };
+    c.window = c;
+    const TODOS = [{ id: "a", title: "Planned only", planDate: "2026-09-03" },
+                   { id: "b", title: "Due only", due: "2026-09-04" },
+                   { id: "c", title: "Both", planDate: "2026-09-05", due: "2026-09-09" },
+                   { id: "d", title: "Done", planDate: "2026-09-03", done: true },
+                   { id: "e", title: "Deleted", planDate: "2026-09-03", deleted: true }];
+    c.D = () => ({ todos: TODOS, budgetBills: [] });
+    c.today = () => "2026-08-27"; c.actEvents = () => []; c.uniOrgs = () => [];
+    vm.createContext(c);
+    vm.runInContext(R("js/163-today-calendar.js"), c);
+    Object.assign(c, c.window);
+    const on = d => c.tcalItemsFor(d).map(x => x.title);
+    ok("⚠️⚠️ a to-do appears on the day it is PLANNED — it read `due` only, so a dragged to-do would have "
+      + "left Today and appeared nowhere, and the gesture would have looked like it deleted the thing",
+      on("2026-09-03").join() === "Planned only", on("2026-09-03"));
+    ok("⭐ one with no plan still shows on its deadline", on("2026-09-04").join() === "Due only");
+    ok("⛔⛔ ONE entry, not two — the planned day wins and the deadline day is not ALSO drawn, or a single "
+      + "to-do reads as two pieces of work", on("2026-09-05").join() === "Both" && on("2026-09-09").length === 0);
+    ok("⛔ done and deleted to-dos are on no day at all", on("2026-09-03").length === 1);
+  }
+
+  /* wiring */
+  {
+    const shellHtml = R("Business App (v1).html"), PH = R("js/122-personal-home.js");
+    ok("⭐ the module is in the shell, after the card it extends",
+      /js\/168-today-todo\.js/.test(shellHtml)
+      && shellHtml.indexOf("122-personal-home") < shellHtml.indexOf("168-today-todo"));
+    ok("⭐ the search box is at the BOTTOM of the card — 'at the bottom something that lets me search'",
+      /return h \+ addBox/.test(PH));
+    ok("⭐ ...and it is there on an EMPTY list too, which is exactly when he most needs it",
+      /if \(!list\.length\)[^]{0,400}addBox/.test(PH));
+    ok("⭐ each row gets the date and delete controls", /ttdRowCtrlHTML\(td\)/.test(PH));
+    /* ⚠️ CODE(PH), not PH — the explanation of this very rule sits between the two lines being matched, and
+       a 240-character window was not enough to jump it. Strip the comments and the structure is plain. */
+    ok("⚠️ the date panel is rendered OUTSIDE the .li — a full-width panel dropped in as a fourth flex child "
+      + "sits beside the title instead of under it",
+      /ttdRowCtrlHTML\(td\)[^]{0,60}'<\/div>'[^]{0,80}ttdDateRowHTML\(td\)/.test(CODE(PH)),
+      (CODE(PH).match(/ttdRowCtrlHTML\(td\)[^]{0,200}/) || [])[0]);
+    ok("⭐ a plan for a FUTURE day is shown on the row, or the date he just set would be invisible",
+      /planned '/.test(PH));
+    ok("⛔ typing never calls render() — that rebuilds the page and takes the caret with it",
+      /function ttdPaint[^]*?innerHTML = ttdResultsHTML/.test(TTD)
+      && !/window\.ttdInput = function[^}]*render\(\)/.test(TTD));
+  }
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

@@ -89,10 +89,20 @@ function tcalItemsFor(iso) {
         confirmed: e.confirmed !== false, tab: "cal", color: "#7c5cff" });
     });
   } catch (e) {}
-  /* to-dos due that day */
+  /* ⭐⭐ TO-DOS SIT ON THE DAY HE PLANNED THEM, FALLING BACK TO THE DAY THEY'RE DUE.
+     Ray, 2026-08-27, asking to drag to-dos onto the calendar. ⚠️ This read `t.due` only, so a to-do dragged
+     onto the 3rd would have vanished from Today (planDate in the future) and appeared NOWHERE — the gesture
+     would have looked like it deleted the thing. Scheduling writes `planDate` and never `due` (js/168
+     explains why: `due` is a real-world deadline and is the one field that must not move), so the calendar
+     has to read the same field to agree with it.
+     ⛔ ONE entry per to-do, not two. Showing both the planned day and the deadline would put a single item
+     on the calendar twice, which reads as two pieces of work. The deadline is still on the record, Today
+     still flags overdue off `due`, and the row itself shows the deadline when the date panel is open. */
   try {
     (D().todos || []).forEach(function (t) {
-      if (!t || t.deleted || t.done || t.due !== iso) return;
+      if (!t || t.deleted || t.done) return;
+      var when = t.planDate || t.due;
+      if (when !== iso) return;
       out.push({ kind: "todo", title: t.title || "To-do", mins: tcalMins(t.time), confirmed: true, tab: "todo", color: "#e0a800" });
     });
   } catch (e) {}
@@ -167,7 +177,14 @@ function tcalMonthHTML(ym) {
     var items = counts[iso] || [];
     var past = iso < today;
     var cls = "tcal-d" + (iso === today ? " tcal-now" : "") + (past ? " tcal-past" : "");
-    h += '<div class="' + cls + '"><span class="tcal-num">' + d + '</span>';
+    /* ⭐ EVERY DAY IS A DROP TARGET for a to-do dragged off Today (js/168). Dropping sets `planDate` — the
+       day he intends to do it — and never the deadline. ⛔ The cell stays read-only in every other respect:
+       nothing here creates or edits a record, the drop just calls the same ttdSchedule() the 📅 button does. */
+    h += '<div class="' + cls + '"'
+      + ' ondragover="if(typeof ttdDragOver===\'function\')ttdDragOver(event)"'
+      + ' ondragleave="if(typeof ttdDragLeave===\'function\')ttdDragLeave(event)"'
+      + ' ondrop="if(typeof ttdDrop===\'function\')ttdDrop(event,\'' + iso + '\')"'
+      + '><span class="tcal-num">' + d + '</span>';
     items.slice(0, 4).forEach(function (x) {
       /* ⭐ the AMOUNT is the point of a bill on a calendar — "Rent" tells him nothing he didn't know */
       var right = x.kind === "bill" ? tcalAmt(x.amount) : (x.mins != null ? tcalClock(x.mins) : "");
