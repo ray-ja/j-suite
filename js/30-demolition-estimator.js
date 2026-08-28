@@ -1,12 +1,12 @@
 /* ---------- SHED / STRUCTURE DEMOLITION ESTIMATOR (on-site quoting) ----------
    Tear-down + haul-off pricing for sheds and small outbuildings.
    Cost model (no hourly labor line — crew is paid from the revenue split):
-     cost = C&D disposal (tons × $73.16, EVERY pound billable) + round-trip mileage + consumables.
+     cost = C&D disposal (tons × $90, EVERY pound billable) + round-trip mileage + consumables.
    Price is set by value bands (footprint) and pushed toward the top by the factors that
    actually make the job harder: shingles, wood floor, anchors, bad access, height, uncleared.
    Drive is static-from-the-property (site + a full dump run, since demo is must-dump). "Review quote →"
    routes through the wizard review for the $45/$30 pay check, the demo market band, and customer linking. */
-var DEMO_TON_FEE   = 73.16;   // mixed C&D, per ton (Dare County transfer)
+var DEMO_TON_FEE   = 90;      // mixed C&D, per ton — the close station (2026-08-28; was $73.16 Dare)
 /* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
    and shouldn't be in any quote tool."
    The 500 lb waiver is an ANNUAL RESIDENTIAL allowance — a household's once-a-year cleanout, not something a

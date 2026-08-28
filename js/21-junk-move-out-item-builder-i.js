@@ -43,7 +43,8 @@ function junkHaulSuggest(c){
   if(t<=2.2)return{method:"trailer",label:cap.tripsUp+" trailer loads",note:"multi-trip job"+wtNote};
   return{method:"rolloff",label:cap.tripsUp+" trailer loads — consider a roll-off",note:"whole-house volume; a dumpster may beat "+cap.tripsUp+" trips"+wtNote};}
 const JUNK_FEE={freon:45,mattress:25,tire:8,ewaste:30,paint:10,appliance:25};
-const JUNK_CD_TON=120;   // heavy/C&D disposal — the transfer station bills by WEIGHT (~$73-94/ton) + handling; estimate the tonnage from the item's pounds
+const JUNK_CD_TON=120;   // heavy/C&D disposal CHARGE to the customer — our station now bills us $90/ton (2026-08-28, was $73-94)
+                         // ⚠️ RAY: at $90 cost this passthrough margin is down to 33% (was 64%) — revisit with the dump-ticket pricing model
 /* per-ITEM disposal fee. "cd" (heavy/construction debris) is weight-based; everything else is a flat fee. Fixes the old "+$undefined". */
 function junkItemFee(it){ const fl=it&&it[4]; if(!fl)return 0; if(fl==="cd")return Math.round(it[3]/2000*JUNK_CD_TON); return JUNK_FEE[fl]||0; }
 const JUNK_BEDBUG_FEE=75; // RAY: confirm — precaution surcharge for infested mattresses/upholstery (bagging + sealed handling); a risk/handling premium, not a hard-cost line

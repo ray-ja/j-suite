@@ -10,7 +10,13 @@
      • DUMP   — C&D/trees must go straight to the dump; full dump run (drive + 1-person time + tip fee).
 
    Every per-job tool calls these qe* functions, so the math + the price readout feel identical. */
-const QE = { TAKE_HOME: 45, CREW_FLOOR: 30, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 73.16, VEG_TON: 58.46, FILL_TON: 45, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
+/* ⭐ RATES = THE NEW CLOSE STATION (Ray, 2026-08-28, read off their printed sheet): C&D $90/ton ·
+   yard waste $75/ton · dirty concrete $90/ton — 15 minutes from base, replacing the 55-mile round trip
+   to Maple. MEASURED before switching: the trailer caps at 3,600 lb = 1.8 ton, so the higher rate costs
+   at most +$30/load, and the shorter run gives back ~$25-30 of mileage plus about an hour — the close
+   station wins EVERY run at this trailer size. (Old, for the record: C&D $73.16 Dare · veg $58.46
+   Currituck $38/1,300 lb · rubble $94.04.) */
+const QE = { TAKE_HOME: 45, CREW_FLOOR: 30, FIELD_SPLIT: 0.48, MILEAGE: 0.725, CD_TON: 90, VEG_TON: 75, FILL_TON: 45, MIN_JOB: 175, MARGIN_FLOOR: 0.35 };
 // TAKE_HOME ($45/hr) = Ray's floor (leaving a $55/hr day job). CREW_FLOOR ($30/hr) = the worth-it line for Chase/Pierce (off $15-18/hr day jobs). A job between the two = "send the crew, not yourself."
 function qeLoadedRate() { return QE.TAKE_HOME / QE.FIELD_SPLIT; }   // 93.75 — billed per person-hour
 /* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant

@@ -75,10 +75,14 @@ function calcQuote(key,inp){
 }
 
 /* COGS_LAYER_V1 — COGS + payment layer, Part 1 (pure logic). Idempotency sentinel; do not duplicate. */
-var DISPOSAL_RATE_PER_TON = 73.16;   // $/ton (Dare County C&D, Manns Harbor)
+/* ⭐ SWITCHED 2026-08-28 to the close station Ray found — 15 min from base, replacing the 55-mile Maple
+   round trip. His sheet: C&D $90/ton · yard waste $75/ton · dirty concrete $90/ton. Higher per ton, but at
+   a 3,600 lb trailer cap the uplift maxes at ~$30/load while the short run returns ~$25-30 of mileage plus
+   an hour — the close station wins every run. (Old: C&D $73.16 Dare Manns Harbor · veg $58.46 Currituck.) */
+var DISPOSAL_RATE_PER_TON = 90;      // $/ton C&D — the close station (Ray's printed sheet, 2026-08-28)
 var LBS_PER_TON           = 2000;
-var VEG_RATE_PER_TON      = 58.46;   // $/ton brush/veg — Currituck transfer station ($38 / 1,300 lb). NOT free.
-var DISPOSAL_TRIP_MILES   = 55;      // round-trip miles to the transfer station (Point Harbor base → Maple, OSRM)
+var VEG_RATE_PER_TON      = 75;      // $/ton yard waste — same station. NOT free.
+var DISPOSAL_TRIP_MILES   = 20;      // ⚠️ round-trip ESTIMATE from "15 minutes away" — confirm actual miles + station name with Ray
 var MARGIN_FLOOR          = 0.35;    // soft floor — warn below 35%
 var MILEAGE_RATE          = 0.725;   // $/mi round-trip vehicle cost — 2026 IRS rate 72.5¢ (absorbs fuel; no separate gas line, no hourly wage)
 var MILEAGE_RATE_LABEL    = "72.5¢"; // display form (avoids $0.725 rounding to $0.72)
@@ -86,7 +90,8 @@ var CONSUMABLES_PCT       = 0.05;    // washing/cleaning chemical + consumable a
 var VEG_FREE              = false;   // CORRECTED 2026-07-25: veg is NOT free for a CONTRACTOR. Dare charges
                                      // $65/ton commercial yard debris (darenc.gov); our own Currituck receipt was $38/1,300 lb
                                      // (~$58/ton). The free residential yard-waste site explicitly excludes contractor-
-                                     // generated and lot-clearing material. Mixed C&D = $73.16/ton, transfer station $94.04.
+                                     // generated and lot-clearing material. (Rates as of that correction: C&D $73.16,
+                                     // rubble $94.04 — since superseded by the close station above. The LESSON stands.)
 function mileageCost(miles){ return Math.round((Math.max(0,+miles||0) * MILEAGE_RATE) * 100) / 100; }
 /* ⛔ NO FREE ALLOWANCE. Ray, 2026-08-26: "the station only waives some trash once per year its irrelevant
    and shouldn't be in any quote tool."

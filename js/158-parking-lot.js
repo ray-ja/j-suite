@@ -112,7 +112,7 @@ function plQuote(inp) {
   var tons = lbs / 2000;
   /* ⛔ tipping ONLY when we take it away. On the customer's dumpster there is no tip fee and no dump run —
      that is the SOP's own words, and it is the single biggest lever on a small lot's margin. */
-  var CD  = (typeof QE !== "undefined") ? QE.CD_TON : 73.16;
+  var CD  = (typeof QE !== "undefined") ? QE.CD_TON : 90;
   var MIL = (typeof QE !== "undefined") ? QE.MILEAGE : 0.725;
   var tip = weHaul ? Math.round(lbs / 2000 * CD * 100) / 100 : 0;   /* ⛔ every pound — see the header */
   var consum = Math.round((PL_CONSUM_BASE + spaces * PL_CONSUM_PER_SP) * 100) / 100;
@@ -317,7 +317,7 @@ window.plCalc = function () {
       ${q.storeP ? `Storefront / sidewalk ${PL.storeFt} ft @ $${PL_STORE_PER_FT}/ft: <b>${m(q.storeP)}</b><br>` : ""}
       ${q.disc ? `<span style="color:var(--accent)">Recurring contract — 20% off: <b>−${m(q.disc)}</b></span><br>` : ""}
       Debris: <b>${q.lbs.toLocaleString()} lb</b> · ${q.weHaul
-        ? `we haul it — tipping <b>${m(q.tip)}</b> (${(q.lbs / 2000).toFixed(2)} ton @ $${(typeof QE !== "undefined" ? QE.CD_TON : 73.16)}/ton) + a dump run`
+        ? `we haul it — tipping <b>${m(q.tip)}</b> (${(q.lbs / 2000).toFixed(2)} ton @ $${(typeof QE !== "undefined" ? QE.CD_TON : 90)}/ton) + a dump run`
         : `<b>customer's dumpster — $0 to dispose, no dump run</b>`}<br>
       Consumables (bags, gloves): <b>${m(q.consum)}</b><br>
       🚗 Drive: <b>${m(q.driveCharge)}</b> <span class="muted">(${q.driveMi ? "$" + q.driveMi.toFixed(2) + " of it is real mileage cost" : "no mileage cost"})</span>

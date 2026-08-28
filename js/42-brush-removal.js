@@ -195,7 +195,7 @@ function brushEditorHTML(){
   h+=`</div><div class="card"><div style="font-weight:800;margin-bottom:6px">Rental cost defaults (hard cost)</div>
     <div class="sub" style="margin-bottom:6px">The chainsaw is owned — no rental line. Add a pole-saw rental here if one is ever rented.</div>
     <div class="row" style="gap:10px;align-items:center"><div class="grow sub">Stump-grinder rental</div><span class="sub">$</span><input type="number" style="width:90px" value="${rent.grinder}" onchange="setBrushRent('grinder',this.value)"></div>
-    <div class="sub" style="margin-top:8px">Access multipliers (open ×1.0 · near structures ×1.15 · tight ×1.30) are fixed by policy. Veg disposal is charged by the ton (~$${(typeof QE!=="undefined"?QE.VEG_TON:58.46)}/ton for a contractor) off the estimated brush weight.</div></div>`;
+    <div class="sub" style="margin-top:8px">Access multipliers (open ×1.0 · near structures ×1.15 · tight ×1.30) are fixed by policy. Veg disposal is charged by the ton (~$${(typeof QE!=="undefined"?QE.VEG_TON:75)}/ton for a contractor) off the estimated brush weight.</div></div>`;
   h+=`<button class="btn ghost" style="margin-top:6px" onclick="resetBrushRates()">↺ Reset to defaults</button>`;
   return h;
 }

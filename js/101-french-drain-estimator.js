@@ -7,7 +7,7 @@
      unchanged. #57 drainage rock is weight-driven (tons from the trench cross-section), fabric is $/sq ft,
      perf pipe is $/linear ft (OFF by default), decorative cap rock defaults to CUSTOMER-provides (Ray's marble).
    - EXCAVATED SPOIL (the dug-out dirt) is a 3-way: leave/spread ($0), haul clean-fill ($45/ton + a dump run),
-     or haul C&D ($73.16/ton + a dump run). Ray usually HAULS → haul-off is the default.
+     or haul C&D ($90/ton + a dump run). Ray usually HAULS → haul-off is the default.
    - PICKUP is its own weight-driven mini-quote → a real sub-job (pvPickup pattern, softer rate). All editable.
    Cost / Price / Profit / Margin shown with the 35% margin-floor warning. Reference job that calibrated it:
    67 ft × 7.5" wide × 12" deep, 2" decorative cap, 1.4 t/cy, +10% settling → ~1.29 cy → ~2.0 tons #57. */
@@ -120,7 +120,7 @@ function fdCalc(fd){
   const MIL    = (typeof QE!=="undefined"?QE.MILEAGE:0.725);
   const LOADED = (typeof QE!=="undefined"?QE.TAKE_HOME/QE.FIELD_SPLIT:93.75);
   const FILL   = (typeof QE!=="undefined"?QE.FILL_TON:45);
-  const CD     = (typeof QE!=="undefined"?QE.CD_TON:73.16);
+  const CD     = (typeof QE!=="undefined"?QE.CD_TON:90);
   const FLOOR  = (typeof QE!=="undefined"?QE.MARGIN_FLOOR:0.35);
   const DUMPMI = (typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:55);
   const dr = (typeof wizSiteDriveRT==="function") ? wizSiteDriveRT() : {rt:20,min:30};
@@ -269,7 +269,7 @@ function wizFrenchDrainUI(){
   h += `<div style="border-top:1px solid var(--line);margin:8px 0 2px;padding-top:8px"><div class="grow" style="margin-bottom:4px"><b>🟫 Excavated spoil</b> <span class="sub">~${Math.round(geo.spoilTon*10)/10} ton dug out</span></div><div class="row" style="gap:6px">
     <button class="btn ${!_haul?"acc":"ghost"} sm" style="flex:1 1 0;font-size:11.5px;white-space:normal;line-height:1.15" onclick="wizFdSpoil('leave')">Leave / spread<br><span class="sub">$0</span></button>
     <button class="btn ${_haul&&_st==="fill"?"acc":"ghost"} sm" style="flex:1 1 0;font-size:11.5px;white-space:normal;line-height:1.15" onclick="wizFdSpoil('fill')">Haul — clean fill<br><span class="sub">$45/ton</span></button>
-    <button class="btn ${_haul&&_st==="cd"?"acc":"ghost"} sm" style="flex:1 1 0;font-size:11.5px;white-space:normal;line-height:1.15" onclick="wizFdSpoil('cd')">Haul — C&amp;D<br><span class="sub">$73.16/ton</span></button></div>
+    <button class="btn ${_haul&&_st==="cd"?"acc":"ghost"} sm" style="flex:1 1 0;font-size:11.5px;white-space:normal;line-height:1.15" onclick="wizFdSpoil('cd')">Haul — C&amp;D<br><span class="sub">$${CD}/ton</span></button></div>
     ${_haul?`<div class="sub" style="margin-top:4px">Haul-off ${money(c.spoilCost)} (pass-through) + ~${money(c.dumpMileage)} dump-run miles.</div>`:`<div class="sub" style="margin-top:4px;color:var(--accent)">Customer keeps the dirt — no haul-off.</div>`}</div>`;
   h += `<div class="sub" style="margin-top:6px">Defaults are real-price estimates — change any to the actual yard price. Your labor price never changes with these.</div></div>`;
   // pickup mini-quote

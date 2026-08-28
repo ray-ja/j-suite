@@ -2,7 +2,7 @@
  * Mirror of cogs-payment-layer.js Part 1 + the 33 assertions from
  * cogs-payment-tests.js. Standalone so it can't be tripped by mount/require quirks.
  * Run: node "verify-cogs-math.js"  →  expect 33 passed, 0 failed. */
-var DISPOSAL_RATE_PER_TON=73.16, LBS_PER_TON=2000, MARGIN_FLOOR=0.35;
+var DISPOSAL_RATE_PER_TON=90, LBS_PER_TON=2000, MARGIN_FLOOR=0.35;   // 2026-08-28 close station (was 73.16)
 function disposalCost(lbs){lbs=Math.max(0,+lbs||0);return Math.round((lbs/LBS_PER_TON)*DISPOSAL_RATE_PER_TON*100)/100;}
 function lineFigures(price,cost,qty){qty=qty||1;var P=(+price||0)*qty,C=(+cost||0)*qty,profit=P-C;return{price:P,cost:C,profit:profit,margin:P>0?profit/P:0};}
 function quoteCogs(items,discount){var price=0,cost=0;(items||[]).forEach(function(it){var f=lineFigures(it.price,it.cost,it.qty);price+=f.price;cost+=f.cost;});price=Math.max(0,price-(+discount||0));var profit=price-cost;return{price:price,cost:cost,profit:profit,margin:price>0?profit/price:0};}
@@ -20,11 +20,11 @@ function ok(n,c,got){if(c){pass++;console.log("  ✓ "+n);}else{fail++;console.l
 function near(a,b,e){return Math.abs(a-b)<=(e==null?0.01:e);}
 
 console.log("\n— Disposal helper —");
-ok("⛔ 500 lbs is NOT free — $18.29",near(disposalCost(500),18.29),disposalCost(500));
-ok("⛔ 400 lbs is NOT free — $14.63",near(disposalCost(400),14.63),disposalCost(400));
-ok("2000 lbs = $73.16",near(disposalCost(2000),73.16),disposalCost(2000));
-ok("4000 lbs = $146.32",near(disposalCost(4000),146.32),disposalCost(4000));
-ok("1500 lbs = $54.87",near(disposalCost(1500),54.87),disposalCost(1500));
+ok("⛔ 500 lbs is NOT free — $22.50",near(disposalCost(500),22.50),disposalCost(500));
+ok("⛔ 400 lbs is NOT free — $18.00",near(disposalCost(400),18.00),disposalCost(400));
+ok("2000 lbs = $90.00",near(disposalCost(2000),90.00),disposalCost(2000));
+ok("4000 lbs = $180.00",near(disposalCost(4000),180.00),disposalCost(4000));
+ok("1500 lbs = $67.50",near(disposalCost(1500),67.50),disposalCost(1500));
 ok("negative = $0",disposalCost(-100)===0,disposalCost(-100));
 console.log("— Line margin —");
 var hw=lineFigures(399,30,1);ok("house wash profit = $369",hw.profit===369,hw);
@@ -46,11 +46,11 @@ console.log("— calcCost defaults —");
 ok("softwash 2500 ≈ $30",near(calcCost("softwash",{qty:2500}),30,1),calcCost("softwash",{qty:2500}));
 ok("pressure 600 ≈ $14",near(calcCost("pressure",{qty:600}),14.4,1),calcCost("pressure",{qty:600}));
 ok("junk 4/8 = base+dump",near(calcCost("junk",{eighths:4}),25+disposalCost(1250),0.5),calcCost("junk",{eighths:4}));
-ok("junk lbs overrides",near(calcCost("junk",{lbs:2500}),25+91.45,0.5),calcCost("junk",{lbs:2500}));
+ok("junk lbs overrides",near(calcCost("junk",{lbs:2500}),25+disposalCost(2500),0.5),calcCost("junk",{lbs:2500}));
 ok("starlink eave = $50",calcCost("starlink",{mount:"eave"})===50,calcCost("starlink",{mount:"eave"}));
 ok("lock wifi x1 = $230",calcCost("lock",{type:"wifi",count:1})===230,calcCost("lock",{type:"wifi",count:1}));
 console.log("— disposalLine —");
 var dl=disposalLine(2000);ok("is cost line",dl.costLine===true&&dl.unit==="cost",dl);
-ok("cost = $73.16 (the whole 2,000 lb)",near(dl.cost,73.16),dl.cost);ok("price = $0",dl.price===0,dl);
+ok("cost = $90.00 (the whole 2,000 lb)",near(dl.cost,90.00),dl.cost);ok("price = $0",dl.price===0,dl);
 console.log("\n=========  "+pass+" passed, "+fail+" failed  =========\n");
 process.exit(fail?1:0);
