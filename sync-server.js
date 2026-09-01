@@ -2278,12 +2278,30 @@ function srvShortTitle(q) {
   if (t.length > 48) t = t.slice(0, 48).replace(/\s+\S*$/, "") + "…";
   return t;
 }
+/* shared money helpers for the hosted pages — MIRROR the client (js/46): due = reconciled grand + 6.75%
+   when taxable; paid = sum of live q.payments. */
+function srvDueOf(slab, x) { const R = invReconcileSrv(x, srvMatsOf(slab, x)); const tax = x.taxable ? Math.round(invEff(x) * 0.0675 * 100) / 100 : 0; return Math.round((R.grand + tax) * 100) / 100; }
+function srvPaidOf(x) { return Math.round(((x.payments || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0)) * 100) / 100; }
+/* COMBINED INVOICE view-model — invoices billed together render as ONE invoice (Ray 2026-09-01: "it
+   should be a single selection"): every member is a line, one total, one paid-to-date, one balance.
+   balance = the open members' remainders; paid = total − balance (robust when a settled member has a
+   paid flag but no payment records). null when the quote isn't in a 2+ group. */
+function invComboOf(slab, cust, q) {
+  if (!slab || !cust || !q || !q.combinedAt) return null;
+  const members = (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && x.customerId === cust.id && +x.combinedAt === +q.combinedAt);
+  if (members.length < 2) return null;
+  const lines = members.map(x => { const due = srvDueOf(slab, x), paid = srvPaidOf(x); return { title: srvShortTitle(x), no: invNoOf(x), amount: due, settled: !!x.paid || (due - paid) < 0.005, token: x.invoiceToken || "" }; });
+  const total = Math.round(lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
+  const balance = Math.round(members.reduce((s, x) => s + (x.paid ? 0 : Math.max(0, srvDueOf(slab, x) - srvPaidOf(x))), 0) * 100) / 100;
+  const date = members.reduce((m, x) => { const d = String(x.invoicedDate || x.date || ""); return d > m ? d : m; }, "");
+  return { members: members.length, lines: lines, total: total, paid: Math.round((total - balance) * 100) / 100, balance: balance, date: date };
+}
 /* PAY-BUTTON SCOPE — invoices billed together (same customer + combinedAt stamp) pay as ONE: a single
    shared button for the group's remaining balance (Ray: "they should share the same payment button").
    A loose invoice is its own scope. remainingCents = what's actually left across the scope. */
 function invPayScopeOf(slab, cust, q) {
-  const paidOf = (x) => Math.round(((x.payments || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0)) * 100) / 100;
-  const dueOf = (x) => { const R = invReconcileSrv(x, srvMatsOf(slab, x)); const tax = x.taxable ? Math.round(invEff(x) * 0.0675 * 100) / 100 : 0; return Math.round((R.grand + tax) * 100) / 100; };
+  const paidOf = (x) => srvPaidOf(x);
+  const dueOf = (x) => srvDueOf(slab, x);
   const members = (q.combinedAt && cust) ? (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && x.customerId === cust.id && +x.combinedAt === +q.combinedAt) : [q];
   const open = members.filter(x => !x.paid && Math.round((dueOf(x) - paidOf(x)) * 100) > 0);
   const remainingCents = open.reduce((s, x) => s + Math.round((dueOf(x) - paidOf(x)) * 100), 0);
@@ -2330,30 +2348,55 @@ function invEnsurePayLink(store, org, cust, q, cb) {
    (no other open invoices AND nothing paid on this one) so the page stays a plain single invoice. */
 function invAccountOf(slab, cust, q) {
   if (!cust || !slab || !q) return null;
-  const dueOf = (x) => { const R = invReconcileSrv(x, srvMatsOf(slab, x)); const tax = x.taxable ? Math.round(invEff(x) * 0.0675 * 100) / 100 : 0; return Math.round((R.grand + tax) * 100) / 100; };
-  const paidOf = (x) => Math.round(((x.payments || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0)) * 100) / 100;
-  const others = (slab.quotes || [])
-    .filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id && x.id !== q.id)
-    .map(x => { const due = dueOf(x), paid = paidOf(x); return { no: invNoOf(x), title: srvShortTitle(x), due: due, paid: paid, remaining: Math.round((due - paid) * 100) / 100, token: x.invoiceToken || "", grp: +x.combinedAt || 0 }; })
-    .filter(r => r.remaining >= 0.005)
-    .sort((a, b) => (a.no < b.no ? -1 : 1));
-  const curPaid = paidOf(q);
+  const curGrp = +q.combinedAt || 0;
+  const inCurScope = (x) => curGrp ? (+x.combinedAt === curGrp) : (x.id === q.id);
+  // billed-together groups collapse into ONE row each (Ray: "it should be a single selection")
+  const rows = [], seenGrp = {};
+  (slab.quotes || [])
+    .filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id && !inCurScope(x))
+    .forEach(x => {
+      const g = +x.combinedAt || 0;
+      if (g) {
+        if (seenGrp[g]) return; seenGrp[g] = true;
+        const c = invComboOf(slab, cust, x);
+        if (c) {
+          if (c.balance >= 0.005) rows.push({ no: c.members + " invoices — billed together", title: c.lines.map(l => l.title).join(" + ").slice(0, 60), due: c.total, paid: c.paid, remaining: c.balance, token: ((c.lines.find(l => !l.settled && l.token) || c.lines.find(l => l.token)) || {}).token || "", grp: g });
+          return;
+        }
+      }
+      const due = srvDueOf(slab, x), paid = srvPaidOf(x), rem = Math.round((due - paid) * 100) / 100;
+      if (rem >= 0.005) rows.push({ no: invNoOf(x), title: srvShortTitle(x), due: due, paid: paid, remaining: rem, token: x.invoiceToken || "", grp: 0 });
+    });
+  rows.sort((a, b) => (a.no < b.no ? -1 : 1));
+  // the CURRENT scope: this invoice, or its whole billed-together group as one
+  const combo = curGrp ? invComboOf(slab, cust, q) : null;
+  const curDue = combo ? combo.total : srvDueOf(slab, q);
+  const curPaid = combo ? combo.paid : srvPaidOf(q);
   // remaining keeps its SIGN — an overpaid invoice shows a green credit instead of clamping to $0.00
-  const curRemaining = Math.round((dueOf(q) - curPaid) * 100) / 100;
-  if (!others.length && curPaid < 0.005) return null;
-  return { others: others, curPaid: curPaid, curRemaining: curRemaining, curGrp: +q.combinedAt || 0,
-    total: Math.round((curRemaining + others.reduce((s, r) => s + r.remaining, 0)) * 100) / 100 };
+  const curRemaining = combo ? combo.balance : Math.round((curDue - curPaid) * 100) / 100;
+  if (!rows.length && curPaid < 0.005) return null;
+  return { others: rows, curDue: curDue, curPaid: curPaid, curRemaining: curRemaining, curGrp: curGrp, curCombined: !!combo,
+    total: Math.round((curRemaining + rows.reduce((s, r) => s + r.remaining, 0)) * 100) / 100 };
 }
-function renderInvoicePage(biz, cust, q, mats, acct, pay) {
-  const AC = "#0a7d4b", no = invNoOf(q), dateStr = invDateOf(q.invoicedDate || q.date);
+function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
+  const AC = "#0a7d4b";
+  const isCombo = !!(combo && combo.lines && combo.lines.length > 1);   // billed-together group renders as ONE invoice
+  const no = isCombo ? (combo.members + " jobs, billed together") : invNoOf(q);
+  const dateStr = invDateOf(isCombo ? combo.date : (q.invoicedDate || q.date));
   const items = invItemsOf(q), sub = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
   const eff = invEff(q), adj = Math.round((eff - sub) * 100) / 100;
   const R = invReconcileSrv(q, mats);   // fixed → the estimate; actual → reconciled to receipts (estimate is the floor)
-  const taxable = !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0, due = Math.round((R.grand + tax) * 100) / 100;
+  const taxable = !isCombo && !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0;
+  const due = isCombo ? combo.total : Math.round((R.grand + tax) * 100) / 100;   // combo lines already carry their own tax
+  const settledAll = isCombo ? combo.balance < 0.005 : !!q.paid;
   const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
   let rows, adjRows;
-  if (R.mode) {
+  if (isCombo) {
+    // COMBINED: one invoice, one line per job (each line's own invoice no beneath, settled lines checked)
+    rows = combo.lines.map(l => `<tr><td>${htmlEsc(l.title)}${l.settled ? ` <span style="color:${AC};font-weight:700;font-size:12px">✓ paid</span>` : ""}<div class="muted" style="font-size:12px">${htmlEsc(l.no)}</div></td><td class="c">1</td><td class="n">${invMoney(l.amount)}</td></tr>`).join("");
+    adjRows = "";
+  } else if (R.mode) {
     // ACTUAL: one labor line (= grand − actual materials, so the estimate-floor folds in) + itemized actual materials
     const laborLine = Math.round((R.grand - R.actualMat) * 100) / 100;
     rows = `<tr><td>Labor &amp; installation</td><td class="c">1</td><td class="n">${invMoney(laborLine)}</td></tr>`
@@ -2401,14 +2444,14 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay) {
       </div>
       <div class="billrow">
         <div><div class="lbl2">Bill to</div>${billTo.map((l, i) => `<div${i === 0 ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${htmlEsc(l)}</div>`).join("")}</div>
-        <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}${(!q.paid && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
+        <div style="text-align:right"><div class="lbl2">${settledAll ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${settledAll ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}${(!settledAll && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
       </div>
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
       <tbody>${rows}</tbody><tfoot>${adjRows}${taxRows}</tfoot></table>
       ${(() => {
         // the pay button: shared across billed-together invoices, grayed when everything is settled,
         // customer can pay the balance or a partial amount at checkout
-        if (q.paid || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
+        if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
           const multi = pay.scope && pay.scope.openCount > 1;
@@ -2424,13 +2467,10 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay) {
         const balColor = (v) => v > 0.005 ? RED : (v < -0.005 ? AC : "#1a1a1a");   // owed = red · overpaid credit = green
         const paidCell = (v) => `<td class="n" style="color:${AC};font-weight:600">${v >= 0.005 ? invMoney(v) : `<span style="color:#9ca3af;font-weight:400">—</span>`}</td>`;
         const balCell = (v) => `<td class="n" style="font-weight:700;color:${balColor(v)}">${v < -0.005 ? invMoney(-v) + " credit" : invMoney(v)}</td>`;
-        // invoices billed together share a combinedAt stamp — badge every member so the grouping is visible
-        const grpN = {}; [acct.curGrp].concat(acct.others.map(r => r.grp)).forEach(g => { if (g) grpN[g] = (grpN[g] || 0) + 1; });
-        const grpBadge = (g) => (g && grpN[g] >= 2) ? `<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6b7280;background:#f1f2f4;border-radius:4px;padding:1px 6px;vertical-align:1px">billed together</span>` : "";
         return `<div style="margin-top:30px"><div class="lbl2">Your account</div>
       <table class="acct" style="margin-top:2px"><thead><tr><th>Invoice</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
-        <tr><td style="font-weight:600">This invoice${grpBadge(acct.curGrp)}<div class="muted" style="font-size:12px;font-weight:400">${htmlEsc(no)}</div></td><td class="n">${dueStr}</td>${paidCell(acct.curPaid)}${balCell(acct.curRemaining)}</tr>
-        ${acct.others.map(r => `<tr><td>${r.token ? `<a href="/i/${encodeURIComponent(r.token)}" style="color:${AC};font-weight:600;text-decoration:none">${htmlEsc(r.title)} →</a>` : `<span style="font-weight:600">${htmlEsc(r.title)}</span>`}${grpBadge(r.grp)}<div class="muted" style="font-size:12px">${htmlEsc(r.no)}</div></td><td class="n">${invMoney(r.due)}</td>${paidCell(r.paid)}${balCell(r.remaining)}</tr>`).join("")}
+        <tr><td style="font-weight:600">${acct.curCombined ? "These invoices" : "This invoice"}<div class="muted" style="font-size:12px;font-weight:400">${htmlEsc(no)}</div></td><td class="n">${dueStr}</td>${paidCell(acct.curPaid)}${balCell(acct.curRemaining)}</tr>
+        ${acct.others.map(r => `<tr><td>${r.token ? `<a href="/i/${encodeURIComponent(r.token)}" style="color:${AC};font-weight:600;text-decoration:none">${htmlEsc(r.title)} →</a>` : `<span style="font-weight:600">${htmlEsc(r.title)}</span>`}<div class="muted" style="font-size:12px">${htmlEsc(r.no)}</div></td><td class="n">${invMoney(r.due)}</td>${paidCell(r.paid)}${balCell(r.remaining)}</tr>`).join("")}
       </tbody><tfoot><tr><td colspan="3" class="n tot" style="font-size:15px">Account balance</td><td class="n tot" style="font-size:15px;color:${balColor(acct.total)}">${acct.total < -0.005 ? invMoney(-acct.total) + " credit" : invMoney(acct.total)}</td></tr></tfoot></table></div>`;
       })() : ""}
       <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
@@ -4221,6 +4261,7 @@ const server = http.createServer((req, res) => {
     // actual materials for the linked job — only when THIS invoice reconciles to actuals (q.billMode === "actual")
     const _js = store[org] || {};
     const _mats = srvMatsOf(_js, q);
+    const _combo = invComboOf(_js, cust, q);    // billed-together group → render as ONE combined invoice
     const _acct = invAccountOf(_js, cust, q);   // other open invoices + balances for the "Your account" section
     const _gate = invViewGate(req.url.split("?")[1], req.headers.cookie);
     const _hdr = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -4234,7 +4275,7 @@ const server = http.createServer((req, res) => {
     }
     invEnsurePayLink(store, org, cust, q, (pay) => {
       res.writeHead(200, _hdr);
-      res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, pay));
+      res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, pay, _combo));
     });
     return;
   }
@@ -4972,4 +5013,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, srvMatsOf, srvShortTitle, invPayScopeOf, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

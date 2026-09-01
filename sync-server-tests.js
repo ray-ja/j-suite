@@ -266,16 +266,32 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
     return h.indexOf("Paid to date") >= 0 && h.indexOf("$622.00") >= 0 && /balance <span[^>]*>\$538\.00/.test(h);
   })());
   ok("account section: absent without acct (old callers unchanged)", t.renderInvoicePage(biz, cust, qz, []).indexOf("Your account") < 0);
-  // grouping + colors (Ray 2026-09-01: show combined invoices as grouped; paid = green, balance = red, overpay = green credit)
+  // COMBINED INVOICES render as ONE (Ray 2026-09-01: "it should be a single selection") + colors
   const slabG = { quotes: [
-    { id: "g1", customerId: "cm1", invoiceNo: "INV-G1", invoiced: true, total: 1160, payments: [{ id: "p1", amount: 622 }], combinedAt: 777, invoiceToken: "tokg1" },
-    { id: "g2", customerId: "cm1", invoiceNo: "INV-G2", invoiced: true, total: 2335, combinedAt: 777, invoiceToken: "tokg2" },
-    { id: "solo2", customerId: "cm1", invoiceNo: "INV-S2", invoiced: true, total: 100, invoiceToken: "toks2" }
+    { id: "ht", customerId: "cm1", invoiceNo: "INV-HT", invoiced: true, paid: true, total: 1378, payments: [{ id: "p0", amount: 1378 }], combinedAt: 777, title: "Hot tub pad" },
+    { id: "g1", customerId: "cm1", invoiceNo: "INV-G1", invoiced: true, total: 1160, payments: [{ id: "p1", amount: 622 }], combinedAt: 777, invoiceToken: "tokg1", title: "French drain" },
+    { id: "g2", customerId: "cm1", invoiceNo: "INV-G2", invoiced: true, total: 2335, combinedAt: 777, invoiceToken: "tokg2", title: "Paver patio" },
+    { id: "s2", customerId: "cm1", invoiceNo: "INV-S2", invoiced: true, total: 2235, invoiceToken: "toks2", title: "Stepping-stone path" }
   ], jobs: [], jobMaterials: [] };
-  const g1 = slabG.quotes[0];
-  const hg = t.renderInvoicePage(biz, cust, g1, [], t.invAccountOf(slabG, cust, g1));
-  ok("account section: combined invoices carry the 'billed together' badge (current + partner), the loose one doesn't", (hg.match(/billed together/g) || []).length === 2 && hg.indexOf("INV-S2") >= 0);
-  ok("account section: paid cell is GREEN, positive balances are RED", /color:#0a7d4b[^>]*>\$622\.00/.test(hg.replace(/"/g, "")) && /color:#b91c1c">\$538\.00/.test(hg.replace(/;font-weight:700;?/g, "").replace(/style="/g, "").replace(/"/g, "")) || (hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$538.00") >= 0 && hg.indexOf("$622.00") >= 0));
+  const g1 = slabG.quotes[1], s2q = slabG.quotes[3];
+  const combo = t.invComboOf(slabG, cust, g1);
+  ok("combo: a billed-together member expands to the WHOLE group — 3 lines, total 4873, paid 2000, balance 2873", !!combo && combo.members === 3 && combo.total === 4873 && combo.paid === 2000 && combo.balance === 2873, combo);
+  const acctG = t.invAccountOf(slabG, cust, g1);
+  ok("account: on a combined page, group members fold into 'These invoices' (others = just the loose one)", acctG.curCombined === true && acctG.curDue === 4873 && acctG.curRemaining === 2873 && acctG.others.length === 1 && acctG.others[0].no === "INV-S2" && acctG.total === 5108);
+  const hg = t.renderInvoicePage(biz, cust, g1, [], acctG, null, combo);
+  ok("combined page: one invoice, one line per job, settled line checked, combined total", hg.indexOf("3 jobs, billed together") >= 0 && hg.indexOf("Hot tub pad") >= 0 && hg.indexOf("French drain") >= 0 && hg.indexOf("Paver patio") >= 0 && hg.indexOf("✓ paid") >= 0 && hg.indexOf("$4,873.00") >= 0 && hg.indexOf("These invoices") >= 0);
+  ok("combined page: paid cell GREEN, balances RED", hg.indexOf("#0a7d4b") >= 0 && hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$2,873.00") >= 0);
+  const acctS = t.invAccountOf(slabG, cust, s2q);
+  ok("account: from the LOOSE invoice, the whole group is ONE row (billed 4873 · paid 2000 · 2873 left, linked)", acctS.others.length === 1 && acctS.others[0].no === "3 invoices — billed together" && acctS.others[0].due === 4873 && acctS.others[0].paid === 2000 && acctS.others[0].remaining === 2873 && acctS.others[0].token === "tokg1" && acctS.total === 5108);
+  ok("combo: fully-settled group renders PAID (settledAll) even though this member has no paid flag", (() => {
+    const slabP = { quotes: [
+      { id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 },
+      { id: "b", customerId: "cm1", invoiceNo: "B", invoiced: true, total: 200, payments: [{ id: "p", amount: 200 }], combinedAt: 9 }
+    ], jobs: [], jobMaterials: [] };
+    const b = slabP.quotes[1];
+    const h = t.renderInvoicePage(biz, cust, b, [], t.invAccountOf(slabP, cust, b), null, t.invComboOf(slabP, cust, b));
+    return h.indexOf("PAID") >= 0 && h.indexOf('<a class="pay"') < 0;
+  })());
   // overpay → signed remaining + green credit
   const slabO = { quotes: [
     { id: "ov", customerId: "cm1", invoiceNo: "INV-OV", invoiced: true, total: 500, payments: [{ id: "p1", amount: 600 }] },
