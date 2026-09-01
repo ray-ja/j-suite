@@ -259,13 +259,13 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("account: null when there is nothing to add (single unpaid invoice, no payments)", t.invAccountOf({ quotes: [{ id: "solo", customerId: "cm1", invoiceNo: "S", invoiced: true, total: 100 }] }, cust, { id: "solo", customerId: "cm1", invoiceNo: "S", invoiced: true, total: 100 }) === null);
   const biz = { name: "OBX Lot Solutions", phone: "" };
   const html = t.renderInvoicePage(biz, cust, qz, [], acct);
-  ok("account section: renders balances + linked open invoices + account total", html.indexOf("Your account") >= 0 && html.indexOf("$538.00") >= 0 && html.indexOf("/i/tok-frenchdrain-1234") >= 0 && html.indexOf("$5,108.00") >= 0);
+  ok("switcher header: whole-account total on top with the tabs; no bottom 'Your account' table (Ray: redundant)", html.indexOf("$5,108.00 total") >= 0 && html.indexOf("/i/tok-frenchdrain-1234") >= 0 && html.indexOf("Your account") < 0 && html.indexOf('class="acct"') < 0);
   ok("account section: paid-to-date line under the headline when the CURRENT invoice is partial", (() => {
     const qa = slab.quotes.find(x => x.id === "qa");
     const h = t.renderInvoicePage(biz, cust, qa, [], t.invAccountOf(slab, cust, qa));
     return h.indexOf("Paid to date") >= 0 && h.indexOf("$622.00") >= 0 && /balance <span[^>]*>\$538\.00/.test(h);
   })());
-  ok("account section: absent without acct (old callers unchanged)", t.renderInvoicePage(biz, cust, qz, []).indexOf("Your account") < 0);
+  ok("switcher + total absent without acct (old callers unchanged)", (() => { const h = t.renderInvoicePage(biz, cust, qz, []); return h.indexOf("tap to switch") < 0 && h.indexOf("Your account") < 0; })());
   // COMBINED INVOICES render as ONE (Ray 2026-09-01: "it should be a single selection") + colors
   const slabG = { quotes: [
     { id: "ht", customerId: "cm1", invoiceNo: "INV-HT", invoiced: true, paid: true, total: 1378, payments: [{ id: "p0", amount: 1378 }], combinedAt: 777, title: "Hot tub pad" },
@@ -279,8 +279,8 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   const acctG = t.invAccountOf(slabG, cust, g1);
   ok("account: on a combined page, group members fold into 'These invoices' (others = just the loose one)", acctG.curCombined === true && acctG.curDue === 4873 && acctG.curRemaining === 2873 && acctG.others.length === 1 && acctG.others[0].no === "INV-S2" && acctG.total === 5108);
   const hg = t.renderInvoicePage(biz, cust, g1, [], acctG, null, combo);
-  ok("combined page: one invoice, one line per job, settled line checked, combined total", hg.indexOf("3 jobs, billed together") >= 0 && hg.indexOf("Hot tub pad") >= 0 && hg.indexOf("French drain") >= 0 && hg.indexOf("Paver patio") >= 0 && hg.indexOf("✓ paid") >= 0 && hg.indexOf("$4,873.00") >= 0 && hg.indexOf("These invoices") >= 0);
-  ok("combined page: paid cell GREEN, balances RED", hg.indexOf("#0a7d4b") >= 0 && hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$2,873.00") >= 0);
+  ok("combined page: one invoice, one line per job, settled line checked, combined total", hg.indexOf("3 jobs, billed together") >= 0 && hg.indexOf("Hot tub pad") >= 0 && hg.indexOf("French drain") >= 0 && hg.indexOf("Paver patio") >= 0 && hg.indexOf("✓ paid") >= 0 && hg.indexOf("$4,873.00") >= 0);
+  ok("combined page: green paid-to-date, red balances, account total on top", hg.indexOf("#0a7d4b") >= 0 && hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$2,873.00") >= 0 && hg.indexOf("$5,108.00 total") >= 0);
   const acctS = t.invAccountOf(slabG, cust, s2q);
   ok("account: from the LOOSE invoice, the whole group is ONE row (billed 4873 · paid 2000 · 2873 left, linked)", acctS.others.length === 1 && acctS.others[0].no === "3 invoices — billed together" && acctS.others[0].due === 4873 && acctS.others[0].paid === 2000 && acctS.others[0].remaining === 2873 && acctS.others[0].token === "tokg1" && acctS.total === 5108);
   ok("invoice switcher: tabs on top — current highlighted (no link), others linked with balances", (() => {
@@ -312,7 +312,7 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   const ov = slabO.quotes[0];
   const acctO = t.invAccountOf(slabO, cust, ov);
   ok("account: OVERPAID current invoice keeps its signed credit (−100) and nets the account total (300 − 100 = 200)", acctO.curRemaining === -100 && acctO.total === 200);
-  ok("account section: an overpaid balance renders as a GREEN '$100.00 credit', never '-$100'", (() => { const h = t.renderInvoicePage(biz, cust, ov, [], acctO); return h.indexOf("$100.00 credit") >= 0 && h.indexOf("-$100") < 0; })());
+  ok("overpaid invoice: headline shows a GREEN '$100.00 credit', never '-$100'", (() => { const h = t.renderInvoicePage(biz, cust, ov, [], acctO); return h.indexOf("$100.00 credit") >= 0 && h.indexOf("-$100") < 0; })());
 })();
 
 // ── Invoice open tracking (GET /i/<token> → invViewGate + invLogView) ──

@@ -2451,7 +2451,10 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
         const balLine = (v) => v > 0.005 ? `<span class="b" style="color:#b91c1c;font-weight:600">${invMoney(v)} due</span>` : `<span class="b" style="color:${AC};font-weight:600">✓ paid</span>`;
         const cur = `<span class="invtab on"><span class="t">${htmlEsc(isCombo ? no : srvShortTitle(q))}</span>${balLine(acct.curRemaining)}</span>`;
         const rest = acct.others.filter(r => r.token).map(r => `<a class="invtab" href="/i/${encodeURIComponent(r.token)}"><span class="t">${htmlEsc(r.grp ? r.no.replace(" invoices — billed together", " jobs, billed together") : r.title)} →</span>${balLine(r.remaining)}</a>`).join("");
-        return `<div class="lbl2">Your invoices — tap to switch</div><div class="invtabs">${cur}${rest}</div>`;
+        // the whole-account balance lives up here with the tabs (Ray: the bottom table was redundant — the
+        // tabs already show each invoice; only the TOTAL was missing from the top)
+        const tot = `<span style="font-size:13px;font-weight:800;letter-spacing:0;text-transform:none;color:${acct.total > 0.005 ? "#b91c1c" : AC}">${acct.total < -0.005 ? invMoney(-acct.total) + " credit" : invMoney(acct.total)} total</span>`;
+        return `<div class="lbl2" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">Your invoices — tap to switch${tot}</div><div class="invtabs">${cur}${rest}</div>`;
       })()}
       <div class="top">
         <div class="biz">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${htmlEsc(biz.name || "")}</div><div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
@@ -2476,17 +2479,6 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
         }
         return (q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : "";
       })()}
-      ${acct ? (() => {
-        const RED = "#b91c1c";
-        const balColor = (v) => v > 0.005 ? RED : (v < -0.005 ? AC : "#1a1a1a");   // owed = red · overpaid credit = green
-        const paidCell = (v) => `<td class="n" style="color:${AC};font-weight:600">${v >= 0.005 ? invMoney(v) : `<span style="color:#9ca3af;font-weight:400">—</span>`}</td>`;
-        const balCell = (v) => `<td class="n" style="font-weight:700;color:${balColor(v)}">${v < -0.005 ? invMoney(-v) + " credit" : invMoney(v)}</td>`;
-        return `<div style="margin-top:30px"><div class="lbl2">Your account</div>
-      <table class="acct" style="margin-top:2px"><thead><tr><th>Invoice</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
-        <tr><td style="font-weight:600">${acct.curCombined ? "These invoices" : "This invoice"}<div class="muted" style="font-size:12px;font-weight:400">${htmlEsc(no)}</div></td><td class="n">${dueStr}</td>${paidCell(acct.curPaid)}${balCell(acct.curRemaining)}</tr>
-        ${acct.others.map(r => `<tr><td>${r.token ? `<a href="/i/${encodeURIComponent(r.token)}" style="color:${AC};font-weight:600;text-decoration:none">${htmlEsc(r.title)} →</a>` : `<span style="font-weight:600">${htmlEsc(r.title)}</span>`}<div class="muted" style="font-size:12px">${htmlEsc(r.no)}</div></td><td class="n">${invMoney(r.due)}</td>${paidCell(r.paid)}${balCell(r.remaining)}</tr>`).join("")}
-      </tbody><tfoot><tr><td colspan="3" class="n tot" style="font-size:15px">Account balance</td><td class="n tot" style="font-size:15px;color:${balColor(acct.total)}">${acct.total < -0.005 ? invMoney(-acct.total) + " credit" : invMoney(acct.total)}</td></tr></tfoot></table></div>`;
-      })() : ""}
       <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
     </div></div>
     </body></html>`;
