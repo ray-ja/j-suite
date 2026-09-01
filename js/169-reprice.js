@@ -48,8 +48,13 @@ function rpActuals(jobId) {
   var RP_SKIP_CATS = /^(fuel|meals)$/i;
   var exps = live(d.jobExpenses).filter(function (m) { return m.jobId === jobId && !RP_SKIP_CATS.test(m.category || ""); })
     .reduce(function (s, m) { return s + (+m.amount || 0); }, 0);
-  /* ⛔ no timeclock read here — see the header. Hours are HIS input, always. */
-  return { materials: rpRound(mats), expenses: rpRound(exps) };
+  /* ⛔ no timeclock read here — see the header. Hours are HIS input, always.
+     ⭐ mileage: the job's hand-set total miles (j.manualMiles, Money tab) × the IRS rate — a real hard cost
+     once he types it. Auto/clock mileage is deliberately NOT read, same reason as the hours. */
+  var job = live(d.jobs).filter(function (x) { return x.id === jobId; })[0];
+  var rate = (typeof QE !== "undefined" && QE.MILEAGE) || 0.725;
+  var mileage = (job && +job.manualMiles > 0) ? rpRound(job.manualMiles * rate) : 0;
+  return { materials: rpRound(mats), expenses: rpRound(exps), mileage: mileage };
 }
 
 /* the band the quote froze at estimate time (items[].mkt) + its label */
@@ -63,7 +68,7 @@ function rpBand(q) {
 /* pure: everything the readout shows for a candidate price. Reuses qeEval — the engine's own verdict. */
 function rpCalc(q, inp) {
   var price = rpRound(inp.price), ph = +inp.ph || 0;
-  var hard = rpRound(inp.materials + inp.expenses + (+inp.other || 0));
+  var hard = rpRound(inp.materials + inp.expenses + (+inp.mileage || 0) + (+inp.other || 0));
   var ev = (typeof qeEval === "function")
     ? qeEval(price, { crew: 1, onsiteHrs: ph, materials: hard })
     : { net: price - hard, takeHome: ph > 0 ? (price - hard) * 0.48 / ph : 0, margin: price > 0 ? (price - hard) / price : 0, ok: false, PH: ph, hard: hard };
@@ -116,7 +121,7 @@ if (typeof window !== "undefined") {
     if (!q) return;
     var a = rpActuals(q.jobId);
     RP = { qId: qId, price: rpRound(q.finalPrice || q.total || 0), ph: 0, other: 0,
-           materials: a.materials, expenses: a.expenses };
+           materials: a.materials, expenses: a.expenses, mileage: a.mileage };
     var body = ''
       + '<p class="muted" style="margin:0 0 10px;font-size:13px;white-space:normal">The pricing math, re-run with what the job '
       + '<b>actually</b> cost — filed materials, filed expenses, real hours. Adjust the price and watch the same readout the estimator showed.</p>'
@@ -161,7 +166,7 @@ if (typeof window !== "undefined") {
     q.adjNote = ((q.adjNote ? q.adjNote + " · " : "")
       + "Repriced after actuals " + ((typeof today === "function") ? today() : "")
       + ": " + rpMoney(prevTotal) + " → " + rpMoney(newP)
-      + " (" + (+RP.ph || 0) + " real person-hours, " + rpMoney(RP.materials + RP.expenses + (+RP.other || 0)) + " real costs)").slice(0, 400);
+      + " (" + (+RP.ph || 0) + " real person-hours, " + rpMoney(RP.materials + RP.expenses + (+RP.mileage || 0) + (+RP.other || 0)) + " real costs)").slice(0, 400);
     if (typeof snapshotQuoteVersion === "function") snapshotQuoteVersion(q, "Repriced with actuals", "reprice", prevTotal, prevItems);
     if (typeof touch === "function") touch(q);
     if (typeof logChange === "function") logChange("update", "quote", q.id, "Repriced with actuals → " + rpMoney(newP));

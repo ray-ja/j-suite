@@ -66,7 +66,15 @@ function jobLIFind(job, store, id) {
 }
 if (typeof window !== "undefined") { window.plExpenses = plExpenses; window.plMaterials = plMaterials; window.jobLIAdd = jobLIAdd; window.jobLIFind = jobLIFind; window.jobLICollKey = jobLICollKey; }
 /* confirmed mileage cost attributed to this job (timeclock miles × IRS rate) */
-function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
+/* ⭐ MANUAL MILES WIN. Ray, 2026-09-01: "I want to make the mileage 163 miles — I don't see an easy way."
+   There wasn't one: this only summed CONFIRMED odometer clock entries, and the timeclock "doesn't really
+   work yet" (his words, same day), so the line read $0 forever. j.manualMiles is the owner's total actual
+   job miles (all trips), typed on the Money tab; when set it IS the mileage cost. ⚠️ Per-person mileage
+   REIMBURSEMENT (jobMileageByPerson, js/72) stays clock-based — the override prices the job, it doesn't
+   guess whose truck earned what. */
+function jobMileageCost(j) { const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725);
+  if (+j.manualMiles > 0) return Math.round(+j.manualMiles * rate * 100) / 100;
+  return (D().timeclock || []).filter(e => e && !e.deleted && e.jobId === j.id && e.clockOut && e.milesConfirmed).reduce((s, e) => s + (+e.miles || 0) * rate, 0); }
 /* sub-jobs / STOPS (e.g. a dump run filed under a bigger job, or split across several) — their costs + hours
    roll up into every job they're linked to, EVENLY SPLIT across however many. Membership match (not equality)
    so a stop can be linked to 0/1/N jobs: job.sharedJobIds[] generalizes the old scalar job.parentJobId. */

@@ -859,6 +859,15 @@ window.jobPageResetEnd = function (jobId) { jobPageSetEndpoint(jobId, "routeEnd"
 /* MANUAL route miles (round-trip) fallback for the estimate when the map can't route (owner/admin). Additive
    j.manualRouteMiles: a positive number, else null. OSRM road miles win when available (jobRecalcRouteMiles);
    this is the fallback. Recompute so the estimate + label update immediately; feeds js/52 jobMilesCostEst. */
+/* the Money-tab mileage override: total ACTUAL miles the job took, all trips (vs manualRouteMiles, which
+   is the ROUTE PLAN's one-round-trip estimate — different question, different field) */
+window.jobSetManualMiles = function (jobId, v) {
+  const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
+  if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
+  const n = parseFloat(v);
+  j.manualMiles = (n > 0) ? Math.round(n * 10) / 10 : null;
+  if (typeof touch === "function") touch(j); if (typeof save === "function") save(); if (typeof render === "function") render();
+};
 window.jobSetManualRouteMiles = function (jobId, v) {
   const j = (typeof actJ === "function") ? actJ().find(x => x.id === jobId) : null; if (!j) return;
   if (!jobCanEditPlan()) { alert("Owner/admin only."); return; }
@@ -1008,7 +1017,7 @@ function jobFiledCostsHTML(j) {
   let h = `<div class="card"><div style="font-weight:800;margin-bottom:6px">💵 Job costs &amp; receipts${(expTotal + matTotal) ? ` · <span style="color:var(--accent)">${money(expTotal + matTotal)}</span>` : ""}</div>`;
   h += `<div class="sub" style="white-space:normal;margin-bottom:8px">Job cost: mileage <b>${money(_bd.mileage)}</b> · job <b>${money(_bd.jobExp)}</b> · materials <b>${money(_bd.materials)}</b>${_bd.tool > 0 ? ` <span class="muted">· 🔧 tools ${money(_bd.tool)} (business overhead, not this job)</span>` : ""}</div>`;
   // virtual MILEAGE line — derived, read-only (not a receipt)
-  h += `<div class="li"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}</span></div><div class="sub" style="white-space:normal">estimate vs confirmed odometer — auto from the route/time clock at $${(typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725)}/mi, not a receipt</div></div></div>`;
+  h += `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm" style="font-size:15px;white-space:normal">🛣 Mileage <span class="sub" style="font-weight:400">· ${money(_bd.mileage)}${+j.manualMiles > 0 ? ` · ${j.manualMiles} mi (set by hand)` : ""}</span></div><div class="sub" style="white-space:normal">${+j.manualMiles > 0 ? "your number × $" + (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725) + "/mi — clear the box to go back to auto" : "auto from confirmed odometer clock entries at $" + (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725) + "/mi — or just type the job's total miles"}</div></div><div class="row" style="flex:0 0 auto;gap:6px"><input id="jm_miles_${j.id}" type="number" inputmode="decimal" style="width:86px" value="${+j.manualMiles > 0 ? j.manualMiles : ""}" placeholder="miles"><button class="btn ghost sm" style="width:auto" onclick="jobSetManualMiles('${j.id}', document.getElementById('jm_miles_${j.id}').value)">Save</button></div></div>`;
   const items = mats.map(e => ({ e, tag: "🧱", store: "jobmat" })).concat(exps.map(e => ({ e, tag: "🚚", store: "jobexp" })));
   if (!items.length) { h += `<div class="muted">No receipts filed yet. Snap a receipt below — Cap turns it into tagged line items.</div>`; }
   else {

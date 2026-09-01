@@ -1467,7 +1467,12 @@ console.log("\n--- ⚖️ reprice with actuals ---");
   const T0 = 1784739050000;
   STORE.timeclock = [{ jobId: "j1", clockIn: T0, clockOut: T0 + 4 * 3600e3 }];   // present, and must be IGNORED
 
+  STORE.jobs = [{ id: "j1", manualMiles: 163 }];
   const a = c.rpActuals("j1");
+  ok("⭐ hand-set job miles become a hard cost at the IRS rate (163 × $0.725 = $118.18)",
+    a.mileage === 118.18, a.mileage);
+  ok("⛔ ...but only HAND-SET: no manualMiles → $0, never the clock",
+    (() => { STORE.jobs = [{ id: "j1" }]; const z = c.rpActuals("j1").mileage; STORE.jobs = [{ id: "j1", manualMiles: 163 }]; return z === 0; })());
   ok("⭐ filed materials and expenses come back as the actual hard line",
     a.materials === 683.14 && a.expenses === 54.34, a);
   ok("⛔ fuel and meals are NOT in it — fuel lives inside the $0.725/mi rate (double-count) and snacks are "
@@ -1480,22 +1485,22 @@ console.log("\n--- ⚖️ reprice with actuals ---");
     a.clockHours === undefined, a);
   ok("⛔ ...and the module contains no timeclock READ — the UI string saying so is allowed, a property access is not", !/\.timeclock/.test(CODE(R("js/169-reprice.js"))));
 
-  const inp = { price: 2722.14, ph: 60, other: 0, materials: 683.14, expenses: 54.34 };
+  const inp = { price: 2722.14, ph: 60, other: 0, materials: 683.14, expenses: 54.34, mileage: 118.18 };
   const r = c.rpCalc(q, inp);
   ok("⭐⭐ the band compares the WORK price — pass-through materials off both sides",
     Math.abs(r.workPrice - 2039) < 0.01, r.workPrice);
   ok("⭐ …and at \$2,039 work price the steppath band says below its \$2,045 local floor — barely, truthfully",
     r.pos === "below", [r.workPrice, r.pos]);
   ok("⭐⭐ MATERIALS CANCEL: take-home/hr is identical with and without the \$683 pass-through",
-    (() => { const bare = c.rpCalc(q, { price: 2039, ph: 60, other: 0, materials: 0, expenses: 54.34 });
+    (() => { const bare = c.rpCalc(q, { price: 2039, ph: 60, other: 0, materials: 0, expenses: 54.34, mileage: 118.18 });
              return Math.abs(bare.ev.takeHome - r.ev.takeHome) < 0.01; })(), r.ev.takeHome);
-  ok("⭐ the verdict is the engine's own: 60 REAL person-hours at this price ≈ \$15.88/hr — under the floor,"
-    + " which is the steppath lesson told by arithmetic",
-    r.ev.takeHome < 16 && r.ev.takeHome > 15.5 && !r.ev.ok, r.ev.takeHome);
+  ok("⭐ the verdict is the engine's own: 60 REAL person-hours + 163 real miles ≈ \$14.93/hr — under the "
+    + "floor, and counting the mileage made it WORSE, which is the whole point of counting it",
+    r.ev.takeHome < 15 && r.ev.takeHome > 14.8 && !r.ev.ok, r.ev.takeHome);
   ok("⭐ at the estimate's 20.4 hours the same price clears the floor — the gap IS the story",
     c.rpCalc(q, { price: 2722.14, ph: 20.4, other: 0, materials: 683.14, expenses: 54.34 }).ev.takeHome > 45);
-  ok("⭐ 'other hard costs' flows straight into the hard line",
-    c.rpCalc(q, { price: 2722.14, ph: 60, other: 100, materials: 683.14, expenses: 54.34 }).hard === 837.48);
+  ok("⭐ 'other hard costs' and mileage flow straight into the hard line",
+    c.rpCalc(q, { price: 2722.14, ph: 60, other: 100, materials: 683.14, expenses: 54.34, mileage: 118.18 }).hard === 955.66);
   ok("⭐ the job-page button only renders when the job HAS a quote",
     c.rpBtnHTML({ id: "j1" }).indexOf("rpOpen") > 0 && c.rpBtnHTML({ id: "nope" }) === "");
   ok("⛔ applying goes through snapshotQuoteVersion — the change-order paper trail, not a side channel",
