@@ -232,7 +232,7 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("pay scope: a loose invoice is its own scope at its own balance", scSs.key === "q_ss" && scSs.remainingCents === 223500);
   ok("pay scope: fully-settled group reports paid-off (remaining 0)", t.invPayScopeOf({ quotes: [{ id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 }, { id: "b", customerId: "cm1", invoiceNo: "B", invoiced: true, total: 200, payments: [{ id: "p", amount: 200 }], combinedAt: 9 }], jobs: [], jobMaterials: [] }, cust, { id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 }).remainingCents === 0);
   const hGrp = t.renderInvoicePage(biz, cust, fd, [], null, { url: "https://buy.stripe.com/bal1", paidOff: false, scope: scFd });
-  ok("pay button: group page shows ONE shared balance button ($2,873.00 · 2 invoices) + the partial-payment note", hGrp.indexOf("buy.stripe.com/bal1") >= 0 && hGrp.indexOf("$2,873.00 balance · 2 invoices") >= 0 && hGrp.indexOf("partial payment") >= 0);
+  ok("pay button: group page shows ONE shared balance button ($2,873.00 balance) + the partial-payment note", hGrp.indexOf("buy.stripe.com/bal1") >= 0 && hGrp.indexOf("$2,873.00 balance") >= 0 && hGrp.indexOf("partial payment") >= 0);
   ok("pay button: cash 3% note is computed on the BALANCE, not face value", hGrp.indexOf(t.renderInvoicePage === null ? "x" : "$2,786.81") >= 0);
   const hPaidOff = t.renderInvoicePage(biz, cust, fd, [], null, { url: null, paidOff: true, scope: null });
   ok("pay button: settled scope grays out — 'Paid — thank you', no link", hPaidOff.indexOf("Paid — thank you") >= 0 && hPaidOff.indexOf('<a class="pay"') < 0);

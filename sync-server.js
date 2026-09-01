@@ -2454,9 +2454,8 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
         if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
-          const multi = pay.scope && pay.scope.openCount > 1;
           const cashP = Math.round(bal * 0.97 * 100) / 100, cashS = Math.round((bal - cashP) * 100) / 100;
-          return `<a class="pay" href="${htmlEsc(pay.url)}">💳 Pay online — ${invMoney(bal)}${multi ? ` balance · ${pay.scope.openCount} invoices` : (Math.abs(bal - due) >= 0.005 ? " balance" : "")}</a>
+          return `<a class="pay" href="${htmlEsc(pay.url)}">💳 Pay online — ${invMoney(bal)}${Math.abs(bal - due) >= 0.005 ? " balance" : ""}</a>
           <div class="muted" style="text-align:center;margin-top:8px">Pay the full balance, or change the amount at checkout to make a partial payment.</div>
           ${cashS >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashP)} (you save ${invMoney(cashS)})</div>` : ""}`;
         }
