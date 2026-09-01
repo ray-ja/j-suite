@@ -2280,7 +2280,7 @@ function invAccountOf(slab, cust, q) {
   const paidOf = (x) => Math.round(((x.payments || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0)) * 100) / 100;
   const others = (slab.quotes || [])
     .filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id && x.id !== q.id)
-    .map(x => { const due = dueOf(x), paid = paidOf(x); return { no: invNoOf(x), title: String(x.title || (invItemsOf(x)[0] || {}).name || "Services").slice(0, 60), due: due, paid: paid, remaining: Math.round((due - paid) * 100) / 100, token: x.invoiceToken || "", grp: +x.combinedAt || 0 }; })
+    .map(x => { const due = dueOf(x), paid = paidOf(x); let t = String(x.title || (invItemsOf(x)[0] || {}).name || "Services"); t = t.split(/\s+[—–]\s+/)[0]; if (t.length > 48) t = t.slice(0, 48).replace(/\s+\S*$/, "") + "…"; return { no: invNoOf(x), title: t, due: due, paid: paid, remaining: Math.round((due - paid) * 100) / 100, token: x.invoiceToken || "", grp: +x.combinedAt || 0 }; })
     .filter(r => r.remaining >= 0.005)
     .sort((a, b) => (a.no < b.no ? -1 : 1));
   const curPaid = paidOf(q);
@@ -2333,6 +2333,7 @@ function renderInvoicePage(biz, cust, q, mats, acct) {
     td{padding:13px 0;border-bottom:1px solid #f1f2f4}
     th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}th.c,td.c{text-align:center}
     tfoot td{border-bottom:none;padding:5px 0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
+    .acct td,.acct th{padding-left:18px}.acct td:first-child,.acct th:first-child{padding-left:0}.acct tfoot .tot{font-size:15px;padding-left:18px}.acct tfoot td:first-child.tot{padding-left:0}
     .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
     .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
     .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg)}
@@ -2360,7 +2361,7 @@ function renderInvoicePage(biz, cust, q, mats, acct) {
         const grpN = {}; [acct.curGrp].concat(acct.others.map(r => r.grp)).forEach(g => { if (g) grpN[g] = (grpN[g] || 0) + 1; });
         const grpBadge = (g) => (g && grpN[g] >= 2) ? `<span style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6b7280;background:#f1f2f4;border-radius:4px;padding:1px 6px;vertical-align:1px">billed together</span>` : "";
         return `<div style="margin-top:30px"><div class="lbl2">Your account</div>
-      <table style="margin-top:2px"><thead><tr><th>Invoice</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
+      <table class="acct" style="margin-top:2px"><thead><tr><th>Invoice</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
         <tr><td style="font-weight:600">This invoice${grpBadge(acct.curGrp)}<div class="muted" style="font-size:12px;font-weight:400">${htmlEsc(no)}</div></td><td class="n">${dueStr}</td>${paidCell(acct.curPaid)}${balCell(acct.curRemaining)}</tr>
         ${acct.others.map(r => `<tr><td>${r.token ? `<a href="/i/${encodeURIComponent(r.token)}" style="color:${AC};font-weight:600;text-decoration:none">${htmlEsc(r.title)} →</a>` : `<span style="font-weight:600">${htmlEsc(r.title)}</span>`}${grpBadge(r.grp)}<div class="muted" style="font-size:12px">${htmlEsc(r.no)}</div></td><td class="n">${invMoney(r.due)}</td>${paidCell(r.paid)}${balCell(r.remaining)}</tr>`).join("")}
       </tbody><tfoot><tr><td colspan="3" class="n tot" style="font-size:15px">Account balance</td><td class="n tot" style="font-size:15px;color:${balColor(acct.total)}">${acct.total < -0.005 ? invMoney(-acct.total) + " credit" : invMoney(acct.total)}</td></tr></tfoot></table></div>`;
