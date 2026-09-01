@@ -294,7 +294,7 @@ const BUILD = String(Date.now());
 const MESSAGING_ON = process.env.MESSAGING_ON === "1" || (function () {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")).messagingOn === true; } catch (e) { return false; }
 })();
-const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles", "studioVideos", "catalogSkus", "shiftNotes", "reminders", "billRates", "workoutLogs", "routineItems", "followUps"];
+const COLLECTIONS = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "milestones", "inventory", "changelog", "locks", "timeclock", "income", "expenses", "messages", "resale", "pendingChanges", "knowledge", "disbursements", "escapeRooms", "escapeBookings", "lifeNotes", "lifeTrackers", "lifeLogs", "budgetBooks", "budgetCats", "budgetTx", "budgetMemo", "budgetAccounts", "budgetBudgets", "budgetTax", "budgetBills", "customJobs", "research", "receipts", "recurringPlans", "invoices", "jobExpenses", "jobMaterials", "siteSurveys", "playbookLib", "installments", "shelfItems", "personalEvents", "personalFiles", "studioVideos", "catalogSkus", "shiftNotes", "reminders", "billRates", "workoutLogs", "routineItems", "followUps", "invoiceViews"];
 const BIZES = ["obx", "jam"];
 
 function blankBiz() { return { customers: [], quotes: [], jobs: [], recurringPlans: [] }; }
@@ -2200,6 +2200,41 @@ function invItemsOf(q) { return ((q && q.items) || []).filter(it => it && (it.na
 function invEff(q) { return +((q && (q.finalPrice || q.total))) || 0; }
 function invNoOf(q) { if (q && q.invoiceNo) return q.invoiceNo; const ds = String((q && q.date) || "").replace(/-/g, ""); return "INV-" + (ds || "00000000") + "-" + String((q && q.id) || "").slice(-4).toUpperCase(); }
 function invDateOf(ds) { const m = String(ds || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (m[2] + "/" + m[3] + "/" + m[1].slice(2)) : String(ds || ""); }
+/* INVOICE OPEN TRACKING — every open of /i/<token> is a customer read UNLESS it's the owner. Owner opens are
+   discerned two ways: ?preview (the in-app "Preview" button appends it) never counts AND stamps a long-lived
+   jso=1 cookie on that browser, so LATER opens from the same browser (e.g. the owner tapping the link he texted)
+   don't count either. Everything else logs an invoiceViews record + DMs the owner (rapid refreshes < 15 min
+   apart collapse into one ping so a customer scrolling doesn't buzz the phone five times). */
+function invViewGate(qs, cookieHeader) {
+  const preview = /(?:^|&)preview(?:=|&|$)/.test(String(qs || ""));
+  const ownerDevice = /(?:^|;\s*)jso=1(?:\s*;|$)/.test(String(cookieHeader || ""));
+  return { preview: preview, ownerDevice: ownerDevice, count: !preview && !ownerDevice,
+    setCookie: preview ? "jso=1; Path=/i/; Max-Age=63072000; SameSite=Lax" : null };
+}
+/* PURE (no I/O): appends the view record and, when this open deserves a ping, merges the owner-DM
+   message records in. Returns { store, threadId, biz } — threadId null when no ping. The ROUTE does
+   saveStore + pushNotify, so this stays unit-testable without ever touching the live data.json. */
+function invLogView(store, org, q, cust, ua, now) {
+  now = +now || Date.now();
+  const slab = store[org]; if (!slab || !q) return { store: store, threadId: null, biz: org };
+  slab.invoiceViews = slab.invoiceViews || [];
+  const prior = slab.invoiceViews.filter(v => v && !v.deleted && v.quoteId === q.id);
+  const lastAt = prior.reduce((m, v) => Math.max(m, +v.at || 0), 0);
+  slab.invoiceViews.push({ id: "iv" + now.toString(36) + crypto.randomBytes(3).toString("hex"), quoteId: q.id, at: now, ua: String(ua || "").slice(0, 140), deleted: false, updatedAt: now });
+  if (now - lastAt <= 15 * 60 * 1000) return { store: store, threadId: null, biz: org };   // rapid refresh — logged, not pinged
+  const users = (store.users || []);
+  const owner = users.find(u => u && !u.kind && !u.deleted && u.superAdmin) || users.find(u => u && !u.kind && !u.deleted && u.role === "owner");
+  if (!owner) return { store: store, threadId: null, biz: org };
+  const who = (cust && (cust.name || cust.company)) || "Customer";
+  const nth = prior.length + 1;
+  const built = ceoBuildMessage({
+    biz: org, to: owner.id, members: [owner.id],
+    title: "Invoice activity", senderLabel: "Invoice watcher",
+    threadId: "thr_inv_views_" + org,
+    body: "👁 " + who + " opened invoice " + invNoOf(q) + " — " + invMoney(invEff(q)) + (nth > 1 ? " (open #" + nth + ")" : " (first open)")
+  }, store);
+  return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, biz: built.biz };
+}
 // MIRRORS the client invCleanMatDesc (js/46) — strip Cap/import annotation cruft off a material description.
 function srvCleanMatDesc(desc) {
   let s = String(desc == null ? "" : desc).trim();
@@ -4080,7 +4115,17 @@ const server = http.createServer((req, res) => {
     const _js = store[org] || {};
     const _jb = (q.billMode === "actual") ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
     const _mats = _jb ? (_js.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === _jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0) : [];
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    const _gate = invViewGate(req.url.split("?")[1], req.headers.cookie);
+    const _hdr = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
+    if (_gate.setCookie) _hdr["Set-Cookie"] = _gate.setCookie;
+    if (_gate.count) {
+      try {
+        const _lv = invLogView(store, org, q, cust, req.headers["user-agent"]);
+        store = _lv.store; saveStore(store);
+        if (_lv.threadId) pushNotify(store, _lv.biz, _lv.threadId, "__ceo__").catch(() => {});
+      } catch (e) {}
+    }
+    res.writeHead(200, _hdr);
     return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats));
   }
 
@@ -4817,4 +4862,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

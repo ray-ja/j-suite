@@ -202,8 +202,42 @@ window.invShareLink = async function (quoteId) {
   let copied = false;
   try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(url); copied = true; } } catch (e) {}
   if (btn) { btn.disabled = false; btn.textContent = "🔗 Copy invoice link"; }
-  alert((copied ? "Invoice link copied ✓\n\n" : "Invoice link:\n\n") + url + "\n\nText or email this to your customer — they can view the invoice and pay online from any browser.");
+  invShareSheet(q, url, copied);
 };
+/* The share screen (replaced the un-selectable browser alert): preview the page exactly as the customer
+   sees it, copy the link, and see the open history. Preview opens carry ?preview so the server never
+   counts them as customer reads — and they mark this browser as the owner's for good measure. */
+function invShareSheet(q, url, copied) {
+  modal("Invoice link — " + invNo(q), `
+    <a class="btn acc" style="display:block;text-align:center" href="${esc(url)}?preview=1" target="_blank" rel="noopener">👁 Preview — see exactly what they'll see</a>
+    <input readonly value="${esc(url)}" onclick="this.select()" style="width:100%;margin-top:10px;font-size:13px">
+    <button class="btn ghost" id="inv_copyurl_${q.id}" style="width:100%;margin-top:8px" onclick="invCopyShareUrl('${q.id}')">${copied ? "✓ Copied — paste it into a text or email" : "🔗 Copy link"}</button>
+    <div class="sub" style="margin-top:10px;white-space:normal">Every time the customer opens this page you'll get a ping in Messages (and on your phone). Opens from the preview button — or from any browser you've previewed in — are never counted as customer reads.</div>
+    ${invViewsHTML(q.id)}
+    <button class="btn ghost sm" style="width:100%;margin-top:12px" onclick="openInvoice('${q.id}')">← Back to invoice</button>
+  `);
+}
+window.invCopyShareUrl = async function (quoteId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q || !q.invoiceToken) return;
+  const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+  const btn = document.getElementById("inv_copyurl_" + quoteId);
+  try { await navigator.clipboard.writeText(origin + "/i/" + q.invoiceToken); if (btn) btn.textContent = "✓ Copied — paste it into a text or email"; }
+  catch (e) { if (btn) btn.textContent = "Couldn't copy — press-and-hold the link above"; }
+};
+/* Open history for one invoice — customer reads logged by the server on the hosted page. */
+function invViewsOf(quoteId) {
+  return (D().invoiceViews || []).filter(v => v && !v.deleted && v.quoteId === quoteId).sort((a, b) => (+b.at || 0) - (+a.at || 0));
+}
+function invViewTime(t) {
+  const d = new Date(+t || 0);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function invViewsHTML(quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) return "";
+  const vs = invViewsOf(quoteId);
+  if (!vs.length) return `<div class="sub" style="margin-top:10px">👁 Not opened by the customer yet.</div>`;
+  return `<div style="margin-top:10px"><div class="sub" style="font-weight:700">👁 Opened ${vs.length}× — last ${invViewTime(vs[0].at)}</div>${vs.slice(0, 5).map(v => `<div class="sub">· ${invViewTime(v.at)}</div>`).join("")}${vs.length > 5 ? `<div class="sub">…and ${vs.length - 5} earlier</div>` : ""}</div>`;
+}
 // single-button flow (alerts + re-render on the result)
 window.invGenPayLink = async function (quoteId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
@@ -295,14 +329,14 @@ window.openInvoice = function (quoteId) {
         <tfoot>${invBillMode(q) === "actual" ? "" : invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
       ${invModeControl(q)}
-      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
+      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${q.invoiceToken ? invViewsHTML(q.id) : ""}${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
       ${q.paymentLink
         ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money2(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
         : ((typeof finCanView !== "function" || finCanView())
           ? `<button class="btn acc" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:8px" onclick="invGenPayLink('${q.id}')">⚡ Generate card-payment link</button>`
           : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
     </div>${invReceiptsNote(q)}
-    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:10px" onclick="invShareLink('${q.id}')">🔗 Copy invoice link (customer views + pays online)</button>` : ""}
+    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:10px" onclick="invShareLink('${q.id}')">🔗 Invoice link — preview, send &amp; see opens</button>` : ""}
     <div class="row" style="gap:8px;margin-top:8px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
       <button class="btn ghost grow" onclick="invPrint('${q.id}')">🖨️ Print / PDF</button>

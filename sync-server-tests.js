@@ -216,6 +216,42 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("invoice page: escapes a customer name (no HTML injection)", t.renderInvoicePage(biz, { name: "<script>x</script>" }, q).indexOf("<script>x") < 0);
 })();
 
+// ── Invoice open tracking (GET /i/<token> → invViewGate + invLogView) ──
+(function () {
+  // gate: who counts as a customer read
+  ok("view gate: a plain customer open COUNTS", t.invViewGate("", "").count === true);
+  ok("view gate: ?preview never counts AND stamps the owner cookie", (() => { const g = t.invViewGate("preview=1", ""); return g.count === false && /jso=1/.test(g.setCookie || ""); })());
+  ok("view gate: a browser carrying the owner cookie never counts", t.invViewGate("", "x=1; jso=1; y=2").count === false);
+  ok("view gate: an UNRELATED cookie still counts (no false owner match)", t.invViewGate("", "jsox=1; ajso=1").count === true);
+  // logger: record + owner ping, pure (no I/O)
+  const mkStore = () => ({
+    users: [{ id: "own1", username: "ray", role: "owner", superAdmin: true, updatedAt: 1 }],
+    obx: { quotes: [{ id: "qv1", invoiceNo: "INV-9", total: 500, updatedAt: 1 }], customers: [], messages: [], invoiceViews: [] }
+  });
+  const q = { id: "qv1", invoiceNo: "INV-9", total: 500 };
+  const cust = { name: "Mike Green" };
+  const T0 = 1756700000000;
+  let st = mkStore();
+  const r1 = t.invLogView(st, "obx", q, cust, "Mozilla/5.0 iPhone", T0);
+  ok("logView: first open logs ONE invoiceViews record with quoteId + at", (() => { const v = r1.store.obx.invoiceViews; return v.length === 1 && v[0].quoteId === "qv1" && v[0].at === T0; })());
+  ok("logView: first open PINGS the owner (DM thread + message merged in)", (() => {
+    const ms = r1.store.obx.messages, th = ms.find(m => m && m.kind === "thread" && m.threadId === r1.threadId), msg = ms.find(m => m && !m.kind);
+    return !!r1.threadId && !!th && th.type === "dm" && String(th.members) === "own1" && !!msg && msg.body.indexOf("Mike Green opened invoice INV-9") >= 0 && msg.body.indexOf("$500.00") >= 0;
+  })());
+  const r2 = t.invLogView(r1.store, "obx", q, cust, "", T0 + 60 * 1000);
+  ok("logView: a refresh 1 min later is LOGGED but NOT pinged (no buzz-spam)", r2.store.obx.invoiceViews.length === 2 && r2.threadId === null);
+  const r3 = t.invLogView(r2.store, "obx", q, cust, "", T0 + 60 * 60 * 1000);
+  ok("logView: an open an hour later pings again with the open count", (() => {
+    const msgs = r3.store.obx.messages.filter(m => m && !m.kind);
+    return r3.threadId && msgs.length === 2 && msgs.some(m => m.body.indexOf("open #3") >= 0);
+  })());
+  ok("logView: view records survive a sync round-trip (per-record LWW, zero loss)", (() => {
+    const merged = t.mergeState(r3.store, { obx: { customers: [{ id: "c9", name: "Other", updatedAt: 5 }] } });
+    return merged.obx.invoiceViews.length === 3 && Array.isArray(merged.obx.invoiceViews);
+  })());
+  ok("logView: an unknown org is a safe no-op (no throw, no ping)", t.invLogView(mkStore(), "nope", q, cust, "", T0).threadId === null);
+})();
+
 // ── Stripe webhook signature verification (the paid-webhook's ONLY auth) ──
 (function () {
   const crypto = require("crypto");
