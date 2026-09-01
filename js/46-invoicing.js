@@ -120,6 +120,28 @@ function invAdjRows(q) {
 }
 /* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
 function invAmountDue(q) { const tax = (typeof quoteSalesTax === "function") ? quoteSalesTax(q) : 0; return Math.round((invGrandTotal(q) + tax) * 100) / 100; }
+/* ⭐ pure: partition the awaiting list into render groups. A COMBO = same customer + same combinedAt stamp
+   (one Print/Copy stamps its members with one timestamp, so equality IS group identity). Everything else is
+   that customer's loose pile; 2+ loose invoices → offer combining, inline and small. Order: customers by
+   their oldest debt first (the list's existing instinct), combos before loose within a customer. */
+function invAwaitingGroups(awaiting) {
+  const byCust = {};
+  (awaiting || []).forEach(q => { const k = q.customerId || "?"; (byCust[k] || (byCust[k] = [])).push(q); });
+  const out = [];
+  Object.keys(byCust).forEach(cid => {
+    const qs = byCust[cid];
+    const combos = {};
+    const loose = [];
+    qs.forEach(q => { if (q.combinedAt) (combos[+q.combinedAt] || (combos[+q.combinedAt] = [])).push(q); else loose.push(q); });
+    Object.keys(combos).sort().forEach(ts => {
+      const rows = combos[ts];
+      /* a "combo" of one — its partners got paid off — still shows as the group the customer holds */
+      out.push({ kind: "combo", cid: cid, when: new Date(+ts).toISOString().slice(0, 10), rows: rows, oldest: Math.max(...rows.map(q => invAgeDays(q) || 0)) });
+    });
+    if (loose.length) out.push({ kind: "loose", cid: cid, rows: loose, offerCombine: loose.length > 1, oldest: Math.max(...loose.map(q => invAgeDays(q) || 0)) });
+  });
+  return out.sort((a, b) => b.oldest - a.oldest);
+}
 /* ⭐ WHAT'S ACTUALLY LEFT. Ray, 2026-09-01, reading the Awaiting list: the French drain showed \$1,160 in
    red with \$622 already paid on it. invAmountDue is the invoice's face value — right for the document,
    wrong for a list whose whole question is "how much am I still waiting on". Partial payments are normal
@@ -423,20 +445,32 @@ function rInvoices() {
 
   h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">📤 Awaiting payment</h2><span class="ct">${money2(arTotal)}</span></div>`;
   if (!awaiting.length) h += `<div class="card"><div class="muted">Nothing outstanding. 🎉</div></div>`;
-  else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); const paid = invPaidAmt2(q);
-    return row(q, `<b style="color:var(--danger)">${money2(invRemaining(q))}</b><div class="sub">${paid > 0 ? "paid " + money2(paid) + " of " + money2(invAmountDue(q)) + " · " : ""}${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
-
-  /* ⭐ THE COMBINER NOW REMEMBERS. Ray, 2026-09-01, seeing the button under a group he combined on 7/24:
-     "I'm a little confused… we did already combine these, I thought." He had — the shared INV-20260724-*
-     numbers prove it — but the display-only combiner kept no record, so the button re-offered forever and
-     read as "you never did this." Print/Copy now stamps q.combinedAt; a fully-stamped group changes the
-     button's whole message from "do this" to "you did this — view it again." */
-  if (typeof invComboCustomers === "function" && invComboCustomers().length) {
-    const _grps = invComboCustomers();
-    const _allDone = _grps.every(g => g.quotes.every(q => q.combinedAt));
-    const _when = _allDone ? new Date(Math.max(..._grps.flatMap(g => g.quotes.map(q => +q.combinedAt || 0)))).toISOString().slice(0, 10) : "";
-    h += `<div class="card" style="border-left:4px solid #6b3fa0"><button class="btn" style="width:100%;background:#6b3fa0;border-color:#6b3fa0;color:#fff" onclick="invComboOpen()">${_allDone ? "🧾 View the combined invoice again" : "🧾 Combine into one invoice"}</button><div class="sub" style="margin-top:6px;white-space:normal">${_allDone ? "These were already combined into one invoice (" + esc(_when) + ") — the customer has it. Reopen to view, print, or re-copy." : "Several open jobs for the same customer → one invoice to hand them (e.g. to send as a single Square invoice). Each job stays its own record for payments &amp; payout."}</div></div>`;
+  else {
+    /* ⭐⭐ COMBINED INVOICES READ AS GROUPS, RIGHT IN THE LIST. Ray, 2026-09-01: "imagine multiple customers,
+       multiple single and multiple combined invoices — you don't want a big purple button for each. It
+       should land on the invoices and the invoice group when applicable." So the global banner is gone;
+       a combined set renders as ONE bordered group — header with the combined date, the remaining total,
+       and its own View action — with its member invoices inside. Loose invoices stay plain rows, and a
+       customer with 2+ loose ones gets a slim combine-offer line under THEIR rows, not a billboard. */
+    invAwaitingGroups(awaiting).forEach(g => {
+      const inner = g.rows.map(q => { const days = invAgeDays(q); const paid = invPaidAmt2(q);
+        return row(q, `<b style="color:var(--danger)">${money2(invRemaining(q))}</b><div class="sub">${paid > 0 ? "paid " + money2(paid) + " of " + money2(invAmountDue(q)) + " · " : ""}${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("");
+      if (g.kind === "combo") {
+        const left = g.rows.reduce((s2, q) => s2 + invRemaining(q), 0);
+        h += `<div class="card" style="border-left:4px solid #6b3fa0;padding-top:8px">
+          <div class="row" style="gap:8px;align-items:baseline;padding:0 0 4px">
+            <div class="grow" style="min-width:0"><div class="nm" style="font-size:13px;color:#a78bda">🧾 Combined invoice · ${esc(cust(g.rows[0]))}</div>
+            <div class="sub">sent ${esc(g.when)} · ${g.rows.length} jobs · the customer holds ONE document</div></div>
+            <div style="flex:0 0 auto;text-align:right"><b style="font-variant-numeric:tabular-nums">${money2(left)}</b><div class="sub">left on it</div></div>
+            <button class="btn ghost sm" style="flex:0 0 auto;width:auto" onclick="invComboOpen('${esc(g.cid)}')">View</button>
+          </div>${inner}</div>`;
+      } else {
+        h += `<div class="card">${inner}` +
+          (g.offerCombine ? `<button class="btn ghost sm" style="width:100%;margin-top:6px;color:#a78bda" onclick="invComboOpen('${esc(g.cid)}')">🧾 Combine ${esc(cust(g.rows[0]))}'s ${g.rows.length} invoices into one</button>` : "") + `</div>`;
+      }
+    });
   }
+
 
   if (paid.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">✓ Paid</h2><span class="ct">${paid.length}</span></div><div class="card">` + paid.map(q => row(q, `<b style="color:var(--accent)">${amt(q)}</b><div class="sub">${q.paidDate ? "paid " + fmtDate(q.paidDate) : "paid"}</div>`)).join("") + `</div>`;
 

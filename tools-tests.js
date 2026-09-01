@@ -1406,5 +1406,39 @@ console.log("\n--- ⭐⭐ the to-do list on Today: search, schedule, delete ---"
   }
 }
 
+
+/* ---------- ⭐ COMBINED INVOICES LAND ON THE LIST, NOT A BANNER (js/46 invAwaitingGroups) ----------------
+   Ray, 2026-09-01: "imagine multiple customers, multiple single and multiple combined invoices — you don't
+   want a big purple button for each. It should land on the invoices and the invoice group when applicable." */
+console.log("\n--- ⭐ awaiting list groups: combos vs loose ---");
+{
+  const SRC46 = R("js/46-invoicing.js");
+  const c = { console };
+  c.invAgeDays = q => q._age || 0;
+  vm.createContext(c);
+  vm.runInContext(SRC46.match(/function invAwaitingGroups[\s\S]*?\n\}/)[0], c);
+  const T1 = 1753358400000, T2 = 1755000000000;
+  const rows = [
+    { id: "a1", customerId: "mike", combinedAt: T1, _age: 39 },
+    { id: "a2", customerId: "mike", combinedAt: T1, _age: 39 },
+    { id: "b1", customerId: "mike", _age: 5 },
+    { id: "c1", customerId: "mb", _age: 60 },
+    { id: "c2", customerId: "mb", _age: 12 },
+    { id: "d1", customerId: "vt", combinedAt: T2, _age: 20 }
+  ];
+  const g = c.invAwaitingGroups(rows);
+  ok("⭐ Mike's 7/24 pair is ONE combo group", g.some(x => x.kind === "combo" && x.cid === "mike" && x.rows.length === 2));
+  ok("⭐ his loose new invoice is separate — no combine offer for a single", (() => {
+    const l = g.find(x => x.kind === "loose" && x.cid === "mike"); return l && l.rows.length === 1 && !l.offerCombine; })());
+  ok("⭐ a customer with 2+ LOOSE invoices gets the inline combine offer", (() => {
+    const l = g.find(x => x.kind === "loose" && x.cid === "mb"); return l && l.offerCombine === true; })());
+  ok("⭐ a combo of ONE (partners paid off) still renders as the group the customer holds",
+    g.some(x => x.kind === "combo" && x.cid === "vt" && x.rows.length === 1));
+  ok("⭐ ordered by oldest debt first", g[0].cid === "mb" && g[0].oldest === 60, g.map(x => [x.cid, x.oldest]));
+  ok("⭐ the combo carries its sent date", /^\d{4}-\d{2}-\d{2}$/.test(g.find(x => x.cid === "vt").when));
+  ok("⛔ the global purple banner is gone — the affordance lives on the groups now",
+    !/Combine into one invoice<\/button>/.test(CODE(R("js/46-invoicing.js"))));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
