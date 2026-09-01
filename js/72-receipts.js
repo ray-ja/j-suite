@@ -387,20 +387,42 @@ function rcptCard4(v) { return v ? String(v).replace(/\D/g, "").slice(-4) : ""; 
 /* do two rows look like the same charge? amount (cents) MUST match, plus at least one signal:
    both have a refNo → identity is the refNo (distinct order #s are NOT dups); else same normalized vendor,
    or same card last-4 (both present). Amount-only with NO signal (blank vendor + no card + no ref) → NOT a dup. */
+/* ⭐ THE DATE A ROW ACTUALLY KNOWS. A FILED jobMaterial/jobExpense often carries NO `date` field at all —
+   the purchase date lives only in what Cap read off the photo (capRead.date) or proposed (suggested.date).
+   The different-dates guard below is only as good as this resolver: with a bare `a.date` it silently
+   wildcards on every filed record, which is exactly how a July purchase merged with an August one. */
+function rcptDupDate(e) {
+  if (typeof _rcptIsoDate !== "function") return String((e && e.date) || "");
+  return _rcptIsoDate(e && e.date)
+      || _rcptIsoDate(e && e.capRead && e.capRead.date)
+      || _rcptIsoDate(e && e.suggested && e.suggested.date) || "";
+}
+/* ⛔⛔ ONLY THE OBVIOUSLY-SAME. Ray, 2026-09-01, after nearly spam-merging two DIFFERENT $28.79 Home Depot
+   purchases — different cards, a month apart, on different jobs: "I just spam click this merge button
+   whenever I see it come up because I trust the engine… it should only be merging receipts that are
+   obviously the same." The SAME pair had already fooled the batch sweep an hour earlier and knocked a
+   billable line off an invoice. So the contract flipped: a conflicting signal now VETOES the group.
+   Amount+vendor alone is a coincidence generator at stores he visits weekly — every hard signal that says
+   "different purchase" (date, card, job) must be ABSENT or AGREE before this dares to suggest a merge.
+   The detector may now miss an odd true duplicate; the owner spam-clicking a false one costs real money. */
 function rcptDupMatch(a, b) {
   var ca = Math.round((+a.amount || 0) * 100), cb = Math.round((+b.amount || 0) * 100);
   if (!ca || ca !== cb) return false;                 // amount must match exactly (and be non-zero)
   var ra = a.refNo ? String(a.refNo) : "", rb = b.refNo ? String(b.refNo) : "";
-  if (ra && rb) return ra === rb;                     // two CSV rows with txn #s: same # = dup, different # = distinct order
-  // DIFFERENT DATES = DIFFERENT PURCHASES. Two photos of the SAME receipt carry the SAME printed date, so when BOTH
-  // copies have a real date and they DIFFER, they cannot be the same receipt — never a dup. This stops distinct
-  // same-total, same-store, same-card receipts (e.g. a $33.60 tarp on 6/10 vs a $33.60 pick-mattock on 7/8 at Home
-  // Depot on the same card) from colliding + being merged into one. A blank date stays a wildcard (Cap may miss one).
-  var da = (typeof _rcptIsoDate === "function") ? _rcptIsoDate(a.date) : "", db = (typeof _rcptIsoDate === "function") ? _rcptIsoDate(b.date) : "";
+  if (ra && rb) return ra === rb;                     // two rows with txn #s: the vendor's own identity settles it
+  // DIFFERENT DATES = DIFFERENT PURCHASES. Two captures of the SAME receipt carry the SAME printed date —
+  // resolved through rcptDupDate so a filed record's photo-read date counts, not just the raw field.
+  var da = rcptDupDate(a), db = rcptDupDate(b);
   if (da && db && da !== db) return false;
+  // DIFFERENT CARDS = DIFFERENT PURCHASES. One receipt is paid with one card; two known, different last-4s
+  // can never be the same charge, no matter how well the vendor matches.
+  var la = rcptCard4(a.cardLast4), lb = rcptCard4(b.cardLast4);
+  if (la && lb && la !== lb) return false;
+  // (Different JOBS deliberately do NOT veto: one receipt double-filed to two jobs is a real duplicate class.
+  // The editor already renders that pair as "≈ Similar — your call" — survivor picker, no one-tap delete —
+  // so it can't be spam-merged. Only physically-impossible signals veto outright: date and card.)
   var va = rcptVendorNorm(a.vendor), vb = rcptVendorNorm(b.vendor);
   if (va && vb && va === vb) return true;             // same normalized vendor
-  var la = rcptCard4(a.cardLast4), lb = rcptCard4(b.cardLast4);
   if (la && lb && la === lb) return true;             // same card (both present) — even if vendor differs/blank
   return false;
 }

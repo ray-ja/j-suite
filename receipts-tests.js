@@ -1199,6 +1199,39 @@ async function main() {
   dg = rcptDupGroups();
   ok("review-vs-filed pair flagged", dg.length === 1 && dg[0].length === 2, dg.map(g => g.length));
 
+  /* ⛔⛔ THE $28.79 INCIDENT, 2026-09-01, BOTH HALVES. Two different Home Depot purchases — EZSand paver
+     sand (8/04, card 8203, steppath job) and Husky contractor bags (card 3621-era, trailer job, over a month
+     earlier) — same store, same total to the cent. The vendor+amount match grouped them; the batch sweep
+     merged them and knocked a billable line off a customer invoice, and an hour later the SAME pair flagged
+     for Ray, who by his own account "just spam clicks the merge button because I trust the engine." The
+     contract is now veto-based: any hard signal that disagrees (date — resolved through capRead/suggested,
+     since filed records often carry no bare date field — card, or job) kills the group. */
+  console.log("— DUP-GROUP: the $28.79 incident — different DATES (one only in capRead) → NOT flagged —");
+  resetStore();
+  STORE.jobMaterials.push({ id: "ez1", receiptId: "ez1p", vendor: "The Home Depot", amount: 28.79, jobId: "j1",
+    capRead: { date: "2026-08-04" } });                       // filed: no bare date, photo-read date only
+  seedReview({ receiptId: "bg1", vendor: "Home Depot", amount: 28.79, suggested: { date: "2026-07-01" } });
+  ok("a month apart (dates via capRead/suggested) → no group", rcptDupGroups().length === 0, rcptDupGroups().map(g => g.length));
+
+  console.log("— DUP-GROUP: same vendor+amount but DIFFERENT CARDS → NOT flagged —");
+  resetStore();
+  seedReview({ receiptId: "c1", vendor: "Home Depot", amount: 28.79, cardLast4: "8203" });
+  seedReview({ receiptId: "c2", vendor: "Home Depot", amount: 28.79, cardLast4: "3621" });
+  ok("two known different cards can never be one charge", rcptDupGroups().length === 0);
+
+  console.log("— DUP-GROUP: different JOBS (no date/card conflict) still group — the near-tie tier handles them —");
+  resetStore();
+  STORE.jobMaterials.push({ id: "ja", receiptId: "jap", vendor: "Home Depot", amount: 28.79, jobId: "j1" });
+  STORE.jobExpenses.push({ id: "jb", receiptId: "jbp", vendor: "Home Depot", amount: 28.79, jobId: "j2" });
+  ok("grouped (a double-filed receipt is a real dup class; the editor makes it your-call, never one-tap)",
+    rcptDupGroups().length === 1);
+
+  console.log("— DUP-GROUP: a true re-upload still flags (same date, one job wildcard) —");
+  resetStore();
+  STORE.jobMaterials.push({ id: "tj", receiptId: "tjp", vendor: "Home Depot", amount: 28.79, jobId: "j1", date: "2026-08-04" });
+  seedReview({ receiptId: "tr", vendor: "The Home Depot", amount: 28.79, suggested: { date: "2026-08-04" } });
+  ok("same resolved date + vendor, review copy jobless → flagged", rcptDupGroups().length === 1);
+
   console.log("— DUP-GROUP: two GENUINELY different same-amount receipts (diff vendor, no shared card, no ref) do NOT flag —");
   resetStore();
   seedReview({ receiptId: "x1", vendor: "Lowe's", amount: 42.00, cardLast4: "8355" });
