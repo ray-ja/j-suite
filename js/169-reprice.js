@@ -15,9 +15,13 @@
    the WORK price (price minus pass-through materials), because the bands were built from labor-value
    pricing where materials ride at cost (mkt.pay45 ≈ the work floor proves it: 2060 vs the 2039 work price).
 
-   ⚠️ TIMECLOCK PREFILLS, NEVER DICTATES. His timeclock has 24-hour "shifts" (forgotten clock-outs) and
-   whole jobs with zero entries. Hours prefill from the clock where sane (entries capped at 12h) and stay
-   editable — he knows the real number ("60 person-hours by shovel") better than a forgotten clock does.
+   ⛔⛔ THE TIMECLOCK IS NOT CONSULTED. AT ALL. Ray, 2026-09-01, minutes after v1 shipped with clock-hours
+   prefill: "definitely don't factor in clocked-in hours — those are absolutely worthless for these jobs.
+   That system doesn't really work yet." He's right and the data agrees: 24-hour "shifts" from forgotten
+   clock-outs, whole jobs with zero entries. My v1 capped entries at 12h and called it a prefill — but a
+   number that appears in the box IS an endorsement, and a plausible-looking wrong prefill is worse than an
+   empty box because it gets accepted unread. Hours start EMPTY; he types what the job really took. When
+   the timeclock system is actually trusted, restoring the prefill is a two-line change here.
 
    ⛔ APPLYING IS A CHANGE ORDER, NOT A SIDE-CHANNEL. The apply writes finalPrice through the same
    snapshotQuoteVersion (js/90) every committed-quote edit uses, so version history shows who moved the
@@ -37,11 +41,8 @@ function rpActuals(jobId) {
     .reduce(function (s, m) { return s + (+m.amount || 0); }, 0);
   var exps = live(d.jobExpenses).filter(function (m) { return m.jobId === jobId; })
     .reduce(function (s, m) { return s + (+m.amount || 0); }, 0);
-  /* clock hours: Σ (out−in), each entry capped at 12h — a 24h entry is a forgotten clock-out, not a shift */
-  var ms = 0;
-  live(d.timeclock).filter(function (t) { return t.jobId === jobId && t.clockIn && t.clockOut; })
-    .forEach(function (t) { ms += Math.min(Math.max(0, t.clockOut - t.clockIn), 12 * 3600 * 1000); });
-  return { materials: rpRound(mats), expenses: rpRound(exps), clockHours: rpRound(ms / 3600000) };
+  /* ⛔ no timeclock read here — see the header. Hours are HIS input, always. */
+  return { materials: rpRound(mats), expenses: rpRound(exps) };
 }
 
 /* the band the quote froze at estimate time (items[].mkt) + its label */
@@ -107,7 +108,7 @@ if (typeof window !== "undefined") {
     var d = D(); var q = (d.quotes || []).find(function (x) { return x && x.id === qId; });
     if (!q) return;
     var a = rpActuals(q.jobId);
-    RP = { qId: qId, price: rpRound(q.finalPrice || q.total || 0), ph: a.clockHours, other: 0,
+    RP = { qId: qId, price: rpRound(q.finalPrice || q.total || 0), ph: 0, other: 0,
            materials: a.materials, expenses: a.expenses };
     var body = ''
       + '<p class="muted" style="margin:0 0 10px;font-size:13px;white-space:normal">The pricing math, re-run with what the job '

@@ -1460,17 +1460,18 @@ console.log("\n--- ⚖️ reprice with actuals ---");
   STORE.quotes = [q];
   STORE.jobMaterials = [{ jobId: "j1", amount: 683.14 }];
   STORE.jobExpenses = [{ jobId: "j1", amount: 54.34 }];
-  const T0 = 1784739050000;   // clockIn must be truthy — a 0 epoch is filtered as an open shift
-  STORE.timeclock = [
-    { jobId: "j1", clockIn: T0, clockOut: T0 + 4 * 3600e3 },        // a real 4h shift
-    { jobId: "j1", clockIn: T0, clockOut: T0 + 24 * 3600e3 }        // a forgotten clock-out
-  ];
+  const T0 = 1784739050000;
+  STORE.timeclock = [{ jobId: "j1", clockIn: T0, clockOut: T0 + 4 * 3600e3 }];   // present, and must be IGNORED
 
   const a = c.rpActuals("j1");
   ok("⭐ filed materials and expenses come back as the actual hard line",
     a.materials === 683.14 && a.expenses === 54.34, a);
-  ok("⚠️ a 24-hour clock entry is a forgotten clock-out — capped at 12h, so 4+24 prefills 16h not 28",
-    a.clockHours === 16, a.clockHours);
+  /* ⛔⛔ SUPERSEDED same-day by Ray: "definitely don't factor in clocked-in hours — those are absolutely
+     worthless for these jobs. That system doesn't really work yet." v1 prefilled capped clock hours; a
+     plausible wrong prefill gets accepted unread, so the clock is now not consulted AT ALL. */
+  ok("⛔⛔ the timeclock is NOT consulted — entries exist for this job and rpActuals returns no hours field",
+    a.clockHours === undefined, a);
+  ok("⛔ ...and the module contains no timeclock READ — the UI string saying so is allowed, a property access is not", !/\.timeclock/.test(CODE(R("js/169-reprice.js"))));
 
   const inp = { price: 2722.14, ph: 60, other: 0, materials: 683.14, expenses: 54.34 };
   const r = c.rpCalc(q, inp);
