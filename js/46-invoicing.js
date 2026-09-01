@@ -486,6 +486,28 @@ function rInvoices() {
   const needLink = awaiting.filter(q => !q.paymentLink && invAmountDue(q) >= 0.5).length;
   if (needLink) h += `<div class="card" style="border-left:4px solid var(--accent)"><button class="btn acc" id="inv_genall" style="width:100%" onclick="invGenPayLinksAll()">⚡ Generate Stripe pay links for ${needLink} invoice${needLink === 1 ? "" : "s"}</button><div class="sub" style="margin-top:6px;white-space:normal">Makes a card-payment link for each awaiting invoice that doesn't have one yet. Real links — but nobody's charged until a customer actually pays.</div></div>`;
 
+  /* ⭐ OPEN BY CUSTOMER (Ray 2026-09-01): one row per customer with open invoices — how many, total owed,
+     and a button straight into their hosted payment window (the /i/ page shows ALL their invoices via the
+     tab switcher). Opens with ?preview so his own click never logs as a customer read. */
+  if (awaiting.length) {
+    const byC = {};
+    awaiting.forEach(q => { const k = q.customerId || ("~" + (q.cust || "?")); (byC[k] || (byC[k] = [])).push(q); });
+    const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+    const custRows = Object.keys(byC).map(k => {
+      const list = byC[k];
+      const owed = list.reduce((s, q) => s + invRemaining(q), 0);
+      const name = (list[0].customerId && typeof custName === "function" ? custName(list[0].customerId) : "") || list[0].cust || "—";
+      const tokQ = list.find(q => q.invoiceToken);
+      const btn = (tokQ && origin)
+        ? `<a class="btn ghost sm" style="margin-top:4px;display:inline-block" href="${esc(origin + "/i/" + tokQ.invoiceToken)}?preview=1" target="_blank" rel="noopener">💳 Payment window</a>`
+        : `<button class="btn ghost sm" style="margin-top:4px" onclick="invShareLink('${list[0].id}')">🔗 Make link</button>`;
+      return { name: name, owed: owed, n: list.length, btn: btn };
+    }).sort((a, b) => b.owed - a.owed);
+    h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">👥 Open by customer</h2><span class="ct">${custRows.length}</span></div><div class="card">`
+      + custRows.map(r => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="nm">${esc(r.name)}</div><div class="sub">${r.n} open invoice${r.n === 1 ? "" : "s"}</div></div><div style="text-align:right;flex:0 0 auto"><b style="color:var(--danger)">${money2(r.owed)}</b><div>${r.btn}</div></div></div>`).join("")
+      + `</div>`;
+  }
+
   h += `<div class="secthd" style="margin-top:8px"><h2 style="font-size:15px">✅ Ready to invoice</h2><span class="ct">${ready.length}</span></div>`;
   if (!ready.length) h += `<div class="card"><div class="muted">No completed jobs waiting to be invoiced. A job shows here once it's marked done.</div></div>`;
   else h += `<div class="card">` + ready.map(q => row(q, `<b>${amt(q)}</b><div class="sub"><button class="btn acc sm" style="margin-top:4px" onclick="event.stopPropagation();invMark('${q.id}')">Create invoice</button></div>`)).join("") + `</div>`;
