@@ -138,7 +138,19 @@ window.invComboMatDetail = function () {
   w.document.open(); w.document.write(html); w.document.close();
 };
 
+/* ⭐ the one data write in a display-only module: remember THAT a combined document was handed over (and
+   when), so the Invoices banner can stop re-offering work that's done. Additive metadata — no money moves. */
+function invComboStamp() {
+  const d = (typeof D === "function") ? D() : {};
+  Object.keys(_invCombo.ids).forEach(id => {
+    if (!_invCombo.ids[id]) return;
+    const q = (d.quotes || []).find(x => x && x.id === id);
+    if (q) { q.combinedAt = (typeof now === "function") ? now() : Date.now(); if (typeof touch === "function") touch(q); }
+  });
+  if (typeof save === "function") save();
+}
 window.invComboPrint = function () {
+  invComboStamp();
   const sel = invComboSelected();
   if (!sel.length) { alert("Pick at least one job to combine."); return; }
   const d = D(), cust = (d.customers || []).find(x => x.id === _invCombo.cid), biz = ((typeof BIZ !== "undefined") && BIZ[S.biz]) || { name: "", phone: "" };
@@ -188,6 +200,7 @@ window.invComboPrint = function () {
 };
 
 window.invComboCopy = function () {
+  invComboStamp();
   const sel = invComboSelected();
   if (!sel.length) { alert("Pick at least one job to combine."); return; }
   const d = D(), cust = (d.customers || []).find(x => x.id === _invCombo.cid), biz = ((typeof BIZ !== "undefined") && BIZ[S.biz]) || { name: "", phone: "" };

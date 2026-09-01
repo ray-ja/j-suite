@@ -120,6 +120,13 @@ function invAdjRows(q) {
 }
 /* the amount the CUSTOMER actually pays = service total + NC sales tax when the quote is taxable */
 function invAmountDue(q) { const tax = (typeof quoteSalesTax === "function") ? quoteSalesTax(q) : 0; return Math.round((invGrandTotal(q) + tax) * 100) / 100; }
+/* ⭐ WHAT'S ACTUALLY LEFT. Ray, 2026-09-01, reading the Awaiting list: the French drain showed \$1,160 in
+   red with \$622 already paid on it. invAmountDue is the invoice's face value — right for the document,
+   wrong for a list whose whole question is "how much am I still waiting on". Partial payments are normal
+   here (Mike pays in \$1,000 chunks across a group), so the list must show the remainder or it overstates
+   A/R every time someone pays anything less than everything. */
+function invPaidAmt2(q) { return ((q && q.payments) || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0); }
+function invRemaining(q) { return Math.max(0, Math.round((invAmountDue(q) - invPaidAmt2(q)) * 100) / 100); }
 /* AUTO-GENERATE a Stripe card-payment link for THIS invoice's exact amount (server-side, using the restricted key
    saved in Settings — the key never touches the client). Saves the URL to q.paymentLink so the invoice shows the
    "Pay online" button. Owner/admin only. */
@@ -399,7 +406,7 @@ function rInvoices() {
   const inprog = notBilled.filter(q => invReadyState(q) !== "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const awaiting = qs.filter(q => q.invoiced && !q.paid).sort((a, b) => (invAgeDays(b) || 0) - (invAgeDays(a) || 0));
   const paid = qs.filter(q => q.paid).sort((a, b) => String(b.paidDate || b.date || "").localeCompare(String(a.paidDate || a.date || ""))).slice(0, 20);
-  const arTotal = awaiting.reduce((s, q) => s + invAmountDue(q), 0);
+  const arTotal = awaiting.reduce((s, q) => s + invRemaining(q), 0);   // the REMAINDER — partial payments already netted
 
   const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${q.paymentLink ? " · 💳 pay link" : ""}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
 
@@ -416,9 +423,20 @@ function rInvoices() {
 
   h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">📤 Awaiting payment</h2><span class="ct">${money2(arTotal)}</span></div>`;
   if (!awaiting.length) h += `<div class="card"><div class="muted">Nothing outstanding. 🎉</div></div>`;
-  else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); return row(q, `<b style="color:var(--danger)">${amt(q)}</b><div class="sub">${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
+  else h += `<div class="card">` + awaiting.map(q => { const days = invAgeDays(q); const paid = invPaidAmt2(q);
+    return row(q, `<b style="color:var(--danger)">${money2(invRemaining(q))}</b><div class="sub">${paid > 0 ? "paid " + money2(paid) + " of " + money2(invAmountDue(q)) + " · " : ""}${days != null ? days + "d outstanding" : "invoiced"}</div>`); }).join("") + `</div>`;
 
-  if (typeof invComboCustomers === "function" && invComboCustomers().length) h += `<div class="card" style="border-left:4px solid #6b3fa0"><button class="btn" style="width:100%;background:#6b3fa0;border-color:#6b3fa0;color:#fff" onclick="invComboOpen()">🧾 Combine into one invoice</button><div class="sub" style="margin-top:6px;white-space:normal">Several open jobs for the same customer → one invoice to hand them (e.g. to send as a single Square invoice). Each job stays its own record for payments &amp; payout.</div></div>`;
+  /* ⭐ THE COMBINER NOW REMEMBERS. Ray, 2026-09-01, seeing the button under a group he combined on 7/24:
+     "I'm a little confused… we did already combine these, I thought." He had — the shared INV-20260724-*
+     numbers prove it — but the display-only combiner kept no record, so the button re-offered forever and
+     read as "you never did this." Print/Copy now stamps q.combinedAt; a fully-stamped group changes the
+     button's whole message from "do this" to "you did this — view it again." */
+  if (typeof invComboCustomers === "function" && invComboCustomers().length) {
+    const _grps = invComboCustomers();
+    const _allDone = _grps.every(g => g.quotes.every(q => q.combinedAt));
+    const _when = _allDone ? new Date(Math.max(..._grps.flatMap(g => g.quotes.map(q => +q.combinedAt || 0)))).toISOString().slice(0, 10) : "";
+    h += `<div class="card" style="border-left:4px solid #6b3fa0"><button class="btn" style="width:100%;background:#6b3fa0;border-color:#6b3fa0;color:#fff" onclick="invComboOpen()">${_allDone ? "🧾 View the combined invoice again" : "🧾 Combine into one invoice"}</button><div class="sub" style="margin-top:6px;white-space:normal">${_allDone ? "These were already combined into one invoice (" + esc(_when) + ") — the customer has it. Reopen to view, print, or re-copy." : "Several open jobs for the same customer → one invoice to hand them (e.g. to send as a single Square invoice). Each job stays its own record for payments &amp; payout."}</div></div>`;
+  }
 
   if (paid.length) h += `<div class="secthd" style="margin-top:10px"><h2 style="font-size:15px">✓ Paid</h2><span class="ct">${paid.length}</span></div><div class="card">` + paid.map(q => row(q, `<b style="color:var(--accent)">${amt(q)}</b><div class="sub">${q.paidDate ? "paid " + fmtDate(q.paidDate) : "paid"}</div>`)).join("") + `</div>`;
 
