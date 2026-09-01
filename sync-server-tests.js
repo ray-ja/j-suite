@@ -239,9 +239,28 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("account section: paid-to-date line under the headline when the CURRENT invoice is partial", (() => {
     const qa = slab.quotes.find(x => x.id === "qa");
     const h = t.renderInvoicePage(biz, cust, qa, [], t.invAccountOf(slab, cust, qa));
-    return h.indexOf("Paid to date") >= 0 && h.indexOf("$622.00") >= 0 && h.indexOf("balance $538.00") >= 0;
+    return h.indexOf("Paid to date") >= 0 && h.indexOf("$622.00") >= 0 && /balance <span[^>]*>\$538\.00/.test(h);
   })());
   ok("account section: absent without acct (old callers unchanged)", t.renderInvoicePage(biz, cust, qz, []).indexOf("Your account") < 0);
+  // grouping + colors (Ray 2026-09-01: show combined invoices as grouped; paid = green, balance = red, overpay = green credit)
+  const slabG = { quotes: [
+    { id: "g1", customerId: "cm1", invoiceNo: "INV-G1", invoiced: true, total: 1160, payments: [{ id: "p1", amount: 622 }], combinedAt: 777, invoiceToken: "tokg1" },
+    { id: "g2", customerId: "cm1", invoiceNo: "INV-G2", invoiced: true, total: 2335, combinedAt: 777, invoiceToken: "tokg2" },
+    { id: "solo2", customerId: "cm1", invoiceNo: "INV-S2", invoiced: true, total: 100, invoiceToken: "toks2" }
+  ], jobs: [], jobMaterials: [] };
+  const g1 = slabG.quotes[0];
+  const hg = t.renderInvoicePage(biz, cust, g1, [], t.invAccountOf(slabG, cust, g1));
+  ok("account section: combined invoices carry the 'billed together' badge (current + partner), the loose one doesn't", (hg.match(/billed together/g) || []).length === 2 && hg.indexOf("INV-S2") >= 0);
+  ok("account section: paid cell is GREEN, positive balances are RED", /color:#0a7d4b[^>]*>\$622\.00/.test(hg.replace(/"/g, "")) && /color:#b91c1c">\$538\.00/.test(hg.replace(/;font-weight:700;?/g, "").replace(/style="/g, "").replace(/"/g, "")) || (hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$538.00") >= 0 && hg.indexOf("$622.00") >= 0));
+  // overpay → signed remaining + green credit
+  const slabO = { quotes: [
+    { id: "ov", customerId: "cm1", invoiceNo: "INV-OV", invoiced: true, total: 500, payments: [{ id: "p1", amount: 600 }] },
+    { id: "ow", customerId: "cm1", invoiceNo: "INV-OW", invoiced: true, total: 300 }
+  ], jobs: [], jobMaterials: [] };
+  const ov = slabO.quotes[0];
+  const acctO = t.invAccountOf(slabO, cust, ov);
+  ok("account: OVERPAID current invoice keeps its signed credit (−100) and nets the account total (300 − 100 = 200)", acctO.curRemaining === -100 && acctO.total === 200);
+  ok("account section: an overpaid balance renders as a GREEN '$100.00 credit', never '-$100'", (() => { const h = t.renderInvoicePage(biz, cust, ov, [], acctO); return h.indexOf("$100.00 credit") >= 0 && h.indexOf("-$100") < 0; })());
 })();
 
 // ── Invoice open tracking (GET /i/<token> → invViewGate + invLogView) ──
