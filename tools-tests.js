@@ -1459,13 +1459,20 @@ console.log("\n--- ⚖️ reprice with actuals ---");
     items: [{ mkt: { natLo: 1815, natHi: 2640, obxLo: 2045, obxHi: 3050, pay45: 2060 }, bandKey: "steppath" }] };
   STORE.quotes = [q];
   STORE.jobMaterials = [{ jobId: "j1", amount: 683.14 }];
-  STORE.jobExpenses = [{ jobId: "j1", amount: 54.34 }];
+  STORE.jobExpenses = [
+    { jobId: "j1", amount: 54.34, category: "disposal" },            // a REAL job cost — counts
+    { jobId: "j1", amount: 12.76, category: "fuel" },                // inside the mileage rate — skipped
+    { jobId: "j1", amount: 10.00, category: "meals" }                // crew snacks — skipped, Ray's call
+  ];
   const T0 = 1784739050000;
   STORE.timeclock = [{ jobId: "j1", clockIn: T0, clockOut: T0 + 4 * 3600e3 }];   // present, and must be IGNORED
 
   const a = c.rpActuals("j1");
   ok("⭐ filed materials and expenses come back as the actual hard line",
     a.materials === 683.14 && a.expenses === 54.34, a);
+  ok("⛔ fuel and meals are NOT in it — fuel lives inside the $0.725/mi rate (double-count) and snacks are "
+    + "a perk, not a job cost (Ray: no Wawa in the reprice screen)",
+    a.expenses === 54.34, a.expenses);
   /* ⛔⛔ SUPERSEDED same-day by Ray: "definitely don't factor in clocked-in hours — those are absolutely
      worthless for these jobs. That system doesn't really work yet." v1 prefilled capped clock hours; a
      plausible wrong prefill gets accepted unread, so the clock is now not consulted AT ALL. */

@@ -39,7 +39,14 @@ function rpActuals(jobId) {
   var live = function (a) { return (a || []).filter(function (x) { return x && !x.deleted; }); };
   var mats = live(d.jobMaterials).filter(function (m) { return m.jobId === jobId; })
     .reduce(function (s, m) { return s + (+m.amount || 0); }, 0);
-  var exps = live(d.jobExpenses).filter(function (m) { return m.jobId === jobId; })
+  /* ⛔ FUEL AND MEALS STAY OUT OF THE PRICING MATH. Ray, 2026-09-01, seeing \$54 of Wawa in the hard line:
+     "that's just snacks and water for the crew — I don't want it to affect the reprice screen." And the
+     model backs him twice over: fuel is already inside the \$0.725/mi mileage rate (counting it here
+     double-counts it), and crew snacks are a perk he chooses, not a cost the JOB imposes. They still hit
+     the job P&L — that screen's question is "what did this really make" — but pricing maths on disposal,
+     rentals, tools, and the like. */
+  var RP_SKIP_CATS = /^(fuel|meals)$/i;
+  var exps = live(d.jobExpenses).filter(function (m) { return m.jobId === jobId && !RP_SKIP_CATS.test(m.category || ""); })
     .reduce(function (s, m) { return s + (+m.amount || 0); }, 0);
   /* ⛔ no timeclock read here — see the header. Hours are HIS input, always. */
   return { materials: rpRound(mats), expenses: rpRound(exps) };
