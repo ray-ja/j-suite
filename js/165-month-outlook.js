@@ -117,6 +117,16 @@ function moTypicalMonth() {
    income" number would let the reliable thing flatter the unreliable one.
    ⛔ Read from what has ACTUALLY LANDED, not from the lease: the median of past receipts, on the median day
    they arrived. If a tenant has been paying $2,520 rather than $2,795, this says $2,520. */
+/* who a rent deposit is FROM — the bank note minus banking noise ("Zelle CR Alexis Soukup" → ALEXIS SOUKUP,
+   'Paula Fugate "Aug rent"' → PAULA FUGATE). Two tenants = two standing arrangements; a single median over
+   a $2,795 tenant and a $1,500 tenant would misprice both (that hid Paula's $1,500/mo entirely at first). */
+function moRentWho(note) {
+  var s = String(note || "").toUpperCase();
+  s = s.replace(/"[^"]*"/g, " ");
+  s = s.replace(/\b(ZELLE|CR|HARD|POST|DEPOSIT|ACH|PAID|FROM|TO|VENMO|CASHOUT|TRANSFER|RENT|RENTAL|INCOME|CHK)\b/g, " ");
+  s = s.replace(/[^A-Z ]/g, " ").replace(/\s+/g, " ").trim();
+  return s || "RENT";
+}
 function moRentDue() {
   try {
     var cats = moActive(D().budgetCats).filter(function (c) { return /rent received|rental income/i.test(c.name || ""); });
@@ -125,18 +135,25 @@ function moRentDue() {
     var got = moActive(D().budgetTx).filter(function (t) {
       return !t.pending && (t.dir || "out") === "in" && !t.isTransfer && ids[t.catId];
     }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
-    if (got.length < 3) return null;                      // three arrivals before calling it a pattern
-    var recent = got.slice(-6);
-    var amts = recent.map(function (t) { return +t.amount || 0; }).sort(function (a, b) { return a - b; });
-    var days = recent.map(function (t) { return +String(t.date).slice(8, 10); }).sort(function (a, b) { return a - b; });
-    var amount = amts[Math.floor(amts.length / 2)];
-    var day = days[Math.floor(days.length / 2)];
-    var last = got[got.length - 1].date;
-    /* next occurrence on/after today */
-    var t = moToday(), y = +t.slice(0, 4), m = +t.slice(5, 7), dom = +t.slice(8, 10);
-    if (dom > day) { m++; if (m > 12) { m = 1; y++; } }
-    var next = y + "-" + String(m).padStart(2, "0") + "-" + String(Math.min(day, 28)).padStart(2, "0");
-    return { amount: Math.round(amount * 100) / 100, day: day, next: next, last: last, n: got.length };
+    /* ⭐ ONE LINE PER TENANT: group the arrivals by payer, pattern each stream on its own evidence */
+    var by = {};
+    got.forEach(function (t) { var k = moRentWho(t.note); (by[k] = by[k] || []).push(t); });
+    var t0 = moToday(), streams = [];
+    Object.keys(by).forEach(function (k) {
+      var g = by[k]; if (g.length < 3) return;          // three arrivals before calling it a pattern
+      var recent = g.slice(-6);
+      var amts = recent.map(function (t) { return +t.amount || 0; }).sort(function (a, b) { return a - b; });
+      var days = recent.map(function (t) { return +String(t.date).slice(8, 10); }).sort(function (a, b) { return a - b; });
+      var amount = amts[Math.floor(amts.length / 2)], day = days[Math.floor(days.length / 2)];
+      var y = +t0.slice(0, 4), m = +t0.slice(5, 7), dom = +t0.slice(8, 10);
+      if (dom > day) { m++; if (m > 12) { m = 1; y++; } }
+      var next = y + "-" + String(m).padStart(2, "0") + "-" + String(Math.min(day, 28)).padStart(2, "0");
+      streams.push({ who: k.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); }),
+        amount: Math.round(amount * 100) / 100, day: day, next: next, last: g[g.length - 1].date, n: g.length });
+    });
+    if (!streams.length) return null;
+    streams.sort(function (a, b) { return a.day - b.day; });
+    return { amount: Math.round(streams.reduce(function (s, x) { return s + x.amount; }, 0) * 100) / 100, streams: streams };
   } catch (e) { return null; }
 }
 
@@ -301,11 +318,12 @@ function monthOutlookHTML() {
     h += moRow("Expected in", "+" + moMoney(expected),
       "not counted as cash — being owed money isn't having it", "mo-owed");
     if (rent) {
-      h += '<div class="mo-inv"><div class="row mo-invrow" style="gap:8px;align-items:baseline">'
-        + '<div class="grow" style="min-width:0">Rent collection<span class="mo-age"> · due ' + esc(rent.next) + '</span></div>'
-        + '<div class="mo-invamt">' + esc(moMoney(rent.amount)) + '</div></div>'
-        + '<div class="sub mo-unbilled">' + rent.n + ' received so far, last on ' + esc(rent.last)
-        + ' — the reliable one.</div></div>';
+      rent.streams.forEach(function (st) {
+        h += '<div class="mo-inv"><div class="row mo-invrow" style="gap:8px;align-items:baseline">'
+          + '<div class="grow" style="min-width:0">Rent — ' + esc(st.who) + '<span class="mo-age"> · due ' + esc(st.next) + '</span></div>'
+          + '<div class="mo-invamt">' + esc(moMoney(st.amount)) + '</div></div>'
+          + '<div class="sub mo-unbilled">' + st.n + ' received so far, last on ' + esc(st.last) + '</div></div>';
+      });
     }
     h += invGroup("Not invoiced yet", unsent, "mo-unsent-hd",
       unsent.length ? "Work is done and nobody has been asked for the money. Your move." : "");
