@@ -77,8 +77,20 @@ function rpCalc(q, inp) {
   if (band) pos = workPrice < band.mkt.obxLo ? "below" : workPrice > band.mkt.obxHi ? "above" : "inside";
   var estPrice = rpRound(q.finalPrice || q.total || 0);
   var estHard = rpRound(q.cost || 0);
+  /* ⭐ THE WHOLE WATERFALL, not just the verdict. Ray, 2026-09-01: "it's missing how much each person takes
+     home, how much goes to the business, etc." His split, applied to the net after hard costs (materials
+     already cancelled inside ev.net): 25% tax reserve · 15% business fund · 60% labor pool, and the pool
+     divides 80% field / 15% sales credit / 5% admin. Field ÷ crew = each person's envelope. */
+  var net = Math.max(0, ev.net || 0);
+  var crew = Math.max(1, +inp.crew || 1);
+  var split = {
+    net: rpRound(net),
+    tax: rpRound(net * 0.25), biz: rpRound(net * 0.15), pool: rpRound(net * 0.60),
+    field: rpRound(net * 0.48), sales: rpRound(net * 0.09), admin: rpRound(net * 0.03),
+    perPerson: rpRound(net * 0.48 / crew), crew: crew
+  };
   return { price: price, ph: ph, hard: hard, ev: ev, workPrice: workPrice, band: band, pos: pos,
-           estPrice: estPrice, estHard: estHard,
+           estPrice: estPrice, estHard: estHard, split: split,
            estMargin: estPrice > 0 ? (estPrice - estHard - inp.materials) / estPrice : 0 };
 }
 
@@ -93,6 +105,26 @@ function rpReadoutHTML(q, inp) {
     + '<div class="sub" style="margin:8px 2px;line-height:1.8;white-space:normal">'
     + c.ph.toFixed(1) + ' person-hours (actual) · hard costs ' + rpMoney(c.hard) + ' (actual) · margin ' + Math.round(c.ev.margin * 100) + '%'
     + '<br>estimate was: ' + rpMoney(c.estPrice) + ' price · ' + rpMoney(c.estHard) + ' est costs</div>';
+  /* the waterfall — where every dollar of this price actually lands */
+  var sp = c.split;
+  var wrow = function (label, val, pct, sub) {
+    return '<div class="row" style="gap:8px;align-items:baseline;padding:3px 0' + (sub ? ';padding-left:16px' : '') + '">'
+      + '<div class="grow sub" style="font-size:' + (sub ? '12px' : '12.5px') + (sub ? '' : ';font-weight:600') + '">' + label + (pct ? ' <span style="opacity:.6">' + pct + '</span>' : '') + '</div>'
+      + '<div style="flex:0 0 auto;font-variant-numeric:tabular-nums;font-size:' + (sub ? '12px' : '13px') + (sub ? '' : ';font-weight:700') + '">' + rpMoney(val) + '</div></div>';
+  };
+  h += '<div class="card" style="padding:10px 12px;margin-top:8px;text-align:left">'
+    + '<div style="font-weight:800;font-size:13px;margin-bottom:4px">💵 Where this price goes</div>'
+    + wrow('Hard costs (real)', c.hard - (+inp.materials || 0), '')
+    + wrow('Materials — back to whoever fronted them', +inp.materials || 0, '')
+    + wrow('Left to split', sp.net, '')
+    + wrow('Tax reserve', sp.tax, '25%', true)
+    + wrow('Business fund', sp.biz, '15%', true)
+    + wrow('Labor pool', sp.pool, '60%', true)
+    + wrow('→ Field crew', sp.field, '80% of pool', true)
+    + wrow('&nbsp;&nbsp;&nbsp;each of ' + sp.crew + ' takes home', sp.perPerson, '', true)
+    + wrow('→ Sales credit', sp.sales, '15% of pool', true)
+    + wrow('→ Admin', sp.admin, '5% of pool', true)
+    + '</div>';
   if (c.band) {
     /* ⭐ THE SAME COLORED BAR THE ESTIMATORS DRAW. Ray, 2026-09-01: "I just wanted to reuse the original
        colored bar line quote screen — I can't visualize with this number box." marketBandHTML (js/22) IS
@@ -126,7 +158,7 @@ if (typeof window !== "undefined") {
     var d = D(); var q = (d.quotes || []).find(function (x) { return x && x.id === qId; });
     if (!q) return;
     var a = rpActuals(q.jobId);
-    RP = { qId: qId, price: rpRound(q.finalPrice || q.total || 0), ph: 0, other: 0,
+    RP = { qId: qId, price: rpRound(q.finalPrice || q.total || 0), ph: 0, other: 0, crew: 2,
            materials: a.materials, expenses: a.expenses, mileage: a.mileage };
     var body = ''
       + '<p class="muted" style="margin:0 0 10px;font-size:13px;white-space:normal">The pricing math, re-run with what the job '
@@ -142,7 +174,10 @@ if (typeof window !== "undefined") {
           return '<input id="rp_slider" type="range" min="' + lo + '" max="' + hi + '" step="5" value="' + RP.price + '"'
             + ' oninput="rpSync(true)" style="width:100%;accent-color:var(--accent);margin-top:6px">';
         })()
-      + '<div class="row" style="gap:8px"><div class="grow">'
+      + '<div class="row" style="gap:8px"><div style="flex:0 0 90px">'
+      + '<label>Crew</label>'
+      + '<input id="rp_crew" type="number" inputmode="numeric" step="1" min="1" value="2" oninput="rpSync(false)">'
+      + '</div><div class="grow">'
       + '<label>Actual person-hours</label>'
       + '<input id="rp_ph" type="number" inputmode="decimal" step="0.5" value="' + RP.ph + '" oninput="rpLive()">'
       + '<div class="sub">' + (RP.ph > 0 ? "prefilled from the timeclock (entries capped at 12h)" : "no clock entries — type what it really took") + '</div>'
@@ -168,6 +203,7 @@ if (typeof window !== "undefined") {
     else if (!fromSlider && sl && num && parseFloat(num.value) >= +sl.min && parseFloat(num.value) <= +sl.max) sl.value = num.value;
     var v = function (id) { var el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
     RP.price = v("rp_price"); RP.ph = v("rp_ph"); RP.other = v("rp_other");
+    RP.crew = Math.max(1, v("rp_crew") || 2);
     var q = (D().quotes || []).find(function (x) { return x && x.id === RP.qId; });
     var el = document.getElementById("rp_readout");
     if (el && q) el.innerHTML = rpReadoutHTML(q, RP);
