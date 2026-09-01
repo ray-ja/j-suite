@@ -209,11 +209,35 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   const q = { id: "q1", invoiceNo: "INV-1", date: "2026-06-23", invoiced: true, taxable: false, total: 380, items: [{ name: "Junk / move-out", qty: 1, price: 280 }, { name: "Travel", qty: 1, price: 100 }], paymentLink: "https://buy.stripe.com/abc" };
   const html = t.renderInvoicePage(biz, cust, q);
   ok("invoice page: renders the business + invoice no", html.indexOf("OBX Lot Solutions") >= 0 && html.indexOf("INV-1") >= 0);
-  ok("invoice page: shows the line items + total ($380)", html.indexOf("Junk / move-out") >= 0 && html.indexOf("$380") >= 0);
+  ok("invoice page: single clean line + total, NO line-item detail (Ray: no line items unless requested)", html.indexOf("Junk / move-out") >= 0 && html.indexOf("$380") >= 0 && html.indexOf("Travel") < 0 && html.indexOf("Subtotal") < 0);
   ok("invoice page: shows the Pay-online button when unpaid + linked", /class="pay"[^>]*href="https:\/\/buy\.stripe\.com\/abc"/.test(html) && html.indexOf("Pay online") >= 0);
-  ok("invoice page: a PAID invoice shows the PAID stamp, NO pay button", (() => { const h = t.renderInvoicePage(biz, cust, Object.assign({}, q, { paid: true })); return h.indexOf("PAID") >= 0 && h.indexOf('class="pay"') < 0; })());
+  ok("invoice page: a PAID invoice shows the PAID stamp + grayed 'Paid — thank you' (no live pay link)", (() => { const h = t.renderInvoicePage(biz, cust, Object.assign({}, q, { paid: true })); return h.indexOf("PAID") >= 0 && h.indexOf('<a class="pay"') < 0 && h.indexOf("Paid — thank you") >= 0; })());
   ok("invoice page: taxable invoice adds 6.75% sales tax + total due", (() => { const h = t.renderInvoicePage(biz, cust, Object.assign({}, q, { taxable: true })); return h.indexOf("Sales tax (6.75%)") >= 0 && h.indexOf("Total due") >= 0; })());
   ok("invoice page: escapes a customer name (no HTML injection)", t.renderInvoicePage(biz, { name: "<script>x</script>" }, q).indexOf("<script>x") < 0);
+})();
+
+// ── Balance pay button: shared group scope + partial payments (invPayScopeOf + renderInvoicePage pay states) ──
+(function () {
+  const biz = { name: "OBX Lot Solutions", phone: "" };
+  const cust = { id: "cm1", name: "Mike Green" };
+  const slab = { quotes: [
+    { id: "fd", customerId: "cm1", invoiceNo: "INV-FD", invoiced: true, total: 1160, payments: [{ id: "p1", amount: 622 }], combinedAt: 777 },
+    { id: "pp", customerId: "cm1", invoiceNo: "INV-PP", invoiced: true, total: 2335, combinedAt: 777 },
+    { id: "ht", customerId: "cm1", invoiceNo: "INV-HT", invoiced: true, paid: true, total: 1378, combinedAt: 777 },
+    { id: "ss", customerId: "cm1", invoiceNo: "INV-SS", invoiced: true, total: 2235 }
+  ], jobs: [], jobMaterials: [] };
+  const fd = slab.quotes[0], pp = slab.quotes[1], ss = slab.quotes[3];
+  const scFd = t.invPayScopeOf(slab, cust, fd), scPp = t.invPayScopeOf(slab, cust, pp), scSs = t.invPayScopeOf(slab, cust, ss);
+  ok("pay scope: billed-together invoices share ONE scope + key (French drain + Patio, paid hot tub excluded from balance)", scFd.key === scPp.key && scFd.key === "grp_cm1_777" && scFd.openCount === 2 && scFd.remainingCents === 287300);
+  ok("pay scope: a loose invoice is its own scope at its own balance", scSs.key === "q_ss" && scSs.remainingCents === 223500);
+  ok("pay scope: fully-settled group reports paid-off (remaining 0)", t.invPayScopeOf({ quotes: [{ id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 }, { id: "b", customerId: "cm1", invoiceNo: "B", invoiced: true, total: 200, payments: [{ id: "p", amount: 200 }], combinedAt: 9 }], jobs: [], jobMaterials: [] }, cust, { id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 }).remainingCents === 0);
+  const hGrp = t.renderInvoicePage(biz, cust, fd, [], null, { url: "https://buy.stripe.com/bal1", paidOff: false, scope: scFd });
+  ok("pay button: group page shows ONE shared balance button ($2,873.00 · 2 invoices) + the partial-payment note", hGrp.indexOf("buy.stripe.com/bal1") >= 0 && hGrp.indexOf("$2,873.00 balance · 2 invoices") >= 0 && hGrp.indexOf("partial payment") >= 0);
+  ok("pay button: cash 3% note is computed on the BALANCE, not face value", hGrp.indexOf(t.renderInvoicePage === null ? "x" : "$2,786.81") >= 0);
+  const hPaidOff = t.renderInvoicePage(biz, cust, fd, [], null, { url: null, paidOff: true, scope: null });
+  ok("pay button: settled scope grays out — 'Paid — thank you', no link", hPaidOff.indexOf("Paid — thank you") >= 0 && hPaidOff.indexOf('<a class="pay"') < 0);
+  const hFall = t.renderInvoicePage(biz, cust, Object.assign({}, ss, { paymentLink: "https://buy.stripe.com/fixed" }), [], null, null);
+  ok("pay button: with no balance link (Stripe down), the invoice's own fixed link still renders", hFall.indexOf("buy.stripe.com/fixed") >= 0);
 })();
 
 // ── "Your account" on the hosted invoice (invAccountOf + renderInvoicePage section) ──
