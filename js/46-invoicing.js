@@ -162,8 +162,11 @@ async function invMakePayLink(q) {
   const label = ("OBX Lot Solutions · " + invNo(q) + (cust ? (" · " + cust) : "") + " · " + job).slice(0, 120);
   const base = (S.sync && S.sync.url) || "", tok = (S.sync && S.sync.token) || "";
   if (!base) return { ok: false, error: "sync not set up on this device" };
+  const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  const kill = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 30000) : null;
   try {
-    const r = await fetch(base + "/api/stripe/paylink", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}), body: JSON.stringify({ amountCents: Math.round(amt * 100), label: label, quoteId: q.id, org: (typeof S !== "undefined" ? S.biz : "") }) });
+    const r = await fetch(base + "/api/stripe/paylink", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, tok ? { Authorization: "Bearer " + tok } : {}), body: JSON.stringify({ amountCents: Math.round(amt * 100), label: label, quoteId: q.id, org: (typeof S !== "undefined" ? S.biz : "") }), signal: ctl ? ctl.signal : undefined });
+    if (kill) clearTimeout(kill);
     const d = await r.json().catch(() => null);
     if (r.ok && d && d.url) {
       q.paymentLink = d.url;
@@ -173,7 +176,11 @@ async function invMakePayLink(q) {
       return { ok: true, url: d.url };
     }
     return { ok: false, error: (d && d.error) || ("HTTP " + r.status) };
-  } catch (e) { return { ok: false, error: (e && e.message) || "offline" }; }
+  } catch (e) {
+    if (kill) clearTimeout(kill);
+    if (e && e.name === "AbortError") return { ok: false, error: "timed out after 30s — check the connection and try again" };
+    return { ok: false, error: (e && e.message) || "offline" };
+  }
 }
 // HOSTED INVOICE LINK — mint (once) an unguessable token, sync it up, and copy the public /i/<token> URL the
 // customer opens in any browser to view the invoice + pay. Owner/admin only.
@@ -202,12 +209,18 @@ window.invGenPayLink = async function (quoteId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
   const btn = document.getElementById("inv_genlink_" + quoteId);
+  const prevLabel = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "Making link…"; }
   const res = await invMakePayLink(q);
-  if (res.ok) { if (typeof render === "function") render(); }
-  else {
+  if (res.ok) {
+    // The button usually lives inside the invoice modal — render() only repaints the page BEHIND it,
+    // so re-open the modal in place to show the fresh link (else the button froze on "Making link…" forever).
+    if (document.getElementById("inv_doc") && typeof openInvoice === "function") openInvoice(quoteId);
+    else if (btn) { btn.disabled = false; btn.textContent = "✓ Link updated"; }
+    if (typeof render === "function") render();
+  } else {
     alert("Couldn't create the link: " + res.error + "\n\nCheck that your Stripe key is saved in Settings (Prices + Payment Links = Write).");
-    if (btn) { btn.disabled = false; btn.textContent = "⚡ Generate card-payment link"; }
+    if (btn) { btn.disabled = false; btn.textContent = prevLabel || "⚡ Generate card-payment link"; }
   }
 };
 // BATCH: generate a Stripe link for every current invoice that doesn't have one yet (Ray: "make Stripe links for
