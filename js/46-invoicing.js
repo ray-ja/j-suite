@@ -371,7 +371,9 @@ window.invMark = function (quoteId) {
   q.invoicedDate = (typeof today === "function") ? today() : "";
   touch(q);
   if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money2(invEffectiveTotal(q)));
-  save(); openInvoice(quoteId);
+  save();
+  if (typeof render === "function") render();   // refresh the list BEHIND the modal — the row moves out of "Ready to invoice" immediately
+  openInvoice(quoteId);
   var _rj = q.jobId || ((D().jobs || []).find(function (x) { return x && x.quoteId === q.id && !x.deleted; }) || {}).id;
   if (_rj && typeof reviewPrompt === "function") reviewPrompt(_rj);   /* review prompt at the INVOICED moment (moved off job-done per Ray) */
 };
