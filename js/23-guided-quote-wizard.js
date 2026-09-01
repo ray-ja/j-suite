@@ -1,6 +1,6 @@
 /* ---------- GUIDED QUOTE WIZARD ---------- */
 let WZON=false,WZ=null;
-const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["downspout","🔧 Gutter / downspout repair"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["paver","🧱 Paver patio / pad"],["frenchdrain","💧 French drain"],["steppath","🪨 Stepping-stone path"],["landscape","🌿 Landscaping / plant care"],["custom","✏️ Custom line"]],
+const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["downspout","🔧 Gutter / downspout repair"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["paver","🧱 Paver patio / pad"],["frenchdrain","💧 French drain"],["steppath","🪨 Stepping-stone path"],["landscape","🌿 Landscaping / plant care"],["handyman","🔧 Handyman / custom job"],["custom","✏️ Custom line"]],
   jam:[["rental","🏠 Rental-Ready (per door)"],["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]]};
 const WZ_FIELDS={
  softwash:[{k:"qty",t:"num",label:"Wall area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"],["3","3 stories"]]},{k:"heavy",t:"chk",label:"Heavy algae / soiling"}],
@@ -120,7 +120,7 @@ function wizPick(){const list=WZ_SVC[S.biz];
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
     <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}
-window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="frenchdrain"){openFrenchDrainEst();return;}if(k==="steppath"){openStepPathEst();return;}if(k==="downspout"){if(typeof openDownspoutEst==="function")openDownspoutEst();return;}if(k==="landscape"){if(typeof openLandscapeSurvey==="function")openLandscapeSurvey();return;}if(k==="parking"){if(typeof openParkingLotEst==="function")openParkingLotEst();return;}   /* ⛔ used to do TAB="map" — it threw away the quote you were building. js/158 keeps you in it. */WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
+window.wizSetSvc=function(k){if(k==="demo"){openDemoEst();return;}if(k==="paver"){openPaverEst();return;}if(k==="frenchdrain"){openFrenchDrainEst();return;}if(k==="steppath"){openStepPathEst();return;}if(k==="downspout"){if(typeof openDownspoutEst==="function")openDownspoutEst();return;}if(k==="handyman"){if(typeof wizHandymanStart==="function")wizHandymanStart();return;}if(k==="landscape"){if(typeof openLandscapeSurvey==="function")openLandscapeSurvey();return;}if(k==="parking"){if(typeof openParkingLotEst==="function")openParkingLotEst();return;}   /* ⛔ used to do TAB="map" — it threw away the quote you were building. js/158 keeps you in it. */WZ.svc=k;WZ.inp={};WZ.deepSearch="";render2calc();};   /* junk falls through to wizCalc → wizJunkUI (the comprehensive item builder) */
 function render2calc(){WZ.step="calc";render();setTimeout(wizLive,20);}
 /* CHANGE SERVICE TYPE — from the review of an existing quote, clear the line item(s) and go back to the service
    picker to rebuild it as a real service (French drain, paver, junk…). Keeps the customer + quote id; receipts live
@@ -137,6 +137,7 @@ function wizCalc(){const k=WZ.svc,R=getRates(),r=R[k],fields=WZ_FIELDS[k];
   if(k==="frenchdrain")return wizFrenchDrainUI();
   if(k==="steppath")return wizStepPathUI();
   if(k==="downspout")return (typeof wizDownspoutUI==="function")?wizDownspoutUI():"";
+  if(k==="handyman")return (typeof wizHandymanUI==="function")?wizHandymanUI():"";
   if(k==="landscape")return (typeof wizLandscapeUI==="function")?wizLandscapeUI():"";
   if(k==="shrubrem")return wizBrushUI();
   if(DEEP[k])return wizDeepUI(k);
@@ -201,7 +202,7 @@ window.wizBackToBuild=function(){WZ.items=[];WZ.step="calc";render();setTimeout(
 
 /* ---- the single editable review/edit screen ---- */
 /* infer a market-band key from the line-item name — fallback for legacy quotes saved before bandKey was persisted */
-function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/stepping.?stone|stepping stone|stone path|rock path/.test(name))return "steppath"; if(/french ?drain|trench drain/.test(name))return "frenchdrain"; if(/downspout|gutter repair|gutter.*(repair|reroute|relocat)/.test(name))return "downspout"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
+function guessBandKey(name){ name=String(name||"").toLowerCase(); if(/paver/.test(name))return "paver"; if(/stepping.?stone|stepping stone|stone path|rock path/.test(name))return "steppath"; if(/french ?drain|trench drain/.test(name))return "frenchdrain"; if(/downspout|gutter repair|gutter.*(repair|reroute|relocat)/.test(name))return "downspout"; if(/handyman/.test(name))return "handyman"; if(/demo|demolition/.test(name))return "demo"; if(/brush|shrub|stump|tree/.test(name))return "brush"; if(/junk|clean.?out|move.?out|haul/.test(name))return "junk"; return null; }
 /* MARKET-VALUE band (paver): a multi-colored gradient = the NATIONAL market (red below → green good →
    yellow high → orange above); the OBX premium range is the outlined region between its two markers;
    ▲ = your price, ▼ = the price that clears Ray's $45/hr. The look Ray liked, with the market data. */
