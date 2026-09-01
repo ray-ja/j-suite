@@ -86,6 +86,49 @@ function moBillsAhead(days) {
    ⚠️ Median on purpose: one $11,297 month (June) would drag a mean up and make every other month look
    cheap by comparison. And COMPLETE months only — this month is half-finished and would read as a windfall.
    ⛔ Transfers and card payments excluded, or moving money between his own pockets counts as spending. */
+/* ⭐ BILLS BY CALENDAR MONTH (Ray 2026-09-01: "I would rather it be sectioned by calendar month" — the
+   rolling-30-day window caught the 1st-of-month bills twice and read ~$3k high). What's LEFT of this
+   month, plus all of next month, each its own section. And the breakdown is a QUICK GLANCE, not a ledger:
+   the four card payments sum to one "Credit cards" line, both car loans to one "Car loans" line, the
+   small subscriptions to one line — big singular bills (rent, mortgage) keep their own. */
+function moBillGroupKey(name) {
+  var s = String(name || "").toLowerCase();
+  if (/visa|chase|discover|citi|amex|credit|card/.test(s)) return "Credit cards";
+  if (/car loan|auto loan|car payment/.test(s)) return "Car loans";
+  if (/seaworld|subscription|\.com\b|spotify|netflix|hulu|pass\b/.test(s)) return "Subscriptions";
+  return null;
+}
+function moBillsByMonth() {
+  var t = moToday(), slots = {};
+  try {
+    var bills = moActive(D().budgetBills).filter(function (b) { return b.active !== false; });
+    var mThis = t.slice(0, 7);
+    var y = +t.slice(0, 4), m = +t.slice(5, 7); m++; if (m > 12) { m = 1; y++; }
+    var mNext = y + "-" + String(m).padStart(2, "0");
+    for (var i = 0; i <= 62; i++) {
+      var iso = (typeof tcalShift === "function") ? tcalShift(t, i) : ""; if (!iso) break;
+      var mo = iso.slice(0, 7);
+      if (mo > mNext) break;
+      if (mo !== mThis && mo !== mNext) continue;
+      bills.forEach(function (b) {
+        if (typeof budgetBillNextDue !== "function" || budgetBillNextDue(b, iso) !== iso) return;
+        var slot = slots[mo] || (slots[mo] = { m: mo, total: 0, n: 0, singles: [], byG: {} });
+        var amt = +b.amount || 0, g = moBillGroupKey(b.name);
+        slot.total += amt; slot.n++;
+        if (g) { var gr = slot.byG[g] || (slot.byG[g] = { label: g, n: 0, amount: 0 }); gr.n++; gr.amount += amt; }
+        else slot.singles.push({ name: b.name || "—", iso: iso, amount: amt });
+      });
+    }
+  } catch (e) {}
+  var MN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return Object.keys(slots).sort().map(function (mo) {
+    var s = slots[mo];
+    var rows = s.singles.map(function (r) { return { label: r.iso.slice(8) + " · " + r.name, amount: r.amount }; })
+      .concat(Object.keys(s.byG).map(function (k) { var g = s.byG[k]; return { label: g.label + " × " + g.n, amount: Math.round(g.amount * 100) / 100 }; }));
+    rows.sort(function (a, b) { return b.amount - a.amount; });
+    return { m: mo, label: MN[+mo.slice(5, 7) - 1] || mo, total: Math.round(s.total * 100) / 100, n: s.n, rows: rows };
+  });
+}
 function moTypicalMonth() {
   try {
     var acctIds = {};
@@ -283,8 +326,10 @@ function moRow(label, value, note, cls) {
 
 function monthOutlookHTML() {
   var cash = moCashOnHand();
-  var bills = moBillsAhead(30);
-  var billTotal = bills.reduce(function (a, x) { return a + x.amount; }, 0);
+  var billMonths = moBillsByMonth();
+  var billCur = billMonths[0] || null, billNext = billMonths[1] || null;
+  var bills = billCur ? billCur.rows : [];                   // truthiness guards below keep working
+  var billTotal = billCur ? billCur.total : 0;               // THIS month's remaining — never double-counts the 1st-of-month bills
   var typical = moTypicalMonth();
   var owed = moOwed();
   if (!cash && !bills.length && !typical && !owed.total) return "";
@@ -303,10 +348,15 @@ function monthOutlookHTML() {
       earned.n + " deposit" + (earned.n === 1 ? "" : "s") + " since " + earned.from
       + " · your personal book, and money moved between your own accounts doesn't count", "mo-earned");
   }
-  if (bills.length) {
-    h += moRowExpand("Bills due in 30 days", "−" + moMoney(billTotal),
-      bills.length + " scheduled payment" + (bills.length === 1 ? "" : "s"), "mo-bill",
-      bills.map(function (o) { return moXLine(o.iso.slice(5) + " · " + (o.bill.name || "—"), "−" + moMoney(o.amount)); }).join(""));
+  if (billCur) {
+    var billInner = billCur.rows.map(function (r) { return moXLine(r.label, "−" + moMoney(r.amount)); }).join("")
+      + (billNext
+        ? '<div class="sub" style="font-weight:700;margin-top:6px">' + esc(billNext.label) + ' — ' + esc(moMoney(billNext.total)) + '</div>'
+          + billNext.rows.map(function (r) { return moXLine(r.label, "−" + moMoney(r.amount)); }).join("")
+        : "");
+    h += moRowExpand("Bills left in " + billCur.label, "−" + moMoney(billTotal),
+      billCur.n + " payment" + (billCur.n === 1 ? "" : "s") + (billNext ? " · " + billNext.label + ": −" + moMoney(billNext.total) : ""), "mo-bill",
+      billInner);
   }
   if (typical) {
     var typInner = (typical.totals || []).map(function (r) { return moXLine(r.m, "−" + moMoney(r.total)); }).join("")
