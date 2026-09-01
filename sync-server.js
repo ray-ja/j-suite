@@ -2265,7 +2265,30 @@ function invReconcileSrv(q, mats) {
   const grand = mode ? Math.max(eff, actualTotal) : eff;
   return { mode: mode, eff: eff, estMat: estMat, actualMat: actualMat, actualList: actualList, laborDrive: laborDrive, actualTotal: actualTotal, grand: Math.round(grand * 100) / 100 };
 }
-function renderInvoicePage(biz, cust, q, mats) {
+/* actual-mode materials for a quote's linked job — the same lookup the /i/ handler did inline. */
+function srvMatsOf(slab, q) {
+  const jb = (q && q.billMode === "actual") ? (((slab || {}).jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id))) : null;
+  return jb ? ((slab.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0)) : [];
+}
+/* "Your account" for the hosted invoice page: the customer's OTHER open invoices + remaining balances,
+   plus paid-to-date on the current one. Mirrors the client (js/46): due = reconciled grand + 6.75% when
+   taxable; paid = sum of live q.payments; remaining = due − paid. null when there's nothing to add
+   (no other open invoices AND nothing paid on this one) so the page stays a plain single invoice. */
+function invAccountOf(slab, cust, q) {
+  if (!cust || !slab || !q) return null;
+  const dueOf = (x) => { const R = invReconcileSrv(x, srvMatsOf(slab, x)); const tax = x.taxable ? Math.round(invEff(x) * 0.0675 * 100) / 100 : 0; return Math.round((R.grand + tax) * 100) / 100; };
+  const paidOf = (x) => Math.round(((x.payments || []).filter(p => p && !p.deleted).reduce((s, p) => s + (+p.amount || 0), 0)) * 100) / 100;
+  const others = (slab.quotes || [])
+    .filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id && x.id !== q.id)
+    .map(x => { const due = dueOf(x), paid = paidOf(x); return { no: invNoOf(x), title: String(x.title || (invItemsOf(x)[0] || {}).name || "Services").slice(0, 60), due: due, paid: paid, remaining: Math.max(0, Math.round((due - paid) * 100) / 100), token: x.invoiceToken || "" }; })
+    .filter(r => r.remaining >= 0.005)
+    .sort((a, b) => (a.no < b.no ? -1 : 1));
+  const curPaid = paidOf(q);
+  const curRemaining = Math.max(0, Math.round((dueOf(q) - curPaid) * 100) / 100);
+  if (!others.length && curPaid < 0.005) return null;
+  return { others: others, curPaid: curPaid, curRemaining: curRemaining, total: Math.round((curRemaining + others.reduce((s, r) => s + r.remaining, 0)) * 100) / 100 };
+}
+function renderInvoicePage(biz, cust, q, mats, acct) {
   const AC = "#0a7d4b", no = invNoOf(q), dateStr = invDateOf(q.invoicedDate || q.date);
   const items = invItemsOf(q), sub = items.reduce((s, it) => s + (+it.price || 0) * (+it.qty || 1), 0);
   const eff = invEff(q), adj = Math.round((eff - sub) * 100) / 100;
@@ -2321,11 +2344,16 @@ function renderInvoicePage(biz, cust, q, mats) {
       </div>
       <div class="billrow">
         <div><div class="lbl2">Bill to</div>${billTo.map((l, i) => `<div${i === 0 ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${htmlEsc(l)}</div>`).join("")}</div>
-        <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}</div>
+        <div style="text-align:right"><div class="lbl2">${q.paid ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${q.paid ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}${(!q.paid && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date −${invMoney(acct.curPaid)} · balance ${invMoney(acct.curRemaining)}</div>` : ""}</div>
       </div>
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
       <tbody>${rows}</tbody><tfoot>${adjRows}${taxRows}</tfoot></table>
       ${(q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : ""}
+      ${acct ? `<div style="margin-top:30px"><div class="lbl2">Your account</div>
+      <table style="margin-top:2px"><thead><tr><th>Invoice</th><th class="n">Billed</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>
+        <tr><td style="font-weight:600">This invoice<div class="muted" style="font-size:12px;font-weight:400">${htmlEsc(no)}</div></td><td class="n">${dueStr}</td><td class="n">${acct.curPaid >= 0.005 ? invMoney(acct.curPaid) : "—"}</td><td class="n" style="font-weight:700">${invMoney(acct.curRemaining)}</td></tr>
+        ${acct.others.map(r => `<tr><td>${r.token ? `<a href="/i/${encodeURIComponent(r.token)}" style="color:${AC};font-weight:600;text-decoration:none">${htmlEsc(r.title)} →</a>` : htmlEsc(r.title)}<div class="muted" style="font-size:12px">${htmlEsc(r.no)}</div></td><td class="n">${invMoney(r.due)}</td><td class="n">${r.paid >= 0.005 ? invMoney(r.paid) : "—"}</td><td class="n" style="font-weight:700">${invMoney(r.remaining)}</td></tr>`).join("")}
+      </tbody><tfoot><tr><td colspan="3" class="n tot" style="font-size:15px">Account balance</td><td class="n tot" style="font-size:15px">${invMoney(acct.total)}</td></tr></tfoot></table></div>` : ""}
       <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
     </div></div>
     </body></html>`;
@@ -4113,8 +4141,8 @@ const server = http.createServer((req, res) => {
     if (!q) return notFound();
     // actual materials for the linked job — only when THIS invoice reconciles to actuals (q.billMode === "actual")
     const _js = store[org] || {};
-    const _jb = (q.billMode === "actual") ? (_js.jobs || []).find(x => x && !x.deleted && (x.id === q.jobId || x.quoteId === q.id)) : null;
-    const _mats = _jb ? (_js.jobMaterials || []).filter(m => m && !m.deleted && m.jobId === _jb.id).map(m => ({ desc: m.desc || m.vendor || "Material", amount: Math.round((+m.amount || 0) * 100) / 100 })).filter(m => m.amount > 0) : [];
+    const _mats = srvMatsOf(_js, q);
+    const _acct = invAccountOf(_js, cust, q);   // other open invoices + balances for the "Your account" section
     const _gate = invViewGate(req.url.split("?")[1], req.headers.cookie);
     const _hdr = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
     if (_gate.setCookie) _hdr["Set-Cookie"] = _gate.setCookie;
@@ -4126,7 +4154,7 @@ const server = http.createServer((req, res) => {
       } catch (e) {}
     }
     res.writeHead(200, _hdr);
-    return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats));
+    return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct));
   }
 
   // PATH BUILD GUIDE public page — GET /guide/path/<org>/<quoteId> (must be checked BEFORE /guide/ below since it also
@@ -4862,4 +4890,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, srvMatsOf, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

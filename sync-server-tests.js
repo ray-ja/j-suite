@@ -216,6 +216,34 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("invoice page: escapes a customer name (no HTML injection)", t.renderInvoicePage(biz, { name: "<script>x</script>" }, q).indexOf("<script>x") < 0);
 })();
 
+// ── "Your account" on the hosted invoice (invAccountOf + renderInvoicePage section) ──
+(function () {
+  const cust = { id: "cm1", name: "Mike Green" };
+  const slab = { quotes: [
+    { id: "qa", customerId: "cm1", invoiceNo: "INV-A", invoiced: true, total: 1160, payments: [{ id: "p1", amount: 622 }], invoiceToken: "tok-frenchdrain-1234" },
+    { id: "qb", customerId: "cm1", invoiceNo: "INV-B", invoiced: true, total: 2335 },
+    { id: "qc", customerId: "cm1", invoiceNo: "INV-C", invoiced: true, paid: true, total: 1378 },          // fully paid → excluded
+    { id: "qd", customerId: "cm1", invoiceNo: "INV-D", invoiced: false, total: 999 },                      // draft → excluded
+    { id: "qe", customerId: "other", invoiceNo: "INV-E", invoiced: true, total: 400 },                     // other customer → excluded
+    { id: "qz", customerId: "cm1", invoiceNo: "INV-Z", invoiced: true, total: 2235, payments: [] }
+  ], jobs: [], jobMaterials: [] };
+  const qz = slab.quotes.find(x => x.id === "qz");
+  const acct = t.invAccountOf(slab, cust, qz);
+  ok("account: lists ONLY the customer's other OPEN invoices (paid/draft/other-customer excluded)", !!acct && acct.others.length === 2 && acct.others.every(r => ["INV-A", "INV-B"].indexOf(r.no) >= 0), acct && acct.others);
+  ok("account: partial payments net out (French drain 1160 − 622 = 538 remaining)", (() => { const r = acct.others.find(x => x.no === "INV-A"); return r && r.due === 1160 && r.paid === 622 && r.remaining === 538 && r.token === "tok-frenchdrain-1234"; })());
+  ok("account: total balance = this invoice + all others (2235 + 538 + 2335)", acct.total === 5108, acct && acct.total);
+  ok("account: null when there is nothing to add (single unpaid invoice, no payments)", t.invAccountOf({ quotes: [{ id: "solo", customerId: "cm1", invoiceNo: "S", invoiced: true, total: 100 }] }, cust, { id: "solo", customerId: "cm1", invoiceNo: "S", invoiced: true, total: 100 }) === null);
+  const biz = { name: "OBX Lot Solutions", phone: "" };
+  const html = t.renderInvoicePage(biz, cust, qz, [], acct);
+  ok("account section: renders balances + linked open invoices + account total", html.indexOf("Your account") >= 0 && html.indexOf("$538.00") >= 0 && html.indexOf("/i/tok-frenchdrain-1234") >= 0 && html.indexOf("$5,108.00") >= 0);
+  ok("account section: paid-to-date line under the headline when the CURRENT invoice is partial", (() => {
+    const qa = slab.quotes.find(x => x.id === "qa");
+    const h = t.renderInvoicePage(biz, cust, qa, [], t.invAccountOf(slab, cust, qa));
+    return h.indexOf("Paid to date") >= 0 && h.indexOf("$622.00") >= 0 && h.indexOf("balance $538.00") >= 0;
+  })());
+  ok("account section: absent without acct (old callers unchanged)", t.renderInvoicePage(biz, cust, qz, []).indexOf("Your account") < 0);
+})();
+
 // ── Invoice open tracking (GET /i/<token> → invViewGate + invLogView) ──
 (function () {
   // gate: who counts as a customer read
