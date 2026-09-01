@@ -85,8 +85,14 @@ function colOwed() {
        ⚠️ Strictly future only: a job dated TODAY has been done and is properly owed. */
     if (t && String(q.date || "") > t) return null;
     var age = colDaysOld(q.date);
+    /* ⭐ the JOB is what a line means inside a per-customer group — repeating the customer's own name on
+       every row of their card says nothing. Fall back through job title → first line item → the date. */
+    var _job = q.jobId ? (d.jobs || []).find(function (j) { return j && j.id === q.jobId && !j.deleted; }) : null;
+    var title = (_job && _job.title) || ((q.items || [])[0] && (q.items || [])[0].name) || ("Quote " + (q.date || ""));
     return { id: q.id, customerId: q.customerId,
       name: q.cust || ((typeof custName === "function") ? custName(q.customerId) : "") || "—",
+      title: String(title).replace(/\s*\(\+\d+ more\)\s*$/, ""),
+      paid: colRound(Math.max(0, colTotal(q) - bal)),
       total: colRound(colTotal(q)), balance: bal, age: age, date: q.date || "",
       invoiced: !!q.invoiced, payLink: q.paymentLink || "",
       lastChase: colLastSent(q.id),
@@ -199,21 +205,63 @@ function colOwedHTML() {
         + esc(colMoney(toBill)) + ' of that has never been invoiced — nobody has asked for it yet.</div>' : '')
     + '</div>';
 
+  /* ⭐⭐ GROUPED BY CUSTOMER. Ray, 2026-09-01: "I would like to track money owed by customer. Can we have
+     a nice easy to read screen for that?" A flat quote-per-card list repeats the same name down the page
+     and makes him do the arithmetic — but "who do I need to talk to, and about how much" is the whole
+     question. One card per customer, their number big, their jobs as lines inside it, worst debtor first.
+     Partial payments show as "paid $X of $Y" per line because a half-paid invoice is a conversation
+     already in motion — very different from one that's never been touched. */
+  var byCust = {};
   rows.forEach(function (r) {
-    var last = r.lastChase;
-    h += '<div class="card" style="padding:10px 12px">'
-      + '<div class="row" style="gap:8px;align-items:baseline">'
-      +   '<div class="grow" style="min-width:0"><div class="nm" style="font-size:15px">' + esc(r.name) + '</div>'
-      +   '<div class="sub">' + esc(r.date) + ' · ' + r.age + ' days'
-      +   (r.action === "invoice" ? ' · <span style="color:var(--danger);font-weight:600">not invoiced</span>' : '')
-      +   (last ? ' · chased ' + (last.days === 0 ? 'today' : last.days + 'd ago') : '')
+    var k = r.customerId || r.name;
+    var g = byCust[k] || (byCust[k] = { name: r.name, customerId: r.customerId, rows: [], balance: 0, unbilled: 0, oldest: 0, paid: 0, billed: 0 });
+    g.rows.push(r);
+    g.balance = colRound(g.balance + r.balance);
+    g.paid = colRound(g.paid + r.paid);
+    g.billed = colRound(g.billed + r.total);
+    if (r.action === "invoice") g.unbilled = colRound(g.unbilled + r.balance);
+    if (r.age > g.oldest) g.oldest = r.age;
+  });
+  var custs = Object.keys(byCust).map(function (k) { return byCust[k]; })
+    .sort(function (a, b) { return b.balance - a.balance; });
+
+  custs.forEach(function (g) {
+    var cust = (D().customers || []).find(function (c) { return c && c.id === g.customerId; });
+    var tel = ((cust && cust.phone) || "").replace(/[^0-9+]/g, "");
+    h += '<div class="card" style="padding:12px 14px">'
+      /* header: the human, and the one number that matters */
+      + '<div class="row" style="gap:10px;align-items:baseline">'
+      +   '<div class="grow" style="min-width:0"><div class="nm" style="font-size:17px">' + esc(g.name) + '</div>'
+      +   '<div class="sub">' + g.rows.length + ' open · oldest ' + g.oldest + 'd'
+      +     (g.paid > 0 ? ' · <span style="color:var(--ok,#1e9e5a)">' + esc(colMoney(g.paid)) + ' received</span> of ' + esc(colMoney(g.billed)) : '')
       +   '</div></div>'
-      +   '<div class="nm" style="flex:0 0 auto;font-variant-numeric:tabular-nums">' + esc(colMoney(r.balance)) + '</div>'
+      +   '<div class="nm" style="flex:0 0 auto;font-size:22px;font-variant-numeric:tabular-nums">' + esc(colMoney(g.balance)) + '</div>'
       + '</div>'
-      + '<button class="btn ' + (r.action === "invoice" ? 'acc' : 'ghost') + ' sm" style="width:100%;margin-top:8px"'
-      + ' onclick="colOpenDraft(\'' + r.id + '\')">'
-      + (r.action === "invoice" ? 'Draft the invoice message' : 'Draft a follow-up') + '</button>'
-      + '</div>';
+      + (g.unbilled > 0.5 ? '<div class="sub" style="white-space:normal;margin-top:2px;color:var(--danger)">'
+          + esc(colMoney(g.unbilled)) + ' of it never invoiced — your move, not theirs.</div>' : '');
+    /* the jobs inside */
+    g.rows.forEach(function (r) {
+      var last = r.lastChase;
+      h += '<div class="row" style="gap:8px;align-items:baseline;padding:7px 0;border-top:1px solid var(--line)">'
+        + '<div class="grow" style="min-width:0;cursor:pointer" onclick="colOpenDraft(\'' + r.id + '\')">'
+        +   '<div style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(r.title) + '</div>'
+        +   '<div class="sub">' + esc(r.date) + ' · ' + r.age + 'd'
+        +   (r.action === "invoice" ? ' · <span style="color:var(--danger);font-weight:600">not invoiced</span>' : '')
+        +   (r.paid > 0 ? ' · paid ' + esc(colMoney(r.paid)) + ' of ' + esc(colMoney(r.total)) : '')
+        +   (last ? ' · chased ' + (last.days === 0 ? 'today' : last.days + 'd ago') : '')
+        +   '</div></div>'
+        + '<div class="nm" style="flex:0 0 auto;font-variant-numeric:tabular-nums">' + esc(colMoney(r.balance)) + '</div>'
+        + '</div>';
+    });
+    /* actions: talk to the person, or draft about the most urgent line (unbilled beats old) */
+    var lead = g.rows.filter(function (r) { return r.action === "invoice"; })[0] || g.rows[0];
+    h += '<div class="row" style="gap:6px;margin-top:9px">'
+      + (tel ? '<a class="btn ghost sm" style="flex:1;text-align:center;text-decoration:none" href="sms:' + esc(tel) + '">💬 Text</a>'
+             + '<a class="btn ghost sm" style="flex:1;text-align:center;text-decoration:none" href="tel:' + esc(tel) + '">📞 Call</a>' : '')
+      + '<button class="btn ' + (g.unbilled > 0.5 ? 'acc' : 'ghost') + ' sm" style="flex:2"'
+      +   ' onclick="colOpenDraft(\'' + lead.id + '\')">'
+      + (g.unbilled > 0.5 ? 'Draft the invoice message' : 'Draft a follow-up') + '</button>'
+      + '</div></div>';
   });
   return h;
 }

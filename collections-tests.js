@@ -246,5 +246,50 @@ console.log("\n--- ⛔⛔ work not yet done is not a receivable ---");
     /WORK NOT YET DONE IS NOT A RECEIVABLE/.test(require("fs").readFileSync("js/154-collections.js", "utf8")));
 }
 
+/* ---------- ⭐⭐ OWED, GROUPED BY CUSTOMER ---------------------------------------------------------------
+   Ray, 2026-09-01: "I would like to track money owed by customer. Can we have a nice easy to read screen
+   for that?" — asked minutes after applying a split payment across a three-job group. The flat list made
+   him do the per-customer arithmetic himself; the card does it now. */
+console.log("\n--- ⭐⭐ owed by customer ---");
+{
+  const S = store();
+  /* Mike part-pays the old one, and Michelle picks up a fresh unpaid job — two customers on the board.
+     ⚠️ qPaid + its income row are removed HERE: they trigger the paid-but-not-logged MISMATCH panel above
+     the customer cards, and "Michelle Brown" appearing there first made the sort-order position check lie. */
+  S.obx.quotes = S.obx.quotes.filter(q => q.id !== "qPaid");
+  S.obx.income = [];
+  S.obx.quotes.find(q => q.id === "qOld").payments.push({ id: "p1", amount: 1000, date: "2026-08-30" });
+  S.obx.quotes.push({ id: "qMB", customerId: "cB", total: 285, date: "2026-07-01", invoiced: true, payments: [], deleted: false });
+  S.obx.jobs.push({ id: "jA", title: "Hot Tub Pad (+1 more)", deleted: false });
+  const c = sandbox(S);
+
+  const rows = c.colOwed();
+  ok("⭐ each row knows its JOB title, not just the customer",
+    rows.find(r => r.id === "qOld").title === "Hot Tub Pad", rows.map(r => r.title));
+  ok("⭐ ...with the '(+N more)' suffix trimmed — noise inside a card", !/more\)/.test(rows.find(r => r.id === "qOld").title));
+  ok("⭐ a jobless quote falls back to its first line item or date", !!rows.find(r => r.id === "qNew").title);
+  ok("⭐ partial payments ride along: paid + balance = total",
+    rows.every(r => Math.abs(r.paid + r.balance - r.total) < 0.01), rows.map(r => [r.paid, r.balance, r.total]));
+
+  const html = c.colOwedHTML();
+  /* one card per customer, worst debtor first */
+  const mikeAt = html.indexOf("Mike Green"), mbAt = html.indexOf("Michelle Brown");
+  ok("⭐⭐ both customers get a card", mikeAt >= 0 && mbAt >= 0);
+  ok("⭐ sorted by balance — Mike ($3,202) before Michelle ($285)", mikeAt < mbAt);
+  ok("⛔ the customer's name appears ONCE per card, not once per row",
+    (html.match(/Mike Green/g) || []).length === 1, (html.match(/Mike Green/g) || []).length);
+  ok("⭐ the per-customer balance is the headline number", /\$3,202\.00/.test(html), html.match(/\$[\d,]+\.\d\d/g));
+  ok("⭐ received-so-far gives the conversation its context", /\$1,000\.00 received<\/span> of/.test(html));
+  ok("⭐ a part-paid line says so — that conversation is already in motion", /paid \$1,000\.00 of \$1,378\.00/.test(html));
+  ok("⛔ never-invoiced money is called out per customer as YOUR move",
+    /\$2,324\.00 of it never invoiced/.test(html));
+  ok("⭐ tap-to-text and tap-to-call use the customer's real number",
+    /sms:2525550101/.test(html) && /tel:2525550101/.test(html));
+  ok("⭐ Michelle has no phone on file → no dead buttons on her card",
+    !/sms:"|tel:"/.test(html) && (html.match(/sms:/g) || []).length === 1);
+  ok("⭐ the draft button leads with the UNBILLED line when one exists",
+    /colOpenDraft\('qBill'\)">\s*Draft the invoice message/.test(html.replace(/\n/g, "")));
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);
