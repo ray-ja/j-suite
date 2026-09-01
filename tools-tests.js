@@ -1440,5 +1440,61 @@ console.log("\n--- ⭐ awaiting list groups: combos vs loose ---");
     !/Combine into one invoice<\/button>/.test(CODE(R("js/46-invoicing.js"))));
 }
 
+
+/* ---------- ⚖️ REPRICE WITH ACTUALS (js/169) — the estimate screen, fed the receipts ---------------------
+   Ray, 2026-09-01: "go back to the initial pricing screen, but with the receipts factored in… the actual
+   hard line for what we spent so I can adjust the final price. I wanna see the market bands and everything." */
+console.log("\n--- ⚖️ reprice with actuals ---");
+{
+  const c = { console };
+  c.window = c; c.esc = s => String(s == null ? "" : s); c.money = n => "$" + (Math.round(n * 100) / 100).toFixed(2);
+  c.isOwner = () => true; c.MARKET_BANDS = { steppath: { label: "stepping-stone path" } };
+  const STORE = { quotes: [], jobMaterials: [], jobExpenses: [], timeclock: [] };
+  c.D = () => STORE;
+  vm.createContext(c);
+  vm.runInContext(R("js/70-quote-engine.js"), c);
+  vm.runInContext(R("js/169-reprice.js"), c);
+
+  const q = { id: "q1", jobId: "j1", finalPrice: 0, total: 2722.14, cost: 545,
+    items: [{ mkt: { natLo: 1815, natHi: 2640, obxLo: 2045, obxHi: 3050, pay45: 2060 }, bandKey: "steppath" }] };
+  STORE.quotes = [q];
+  STORE.jobMaterials = [{ jobId: "j1", amount: 683.14 }];
+  STORE.jobExpenses = [{ jobId: "j1", amount: 54.34 }];
+  const T0 = 1784739050000;   // clockIn must be truthy — a 0 epoch is filtered as an open shift
+  STORE.timeclock = [
+    { jobId: "j1", clockIn: T0, clockOut: T0 + 4 * 3600e3 },        // a real 4h shift
+    { jobId: "j1", clockIn: T0, clockOut: T0 + 24 * 3600e3 }        // a forgotten clock-out
+  ];
+
+  const a = c.rpActuals("j1");
+  ok("⭐ filed materials and expenses come back as the actual hard line",
+    a.materials === 683.14 && a.expenses === 54.34, a);
+  ok("⚠️ a 24-hour clock entry is a forgotten clock-out — capped at 12h, so 4+24 prefills 16h not 28",
+    a.clockHours === 16, a.clockHours);
+
+  const inp = { price: 2722.14, ph: 60, other: 0, materials: 683.14, expenses: 54.34 };
+  const r = c.rpCalc(q, inp);
+  ok("⭐⭐ the band compares the WORK price — pass-through materials off both sides",
+    Math.abs(r.workPrice - 2039) < 0.01, r.workPrice);
+  ok("⭐ …and at \$2,039 work price the steppath band says below its \$2,045 local floor — barely, truthfully",
+    r.pos === "below", [r.workPrice, r.pos]);
+  ok("⭐⭐ MATERIALS CANCEL: take-home/hr is identical with and without the \$683 pass-through",
+    (() => { const bare = c.rpCalc(q, { price: 2039, ph: 60, other: 0, materials: 0, expenses: 54.34 });
+             return Math.abs(bare.ev.takeHome - r.ev.takeHome) < 0.01; })(), r.ev.takeHome);
+  ok("⭐ the verdict is the engine's own: 60 REAL person-hours at this price ≈ \$15.88/hr — under the floor,"
+    + " which is the steppath lesson told by arithmetic",
+    r.ev.takeHome < 16 && r.ev.takeHome > 15.5 && !r.ev.ok, r.ev.takeHome);
+  ok("⭐ at the estimate's 20.4 hours the same price clears the floor — the gap IS the story",
+    c.rpCalc(q, { price: 2722.14, ph: 20.4, other: 0, materials: 683.14, expenses: 54.34 }).ev.takeHome > 45);
+  ok("⭐ 'other hard costs' flows straight into the hard line",
+    c.rpCalc(q, { price: 2722.14, ph: 60, other: 100, materials: 683.14, expenses: 54.34 }).hard === 837.48);
+  ok("⭐ the job-page button only renders when the job HAS a quote",
+    c.rpBtnHTML({ id: "j1" }).indexOf("rpOpen") > 0 && c.rpBtnHTML({ id: "nope" }) === "");
+  ok("⛔ applying goes through snapshotQuoteVersion — the change-order paper trail, not a side channel",
+    /snapshotQuoteVersion\(q, "Repriced with actuals"/.test(CODE(R("js/169-reprice.js"))));
+  ok("⭐ registered in the shell after the engine it reuses",
+    (() => { const sh = R("Business App (v1).html"); return sh.indexOf("70-quote-engine") < sh.indexOf("169-reprice"); })());
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

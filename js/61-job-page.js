@@ -445,6 +445,8 @@ function rJobPage(j) {
   // Job costs & receipts — the UNIFIED receipt card + the filed list. After the drive (you buy en route/on-site).
   let _secCosts = jobFiledCostsHTML(j);
   _secCosts += (typeof jobRcptCardHTML === "function") ? jobRcptCardHTML(j) : "";
+  /* ⚖️ back to the pricing table, fed the receipts (js/169) — the loop-closer Ray asked for 2026-09-01 */
+  _secCosts += (typeof rpBtnHTML === "function") ? rpBtnHTML(j) : "";
 
   // Notes
   let _secNotes = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
