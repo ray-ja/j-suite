@@ -283,14 +283,15 @@ function rJobPage(j) {
   const _jq = (typeof actQ === "function") ? (j.quoteId ? actQ().find(x => x && x.id === j.quoteId) : actQ().find(x => x && x.jobId === j.id)) : null;
   const _isPathJob = !!(_jq && (_jq.sp || (_jq.items || []).some(i => i && i.bandKey === "steppath")));
   const _isLandJob = !!(_jq && (_jq.survey || (_jq.items || []).some(i => i && i.bandKey === "landscape")));
-  // If the job's own quote is neither type (a generic/older job with no type marker), fall back to showing whatever
-  // guide the customer has — so nothing that used to appear silently disappears; only the AMBIGUOUS both-types case
-  // (customer has a survey AND a path quote) is now disambiguated by the job's own quote.
+  // The customer-wide fallback is ONLY for legacy jobs with no quote link at all. A job whose own quote
+  // is neither type (junk haul, demo, …) is TYPED as "not a build" — it gets no guides, even when the
+  // customer also has a path/landscaping quote (Ray 2026-09-01: path guides showed on his junk-haul job).
   const _typed = _isPathJob || _isLandJob;
-  // PLANT crew guide — a landscaping job (or an untyped job that only has a plant guide)
-  if ((_isLandJob || !_typed) && typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
-  // PATH BUILD GUIDE — a path job (prefer this job's OWN quote); or an untyped job whose customer has a path quote.
-  if ((_isPathJob || !_typed) && typeof D === "function" && j.customerId) {
+  const _untypedFallback = !_typed && !_jq;
+  // PLANT crew guide — a landscaping job (or a quote-less legacy job that has a plant guide)
+  if ((_isLandJob || _untypedFallback) && typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
+  // PATH BUILD GUIDE — a path job (prefer this job's OWN quote); or a quote-less legacy job whose customer has a path quote.
+  if ((_isPathJob || _untypedFallback) && typeof D === "function" && j.customerId) {
     const _pq = (_isPathJob && _jq) ? _jq : (D().quotes || []).filter(function (x) { return x && !x.deleted && x.customerId === j.customerId && x.sp && (x.items || []).some(function (i) { return i && i.bandKey === "steppath"; }); }).sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
     if (_pq) {
       h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="openPathGuide('${_pq.id}')">🪨 Path Build Guide — specs &amp; steps</button>`;
