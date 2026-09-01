@@ -107,8 +107,37 @@ function moTypicalMonth() {
     if (months.length < 2) return null;                 // two complete months is the least that means anything
     var used = months.slice(-MO_MONTHS);
     var vals = used.map(function (m) { return byMonth[m]; }).sort(function (a, b) { return a - b; });
-    return { median: Math.round(vals[Math.floor(vals.length / 2)] * 100) / 100, months: used };
+    /* the BREAKDOWN behind the number (Ray 2026-09-01: "the math saying I need 12k/month doesn't seem
+       right — make a breakdown show when I click on it"): each month's real total, plus the biggest
+       payees of the most recent complete month so the number can be audited, not just believed. */
+    var totals = used.map(function (m) { return { m: m, total: Math.round(byMonth[m] * 100) / 100 }; });
+    var lastM = used[used.length - 1];
+    var byWho = {};
+    moActive(D().budgetTx).forEach(function (t) {
+      if (t.pending || t.isTransfer || t.isCardPayment) return;
+      if ((t.dir || "out") !== "out") return;
+      if (!acctIds[t.accountId]) return;
+      if (String(t.date || "").slice(0, 7) !== lastM) return;
+      var k = String(t.payee || t.note || "—").toUpperCase().replace(/[0-9#*]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 26) || "—";
+      byWho[k] = (byWho[k] || 0) + (+t.amount || 0);
+    });
+    var top = Object.keys(byWho).map(function (k) { return { who: k, amount: Math.round(byWho[k] * 100) / 100 }; })
+      .sort(function (a, b) { return b.amount - a.amount; }).slice(0, 8);
+    return { median: Math.round(vals[Math.floor(vals.length / 2)] * 100) / 100, months: used,
+             totals: totals, lastMonth: lastM, top: top };
   } catch (e) { return null; }
+}
+/* an expandable money-card row — the headline stays scannable, the receipts are one tap down */
+function moRowExpand(label, value, note, cls, inner) {
+  return '<details class="mo-x' + (cls ? " " + cls : "") + '"><summary class="row mo-row" style="gap:10px;align-items:baseline;cursor:pointer;list-style:none">'
+    + '<div class="grow" style="min-width:0"><div class="mo-lab">' + esc(label) + ' <span class="mo-age">▾ breakdown</span></div>'
+    + (note ? '<div class="sub" style="white-space:normal">' + esc(note) + '</div>' : '') + '</div>'
+    + '<div class="mo-val">' + esc(value) + '</div></summary>'
+    + '<div style="padding:2px 0 8px 2px">' + inner + '</div></details>';
+}
+function moXLine(l, r) {
+  return '<div class="row" style="gap:10px;align-items:baseline"><div class="grow sub" style="min-width:0">' + esc(l) + '</div>'
+    + '<div class="sub" style="font-variant-numeric:tabular-nums;flex:0 0 auto">' + esc(r) + '</div></div>';
 }
 
 /* ⭐ RENT COLLECTION IS ITS OWN LINE. Ray, 2026-08-27: "rent collection is separate line."
@@ -275,12 +304,19 @@ function monthOutlookHTML() {
       + " · your personal book, and money moved between your own accounts doesn't count", "mo-earned");
   }
   if (bills.length) {
-    h += moRow("Bills due in 30 days", "−" + moMoney(billTotal),
-      bills.length + " scheduled payment" + (bills.length === 1 ? "" : "s"), "mo-bill");
+    h += moRowExpand("Bills due in 30 days", "−" + moMoney(billTotal),
+      bills.length + " scheduled payment" + (bills.length === 1 ? "" : "s"), "mo-bill",
+      bills.map(function (o) { return moXLine(o.iso.slice(5) + " · " + (o.bill.name || "—"), "−" + moMoney(o.amount)); }).join(""));
   }
   if (typical) {
-    h += moRow("A typical month costs", "−" + moMoney(typical.median),
-      "median of " + typical.months.join(", ") + " — includes the bills above, don't add them together", "mo-spend");
+    var typInner = (typical.totals || []).map(function (r) { return moXLine(r.m, "−" + moMoney(r.total)); }).join("")
+      + ((typical.top || []).length
+        ? '<div class="sub" style="font-weight:700;margin-top:6px">Biggest in ' + esc(typical.lastMonth || "") + '</div>'
+          + typical.top.map(function (r) { return moXLine(r.who.toLowerCase(), "−" + moMoney(r.amount)); }).join("")
+        : "");
+    h += moRowExpand("A typical month costs", "−" + moMoney(typical.median),
+      "median of " + typical.months.join(", ") + " — includes the bills above, don't add them together", "mo-spend",
+      typInner);
   }
   /* ⭐⭐ TWO GROUPS, BECAUSE THEY ARE TWO DIFFERENT JOBS. Ray, 2026-08-27: "only the ones I haven't sent yet
      where the job's done but I haven't sent the invoice. Or the ones where I'm awaiting payment — I've
