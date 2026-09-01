@@ -394,8 +394,17 @@
   /* ⭐ EXPANDED SIDEBAR CHILDREN (js/155). Only rendered for the open group, and only on desktop — the
      phone nav is a horizontal bottom bar with nowhere to drop anything down. */
   .navkids{display:none}
+  /* NAV SEARCH (js/170) — desktop sidebar only; the phone bottom bar has no room for a box */
+  .navsearch{display:none}
   @media(min-width:900px){
     .navkids{display:block;padding:2px 0 6px}
+    .navsearch{display:block;padding:0 16px 10px}
+    .navsearch input{width:100%;background:rgba(127,141,160,.12);border:1px solid var(--line);border-radius:8px;
+      padding:8px 11px;color:var(--ink);font-size:13.5px;outline:none}
+    .navsearch input:focus{border-color:var(--brand-text)}
+    .navsearch input::placeholder{color:var(--muted)}
+    .navsearch .navkids{padding:4px 0 0}
+    .navsearch .navbadge{color:var(--muted);background:none}
     nav .navkids button.navsub{display:flex;align-items:center;gap:10px;width:100%;padding:8px 24px 8px 34px;
       font-size:13.5px;font-weight:500;background:none;border:0;color:var(--muted);text-align:left;cursor:pointer}
     nav .navkids button.navsub .ic{font-size:14px;flex:0 0 auto}
