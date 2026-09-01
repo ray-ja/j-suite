@@ -283,6 +283,18 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("combined page: paid cell GREEN, balances RED", hg.indexOf("#0a7d4b") >= 0 && hg.indexOf("#b91c1c") >= 0 && hg.indexOf("$2,873.00") >= 0);
   const acctS = t.invAccountOf(slabG, cust, s2q);
   ok("account: from the LOOSE invoice, the whole group is ONE row (billed 4873 · paid 2000 · 2873 left, linked)", acctS.others.length === 1 && acctS.others[0].no === "3 invoices — billed together" && acctS.others[0].due === 4873 && acctS.others[0].paid === 2000 && acctS.others[0].remaining === 2873 && acctS.others[0].token === "tokg1" && acctS.total === 5108);
+  ok("invoice switcher: tabs on top — current highlighted (no link), others linked with balances", (() => {
+    const h = t.renderInvoicePage(biz, cust, g1, [], acctG, null, combo);
+    return h.indexOf("Your invoices — tap to switch") >= 0
+      && /class="invtab on"><span class="t">3 jobs, billed together<\/span>/.test(h)
+      && /<a class="invtab" href="\/i\/toks2"><span class="t">Stepping-stone path →<\/span>/.test(h)
+      && h.indexOf("$2,235.00 due") >= 0;
+  })());
+  ok("invoice switcher: absent when the customer has nothing else to switch to", (() => {
+    const slab1 = { quotes: [{ id: "solo", customerId: "cm1", invoiceNo: "S", invoiced: true, total: 100, payments: [{ id: "p", amount: 40 }] }], jobs: [], jobMaterials: [] };
+    const so = slab1.quotes[0];
+    return t.renderInvoicePage(biz, cust, so, [], t.invAccountOf(slab1, cust, so), null, null).indexOf("tap to switch") < 0;
+  })());
   ok("combo: fully-settled group renders PAID (settledAll) even though this member has no paid flag", (() => {
     const slabP = { quotes: [
       { id: "a", customerId: "cm1", invoiceNo: "A", invoiced: true, paid: true, total: 100, combinedAt: 9 },

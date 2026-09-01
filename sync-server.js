@@ -2434,10 +2434,25 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
     .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
     .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
     .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg)}
+    .invtabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 26px;border-bottom:1px solid #f1f2f4;padding-bottom:20px}
+    .invtab{display:block;text-decoration:none;border:1.5px solid #d7dbe0;border-radius:10px;padding:9px 14px;min-width:150px}
+    .invtab .t{display:block;font-weight:700;font-size:13px;color:${AC}}
+    .invtab .b{display:block;font-size:12px;margin-top:2px;color:#6b7280}
+    .invtab.on{border-color:${AC};background:#f0fdf4;cursor:default}
+    .invtab.on .t{color:#1a1a1a}
     .foot{margin-top:26px;color:#6b7280;font-size:13px;text-align:center;border-top:1px solid #f1f2f4;padding-top:18px}
     @media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0;max-width:none}.pay{border:2px solid ${AC}}}
     </style></head><body>
     <div class="sheet"><div class="bar"></div><div class="pad">
+      ${(() => {
+        // INVOICE SWITCHER — obvious, on top (Ray: "you should select your invoice on the top… obvious
+        // that it's selectable"). One tab per open scope: the one being viewed highlighted, the rest links.
+        if (!acct || !acct.others.some(r => r.token)) return "";
+        const balLine = (v) => v > 0.005 ? `<span class="b" style="color:#b91c1c;font-weight:600">${invMoney(v)} due</span>` : `<span class="b" style="color:${AC};font-weight:600">✓ paid</span>`;
+        const cur = `<span class="invtab on"><span class="t">${htmlEsc(isCombo ? no : srvShortTitle(q))}</span>${balLine(acct.curRemaining)}</span>`;
+        const rest = acct.others.filter(r => r.token).map(r => `<a class="invtab" href="/i/${encodeURIComponent(r.token)}"><span class="t">${htmlEsc(r.grp ? r.no.replace(" invoices — billed together", " jobs, billed together") : r.title)} →</span>${balLine(r.remaining)}</a>`).join("");
+        return `<div class="lbl2">Your invoices — tap to switch</div><div class="invtabs">${cur}${rest}</div>`;
+      })()}
       <div class="top">
         <div class="biz">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${htmlEsc(biz.name || "")}</div><div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
         <div class="badge"><div class="lbl">INVOICE</div><div class="muted">${htmlEsc(no)}</div><div class="muted">${htmlEsc(dateStr)}</div></div>
