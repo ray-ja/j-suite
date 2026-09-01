@@ -94,12 +94,18 @@ function rpReadoutHTML(q, inp) {
     + c.ph.toFixed(1) + ' person-hours (actual) · hard costs ' + rpMoney(c.hard) + ' (actual) · margin ' + Math.round(c.ev.margin * 100) + '%'
     + '<br>estimate was: ' + rpMoney(c.estPrice) + ' price · ' + rpMoney(c.estHard) + ' est costs</div>';
   if (c.band) {
-    var sc = c.pos === "inside" ? "#1a7f37" : c.pos === "below" ? "#c1121f" : "var(--muted)";
-    h += '<div class="sub" style="margin:2px 2px;white-space:normal">📊 Local ' + esc(c.band.label) + ' range '
-      + rpMoney(c.band.mkt.obxLo) + '–' + rpMoney(c.band.mkt.obxHi)
-      + ' (national ' + rpMoney(c.band.mkt.natLo) + '–' + rpMoney(c.band.mkt.natHi) + ') — your work price '
-      + rpMoney(c.workPrice) + ' is <b style="color:' + sc + '">' + c.pos + '</b>'
-      + '<br><span style="opacity:.75">(band compares the work price — pass-through materials excluded on both sides)</span></div>';
+    /* ⭐ THE SAME COLORED BAR THE ESTIMATORS DRAW. Ray, 2026-09-01: "I just wanted to reuse the original
+       colored bar line quote screen — I can't visualize with this number box." marketBandHTML (js/22) IS
+       that bar — red below the local range, green inside, amber above, your price as the marked line. */
+    if (typeof marketBandHTML === "function") {
+      h += marketBandHTML(c.workPrice, c.band.mkt.obxLo, c.band.mkt.obxHi, c.band.label + " — work price (materials excluded both sides)");
+      h += '<div class="sub" style="margin-top:2px;opacity:.8">national range ' + rpMoney(c.band.mkt.natLo) + '–' + rpMoney(c.band.mkt.natHi) + '</div>';
+    } else {
+      var sc = c.pos === "inside" ? "#1a7f37" : c.pos === "below" ? "#c1121f" : "var(--muted)";
+      h += '<div class="sub" style="margin:2px 2px;white-space:normal">📊 Local ' + esc(c.band.label) + ' range '
+        + rpMoney(c.band.mkt.obxLo) + '–' + rpMoney(c.band.mkt.obxHi) + ' — your work price '
+        + rpMoney(c.workPrice) + ' is <b style="color:' + sc + '">' + c.pos + '</b></div>';
+    }
   }
   return h;
 }
@@ -126,7 +132,16 @@ if (typeof window !== "undefined") {
       + '<p class="muted" style="margin:0 0 10px;font-size:13px;white-space:normal">The pricing math, re-run with what the job '
       + '<b>actually</b> cost — filed materials, filed expenses, real hours. Adjust the price and watch the same readout the estimator showed.</p>'
       + '<label>Final price to the customer</label>'
-      + '<input id="rp_price" type="number" inputmode="decimal" step="1" value="' + RP.price + '" oninput="rpLive()">'
+      + '<input id="rp_price" type="number" inputmode="decimal" step="1" value="' + RP.price + '" oninput="rpSync(false)">'
+      /* ⭐ the estimator-style slider — drag the price across the band instead of typing. Bounds hug the
+         band, with materials added back on (the slider moves the FULL invoice price, band is work-price). */
+      + (function () {
+          var b = rpBand(q);
+          var lo = b ? Math.floor((b.mkt.obxLo * 0.6 + a.materials) / 5) * 5 : Math.floor(RP.price * 0.5 / 5) * 5;
+          var hi = b ? Math.ceil((b.mkt.obxHi * 1.35 + a.materials) / 5) * 5 : Math.ceil(RP.price * 1.5 / 5) * 5;
+          return '<input id="rp_slider" type="range" min="' + lo + '" max="' + hi + '" step="5" value="' + RP.price + '"'
+            + ' oninput="rpSync(true)" style="width:100%;accent-color:var(--accent);margin-top:6px">';
+        })()
       + '<div class="row" style="gap:8px"><div class="grow">'
       + '<label>Actual person-hours</label>'
       + '<input id="rp_ph" type="number" inputmode="decimal" step="0.5" value="' + RP.ph + '" oninput="rpLive()">'
@@ -144,8 +159,13 @@ if (typeof window !== "undefined") {
     modal("⚖️ Reprice with actuals", body);
   };
 
-  window.rpLive = function () {
+  window.rpLive = function () { rpSync(false); };
+  /* keep the number box and the slider agreeing, whichever one he moved */
+  window.rpSync = function (fromSlider) {
     if (!RP) return;
+    var num = document.getElementById("rp_price"), sl = document.getElementById("rp_slider");
+    if (fromSlider && sl && num) num.value = sl.value;
+    else if (!fromSlider && sl && num && parseFloat(num.value) >= +sl.min && parseFloat(num.value) <= +sl.max) sl.value = num.value;
     var v = function (id) { var el = document.getElementById(id); return el ? parseFloat(el.value) || 0 : 0; };
     RP.price = v("rp_price"); RP.ph = v("rp_ph"); RP.other = v("rp_other");
     var q = (D().quotes || []).find(function (x) { return x && x.id === RP.qId; });
