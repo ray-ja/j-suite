@@ -216,6 +216,25 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("invoice page: escapes a customer name (no HTML injection)", t.renderInvoicePage(biz, { name: "<script>x</script>" }, q).indexOf("<script>x") < 0);
 })();
 
+// ── QUOTE page: an un-invoiced quote renders as a quote, with line items, no pay button ──
+(function () {
+  const biz = { name: "OBX Lot Solutions", phone: "" };
+  const cust = { id: "cq", name: "Christina Jamieson" };
+  const q = { id: "pq", invoiced: false, total: 1710, invoiceToken: "tok-pond", items: [
+    { name: "Pond removal & fill-in", price: 1150, qty: 1 },
+    { name: "Haul-away — liner & debris", price: 300, qty: 1 },
+    { name: "Change order — waterfall is masonry", price: 260, qty: 1 }
+  ] };
+  const h = t.renderInvoicePage(biz, cust, q, [], null, null, null);
+  ok("quote page: says QUOTE (not INVOICE), full line items incl. the change order, correct total", h.indexOf(">QUOTE<") >= 0 && h.indexOf("Change order — waterfall is masonry") >= 0 && h.indexOf("$1,710.00") >= 0 && h.indexOf("for your approval") >= 0);
+  ok("quote page: NO pay button, no due-on-receipt language", h.indexOf('class="pay"') < 0 && h.indexOf("Due on receipt") < 0 && h.indexOf("nothing due until the work is billed") >= 0);
+  ok("invoiced page unchanged: single line + pay path intact", (() => {
+    const inv = Object.assign({}, q, { invoiced: true, invoiceNo: "INV-X", paymentLink: "https://buy.stripe.com/x" });
+    const hi = t.renderInvoicePage(biz, cust, inv, [], null, null, null);
+    return hi.indexOf(">INVOICE<") >= 0 && hi.indexOf("Change order") < 0 && hi.indexOf('class="pay"') >= 0;
+  })());
+})();
+
 // ── Balance pay button: shared group scope + partial payments (invPayScopeOf + renderInvoicePage pay states) ──
 (function () {
   const biz = { name: "OBX Lot Solutions", phone: "" };

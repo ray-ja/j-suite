@@ -2389,6 +2389,9 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
   const taxable = !isCombo && !!q.taxable, tax = taxable ? Math.round(eff * 0.0675 * 100) / 100 : 0;
   const due = isCombo ? combo.total : Math.round((R.grand + tax) * 100) / 100;   // combo lines already carry their own tax
   const settledAll = isCombo ? combo.balance < 0.005 : !!q.paid;
+  // NOT YET INVOICED → this is a QUOTE page: full line items (the breakdown IS the point of a quote —
+  // e.g. a change order the customer needs to see), no pay button, no due-on-receipt language.
+  const isQuote = !isCombo && !q.invoiced && !q.paid;
   const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
   let rows, adjRows;
@@ -2402,6 +2405,12 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
     rows = `<tr><td>Labor &amp; installation</td><td class="c">1</td><td class="n">${invMoney(laborLine)}</td></tr>`
       + (R.actualList.length ? `<tr><td colspan="3" style="padding-top:10px;font-weight:700">Materials (at cost)</td></tr>` + R.actualList.map(m => `<tr><td>${htmlEsc(srvCleanMatDesc(m.desc) || m.desc || "Material")}</td><td class="c">1</td><td class="n">${invMoney(+m.amount || 0)}</td></tr>`).join("") : "");
     adjRows = "";
+  } else if (isQuote) {
+    // QUOTE: the full line items — a quote's breakdown (incl. change orders) is exactly what the
+    // customer is being asked to agree to, so it all shows
+    rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
+      : `<tr><td colspan="3" style="color:#9ca3af">No line items on this quote.</td></tr>`);
+    adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
   } else {
     // FIXED: one clean line, one total — no line items on the customer's page (Ray 2026-09-01:
     // "Just have a single total. I don't need line item stuff unless they request it.")
@@ -2458,17 +2467,18 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
       })()}
       <div class="top">
         <div class="biz">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${htmlEsc(biz.name || "")}</div><div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
-        <div class="badge"><div class="lbl">INVOICE</div><div class="muted">${htmlEsc(no)}</div><div class="muted">${htmlEsc(dateStr)}</div></div>
+        <div class="badge"><div class="lbl">${isQuote ? "QUOTE" : "INVOICE"}</div><div class="muted">${htmlEsc(isQuote ? "for your approval" : no)}</div><div class="muted">${htmlEsc(dateStr)}</div></div>
       </div>
       <div class="billrow">
         <div><div class="lbl2">Bill to</div>${billTo.map((l, i) => `<div${i === 0 ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${htmlEsc(l)}</div>`).join("")}</div>
-        <div style="text-align:right"><div class="lbl2">${settledAll ? "Amount" : "Amount due"}</div><div class="due">${dueStr}</div>${settledAll ? `<div class="paidstamp">PAID</div>` : `<div class="muted">Due on receipt</div>`}${(!settledAll && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
+        <div style="text-align:right"><div class="lbl2">${isQuote ? "Quote total" : (settledAll ? "Amount" : "Amount due")}</div><div class="due">${dueStr}</div>${settledAll ? `<div class="paidstamp">PAID</div>` : (isQuote ? `<div class="muted">nothing due until the work is billed</div>` : `<div class="muted">Due on receipt</div>`)}${(!settledAll && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
       </div>
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
       <tbody>${rows}</tbody><tfoot>${adjRows}${taxRows}</tfoot></table>
       ${(() => {
         // the pay button: shared across billed-together invoices, grayed when everything is settled,
         // customer can pay the balance or a partial amount at checkout
+        if (isQuote) return "";   // a QUOTE has no pay button — nothing is billed yet
         if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
@@ -4278,6 +4288,10 @@ const server = http.createServer((req, res) => {
         store = _lv.store; saveStore(store);
         if (_lv.threadId) pushNotify(store, _lv.biz, _lv.threadId, "__ceo__").catch(() => {});
       } catch (e) {}
+    }
+    if (!q.invoiced && !_combo) {   // a QUOTE page — never mint a Stripe link for un-billed work
+      res.writeHead(200, _hdr);
+      return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, null, null));
     }
     invEnsurePayLink(store, org, cust, q, (pay) => {
       res.writeHead(200, _hdr);
