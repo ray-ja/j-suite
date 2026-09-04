@@ -370,6 +370,12 @@ window.invMark = function (quoteId) {
   q.invoiced = true;
   if (!q.invoiceNo) q.invoiceNo = invNo(q);
   q.invoicedDate = (typeof today === "function") ? today() : "";
+  // every invoice is born with its hosted link (Ray 2026-09-04: rows had no preview/pay links because
+  // tokens only minted inside the share sheet). Same token format as invShareLink.
+  if (!q.invoiceToken) {
+    try { q.invoiceToken = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, "0")).join(""); }
+    catch (e) { q.invoiceToken = "inv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+  }
   touch(q);
   if (typeof logChange === "function") logChange("update", "quote", q.id, "Invoiced " + q.invoiceNo + " · " + money2(invEffectiveTotal(q)));
   save();
