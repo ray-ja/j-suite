@@ -336,7 +336,8 @@ window.openInvoice = function (quoteId) {
           ? `<button class="btn acc" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:8px" onclick="invGenPayLink('${q.id}')">⚡ Generate card-payment link</button>`
           : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
     </div>${invReceiptsNote(q)}
-    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:10px" onclick="invShareLink('${q.id}')">🔗 Invoice link — preview, send &amp; see opens</button>` : ""}
+    ${(q.invoiceToken && S.sync && S.sync.url && (typeof finCanView !== "function" || finCanView())) ? `<a class="btn ghost" style="display:block;width:100%;margin-top:10px;text-align:center" href="${esc(String(S.sync.url).replace(/\/+$/, "") + "/i/" + q.invoiceToken)}?preview=1" target="_blank" rel="noopener">👁 Preview — see what they see</a>` : ""}
+    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:${q.invoiceToken ? 8 : 10}px" onclick="invShareLink('${q.id}')">🔗 Invoice link — send &amp; see opens</button>` : ""}
     <div class="row" style="gap:8px;margin-top:8px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
       <button class="btn ghost grow" onclick="invPrint('${q.id}')">🖨️ Print / PDF</button>
@@ -479,7 +480,17 @@ function rInvoices() {
   const paid = qs.filter(q => q.paid).sort((a, b) => String(b.paidDate || b.date || "").localeCompare(String(a.paidDate || a.date || ""))).slice(0, 20);
   const arTotal = awaiting.reduce((s, q) => s + invRemaining(q), 0);   // the REMAINDER — partial payments already netted
 
-  const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${q.paymentLink ? " · 💳 pay link" : ""}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
+  /* persistent quick links on every row (Ray 2026-09-04: "the preview link only shows once… keep the
+     preview and payment links available on the invoice card") — preview opens the hosted page as the
+     customer sees it (?preview → never counts as a customer read); pay link opens the live Stripe page. */
+  const _rowLinks = (q) => {
+    const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+    let s = "";
+    if (q.invoiceToken && origin) s += ` · <a href="${esc(origin + "/i/" + q.invoiceToken)}?preview=1" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);font-weight:700;text-decoration:none">👁 preview</a>`;
+    if (q.paymentLink) s += ` · <a href="${esc(q.paymentLink)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-text);font-weight:700;text-decoration:none">💳 pay link</a>`;
+    return s;
+  };
+  const row = (q, right) => `<div class="li" onclick="openInvoice('${q.id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${type(q)} · <span style="font-weight:400">${cust(q)}</span></div><div class="sub">${q.date ? fmtDate(q.date) : ""}${q.invoiceNo ? " · " + esc(q.invoiceNo) : ""}${_rowLinks(q)}</div></div><div style="text-align:right;flex:0 0 auto">${right}</div></div>`;
 
   let h = `<div class="secthd"><h2>🧾 Invoices</h2>${arTotal ? `<span class="ct">${money2(arTotal)} owed</span>` : ""}</div>`;
 
