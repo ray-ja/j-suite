@@ -554,10 +554,17 @@ window.tcClockOutNow = function (id) {
       }
     }
   }
+  /* ⚠ HONOR THE "FINISHING WHEN?" PICKER (js/135). Ray, 2026-09-04: he edited the time, the only button
+     said "Clock out now", and tapping it DISCARDED his edit — this primary path stamped now() while only
+     the secondary tcFinishClockOut path read the field. That is exactly how a forgot-to-clock-out shift
+     posted 46 hours. Read it BEFORE the modal closes and takes the field with it. */
+  let _at = (typeof cwRead === "function") ? cwRead("tc_when_out", now()) : now();
+  if (!(_at > e.clockIn)) _at = now();   // nonsense (before clock-in / unparsable) → fall back to now
+  if (_at > now()) _at = now();          // a future typo can't post future hours
   if (typeof closeModal === "function") closeModal();
   if (hasVeh && odoEnd == null) e.odoPending = true;   // deferred odometer → soft reminder (additive, display-only; finMileage never reads it)
   else if (e.odoPending) e.odoPending = false;
-  tcFinalizeSegment(e, odoEnd);   // shared miles math — sets clockOut, miles, source (unchanged); withholds auto-confirm on an implausible distance
+  tcFinalizeSegment(e, odoEnd, _at);   // shared miles math — sets clockOut (at the CHOSEN time), miles, source; withholds auto-confirm on an implausible distance
   touch(e); tcPingStop();
   if (typeof renderClockPill === "function") renderClockPill();   // OPTIMISTIC: flip the header pill to "clocked out" this instant
   const src = (odoEnd != null) ? "odometer" : "GPS";
@@ -1303,6 +1310,11 @@ window.tcOpenEntry = function (id) {
       <div class="sub">GPS estimate: <b>${tcRound(e.computedMiles)} mi</b> from ${e.inLoc ? "in" : "no in"}${e.outLoc ? " + out" : ""}${(e.pings||[]).length ? " + " + e.pings.length + " ping(s)" : ""}${stops.length ? " · " + stops.length + " stop(s)" : ""}</div></div>
     ${flagHtml}
     ${stops.length ? `<div class="sub" style="margin:4px 0 8px"><b>Stops:</b> ${stops.map(s => esc(s.name)).join(" · ")}</div>` : ""}
+    <label style="margin-top:10px">Clock in</label>
+    <input id="tc_e_in" type="datetime-local" value="${(typeof cwLocalValue === "function") ? cwLocalValue(e.clockIn) : ""}">
+    ${e.clockOut ? `<label style="margin-top:10px">Clock out</label>
+    <input id="tc_e_out" type="datetime-local" value="${(typeof cwLocalValue === "function") ? cwLocalValue(e.clockOut) : ""}">` : ""}
+    <div class="sub" style="margin-top:4px;white-space:normal">Fix the worked times here — a forgot-to-clock-out shift is corrected by setting the real clock-out and saving. Hours update on save.</div>
     <label>Miles (owner-confirmed)</label>
     <input id="tc_e_miles" type="number" step="0.1" value="${tcMiles(e)}">
     <div class="sub" style="margin-top:4px">Mileage cost @ $${TC_RATE}/mi updates on save. Editing miles by hand marks the source as <b>manual</b>. Odometer is the number of record; GPS is only a cross-check.</div>
@@ -1314,6 +1326,17 @@ window.tcOpenEntry = function (id) {
 };
 window.tcSaveEntry = function (id) {
   const e = tcoll().find(x => x.id === id); if (!e) return;
+  /* worked-time corrections (Ray 2026-09-04: a 46-h forgot-to-clock-out shift, and this editor could only
+     touch MILEAGE — the times were uneditable everywhere). Same owner gate as the rest of the modal. */
+  const _pT = function (v) { const t = new Date(String(v || "")).getTime(); return t > 0 ? t : 0; };
+  const _inV = _pT(val("tc_e_in"));
+  const _outEl = document.getElementById("tc_e_out");
+  const _outV = _outEl ? _pT(_outEl.value) : 0;
+  const _newIn = _inV || e.clockIn;
+  const _newOut = e.clockOut ? (_outV || e.clockOut) : null;
+  if (_newOut != null && _newOut <= _newIn) { alert("Clock-out must be after clock-in."); return; }
+  const _timesChanged = (_newIn !== e.clockIn) || (_newOut != null && _newOut !== e.clockOut);
+  e.clockIn = _newIn; if (_newOut != null) e.clockOut = _newOut;
   const prevMiles = tcMiles(e);
   const m = parseFloat(val("tc_e_miles")); e.miles = isNaN(m) ? tcRound(e.computedMiles) : Math.max(0, m);
   if (!isNaN(m) && Math.abs(m - prevMiles) > 0.05) e.milesSource = "manual";   // a hand-edit of the miles → provenance = manual
@@ -1323,7 +1346,7 @@ window.tcSaveEntry = function (id) {
   e.riderRole = (veh.vehicleId || veh.vehicleOwnerId || veh.vehicle) ? "driver" : "none";
   e.milesConfirmed = !!(document.getElementById("tc_e_conf") || {}).checked;
   touch(e);
-  if (typeof logChange === "function") logChange("update", "timeclock", e.id, (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcEntryLabel(e));
+  if (typeof logChange === "function") logChange("update", "timeclock", e.id, (_timesChanged ? "Fixed worked time (" + tcFmtDur((e.clockOut || now()) - e.clockIn) + ") · " : "") + (e.milesConfirmed ? "Confirmed" : "Adjusted") + " mileage — " + tcMiles(e) + " mi · " + tcEntryLabel(e));
   save(); closeModal(); render();
 };
 window.tcDelEntry = function (id) {
