@@ -12,6 +12,27 @@
   var FOCUSED = false;   // whether the box had focus when the nav was last repainted
   var IDX = [];          // flat destination index, rebuilt on every nav render
 
+  /* what a human CALLS a page vs what the menu labels it (Ray 2026-09-04: searched "timesheet",
+     found nothing — the page is labeled "Time"). Searched alongside the label, never shown. */
+  var NAVQ_ALIASES = {
+    time: "timesheet time sheet hours clock in out timeclock punch",
+    pay: "paycheck wages payout take home", nextcheck: "paycheck next check",
+    invoices: "billing bill owed", receipts: "expense expenses scan",
+    finance: "money cash income expenses", schedule: "calendar week",
+    accounts: "customers clients properties", team: "crew people staff",
+    todo: "tasks task list checklist", map: "pins locations",
+    admin: "users roles permissions", data: "settings preferences sync",
+    budget: "envelopes money personal", journal: "diary notes voice",
+    messages: "chat dm broadcast texts", jobs: "work orders job list",
+    quotes: "estimates estimate pricing", leads: "calls call lead pipeline",
+    recurring: "plans subscriptions repeat", inventory: "tools gear equipment",
+    resale: "sell flip marketplace", products: "catalog skus parts",
+    route: "driving directions stops", routes: "gps driven review",
+    playbook: "guides how-to sop", research: "ventures ideas notes",
+    workout: "gym exercise lifting", cal: "birthdays dates personal calendar",
+    studio: "video clips tiktok footage", shelf: "books reading library",
+    life: "habits trackers", booking: "reservations tickets"
+  };
   function navSearchIndex() {
     var out = [];
     if (typeof navGroupsOrdered !== "function") return out;
@@ -24,7 +45,7 @@
       rows.forEach(function (d) {
         if (String(d.label || "").toLowerCase() === String(g.label || "").toLowerCase()) return;   // lone child named like its parent = noise
         out.push({ icon: d.icon || "•", label: d.label, crumb: g.label,
-          s: (String(d.label || "") + " " + String(g.label || "")).toLowerCase(),
+          s: (String(d.label || "") + " " + String(g.label || "") + " " + (NAVQ_ALIASES[d.tab] || "")).toLowerCase(),
           go: d.plain
             ? function () { if (typeof navSub === "function") navSub(d.tab); }
             : function () { if (typeof navDeepGo === "function") navDeepGo(d.tab, d.sub || "", d.setter || ""); } });
