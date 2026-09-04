@@ -257,6 +257,20 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("pay button: settled scope grays out — 'Paid — thank you', no link", hPaidOff.indexOf("Paid — thank you") >= 0 && hPaidOff.indexOf('<a class="pay"') < 0);
   const hFall = t.renderInvoicePage(biz, cust, Object.assign({}, ss, { paymentLink: "https://buy.stripe.com/fixed" }), [], null, null);
   ok("pay button: with no balance link (Stripe down), the invoice's own fixed link still renders", hFall.indexOf("buy.stripe.com/fixed") >= 0);
+  // pay CHOICES (Ray 2026-09-04): single scope inside a group, whole-account scope, and their rendering
+  ok("pay scope: {single:true} scopes ONE member of a group at its own balance", (() => { const sc = t.invPayScopeOf(slab, cust, fd, { single: true }); return sc.key === "q_fd" && sc.remainingCents === 53800; })());
+  ok("account scope: every open invoice across groups (2873 + 2235 = 5108)", t.invAcctScopeOf(slab, cust).remainingCents === 510800 && t.invAcctScopeOf(slab, cust).key === "acct_cm1");
+  const scFd2 = t.invPayScopeOf(slab, cust, fd);
+  const hChoice = t.renderInvoicePage(biz, cust, fd, [], null, { url: "https://buy.stripe.com/bal1", paidOff: false, scope: scFd2 }, t.invComboOf(slab, cust, fd),
+    { acct: { url: "https://buy.stripe.com/acct1", cents: 510800 }, lines: { fd: { url: "https://buy.stripe.com/lfd", cents: 53800 }, pp: { url: "https://buy.stripe.com/lpp", cents: 233500 } } });
+  ok("pay choices: whole-account button renders alongside the scope button", hChoice.indexOf("buy.stripe.com/acct1") >= 0 && hChoice.indexOf("Pay your whole account — $5,108.00") >= 0);
+  ok("pay choices: each open combined line carries its own 'pay just this' link; the settled line doesn't", (() => {
+    return hChoice.indexOf("pay just this — $538.00") >= 0 && hChoice.indexOf("pay just this — $2,335.00") >= 0 && hChoice.indexOf("buy.stripe.com/lfd") >= 0 && (hChoice.match(/pay just this/g) || []).length === 2;
+  })());
+  ok("pay choices: account button suppressed when the account holds nothing beyond this scope", (() => {
+    const h2 = t.renderInvoicePage(biz, cust, fd, [], null, { url: "https://buy.stripe.com/bal1", paidOff: false, scope: scFd2 }, t.invComboOf(slab, cust, fd), { acct: null, lines: {} });
+    return h2.indexOf("whole account") < 0;
+  })());
 })();
 
 // ── "Your account" on the hosted invoice (invAccountOf + renderInvoicePage section) ──

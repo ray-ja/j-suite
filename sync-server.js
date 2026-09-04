@@ -2290,7 +2290,7 @@ function invComboOf(slab, cust, q) {
   if (!slab || !cust || !q || !q.combinedAt) return null;
   const members = (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && x.customerId === cust.id && +x.combinedAt === +q.combinedAt);
   if (members.length < 2) return null;
-  const lines = members.map(x => { const due = srvDueOf(slab, x), paid = srvPaidOf(x); return { title: srvShortTitle(x), no: invNoOf(x), amount: due, settled: !!x.paid || (due - paid) < 0.005, token: x.invoiceToken || "" }; });
+  const lines = members.map(x => { const due = srvDueOf(slab, x), paid = srvPaidOf(x); return { qid: x.id, title: srvShortTitle(x), no: invNoOf(x), amount: due, settled: !!x.paid || (due - paid) < 0.005, token: x.invoiceToken || "" }; });
   const total = Math.round(lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const balance = Math.round(members.reduce((s, x) => s + (x.paid ? 0 : Math.max(0, srvDueOf(slab, x) - srvPaidOf(x))), 0) * 100) / 100;
   const date = members.reduce((m, x) => { const d = String(x.invoicedDate || x.date || ""); return d > m ? d : m; }, "");
@@ -2299,10 +2299,12 @@ function invComboOf(slab, cust, q) {
 /* PAY-BUTTON SCOPE — invoices billed together (same customer + combinedAt stamp) pay as ONE: a single
    shared button for the group's remaining balance (Ray: "they should share the same payment button").
    A loose invoice is its own scope. remainingCents = what's actually left across the scope. */
-function invPayScopeOf(slab, cust, q) {
+function invPayScopeOf(slab, cust, q, opts) {
   const paidOf = (x) => srvPaidOf(x);
   const dueOf = (x) => srvDueOf(slab, x);
-  const members = (q.combinedAt && cust) ? (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && x.customerId === cust.id && +x.combinedAt === +q.combinedAt) : [q];
+  // opts.single: scope THIS invoice alone even inside a billed-together group (the per-line "pay just
+  // this one" links on a combined page)
+  const members = (!(opts && opts.single) && q.combinedAt && cust) ? (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && x.customerId === cust.id && +x.combinedAt === +q.combinedAt) : [q];
   const open = members.filter(x => !x.paid && Math.round((dueOf(x) - paidOf(x)) * 100) > 0);
   const remainingCents = open.reduce((s, x) => s + Math.round((dueOf(x) - paidOf(x)) * 100), 0);
   return { key: (members.length > 1) ? ("grp_" + (cust ? cust.id : "") + "_" + (+q.combinedAt)) : ("q_" + q.id),
@@ -2313,34 +2315,51 @@ function invPayScopeOf(slab, cust, q) {
    Links live in the server-owned payLinks collection — never on the quote, so this can't clobber an edit.
    A stale link (balance moved) is replaced + deactivated. Falls back to the invoice's own fixed link on
    any Stripe failure so the page ALWAYS renders. cb({url, paidOff, scope}). */
-function invEnsurePayLink(store, org, cust, q, cb) {
-  let scope = null;
-  const fallback = () => cb({ url: (!q.paid && q.paymentLink) || null, paidOff: false, scope: scope });
+/* the CORE minter for any pay scope: reuse the cached link when the balance matches, else mint a fresh
+   customer-adjustable link (preset = balance, min $1, max = balance), deactivate the stale one, cache it.
+   cb({url, paidOff, scope}). Scope-agnostic so one code path serves the invoice/group button, the
+   whole-account button, and the per-invoice "pay just this one" links on combined pages. */
+function invEnsureScopeLink(store, org, scope, label, fallbackUrl, cb) {
+  const done = (url, paidOff) => cb({ url: url || null, paidOff: !!paidOff, scope: scope });
   try {
     const slab = store[org] || {};
-    scope = invPayScopeOf(slab, cust, q);
-    if (scope.remainingCents < 50) return cb({ url: null, paidOff: true, scope: scope });
+    if (scope.remainingCents < 50) return done(null, true);
     slab.payLinks = slab.payLinks || [];
     const rec = slab.payLinks.find(r => r && !r.deleted && r.key === scope.key);
-    if (rec && rec.amountCents === scope.remainingCents && rec.url) return cb({ url: rec.url, paidOff: false, scope: scope });
+    if (rec && rec.amountCents === scope.remainingCents && rec.url) return done(rec.url, false);
     let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
-    if (!cfg.stripeKey) return fallback();
-    const biz = pubBizOf(store, org);
-    const label = ((biz.name || "") + " · " + (scope.openCount > 1 ? scope.openNos.join(" + ") : invNoOf(q)) + (cust && cust.name ? " · " + cust.name : "")).replace(/[\r\n]+/g, " ").slice(0, 120);
+    if (!cfg.stripeKey) return done(fallbackUrl, false);
+    label = String(label || "Invoice").replace(/[\r\n]+/g, " ").slice(0, 120);
     stripeCall(cfg.stripeKey, "/v1/prices", { currency: "usd", "custom_unit_amount[enabled]": "true", "custom_unit_amount[preset]": String(scope.remainingCents), "custom_unit_amount[minimum]": "100", "custom_unit_amount[maximum]": String(scope.remainingCents), "product_data[name]": label }, (st1, pr) => {
-      if (st1 !== 200 || !pr || !pr.id) return fallback();
+      if (st1 !== 200 || !pr || !pr.id) return done(fallbackUrl, false);
       stripeCall(cfg.stripeKey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1", "metadata[scopeKey]": scope.key, "metadata[org]": org }, (st2, pl) => {
-        if (st2 !== 200 || !pl || !pl.url) return fallback();
+        if (st2 !== 200 || !pl || !pl.url) return done(fallbackUrl, false);
         if (rec && rec.linkId) stripeCall(cfg.stripeKey, "/v1/payment_links/" + rec.linkId, { active: "false" }, () => {});
         const now = Date.now();
         const nr = { id: "plk_" + scope.key, key: scope.key, url: pl.url, linkId: pl.id, amountCents: scope.remainingCents, deleted: false, updatedAt: now };
         const i = slab.payLinks.findIndex(r => r && r.id === nr.id);
         if (i >= 0) slab.payLinks[i] = nr; else slab.payLinks.push(nr);
         try { saveStore(store); } catch (e) {}
-        cb({ url: pl.url, paidOff: false, scope: scope });
+        done(pl.url, false);
       });
     });
-  } catch (e) { fallback(); }
+  } catch (e) { done(fallbackUrl, false); }
+}
+/* the WHOLE ACCOUNT as one pay scope: every open invoice the customer has, across groups. */
+function invAcctScopeOf(slab, cust) {
+  const open = (slab.quotes || []).filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id);
+  const remainingCents = open.reduce((s, x) => s + Math.max(0, Math.round((srvDueOf(slab, x) - srvPaidOf(x)) * 100)), 0);
+  return { key: "acct_" + cust.id, members: open.length, openCount: open.length, openNos: [], remainingCents: remainingCents };
+}
+function invEnsurePayLink(store, org, cust, q, cb) {
+  let scope = null;
+  try {
+    const slab = store[org] || {};
+    scope = invPayScopeOf(slab, cust, q);
+    const biz = pubBizOf(store, org);
+    const label = (biz.name || "") + " · " + (scope.openCount > 1 ? scope.openNos.join(" + ") : invNoOf(q)) + (cust && cust.name ? " · " + cust.name : "");
+    invEnsureScopeLink(store, org, scope, label, (!q.paid && q.paymentLink) || null, cb);
+  } catch (e) { cb({ url: (!q.paid && q.paymentLink) || null, paidOff: false, scope: scope }); }
 }
 /* "Your account" for the hosted invoice page: the customer's OTHER open invoices + remaining balances,
    plus paid-to-date on the current one. Mirrors the client (js/46): due = reconciled grand + 6.75% when
@@ -2378,7 +2397,7 @@ function invAccountOf(slab, cust, q) {
   return { others: rows, curDue: curDue, curPaid: curPaid, curRemaining: curRemaining, curGrp: curGrp, curCombined: !!combo,
     total: Math.round((curRemaining + rows.reduce((s, r) => s + r.remaining, 0)) * 100) / 100 };
 }
-function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
+function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
   const AC = "#0a7d4b";
   const isCombo = !!(combo && combo.lines && combo.lines.length > 1);   // billed-together group renders as ONE invoice
   const no = isCombo ? (combo.members + " jobs, billed together") : invNoOf(q);
@@ -2396,8 +2415,12 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
   let rows, adjRows;
   if (isCombo) {
-    // COMBINED: one invoice, one line per job (each line's own invoice no beneath, settled lines checked)
-    rows = combo.lines.map(l => `<tr><td>${htmlEsc(l.title)}${l.settled ? ` <span style="color:${AC};font-weight:700;font-size:12px">✓ paid</span>` : ""}<div class="muted" style="font-size:12px">${htmlEsc(l.no)}</div></td><td class="c">1</td><td class="n">${invMoney(l.amount)}</td></tr>`).join("");
+    // COMBINED: one invoice, one line per job (each line's own invoice no beneath, settled lines checked).
+    // Open lines each carry their own "pay just this one" link when one was minted (Ray 2026-09-04).
+    rows = combo.lines.map(l => {
+      const lp = (extras && extras.lines && extras.lines[l.qid]) || null;
+      return `<tr><td>${htmlEsc(l.title)}${l.settled ? ` <span style="color:${AC};font-weight:700;font-size:12px">✓ paid</span>` : ""}<div class="muted" style="font-size:12px">${htmlEsc(l.no)}${(lp && !l.settled) ? ` · <a href="${htmlEsc(lp.url)}" style="color:${AC};font-weight:700;text-decoration:none">💳 pay just this — ${invMoney(lp.cents / 100)}</a>` : ""}</div></td><td class="c">1</td><td class="n">${invMoney(l.amount)}</td></tr>`;
+    }).join("");
     adjRows = "";
   } else if (R.mode) {
     // ACTUAL: one labor line (= grand − actual materials, so the estimate-floor folds in) + itemized actual materials
@@ -2441,6 +2464,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
     tfoot td{border-bottom:none;padding:5px 0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
     .acct td,.acct th{padding-left:18px}.acct td:first-child,.acct th:first-child{padding-left:0}.acct tfoot .tot{font-size:15px;padding-left:18px}.acct tfoot td:first-child.tot{padding-left:0}
     .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
+    .pay2{display:block;text-align:center;background:#fff;border:2px solid ${AC};color:${AC}!important;text-decoration:none;font-weight:700;padding:13px;border-radius:10px;margin-top:10px;font-size:15px}
     .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
     .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg)}
     .invtabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 26px;border-bottom:1px solid #f1f2f4;padding-bottom:20px}
@@ -2483,8 +2507,11 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo) {
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
           const cashP = Math.round(bal * 0.97 * 100) / 100, cashS = Math.round((bal - cashP) * 100) / 100;
+          const acctBtn = (extras && extras.acct && extras.acct.cents > Math.round(bal * 100) + 50)
+            ? `<a class="pay2" href="${htmlEsc(extras.acct.url)}">Pay your whole account — ${invMoney(extras.acct.cents / 100)}</a>` : "";
           return `<a class="pay" href="${htmlEsc(pay.url)}">💳 Pay online — ${invMoney(bal)}${Math.abs(bal - due) >= 0.005 ? " balance" : ""}</a>
-          <div class="muted" style="text-align:center;margin-top:8px">Pay the full balance, or change the amount at checkout to make a partial payment.</div>
+          ${acctBtn}
+          <div class="muted" style="text-align:center;margin-top:8px">Pay the full balance, or change the amount at checkout to make a partial payment — split it across cards or payment methods by paying in parts.</div>
           ${cashS >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashP)} (you save ${invMoney(cashS)})</div>` : ""}`;
         }
         return (q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : "";
@@ -4293,9 +4320,35 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, _hdr);
       return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, null, null));
     }
+    /* PAY CHOICES (Ray 2026-09-04: "pay either their whole balance or by specific invoice"): after the
+       primary scope link, also ensure (a) a whole-account link when the account holds MORE than this
+       scope, and (b) a per-invoice link for each open line of a combined page. All cached in payLinks —
+       first open mints, every later open reuses. Sequential + best-effort: a Stripe hiccup on an extra
+       never blocks the page. */
     invEnsurePayLink(store, org, cust, q, (pay) => {
-      res.writeHead(200, _hdr);
-      res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, pay, _combo));
+      const _biz = pubBizOf(store, org);
+      const extras = { acct: null, lines: {} };
+      const tasks = [];
+      if (cust) {
+        const as = invAcctScopeOf(_js, cust);
+        const curCents = (pay && pay.scope) ? pay.scope.remainingCents : 0;
+        if (as.remainingCents >= 50 && as.remainingCents > curCents + 50) tasks.push({ kind: "acct", scope: as, label: (_biz.name || "") + " · Account balance · " + (cust.name || "") });
+      }
+      if (_combo && cust) {
+        (_js.quotes || []).filter(x => x && !x.deleted && x.invoiced && !x.paid && x.customerId === cust.id && +x.combinedAt === +q.combinedAt).forEach(x => {
+          const sc = invPayScopeOf(_js, cust, x, { single: true });
+          if (sc.remainingCents >= 50) tasks.push({ kind: "line", qid: x.id, scope: sc, label: (_biz.name || "") + " · " + invNoOf(x) + (cust.name ? " · " + cust.name : "") });
+        });
+      }
+      const step = () => {
+        const t = tasks.shift();
+        if (!t) { res.writeHead(200, _hdr); return res.end(renderInvoicePage(_biz, cust, q, _mats, _acct, pay, _combo, extras)); }
+        invEnsureScopeLink(store, org, t.scope, t.label, null, (r) => {
+          if (r && r.url) { if (t.kind === "acct") extras.acct = { url: r.url, cents: t.scope.remainingCents }; else extras.lines[t.qid] = { url: r.url, cents: t.scope.remainingCents }; }
+          step();
+        });
+      };
+      step();
     });
     return;
   }
@@ -5033,4 +5086,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
