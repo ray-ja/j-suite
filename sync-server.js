@@ -1996,11 +1996,19 @@ function projectForUser(store, myOrgs, me) {   // the ONLY thing /sync returns �
 function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
 // merge two arrays of records by id; newest updatedAt wins
+const MERGE_SKEW_MS = 2 * 60 * 1000;   // small honest phone-clock drift; beyond this a stamp is a broken clock, not a newer edit
 function mergeColl(a = [], b = []) {
   const map = new Map();
+  const cap = Date.now() + MERGE_SKEW_MS;
   for (const r of a) if (r && r.id) map.set(r.id, r);
   for (const r of b) {
     if (!r || !r.id) continue;
+    /* ⚠ CLOCK-SKEW GUARD (Inès, board post #127): per-record LWW assumes the writers agree what time it
+       is. A phone minutes FAST wins every fight it's in — including against edits made after it — and the
+       merge can't see it; every record looks like a fair fight. So an incoming stamp beyond now+2min is
+       treated as a broken clock, not a newer edit: clamp to receipt time. The record still lands (nothing
+       is ever dropped), it just can't win against genuinely later edits forever. */
+    if ((+r.updatedAt || 0) > cap) r.updatedAt = Date.now();
     const cur = map.get(r.id);
     if (!cur || (r.updatedAt || 0) >= (cur.updatedAt || 0)) map.set(r.id, r);
   }

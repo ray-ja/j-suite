@@ -17,6 +17,22 @@ const m = t.mergeState(stored, incoming);
 ok("all collections present on obx", ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock"].every(k => Array.isArray(m.obx[k])), Object.keys(m.obx));
 ok("jam org preserved when incoming omits it (never-drop-an-org)", m.jam && Array.isArray(m.jam.customers) && !!m.jam.customers.find(x => x.id === "jc1"), m.jam);
 
+console.log("\n— clock-skew guard: a future-stamped record can't win LWW fights forever (Inès, board #127) —");
+(function () {
+  const FUTURE = Date.now() + 3600000;               // an hour ahead — a broken phone clock
+  const stored = { obx: { customers: [{ id: "ck1", name: "Real", updatedAt: 50 }] } };
+  const m1 = t.mergeState(stored, { obx: { customers: [{ id: "ck1", name: "FastClock", updatedAt: FUTURE }] } });
+  const r1 = m1.obx.customers.find(x => x.id === "ck1");
+  ok("future-stamped record still LANDS (nothing dropped) and wins over the old copy", r1.name === "FastClock");
+  ok("…but its stamp is CLAMPED to receipt time, not kept an hour in the future", r1.updatedAt <= Date.now() + 130000, r1.updatedAt);
+  const m2 = t.mergeState(m1, { obx: { customers: [{ id: "ck1", name: "LaterRealEdit", updatedAt: Date.now() + 60000 }] } });
+  ok("a genuinely later edit (within honest skew) BEATS the clamped fast-clock record", m2.obx.customers.find(x => x.id === "ck1").name === "LaterRealEdit");
+  ok("normal past stamps pass through byte-identical (no clamp below the skew cap)", (() => {
+    const mm = t.mergeState({ obx: { customers: [] } }, { obx: { customers: [{ id: "n1", updatedAt: 12345 }] } });
+    return mm.obx.customers.find(x => x.id === "n1").updatedAt === 12345;
+  })());
+})();
+
 console.log("\n— multi-org (Phase 1): dynamic orgs + registry —");
 ok("orgIdsOf lists org keys, excludes users/registry", JSON.stringify(t.orgIdsOf({ obx: {}, jam: {}, users: [], registry: [] }).sort()) === JSON.stringify(["jam", "obx"]));
 const moA = t.mergeState({ obx: { customers: [{ id: "oc", updatedAt: 5 }] }, jam: { customers: [{ id: "jcx", updatedAt: 5 }] } }, { escaperoom: { customers: [{ id: "ec", updatedAt: 5 }] } });
