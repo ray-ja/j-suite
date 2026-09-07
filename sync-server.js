@@ -2008,7 +2008,12 @@ function mergeColl(a = [], b = []) {
        merge can't see it; every record looks like a fair fight. So an incoming stamp beyond now+2min is
        treated as a broken clock, not a newer edit: clamp to receipt time. The record still lands (nothing
        is ever dropped), it just can't win against genuinely later edits forever. */
-    if ((+r.updatedAt || 0) > cap) r.updatedAt = Date.now();
+    if ((+r.updatedAt || 0) > cap) {
+      /* log every clamp (Inès, board #141): a silent normalization erases the evidence that a device's
+         clock is broken — the clamp event IS the forensics on the day someone asks "why did my edit lose". */
+      console.log("[skew] clamped future stamp on " + r.id + " (+" + Math.round(((+r.updatedAt || 0) - cap) / 1000) + "s beyond allowance)");
+      r.updatedAt = Date.now();
+    }
     const cur = map.get(r.id);
     if (!cur || (r.updatedAt || 0) >= (cur.updatedAt || 0)) map.set(r.id, r);
   }
