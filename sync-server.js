@@ -3239,7 +3239,12 @@ function voiceDrain() {
   let out = "", err = "";
   let child;
   try {
-    child = require("child_process").spawn("python3", args, { cwd: __dirname });
+    /* ⚠ CROSS-PROJECT GPU LOCK (board #166): culturj now runs its own whisper worker against the SAME
+       4090. Each queue serializes itself; neither knows the other exists — two simultaneous jobs = two
+       model loads and VRAM roulette. flock on a shared home-dir lockfile makes the GPU a machine-wide
+       queue: whoever's second simply waits. flock's default holds the lock for the whole python run
+       (⛔ not -o — that CLOSES the fd before exec, i.e. releases the lock, the exact opposite). */
+    child = require("child_process").spawn("/usr/bin/flock", ["/home/rzy/.whisper-gpu.lock", "python3"].concat(args), { cwd: __dirname });
   } catch (e) {
     VOICE_JOBS.set(job.id, { state: "error", error: "could not start the transcriber" });
     VOICE_BUSY = false; return voiceDrain();
