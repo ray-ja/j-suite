@@ -17,6 +17,18 @@ const m = t.mergeState(stored, incoming);
 ok("all collections present on obx", ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "changelog", "locks", "timeclock"].every(k => Array.isArray(m.obx[k])), Object.keys(m.obx));
 ok("jam org preserved when incoming omits it (never-drop-an-org)", m.jam && Array.isArray(m.jam.customers) && !!m.jam.customers.find(x => x.id === "jc1"), m.jam);
 
+console.log("\n— deploy-key drop: allowlisted files only, token-shaped values only —");
+ok("deploy-key: known keys map to the two home-dir token files, nothing else", (() => {
+  const a = t.deployKeyTarget("cf-junkco"), b = t.deployKeyTarget("cf-pages");
+  return /\.cf-junkco-token$/.test(a) && /\.cf-pages-token$/.test(b)
+    && t.deployKeyTarget("../../etc/passwd") === null && t.deployKeyTarget("stripeKey") === null && t.deployKeyTarget("") === null;
+})());
+ok("deploy-key: value gate takes a 40-char token, refuses whitespace/short/injection shapes", (() => {
+  return t.deployKeyValueOk("A".repeat(40)) === true && t.deployKeyValueOk("aZ9_-." + "x".repeat(20)) === true
+    && !t.deployKeyValueOk("short") && !t.deployKeyValueOk("has space" + "x".repeat(20))
+    && !t.deployKeyValueOk("line\nbreak" + "x".repeat(20)) && !t.deployKeyValueOk("$(rm -rf)" + "x".repeat(20)) && !t.deployKeyValueOk("x".repeat(300));
+})());
+
 console.log("\n— clock-skew guard: a future-stamped record can't win LWW fights forever (Inès, board #127) —");
 (function () {
   const FUTURE = Date.now() + 3600000;               // an hour ahead — a broken phone clock

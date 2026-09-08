@@ -2615,6 +2615,13 @@ function stripeCall(key, path2, form, cb) {
 /* Verify a Stripe webhook signature (the "Stripe-Signature" header) against the raw body + the webhook signing
    secret (whsec_…). HMAC-SHA256 of "t.rawBody", timing-safe compared to the v1 signatures, with a 15-min tolerance
    (replay guard + clock skew). No Stripe SDK needed. Returns true only on a genuine, fresh Stripe event. */
+/* deploy-key file targets — the ONLY files /api/config/deploykey may write. Pure + exported for tests. */
+function deployKeyTarget(key) {
+  const home = require("os").homedir();
+  const T = { "cf-junkco": path.join(home, ".cf-junkco-token"), "cf-pages": path.join(home, ".cf-pages-token") };
+  return T[key] || null;
+}
+function deployKeyValueOk(v) { return typeof v === "string" && /^[A-Za-z0-9_.\-]{20,200}$/.test(v); }
 function verifyStripeSig(raw, header, secret) {
   if (!raw || !header || !secret) return false;
   let t = null; const v1 = [];
@@ -4174,6 +4181,46 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* DEPLOY KEYS — the Cloudflare API tokens live in FILES under ~ (wrangler reads them at deploy time),
+     not in ceo-config. Same one-way contract as /api/config/secret — superAdmin only, allowlisted targets
+     only (never a client-supplied path), value never returned or logged — PLUS the route verifies the
+     value against Cloudflare's own /user/tokens/verify and reports cfValid, so a bad paste is caught at
+     save time instead of at the next failed deploy (Ray 2026-09-08: 53-char non-tokens sat in these files
+     for over a week looking fine). */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/config/deploykey") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    readBodyUtf8(req, 8192, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const target = deployKeyTarget(p && p.key);
+      const value = String((p && p.value) || "").trim();
+      if (!target || !deployKeyValueOk(value)) {
+        res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"not allowed — expected a single-line API token (letters/digits/_-.), 20-200 chars"}');
+      }
+      try {
+        const tmp = target + ".tmp";
+        fs.writeFileSync(tmp, value + "\n", { mode: 0o600 });
+        fs.renameSync(tmp, target);
+        try { fs.chmodSync(target, 0o600); } catch (e) {}
+      } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
+      /* verify against Cloudflare itself — best-effort: cfValid true/false, or null when CF is unreachable */
+      let sent = false;
+      const answer = (cfValid) => { if (sent) return; sent = true; res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify({ ok: true, cfValid: cfValid })); };
+      try {
+        const vr = https.request("https://api.cloudflare.com/client/v4/user/tokens/verify", { headers: { "Authorization": "Bearer " + value } }, (resp) => {
+          let s = ""; resp.on("data", (d) => s += d);
+          resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} answer(!!(j && j.success)); });
+        });
+        vr.on("error", () => answer(null));
+        vr.setTimeout(10000, () => { try { vr.destroy(); } catch (e) {} answer(null); });
+        vr.end();
+      } catch (e) { answer(null); }
+    });
+    return;
+  }
+
   // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
@@ -5104,4 +5151,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

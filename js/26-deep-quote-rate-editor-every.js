@@ -114,6 +114,14 @@ function rData(){
       <div class="sub" style="margin:2px 0 4px;white-space:normal">The <code>whsec_…</code> from a Stripe webhook pointed at <code>/api/stripe/webhook</code> (event <b>checkout.session.completed</b>). Lets the app auto-mark an invoice PAID the moment the customer pays.</div>
       <input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save webhook secret</button>
+      <label style="margin:16px 0 0">Cloudflare deploy key — OBX sites account</label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">The API token from the <b>Ray@obxlotsolutions.com</b> Cloudflare account (junk co, Jamieson, lot solutions, home watch). Saved to the server's deploy-key file and <b>checked against Cloudflare on the spot</b> — you'll know immediately if the paste is wrong.</div>
+      <input type="password" id="in_cfJunkco" placeholder="40-character API token" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-junkco','in_cfJunkco')">Save &amp; verify OBX-account key</button>
+      <label style="margin:16px 0 0">Cloudflare deploy key — Gmail account</label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">The API token from the <b>Gmail</b> Cloudflare account (holiday lights, milepost domain).</div>
+      <input type="password" id="in_cfPages" placeholder="40-character API token" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-pages','in_cfPages')">Save &amp; verify Gmail-account key</button>
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
@@ -300,6 +308,23 @@ window.saveSecret=function(key,inputId){
   fetch(base+"/api/config/secret",{method:"POST",headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{}),body:JSON.stringify({key:key,value:v})})
     .then(r=>r.json())
     .then(d=>{ if(d&&d.ok){ el.value=""; loadSecStatus(); alert("Saved ✓ — written to the server. It never passed through anyone else."); } else { alert("Save failed: "+((d&&d.error)||"unknown")); } })
+    .catch(()=>alert("Save failed — are you online?"));
+};
+/* like saveSecret, but for the Cloudflare deploy-key FILES — and the server verifies the pasted value
+   against Cloudflare itself before answering, so a bad paste is caught here, not at the next deploy. */
+window.saveDeployKey=function(key,inputId){
+  const el=document.getElementById(inputId); if(!el)return; const v=(el.value||"").trim();
+  if(!v){alert("Paste the token first.");return;}
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/config/deploykey",{method:"POST",headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{}),body:JSON.stringify({key:key,value:v})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(!(d&&d.ok)){alert("Save failed: "+((d&&d.error)||"unknown"));return;}
+      el.value="";
+      if(d.cfValid===true)alert("Saved ✓ and Cloudflare confirms the token is VALID. Deploys are unblocked.");
+      else if(d.cfValid===false)alert("Saved — but Cloudflare REJECTED it as invalid. Double-check you copied the token VALUE (shown once at create/roll), not the token ID, and that it's from the right account.");
+      else alert("Saved ✓ — couldn't reach Cloudflare to verify just now; it'll be tested at the next deploy.");
+    })
     .catch(()=>alert("Save failed — are you online?"));
 };
 window.importData=function(inp){
