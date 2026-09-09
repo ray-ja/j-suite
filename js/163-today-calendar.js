@@ -84,9 +84,12 @@ function tcalItemsFor(iso) {
     (typeof actEvents === "function" ? actEvents() : []).forEach(function (e) {
       var when = (typeof evNextISO === "function") ? evNextISO(e) : e.date;
       if (when !== iso) return;
+      /* ⭐ the event's OWN colour when it has one (js/126), else the long-standing personal-event purple —
+         so a colour chosen on the Calendar tab means the same thing here instead of being flattened away. */
       out.push({ kind: "event", title: e.title || "Event", note: e.note || "",
         mins: tcalMins(e.time), endMins: tcalMins(e.endTime),
-        confirmed: e.confirmed !== false, tab: "cal", color: "#7c5cff" });
+        confirmed: e.confirmed !== false, tab: "cal",
+        color: (typeof evColor === "function") ? evColor(e) : (e.color || "#7c5cff") });
     });
   } catch (e) {}
   /* ⭐⭐ TO-DOS SIT ON THE DAY HE PLANNED THEM, FALLING BACK TO THE DAY THEY'RE DUE.

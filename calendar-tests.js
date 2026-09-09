@@ -256,5 +256,95 @@ console.log("\n--- BILLS ON THE CALENDAR ---");
   ok("...and dims days already past", /opacity:\.45/.test(grid));
 }
 
+/* ---- Ray, 2026-09-09: "click on a calendar day to add a new event with an optional time, color, etc." --
+   Three things had to be true and only one of them was: the time fields already existed, colour did not,
+   and tapping a day cost a second tap to reach the add form. */
+console.log("\n--- COLOUR + tap-a-day-to-add ---");
+{
+  const els = {};
+  let opened = null, modalTitle = "", modalBody = "";
+  const store = { personalEvents: [
+    { id: "e1", date: "2026-08-16", title: "Wife's birthday", annual: true, confirmed: true, color: "#d4489b" },
+    { id: "e2", date: "2026-08-22", title: "Party", confirmed: true, time: "14:00", endTime: "16:30" },
+    { id: "e3", date: "2026-08-19", title: "Old event, no colour", confirmed: true }
+  ], budgetBills: [] };
+  const c = {
+    console, JSON, Math, Date, String, Number, Array, Object,
+    today: () => "2026-08-05", esc: x => String(x == null ? "" : x), fmtDate: d => d,
+    D: () => store,
+    modal: (t, b) => { modalTitle = t; modalBody = b; },
+    closeModal: () => {}, render: () => {}, save: () => {}, touch: () => {}, uid: () => "zzz",
+    alert: m => { throw new Error("alert: " + m); },
+    setTimeout: fn => { try { fn(); } catch (e) {} },   // the autofocus hop; run it inline
+    document: {
+      getElementById: id => (els[id] = els[id] || { innerHTML: "", value: "", focus() {} }),
+      querySelectorAll: () => []
+    }
+  };
+  c.window = c; c.view = { innerHTML: "" };
+  vm.createContext(c); vm.runInContext(CAL, c);
+
+  /* --- colour resolves, and stays optional forever --- */
+  eq("a chosen colour is used", c.evColor(store.personalEvents[0]), "#d4489b");
+  eq("an event with NO colour falls back, it is not broken", c.evColor({ id: "x" }), "#7c5cff");
+  eq("...and so does an empty string", c.evColor({ color: "" }), "#7c5cff");
+
+  /* --- optional times read as times, and all-day stays silent --- */
+  eq("a start+end reads as a range", c.evTimeLabel(store.personalEvents[1]), "2pm – 4:30pm");
+  eq("a start alone is enough", c.evTimeLabel({ time: "09:05" }), "9:05am");
+  eq("midnight is 12am, not 0am", c.evTimeLabel({ time: "00:30" }), "12:30am");
+  eq("noon is 12pm, not 0pm", c.evTimeLabel({ time: "12:00" }), "12pm");
+  eq("an all-day event says NOTHING about time", c.evTimeLabel({ id: "x" }), "");
+
+  /* --- the grid paints each event in its own colour --- */
+  const grid = c.calMonthHTML();
+  ok("the grid carries the chosen colour", grid.indexOf("#d4489b") > 0);
+  ok("...and the default for the one without", grid.indexOf("#7c5cff") > 0);
+
+  /* --- ⭐ tapping an EMPTY day goes straight to the add form, no interstitial --- */
+  c.openEvent = function (id, iso) { opened = { id: id, iso: iso }; };
+  c.calOpenDay("2026-08-07");
+  ok("an empty day opens the add form directly", opened && opened.id === null, JSON.stringify(opened));
+  eq("...pre-dated to the day that was tapped", opened.iso, "2026-08-07");
+  eq("...and does NOT show a 'nothing here' sheet first", modalTitle, "");
+
+  /* --- a day that HAS something still shows it first --- */
+  opened = null;
+  c.calOpenDay("2026-08-22");
+  eq("a day with an event opens the day sheet", modalTitle, "2026-08-22");
+  ok("...listing what's on it", modalBody.indexOf("Party") > 0);
+  ok("...with the time visible", modalBody.indexOf("2pm – 4:30pm") > 0);
+  ok("...and an add button for that same day", modalBody.indexOf("openEventOn('2026-08-22')") > 0);
+  ok("...without having jumped to the form", opened === null);
+
+  /* --- the preset date reaches the field, and is not eaten by evNextISO --- */
+  vm.runInContext(CAL, c);   // restore the real openEvent
+  c.openEvent(null, "2026-12-25");
+  ok("a new event's date field is preloaded", modalBody.indexOf('id="ev_date" type="date" value="2026-12-25"') > 0,
+     (modalBody.match(/id="ev_date"[^>]*/) || [""])[0]);
+  ok("the colour swatches are offered", (modalBody.match(/class="evcolor"/g) || []).length === c.EV_COLORS.length);
+  ok("...including a way to choose none", modalBody.indexOf("evPickColor('')") > 0);
+  ok("the optional time fields are still there", modalBody.indexOf('id="ev_time"') > 0 && modalBody.indexOf('id="ev_end"') > 0);
+
+  /* editing an ANNUAL event still shows its NEXT occurrence, not the year it was entered */
+  c.openEvent("e1");
+  ok("an annual birthday still rolls to its next date", modalBody.indexOf('value="2026-08-16"') > 0,
+     (modalBody.match(/id="ev_date"[^>]*/) || [""])[0]);
+
+  /* --- a colour off the palette can never reach the DOM --- */
+  els["ev_title"] = { value: "Injected" };
+  els["ev_date"] = { value: "2026-10-01" };
+  els["ev_time"] = { value: "" }; els["ev_end"] = { value: "" }; els["ev_note"] = { value: "" };
+  els["ev_color"] = { value: '#fff" onload="alert(1)' };
+  els["ev_annual"] = { checked: false }; els["ev_unsure"] = { checked: false };
+  c.saveEvent("");
+  const saved = store.personalEvents.find(e => e.title === "Injected");
+  eq("an off-palette colour is refused, not stored", saved.color, "");
+  els["ev_color"] = { value: "#12a594" };
+  els["ev_title"] = { value: "Legit" };
+  c.saveEvent("");
+  eq("a palette colour saves fine", store.personalEvents.find(e => e.title === "Legit").color, "#12a594");
+}
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");
 process.exit(fail ? 1 : 0);

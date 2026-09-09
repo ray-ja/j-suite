@@ -17,6 +17,38 @@
 
 function actEvents() { return (D().personalEvents || []).filter(function (e) { return e && !e.deleted; }); }
 
+/* ---- COLOUR ----------------------------------------------------------------------------------------
+   Ray, 2026-09-09: "click on a calendar day to add a new event with an optional time, color, etc."
+
+   ⛔ OPTIONAL, LIKE THE TIME. An event with no colour is not broken — it is the normal case, and every
+   event already stored predates this field. So a blank/absent colour resolves to the same purple js/163
+   has always drawn personal events in, and nothing that exists has to be edited to keep looking right.
+
+   ⚠️ The palette deliberately avoids re-using the OTHER kinds' colours on the Today calendar (to-do amber
+   #e0a800, bill orange #e8683f, job green #1e9e5a). Colour there means "what kind of thing is this"; if a
+   birthday could be job-green the whole legend stops meaning anything. These are distinguishable hues
+   picked to stay legible on both the light and dark grounds. */
+var EV_COLOR_DEF = "#7c5cff";                                   // the long-standing personal-event purple
+var EV_COLORS = ["#7c5cff", "#0099e5", "#12a594", "#d98a00", "#d4489b", "#c0392b", "#5b6bd6", "#7f8c8d"];
+function evColor(e) { return (e && e.color) || EV_COLOR_DEF; }
+function evDot(e, size) {
+  var s = size || 8;
+  return '<span style="flex:0 0 auto;width:' + s + 'px;height:' + s + 'px;border-radius:50%;background:'
+    + esc(evColor(e)) + ';display:inline-block"></span>';
+}
+/* "2pm", "2pm – 4:30pm", or "" for the all-day majority. Self-contained on purpose: js/163 has the same
+   formatter but loads AFTER this file, and a calendar that renders times shouldn't depend on load order. */
+function ev12h(t) {
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(t || "").trim()); if (!m) return "";
+  var h = +m[1], mm = +m[2], ap = h >= 12 ? "pm" : "am", h12 = h % 12; if (!h12) h12 = 12;
+  return h12 + (mm ? ":" + String(mm).padStart(2, "0") : "") + ap;
+}
+function evTimeLabel(e) {
+  var a = ev12h(e && e.time); if (!a) return "";
+  var b = ev12h(e && e.endTime);
+  return b ? a + " – " + b : a;
+}
+
 /* ---- date helpers (UTC-normalised so a timezone offset can't shift a birthday by a day) ---- */
 function evParse(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; }
 function evTodayUTC() { var p = evParse((typeof today === "function") ? today() : ""); if (p != null) return p; var d = new Date(); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()); }
@@ -148,8 +180,10 @@ function evHomeCardHTML(within) {
     + up.slice(0, 5).map(function (e) {
         var d = evDaysAway(e), soon = d <= 7;
         return '<div class="row" style="gap:8px;align-items:baseline;margin-top:5px">'
+          + evDot(e, 8)
           + '<div style="flex:0 1 auto;min-width:0;font-size:13.5px;overflow-wrap:anywhere'
-          +   (soon ? ';font-weight:700' : '') + '">' + esc(evLabel(e)) + '</div>'
+          +   (soon ? ';font-weight:700' : '') + '">' + esc(evLabel(e))
+          +   (evTimeLabel(e) ? ' <span class="sub" style="font-weight:400">· ' + esc(evTimeLabel(e)) + '</span>' : '') + '</div>'
           + '<div class="sub" style="flex:0 0 auto;font-size:11.5px' + (soon ? ';color:var(--danger);font-weight:700' : '') + '">' + esc(evCountdown(e)) + '</div>'
           + '<div class="grow"></div></div>'
           + (e.note ? '<div class="sub" style="white-space:normal;font-size:11.5px;margin-top:1px">' + esc(e.note) + '</div>' : '');
@@ -216,8 +250,11 @@ function calMonthHTML() {
       + '<div style="font-size:12.5px;line-height:1.2">' + day + '</div>'
       + ((evs.length || bills.length)
           ? '<div style="display:flex;gap:2px;justify-content:center;align-items:center;margin-top:2px">'
-            + evs.slice(0, 3).map(function () {
-                return '<span style="width:5px;height:5px;border-radius:50%;background:' + (isToday ? 'var(--accent-ink,#fff)' : 'var(--accent)') + ';display:inline-block"></span>';
+            /* the dot carries the event's OWN colour — that is the entire point of choosing one. On the
+               today cell the accent background would swallow a mid-tone dot, so those stay high-contrast. */
+            + evs.slice(0, 3).map(function (e) {
+                return '<span style="width:5px;height:5px;border-radius:50%;background:'
+                  + (isToday ? 'var(--accent-ink,#fff)' : esc(evColor(e))) + ';display:inline-block"></span>';
               }).join("")
             + (bills.length ? '<span style="font-size:8px;line-height:1;opacity:.85">💵</span>' : '')
             + '</div>'
@@ -253,8 +290,10 @@ function calMonthHTML() {
   if (inMonth.length) {
     h += '<div class="card" style="padding:6px 10px">' + inMonth.map(function (x) {
       return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openEvent(\'' + x.e.id + '\')">'
+        + '<div class="row" style="gap:7px;align-items:baseline;flex:0 0 auto;padding-top:5px">' + evDot(x.e, 9) + '</div>'
         + '<div class="grow"><div class="nm">' + esc(evLabel(x.e)) + '</div>'
         + '<div class="sub">' + esc((typeof fmtDate === "function") ? fmtDate(x.iso) : x.iso)
+        + (evTimeLabel(x.e) ? ' · ' + esc(evTimeLabel(x.e)) : '')
         + (x.iso === todayISO ? ' · today' : '') + '</div>'
         + (x.e.note ? '<div class="sub" style="white-space:normal;margin-top:2px">' + esc(x.e.note) + '</div>' : '')
         + '</div></div>';
@@ -268,12 +307,20 @@ function calMonthHTML() {
 /* tapping a day: show it, and offer to add on that date */
 if (typeof window !== "undefined") window.calOpenDay = function (iso) {
   var evs = evOnDay(iso), bills = calBillsOnDay(iso);
+  /* ⭐ AN EMPTY DAY GOES STRAIGHT TO THE ADD FORM. Ray, 2026-09-09: "i want to be able to click on a
+     calendar day to add a new event". Tapping an empty square used to open a sheet whose entire content was
+     "Nothing on this day" and a button — a full extra tap to be told nothing, on the exact gesture whose
+     only possible intent is to add something. A day that HAS things still shows them first: there the tap
+     is ambiguous (read or add?) and the sheet answers both, with the add button at the bottom. */
+  if (!evs.length && !bills.length) return window.openEventOn(iso);
   var pretty = (typeof fmtDate === "function") ? fmtDate(iso) : iso;
   modal(pretty,
     (evs.length
       ? evs.map(function (e) {
           return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="closeModal();openEvent(\'' + e.id + '\')">'
+            + '<div class="row" style="gap:7px;align-items:baseline;flex:0 0 auto;padding-top:5px">' + evDot(e, 9) + '</div>'
             + '<div class="grow"><div class="nm">' + esc(evLabel(e)) + '</div>'
+            + (evTimeLabel(e) ? '<div class="sub">' + esc(evTimeLabel(e)) + '</div>' : '')
             + (e.annual ? '<div class="sub">every year</div>' : '')
             + (e.note ? '<div class="sub" style="white-space:normal">' + esc(e.note) + '</div>' : '')
             + '</div></div>';
@@ -289,10 +336,10 @@ if (typeof window !== "undefined") window.calOpenDay = function (iso) {
     + ((!evs.length && !bills.length) ? '<div class="muted" style="font-size:13px">Nothing on this day.</div>' : '')
     + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal();openEventOn(\'' + iso + '\')">+ Add on this day</button>');
 };
-if (typeof window !== "undefined") window.openEventOn = function (iso) {
-  window.openEvent(null);
-  setTimeout(function () { var el = document.getElementById("ev_date"); if (el) el.value = iso; }, 80);
-};
+/* ⚠️ WAS A RACE. This used to open the blank form and then poke the date in 80ms later from a setTimeout —
+   so the value depended on the modal having painted in time, and on a slow phone the tapped day was simply
+   lost. The date is an ARGUMENT now; it is set in the same breath as the markup and cannot miss. */
+if (typeof window !== "undefined") window.openEventOn = function (iso) { window.openEvent(null, iso); };
 
 /* ---- the tab ---- */
 function rCal() {
@@ -320,9 +367,10 @@ function rCal() {
     h += '<div class="card" style="padding:6px 10px">' + future.map(function (x) {
       var e = x.e, soon = x.d <= 7;
       return '<div class="li" style="align-items:flex-start;cursor:pointer" onclick="openEvent(\'' + e.id + '\')">'
+        + '<div class="row" style="gap:7px;align-items:baseline;flex:0 0 auto;padding-top:5px">' + evDot(e, 9) + '</div>'
         + '<div class="grow"><div class="nm"' + (soon ? ' style="color:var(--danger)"' : '') + '>' + esc(evLabel(e))
         + (e.annual ? ' <span class="sub" style="font-weight:400">· every year</span>' : '') + '</div>'
-        + '<div class="sub">' + esc(evWhen(e)) + '</div>'
+        + '<div class="sub">' + esc(evWhen(e)) + (evTimeLabel(e) ? ' · ' + esc(evTimeLabel(e)) : '') + '</div>'
         + (e.note ? '<div class="sub" style="white-space:normal;margin-top:2px">' + esc(e.note) + '</div>' : '')
         + '</div></div>';
     }).join("") + '</div>';
@@ -332,14 +380,25 @@ function rCal() {
 if (typeof window !== "undefined") window.rCal = rCal;
 
 /* ---- add / edit ---- */
-if (typeof window !== "undefined") window.openEvent = function (id) {
+if (typeof window !== "undefined") window.openEvent = function (id, presetISO) {
   var e = id ? actEvents().find(function (x) { return x.id === id; }) : null;
   var isNew = !e;
-  e = e || { id: "", date: (typeof today === "function") ? today() : "", title: "", note: "", annual: false, confirmed: true };
+  e = e || { id: "", date: presetISO || ((typeof today === "function") ? today() : ""), title: "", note: "", annual: false, confirmed: true };
+  /* ⚠️ A PRESET DATE MUST SURVIVE evNextISO. The date field below normally shows evNextISO(e) so an annual
+     birthday displays its NEXT occurrence rather than the year it was born. For a brand-new event opened
+     from a tapped day there is no "next occurrence" to compute — the tapped day IS the answer — and running
+     it through evNextISO on an empty record returns "", which silently blanked the date the tap just set. */
+  var dateVal = (isNew && presetISO) ? presetISO : (evNextISO(e) || e.date || "");
+  var curColor = e.color || "";
+  var swatches = EV_COLORS.map(function (c) {
+    return '<button type="button" class="evcolor" data-color="' + c + '" onclick="evPickColor(\'' + c + '\')" '
+      + 'style="width:30px;height:30px;border-radius:50%;background:' + c + ';cursor:pointer;'
+      + 'border:3px solid ' + (curColor === c ? "var(--ink,#111)" : "transparent") + '"></button>';
+  }).join(" ");
   modal(isNew ? "Add a date" : "Date", ''
     + '<label style="margin-top:0">What is it?</label><input id="ev_title" value="' + esc(e.title || "") + '" placeholder="e.g. Jess\'s birthday" autocomplete="off" '
     + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveEvent(\'' + (e.id || "") + '\');}">'
-    + '<label>Date</label><input id="ev_date" type="date" value="' + esc(evNextISO(e) || e.date || "") + '">'
+    + '<label>Date</label><input id="ev_date" type="date" value="' + esc(dateVal) + '">'
     /* ⭐ OPTIONAL TIMES. Ray, 2026-08-27, asked for a day view "showing times" — and nothing in this app
        carried one, so every record was all-day and a day view would have been a list with extra lines.
        ⛔ Both fields stay optional forever: a birthday has no time and must never need editing to keep
@@ -350,6 +409,11 @@ if (typeof window !== "undefined") window.openEvent = function (id) {
     +   '<div class="grow"><label>Ends <span class="sub">(optional)</span></label>'
     +     '<input id="ev_end" type="time" value="' + esc(e.endTime || "") + '"></div>'
     + '</div>'
+    + '<label>Colour <span class="sub">(optional)</span></label>'
+    + '<input type="hidden" id="ev_color" value="' + esc(curColor) + '">'
+    + '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:2px">' + swatches
+    +   '<button type="button" class="btn ghost sm" style="flex:0 0 auto" onclick="evPickColor(\'\')">None</button>'
+    + '</div>'
     + '<label>Note</label><input id="ev_note" value="' + esc(e.note || "") + '" placeholder="optional — e.g. wants floats for the sound" autocomplete="off" '
     + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();saveEvent(\'' + (e.id || "") + '\');}">'
     + '<label class="toggle" style="margin-top:10px"><input type="checkbox" id="ev_annual" ' + (e.annual ? "checked" : "") + '> Repeats every year</label>'
@@ -357,6 +421,12 @@ if (typeof window !== "undefined") window.openEvent = function (id) {
     + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="saveEvent(\'' + (e.id || "") + '\')">Save</button>'
     + (isNew ? '' : '<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delEvent(\'' + e.id + '\')">Delete</button>'));
   setTimeout(function () { var el = document.getElementById("ev_title"); if (el) el.focus(); }, 60);
+};
+if (typeof window !== "undefined") window.evPickColor = function (c) {
+  var h = document.getElementById("ev_color"); if (h) h.value = c || "";
+  Array.prototype.forEach.call(document.querySelectorAll(".evcolor"), function (btn) {
+    btn.style.border = "3px solid " + (btn.getAttribute("data-color") === c ? "var(--ink,#111)" : "transparent");
+  });
 };
 if (typeof window !== "undefined") window.saveEvent = function (id) {
   var g = function (x) { var el = document.getElementById(x); return el ? (el.value || "").trim() : ""; };
@@ -370,6 +440,9 @@ if (typeof window !== "undefined") window.saveEvent = function (id) {
   e.time = g("ev_time") || "";            // blank = all-day, which is most of them
   e.endTime = g("ev_end") || "";
   e.note = g("ev_note").slice(0, 160);
+  /* only accept a colour from the palette — a hand-edited hidden field can't inject markup into the dots */
+  var col = g("ev_color");
+  e.color = (EV_COLORS.indexOf(col) >= 0) ? col : "";
   e.annual = ck("ev_annual");
   e.confirmed = !ck("ev_unsure");
   e.deleted = false;
@@ -391,5 +464,6 @@ if (typeof window !== "undefined") {
   window.actEvents = actEvents; window.evUpcoming = evUpcoming; window.evHomeCardHTML = evHomeCardHTML;
   window.evNextISO = evNextISO; window.evDaysAway = evDaysAway; window.evCountdown = evCountdown;
   window.evOnDay = evOnDay; window.calMonthHTML = calMonthHTML;
+  window.evColor = evColor; window.evDot = evDot; window.evTimeLabel = evTimeLabel; window.EV_COLORS = EV_COLORS;
 }
 if (typeof module !== "undefined" && module.exports) module.exports = { evNextISO: evNextISO, evDaysAway: evDaysAway, evCountdown: evCountdown };
