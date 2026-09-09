@@ -181,9 +181,18 @@ function tcalMonthHTML(ym) {
     var past = iso < today;
     var cls = "tcal-d" + (iso === today ? " tcal-now" : "") + (past ? " tcal-past" : "");
     /* ⭐ EVERY DAY IS A DROP TARGET for a to-do dragged off Today (js/168). Dropping sets `planDate` — the
-       day he intends to do it — and never the deadline. ⛔ The cell stays read-only in every other respect:
-       nothing here creates or edits a record, the drop just calls the same ttdSchedule() the 📅 button does. */
+       day he intends to do it — and never the deadline. The drop just calls the same ttdSchedule() the 📅
+       button does.
+
+       ⭐⭐ AND EVERY DAY IS TAPPABLE. Ray, 2026-09-09: "im tapping on the days here nothing happens." He was
+       right and this is the calendar he actually looks at — the Calendar TAB had grown tap-to-add while this
+       grid, the one on his home page, stayed inert. ⚠️ It cannot just call the tab's calOpenDay: that one
+       only knows about events and bills, so tapping a day holding a JOB would have read as empty and jumped
+       straight to a blank add form, hiding the job. tcalOpenDay below reads the same tcalItemsFor() this
+       grid is drawn from, so what the sheet says matches what the cell shows.
+       (A drag never fires click, so this does not collide with the drop target above.) */
     h += '<div class="' + cls + '"'
+      + ' onclick="if(typeof tcalOpenDay===\'function\')tcalOpenDay(\'' + iso + '\')"'
       + ' ondragover="if(typeof ttdDragOver===\'function\')ttdDragOver(event)"'
       + ' ondragleave="if(typeof ttdDragLeave===\'function\')ttdDragLeave(event)"'
       + ' ondrop="if(typeof ttdDrop===\'function\')ttdDrop(event,\'' + iso + '\')"'
@@ -293,6 +302,39 @@ if (typeof window !== "undefined") {
   window.tcalHTML = tcalHTML; window.tcalDaysHTML = tcalDaysHTML; window.tcalItemsFor = tcalItemsFor; window.tcalDayHTML = tcalDayHTML;
   window.tcalMonthHTML = tcalMonthHTML; window.tcalMins = tcalMins; window.tcalClock = tcalClock;
   window.tcalShift = tcalShift; window.tcalBillName = tcalBillName; window.tcalShort = tcalShort; window.tcalAmt = tcalAmt; window.tcalAddMonths = tcalAddMonths; window.tcalToday = tcalToday;
+  /* ---- tapping a day on the month grid ------------------------------------------------------------
+     Empty day → straight to the add form, pre-dated (same gesture as the Calendar tab; the only possible
+     intent on an empty square is to put something there). A day that HAS things shows them first, because
+     there the tap is ambiguous — he might be reading, not adding.
+
+     ⛔ STILL DOESN'T EDIT ANYTHING BUT ITS OWN EVENTS. Bills, jobs and to-dos are shown and hand off to the
+     screen that owns them, exactly as tcalGo has always done. Only a personal EVENT is created here, which
+     is the record this calendar is the home of. */
+  window.tcalOpenDay = function (iso) {
+    var items = [];
+    try { items = tcalItemsFor(iso); } catch (e) {}
+    if (!items.length) {
+      if (typeof openEventOn === "function") return openEventOn(iso);
+      return;
+    }
+    var pretty = (typeof fmtDate === "function") ? fmtDate(iso) : iso;
+    var rows = items.map(function (x) {
+      var right = x.kind === "bill" ? tcalAmt(x.amount) : (x.mins != null ? tcalClock(x.mins)
+        + (x.endMins != null ? " – " + tcalClock(x.endMins) : "") : "");
+      return '<div class="li" style="align-items:flex-start;gap:8px'
+        + (x.tab ? ';cursor:pointer" onclick="closeModal();tcalGo(\'' + esc(x.tab) + '\',\'' + esc(x.org || "") + '\')"' : '"')
+        + '>'
+        + '<span style="flex:0 0 auto;width:4px;align-self:stretch;border-radius:2px;background:' + esc(x.color) + '"></span>'
+        + '<div class="grow"><div class="nm">' + esc(x.title) + (x.confirmed === false ? ' <span style="opacity:.7">?</span>' : '') + '</div>'
+        + (x.note ? '<div class="sub" style="white-space:normal">' + esc(x.note) + '</div>' : '')
+        + '</div>'
+        + (right ? '<div class="sub" style="flex:0 0 auto">' + esc(right) + '</div>' : '')
+        + '</div>';
+    }).join("");
+    modal(pretty, rows
+      + '<button class="btn acc" style="margin-top:12px;width:100%" onclick="closeModal();openEventOn(\'' + iso + '\')">+ Add on this day</button>');
+  };
+
   /* ⛔ a calendar sends him to the screen that OWNS the record — it never edits one itself */
   window.tcalGo = function (tab, org) {
     try {

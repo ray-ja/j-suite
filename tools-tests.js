@@ -558,6 +558,50 @@ console.log("\n--- 📅 the calendar on Today ---");
   ok("⭐ amounts read short: $2.4k, not $2,413", c.tcalAmt(2413) === "$2.4k" && c.tcalAmt(476.26) === "$476" && c.tcalAmt(650) === "$650");
   ok("⛔ a bill is a FORECAST — nothing about it is booked", !/budgetTx|ledgerIngest/.test(CODE(R("js/163-today-calendar.js"))));
 
+  /* ⭐⭐ TAPPING A DAY. Ray, 2026-09-09: "im tapping on the days here nothing happens." The Calendar TAB had
+     grown tap-to-add; this grid — the one on his home page, the one he actually looks at — stayed inert. */
+  {
+    const m2 = c.tcalMonthHTML("2026-08");
+    ok("⭐⭐ every day cell is tappable", /onclick="if\(typeof tcalOpenDay/.test(m2));
+    ok("⭐ ...and it carries the day it is", /tcalOpenDay\('2026-08-27'\)/.test(m2));
+    ok("⛔ the drop target still works — a drag and a tap are different gestures",
+      /ondrop="if\(typeof ttdDrop/.test(m2));
+
+    let shown = null, added = null;
+    c.modal = (t, b) => { shown = { t: t, b: b }; };
+    c.closeModal = () => {};
+    c.fmtDate = d => d;
+    c.openEventOn = iso => { added = iso; };
+
+    /* an EMPTY day goes straight to the add form — the only intent a tap on a blank square can have */
+    c.tcalOpenDay("2026-08-14");
+    ok("an empty day opens the add form, pre-dated", added === "2026-08-14", String(added));
+    ok("...with no 'nothing here' sheet on the way", shown === null);
+
+    /* a day with things shows them FIRST — there the tap is ambiguous */
+    added = null;
+    c.tcalOpenDay("2026-08-27");
+    ok("a day with items opens the day sheet instead", shown !== null && added === null);
+    ok("...listing what is actually on it", /Vera/.test(shown.b) && /Send the invoice/.test(shown.b));
+    ok("...with the time on the timed one", /2pm/.test(shown.b));
+    ok("...an unconfirmed event stays marked unconfirmed", /opacity:\.7/.test(shown.b));
+    ok("...and still offers to add on that day", /openEventOn\('2026-08-27'\)/.test(shown.b));
+
+    /* ⛔⛔ THE SHEET MUST AGREE WITH THE CELL. It reads tcalItemsFor, the same source the grid is drawn
+       from — so a day holding only a JOB is not mistaken for empty and silently replaced by a blank form. */
+    added = null; shown = null;
+    c.tcalOpenDay("2026-08-28");
+    ok("⛔⛔ a day holding only a cross-org JOB is NOT treated as empty",
+      shown !== null && added === null, JSON.stringify({ added: added, shown: !!shown }));
+    ok("...and the job is named in it", /Mike Green/.test(shown.b));
+
+    /* a bill day shows the money, and hands off to the screen that owns it */
+    added = null; shown = null;
+    c.tcalOpenDay("2026-09-01");
+    ok("a bill day shows the amount", /\$2\.4k/.test(shown.b), shown && shown.b.slice(0, 200));
+    ok("⛔ and links out to Budget rather than editing it here", /tcalGo\('budget'/.test(shown.b));
+  }
+
   const all = c.tcalHTML();
   /* ⛔ SUPERSEDED 2026-08-27. This asserted the calendar header totals two weeks of bills — which I put
      there, and then Ray rightly said "we dont need that we have a money area now". The total lives in the
@@ -905,8 +949,19 @@ console.log("\n--- 💵 the month ahead ---");
   vm.runInContext(R("js/165-month-outlook.js"), c5);
   const rent = c5.moRentDue();
   ok("⭐ rent is read from what ACTUALLY LANDED, not from the lease", rent && rent.amount === 2795, rent);
-  ok("⭐ ...on the day it actually tends to arrive", rent.day >= 28, rent.day);
-  ok("⭐ and it gets its own line, apart from the invoices", /Rent collection/.test(c5.monthOutlookHTML()));
+  /* ⭐⭐ ONE LINE PER TENANT (2026-09-08). Ray: "did you price in my mother in law paying 1500 / month
+     towards my rent?" — she was paying and the card couldn't see it. A single median across two payers
+     would have mispriced BOTH streams, so moRentDue groups arrivals by payer and patterns each on its own
+     evidence. `day`/`next` therefore live on a stream, and `amount` is the total across them. */
+  ok("⭐ ...on the day it actually tends to arrive", rent.streams[0].day >= 28, rent.streams[0].day);
+  ok("⭐ one stream here — one payer", rent.streams.length === 1, rent.streams.length);
+  /* ⚠️ NOT /Rent — /: the test store also has a BILL called "Rent — Ashley Belvin", so that matches the
+     bill line and would pass even with the rent-collection line deleted. Match the stream's own evidence
+     line, which nothing else on the card prints. */
+  ok("⭐ and it gets its own line, apart from the invoices",
+    /received so far, last on 2026-07-30/.test(c5.monthOutlookHTML()));
+  ok("⭐ ...with the day it is next expected, off its own history",
+    /due 2026-08-28/.test(c5.monthOutlookHTML()));
   const { c: c6, store: s6 } = mkMo();
   s6.p.budgetCats.push({ id: "c_rentinc", name: "Rent received", deleted: false });
   s6.p.budgetTx.push({ id: "one", accountId: "chk", date: "2026-07-30", amount: 2795, dir: "in",
@@ -931,7 +986,10 @@ console.log("\n--- ⛔ one number, one place ---");
      its own explanatory prose would pass forever regardless of the code. */
   ok("⛔ the calendar header no longer totals the bills", !/in the next two weeks/.test(CODE(t)));
   ok("⭐ the calendar still shows WHEN each one lands", /kind: "bill"/.test(CODE(t)));
-  ok("⭐ and the outlook card is where the total lives", /Bills due in 30 days/.test(R("js/165-month-outlook.js")));
+  /* ⚠️ the label moved 2026-09-08. Ray: "I would rather it be sectioned by calendar month" — a rolling
+     30-day window caught the 1st-of-month bills TWICE and read ~$3k high. It is "Bills left in <month>"
+     now; what this test is really guarding is that the TOTAL lives here and not on the calendar. */
+  ok("⭐ and the outlook card is where the total lives", /Bills left in /.test(R("js/165-month-outlook.js")));
   ok("⚠️ the duplication is written down so it isn't re-added", /Two places saying the same thing/.test(t));
 }
 

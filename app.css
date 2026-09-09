@@ -500,8 +500,11 @@
 .tcal-dow{font-size:10.5px;color:var(--muted);text-align:center;padding-bottom:3px;letter-spacing:.3px}
 /* ⭐ tall enough for three labels — a day cell that can only hold a dot is a day cell that says nothing */
 .tcal-d{min-height:70px;border-radius:6px;background:var(--soft);padding:3px 4px 4px;
-  display:flex;flex-direction:column;gap:2px;overflow:hidden}
-.tcal-d.tcal-pad{background:transparent}
+  display:flex;flex-direction:column;gap:2px;overflow:hidden;cursor:pointer}
+/* a tappable day should LOOK tappable — Ray tapped these for weeks before asking why nothing happened */
+.tcal-d:hover{background:var(--accent-soft)}
+.tcal-d.tcal-pad{background:transparent;cursor:default}
+.tcal-d.tcal-pad:hover{background:transparent}
 .tcal-d.tcal-past{opacity:.45}
 .tcal-d.tcal-now{outline:2px solid var(--accent)}
 .tcal-num{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;line-height:1}
