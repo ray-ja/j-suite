@@ -25,10 +25,15 @@ var TD_DUMP_MIN = 50;               // minutes per Soundside run
 var TD_CONSUM = { deck: 30, fence: 20, interior: 35, slab: 45, wall: 45 };   // blades/bags/fuel; concrete eats blades
 
 /* ---- pure calc (node-testable) -------------------------------------------------------------------- */
-/* debris lbs per type. inp: {area,lf,heightFt,thickIn,railLf,stairs,footings,fenceKind,gut} */
+/* debris lbs per type. inp: {area,lf,heightFt,thickIn,railLf,stairs,footings,fenceKind,gut,boatFt,hull,motor} */
 function tdWeight(type, inp) {
   inp = inp || {};
   var a = Math.max(0, +inp.area || 0), lf = Math.max(0, +inp.lf || 0);
+  if (type === "boat") {
+    /* hull weight per foot by construction: aluminum jon ~15, fiberglass skiff ~55, wood ~70 */
+    var perFt = inp.hull === "alu" ? 15 : inp.hull === "wood" ? 70 : 55;
+    return Math.round(Math.max(0, +inp.boatFt || 0) * perFt + (inp.motor ? 250 : 0));
+  }
   if (type === "deck")
     return Math.round(a * 8 + (+inp.railLf || 0) * 5 + (+inp.stairs || 0) * 150 + (+inp.footings || 0) * 60);
   if (type === "fence") {
@@ -44,6 +49,8 @@ function tdWeight(type, inp) {
 function tdBand(type, inp) {
   inp = inp || {};
   var a = Math.max(0, +inp.area || 0), lf = Math.max(0, +inp.lf || 0);
+  /* boat disposal market runs $400–1,800, length-driven (researched 2026-09-09) */
+  if (type === "boat") { var bf = Math.max(0, +inp.boatFt || 0); return [bf * 35, bf * 110, 400]; }
   if (type === "deck") return [a * 5, a * 12, 600];
   if (type === "fence") return [lf * 3, lf * 6, 400];
   if (type === "interior") return [a * (inp.gut ? 4 : 3), a * (inp.gut ? 8 : 6), 500];
@@ -55,16 +62,37 @@ function tdLoads(lbs) { return Math.max(1, Math.ceil(Math.max(0, +lbs || 0) / TD
 function tdWorkMin(type, inp, push) {
   inp = inp || {};
   var a = Math.max(0, +inp.area || 0), lf = Math.max(0, +inp.lf || 0);
-  var base = type === "deck" ? a * 3 : type === "fence" ? lf * 5 : type === "interior" ? a * (inp.gut ? 5 : 2.5)
+  var base = type === "boat" ? Math.max(0, +inp.boatFt || 0) * (inp.hull === "alu" ? 8 : inp.hull === "wood" ? 12 : 14)   // fiberglass cuts slowest
+    : type === "deck" ? a * 3 : type === "fence" ? lf * 5 : type === "interior" ? a * (inp.gut ? 5 : 2.5)
     : a * (8 + Math.max(0, (+inp.thickIn || 4) - 4));   // concrete: slower per inch past 4"
   return Math.round(base * (1 + (push || 0) * 0.5));
+}
+
+/* ---- BOAT PAPERWORK (Ray, 2026-09-09: "all of this should be built into the tool as reminders") ------
+   NC titles vessels 14 ft+ (and all PWC). The boat NEVER changes hands — we are a demo contractor
+   destroying the owner's property — so no title transfer. The verified NCWRC process:
+     · lien check is FREE: the lienholder is printed on the face of an NC title, and NCWRC runs a free
+       public online lookup (basic title/lien info) + phone confirm at 800-628-3773.
+     · a recorded lien = someone's loan collateral. Destroying collateral is the one real trap — needs a
+       notarized release from the lender first, or we walk.
+     · after destruction the OWNER reports the vessel destroyed/scrapped to NCWRC within 15 DAYS
+       (800-628-3773) — their call, not ours; the tool makes us remind them. */
+function tdBoatChecklist(titled) {
+  var items = [
+    ["Title/registration seen — name matches the customer", true],
+    ["Lien clear — check the title's lienholder line + NCWRC free lookup (800-628-3773)", titled],
+    ["Disposal authorization signed (Print button below)", true],
+    ["HIN plate photographed BEFORE and AFTER the cut", true],
+    ["⭐ Remind the owner: report it destroyed to NC Wildlife within 15 DAYS — 800-628-3773", titled]
+  ];
+  return items.filter(function (x) { return x[1]; }).map(function (x) { return x[0]; });
 }
 
 /* ---- UI ------------------------------------------------------------------------------------------- */
 /* node-requireable for teardown-tests.js: the pure calc above is the tested surface; the DOM handlers
    below land on a throwaway object when there is no window (same trick as the shared cwRead modules). */
 if (typeof window === "undefined") var window = {};
-var TD_TYPES = [["deck", "🪵 Deck"], ["fence", "🚧 Fence"], ["interior", "🧱 Interior strip-out"], ["slab", "🪨 Concrete slab"], ["wall", "🧊 Concrete wall"]];
+var TD_TYPES = [["deck", "🪵 Deck"], ["fence", "🚧 Fence"], ["interior", "🧱 Interior strip-out"], ["slab", "🪨 Concrete slab"], ["wall", "🧊 Concrete wall"], ["boat", "🛶 Boat"]];
 
 window.openTeardownEst = function () {
   if (!window._tdCrew) window._tdCrew = 2;
@@ -111,6 +139,13 @@ function tdFields() {
   } else if (t === "interior") {
     h = '<div class="row" style="gap:8px">' + num("td_l", "Room length (ft)", 15) + num("td_w", "Width (ft)", 12) + '</div>'
       + '<label>Scope</label><select id="td_gut" onchange="tdCalc()"><option value="light">Strip-out — flooring, trim, fixtures, cabinets</option><option value="gut">Full gut — down to studs (drywall out)</option></select>';
+  } else if (t === "boat") {
+    h = '<div class="row" style="gap:8px">' + num("td_boatft", "Hull length (ft)", 14) + '</div>'
+      + '<label>Construction</label><select id="td_hull" onchange="tdCalc()"><option value="glass">Fiberglass</option><option value="alu">Aluminum (jon boat)</option><option value="wood">Wood</option></select>'
+      + '<div class="toggle"><input type="checkbox" id="td_motor" onchange="tdCalc()"><label style="margin:0">Motor still on it (comes too)</label></div>'
+      + '<div class="sub" style="white-space:normal">⚠️ A boat TRAILER is a titled vehicle — the boat comes off it, the trailer stays (junk-car buyers take those). ⚠️ Fiberglass at Soundside: unconfirmed — it\'s on the to-do list; confirm before the first fiberglass quote.</div>'
+      + '<div class="card" id="td_boatck" style="border-left:4px solid var(--danger);font-size:12.5px;line-height:1.6"></div>'
+      + '<button class="btn ghost sm" style="width:100%" onclick="tdPrintBoatForm()">🖨 Print disposal authorization</button>';
   } else {
     h = '<div class="row" style="gap:8px">'
       + num("td_l", t === "slab" ? "Slab length (ft)" : "Wall length (ft)", t === "slab" ? 10 : 20)
@@ -126,9 +161,19 @@ window.tdCalc = function () {
   var ck = function (id) { var e = document.getElementById(id); return !!(e && e.checked); };
   var sel = function (id) { var e = document.getElementById(id); return e ? e.value : ""; };
   var inp = { area: g("td_l") * g("td_w"), lf: g("td_lf"), heightFt: g("td_h") || 6, thickIn: g("td_thick") || 4,
-    railLf: g("td_rail"), stairs: g("td_stairs"), footings: ck("td_footings"), fenceKind: sel("td_fk") || "wood", gut: sel("td_gut") === "gut" };
+    railLf: g("td_rail"), stairs: g("td_stairs"), footings: ck("td_footings"), fenceKind: sel("td_fk") || "wood", gut: sel("td_gut") === "gut",
+    boatFt: g("td_boatft"), hull: sel("td_hull") || "glass", motor: ck("td_motor") };
   if (t === "fence") inp.area = 0;
-  var qty = t === "fence" ? inp.lf : inp.area;
+  var qty = t === "fence" ? inp.lf : t === "boat" ? inp.boatFt : inp.area;
+  /* the boat paperwork checklist, live with the titled/untitled line at 14 ft */
+  if (t === "boat") {
+    var bck = document.getElementById("td_boatck");
+    if (bck) {
+      var titled = inp.boatFt >= 14;
+      bck.innerHTML = '<b>' + (titled ? "14 ft+ — TITLED vessel. Before the first cut:" : "Under 14 ft — no NC title. Before the first cut:") + '</b><br>'
+        + tdBoatChecklist(titled).map(function (s) { return "☐ " + s; }).join("<br>");
+    }
+  }
   var lbs = tdWeight(t, inp), tons = lbs / 2000, loads = tdLoads(lbs);
   var disposal = Math.round(tons * TD_TON * 100) / 100;
   var consum = TD_CONSUM[t] || 25;
@@ -139,6 +184,7 @@ window.tdCalc = function () {
   if (t === "deck") { if (sel("td_elev") === "high") push += 0.2; if (inp.footings) push += 0.25; if ((inp.stairs || 0) > 1) push += 0.1; }
   if (t === "fence" && inp.footings) push += 0.25;
   if (t === "interior" && inp.gut) push += 0.1;
+  if (t === "boat") { if (inp.motor) push += 0.1; if (inp.boatFt >= 14) push += 0.1; }   // titled = paperwork time
   if ((t === "slab" || t === "wall") && inp.thickIn > 4) push += Math.min(0.3, (inp.thickIn - 4) * 0.1);
   push = Math.min(1, push);
 
@@ -165,7 +211,9 @@ window.tdCalc = function () {
 
   var b = document.getElementById("td_break");
   if (b) b.innerHTML = '<div style="font-size:13px;line-height:1.85">'
-    + (t === "fence" ? 'Fence: <b>' + inp.lf + ' lf × ' + inp.heightFt + ' ft</b>' : 'Size: <b>' + Math.round(qty) + (t === "wall" ? ' sq ft face' : ' sq ft') + '</b>' + ((t === "slab" || t === "wall") ? ' × ' + inp.thickIn + '"' : '')) + '<br>'
+    + (t === "fence" ? 'Fence: <b>' + inp.lf + ' lf × ' + inp.heightFt + ' ft</b>'
+      : t === "boat" ? 'Hull: <b>' + inp.boatFt + ' ft ' + (inp.hull === "alu" ? "aluminum" : inp.hull === "wood" ? "wood" : "fiberglass") + '</b>' + (inp.motor ? ' + motor' : '') + (inp.boatFt >= 14 ? ' · <b style="color:#c1121f">TITLED</b>' : ' · no title')
+      : 'Size: <b>' + Math.round(qty) + (t === "wall" ? ' sq ft face' : ' sq ft') + '</b>' + ((t === "slab" || t === "wall") ? ' × ' + inp.thickIn + '"' : '')) + '<br>'
     + 'Est. debris: <b>' + lbs.toLocaleString() + ' lb (' + tons.toFixed(2) + ' ton) = ' + loads + ' load' + (loads > 1 ? 's' : '') + '</b><br>'
     + 'C&amp;D tipping @ $' + TD_TON + '/ton: <b>' + money(disposal) + '</b> · consumables <b>' + money(consum) + '</b><br>'
     + '🚗 Site trip + ' + loads + ' dump run' + (loads > 1 ? 's' : '') + ' (' + DUMPMI + ' mi each): <b>' + money(driveCharge) + '</b></div>'
@@ -180,23 +228,65 @@ window.tdCalc = function () {
     disposal: disposal, driveCharge: driveCharge, driveMin: dr.min + TD_DUMP_MIN * loads, mins: workMin, crew: crew, qty: qty, inp: inp };
 };
 
+/* ---- printable vessel disposal authorization -------------------------------------------------------
+   One page, fill-in-by-hand in the driveway. The legal shape (verified 2026-09-09): the boat never
+   changes hands — DYAD is a demolition contractor destroying the OWNER'S property, so no title transfer;
+   the owner attests sole ownership + no liens, authorizes destruction, and acknowledges THEIR 15-day
+   NCWRC notification duty (800-628-3773). Opens a print window; works from file:// too.
+   ⚠️ CUSTOMER-FACING — Ray reviews the wording before the first real signature (operating agreement). */
+window.tdPrintBoatForm = function () {
+  var ft = (function () { var e = document.getElementById("td_boatft"); return e ? e.value : ""; })();
+  var w = window.open("", "_blank", "width=700,height=900");
+  if (!w) { alert("Pop-up blocked — allow pop-ups to print the form."); return; }
+  var L = function (lbl, wpx) { return '<div style="margin:14px 0"><span style="font-size:11px;color:#555">' + lbl + '</span><div style="border-bottom:1px solid #000;height:22px;width:' + (wpx || "100%") + '"></div></div>'; };
+  w.document.write('<!DOCTYPE html><html><head><title>Vessel Disposal Authorization</title></head>'
+    + '<body style="font-family:Georgia,serif;max-width:640px;margin:28px auto;color:#111;font-size:14px;line-height:1.5">'
+    + '<div style="text-align:center;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:18px">'
+    + '<div style="font-size:21px;font-weight:bold">VESSEL DISPOSAL AUTHORIZATION</div>'
+    + '<div style="font-size:12px">OBX Junk Co. — a service of OBX Lot Solutions (DYAD Holdings LLC) · (252) 207-5985</div></div>'
+    + '<table style="width:100%"><tr><td style="width:60%">' + L("Owner name") + '</td><td>' + L("Date") + '</td></tr></table>'
+    + L("Owner address") + '<table style="width:100%"><tr><td style="width:50%">' + L("Phone") + '</td><td>' + L("NC registration # (if any)") + '</td></tr></table>'
+    + '<table style="width:100%"><tr><td style="width:50%">' + L("Hull ID number (HIN)") + '</td><td style="width:25%">' + L("Length (ft)", "90%") + '</td><td>' + L("Make / type") + '</td></tr></table>'
+    + '<p style="margin:18px 0 6px"><b>I state and agree that:</b></p>'
+    + '<ol style="margin:0 0 14px;padding-left:22px">'
+    + '<li>I am the sole owner of the vessel described above, and it is free of all liens and encumbrances.</li>'
+    + '<li>I authorize OBX Junk Co. to demolish, remove and dispose of this vessel. Ownership does not transfer; the vessel is destroyed as my property, at my direction.</li>'
+    + '<li>If this vessel is titled or registered in North Carolina, <b>I will notify the NC Wildlife Resources Commission that it has been destroyed within 15 days</b> (800-628-3773).</li>'
+    + '<li>The boat trailer, if any, is not included and remains mine.</li></ol>'
+    + '<table style="width:100%;margin-top:26px"><tr><td style="width:55%">' + L("Owner signature") + '</td><td>' + L("Date") + '</td></tr>'
+    + '<tr><td>' + L("OBX Junk Co. crew signature") + '</td><td>' + L("HIN photographed ☐ before ☐ after") + '</td></tr></table>'
+    + '<script>window.print();<\/script></body></html>');
+  w.document.close();
+};
+
 window.saveTeardownQuote = function () {
   var d = window._td || {};
   if (!(d.price > 0)) { alert("Enter the size first."); return; }
   if (typeof WZON === "undefined" || !WZON || typeof WZ === "undefined" || !WZ) { alert("Open this from a quote so it links the customer."); return; }
   var nm = val("td_name"); if (nm && WZ.cust && !WZ.cust.name) WZ.cust.name = nm;
-  var label = { deck: "Deck removal + haul-off", fence: "Fence removal + haul-off", interior: "Interior strip-out + haul-off", slab: "Concrete slab removal + haul-off", wall: "Concrete wall removal + haul-off" }[d.type];
-  var notes = [label + " — residential (≤4 units) only.",
-    "Utilities disconnected by owner before work. " + (d.type === "interior" ? "Non-structural surfaces only." : ""),
-    "Must-dump — price includes " + d.loads + " dump run" + (d.loads > 1 ? "s" : "") + " + C&D tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
+  var label = { deck: "Deck removal + haul-off", fence: "Fence removal + haul-off", interior: "Interior strip-out + haul-off", slab: "Concrete slab removal + haul-off", wall: "Concrete wall removal + haul-off", boat: "Boat disposal — cut up + haul-off" }[d.type];
+  var notes;
+  if (d.type === "boat") {
+    /* ⭐ THE PAPERWORK RIDES ON THE QUOTE (Ray: "make sure all of this is in the tool as reminders") —
+       so the checklist is on the record the crew opens at the job, not just in a modal someone closed. */
+    var titled = (d.inp && d.inp.boatFt >= 14);
+    notes = [label + (titled ? " — TITLED vessel (14 ft+)." : " — under 14 ft, no NC title."),
+      "BEFORE THE CUT: " + tdBoatChecklist(titled).join(" · "),
+      "Boat trailer NOT included — that's a titled vehicle; the boat comes off it.",
+      "Price includes " + d.loads + " dump run" + (d.loads > 1 ? "s" : "") + " + tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
+  } else {
+    notes = [label + " — residential (≤4 units) only.",
+      "Utilities disconnected by owner before work. " + (d.type === "interior" ? "Non-structural surfaces only." : ""),
+      "Must-dump — price includes " + d.loads + " dump run" + (d.loads > 1 ? "s" : "") + " + C&D tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
+  }
   WZ.items = WZ.items || [];
   WZ.items.push({ serviceId: "", name: label, unit: "job", price: d.price, qty: 1, cost: d.cost || 0, notes: notes,
-    bandKey: d.type === "deck" ? "deckdemo" : d.type === "fence" ? "fencedemo" : d.type === "interior" ? "intdemo" : "concdemo",
-    breakdown: [Math.round(d.qty) + (d.type === "fence" ? " lf" : " sq ft") + " · " + (d.tons || 0).toFixed(2) + " ton · " + d.loads + " load" + (d.loads > 1 ? "s" : "")] });
+    bandKey: d.type === "deck" ? "deckdemo" : d.type === "fence" ? "fencedemo" : d.type === "interior" ? "intdemo" : d.type === "boat" ? "boatdemo" : "concdemo",
+    breakdown: [Math.round(d.qty) + (d.type === "fence" ? " lf" : d.type === "boat" ? " ft hull" : " sq ft") + " · " + (d.tons || 0).toFixed(2) + " ton · " + d.loads + " load" + (d.loads > 1 ? "s" : "")] });
   var crew = d.crew || 2, totalPH = ((d.mins || 0) / 60) + crew * ((d.driveMin || 0) / 60) + crew * (20 / 60);
   WZ.crewN = crew; WZ.hours = totalPH > 0 ? Math.round(totalPH / crew * 10) / 10 : 0;
   WZ.modalBuilt = true;
   closeModal(); WZ.step = "review"; render();
 };
 
-if (typeof module !== "undefined" && module.exports) module.exports = { tdWeight: tdWeight, tdBand: tdBand, tdLoads: tdLoads, tdWorkMin: tdWorkMin, TD_CAP: TD_CAP };
+if (typeof module !== "undefined" && module.exports) module.exports = { tdWeight: tdWeight, tdBand: tdBand, tdLoads: tdLoads, tdWorkMin: tdWorkMin, tdBoatChecklist: tdBoatChecklist, TD_CAP: TD_CAP };

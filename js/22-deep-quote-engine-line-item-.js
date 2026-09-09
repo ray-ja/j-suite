@@ -368,7 +368,8 @@ const MARKET_BANDS={
  deckdemo:{lo:1000,hi:5000,label:"deck removal ($5–12/sq ft)"},
  fencedemo:{lo:400,hi:1200,label:"fence removal ($3–6/lf)"},
  intdemo:{lo:500,hi:3000,label:"interior strip-out ($3–8/sq ft)"},
- concdemo:{lo:500,hi:3500,label:"concrete removal ($4–8/sq ft)"}
+ concdemo:{lo:500,hi:3500,label:"concrete removal ($4–8/sq ft)"},
+ boatdemo:{lo:400,hi:1800,label:"boat disposal (length-driven)"}
 };
 /* rehearsal-style band: a red(below)/green(in)/amber(above) bar with the quote marked. Self-contained inline styles. */
 function marketBandHTML(price,lo,hi,label){

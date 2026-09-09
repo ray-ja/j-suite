@@ -62,6 +62,32 @@ console.log("\n— work minutes feed the $45/hr check —");
   ok("concrete is the slowest per sq ft, and thicker is slower", td.tdWorkMin("slab", { area: 100, thickIn: 6 }, 0) > td.tdWorkMin("slab", { area: 100, thickIn: 4 }, 0));
 }
 
+console.log("\n— boats (Ray 2026-09-09: paperwork built into the tool as reminders) —");
+{
+  ok("a 14 ft fiberglass skiff ≈ 770 lb — one load", td.tdWeight("boat", { boatFt: 14, hull: "glass" }) === 770 && td.tdLoads(770) === 1);
+  ok("aluminum jon boat is far lighter (14 ft ≈ 210 lb)", td.tdWeight("boat", { boatFt: 14, hull: "alu" }) === 210);
+  ok("a motor left on adds 250 lb", td.tdWeight("boat", { boatFt: 14, hull: "glass", motor: true }) === 1020);
+  const b = td.tdBand("boat", { boatFt: 14 });
+  ok("14 ft bands $490–1,540 inside the researched $400–1,800 market", b[0] === 490 && b[1] === 1540 && b[2] === 400, b);
+  ok("no boat goes out under the $400 minimum", td.tdBand("boat", { boatFt: 8 })[2] === 400);
+  ok("fiberglass cuts slowest, aluminum fastest",
+    td.tdWorkMin("boat", { boatFt: 14, hull: "glass" }, 0) > td.tdWorkMin("boat", { boatFt: 14, hull: "wood" }, 0)
+    && td.tdWorkMin("boat", { boatFt: 14, hull: "wood" }, 0) > td.tdWorkMin("boat", { boatFt: 14, hull: "alu" }, 0));
+  /* ⭐ the checklist IS the feature */
+  const titled = td.tdBoatChecklist(true), open = td.tdBoatChecklist(false);
+  ok("titled (14 ft+) checklist carries all 5 steps", titled.length === 5, titled);
+  ok("...including the FREE lien check with the NCWRC number", titled.some(s => /lien/i.test(s) && /800-628-3773/.test(s)));
+  ok("...and the owner's 15-day destroyed-vessel report", titled.some(s => /15 DAYS/.test(s) && /800-628-3773/.test(s)));
+  ok("an untitled boat drops the lien + NCWRC steps (3 remain)", open.length === 3, open);
+  ok("...but never the authorization, title-match or HIN photos",
+    ["authorization", "name matches", "HIN"].every(k => open.some(s => s.toLowerCase().indexOf(k.toLowerCase()) >= 0)));
+  const fs2 = require("fs"), src = fs2.readFileSync("js/172-teardown.js", "utf8");
+  ok("the printable authorization form exists", /tdPrintBoatForm/.test(src) && /VESSEL DISPOSAL AUTHORIZATION/.test(src));
+  ok("⛔ the form transfers NO ownership — demo contractor, not a buyer", /Ownership does not transfer/.test(src));
+  ok("⛔ and it puts the 15-day NCWRC duty on the OWNER in writing", /within 15 days/.test(src) && /800-628-3773/.test(src));
+  ok("the boat trailer is excluded in the form AND the quote notes", /trailer, if any, is not included/.test(src) && /titled vehicle; the boat comes off it/.test(src));
+}
+
 console.log("\n— the file registers everywhere it must —");
 {
   const fs = require("fs");
@@ -71,7 +97,7 @@ console.log("\n— the file registers everywhere it must —");
   ok("service-picker entry", /teardown.*Deck \/ fence \/ concrete teardown/.test(wiz));
   ok("wizard routes to the estimator", /k==="teardown".*openTeardownEst/.test(wiz));
   const bands = fs.readFileSync("js/22-deep-quote-engine-line-item-.js", "utf8");
-  ok("all four teardown market bands exist", ["deckdemo", "fencedemo", "intdemo", "concdemo"].every(k => bands.indexOf(k + ":{lo:") >= 0));
+  ok("all five teardown market bands exist", ["deckdemo", "fencedemo", "intdemo", "concdemo", "boatdemo"].every(k => bands.indexOf(k + ":{lo:") >= 0));
   ok("⭐ the shed band was raised to market ($500–1,500)", /demo:\{lo:500,hi:1500/.test(bands));
   const shed = fs.readFileSync("js/30-demolition-estimator.js", "utf8");
   ok("...and js/30's footprint bands match", /return \[500,700\]/.test(shed) && /return \[1000,1500\]/.test(shed));
