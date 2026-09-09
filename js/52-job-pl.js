@@ -82,20 +82,50 @@ function subJobsOf(jobId) { return jobId ? (typeof actJ === "function" ? actJ() 
 /* how many ways a stop-job's cost splits — never divide by zero (0-linked stops don't roll up into anything anyway) */
 function stopSplitN(sj) { return Math.max(1, (sj && Array.isArray(sj.sharedJobIds)) ? sj.sharedJobIds.length : 1); }
 function stopEmoji(kind) { return kind === "dump" ? "🚛" : kind === "pickup" ? "📦" : "🔀"; }
-/* one job's mileage cost: confirmed time-clock miles if any, else the manual driveMiles estimate */
-function jobMilesCost(j) { const tc = jobMileageCost(j); if (tc > 0) return tc; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); return (+j.driveMiles || 0) * rate; }
-/* mileage cost for a job's TOTAL-COST DISPLAY (e.g. the Jobs-table Expenses column): the odometer-of-record
-   (confirmed time-clock miles) when a drive has been clocked, else the maps ROUTE ESTIMATE (j.estRouteMiles)
-   as the automatic fallback — × IRS rate. Display-only: this NEVER writes and the confirmed odometer always
-   wins once entered (the estimate is just so every job shows its expected mileage payout before clock-out). */
-function jobMilesCostEst(j) { if (!j) return 0; const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725); const wd = (typeof jobWorkDays === "function") ? Math.max(1, jobWorkDays(j).length) : 1; /* one round trip PER work day — a 3-day job drives the route 3× */ const q = (typeof plQuoteFor === "function") ? plQuoteFor(j) : null; const estDays = (q && +q.estDays > 0) ? +q.estDays : 1; const days = Math.max(wd, estDays);
-  /* 1) MANUAL OVERRIDE wins over EVERYTHING (odometer + map estimate). The owner enters manual route miles BECAUSE
-     the automatic tools were wrong (bad/tiny odometer, map couldn't route) — so it's authoritative, not a fallback. */
-  if (+j.manualRouteMiles > 0) return (+j.manualRouteMiles) * rate * days;
-  /* 2) confirmed odometer (sums every day's reading) */
-  const tc = jobMileageCost(j); if (tc > 0) return tc;
-  /* 3) the map's road estimate × trips */
-  const est = +j.estRouteMiles; if (!(est > 0)) return 0; return est * rate * days; }
+/* ⭐⭐ THE ONE MILEAGE CASCADE ────────────────────────────────────────────────────────────────────────────
+   Ray, 2026-09-09: "mileage should just cascade based on available info. odometer is 1st truth, then
+   calculated mileage based on home to job to soundside recycling to home."
+
+   ⚠️ WHY THIS EXISTS. There were THREE mileage functions with THREE different orders, and the money path
+   used the narrowest one — jobMileageCost, which stops at the odometer and returns 0. So a job nobody
+   clocked miles on carried NO vehicle cost at all: it wasn't netted off the split base, the crew divided
+   the truck money, and the Business Fund bought the fuel back. The route was never missing — js/61
+   jobRecalcRouteMiles already drives OSRM over `home base → planned stops (the transfer station is one of
+   them) → job site → home base` and parks real road miles on j.estRouteMiles. Nothing read it for costing.
+
+   ⛔ ODOMETER OUTRANKS THE MAP, per Ray. That REVERSES the old jobMilesCostEst order, which put
+   manualRouteMiles above the odometer. The reasoning behind the old order still holds — the owner types a
+   manual route BECAUSE the automatic tools were wrong — because a broken or unclocked odometer reads 0 and
+   falls straight through to it. A REAL odometer reading now wins, which is what he asked for.
+
+   Returns {miles, cost, source} — the source so the UI can say where a number came from instead of
+   presenting a guess and a measurement as the same thing. */
+function jobMilesBilled(j) {
+  const rate = (typeof FIN !== "undefined" ? FIN.MILEAGE_RATE : 0.725);
+  const out = (miles, source) => ({ miles: miles, cost: Math.round(miles * rate * 100) / 100, source: source });
+  if (!j) return out(0, "none");
+  /* a multi-day job drives the route once PER work day; an odometer already counts every trip it made */
+  const wd = (typeof jobWorkDays === "function") ? Math.max(1, jobWorkDays(j).length) : 1;
+  const q = (typeof plQuoteFor === "function") ? plQuoteFor(j) : null;
+  const days = Math.max(wd, (q && +q.estDays > 0) ? +q.estDays : 1);
+
+  // 1) ODOMETER — the owner's stated actual total for the job, typed on the Money tab
+  if (+j.manualMiles > 0) return out(+j.manualMiles, "odometer");
+  // 2) ODOMETER — confirmed time-clock readings, summed across every day
+  const tc = jobMileageCost(j); if (tc > 0) return out(tc / rate, "odometer");
+  // 3) CALCULATED — the owner's own round-trip figure, when the map couldn't answer
+  if (+j.manualRouteMiles > 0) return out((+j.manualRouteMiles) * days, "manual route");
+  // 4) CALCULATED — real OSRM road miles: base → stops (incl. the transfer station) → site → base
+  if (+j.estRouteMiles > 0) return out((+j.estRouteMiles) * days, "route");
+  // 5) LEGACY — driveMiles, kept so old jobs don't silently lose their mileage
+  if (+j.driveMiles > 0) return out(+j.driveMiles, "legacy");
+  return out(0, "none");
+}
+/* one job's mileage cost — the full cascade (was: odometer, else the legacy driveMiles estimate) */
+function jobMilesCost(j) { return jobMilesBilled(j).cost; }
+/* mileage for a job's TOTAL-COST DISPLAY. Same cascade, so what the Jobs table shows, what the P&L costs,
+   and what the payout split nets off the top are all provably the same number. */
+function jobMilesCostEst(j) { return jobMilesBilled(j).cost; }
 /* ── 3-WAY EXPENSE CATEGORIZATION ─────────────────────────────────────────────────────────────
    A job.expenses[] item tagged as a reusable TOOL/equipment is BUSINESS overhead (capital), NOT this
    job's cost — it must not dent the job's profit. expenseIsTool() is the tunable predicate (a small set,
@@ -193,6 +223,7 @@ function finSalesToBusiness(income) {
   });
 }
 window.jobHardCost = jobHardCost;
+window.jobMilesBilled = jobMilesBilled;
 window.finHardCostsForJob = finHardCostsForJob;
 window.finHardCostsForIncome = finHardCostsForIncome;
 window.finSalesToBusiness = finSalesToBusiness;
@@ -207,10 +238,13 @@ function jobHardCost(j) {
   if (!j) return { exp: 0, mat: 0, mil: 0, total: 0 };
   const expOf = job => plExpenses(job).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
   const matOf = job => plMaterials(job).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
-  let expCost = expOf(j), matCost = matOf(j), milCost = jobMileageCost(j);
+  /* ⭐ the CASCADE, not the bare odometer. jobMileageCost alone returns 0 on any job nobody clocked miles
+     on — so the truck cost silently vanished from the split base and the crew divided the fuel money. */
+  const mb = jobMilesBilled(j);
+  let expCost = expOf(j), matCost = matOf(j), milCost = mb.cost;
   // a stop-job linked to N jobs contributes 1/N of its cost to each — a 1-element split (today's sub-jobs) is a no-op divide
-  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += expOf(sj) / n; matCost += matOf(sj) / n; milCost += jobMileageCost(sj) / n; });
-  return { exp: expCost, mat: matCost, mil: milCost, total: expCost + matCost + milCost };
+  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += expOf(sj) / n; matCost += matOf(sj) / n; milCost += jobMilesBilled(sj).cost / n; });
+  return { exp: expCost, mat: matCost, mil: milCost, milesSource: mb.source, total: expCost + matCost + milCost };
 }
 function jobProfit(j) {
   const q = plQuoteFor(j);
