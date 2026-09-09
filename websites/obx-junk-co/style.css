@@ -129,10 +129,16 @@ h3{font-size:20px;font-weight:800;letter-spacing:-.01em}
 .town .ic{width:16px;height:16px;color:var(--orange)}
 
 /* checklists */
-.checkrow{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 32px;margin-top:32px;list-style:none}
-.checkrow li{display:flex;gap:12px;font-size:17px;align-items:flex-start;line-height:1.45}
-.checkrow li .ic{color:var(--orange);margin-top:3px;width:20px;height:20px}
+.checkrow{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 32px;margin-top:32px;list-style:none;padding-left:0}
+/* ⚠️ NOT flex. display:flex here turned EVERY child of the li into a column — fine when each item was one
+   bare text node, but the moment an item carried <b> or <span> markup the sentence shredded into side-by-
+   side tracks ("Loose dirt," | "but" | "small concrete…"). Block + absolute icon reads as prose no matter
+   how the item is marked up. */
+.checkrow li{display:block;position:relative;padding-left:32px;font-size:17px;line-height:1.5}
+.checkrow li .ic{position:absolute;left:0;top:3px;color:var(--orange);width:20px;height:20px}
 .checkrow.no li .ic{color:#9a948c}
+/* the can't-take items carry full where-it-goes routes now — two columns of long prose reads badly */
+.checkrow.no{grid-template-columns:1fr;gap:16px}
 @media(max-width:700px){.checkrow{grid-template-columns:1fr}}
 
 /* pm strip */
