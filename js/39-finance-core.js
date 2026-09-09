@@ -18,8 +18,23 @@ var FIN = {
   FIELD: 0.80, SALES: 0.15, ADMIN: 0.05,       // shares of the labor pool
   ADMIN_CAP_CENTS: 50000,                       // $500 / month to the Admin Member
   MILEAGE_RATE: 0.725,                          // $/mile (IRS)
-  SALES_WINDOW_MONTHS: 3
+  SALES_WINDOW_MONTHS: 3,
+  /* ⭐⭐ SPLIT MODEL V2 — hard costs off the top (js/52 finHardCostsForIncome) + junk's unclaimed sales
+     share to the Business Fund instead of the field pool. Ray, 2026-09-09; tax stayed at 25% by his call.
+
+     ⛔⛔ THE DATE IS THE WHOLE SAFETY MECHANISM. finRollup RECOMPUTES every historical income entry on every
+     render — it stores no result — so flipping the model without a cutoff would silently rewrite what
+     everyone was already paid, and Chaz and Vlad's settled $398.43 would retroactively read as an
+     overpayment. Income dated BEFORE this stays on V1 and reconciles byte-identically, forever. Moving this
+     date backwards rewrites history; only ever move it forward. */
+  HARDCOST_FROM: "2026-09-09"
 };
+/* which model an income entry settles under — a plain date compare, so it is stable across renders,
+   devices and reloads without storing anything on the record. */
+function finSplitV2(income) {
+  var d = String((income && income.date) || "");
+  return !!(FIN.HARDCOST_FROM && d && d >= FIN.HARDCOST_FROM);
+}
 function finCents(d) { return Math.round((Number(d) || 0) * 100); }
 function finDollars(c) { return (c || 0) / 100; }
 
@@ -159,18 +174,35 @@ function finJobSplit(income) {
   // the person reimbursed) — NOT revenue to split. Net the pass-through cost off the top so only the LABOR VALUE runs
   // through 25/15/60. Guarded: the helper lives in the P&L layer (js/52); absent (isolated core tests) → 0, so the
   // split stays byte-identical until a PAID job actually carries pass-through. income._noPT forces the gross split.
-  var pt = (income && !income._noPT && typeof finPassThroughForIncome === "function") ? Math.max(0, finPassThroughForIncome(income) || 0) : 0;
+  /* V2 nets ALL hard costs (disposal + materials + mileage + rental); V1 netted materials only. Both helpers
+     live in the P&L layer (js/52) — absent in isolated core tests → 0, so the split stays byte-identical. */
+  var v2 = finSplitV2(income);
+  var pt = 0;
+  if (income && !income._noPT) {
+    if (v2 && typeof finHardCostsForIncome === "function") pt = Math.max(0, finHardCostsForIncome(income) || 0);
+    else if (typeof finPassThroughForIncome === "function") pt = Math.max(0, finPassThroughForIncome(income) || 0);
+  }
   if (pt > gross) pt = gross;   // never a negative base
   var s = finSplitAmount(gross - pt);
   var crew = (income.crew || []).filter(Boolean);
   var salesOK = !!(income.originator && !income.houseAccount && finWithinSalesWindow(income.bookedAt, income.date));
-  var fieldBeforeAdmin = s.field, salesToOriginator = 0;
-  if (salesOK) salesToOriginator = s.sales; else fieldBeforeAdmin += s.sales;   // house/out-of-window → Field Work
+  /* an UNCLAIMED sales share on a V2 junk job funds the ads that found the job, instead of quietly
+     topping up the field pool. Guarded: helper absent → today's fallback, unchanged. */
+  var toBiz = !salesOK && v2 && typeof finSalesToBusiness === "function" && !!finSalesToBusiness(income);
+  var fieldBeforeAdmin = s.field, salesToOriginator = 0, salesToBusiness = 0;
+  if (salesOK) salesToOriginator = s.sales;
+  else if (toBiz) salesToBusiness = s.sales;
+  else fieldBeforeAdmin += s.sales;                                            // house/out-of-window → Field Work
   return {
     amount: s.amount, gross: gross, passThrough: pt, tax: s.tax, business: s.business, labor: s.labor,
     field: s.field, sales: s.sales, admin: s.admin,
     crew: crew, salesOK: salesOK, originator: income.originator || "",
-    salesToOriginator: salesToOriginator, fieldBeforeAdmin: fieldBeforeAdmin, rawAdmin: s.admin
+    salesToOriginator: salesToOriginator, fieldBeforeAdmin: fieldBeforeAdmin, rawAdmin: s.admin,
+    /* ⛔ salesToBusiness is reported ALONGSIDE business, never folded into it — tax + business + labor must
+       keep summing to amount exactly, and the sales share is constitutionally part of the labor pool even
+       when the business is the one that earned it. Display layers add the two. */
+    hardCostMode: v2 ? "v2" : "v1", salesToBusiness: salesToBusiness,
+    businessTotal: s.business + salesToBusiness
   };
 }
 
@@ -182,7 +214,7 @@ function finRollup(incomes, opts) {
     return x && !x.deleted && (!opts.from || x.date >= opts.from) && (!opts.to || x.date <= opts.to);
   }).slice().sort(function (a, b) { return (a.date + "|" + a.id) < (b.date + "|" + b.id) ? -1 : 1; });
   var member = {}, adminByMonth = {}, perJob = [];
-  var totals = { amount: 0, gross: 0, passThrough: 0, tax: 0, business: 0, labor: 0, field: 0, sales: 0, admin: 0, adminOverflow: 0, unallocatedField: 0 };
+  var totals = { amount: 0, gross: 0, passThrough: 0, tax: 0, business: 0, labor: 0, field: 0, sales: 0, admin: 0, adminOverflow: 0, unallocatedField: 0, salesToBusiness: 0, businessTotal: 0 };
   function M(id) { return member[id] || (member[id] = { field: 0, sales: 0, admin: 0 }); }
   list.forEach(function (inc) {
     var js = finJobSplit(inc);
@@ -190,6 +222,8 @@ function finRollup(incomes, opts) {
     // totals.gross = what customers actually paid; totals.passThrough = material money routed back to payers (not split).
     totals.amount += js.amount; totals.gross += js.gross; totals.passThrough += js.passThrough;
     totals.tax += js.tax; totals.business += js.business; totals.labor += js.labor;
+    totals.salesToBusiness += js.salesToBusiness || 0;
+    totals.businessTotal = totals.business + totals.salesToBusiness;   // what the Business Fund actually keeps
     if (js.salesToOriginator > 0) { M(js.originator).sales += js.salesToOriginator; totals.sales += js.salesToOriginator; }
     var mo = String(inc.date || "").slice(0, 7), paid = adminByMonth[mo] || 0, adminToMember = 0, overflow = js.rawAdmin;
     if (opts.adminMemberId && js.rawAdmin > 0) {
@@ -287,6 +321,6 @@ if (typeof module !== "undefined" && module.exports) {
     FIN: FIN, finCents: finCents, finDollars: finDollars, finSplitAmount: finSplitAmount,
     finWithinSalesWindow: finWithinSalesWindow, finSplitEqual: finSplitEqual, finSplitWeighted: finSplitWeighted, finFieldSplit: finFieldSplit, finWeightsActive: finWeightsActive, finJobSplit: finJobSplit,
     finRollup: finRollup, finMileage: finMileage, finAccounts: finAccounts, finPayouts: finPayouts, finDayOf: finDayOf,
-    finHoursByJob: finHoursByJob, finPerPerson: finPerPerson
+    finHoursByJob: finHoursByJob, finPerPerson: finPerPerson, finSplitV2: finSplitV2
   };
 }

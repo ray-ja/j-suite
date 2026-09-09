@@ -149,18 +149,75 @@ function finPassThroughForIncome(income) {
 }
 window.finPassThroughForJob = finPassThroughForJob;
 window.finPassThroughForIncome = finPassThroughForIncome;
+
+/* ⭐⭐ HARD COSTS OFF THE TOP (split model V2, live from FIN.HARDCOST_FROM) ─────────────────────────────
+   Ray, 2026-09-09: "ideally, the business card always pays for the hard cost… the reimbursement thing was a
+   Band Aid because the business had no money."
+
+   Exactly right, and it names the bug. If the business card buys the dump ticket, that money has to leave
+   the job BEFORE anyone splits it — otherwise the card is paid out of a pot the crew already took 60% of.
+   V1 netted pass-through materials only, so disposal, mileage and rental were split as if they were profit.
+
+   ⛔ NOT A PERCENTAGE CHANGE. 25/15/60 and 80/15/5 are untouched. Only the BASE they apply to changes.
+   ⛔ Reimbursement still works — it just routes a hard cost to a PERSON instead of to the card. Same money,
+      same point in the waterfall. */
+function finHardCostsForJob(jobId) {
+  if (!jobId || typeof D !== "function") return 0;
+  var j = (D().jobs || []).find(function (x) { return x && x.id === jobId && !x.deleted; });
+  if (!j) return 0;
+  return Math.round(((typeof jobHardCost === "function") ? jobHardCost(j).total : 0) * 100);
+}
+function finHardCostsForIncome(income) {
+  if (!income) return 0;
+  var ids = (Array.isArray(income.jobIds) && income.jobIds.length) ? income.jobIds : (income.jobId ? [income.jobId] : []);
+  return ids.reduce(function (s, id) { return s + finHardCostsForJob(id); }, 0);
+}
+
+/* ⭐ JUNK'S SALES CREDIT BELONGS TO THE BUSINESS. Ray: "sales credit shouldnt exist on junk jobs as its just
+   ad spending" — and he kept it everywhere else, because on demo and hardscape it exists to make selling pay.
+
+   ⚠️ This only ever fires when there is NO valid originator. With one, salesOK wins and a real person is paid
+   exactly as before. What it replaces is the old silent fallback that rolled an unclaimed sales share into
+   the FIELD pool — so on junk the crew was collecting the money that should have funded the ads that found
+   the job. Scoped to bandKey "junk" per Ray ("lets focus on junk only right now"); dropping the bandKey test
+   would generalise it to "nobody sold it, so the business did." */
+function finSalesToBusiness(income) {
+  if (!income || typeof D === "function" === false) return false;
+  var ids = (Array.isArray(income.jobIds) && income.jobIds.length) ? income.jobIds : (income.jobId ? [income.jobId] : []);
+  if (!ids.length) return false;
+  var jobs = (D().jobs || []);
+  return ids.some(function (id) {
+    var j = jobs.find(function (x) { return x && x.id === id && !x.deleted; });
+    var q = (j && typeof plQuoteFor === "function") ? plQuoteFor(j) : null;
+    return !!(q && (q.items || []).some(function (it) { return it && it.bandKey === "junk"; }));
+  });
+}
+window.jobHardCost = jobHardCost;
+window.finHardCostsForJob = finHardCostsForJob;
+window.finHardCostsForIncome = finHardCostsForIncome;
+window.finSalesToBusiness = finSalesToBusiness;
 /* canonical per-job profitability — price (charged) − hard costs (expenses + mileage); NO labor line.
    TOOL/equipment job.expenses are EXCLUDED from the cost (they're capital/overhead, re-attributed to the
    business, not this job) — display-only; the record stays put in job.expenses[]. */
+/* ⭐⭐ ONE definition of a job's hard costs, extracted 2026-09-09 so the P&L and the PAYOUT SPLIT cannot
+   drift apart. They already had: jobProfit netted expenses + materials + mileage, while finJobSplit netted
+   MATERIALS ONLY — so the crew was paid 60% of the dump ticket and the Business Fund then bought it back,
+   which is why the fund ended a $650 job holding $1.72. Both now read this. Returns dollars. */
+function jobHardCost(j) {
+  if (!j) return { exp: 0, mat: 0, mil: 0, total: 0 };
+  const expOf = job => plExpenses(job).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
+  const matOf = job => plMaterials(job).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
+  let expCost = expOf(j), matCost = matOf(j), milCost = jobMileageCost(j);
+  // a stop-job linked to N jobs contributes 1/N of its cost to each — a 1-element split (today's sub-jobs) is a no-op divide
+  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += expOf(sj) / n; matCost += matOf(sj) / n; milCost += jobMileageCost(sj) / n; });
+  return { exp: expCost, mat: matCost, mil: milCost, total: expCost + matCost + milCost };
+}
 function jobProfit(j) {
   const q = plQuoteFor(j);
   const price = q ? (+(q.finalPrice || q.total) || 0) : 0;
-  let expCost = plExpenses(j).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
-  let matCost = plMaterials(j).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0);
-  let milCost = jobMileageCost(j);
-  // a stop-job linked to N jobs contributes 1/N of its cost to each — a 1-element split (today's sub-jobs) is a no-op divide
-  subJobsOf(j.id).forEach(sj => { const n = stopSplitN(sj); expCost += plExpenses(sj).filter(x => x && !x.deleted && !expenseIsTool(x) && !expenseIsFuel(x) && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; matCost += plMaterials(sj).filter(x => x && !x.deleted && !plDepHeld(x)).reduce((s, e) => s + (+e.amount || 0), 0) / n; milCost += jobMileageCost(sj) / n; });
-  const cost = expCost + matCost + milCost, profit = price - cost;
+  const hc = jobHardCost(j);
+  const expCost = hc.exp, matCost = hc.mat, milCost = hc.mil;
+  const cost = hc.total, profit = price - cost;
   const margin = price > 0 ? profit / price : (cost > 0 ? -1 : 0);
   const type = (q && typeof quoteType === "function" && quoteType(q)) || (j.title || "Other");
   const cust = (q && q.cust) || (j.customerId && typeof custName === "function" ? custName(j.customerId) : "") || "—";

@@ -190,11 +190,17 @@ function rFinPayouts() {
 function finJobBreakdownHTML(pj, adminId) {
   const j = (D().jobs || []).find(x => x.id === pj.jobId), title = (j && j.title) || "Income", s = pj.split;
   const fieldLines = Object.keys(pj.field).map(id => `${esc(finName(id))} ${fm(pj.field[id])}`).join(" · ") || (pj.unallocated ? `unassigned ${fm(pj.unallocated)}` : "—");
-  const salesLine = s.salesToOriginator > 0 ? `${esc(finName(s.originator))} ${fm(s.salesToOriginator)}` : `→ field work (${s.originator ? "out of window / house" : "no originator"})`;
+  /* junk's unclaimed sales share funds the ads that found the job (js/52 finSalesToBusiness) — say so, or
+     the row reads as money that simply vanished out of the labor pool. */
+  const salesLine = s.salesToOriginator > 0 ? `${esc(finName(s.originator))} ${fm(s.salesToOriginator)}`
+    : (s.salesToBusiness > 0 ? `→ business fund ${fm(s.salesToBusiness)} (junk — no one sold it, the ads did)`
+    : `→ field work (${s.originator ? "out of window / house" : "no originator"})`);
   const adminLine = pj.adminToMember > 0 ? `${esc(finName(adminId))} ${fm(pj.adminToMember)}` : (pj.adminOverflow > 0 ? `→ field work (${adminId ? "over $500/mo cap" : "no admin member"})` : "—");
   return `<details style="border-bottom:1px solid var(--line);padding:7px 0"><summary style="cursor:pointer;font-weight:700">${esc(title)} · ${fmtDate(pj.date)} — ${fm(pj.amount)}${pj.passThrough > 0 ? ` <span class="sub" style="font-weight:400">of ${fm(pj.gross)}</span>` : ""}</summary>
     <div class="sub" style="white-space:normal;margin-top:6px;line-height:1.7">
-      ${pj.passThrough > 0 ? `↩ Materials pass-through ${fm(pj.passThrough)} → back to whoever paid (not split)<br>Split base ${fm(pj.amount)} = ${fm(pj.gross)} billed − ${fm(pj.passThrough)} materials<br>` : ""}Tax (25%) ${fm(s.tax)} · Business (15%) ${fm(s.business)} · Labor (60%) ${fm(s.labor)}<br>
+      ${pj.passThrough > 0 ? (s.hardCostMode === "v2"
+          ? `↩ Hard costs ${fm(pj.passThrough)} → the business card, or back to whoever paid (not split)<br>Split base ${fm(pj.amount)} = ${fm(pj.gross)} billed − ${fm(pj.passThrough)} disposal, materials &amp; mileage<br>`
+          : `↩ Materials pass-through ${fm(pj.passThrough)} → back to whoever paid (not split)<br>Split base ${fm(pj.amount)} = ${fm(pj.gross)} billed − ${fm(pj.passThrough)} materials<br>`) : ""}Tax (25%) ${fm(s.tax)} · Business (15%) ${fm(s.business)}${s.salesToBusiness > 0 ? ` <b>+ ${fm(s.salesToBusiness)} sales = ${fm(s.businessTotal)}</b>` : ""} · Labor (60%) ${fm(s.labor)}<br>
       <b>Field</b> ${fm(pj.fieldPool)} → ${fieldLines}<br>
       <b>Sales</b> ${fm(s.sales)} → ${salesLine}<br>
       <b>Admin</b> ${fm(s.admin)} → ${adminLine}

@@ -149,5 +149,94 @@ ok("the two members' field still sums to the pooled field (970,000)", pp.member.
 ok("m1 earned = field+sales+admin; owed = earned + mileage − paid", pp.member.m1.earned === 485000 + 180000 && pp.member.m1.owed === 485000 + 180000 + 1044 - 12345, pp.member.m1);
 ok("payout subtracted only from m1 (m2 unpaid)", pp.member.m2.paid === 0 && pp.member.m1.paid === 12345, { m1: pp.member.m1.paid, m2: pp.member.m2.paid });
 
+/* ═══ SPLIT MODEL V2 — hard costs off the top, junk's sales share to the business ═══════════════════════
+   Ray, 2026-09-09: "ideally, the business card always pays for the hard cost… the reimbursement thing was a
+   Band Aid because the business had no money." The bug it names: V1 split the dump ticket as if it were
+   profit, then the Business Fund bought it back — a $650 job left the fund holding $1.72.
+   ⛔ NO PERCENTAGE MOVED. 25/15/60 and 80/15/5 are identical in both models; only the BASE changes. */
+console.log("\n— split model V2: the cutoff date —");
+ok("V2 is off before the cutoff", f.finSplitV2({ date: "2026-09-08" }) === false, f.FIN.HARDCOST_FROM);
+ok("V2 is on from the cutoff day itself", f.finSplitV2({ date: "2026-09-09" }) === true, null);
+ok("V2 is on after it", f.finSplitV2({ date: "2027-01-01" }) === true, null);
+ok("a dateless income never silently flips model", f.finSplitV2({}) === false, null);
+
+console.log("— the percentages did NOT change —");
+ok("FIN still reads 25 / 15 / 60", f.FIN.TAX === 0.25 && f.FIN.BUSINESS === 0.15 && f.FIN.LABOR === 0.60, f.FIN);
+ok("labor pool still reads 80 / 15 / 5", f.FIN.FIELD === 0.80 && f.FIN.SALES === 0.15 && f.FIN.ADMIN === 0.05, f.FIN);
+
+console.log("— Ray's $650 median junk job, both models —");
+/* $650 billed · $67.50 disposal + $28.28 mileage = $95.78 hard costs · no originator (ads found it) */
+const HARD = 9578, JUNK = { id: "i-junk", amount: 650, crew: ["m1"], jobId: "j-junk", date: "2026-09-09" };
+const OLD = Object.assign({}, JUNK, { id: "i-old", date: "2026-09-08" });
+/* the P&L-layer helpers live in js/52 (DOM); stand them in exactly as the guards expect */
+global.finHardCostsForIncome = inc => (inc && inc.jobId === "j-junk" ? HARD : 0);
+global.finSalesToBusiness = inc => !!(inc && inc.jobId === "j-junk");
+const v2 = f.finJobSplit(JUNK), v1 = f.finJobSplit(OLD);
+
+ok("V1 splits the whole $650 — the dump ticket included", v1.amount === 65000 && v1.hardCostMode === "v1", v1.amount);
+ok("V2 splits $554.22 — hard costs came off the top first", v2.amount === 65000 - HARD && v2.hardCostMode === "v2", v2.amount);
+ok("V2 nets the FULL hard cost, not just materials", v2.passThrough === HARD, v2.passThrough);
+
+ok("V1 field pool is $370.50 — 48% plus the unclaimed sales share rolled in",
+  v1.fieldBeforeAdmin === 31200 + 5850, { field: v1.fieldBeforeAdmin, sales: v1.sales });
+ok("V2 field pool is $266.03 — 48% of the real base, sales no longer rolled in",
+  v2.fieldBeforeAdmin === v2.field, { field: v2.fieldBeforeAdmin, base: v2.amount });
+/* ⚠️ NOT round(base × 0.60 × 0.80) — that is 26603 and it is WRONG by design. finSplitAmount assigns each
+   level's rounding remainder to one bucket so tax+business+labor and field+sales+admin sum EXACTLY; the
+   naive product re-rounds and invents a cent. The engine's answer is $266.02, and $266.03 in the tables
+   is that number to the nearest cent of a naive 48%. Assert the discipline, not the shortcut. */
+ok("...which is the quote tool's $45/hr floor: 48% of net, remainder-exact",
+  v2.field === Math.round(v2.labor * 0.80) && Math.abs(v2.field - v2.amount * 0.48) <= 1,
+  { field: v2.field, naive: Math.round(v2.amount * 0.48) });
+
+ok("V1 leaves the business $97.50 — which the dump ticket then eats to $1.72",
+  v1.business === 9750 && v1.business - HARD === 172, v1.business - HARD);
+ok("V2 leaves the business $133.01, clear", v2.businessTotal === 8313 + 4988, v2.businessTotal);
+ok("...because junk's unclaimed sales share funds the ads instead of the crew",
+  v2.salesToBusiness === v2.sales && v1.salesToBusiness === 0, { v2: v2.salesToBusiness, v1: v1.salesToBusiness });
+
+console.log("— the invariants that must survive a model change —");
+ok("V2 still reconciles: tax + business + labor === base",
+  v2.tax + v2.business + v2.labor === v2.amount, v2);
+ok("V2 labor still reconciles: field + sales + admin === labor",
+  v2.field + v2.sales + v2.admin === v2.labor, v2);
+ok("⛔ salesToBusiness is NOT folded into business — that would break the reconciliation",
+  v2.business === 8313 && v2.businessTotal === v2.business + v2.salesToBusiness, v2);
+ok("nothing is invented or lost: hard costs + every bucket === what the customer paid",
+  v2.passThrough + v2.tax + v2.business + v2.field + v2.sales + v2.admin === v2.gross,
+  { sum: v2.passThrough + v2.tax + v2.business + v2.field + v2.sales + v2.admin, gross: v2.gross });
+
+console.log("— a REAL originator still gets paid, on either model —");
+const SOLD = Object.assign({}, JUNK, { id: "i-sold", originator: "m2", bookedAt: "2026-09-01" });
+const sold = f.finJobSplit(SOLD);
+ok("a person who actually sold the job keeps the sales credit", sold.salesToOriginator === sold.sales, sold);
+ok("...and the business does NOT also take it", sold.salesToBusiness === 0, sold);
+
+console.log("— ⛔⛔ HISTORY DOES NOT MOVE —");
+/* finRollup recomputes every past entry on every render and stores nothing, so a model flip without a
+   cutoff would rewrite what people were already paid. Chaz and Vlad's settled $398.43 must not budge. */
+const PAST = [
+  { id: "p1", amount: 1378, crew: ["m1", "m2"], jobId: "j-junk", date: "2026-06-11" },
+  { id: "p2", amount: 2005, crew: ["m1"], jobId: "j-junk", date: "2026-07-14" }
+];
+const before = f.finRollup(PAST, {});
+ok("every pre-cutoff entry stays on V1", before.perJob.every(p => p.split.hardCostMode === "v1"), before.perJob.map(p => p.split.hardCostMode));
+ok("the split base is still the full gross — no hard costs retro-netted",
+  before.totals.amount === f.finCents(1378) + f.finCents(2005), before.totals.amount);
+ok("no historical sales share was moved to the business", before.totals.salesToBusiness === 0, before.totals);
+ok("the old rollup still reconciles exactly",
+  before.totals.tax + before.totals.business + before.totals.labor === before.totals.amount, before.totals);
+
+console.log("— a mixed period splits cleanly at the date —");
+const MIXED = f.finRollup(PAST.concat([JUNK]), {});
+ok("one V1 model and one V2 in the same rollup", MIXED.perJob.filter(p => p.split.hardCostMode === "v2").length === 1, MIXED.perJob.map(p => p.split.hardCostMode));
+ok("only the V2 entry contributes hard costs", MIXED.totals.passThrough === HARD, MIXED.totals.passThrough);
+ok("only the V2 entry contributes a business sales share", MIXED.totals.salesToBusiness === v2.sales, MIXED.totals.salesToBusiness);
+ok("businessTotal === business + salesToBusiness across the period",
+  MIXED.totals.businessTotal === MIXED.totals.business + MIXED.totals.salesToBusiness, MIXED.totals);
+ok("the mixed rollup still reconciles",
+  MIXED.totals.tax + MIXED.totals.business + MIXED.totals.labor === MIXED.totals.amount, MIXED.totals);
+delete global.finHardCostsForIncome; delete global.finSalesToBusiness;
+
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
 process.exit(fail ? 1 : 0);
