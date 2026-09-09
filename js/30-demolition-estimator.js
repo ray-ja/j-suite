@@ -28,12 +28,16 @@ function demoWeight(area, h, roof, floor, anchor){
   const anchorL= anchor==="concrete" ? 250 : anchor==="light" ? 50 : 0;
   return Math.round(struct + roofL + floorL + anchorL);
 }
-/* value bands by footprint (sq ft) — [low, high] $ */
+/* value bands by footprint (sq ft) — [low, high] $
+   ⭐ RAISED TO MARKET 2026-09-09 (was 350–1000 top to bottom). Ray: "I will price at market. i didnt
+   before because i was just putting my toe in. im ready to price at market." 2026 market: most shed
+   removals land $500–1,500, concrete-slabbed large sheds $3,500+. The old bands sat at/below the floor —
+   the same instinct that made hardscape pay $12/hr blended. Do not quietly lower these. */
 function demoBand(area){
-  if(area<=64)  return [350,450];   // ≤ 8×8
-  if(area<=120) return [450,650];   // 8×10 – 10×12
-  if(area<=176) return [600,850];   // bridge toward the top band
-  return [700,1000];                // 12×16+
+  if(area<=64)  return [500,700];    // ≤ 8×8
+  if(area<=120) return [650,950];    // 8×10 – 10×12
+  if(area<=176) return [850,1250];   // bridge toward the top band
+  return [1000,1500];                // 12×16+
 }
 
 window.openDemoEst=function(){

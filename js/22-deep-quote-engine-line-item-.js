@@ -360,7 +360,15 @@ const MARKET_BANDS={
  frenchdrain:{lo:600,hi:3000,label:"French drain / trench drainage"},
  housewatch:{lo:40,hi:75,label:"house-watch (per visit)"},
  junk:{lo:150,hi:800,label:"junk / cleanout (scales with volume)"},
- demo:{lo:350,hi:1000,label:"shed demolition"}
+ /* ⭐ RAISED TO MARKET 2026-09-09. Ray: "I will price at market. i didnt before because i was just putting
+    my toe in. im ready to price at market." The old $350–1,000 sat at/below the bottom of the 2026 range
+    (HomeGuide: most shed removals land $500–1,500) — the same floor instinct that made the hardscape jobs
+    pay $12/hr blended. The teardown bands below launch at market MID; do not quietly lower them. */
+ demo:{lo:500,hi:1500,label:"shed demolition"},
+ deckdemo:{lo:1000,hi:5000,label:"deck removal ($5–12/sq ft)"},
+ fencedemo:{lo:400,hi:1200,label:"fence removal ($3–6/lf)"},
+ intdemo:{lo:500,hi:3000,label:"interior strip-out ($3–8/sq ft)"},
+ concdemo:{lo:500,hi:3500,label:"concrete removal ($4–8/sq ft)"}
 };
 /* rehearsal-style band: a red(below)/green(in)/amber(above) bar with the quote marked. Self-contained inline styles. */
 function marketBandHTML(price,lo,hi,label){
