@@ -26,7 +26,6 @@ img,svg{max-width:100%}
 
 /* icons — thin line art, inherit currentColor, never emoji */
 .ic{width:1.15em;height:1.15em;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.18em}
-.ic-lg{width:30px;height:30px;stroke-width:1.6}
 
 /* top bar */
 .topbar{background:var(--ink);color:#a9adb5;font-size:14.5px}
@@ -103,7 +102,6 @@ h3{font-size:20px;font-weight:800;letter-spacing:-.01em}
 .grid.g2{grid-template-columns:repeat(2,1fr)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 22px;transition:transform .13s ease,box-shadow .13s ease,border-color .13s ease}
 .card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:#d8d1c6}
-.card .ic-lg{color:var(--orange)}
 .card h3{margin-top:16px;font-size:18.5px}
 .card p{font-size:15.5px;color:var(--body);margin-top:7px;line-height:1.5}
 @media(max-width:900px){.grid,.grid.g3{grid-template-columns:repeat(2,1fr)}}
