@@ -243,13 +243,13 @@ console.log("\n--- ⭐ section tabs: splitting a monolith without cutting it ope
   }
 
   const S1 = build(["Sync", "Appearance", "Cards", "Pricing rates", "Job costs (COGS)",
-                    "Home base — OBX Lot Solutions", "Archive", "Backups", "Security"], true);
+                    "Home base — OBX Lot Solutions", "Archive", "Backups", "🔑 Keys & connections"], true);
   const c1 = run(S1.view);
   const secs = S1.view.children.filter(x => x.attrs["data-sec"]);
   eq("⭐ Settings splits into its nine sections", secs.length, 9);
   /* ⭐ the ORDER is declared in SEC_ORDER, not inherited from whatever order the template emits */
   eq("...ordered logically, not as the template happens to emit them", secs.map(x => x.attrs["data-sec"]).join(","),
-    "sync,appearance,home-base,pricing-rates,job-costs-cogs,cards,security,backups,archive");
+    "sync,appearance,home-base,pricing-rates,job-costs-cogs,cards,keys-connections,backups,archive");
   ok("⛔ a section missing from SEC_ORDER still appears, at the end", (function () {
     const X = build(["Sync", "Brand New Thing"], false); run(X.view);
     const k = X.view.children.filter(y => y.attrs["data-sec"]).map(y => y.attrs["data-sec"]);
