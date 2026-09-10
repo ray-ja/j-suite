@@ -249,7 +249,7 @@ window.wizAddJunk=function(){
   const cost=Math.round((c.special+dumpAmort+_dr.rt*QE.MILEAGE)*100)/100;   // reserved/passthrough: disposal + dump-run reserve + site mileage
   // job time for the pay check — STASHED, no dump run on this job: 20-min on-site baseline + load times + site drive
   const totalPH=crew*((20+(c.loadMin||0))/60)+crew*(_dr.min/60);
-  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:""});
+  WZ.items.push({name:"Junk / move-out — "+itemCount+" items (~"+c.eighths.toFixed(1)+"/8 truck)",price:price,cost:cost,notes:notes,qty:1,unit:"job",serviceId:"",bandKey:"junk"});
   WZ.crewN=crew; WZ.hours=Math.round(totalPH/crew*10)/10;   // carry crew + hours-each into the review
   WZ.step="review";render();   // keep WZ.junk/junkCrew/junkMode so the review's ← back button returns to the live load
 };

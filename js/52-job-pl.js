@@ -219,7 +219,18 @@ function finSalesToBusiness(income) {
   return ids.some(function (id) {
     var j = jobs.find(function (x) { return x && x.id === id && !x.deleted; });
     var q = (j && typeof plQuoteFor === "function") ? plQuoteFor(j) : null;
-    return !!(q && (q.items || []).some(function (it) { return it && it.bandKey === "junk"; }));
+    if (!q) return false;
+    /* ⚠️ FIXED 2026-09-10: real junk quotes never carried bandKey — js/17 stamps kind:"junk" and js/21
+       pushed items with NO bandKey at all, so this returned false on every actual junk job and the sales
+       share kept rolling to the field pool. The sources now stamp bandKey:"junk"; the kind and name checks
+       cover every quote saved before today. */
+    if (q.kind === "junk") return true;
+    return (q.items || []).some(function (it) {
+      if (!it) return false;
+      if (it.bandKey === "junk") return true;
+      if (it.bandKey) return false;                      // a typed non-junk item is not junk
+      return /junk|clean.?out|move.?out|haul/i.test(String(it.name || ""));
+    });
   });
 }
 window.jobHardCost = jobHardCost;

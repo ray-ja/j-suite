@@ -288,6 +288,24 @@ function rJobPage(j) {
   // customer also has a path/landscaping quote (Ray 2026-09-01: path guides showed on his junk-haul job).
   const _typed = _isPathJob || _isLandJob;
   const _untypedFallback = !_typed && !_jq;
+  // ⭐ TEARDOWN & HAUL crew guides (2026-09-10, Ray: "make sure we have good crew guides" for everything
+  // the ads sell). Same typing rule as path/land above: the job's OWN quote's bandKeys pick the guide, so a
+  // deck job shows the deck guide and never the boat one. Reads the playbookLib process entries seeded in
+  // js/114; opens the driveway-readable modal (pbLibShow). Junk/cleanout jobs get the haul guide.
+  const _pbByBand = { deckdemo: "deck_teardown", demo: "shed_demo", fencedemo: "fence_removal",
+    hottubdemo: "hottub_removal", intdemo: "interior_stripout", concdemo: "concrete_removal",
+    paverdemo: "paver_removal", boatdemo: "boat_cutup", junk: "junk_haul" };
+  if (_jq && typeof pbLibProcess === "function") {
+    const _seen = {};
+    (_jq.items || []).forEach(it => {
+      /* legacy junk quotes carry no bandKey — fall back to the same name guess the wizard uses */
+      const bk = it && (it.bandKey || (_jq.kind === "junk" ? "junk" : (typeof guessBandKey === "function" ? guessBandKey(it.name) : null)));
+      const k = bk && _pbByBand[bk];
+      if (!k || _seen[k]) return; _seen[k] = 1;
+      const g = pbLibProcess(k);
+      if (g) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="pbLibShow('${k}')">📋 Crew Guide — ${esc(g.name)}</button>`;
+    });
+  }
   // PLANT crew guide — a landscaping job (or a quote-less legacy job that has a plant guide)
   if ((_isLandJob || _untypedFallback) && typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
   // PATH BUILD GUIDE — a path job (prefer this job's OWN quote); or a quote-less legacy job whose customer has a path quote.

@@ -88,6 +88,57 @@ console.log("\n— boats (Ray 2026-09-09: paperwork built into the tool as remin
   ok("the boat trailer is excluded in the form AND the quote notes", /trailer, if any, is not included/.test(src) && /titled vehicle; the boat comes off it/.test(src));
 }
 
+console.log("\n— hot tubs (Ray: lifted out whole, never cut) —");
+{
+  ok("a standard tub is ~900 lb — one load", td.tdWeight("hottub", { tubSize: "std" }) === 900 && td.tdLoads(900) === 1);
+  ok("small 700 / swim spa 1,500", td.tdWeight("hottub", { tubSize: "small" }) === 700 && td.tdWeight("hottub", { tubSize: "swim" }) === 1500);
+  const b = td.tdBand("hottub", { tubSize: "std" });
+  ok("bands $350–650 inside the 2026 market ($300–600)", b[0] === 350 && b[1] === 650 && b[2] === 350, b);
+  ok("a swim spa is its own tier ($700–1,200)", td.tdBand("hottub", { tubSize: "swim" })[0] === 700);
+  ok("a swim spa takes twice the crew-minutes", td.tdWorkMin("hottub", { tubSize: "swim" }, 0) === 2 * td.tdWorkMin("hottub", { tubSize: "std" }, 0));
+}
+console.log("\n— pavers (lift, don't break — cheaper than concrete) —");
+{
+  const w = td.tdWeight("pavers", { area: 120 });
+  ok("120 sq ft of pavers ≈ 1,560 lb — one load", w === 1560 && td.tdLoads(w) === 1, w);
+  const b = td.tdBand("pavers", { area: 120 });
+  ok("bands $2.5–5/sq ft with a $400 floor", b[0] === 300 && b[1] === 600 && b[2] === 400, b);
+  ok("⭐ paver removal per sq ft is CHEAPER than concrete per sq ft — no breaking",
+    td.tdBand("pavers", { area: 100 })[1] < td.tdBand("slab", { area: 100 })[1]);
+}
+
+console.log("\n— crew guides: every advertised job has one, and the job page can find it —");
+{
+  const fs2 = require("fs");
+  const pb = fs2.readFileSync("js/114-playbook-library.js", "utf8");
+  const KEYS = ["deck_teardown", "shed_demo", "fence_removal", "hottub_removal", "interior_stripout",
+    "concrete_removal", "paver_removal", "boat_cutup", "cleanout_protocol", "junk_haul"];
+  ok("all 10 teardown/haul guides are in the seed", KEYS.every(k => pb.indexOf('key:"' + k + '"') >= 0),
+    KEYS.filter(k => pb.indexOf('key:"' + k + '"') < 0));
+  ok("each guide carries do + dont + safety", KEYS.every(k => {
+    const i = pb.indexOf('key:"' + k + '"'); const chunk = pb.slice(i, i + 4000);
+    return /do:\[/.test(chunk) && /dont:\[/.test(chunk) && /safety:\[/.test(chunk);
+  }));
+  ok("the boat guide carries the paperwork gate", /PAPERWORK FIRST/.test(pb) && /15 DAYS/.test(pb));
+  ok("the interior guide carries the asbestos stop-work rule", /asbestos until proven otherwise/.test(pb));
+  ok("the hot tub guide demands verify-dead on the 240V", /verify-dead is NON-NEGOTIABLE/.test(pb));
+  ok("the cleanout guide states the everything-goes model", /pointed at = goes/.test(pb));
+  ok("the single-guide viewer exists", /window\.pbLibShow *= */.test(pb));
+  const jp = fs2.readFileSync("js/61-job-page.js", "utf8");
+  ok("the job page maps every teardown bandKey to its guide",
+    ["deckdemo", "fencedemo", "hottubdemo", "intdemo", "concdemo", "paverdemo", "boatdemo", "junk"].every(b => jp.indexOf(b + ':') >= 0 || jp.indexOf(b + ' :') >= 0 || new RegExp(b + '\\s*:').test(jp)));
+  ok("...with a legacy fallback for junk quotes that predate bandKey", /kind === "junk" \? "junk"/.test(jp));
+}
+
+console.log("\n— ⚠️ the split-scoping bug: junk quotes never carried bandKey —");
+{
+  const fs2 = require("fs");
+  ok("js/21 items now stamp bandKey junk", /bandKey:"junk"/.test(fs2.readFileSync("js/21-junk-move-out-item-builder-i.js", "utf8")));
+  ok("js/17 quick quotes now stamp it too", /bandKey:"junk"/.test(fs2.readFileSync("js/17-junk-move-out-estimator-on-s.js", "utf8")));
+  const pl = fs2.readFileSync("js/52-job-pl.js", "utf8");
+  ok("finSalesToBusiness accepts kind:junk + legacy name-match", /q\.kind === "junk"/.test(pl) && /junk\|clean\.\?out\|move\.\?out\|haul/.test(pl));
+}
+
 console.log("\n— the file registers everywhere it must —");
 {
   const fs = require("fs");
@@ -97,7 +148,7 @@ console.log("\n— the file registers everywhere it must —");
   ok("service-picker entry", /teardown.*Deck \/ fence \/ concrete teardown/.test(wiz));
   ok("wizard routes to the estimator", /k==="teardown".*openTeardownEst/.test(wiz));
   const bands = fs.readFileSync("js/22-deep-quote-engine-line-item-.js", "utf8");
-  ok("all five teardown market bands exist", ["deckdemo", "fencedemo", "intdemo", "concdemo", "boatdemo"].every(k => bands.indexOf(k + ":{lo:") >= 0));
+  ok("all seven teardown market bands exist", ["deckdemo", "fencedemo", "intdemo", "concdemo", "boatdemo", "hottubdemo", "paverdemo"].every(k => bands.indexOf(k + ":{lo:") >= 0));
   ok("⭐ the shed band was raised to market ($500–1,500)", /demo:\{lo:500,hi:1500/.test(bands));
   const shed = fs.readFileSync("js/30-demolition-estimator.js", "utf8");
   ok("...and js/30's footprint bands match", /return \[500,700\]/.test(shed) && /return \[1000,1500\]/.test(shed));

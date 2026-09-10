@@ -34,6 +34,10 @@ function tdWeight(type, inp) {
     var perFt = inp.hull === "alu" ? 15 : inp.hull === "wood" ? 70 : 55;
     return Math.round(Math.max(0, +inp.boatFt || 0) * perFt + (inp.motor ? 250 : 0));
   }
+  /* dry acrylic shell + cabinet: 2-4 person ~700, 5-7 ~900, swim spa ~1,500 (per Ray: LIFTED out, never cut) */
+  if (type === "hottub") return inp.tubSize === "small" ? 700 : inp.tubSize === "swim" ? 1500 : 900;
+  /* pavers lift, they don't break: ~11 lb/sq ft of paver + ~2 of scraped setting sand */
+  if (type === "pavers") return Math.round(a * 13);
   if (type === "deck")
     return Math.round(a * 8 + (+inp.railLf || 0) * 5 + (+inp.stairs || 0) * 150 + (+inp.footings || 0) * 60);
   if (type === "fence") {
@@ -51,6 +55,8 @@ function tdBand(type, inp) {
   var a = Math.max(0, +inp.area || 0), lf = Math.max(0, +inp.lf || 0);
   /* boat disposal market runs $400–1,800, length-driven (researched 2026-09-09) */
   if (type === "boat") { var bf = Math.max(0, +inp.boatFt || 0); return [bf * 35, bf * 110, 400]; }
+  if (type === "hottub") return inp.tubSize === "swim" ? [700, 1200, 700] : [350, 650, 350];   // 2026 market $300-600 + swim-spa tier
+  if (type === "pavers") return [a * 2.5, a * 5, 400];   // lifting, not breaking — cheaper than concrete
   if (type === "deck") return [a * 5, a * 12, 600];
   if (type === "fence") return [lf * 3, lf * 6, 400];
   if (type === "interior") return [a * (inp.gut ? 4 : 3), a * (inp.gut ? 8 : 6), 500];
@@ -63,6 +69,8 @@ function tdWorkMin(type, inp, push) {
   inp = inp || {};
   var a = Math.max(0, +inp.area || 0), lf = Math.max(0, +inp.lf || 0);
   var base = type === "boat" ? Math.max(0, +inp.boatFt || 0) * (inp.hull === "alu" ? 8 : inp.hull === "wood" ? 12 : 14)   // fiberglass cuts slowest
+    : type === "hottub" ? (inp.tubSize === "swim" ? 240 : 120)   // disconnect-check, tip, walk, load — crew-total minutes
+    : type === "pavers" ? a * 2                                  // lift + stack + scrape
     : type === "deck" ? a * 3 : type === "fence" ? lf * 5 : type === "interior" ? a * (inp.gut ? 5 : 2.5)
     : a * (8 + Math.max(0, (+inp.thickIn || 4) - 4));   // concrete: slower per inch past 4"
   return Math.round(base * (1 + (push || 0) * 0.5));
@@ -92,7 +100,7 @@ function tdBoatChecklist(titled) {
 /* node-requireable for teardown-tests.js: the pure calc above is the tested surface; the DOM handlers
    below land on a throwaway object when there is no window (same trick as the shared cwRead modules). */
 if (typeof window === "undefined") var window = {};
-var TD_TYPES = [["deck", "🪵 Deck"], ["fence", "🚧 Fence"], ["interior", "🧱 Interior strip-out"], ["slab", "🪨 Concrete slab"], ["wall", "🧊 Concrete wall"], ["boat", "🛶 Boat"]];
+var TD_TYPES = [["deck", "🪵 Deck"], ["fence", "🚧 Fence"], ["hottub", "♨️ Hot tub"], ["interior", "🧱 Interior strip-out"], ["slab", "🪨 Concrete slab"], ["wall", "🧊 Concrete wall"], ["pavers", "🟫 Paver patio"], ["boat", "🛶 Boat"]];
 
 window.openTeardownEst = function () {
   if (!window._tdCrew) window._tdCrew = 2;
@@ -139,6 +147,15 @@ function tdFields() {
   } else if (t === "interior") {
     h = '<div class="row" style="gap:8px">' + num("td_l", "Room length (ft)", 15) + num("td_w", "Width (ft)", 12) + '</div>'
       + '<label>Scope</label><select id="td_gut" onchange="tdCalc()"><option value="light">Strip-out — flooring, trim, fixtures, cabinets</option><option value="gut">Full gut — down to studs (drywall out)</option></select>';
+  } else if (t === "hottub") {
+    h = '<label>Size</label><select id="td_tub" onchange="tdCalc()"><option value="std">Standard (5–7 person)</option><option value="small">Small (2–4 person)</option><option value="swim">Swim spa / oversized</option></select>'
+      + '<label>Where it sits</label><select id="td_tubloc" onchange="tdCalc()"><option value="ground">Ground level / patio</option><option value="deck">On a deck (elevated)</option><option value="upstairs">Upper deck / tight spot</option></select>'
+      + '<div class="sub" style="white-space:normal">Lifted out whole — we don\'t cut tubs. Owner kills the power at the breaker before we arrive; we drain if it\'s still wet (add time).</div>'
+      + '<div class="toggle"><input type="checkbox" id="td_wet" onchange="tdCalc()"><label style="margin:0">Still full of water (we drain it first)</label></div>';
+  } else if (t === "pavers") {
+    h = '<div class="row" style="gap:8px">' + num("td_l", "Patio length (ft)", 12) + num("td_w", "Width (ft)", 10) + '</div>'
+      + '<div class="toggle"><input type="checkbox" id="td_base" onchange="tdCalc()"><label style="margin:0">Scrape &amp; haul the sand base too</label></div>'
+      + '<div class="sub" style="white-space:normal">Pavers lift, they don\'t break — cheaper than concrete. Good pavers have resale/reuse value; ask if the customer wants any kept.</div>';
   } else if (t === "boat") {
     h = '<div class="row" style="gap:8px">' + num("td_boatft", "Hull length (ft)", 14) + '</div>'
       + '<label>Construction</label><select id="td_hull" onchange="tdCalc()"><option value="glass">Fiberglass</option><option value="alu">Aluminum (jon boat)</option><option value="wood">Wood</option></select>'
@@ -162,9 +179,10 @@ window.tdCalc = function () {
   var sel = function (id) { var e = document.getElementById(id); return e ? e.value : ""; };
   var inp = { area: g("td_l") * g("td_w"), lf: g("td_lf"), heightFt: g("td_h") || 6, thickIn: g("td_thick") || 4,
     railLf: g("td_rail"), stairs: g("td_stairs"), footings: ck("td_footings"), fenceKind: sel("td_fk") || "wood", gut: sel("td_gut") === "gut",
-    boatFt: g("td_boatft"), hull: sel("td_hull") || "glass", motor: ck("td_motor") };
+    boatFt: g("td_boatft"), hull: sel("td_hull") || "glass", motor: ck("td_motor"),
+    tubSize: (sel("td_tub") === "small" ? "small" : sel("td_tub") === "swim" ? "swim" : "std"), tubLoc: sel("td_tubloc") || "ground", wet: ck("td_wet"), base: ck("td_base") };
   if (t === "fence") inp.area = 0;
-  var qty = t === "fence" ? inp.lf : t === "boat" ? inp.boatFt : inp.area;
+  var qty = t === "fence" ? inp.lf : t === "boat" ? inp.boatFt : t === "hottub" ? 1 : inp.area;
   /* the boat paperwork checklist, live with the titled/untitled line at 14 ft */
   if (t === "boat") {
     var bck = document.getElementById("td_boatck");
@@ -185,6 +203,8 @@ window.tdCalc = function () {
   if (t === "fence" && inp.footings) push += 0.25;
   if (t === "interior" && inp.gut) push += 0.1;
   if (t === "boat") { if (inp.motor) push += 0.1; if (inp.boatFt >= 14) push += 0.1; }   // titled = paperwork time
+  if (t === "hottub") { if (inp.tubLoc === "deck") push += 0.2; else if (inp.tubLoc === "upstairs") push += 0.45; if (inp.wet) push += 0.15; }
+  if (t === "pavers" && inp.base) push += 0.2;   // the sand base adds shovel time and a heavier load
   if ((t === "slab" || t === "wall") && inp.thickIn > 4) push += Math.min(0.3, (inp.thickIn - 4) * 0.1);
   push = Math.min(1, push);
 
@@ -213,6 +233,7 @@ window.tdCalc = function () {
   if (b) b.innerHTML = '<div style="font-size:13px;line-height:1.85">'
     + (t === "fence" ? 'Fence: <b>' + inp.lf + ' lf × ' + inp.heightFt + ' ft</b>'
       : t === "boat" ? 'Hull: <b>' + inp.boatFt + ' ft ' + (inp.hull === "alu" ? "aluminum" : inp.hull === "wood" ? "wood" : "fiberglass") + '</b>' + (inp.motor ? ' + motor' : '') + (inp.boatFt >= 14 ? ' · <b style="color:#c1121f">TITLED</b>' : ' · no title')
+      : t === "hottub" ? 'Tub: <b>' + (inp.tubSize === "small" ? "2–4 person" : inp.tubSize === "swim" ? "swim spa" : "5–7 person") + '</b> · ' + (inp.tubLoc === "ground" ? "ground level" : inp.tubLoc === "deck" ? "on a deck" : "upper deck / tight") + (inp.wet ? ' · <b>still wet</b>' : '')
       : 'Size: <b>' + Math.round(qty) + (t === "wall" ? ' sq ft face' : ' sq ft') + '</b>' + ((t === "slab" || t === "wall") ? ' × ' + inp.thickIn + '"' : '')) + '<br>'
     + 'Est. debris: <b>' + lbs.toLocaleString() + ' lb (' + tons.toFixed(2) + ' ton) = ' + loads + ' load' + (loads > 1 ? 's' : '') + '</b><br>'
     + 'C&amp;D tipping @ $' + TD_TON + '/ton: <b>' + money(disposal) + '</b> · consumables <b>' + money(consum) + '</b><br>'
@@ -264,7 +285,7 @@ window.saveTeardownQuote = function () {
   if (!(d.price > 0)) { alert("Enter the size first."); return; }
   if (typeof WZON === "undefined" || !WZON || typeof WZ === "undefined" || !WZ) { alert("Open this from a quote so it links the customer."); return; }
   var nm = val("td_name"); if (nm && WZ.cust && !WZ.cust.name) WZ.cust.name = nm;
-  var label = { deck: "Deck removal + haul-off", fence: "Fence removal + haul-off", interior: "Interior strip-out + haul-off", slab: "Concrete slab removal + haul-off", wall: "Concrete wall removal + haul-off", boat: "Boat disposal — cut up + haul-off" }[d.type];
+  var label = { deck: "Deck removal + haul-off", fence: "Fence removal + haul-off", interior: "Interior strip-out + haul-off", slab: "Concrete slab removal + haul-off", wall: "Concrete wall removal + haul-off", boat: "Boat disposal — cut up + haul-off", hottub: "Hot tub removal + haul-off", pavers: "Paver patio removal + haul-off" }[d.type];
   var notes;
   if (d.type === "boat") {
     /* ⭐ THE PAPERWORK RIDES ON THE QUOTE (Ray: "make sure all of this is in the tool as reminders") —
@@ -274,6 +295,15 @@ window.saveTeardownQuote = function () {
       "BEFORE THE CUT: " + tdBoatChecklist(titled).join(" · "),
       "Boat trailer NOT included — that's a titled vehicle; the boat comes off it.",
       "Price includes " + d.loads + " dump run" + (d.loads > 1 ? "s" : "") + " + tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
+  } else if (d.type === "hottub") {
+    notes = [label + " — lifted out whole, never cut.",
+      "Power killed at the breaker by the owner BEFORE we arrive; we disconnect nothing electrical.",
+      (d.inp && d.inp.wet ? "Tub is wet — drain on site before the lift." : "Tub confirmed drained."),
+      "Price includes the dump run + tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
+  } else if (d.type === "pavers") {
+    notes = [label + " — pavers lifted and hauled" + (d.inp && d.inp.base ? ", sand base scraped and hauled too." : "; base left raked level."),
+      "Ask before loading: does the customer want any pavers kept for reuse?",
+      "Price includes " + d.loads + " dump run" + (d.loads > 1 ? "s" : "") + " + tipping (" + (d.tons || 0).toFixed(2) + " ton)."];
   } else {
     notes = [label + " — residential (≤4 units) only.",
       "Utilities disconnected by owner before work. " + (d.type === "interior" ? "Non-structural surfaces only." : ""),
@@ -281,8 +311,8 @@ window.saveTeardownQuote = function () {
   }
   WZ.items = WZ.items || [];
   WZ.items.push({ serviceId: "", name: label, unit: "job", price: d.price, qty: 1, cost: d.cost || 0, notes: notes,
-    bandKey: d.type === "deck" ? "deckdemo" : d.type === "fence" ? "fencedemo" : d.type === "interior" ? "intdemo" : d.type === "boat" ? "boatdemo" : "concdemo",
-    breakdown: [Math.round(d.qty) + (d.type === "fence" ? " lf" : d.type === "boat" ? " ft hull" : " sq ft") + " · " + (d.tons || 0).toFixed(2) + " ton · " + d.loads + " load" + (d.loads > 1 ? "s" : "")] });
+    bandKey: d.type === "deck" ? "deckdemo" : d.type === "fence" ? "fencedemo" : d.type === "interior" ? "intdemo" : d.type === "boat" ? "boatdemo" : d.type === "hottub" ? "hottubdemo" : d.type === "pavers" ? "paverdemo" : "concdemo",
+    breakdown: [(d.type === "hottub" ? "1 tub" : Math.round(d.qty) + (d.type === "fence" ? " lf" : d.type === "boat" ? " ft hull" : " sq ft")) + " · " + (d.tons || 0).toFixed(2) + " ton · " + d.loads + " load" + (d.loads > 1 ? "s" : "")] });
   var crew = d.crew || 2, totalPH = ((d.mins || 0) / 60) + crew * ((d.driveMin || 0) / 60) + crew * (20 / 60);
   WZ.crewN = crew; WZ.hours = totalPH > 0 ? Math.round(totalPH / crew * 10) / 10 : 0;
   WZ.modalBuilt = true;

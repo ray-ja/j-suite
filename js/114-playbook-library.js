@@ -114,7 +114,151 @@ const PLAYBOOK_SEED = [
    do:["Drop in safe sections away from structures","Cut, load, and haul to the transfer station","Rake & blow the area clean"],
    dont:["Don't remove protected/ordinance trees without clearing it with the owner first","Don't leave debris or ruts"],
    when:"Any time; check ordinances for larger trees", tools:["Chainsaw","Loppers","Pole saw","Rake","Tarps","Trailer"],
-   safety:["Ordinance/HOA check on big trees; drop away from structures; PPE"], refImage:"01a299eb40e79f85b6ba34d2.jpg" }
+   safety:["Ordinance/HOA check on big trees; drop away from structures; PPE"], refImage:"01a299eb40e79f85b6ba34d2.jpg" },
+
+ /* ── TEARDOWN & HAUL GUIDES (seeded 2026-09-10) — one per service the ads now sell (Ray: "make sure we
+    have good crew guides for them too"). Same idempotent seed path as everything above. ── */
+ { key:"deck_teardown", kind:"process", name:"Deck teardown & haul-off", latin:"", category:"teardown",
+   identify:"Removing a wood deck: boards, framing, railings, stairs — down to posts cut flush or dug out per the quote.",
+   do:["Walk it with the customer FIRST — confirm what stays (posts? footings? ledger?) against the quote notes",
+       "Deck boards first (pry from the outside edge in), then rails/stairs, then joists, then beams/posts",
+       "Cut framing into trailer-length pieces as you go — don't build a pile you have to cut twice",
+       "De-nail or bend nails flat as pieces come off — a nail through a boot ends the day",
+       "Load heavy framing low and flat, boards on top; strap before the road",
+       "Sweep the footprint magnet-style for fasteners before leaving"],
+   dont:["Don't cut the ledger or anything attached to the HOUSE unless the quote explicitly says so",
+         "Don't drop sections onto irrigation, hose bibs, or AC lines hiding below",
+         "Don't leave footings proud of grade if the quote says cut-flush — trip hazard with our name on it"],
+   when:"Dry footing preferred; wind under ~20 mph for rail sections",
+   tools:["Recip saw + demo blades","Circular saw","Pry bars / wrecking bar","Sledge","Cat's paw","Magnet sweeper","Straps & tarps"],
+   safety:["Nails UP never sideways in stacked lumber","Gloves + eye pro on saws","Watch for wasp nests under boards","Two people on rail/stair sections"], refImage:"" },
+
+ { key:"shed_demo", kind:"process", name:"Shed / outbuilding demo", latin:"", category:"teardown",
+   identify:"Tear-down of a shed or small outbuilding: roof, walls, floor per quote — hauled the same visit.",
+   do:["Confirm power is DEAD at the source before touching anything wired — owner's job, our check",
+       "Empty it completely first (contents are a junk line, not part of demo time)",
+       "Top down: roofing, then roof framing, then walls in panels, then floor",
+       "Push walls INWARD when dropping panels — the debris lands where the shed was",
+       "Photograph the pad/footprint after cleanup"],
+   dont:["Don't cut standing walls at the base and hope — control every panel",
+         "Don't demo with contents inside 'to save a trip'",
+         "Don't take a structure with a meter, sub-panel, or plumbing still live"],
+   when:"Any dry day; shingle tear-off is brutal in July heat — start early",
+   tools:["Recip saw","Circular saw","Sledge","Pry bars","Shingle fork if shingled","Straps, tarps, magnet sweeper"],
+   safety:["Roof work = two people minimum","Check for wasps/snakes before reaching into cavities","Shingles are heavy — don't overload the first trip"], refImage:"" },
+
+ { key:"fence_removal", kind:"process", name:"Fence removal & haul", latin:"", category:"teardown",
+   identify:"Pulling fence runs: panels/pickets, posts, and (if quoted) the concrete footings.",
+   do:["Confirm the LINE with the customer — which runs go, which stay, where the neighbour's fence starts",
+       "Panels off first, stack flat; then posts",
+       "Footings quoted OUT: rock the post loose, lever with a digging bar, or chain-pull with the machine; fill holes with soil and tamp",
+       "Footings quoted CUT: cut posts at grade and note it on the job"],
+   dont:["Don't pull a shared/boundary fence without the customer confirming it's theirs — fence disputes are neighbour wars",
+         "Don't leave open post holes — fill and tamp every one",
+         "Don't yank posts blind next to irrigation or the water meter"],
+   when:"Soft ground after rain makes footing pulls EASIER — heavy clay when dry",
+   tools:["Recip saw","Digging bar","Post puller or farm jack","Shovel","Chain (machine pulls)","Magnet sweeper"],
+   safety:["811 rules of thumb: hand-dig near meters/lines","Panels catch wind — two people on 6-ft privacy panels"], refImage:"" },
+
+ { key:"hottub_removal", kind:"process", name:"Hot tub removal", latin:"", category:"teardown",
+   identify:"Dead spa lifted out WHOLE (we don't cut tubs), cabinet and all, onto the trailer.",
+   do:["Owner kills power at the BREAKER before we arrive — verify with a non-contact tester at the disconnect",
+       "Drain fully if wet (pump or gravity) — water is 8 lb/gallon and a wet tub is a back injury",
+       "Unbolt/unscrew cabinet corners if it slims the profile for the route out",
+       "Tip on edge, walk it on furniture dollies or pipe-roll it; ramps + winch onto the trailer",
+       "Photograph the empty pad and the disconnected whip"],
+   dont:["Don't touch the electrical whip until the tester confirms dead — 240V",
+         "Don't drag it across a deck it will gouge — dollies or sacrificial ply",
+         "Don't lift wet, ever; drain first even when it costs an hour"],
+   when:"Dry deck/ground for footing; two-person minimum, three for uppers",
+   tools:["Non-contact voltage tester","Drain pump + hose","Furniture dollies","2-3 pipes for rolling","Ramps","Winch/come-along","Straps"],
+   safety:["240V verify-dead is NON-NEGOTIABLE","Backs: tip and roll, never dead-lift","Watch fingers under the shell edge"], refImage:"" },
+
+ { key:"interior_stripout", kind:"process", name:"Interior strip-out", latin:"", category:"teardown",
+   identify:"Non-structural interior demo: cabinets, counters, flooring, trim, fixtures — surfaces only, never framing.",
+   do:["Walk the scope room by room with the customer; tape off anything that STAYS",
+       "Kill power to the room at the panel for anything wired (fixtures, disposals); cap water before pulling sinks/dishwashers",
+       "Uppers before lowers on cabinets; counters off before base cabinets",
+       "Floor protection on every exit path — ram board or ply",
+       "Broom-clean finish; photograph every room done"],
+   dont:["Don't open or cut ANY wall — we are strictly non-structural, and pre-1980s wall cavities can hold asbestos or live knob-and-tube",
+         "Don't pull flooring in a pre-1980 house without the customer confirming it's not asbestos tile — if it's 9-inch tile, STOP and tell Ray",
+         "Don't disconnect gas appliances — owner's plumber does gas, always"],
+   when:"House empty of furniture in the work rooms; power/water confirmations first",
+   tools:["Pry bars","Recip saw","Oscillating tool","Utility knives","Ram board","Dust masks/respirators","Contractor bags"],
+   safety:["9-inch floor tile or crumbly pipe wrap in an old house = asbestos until proven otherwise — stop work, call Ray","Respirators for dusty pulls","Cap live water lines properly, not with rags"], refImage:"" },
+
+ { key:"concrete_removal", kind:"process", name:"Concrete slab & wall removal", latin:"", category:"teardown",
+   identify:"Breaking and hauling slabs, walkways, and garden walls — sledge/breaker to liftable pieces, machine loads.",
+   do:["Score the free edge and work FROM it — concrete breaks toward daylight",
+       "Break to pieces two people (or the machine) can actually lift — grapefruit-to-microwave size",
+       "Pull wire mesh / rebar as you go, cut with the grinder, keep it in its own pile",
+       "Machine does the loading; keep every load under the 3,600 lb cap — the tool's load count is the plan",
+         "Rake and level the dirt left behind"],
+   dont:["Don't break blind next to the house — check for conduit/plumbing runs under old slabs",
+         "Don't overload 'to save a trip' — the trailer cap is the law",
+         "Don't leave rebar stubs proud of the ground"],
+   when:"Any dry day; hearing/eye protection non-negotiable",
+   tools:["SDS-max breaker (rented) or sledges + wedges","Angle grinder + cutoff wheels (rebar)","Digging bar","Machine + bucket","Gloves rated for handling"],
+   safety:["Full eye pro — chips fly (Ray took chips to the face on the pond job; glasses saved it)","Hearing protection on the breaker","Lift with the machine, not backs"], refImage:"" },
+
+ { key:"paver_removal", kind:"process", name:"Paver patio removal", latin:"", category:"teardown",
+   identify:"Lifting a paver patio/walk: pavers up whole, sand base per quote — no breaking involved.",
+   do:["ASK FIRST: does the customer want any pavers kept? Good pavers have reuse value — that's goodwill or a discount lever",
+       "Pop the first paver with two flat screwdrivers or a trowel; hand-lift from there",
+       "Stack on the trailer like books, tight rows — loose pavers slide and crack",
+       "Base per quote: scrape and haul the sand, or rake it level and leave it",
+       "Edge restraint and spikes come out too — magnet sweep"],
+   dont:["Don't toss pavers in loose — a shifting half-ton of loose brick is dangerous at 45 mph",
+         "Don't scrape the base if the quote says leave it — the customer may be re-topping"],
+   when:"Any time; wet sand is heavier — mind the load math",
+   tools:["Flat screwdrivers/trowel","Gloves","Dollies","Straps","Flat shovel for base","Magnet sweeper"],
+   safety:["Fingers between pavers when stacking","Strap stacked loads tight — they're the slide risk"], refImage:"" },
+
+ { key:"boat_cutup", kind:"process", name:"Boat cut-up & disposal", latin:"", category:"teardown",
+   identify:"Dead skiff/jon boat/dinghy cut to trailer pieces and hauled. TITLED (14 ft+) vessels carry paperwork steps that are NOT optional.",
+   do:["PAPERWORK FIRST on any titled hull (the quote notes carry the checklist): title seen + name matches · lien line blank (NCWRC free lookup / 800-628-3773) · disposal authorization SIGNED · HIN photographed BEFORE",
+       "Drain every fluid before a blade touches it: fuel siphoned to a jerry can, oil out of any motor — fuel goes back to the owner or our cans, never the dump",
+       "Battery out first (core credit at the parts store); motor off (scrap value)",
+       "Cut hull into liftable sections — recip saw w/ demo blades on aluminum/wood; grinder + recip on fiberglass",
+       "Photograph the HIN plate AFTER the cut; remind the owner: report destroyed to NC Wildlife within 15 DAYS",
+       "Fiberglass dust: full respirator + long sleeves, cut wet if possible"],
+   dont:["Don't cut ANY titled hull before the authorization is signed and the lien is confirmed clear — destroying someone's loan collateral is a lawsuit",
+         "Don't cut a fuel tank, EVER — drain, vent, remove whole",
+         "Don't take the boat TRAILER — titled vehicle, it stays",
+         "Don't grind fiberglass without a respirator; the itch is the least of it"],
+   when:"Outdoors only; wind at your back on fiberglass cuts",
+   tools:["Recip saw + demo blades","Angle grinder","Siphon + jerry cans","Battery wrench","Respirators (P100)","Tyvek or long sleeves","Camera for HIN shots"],
+   safety:["Fuel vapor is the explosion risk — no cutting near a wet tank","P100 respirator on fiberglass, no exceptions","Cut sections are sharp — glove up for loading"], refImage:"" },
+
+ { key:"cleanout_protocol", kind:"process", name:"Cleanout — rental / office / foreclosure", latin:"", category:"cleanup",
+   identify:"Clearing a whole unit or space. THE MODEL: everything pointed at goes — we don't sort, pick through, or decide what's valuable. That rule is why these jobs are profitable (see the one we don't do: attic/estate picking).",
+   do:["Walk it (or work the photo list) BEFORE loading; confirm anything that STAYS is marked or moved aside by the customer",
+       "One pass per room, big furniture first, boxes/loose last",
+       "Freon units (fridge/freezer/AC) set aside — they ride separate for certified recovery, per the quote's per-unit fee",
+       "Photograph every room empty — the after-photos ARE the deliverable for off-island owners",
+       "Broom-clean each room on the way out"],
+   dont:["Don't start sorting 'keep vs toss' with the customer mid-job — that's the estate-cleanout trap; pointed at = goes, full stop",
+         "Don't pocket or set aside 'good stuff' without the customer offering — everything on the trailer is theirs until it's disposal",
+         "Don't take documents/safes/firearms found in a foreclosure — flag the property manager, photograph in place"],
+   when:"On the customer's window — rental turnovers are clock jobs; be early",
+   tools:["Dollies","Contractor bags","Shrink wrap","Straps","Broom","Camera"],
+   safety:["Foreclosures: assume sharps/unknowns in bags — grip from outside, never blind-reach","Two people on mattresses/sofas on stairs"], refImage:"" },
+
+ { key:"junk_haul", kind:"process", name:"Junk haul & dump run", latin:"", category:"cleanup",
+   identify:"The bread-and-butter load: pickup, load, weigh, dump, done. The habits here are the margin.",
+   do:["Photo-match on arrival: does the pile match what was quoted? Bigger = re-quote at the door BEFORE loading (price agreed before we start — that's the promise)",
+       "Load dense/heavy low and forward over the axles; bulky/light on top; strap and tarp every road load",
+       "Weigh every C&D load — the scale ticket is the billing record; photograph it",
+       "Clock the miles at confirm — the odometer IS first truth in the pay math now",
+       "Same-day dump when the load has C&D or anything that smells — never let it sit on the trailer overnight",
+       "Before leaving: 'While we're here, anything else?' — the cheapest upsell in the business"],
+   dont:["Don't take items on the banned list (liquids, hazmat, titled anything) 'just this once' — the list is the law",
+         "Don't overload past ~3,600 lb cargo — two trips beat one ticket or one axle",
+         "Don't leave without the review ask on a happy job: say it out loud, then send the link same day"],
+   when:"Soundside hours; batch Hatteras/Ocracoke runs — never one small job alone past Oregon Inlet",
+   tools:["Straps","Tarps","Dollies","Gloves","Magnet sweeper","Phone for scale/before-after photos"],
+   safety:["Strap + tarp is DOT law, not a suggestion","Lift in pairs on anything over ~70 lb","Watch load balance — tongue-heavy beats tail-heavy"], refImage:"" }
 ];
 
 /* pbLibNorm — normalize a plant name for matching: lowercase, strip everything after "/", strip non [a-z ], trim.
@@ -169,6 +313,26 @@ window.pbLibProcess = function(key){
   const list = pbLibAll();
   for(let i=0;i<list.length;i++){ const e=list[i]; if(e && e.kind==="process" && String(e.key)===k) return e; }
   return null;
+};
+
+/* pbLibShow(key) — modal for ONE process guide, for the job-page Crew Guide buttons (js/61). The crew
+   reads this standing in the driveway: identify → do → don't → safety, in that order, big enough to tap. */
+window.pbLibShow = function(key){
+  const e = (typeof pbLibProcess==="function") ? pbLibProcess(key) : null;
+  if(!e){ if(typeof toast==="function") toast("No guide found."); return; }
+  const E = (typeof esc==="function") ? esc : function(s){ return String(s==null?"":s); };
+  const sec = function(title, items, color){
+    if(!items || !items.length) return "";
+    return '<div style="font-weight:800;margin:12px 0 4px;color:'+(color||"var(--ink)")+'">'+title+'</div>'
+      + items.map(function(x){ return '<div style="display:flex;gap:8px;margin:5px 0;font-size:14px;line-height:1.5"><span style="flex:0 0 auto">'+(color==="var(--danger)"?"✋":"•")+'</span><span style="white-space:normal">'+E(x)+'</span></div>'; }).join("");
+  };
+  modal("📋 "+E(e.name), ''
+    + (e.identify ? '<p class="sub" style="white-space:normal;margin:0 0 4px">'+E(e.identify)+'</p>' : '')
+    + sec("Do it this way", e.do)
+    + sec("Never", e.dont, "var(--danger)")
+    + (e.safety && e.safety.length ? sec("Safety", e.safety, "#b8860b") : "")
+    + (e.when ? '<div class="sub" style="white-space:normal;margin-top:10px"><b>When:</b> '+E(e.when)+'</div>' : '')
+    + (e.tools && e.tools.length ? '<div class="sub" style="white-space:normal;margin-top:6px"><b>Bring:</b> '+E(e.tools.join(" · "))+'</div>' : ''));
 };
 
 /* ---------- VIEWER UI (reachable from the Playbook area — js/63 button) ---------- */
