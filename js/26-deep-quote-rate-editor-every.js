@@ -99,52 +99,79 @@ function rData(){
       <input type="file" accept="application/json" id="impfile" onchange="importData(this)">
       <p class="muted" style="margin-top:8px;font-size:12px">The server auto-backs-up hourly. "Back up now" puts a full copy on this device — keep one off the server.</p>
     </div>`:""}
-    ${(typeof isOwner==="function"&&isOwner())?`
-    <h2>🔒 Security</h2>
-    <div class="card">
-      <p class="muted" style="margin-bottom:12px">Paste a secret and Save — it's written straight to the server file, never shown back and never sent anywhere else.</p>
-      <label style="margin:0">Resend email key <span id="sec_resendKey" class="sub"></span></label>
-      <input type="password" id="in_resendKey" placeholder="re_…" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('resendKey','in_resendKey')">Save Resend key</button>
-      <label style="margin:16px 0 0">Stripe key <span id="sec_stripeKey" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">A <b>restricted</b> key (<code>rk_live_…</code>) with <b>Prices</b>, <b>Products</b>, and <b>Payment Links</b> set to Write. Lets the app auto-make a card-payment link at the exact amount for each invoice.</div>
-      <input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeKey','in_stripeKey')">Save Stripe key</button>
-      <label style="margin:16px 0 0">Stripe webhook secret <span id="sec_stripeWebhookSecret" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">The <code>whsec_…</code> from a Stripe webhook pointed at <code>/api/stripe/webhook</code> (event <b>checkout.session.completed</b>). Lets the app auto-mark an invoice PAID the moment the customer pays.</div>
-      <input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save webhook secret</button>
-      <label style="margin:16px 0 0">Cloudflare — sites/deploy token · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="ok_cfSites" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">This org's OWN Cloudflare token for deploying its websites (Pages read/write on the account that hosts them). Every key on this page belongs to <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> only — switch org tabs to manage another org's keys. Checked against Cloudflare on the spot.</div>
-      <input type="password" id="in_cfSites" placeholder="40-character API token" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfSites','in_cfSites')">Save &amp; verify sites token</button>
-      <label style="margin:16px 0 0">Cloudflare — DNS token · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="ok_cfDns" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">The token from the Cloudflare account holding this org's domain zones (needs Zone·DNS·Edit). Can be the same account as above or a different one.</div>
-      <input type="password" id="in_cfDns" placeholder="40-character API token" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfDns','in_cfDns')">Save &amp; verify DNS token</button>
-
-      <label style="margin:20px 0 0">Review link — ${esc((BIZ[S.biz]||{}).name||S.biz)}</label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">The link customers tap to leave a review (the LSA review link from the lead inbox, or the Google review short-link). Powers the ⭐ "Text the review ask" button on finished jobs — reviews are the LSA ranking game.</div>
-      <input id="in_reviewLink" placeholder="https://…" autocomplete="off" style="width:100%" value="${esc(((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).reviewLink||"")}">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveReviewLink()">Save review link</button>
-
-      <label style="margin:20px 0 0">Google Ads · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="gads_status" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">This org's OWN ads account (spend, leads, search terms → the nightly digest). Three pieces, then a one-tap connect.</div>
-      <div class="sub" style="margin:6px 0 2px"><b>1.</b> The OAuth client JSON (downloaded from Cloud Console → Credentials):</div>
-      <input type="file" id="in_gadsFile" accept=".json,application/json" style="width:100%" onchange="gadsReadFile(this)">
-      <textarea id="in_gadsJson" placeholder="…or paste the JSON here" style="width:100%;height:54px;font-size:11px" autocomplete="off"></textarea>
-      <div class="row" style="gap:8px;margin-top:6px">
-        <input id="in_gadsCust" placeholder="Customer ID e.g. 123-456-7890" autocomplete="off" style="flex:1">
-        <input type="password" id="in_gadsDev" placeholder="Developer token (optional)" autocomplete="off" style="flex:1">
-      </div>
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsSaveCfg()">Save Google Ads keys</button>
-      <div class="sub" style="margin:10px 0 2px"><b>2.</b> Connect: sign in as Ray@obxlotsolutions.com and approve. Google then dumps you on a <b>broken page — that's expected</b>. Copy that page's ADDRESS and paste it below.</div>
-      <button class="btn ghost" style="width:100%" onclick="gadsConnect()">Connect Google (opens sign-in)</button>
-      <input id="in_gadsCode" placeholder="Paste the broken page's full address (contains ?code=…)" autocomplete="off" style="width:100%;margin-top:6px">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsExchange()">Finish connection</button>
-      <div class="sub" style="margin:10px 0 2px"><b>Nightly monitor (no Google sign-in needed):</b> mint a script key, put it in the Ads Script Wade gives you, and stats flow in every night.</div>
-      <button class="btn ghost" style="width:100%" onclick="gadsScriptKey()">Mint script key (shown once)</button>
-    </div>`:""}
+    ${(typeof isOwner==="function"&&isOwner())?(function(){
+      /* ── 🔑 KEYS & CONNECTIONS (Ray 2026-09-10: "really poorly organized… tiny text… it should have a
+         tiny description… what exactly this key is, how to make it, very very shortly").
+         One row per key: bold name + status, a one-line WHAT, a one-line GET IT, then the input. Grouped
+         into collapsible sections — per-ORG groups say whose keys they are; platform groups say "all orgs". */
+      const ORG=esc((BIZ[S.biz]||{}).name||S.biz);
+      const row=(title,statusId,what,get,body)=>`
+        <div style="padding:12px 0;border-top:1px solid var(--line)">
+          <div style="font-size:15.5px;font-weight:800;color:var(--ink)">${title}${statusId?` <span id="${statusId}" class="sub" style="font-size:12.5px"></span>`:""}</div>
+          <div style="font-size:13.5px;color:var(--muted);white-space:normal;line-height:1.5;margin:3px 0 1px">${what}</div>
+          <div style="font-size:13.5px;color:var(--muted);white-space:normal;line-height:1.5;margin:0 0 7px"><b style="color:var(--ink)">Get it:</b> ${get}</div>
+          ${body}</div>`;
+      const grp=(title,inner,open)=>`<details class="card" ${open?"open":""} style="padding:14px 16px"><summary style="font-size:16px;font-weight:800;cursor:pointer">${title}</summary>${inner}</details>`;
+      return `
+    <h2>🔑 Keys &amp; connections</h2>
+    <p class="muted" style="margin:0 4px 10px;font-size:13.5px">Secrets are written straight to the server and never shown back. Sections marked <b>${ORG}</b> hold ONLY this org's keys — switch org tabs for another org's.</p>
+    ${grp(`🌐 Websites — ${ORG}`,
+      row(`Sites / deploy token`,`ok_cfSites`,
+        `Deploys ${ORG}'s websites.`,
+        `Cloudflare (the account hosting the sites) → My Profile → API Tokens → Create → permission <b>Pages: Edit</b>. Copy the value shown once.`,
+        `<input type="password" id="in_cfSites" placeholder="40-character API token" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfSites','in_cfSites')">Save &amp; verify</button>`)
+      +row(`DNS token`,`ok_cfDns`,
+        `Edits ${ORG}'s domain records (pointing a domain at a site).`,
+        `Cloudflare (the account holding the DOMAINS — can be a different one) → API Tokens → Create → permission <b>Zone · DNS · Edit</b>.`,
+        `<input type="password" id="in_cfDns" placeholder="40-character API token" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfDns','in_cfDns')">Save &amp; verify</button>`),true)}
+    ${grp(`📣 Google Ads — ${ORG} <span id="gads_status" class="sub" style="font-size:12.5px"></span>`,
+      row(`1 · OAuth client (JSON file)`,``,
+        `Lets the app talk to ${ORG}'s ads account.`,
+        `console.cloud.google.com → APIs &amp; Services → Credentials → Create → OAuth client ID → <b>Desktop app</b> → Download JSON.`,
+        `<input type="file" id="in_gadsFile" accept=".json,application/json" style="width:100%" onchange="gadsReadFile(this)">
+         <textarea id="in_gadsJson" placeholder="…or paste the JSON here" style="width:100%;height:50px;font-size:12px" autocomplete="off"></textarea>`)
+      +row(`2 · Customer ID &amp; developer token`,``,
+        `Which ads account to read, and Google's API pass.`,
+        `Customer ID: the 10-digit number top-right in Google Ads. Dev token: the Ads <b>manager</b> account → API Center.`,
+        `<div class="row" style="gap:8px"><input id="in_gadsCust" placeholder="Customer ID 123-456-7890" autocomplete="off" style="flex:1">
+         <input type="password" id="in_gadsDev" placeholder="Developer token" autocomplete="off" style="flex:1"></div>
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsSaveCfg()">Save keys</button>`)
+      +row(`3 · Connect &amp; authorize`,``,
+        `The one-time Google sign-in that grants access.`,
+        `Tap Connect, approve as this org's Google account. You'll land on a <b>broken page — that's expected</b>; copy that page's address here.`,
+        `<button class="btn ghost" style="width:100%" onclick="gadsConnect()">Connect Google (opens sign-in)</button>
+         <input id="in_gadsCode" placeholder="Paste the broken page's address (?code=…)" autocomplete="off" style="width:100%;margin-top:6px">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsExchange()">Finish connection</button>`)
+      +row(`Nightly monitor key`,``,
+        `Lets the read-only Ads Script push nightly stats here — works even before step 3.`,
+        `Mint it here (shown once), paste into the script's INGEST_KEY line (Google Ads → Tools → Bulk actions → Scripts).`,
+        `<button class="btn ghost" style="width:100%" onclick="gadsScriptKey()">Mint script key</button>`))}
+    ${grp(`⭐ Reviews — ${ORG}`,
+      row(`Review link`,``,
+        `The page a customer lands on to leave a review; powers the ⭐ button on finished jobs.`,
+        `Google LSA → lead inbox → Ask for reviews → copy link (or the Business Profile review short-link).`,
+        `<input id="in_reviewLink" placeholder="https://…" autocomplete="off" style="width:100%" value="${esc(((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).reviewLink||"")}">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveReviewLink()">Save review link</button>`))}
+    ${grp(`💳 Payments — all orgs`,
+      row(`Stripe key`,`sec_stripeKey`,
+        `Makes the card-payment links on invoices.`,
+        `Stripe → Developers → API keys → <b>Create restricted key</b> → Prices, Products &amp; Payment Links set to Write (<code>rk_live_…</code>).`,
+        `<input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeKey','in_stripeKey')">Save</button>`)
+      +row(`Stripe webhook secret`,`sec_stripeWebhookSecret`,
+        `Flips an invoice to PAID the moment the customer pays.`,
+        `Stripe → Developers → Webhooks → endpoint <code>/api/stripe/webhook</code>, event <b>checkout.session.completed</b> → signing secret (<code>whsec_…</code>).`,
+        `<input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save</button>`))}
+    ${grp(`📧 Email — all orgs`,
+      row(`Resend key`,`sec_resendKey`,
+        `Lets the app send email (account invites, password resets).`,
+        `resend.com → API Keys → Create (<code>re_…</code>).`,
+        `<input type="password" id="in_resendKey" placeholder="re_…" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('resendKey','in_resendKey')">Save</button>`))}`;
+    })():""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
   if(window.orgpRefresh&&typeof orgpCan==="function"&&orgpCan())setTimeout(orgpRefresh,40);
