@@ -30,7 +30,6 @@ img,svg{max-width:100%}
 .wrap{max-width:var(--wrap);margin:0 auto;padding:0 22px}
 
 .ic{width:1.15em;height:1.15em;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.18em}
-.ic-lg{width:28px;height:28px;stroke-width:1.5}
 
 /* top bar */
 .topbar{background:var(--navy);color:#93a1b3;font-size:14.5px;border-bottom:1px solid rgba(255,255,255,.07)}
