@@ -2284,6 +2284,18 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("a new OAuth client invalidates any old refresh token", /refreshToken = ""/.test(_gads));
   ok("the consent URL asks for offline access + forced consent (that's what yields a refresh token)", /access_type: *"offline"/.test(_gads) && /prompt: *"consent"/.test(_gads));
   ok("exchange verifies live against the Ads API when a dev token exists", /listAccessibleCustomers/.test(_gads));
+  ok("gadsIngestOk demands a real date + bounded arrays",
+    t.gadsIngestOk({ date: "2026-09-10", campaigns: [{ name: "Junk Co — Search", clicks: 3, impressions: 40, costMicros: 5010000, conversions: 1 }], searchTerms: [{ term: "junk removal obx", clicks: 1, costMicros: 1670000 }] })
+    && !t.gadsIngestOk({ date: "yesterday", campaigns: [] })
+    && !t.gadsIngestOk({ date: "2026-09-10", campaigns: [{ name: 7 }] })
+    && !t.gadsIngestOk({ date: "2026-09-10", campaigns: [{ name: "x", clicks: -1 }] })
+    && !t.gadsIngestOk(null));
+  const _ing = _srv.slice(_srv.indexOf('"/api/gads/ingest"'), _srv.indexOf('"/api/gads/ingest"') + 1400);
+  ok("ingest authenticates by the minted key alone and appends JSONL", /ingestKey/.test(_ing) && /appendFileSync/.test(_ing));
+  ok("the nightly script for Ray exists and is read-only", (function () {
+    const s = require("fs").readFileSync(__dirname + "/tools/google-ads-nightly-monitor.js", "utf8");
+    return /api\/gads\/ingest/.test(s) && /search_term_view/.test(s) && !/setBid|setBudget|pause\(|enable\(/.test(s);
+  })());
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);

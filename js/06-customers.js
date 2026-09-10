@@ -115,7 +115,7 @@ function liCustomer(c){
     ${lines.map(l=>`<div class="sub" style="white-space:normal">${l}</div>`).join("")}</div>
     <span class="badge s-${c.status||"Lead"}">${c.status||"Lead"}</span></div>`;
 }
-const SOURCES=["","Referral","Google","Facebook/Instagram","Nextdoor","Door hanger / sign","Cold call / in-person","Property manager","Other"];
+const SOURCES=["","Google — LSA (Guaranteed)","Google — Search ad","Google (organic/maps)","Referral","Repeat customer","Facebook/Instagram","Nextdoor","Door hanger / sign","Yard sign / truck","Cold call / in-person","Property manager","Website","Other","Google"];  // "Google" kept LAST for legacy records; the split is what makes cost-per-booked-job-per-channel computable (2026-09-10)
 let CPROPS=[];
 window.openCustomer=function(id){
   const d=D();const c=id?d.customers.find(x=>x.id===id):{id:uid(),status:"Lead",notes:[]};

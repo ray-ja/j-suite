@@ -79,3 +79,4 @@ plaid-config.json
 # --- Google Ads API credentials (OAuth client + refresh token; app-managed, never commit) ---
 google-ads-config.json
 google-ads-oauth.json
+google-ads-stats.jsonl

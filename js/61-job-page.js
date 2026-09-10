@@ -306,6 +306,21 @@ function rJobPage(j) {
       if (g) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="pbLibShow('${k}')">📋 Crew Guide — ${esc(g.name)}</button>`;
     });
   }
+  // ⭐ REVIEW ASK — one tap texts the customer the org's review link (set in Settings). Shows only when the
+  // job is DONE or PAID (never mid-job — you ask when the mess is gone, satisfaction peaks at the empty
+  // driveway) and the customer has a phone. sms: opens their thread pre-written; nothing is auto-sent.
+  (function () {
+    try {
+      const org = ((typeof S !== "undefined" && S.registry) || []).find(r => r && r.id === S.biz);
+      if (!org || !org.reviewLink || !(j.done || j.paid)) return;
+      const cu = j.customerId ? (D().customers || []).find(c => c && c.id === j.customerId) : null;
+      const ph = cu && String(cu.phone || "").replace(/[^\d+]/g, "");
+      if (!ph) return;
+      const first = ((cu.name || "").trim().split(/\s+/)[0]) || "there";
+      const body = encodeURIComponent("Hi " + first + " — thanks again for having us out! If we did right by you, a quick review really helps our small crew: " + org.reviewLink);
+      h += `<a class="btn acc" style="width:100%;margin:8px 0 0;display:block;text-align:center" href="sms:${ph}?&body=${body}">⭐ Text the review ask</a>`;
+    } catch (e) {}
+  })();
   // PLANT crew guide — a landscaping job (or a quote-less legacy job that has a plant guide)
   if ((_isLandJob || _untypedFallback) && typeof landJobHasGuide === "function" && landJobHasGuide(j)) h += `<button class="btn acc" style="width:100%;margin:8px 0 0" onclick="landOpenGuideForJob('${j.id}')">📋 Crew Guide — plants, photos &amp; how-to</button>`;
   // PATH BUILD GUIDE — a path job (prefer this job's OWN quote); or a quote-less legacy job whose customer has a path quote.

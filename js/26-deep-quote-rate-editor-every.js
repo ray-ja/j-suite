@@ -123,6 +123,11 @@ function rData(){
       <input type="password" id="in_cfPages" placeholder="40-character API token" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-pages','in_cfPages')">Save &amp; verify Gmail-account key</button>
 
+      <label style="margin:20px 0 0">Review link — ${esc((BIZ[S.biz]||{}).name||S.biz)}</label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">The link customers tap to leave a review (the LSA review link from the lead inbox, or the Google review short-link). Powers the ⭐ "Text the review ask" button on finished jobs — reviews are the LSA ranking game.</div>
+      <input id="in_reviewLink" placeholder="https://…" autocomplete="off" style="width:100%" value="${esc(((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).reviewLink||"")}">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveReviewLink()">Save review link</button>
+
       <label style="margin:20px 0 0">Google Ads <span id="gads_status" class="sub"></span></label>
       <div class="sub" style="margin:2px 0 4px;white-space:normal">Lets the app read the junk campaigns (spend, leads, search terms → the nightly digest). Three pieces, then a one-tap connect.</div>
       <div class="sub" style="margin:6px 0 2px"><b>1.</b> The OAuth client JSON (downloaded from Cloud Console → Credentials):</div>
@@ -137,6 +142,8 @@ function rData(){
       <button class="btn ghost" style="width:100%" onclick="gadsConnect()">Connect Google (opens sign-in)</button>
       <input id="in_gadsCode" placeholder="Paste the broken page's full address (contains ?code=…)" autocomplete="off" style="width:100%;margin-top:6px">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsExchange()">Finish connection</button>
+      <div class="sub" style="margin:10px 0 2px"><b>Nightly monitor (no Google sign-in needed):</b> mint a script key, put it in the Ads Script Wade gives you, and stats flow in every night.</div>
+      <button class="btn ghost" style="width:100%" onclick="gadsScriptKey()">Mint script key (shown once)</button>
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
@@ -328,6 +335,18 @@ window.saveSecret=function(key,inputId){
 };
 /* like saveSecret, but for the Cloudflare deploy-key FILES — and the server verifies the pasted value
    against Cloudflare itself before answering, so a bad paste is caught here, not at the next deploy. */
+/* review link — a plain synced field on THIS org's registry record (owner/admin writes pass the server's
+   registry sanitizer). Not a secret: it's the public link customers tap. */
+window.saveReviewLink=function(){
+  if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}
+  const v=(val("in_reviewLink")||"").trim();
+  if(v&&!/^https:\/\/\S+$/.test(v)){alert("That doesn't look like a link (should start with https://).");return;}
+  const rec=(S.registry||[]).find(r=>r&&r.id===S.biz);
+  if(!rec){alert("No org record found.");return;}
+  rec.reviewLink=v; if(typeof touch==="function")touch(rec); save();
+  alert(v?"Saved ✓ — the ⭐ button now shows on finished jobs.":"Cleared.");
+};
+
 /* ── Google Ads key management (Ray: keys managed IN THE APP, no terminal) ─────────────────────────────
    Mirrors saveDeployKey's trust model; the server never echoes secrets back, the UI only shows booleans. */
 function gadsApi(pathSuffix,opts){
@@ -374,6 +393,14 @@ window.gadsExchange=function(){
     else if(d.verified===false)alert("Connected ✓ but the Ads API refused the first call"+(d.apiError?" ("+d.apiError+")":"")+" — the grant is stored; we'll debug the API side separately.");
     else alert("Connected ✓ — "+(d.note||"verify skipped."));
     gadsRefreshStatus();
+  }).catch(()=>alert("Couldn't reach the server."));
+};
+
+window.gadsScriptKey=function(){
+  if(!confirm("Mint a new script key? Any previously minted key stops working."))return;
+  gadsApi("/scriptkey",{method:"POST",body:"{}"}).then(d=>{
+    if(!(d&&d.ok&&d.ingestKey)){alert("Failed: "+((d&&d.error)||"unknown"));return;}
+    prompt("Copy this key into the INGEST_KEY line of the Ads Script (shown only once):",d.ingestKey);
   }).catch(()=>alert("Couldn't reach the server."));
 };
 

@@ -158,6 +158,33 @@ function rFinPayouts() {
     <label style="margin-top:10px">Admin Member — 5% of labor, capped $500/mo</label>
     <select onchange="finSetAdmin(this.value)"><option value="">— none (admin share → field work) —</option>${members.map(u => `<option value="${u.id}" ${adminId === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select></div>`;
 
+  /* ── LEAD CHANNELS — where this month's PAID money actually came from (Ray 2026-09-10, ads went live:
+     the day-30 verdict is cost-per-booked-job PER CHANNEL, and nothing was recording the channel). Buckets
+     by the paying customer's `source` (the split SOURCES list distinguishes LSA vs Search ad). Read-only:
+     income → job/quote → customer, unknowns shown honestly so untagged customers are visible, not hidden. */
+  (function () {
+    try {
+      const d = D(), by = {};
+      roll.perJob.forEach(pj => {
+        const inc = (d.income || []).find(x => x && x.id === pj.id);
+        let cust = null;
+        const j = inc && inc.jobId ? (d.jobs || []).find(x => x && x.id === inc.jobId) : null;
+        if (j && j.customerId) cust = (d.customers || []).find(c => c && c.id === j.customerId);
+        const src = (cust && cust.source) || "— untagged —";
+        (by[src] = by[src] || { n: 0, cents: 0 }).n++; by[src].cents += pj.gross;
+      });
+      const rows = Object.entries(by).sort((a, b) => b[1].cents - a[1].cents);
+      if (rows.length) {
+        h += `<div class="secthd"><h2>Lead channels — paid this month</h2></div><div class="card" style="padding:8px 12px">`
+          + rows.map(([s, v]) => `<div class="row" style="gap:8px;align-items:baseline;padding:3px 0">
+              <div class="grow" style="font-size:13.5px${s === "— untagged —" ? ";color:var(--danger)" : ""}">${esc(s)}</div>
+              <div class="sub" style="flex:0 0 auto">${v.n} job${v.n === 1 ? "" : "s"}</div>
+              <div style="flex:0 0 auto;font-weight:700;font-size:13px">${fm(v.cents)}</div></div>`).join("")
+          + `<div class="sub" style="white-space:normal;font-size:11px;margin-top:5px">Set on the customer ("How they found us"). Divide a channel's ad spend by its jobs here = cost per booked job — the day-30 number.</div></div>`;
+      }
+    } catch (e) {}
+  })();
+
   /* account funding */
   h += `<div class="secthd"><h2>Move to accounts</h2></div><div class="card">
     <div class="li"><div class="grow"><div class="nm">🏦 Tax Reserve</div><div class="sub">25% of revenue — set aside for taxes</div></div><b>${fm(acct.taxReserve)}</b></div>

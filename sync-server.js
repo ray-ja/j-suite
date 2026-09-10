@@ -2647,6 +2647,16 @@ function gadsParseClient(jsonStr) {
 }
 /* "123-456-7890" or "1234567890" → "1234567890"; anything else → null */
 function gadsCustomerIdOk(v) { const s = String(v || "").replace(/-/g, "").trim(); return /^\d{10}$/.test(s) ? s : null; }
+/* ingest shape guard for the nightly Ads-Script push — pure, exported for tests */
+function gadsIngestOk(p) {
+  if (!p || typeof p !== "object") return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date || ""))) return false;
+  if (!Array.isArray(p.campaigns) || p.campaigns.length > 50) return false;
+  if (p.searchTerms != null && (!Array.isArray(p.searchTerms) || p.searchTerms.length > 500)) return false;
+  return p.campaigns.every(c => c && typeof c.name === "string" && c.name.length <= 200
+    && [c.clicks, c.impressions, c.costMicros, c.conversions].every(n => n == null || (typeof n === "number" && isFinite(n) && n >= 0)));
+}
+const GADS_STATS_FILE = path.join(__dirname, "google-ads-stats.jsonl");
 /* the pasted dead-page address (…?code=4/xxx&scope=…) OR a bare code. URL-decodes; null when absent. */
 function gadsCodeFromInput(s) {
   const str = String(s || "").trim(); if (!str) return null;
@@ -4293,6 +4303,13 @@ const server = http.createServer((req, res) => {
         return J(200, Object.assign({ ok: true, connected: !!c.refreshToken }, out));
       });
     }
+    // one-tap key for the nightly Ads Script (shown ONCE; only its presence is ever reported after)
+    if (req.method === "POST" && sub === "/scriptkey") {
+      const c = gadsLoad();
+      c.ingestKey = crypto.randomBytes(24).toString("hex");
+      try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+      return J(200, { ok: true, ingestKey: c.ingestKey });
+    }
     // the consent URL for the "Connect Google" button
     if (req.method === "POST" && sub === "/connect") {
       const c = gadsLoad();
@@ -4331,6 +4348,22 @@ const server = http.createServer((req, res) => {
       });
     }
     return J(404, { error: "unknown googleads action" });
+  }
+
+  /* ── nightly stats push FROM the Google Ads Script (runs in Google's cloud, so it can't hold a user
+     token — it authenticates with the dedicated ingestKey minted in the app). Append-only JSONL; one line
+     per day per push, newest wins at read time. No OAuth involved — this is the 6-day-freeze workaround. */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/gads/ingest") {
+    return readBodyUtf8(req, 2e5, (body) => {
+      const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const c = gadsLoad();
+      if (!c.ingestKey || String(p && p.key) !== c.ingestKey) return J(403, { error: "forbidden" });
+      if (!gadsIngestOk(p)) return J(400, { error: "bad shape" });
+      const line = JSON.stringify({ at: Date.now(), date: p.date, campaigns: p.campaigns, searchTerms: (p.searchTerms || []).slice(0, 500) });
+      try { fs.appendFileSync(GADS_STATS_FILE, line + "\n"); } catch (e) { return J(500, { error: "write failed" }); }
+      return J(200, { ok: true });
+    });
   }
 
   // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
@@ -5263,4 +5296,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
