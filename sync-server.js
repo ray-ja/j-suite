@@ -2632,11 +2632,40 @@ function deployKeyValueOk(v) { return typeof v === "string" && /^[A-Za-z0-9_.\-]
    So: the app opens the consent URL → Google bounces to a dead 127.0.0.1 page → the user copies that
    page's ADDRESS into the app → /exchange pulls the code out and trades it for the refresh token here
    on the server. One paste, works from any device. Pure helpers exported for tests. */
+/* ── PER-ORG KEY STORE (Ray, 2026-09-10: "they need to be separate keys… they're both gonna have their
+   own ads accounts… And that goes for every organization. It should always be unique to that organization.")
+   ONE gitignored file, org-id keyed: { obx:{cfSites,cfDns,gads:{…}}, jam:{…} }. The old global files
+   (~/.cf-*-token, google-ads-config.json) are MIGRATED IN on first load and WRITTEN THROUGH on save so
+   every existing deploy command keeps working — but this store is the source of truth from here on. */
+const ORG_KEYS_FILE = path.join(__dirname, "org-keys.json");
+function orgKeysLoad() {
+  let k = {}; try { k = JSON.parse(fs.readFileSync(ORG_KEYS_FILE, "utf8")); } catch (e) {}
+  /* one-time seed from the legacy globals (never overwrites an existing per-org value) */
+  try {
+    const home = require("os").homedir();
+    if (!k.obx) k.obx = {};
+    if (!k.obx.cfSites) { try { k.obx.cfSites = fs.readFileSync(path.join(home, ".cf-junkco-token"), "utf8").trim(); } catch (e) {} }
+    if (!k.obx.cfDns) { try { k.obx.cfDns = fs.readFileSync(path.join(home, ".cf-pages-token"), "utf8").trim(); } catch (e) {} }
+    if (!k.obx.gads) { try { k.obx.gads = JSON.parse(fs.readFileSync(path.join(__dirname, "google-ads-config.json"), "utf8")); } catch (e) {} }
+  } catch (e) {}
+  return k;
+}
+function orgKeysSave(k) { const tmp = ORG_KEYS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(k, null, 2), { mode: 0o600 }); fs.renameSync(tmp, ORG_KEYS_FILE); try { fs.chmodSync(ORG_KEYS_FILE, 0o600); } catch (e) {} }
+function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns"; }
+/* write-through so existing deploy tooling reading the home files stays alive */
+function orgKeyLegacyMirror(org, name, value) {
+  try {
+    const home = require("os").homedir();
+    if (org === "obx" && name === "cfSites") { const f = path.join(home, ".cf-junkco-token"); fs.writeFileSync(f, value + "\n", { mode: 0o600 }); }
+    if (name === "cfDns") { const f = path.join(home, ".cf-pages-token"); fs.writeFileSync(f, value + "\n", { mode: 0o600 }); }
+  } catch (e) {}
+}
 const GADS_FILE = path.join(__dirname, "google-ads-config.json");
 const GADS_REDIRECT = "http://127.0.0.1:8085";
 const GADS_API_VERSION = "v21";
-function gadsLoad() { try { return JSON.parse(fs.readFileSync(GADS_FILE, "utf8")); } catch (e) { return {}; } }
-function gadsSave(cfg) { const tmp = GADS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 }); fs.renameSync(tmp, GADS_FILE); try { fs.chmodSync(GADS_FILE, 0o600); } catch (e) {} }
+/* per-org Google Ads config, living inside the org key store (each org gets its own ads account) */
+function gadsLoad(org) { const k = orgKeysLoad(); const o = k[org || "obx"] || {}; return o.gads || {}; }
+function gadsSave(cfg, org) { const k = orgKeysLoad(); const id = org || "obx"; if (!k[id]) k[id] = {}; k[id].gads = cfg; orgKeysSave(k); }
 /* the downloaded OAuth client JSON — accepts the "installed" (desktop) or "web" wrapper */
 function gadsParseClient(jsonStr) {
   let j; try { j = JSON.parse(String(jsonStr || "")); } catch (e) { return null; }
@@ -4264,6 +4293,42 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* ── PER-ORG Cloudflare keys (Ray 2026-09-10: every org has its own accounts — keys are org-unique).
+     name: cfSites (the Pages/deploy token) | cfDns (the token holding the org's DNS zones). Live-verified
+     against Cloudflare on save, like the legacy deploy-key route this supersedes. ── */
+  if (req.url.split("?")[0] === "/api/config/orgkeys") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const ORG = /^[a-z0-9_\-]{2,40}$/i.test(String(q.searchParams.get("org") || "")) ? q.searchParams.get("org") : null;
+    if (!ORG) return J(400, { error: "org required" });
+    if (req.method === "GET") {
+      const k = orgKeysLoad(), o = k[ORG] || {};
+      return J(200, { ok: true, org: ORG, cfSites: !!o.cfSites, cfDns: !!o.cfDns, gads: !!(o.gads && o.gads.clientId), gadsConnected: !!(o.gads && o.gads.refreshToken) });
+    }
+    if (req.method === "POST") {
+      return readBodyUtf8(req, 8192, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const name = p && p.name, value = String((p && p.value) || "").trim();
+        if (!orgKeyNameOk(name) || !deployKeyValueOk(value)) return J(400, { error: "expected name cfSites|cfDns and a single-line API token (20-200 chars)" });
+        const k = orgKeysLoad(); if (!k[ORG]) k[ORG] = {}; k[ORG][name] = value;
+        try { orgKeysSave(k); orgKeyLegacyMirror(ORG, name, value); } catch (e) { return J(500, { error: "write failed" }); }
+        let sent = false;
+        const answer = (cfValid) => { if (sent) return; sent = true; J(200, { ok: true, cfValid: cfValid }); };
+        try {
+          const vr = https.request("https://api.cloudflare.com/client/v4/user/tokens/verify", { headers: { "Authorization": "Bearer " + value } }, (resp) => {
+            let s = ""; resp.on("data", (d) => s += d);
+            resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} answer(!!(j && j.success)); });
+          });
+          vr.on("error", () => answer(null)); vr.setTimeout(10000, () => { try { vr.destroy(); } catch (e) {} answer(null); }); vr.end();
+        } catch (e) { answer(null); }
+      });
+    }
+    return J(405, { error: "method" });
+  }
+
   /* ── GOOGLE ADS config + connect (superAdmin, like the deploy keys). Values are never echoed back. ── */
   if (req.url.split("?")[0].indexOf("/api/config/googleads") === 0) {
     const q = new URL(req.url, "http://x");
@@ -4272,17 +4337,19 @@ const server = http.createServer((req, res) => {
     if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
     const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
     const sub = req.url.split("?")[0].slice("/api/config/googleads".length);
+    /* every org has its OWN ads account (Ray 2026-09-10) — ?org= scopes everything; "obx" = legacy default */
+    const KORG = /^[a-z0-9_\-]{2,40}$/i.test(String(q.searchParams.get("org") || "")) ? q.searchParams.get("org") : "obx";
 
     // status — booleans only, no secret material
     if (req.method === "GET" && !sub) {
-      const c = gadsLoad();
+      const c = gadsLoad(KORG);
       return J(200, { ok: true, hasClient: !!(c.clientId && c.clientSecret), hasCustomerId: !!c.customerId, hasDevToken: !!c.developerToken, connected: !!c.refreshToken });
     }
     // save any subset of the pieces
     if (req.method === "POST" && !sub) {
       return readBodyUtf8(req, 3e4, (body) => {
         let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
-        const c = gadsLoad(); const out = {};
+        const c = gadsLoad(KORG); const out = {};
         if (p.oauthJson != null) {
           const cl = gadsParseClient(p.oauthJson);
           if (!cl) return J(400, { error: "that isn't a Google OAuth client JSON — download it from Cloud Console → Credentials (it contains client_id ending .apps.googleusercontent.com)" });
@@ -4299,20 +4366,20 @@ const server = http.createServer((req, res) => {
           if (dt && !/^[\w\-]{10,80}$/.test(dt)) return J(400, { error: "that doesn't look like a developer token" });
           c.developerToken = dt; out.devToken = !!dt;
         }
-        try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+        try { gadsSave(c, KORG); } catch (e) { return J(500, { error: "write failed" }); }
         return J(200, Object.assign({ ok: true, connected: !!c.refreshToken }, out));
       });
     }
     // one-tap key for the nightly Ads Script (shown ONCE; only its presence is ever reported after)
     if (req.method === "POST" && sub === "/scriptkey") {
-      const c = gadsLoad();
+      const c = gadsLoad(KORG);
       c.ingestKey = crypto.randomBytes(24).toString("hex");
-      try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+      try { gadsSave(c, KORG); } catch (e) { return J(500, { error: "write failed" }); }
       return J(200, { ok: true, ingestKey: c.ingestKey });
     }
     // the consent URL for the "Connect Google" button
     if (req.method === "POST" && sub === "/connect") {
-      const c = gadsLoad();
+      const c = gadsLoad(KORG);
       if (!c.clientId) return J(400, { error: "save the OAuth client JSON first" });
       const url = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
         client_id: c.clientId, redirect_uri: GADS_REDIRECT, response_type: "code",
@@ -4326,7 +4393,7 @@ const server = http.createServer((req, res) => {
         let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
         const code = gadsCodeFromInput(p && p.input);
         if (!code) return J(400, { error: "couldn't find a code in that — paste the FULL address of the error page Google sent you to (it contains ?code=…)" });
-        const c = gadsLoad();
+        const c = gadsLoad(KORG);
         if (!c.clientId || !c.clientSecret) return J(400, { error: "save the OAuth client JSON first" });
         const form = new URLSearchParams({ code: code, client_id: c.clientId, client_secret: c.clientSecret, redirect_uri: GADS_REDIRECT, grant_type: "authorization_code" }).toString();
         fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form })
@@ -4334,7 +4401,7 @@ const server = http.createServer((req, res) => {
           .then(tj => {
             if (!tj || !tj.refresh_token) return J(400, { error: "Google refused the code" + (tj && tj.error_description ? ": " + tj.error_description : "") + " — codes are single-use and expire in minutes; hit Connect again for a fresh one" });
             c.refreshToken = tj.refresh_token;
-            try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+            try { gadsSave(c, KORG); } catch (e) { return J(500, { error: "write failed" }); }
             /* best-effort live verify — list the accounts this grant can see */
             if (!c.developerToken) return J(200, { ok: true, connected: true, verified: null, note: "no developer token saved — connection stored, API verify skipped" });
             fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers:listAccessibleCustomers", {
@@ -4357,10 +4424,12 @@ const server = http.createServer((req, res) => {
     return readBodyUtf8(req, 2e5, (body) => {
       const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
       let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
-      const c = gadsLoad();
-      if (!c.ingestKey || String(p && p.key) !== c.ingestKey) return J(403, { error: "forbidden" });
+      /* the script only carries its key — resolve WHICH org's key it is, so the stats line is org-tagged */
+      const allKeys = orgKeysLoad(); let orgHit = null;
+      Object.keys(allKeys).forEach(oid => { const g = allKeys[oid] && allKeys[oid].gads; if (g && g.ingestKey && String(p && p.key) === g.ingestKey) orgHit = oid; });
+      if (!orgHit) return J(403, { error: "forbidden" });
       if (!gadsIngestOk(p)) return J(400, { error: "bad shape" });
-      const line = JSON.stringify({ at: Date.now(), date: p.date, campaigns: p.campaigns, searchTerms: (p.searchTerms || []).slice(0, 500) });
+      const line = JSON.stringify({ at: Date.now(), org: orgHit, date: p.date, campaigns: p.campaigns, searchTerms: (p.searchTerms || []).slice(0, 500) });
       try { fs.appendFileSync(GADS_STATS_FILE, line + "\n"); } catch (e) { return J(500, { error: "write failed" }); }
       return J(200, { ok: true });
     });
@@ -5296,4 +5365,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

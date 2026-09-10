@@ -2292,6 +2292,11 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     && !t.gadsIngestOk(null));
   const _ing = _srv.slice(_srv.indexOf('"/api/gads/ingest"'), _srv.indexOf('"/api/gads/ingest"') + 1400);
   ok("ingest authenticates by the minted key alone and appends JSONL", /ingestKey/.test(_ing) && /appendFileSync/.test(_ing));
+  ok("org keys: name allowlist is exactly cfSites|cfDns", t.orgKeyNameOk("cfSites") && t.orgKeyNameOk("cfDns") && !t.orgKeyNameOk("gads") && !t.orgKeyNameOk("../evil") && !t.orgKeyNameOk(""));
+  const _ok = _srv.slice(_srv.indexOf('"/api/config/orgkeys"'), _srv.indexOf('"/api/config/orgkeys"') + 2600);
+  ok("orgkeys route is superAdmin-gated, org-required, live-verified against Cloudflare", /sc\.superAdmin/.test(_ok) && /org required/.test(_ok) && /tokens\/verify/.test(_ok));
+  ok("per-org googleads: the route scopes every load/save by ?org (obx = legacy default)", /gadsLoad\(KORG\)/.test(_srv) && /gadsSave\(c, KORG\)/.test(_srv));
+  ok("ingest resolves WHICH org's script key pushed and tags the stats line", /orgHit/.test(_srv) && /org: orgHit/.test(_srv));
   ok("the nightly script for Ray exists and is read-only", (function () {
     const s = require("fs").readFileSync(__dirname + "/tools/google-ads-nightly-monitor.js", "utf8");
     return /api\/gads\/ingest/.test(s) && /search_term_view/.test(s) && !/setBid|setBudget|pause\(|enable\(/.test(s);

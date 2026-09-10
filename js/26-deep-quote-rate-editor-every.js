@@ -114,22 +114,22 @@ function rData(){
       <div class="sub" style="margin:2px 0 4px;white-space:normal">The <code>whsec_…</code> from a Stripe webhook pointed at <code>/api/stripe/webhook</code> (event <b>checkout.session.completed</b>). Lets the app auto-mark an invoice PAID the moment the customer pays.</div>
       <input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save webhook secret</button>
-      <label style="margin:16px 0 0">Cloudflare deploy key — OBX sites account</label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">The API token from the <b>Ray@obxlotsolutions.com</b> Cloudflare account (junk co, Jamieson, lot solutions, home watch). Saved to the server's deploy-key file and <b>checked against Cloudflare on the spot</b> — you'll know immediately if the paste is wrong.</div>
-      <input type="password" id="in_cfJunkco" placeholder="40-character API token" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-junkco','in_cfJunkco')">Save &amp; verify OBX-account key</button>
-      <label style="margin:16px 0 0">Cloudflare deploy key — Gmail account</label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">The API token from the <b>Gmail</b> Cloudflare account (holiday lights, milepost domain).</div>
-      <input type="password" id="in_cfPages" placeholder="40-character API token" autocomplete="off" style="width:100%">
-      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-pages','in_cfPages')">Save &amp; verify Gmail-account key</button>
+      <label style="margin:16px 0 0">Cloudflare — sites/deploy token · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="ok_cfSites" class="sub"></span></label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">This org's OWN Cloudflare token for deploying its websites (Pages read/write on the account that hosts them). Every key on this page belongs to <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> only — switch org tabs to manage another org's keys. Checked against Cloudflare on the spot.</div>
+      <input type="password" id="in_cfSites" placeholder="40-character API token" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfSites','in_cfSites')">Save &amp; verify sites token</button>
+      <label style="margin:16px 0 0">Cloudflare — DNS token · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="ok_cfDns" class="sub"></span></label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">The token from the Cloudflare account holding this org's domain zones (needs Zone·DNS·Edit). Can be the same account as above or a different one.</div>
+      <input type="password" id="in_cfDns" placeholder="40-character API token" autocomplete="off" style="width:100%">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfDns','in_cfDns')">Save &amp; verify DNS token</button>
 
       <label style="margin:20px 0 0">Review link — ${esc((BIZ[S.biz]||{}).name||S.biz)}</label>
       <div class="sub" style="margin:2px 0 4px;white-space:normal">The link customers tap to leave a review (the LSA review link from the lead inbox, or the Google review short-link). Powers the ⭐ "Text the review ask" button on finished jobs — reviews are the LSA ranking game.</div>
       <input id="in_reviewLink" placeholder="https://…" autocomplete="off" style="width:100%" value="${esc(((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).reviewLink||"")}">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveReviewLink()">Save review link</button>
 
-      <label style="margin:20px 0 0">Google Ads <span id="gads_status" class="sub"></span></label>
-      <div class="sub" style="margin:2px 0 4px;white-space:normal">Lets the app read the junk campaigns (spend, leads, search terms → the nightly digest). Three pieces, then a one-tap connect.</div>
+      <label style="margin:20px 0 0">Google Ads · <b>${esc((BIZ[S.biz]||{}).name||S.biz)}</b> <span id="gads_status" class="sub"></span></label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">This org's OWN ads account (spend, leads, search terms → the nightly digest). Three pieces, then a one-tap connect.</div>
       <div class="sub" style="margin:6px 0 2px"><b>1.</b> The OAuth client JSON (downloaded from Cloud Console → Credentials):</div>
       <input type="file" id="in_gadsFile" accept=".json,application/json" style="width:100%" onchange="gadsReadFile(this)">
       <textarea id="in_gadsJson" placeholder="…or paste the JSON here" style="width:100%;height:54px;font-size:11px" autocomplete="off"></textarea>
@@ -150,6 +150,7 @@ function rData(){
   if(window.orgpRefresh&&typeof orgpCan==="function"&&orgpCan())setTimeout(orgpRefresh,40);
   if(window.loadSecStatus)setTimeout(loadSecStatus,30);
   if(window.gadsRefreshStatus&&typeof settingsCanConfig==="function"&&settingsCanConfig())setTimeout(gadsRefreshStatus,40);
+  if(window.orgKeysRefresh&&typeof settingsCanConfig==="function"&&settingsCanConfig())setTimeout(orgKeysRefresh,50);
 }
 window.saveSync=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}S.sync.url=val("sy_url");S.sync.token=val("sy_token");
   S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
@@ -351,7 +352,7 @@ window.saveReviewLink=function(){
    Mirrors saveDeployKey's trust model; the server never echoes secrets back, the UI only shows booleans. */
 function gadsApi(pathSuffix,opts){
   const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
-  return fetch(base+"/api/config/googleads"+(pathSuffix||""),Object.assign({headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{})},opts||{})).then(r=>r.json());
+  return fetch(base+"/api/config/googleads"+(pathSuffix||"")+"?org="+encodeURIComponent(S.biz),Object.assign({headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{})},opts||{})).then(r=>r.json());
 }
 window.gadsRefreshStatus=function(){
   const el=document.getElementById("gads_status"); if(!el)return;
@@ -402,6 +403,30 @@ window.gadsScriptKey=function(){
     if(!(d&&d.ok&&d.ingestKey)){alert("Failed: "+((d&&d.error)||"unknown"));return;}
     prompt("Copy this key into the INGEST_KEY line of the Ads Script (shown only once):",d.ingestKey);
   }).catch(()=>alert("Couldn't reach the server."));
+};
+
+/* per-org Cloudflare keys — every org has its own accounts (Ray 2026-09-10) */
+window.saveOrgKey=function(name,inputId){
+  const el=document.getElementById(inputId); if(!el)return; const v=(el.value||"").trim();
+  if(!v){alert("Paste the token first.");return;}
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/config/orgkeys?org="+encodeURIComponent(S.biz),{method:"POST",headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{}),body:JSON.stringify({name:name,value:v})})
+    .then(r=>r.json()).then(d=>{
+      if(!(d&&d.ok)){alert("Save failed: "+((d&&d.error)||"unknown"));return;}
+      el.value="";
+      if(d.cfValid===true)alert("Saved ✓ for "+((BIZ[S.biz]||{}).name||S.biz)+" — Cloudflare confirms the token is VALID.");
+      else if(d.cfValid===false)alert("Saved — but Cloudflare REJECTED it. Copy the token VALUE (shown once at create/roll), from the right account.");
+      else alert("Saved ✓ — couldn't reach Cloudflare to verify just now.");
+      orgKeysRefresh();
+    }).catch(()=>alert("Save failed — are you online?"));
+};
+window.orgKeysRefresh=function(){
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  fetch(base+"/api/config/orgkeys?org="+encodeURIComponent(S.biz),{headers:tok?{Authorization:"Bearer "+tok}:{}}).then(r=>r.json()).then(d=>{
+    if(!d||!d.ok)return;
+    const set=(id,on)=>{const e=document.getElementById(id);if(e)e.textContent=on?"· saved ✓":"· not set";};
+    set("ok_cfSites",d.cfSites); set("ok_cfDns",d.cfDns);
+  }).catch(()=>{});
 };
 
 window.saveDeployKey=function(key,inputId){
