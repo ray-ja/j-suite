@@ -245,6 +245,22 @@ const PLAYBOOK_SEED = [
    tools:["Dollies","Contractor bags","Shrink wrap","Straps","Broom","Camera"],
    safety:["Foreclosures: assume sharps/unknowns in bags — grip from outside, never blind-reach","Two people on mattresses/sofas on stairs"], refImage:"" },
 
+ /* saved replies for the daily group sweep (Ray 2026-09-10) — auto-scanning/auto-commenting FB & Nextdoor
+    is a ToS violation that risks the ad accounts, so the human pastes; these make the paste 10 seconds.
+    ⚠️ CUSTOMER-FACING TEXT: Ray edits to taste in the Playbook editor before first use. */
+ { key:"lead_replies", kind:"process", name:"Lead replies — Facebook / Nextdoor", latin:"", category:"sales",
+   identify:"Someone in a local group asks for junk removal, demo, or hauling. Reply fast, sound like a neighbour, never like an ad. One link or number max. If a friend already recommended us, THANK them first.",
+   do:["JUNK ASK → \"We do this every day — OBX Junk Co, local crew out of Harbinger. Text a photo of the pile to (252) 207-5985 and we'll shoot you a real quote. obxjunkco.com\"",
+       "DEMO/DECK/SHED ASK → \"We tear out decks, sheds, fences and hot tubs and haul every piece the same trip — no dumpster sitting in the driveway. Text a photo to (252) 207-5985 for a straight quote.\"",
+       "BOAT ASK → \"Dead boat? We cut them up and haul them off, titled hulls too. Text a photo and the length to (252) 207-5985.\"",
+       "SOMEONE RECOMMENDED US → \"Thanks [name]! 🙏 — happy to help; text a photo to (252) 207-5985 and we'll get you a quote same day.\"",
+       "Reply within the hour when you can — group asks get 5+ replies by evening; first credible answer usually wins"],
+   dont:["Don't paste the same wording twice in the same group the same week — vary it or it reads as spam",
+         "Don't reply to posts OUTSIDE our area or banned-item asks (liquids, hazmat) — a public no is worse than silence; DM if anything",
+         "Don't argue with a competitor's fans, ever"],
+   when:"Daily 2-min sweep (it's on the morning routine) + whenever a notification fires",
+   tools:["Phone","This card"], safety:[], refImage:"" },
+
  { key:"junk_haul", kind:"process", name:"Junk haul & dump run", latin:"", category:"cleanup",
    identify:"The bread-and-butter load: pickup, load, weigh, dump, done. The habits here are the margin.",
    do:["Photo-match on arrival: does the pile match what was quoted? Bigger = re-quote at the door BEFORE loading (price agreed before we start — that's the promise)",
