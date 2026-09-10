@@ -4315,15 +4315,24 @@ const server = http.createServer((req, res) => {
         if (!orgKeyNameOk(name) || !deployKeyValueOk(value)) return J(400, { error: "expected name cfSites|cfDns and a single-line API token (20-200 chars)" });
         const k = orgKeysLoad(); if (!k[ORG]) k[ORG] = {}; k[ORG][name] = value;
         try { orgKeysSave(k); orgKeyLegacyMirror(ORG, name, value); } catch (e) { return J(500, { error: "write failed" }); }
+        /* ⚠️ TWO KINDS OF CLOUDFLARE TOKEN (learned the hard way, 2026-09-10): classic USER tokens verify
+           at /user/tokens/verify — but newer ACCOUNT-OWNED tokens (53 chars, "cf…") return "Invalid API
+           Token" there while being perfectly valid. That false REJECTED sent Ray re-rolling a good token
+           into both boxes and clobbered the other org key. So: user-verify first, and on failure probe
+           /accounts — any token that can list its accounts is real. */
         let sent = false;
         const answer = (cfValid) => { if (sent) return; sent = true; J(200, { ok: true, cfValid: cfValid }); };
-        try {
-          const vr = https.request("https://api.cloudflare.com/client/v4/user/tokens/verify", { headers: { "Authorization": "Bearer " + value } }, (resp) => {
-            let s = ""; resp.on("data", (d) => s += d);
-            resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} answer(!!(j && j.success)); });
-          });
-          vr.on("error", () => answer(null)); vr.setTimeout(10000, () => { try { vr.destroy(); } catch (e) {} answer(null); }); vr.end();
-        } catch (e) { answer(null); }
+        const probe = (url, next) => {
+          try {
+            const vr = https.request(url, { headers: { "Authorization": "Bearer " + value } }, (resp) => {
+              let s = ""; resp.on("data", (d) => s += d);
+              resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} const good = !!(j && j.success); (good || !next) ? answer(good) : next(); });
+            });
+            vr.on("error", () => next ? next() : answer(null)); vr.setTimeout(10000, () => { try { vr.destroy(); } catch (e) {} next ? next() : answer(null); }); vr.end();
+          } catch (e) { next ? next() : answer(null); }
+        };
+        probe("https://api.cloudflare.com/client/v4/user/tokens/verify",
+          () => probe("https://api.cloudflare.com/client/v4/accounts?per_page=1", null));
       });
     }
     return J(405, { error: "method" });
