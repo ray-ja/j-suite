@@ -58,7 +58,7 @@ var NAV_DEEP = [
   { group: "more", tab: "data", sub: "job-costs-cogs", setter: "secGoDeep", icon: "🧮", label: "Job costs" },
   { group: "more", tab: "data", sub: "backups",        setter: "secGoDeep", icon: "💾", label: "Backups", head: "Data & safety" },
   { group: "more", tab: "data", sub: "archive",        setter: "secGoDeep", icon: "🗄️", label: "Archive" },
-  { group: "more", tab: "data", sub: "security",       setter: "secGoDeep", icon: "🔒", label: "Security" },
+  { group: "more", tab: "data", sub: "keys-connections", setter: "secGoDeep", icon: "🔑", label: "Keys" },
 
   /* ⭐ FOUR SECTIONS, DOWN FROM SEVEN. Ray, 2026-08-26 consolidated them himself: members + roles +
      the admin PIN are one subject ("who gets in and what they can touch"), and menu order + tools were

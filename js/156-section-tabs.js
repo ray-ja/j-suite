@@ -30,7 +30,7 @@ var SEC_SCREENS = ["data", "admin"];    // which screens get split
    same reason this file splits the DOM instead of the source. Anything not listed keeps its DOM position
    at the end, so a new section can never vanish by being forgotten here. */
 var SEC_ORDER = {
-  data:  ["sync", "appearance", "home-base", "pricing-rates", "job-costs-cogs", "cards", "security", "backups", "archive"],
+  data:  ["sync", "appearance", "home-base", "pricing-rates", "job-costs-cogs", "cards", "keys-connections", "backups", "archive"],
   admin: ["members", "menu-tools", "ai-tools", "activity"]
 };
 function secSortGroups(tab, groups) {

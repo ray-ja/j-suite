@@ -21,7 +21,7 @@
     finance: "money cash income expenses", schedule: "calendar week",
     accounts: "customers clients properties", team: "crew people staff",
     todo: "tasks task list checklist", map: "pins locations",
-    admin: "users roles permissions", data: "settings preferences sync",
+    admin: "users roles permissions", data: "settings preferences sync security keys secrets tokens api cloudflare stripe google ads",
     budget: "envelopes money personal", journal: "diary notes voice",
     messages: "chat dm broadcast texts", jobs: "work orders job list",
     quotes: "estimates estimate pricing", leads: "calls call lead pipeline",
