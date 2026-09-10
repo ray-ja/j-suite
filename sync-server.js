@@ -2622,6 +2622,39 @@ function deployKeyTarget(key) {
   return T[key] || null;
 }
 function deployKeyValueOk(v) { return typeof v === "string" && /^[A-Za-z0-9_.\-]{20,200}$/.test(v); }
+
+/* ── GOOGLE ADS credentials (Ray, 2026-09-10: "all of these keys need to be managed in the j-suite app,
+   they sometimes need to be updated. no terminal requirements.") Same trust model as the deploy keys:
+   superAdmin-gated writes, values never echoed back, stored in ONE gitignored file next to the others.
+
+   The connect flow is terminal-free AND device-free: Google's desktop-client OAuth only redirects to
+   127.0.0.1, which is unreachable from a phone — but the authorization CODE rides in that failed URL.
+   So: the app opens the consent URL → Google bounces to a dead 127.0.0.1 page → the user copies that
+   page's ADDRESS into the app → /exchange pulls the code out and trades it for the refresh token here
+   on the server. One paste, works from any device. Pure helpers exported for tests. */
+const GADS_FILE = path.join(__dirname, "google-ads-config.json");
+const GADS_REDIRECT = "http://127.0.0.1:8085";
+const GADS_API_VERSION = "v21";
+function gadsLoad() { try { return JSON.parse(fs.readFileSync(GADS_FILE, "utf8")); } catch (e) { return {}; } }
+function gadsSave(cfg) { const tmp = GADS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 }); fs.renameSync(tmp, GADS_FILE); try { fs.chmodSync(GADS_FILE, 0o600); } catch (e) {} }
+/* the downloaded OAuth client JSON — accepts the "installed" (desktop) or "web" wrapper */
+function gadsParseClient(jsonStr) {
+  let j; try { j = JSON.parse(String(jsonStr || "")); } catch (e) { return null; }
+  const c = (j && (j.installed || j.web)) || j;
+  if (!c || typeof c.client_id !== "string" || typeof c.client_secret !== "string") return null;
+  if (!/\.apps\.googleusercontent\.com$/.test(c.client_id)) return null;
+  return { clientId: c.client_id, clientSecret: c.client_secret };
+}
+/* "123-456-7890" or "1234567890" → "1234567890"; anything else → null */
+function gadsCustomerIdOk(v) { const s = String(v || "").replace(/-/g, "").trim(); return /^\d{10}$/.test(s) ? s : null; }
+/* the pasted dead-page address (…?code=4/xxx&scope=…) OR a bare code. URL-decodes; null when absent. */
+function gadsCodeFromInput(s) {
+  const str = String(s || "").trim(); if (!str) return null;
+  const m = /[?&]code=([^&\s]+)/.exec(str);
+  if (m) { try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; } }
+  if (/^4\/[\w\-\/\.]{10,}$/.test(str)) return str;   // a raw google auth code
+  return null;
+}
 function verifyStripeSig(raw, header, secret) {
   if (!raw || !header || !secret) return false;
   let t = null; const v1 = [];
@@ -4221,6 +4254,85 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* ── GOOGLE ADS config + connect (superAdmin, like the deploy keys). Values are never echoed back. ── */
+  if (req.url.split("?")[0].indexOf("/api/config/googleads") === 0) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const sub = req.url.split("?")[0].slice("/api/config/googleads".length);
+
+    // status — booleans only, no secret material
+    if (req.method === "GET" && !sub) {
+      const c = gadsLoad();
+      return J(200, { ok: true, hasClient: !!(c.clientId && c.clientSecret), hasCustomerId: !!c.customerId, hasDevToken: !!c.developerToken, connected: !!c.refreshToken });
+    }
+    // save any subset of the pieces
+    if (req.method === "POST" && !sub) {
+      return readBodyUtf8(req, 3e4, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const c = gadsLoad(); const out = {};
+        if (p.oauthJson != null) {
+          const cl = gadsParseClient(p.oauthJson);
+          if (!cl) return J(400, { error: "that isn't a Google OAuth client JSON — download it from Cloud Console → Credentials (it contains client_id ending .apps.googleusercontent.com)" });
+          c.clientId = cl.clientId; c.clientSecret = cl.clientSecret; c.refreshToken = "";   // new client invalidates any old grant
+          out.client = true;
+        }
+        if (p.customerId != null) {
+          const id = gadsCustomerIdOk(p.customerId);
+          if (!id) return J(400, { error: "customer ID should be the 10-digit number from the top-right of Google Ads (dashes ok)" });
+          c.customerId = id; out.customerId = true;
+        }
+        if (p.developerToken != null) {
+          const dt = String(p.developerToken).trim();
+          if (dt && !/^[\w\-]{10,80}$/.test(dt)) return J(400, { error: "that doesn't look like a developer token" });
+          c.developerToken = dt; out.devToken = !!dt;
+        }
+        try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+        return J(200, Object.assign({ ok: true, connected: !!c.refreshToken }, out));
+      });
+    }
+    // the consent URL for the "Connect Google" button
+    if (req.method === "POST" && sub === "/connect") {
+      const c = gadsLoad();
+      if (!c.clientId) return J(400, { error: "save the OAuth client JSON first" });
+      const url = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+        client_id: c.clientId, redirect_uri: GADS_REDIRECT, response_type: "code",
+        scope: "https://www.googleapis.com/auth/adwords", access_type: "offline", prompt: "consent"
+      }).toString();
+      return J(200, { ok: true, url: url });
+    }
+    // trade the pasted dead-page address for the refresh token, then live-verify against the Ads API
+    if (req.method === "POST" && sub === "/exchange") {
+      return readBodyUtf8(req, 8192, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const code = gadsCodeFromInput(p && p.input);
+        if (!code) return J(400, { error: "couldn't find a code in that — paste the FULL address of the error page Google sent you to (it contains ?code=…)" });
+        const c = gadsLoad();
+        if (!c.clientId || !c.clientSecret) return J(400, { error: "save the OAuth client JSON first" });
+        const form = new URLSearchParams({ code: code, client_id: c.clientId, client_secret: c.clientSecret, redirect_uri: GADS_REDIRECT, grant_type: "authorization_code" }).toString();
+        fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form })
+          .then(r => r.json())
+          .then(tj => {
+            if (!tj || !tj.refresh_token) return J(400, { error: "Google refused the code" + (tj && tj.error_description ? ": " + tj.error_description : "") + " — codes are single-use and expire in minutes; hit Connect again for a fresh one" });
+            c.refreshToken = tj.refresh_token;
+            try { gadsSave(c); } catch (e) { return J(500, { error: "write failed" }); }
+            /* best-effort live verify — list the accounts this grant can see */
+            if (!c.developerToken) return J(200, { ok: true, connected: true, verified: null, note: "no developer token saved — connection stored, API verify skipped" });
+            fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers:listAccessibleCustomers", {
+              headers: { "Authorization": "Bearer " + tj.access_token, "developer-token": c.developerToken }
+            }).then(r => r.json()).then(vj => {
+              const names = (vj && vj.resourceNames) || null;
+              J(200, { ok: true, connected: true, verified: !!names, accounts: names ? names.length : 0, apiError: !names && vj && vj.error ? String(vj.error.message || "").slice(0, 200) : undefined });
+            }).catch(() => J(200, { ok: true, connected: true, verified: null }));
+          })
+          .catch(() => J(502, { error: "couldn't reach Google" }));
+      });
+    }
+    return J(404, { error: "unknown googleads action" });
+  }
+
   // ONE-WAY WRITE — set an allowlisted secret into ceo-config.json. Never returns or logs the value. Atomic.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/config/secret") {
     const q = new URL(req.url, "http://x");
@@ -5151,4 +5263,4 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

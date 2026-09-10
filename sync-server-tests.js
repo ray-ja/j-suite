@@ -2260,6 +2260,31 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("show-after endpoint gates rate → account → member(orgsForUser) → owner/admin(writerManagesOrg) → photo-owned(landPhotoOwnedByOrg)", /rateCheck/.test(_ep) && /apiAccount/.test(_srv.slice(_srv.indexOf('"/api/org-ai/show-after"') - 400, _srv.indexOf('"/api/org-ai/show-after"') + 2600)) && /orgsForUser/.test(_ep) && /writerManagesOrg/.test(_ep) && /landPhotoOwnedByOrg/.test(_ep));
   ok("show-after requires the Gemini image key and saves a new blob via crypto.randomBytes(12)", /set the Gemini image key/.test(_ep) && /randomBytes\(12\)/.test(_ep) && /fs\.writeFileSync/.test(_ep));
 
+  /* ── Google Ads app-managed credentials (Ray 2026-09-10: keys live in the app, no terminal) ── */
+  console.log("\n— Google Ads config helpers —");
+  ok("gadsParseClient accepts the downloaded 'installed' wrapper",
+    (function () { const c = t.gadsParseClient(JSON.stringify({ installed: { client_id: "abc123.apps.googleusercontent.com", client_secret: "s3cr3t", redirect_uris: [] } })); return c && c.clientId === "abc123.apps.googleusercontent.com" && c.clientSecret === "s3cr3t"; })());
+  ok("...and the 'web' wrapper", !!t.gadsParseClient(JSON.stringify({ web: { client_id: "x.apps.googleusercontent.com", client_secret: "y" } })));
+  ok("...but refuses junk, bad ids, and non-JSON",
+    t.gadsParseClient("not json") === null
+    && t.gadsParseClient(JSON.stringify({ installed: { client_id: "not-a-google-id", client_secret: "y" } })) === null
+    && t.gadsParseClient(JSON.stringify({ hello: 1 })) === null);
+  ok("gadsCustomerIdOk normalizes dashes and demands exactly 10 digits",
+    t.gadsCustomerIdOk("123-456-7890") === "1234567890" && t.gadsCustomerIdOk(" 1234567890 ") === "1234567890"
+    && t.gadsCustomerIdOk("12345") === null && t.gadsCustomerIdOk("12345678901") === null && t.gadsCustomerIdOk("abc") === null);
+  ok("gadsCodeFromInput pulls the code out of the pasted dead-page address (url-decoded)",
+    t.gadsCodeFromInput("http://127.0.0.1:8085/?code=4%2FabcDEF-123&scope=https://www.googleapis.com/auth/adwords") === "4/abcDEF-123");
+  ok("...accepts a bare 4/ code, refuses everything else",
+    t.gadsCodeFromInput("4/0AbCdEfGhIjKlMnOp") === "4/0AbCdEfGhIjKlMnOp"
+    && t.gadsCodeFromInput("https://accounts.google.com/o/oauth2/v2/auth?client_id=x") === null
+    && t.gadsCodeFromInput("hello") === null && t.gadsCodeFromInput("") === null);
+  const _gads = _srv.slice(_srv.indexOf('"/api/config/googleads"') >= 0 ? _srv.indexOf('"/api/config/googleads"') : _srv.indexOf("/api/config/googleads"), _srv.indexOf("ONE-WAY WRITE"));
+  ok("googleads routes are superAdmin-gated like the deploy keys", /sc\.superAdmin/.test(_gads));
+  ok("status endpoint returns booleans only — never echoes secret material", /hasClient: *!!/.test(_gads) && !/clientSecret *:/.test(_gads.slice(_gads.indexOf("GET"))));
+  ok("a new OAuth client invalidates any old refresh token", /refreshToken = ""/.test(_gads));
+  ok("the consent URL asks for offline access + forced consent (that's what yields a refresh token)", /access_type: *"offline"/.test(_gads) && /prompt: *"consent"/.test(_gads));
+  ok("exchange verifies live against the Ads API when a dev token exists", /listAccessibleCustomers/.test(_gads));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

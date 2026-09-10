@@ -122,11 +122,27 @@ function rData(){
       <div class="sub" style="margin:2px 0 4px;white-space:normal">The API token from the <b>Gmail</b> Cloudflare account (holiday lights, milepost domain).</div>
       <input type="password" id="in_cfPages" placeholder="40-character API token" autocomplete="off" style="width:100%">
       <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveDeployKey('cf-pages','in_cfPages')">Save &amp; verify Gmail-account key</button>
+
+      <label style="margin:20px 0 0">Google Ads <span id="gads_status" class="sub"></span></label>
+      <div class="sub" style="margin:2px 0 4px;white-space:normal">Lets the app read the junk campaigns (spend, leads, search terms → the nightly digest). Three pieces, then a one-tap connect.</div>
+      <div class="sub" style="margin:6px 0 2px"><b>1.</b> The OAuth client JSON (downloaded from Cloud Console → Credentials):</div>
+      <input type="file" id="in_gadsFile" accept=".json,application/json" style="width:100%" onchange="gadsReadFile(this)">
+      <textarea id="in_gadsJson" placeholder="…or paste the JSON here" style="width:100%;height:54px;font-size:11px" autocomplete="off"></textarea>
+      <div class="row" style="gap:8px;margin-top:6px">
+        <input id="in_gadsCust" placeholder="Customer ID e.g. 123-456-7890" autocomplete="off" style="flex:1">
+        <input type="password" id="in_gadsDev" placeholder="Developer token (optional)" autocomplete="off" style="flex:1">
+      </div>
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsSaveCfg()">Save Google Ads keys</button>
+      <div class="sub" style="margin:10px 0 2px"><b>2.</b> Connect: sign in as Ray@obxlotsolutions.com and approve. Google then dumps you on a <b>broken page — that's expected</b>. Copy that page's ADDRESS and paste it below.</div>
+      <button class="btn ghost" style="width:100%" onclick="gadsConnect()">Connect Google (opens sign-in)</button>
+      <input id="in_gadsCode" placeholder="Paste the broken page's full address (contains ?code=…)" autocomplete="off" style="width:100%;margin-top:6px">
+      <button class="btn ghost" style="width:100%;margin-top:6px" onclick="gadsExchange()">Finish connection</button>
     </div>`:""}
     <p class="muted" style="margin:14px 4px">App v2 · offline-first · syncs to your server</p>`;
   if(window.loadBackupStatus)setTimeout(loadBackupStatus,30);
   if(window.orgpRefresh&&typeof orgpCan==="function"&&orgpCan())setTimeout(orgpRefresh,40);
   if(window.loadSecStatus)setTimeout(loadSecStatus,30);
+  if(window.gadsRefreshStatus&&typeof settingsCanConfig==="function"&&settingsCanConfig())setTimeout(gadsRefreshStatus,40);
 }
 window.saveSync=function(){if(typeof settingsCanConfig==="function"&&!settingsCanConfig()){alert("Owner or admin only.");return;}S.sync.url=val("sy_url");S.sync.token=val("sy_token");
   S.sync.auto=document.getElementById("sy_auto").checked;save();syMsg("Saved.");renderSyncPill();
@@ -312,6 +328,55 @@ window.saveSecret=function(key,inputId){
 };
 /* like saveSecret, but for the Cloudflare deploy-key FILES — and the server verifies the pasted value
    against Cloudflare itself before answering, so a bad paste is caught here, not at the next deploy. */
+/* ── Google Ads key management (Ray: keys managed IN THE APP, no terminal) ─────────────────────────────
+   Mirrors saveDeployKey's trust model; the server never echoes secrets back, the UI only shows booleans. */
+function gadsApi(pathSuffix,opts){
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  return fetch(base+"/api/config/googleads"+(pathSuffix||""),Object.assign({headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{})},opts||{})).then(r=>r.json());
+}
+window.gadsRefreshStatus=function(){
+  const el=document.getElementById("gads_status"); if(!el)return;
+  gadsApi("",{method:"GET"}).then(d=>{
+    if(!d||!d.ok){el.textContent="";return;}
+    el.textContent=d.connected?"· connected ✓":d.hasClient?"· keys saved, not connected yet":"· not set up";
+  }).catch(()=>{});
+};
+window.gadsReadFile=function(inp){
+  const f=inp&&inp.files&&inp.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=function(){const t=document.getElementById("in_gadsJson");if(t)t.value=String(r.result||"");};
+  r.readAsText(f);
+};
+window.gadsSaveCfg=function(){
+  const j=(val("in_gadsJson")||"").trim(), cid=(val("in_gadsCust")||"").trim(), dev=(val("in_gadsDev")||"").trim();
+  const body={}; if(j)body.oauthJson=j; if(cid)body.customerId=cid; if(dev)body.developerToken=dev;
+  if(!Object.keys(body).length){alert("Nothing to save — add the JSON, the customer ID, or the developer token.");return;}
+  gadsApi("",{method:"POST",body:JSON.stringify(body)}).then(d=>{
+    if(!(d&&d.ok)){alert("Save failed: "+((d&&d.error)||"unknown"));return;}
+    ["in_gadsJson","in_gadsCust","in_gadsDev"].forEach(id=>{const e=document.getElementById(id);if(e)e.value="";});
+    alert("Saved ✓"+(d.client?" — client keys stored":"")+". Now hit Connect Google.");
+    gadsRefreshStatus();
+  }).catch(()=>alert("Save failed — are you online?"));
+};
+window.gadsConnect=function(){
+  gadsApi("/connect",{method:"POST",body:"{}"}).then(d=>{
+    if(!(d&&d.ok&&d.url)){alert("Can't connect yet: "+((d&&d.error)||"unknown"));return;}
+    window.open(d.url,"_blank");
+  }).catch(()=>alert("Couldn't reach the server."));
+};
+window.gadsExchange=function(){
+  const input=(val("in_gadsCode")||"").trim();
+  if(!input){alert("Paste the broken page's address first.");return;}
+  gadsApi("/exchange",{method:"POST",body:JSON.stringify({input:input})}).then(d=>{
+    if(!(d&&d.ok)){alert("Didn't work: "+((d&&d.error)||"unknown"));return;}
+    const e=document.getElementById("in_gadsCode");if(e)e.value="";
+    if(d.verified===true)alert("Connected ✓ and the Ads API answered — it can see "+d.accounts+" account"+(d.accounts===1?"":"s")+". Done.");
+    else if(d.verified===false)alert("Connected ✓ but the Ads API refused the first call"+(d.apiError?" ("+d.apiError+")":"")+" — the grant is stored; we'll debug the API side separately.");
+    else alert("Connected ✓ — "+(d.note||"verify skipped."));
+    gadsRefreshStatus();
+  }).catch(()=>alert("Couldn't reach the server."));
+};
+
 window.saveDeployKey=function(key,inputId){
   const el=document.getElementById(inputId); if(!el)return; const v=(el.value||"").trim();
   if(!v){alert("Paste the token first.");return;}
