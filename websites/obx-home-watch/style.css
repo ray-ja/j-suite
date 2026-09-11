@@ -55,7 +55,8 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);ba
 .btn.onDark:hover{background:rgba(255,255,255,.08)}
 .btn.big{font-size:17.5px;padding:16px 26px}
 .navcta .btn{padding:11px 18px;font-size:16px}
-@media(max-width:1180px){.navlinks{gap:17px;font-size:15.5px}.navcta .btn{padding:10px 15px;font-size:15px}}
+@media(max-width:1280px){.navlinks{gap:17px;font-size:15.5px}.navcta .btn{padding:10px 15px;font-size:15px}}
+@media(max-width:1180px){.navcta{display:none}}
 #nav-check,.menu-toggle,.mobilemenu{display:none}
 @media(max-width:1020px){
   .navlinks,.navcta{display:none}
