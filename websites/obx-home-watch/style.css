@@ -263,11 +263,16 @@ footer.site b{color:#aab6c6}
 .locs button.on{background:var(--brass);border-color:var(--brass);color:#fff}
 .locs button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
 .locnote{margin-top:18px;color:#b6c2d0;font-size:15px}
-.locmap{height:380px;margin-top:22px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.14);background:#e9eef3}
+.locgrid{display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:stretch;margin-top:22px;text-align:left}
+.locgrid .locs{justify-content:flex-start;margin-top:0}
+.locgrid .locnote{text-align:left}
+@media(max-width:940px){.locgrid{grid-template-columns:1fr;text-align:center}.locgrid .locs{justify-content:center}.locgrid .locnote{text-align:center}}
+.locmap{height:520px;min-height:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.14);background:#e9eef3}
 .locmap .leaflet-container{font-family:var(--sans)}
 .locmap .leaflet-tooltip{font-weight:700;font-size:14px;border-radius:8px;padding:6px 10px}
 .locmap .leaflet-interactive{cursor:pointer}
-@media(max-width:560px){.locmap{height:300px}}
+@media(max-width:940px){.locmap{height:420px;min-height:0}}
+@media(max-width:560px){.locmap{height:340px}}
 .eyebrow.center{text-align:center;margin-top:40px}
 .pprice.unset .pv{font-family:var(--sans);font-size:15px;font-weight:600;color:var(--brass-deep)}
 .fees td.p.unset .pv{color:var(--body);font-weight:400}
