@@ -8,7 +8,7 @@ const RATES_DEFAULT={
   windows:{label:"Window cleaning",unit:"panes",hint:"Number of window panes. Interior + exterior costs more (≈1.5×).",tiers:[[20,14],[40,11],[1e9,9]],min:99,intext:1.5,upperAdd:4},
   gutters:{label:"Gutter cleaning",unit:"linear ft",hint:"Total linear feet of gutter — roughly the home's perimeter.",tiers:[[150,1.5],[1e9,1.2]],min:149,stories2:1.3},
   parking:{label:"Parking-lot cleanup",unit:"spaces",hint:"Number of parking spaces — use the Map tool to estimate from satellite.",tiers:[[25,3.2],[100,2.6],[300,2.0],[1e9,1.6]],min:79,freq:{"one-time":1,weekly:0.8,daily:0.7}},
-  housewatch:{label:"House-watch (per visit)",unit:"visit",hint:"Recurring property checks for absentee owners — photo report each visit.",base:50,size:{small:0,medium:10,large:25},freq:{monthly:1,"bi-weekly":0.9,weekly:0.8}},
+  housewatch:{label:"House-watch (per visit)",unit:"visit",hint:"Recurring property checks for absentee owners — photo report each visit. Standard rate covers Harbinger–Duck and down through Nags Head (≈25 mi); beyond that the drive is priced per address. Carova/Ocracoke carry a flat access charge instead.",base:55,size:{small:0,medium:15,large:45},freq:{monthly:1,"bi-weekly":0.9,weekly:0.8},freeMiles:25,perMile:0.725,access:{carova:60,ocracoke:125}},
   junk:{label:"Junk removal",unit:"load",hint:"Estimate the fraction of a truck bed it fills.",base:120,perEighth:90,dumpFee:60}
  },
  jam:{
@@ -27,6 +27,15 @@ function setCosts(obj){let d=D().docs.find(x=>x.id==="costs");if(d){d.text=JSON.
 function tierPrice(qty,tiers){let rem=qty,prev=0,sum=0;for(let k=0;k<tiers.length;k++){const cap=tiers[k][0],rate=tiers[k][1];const span=Math.min(rem,cap-prev);if(span>0){sum+=span*rate;rem-=span;}prev=cap;if(rem<=0)break;}return sum;}
 function rnd5(n){return Math.round(n/5)*5;}
 /* each calculator returns {name, price, notes:[]} */
+/* Milepost travel rule (Ray, 2026-09-11): standard rate inside ~25 mi of Harbinger; beyond that the
+   visit is priced by address at the IRS rate on the extra miles, rounded up to $5. Carova and Ocracoke
+   get a flat access charge that already includes the drive. */
+function hwTravel(r,inp){
+  var acc=(inp&&inp.access)||"";
+  if(r.access&&r.access[acc])return r.access[acc];
+  var extra=Math.max(0,(+(inp&&inp.miles)||0)-(r.freeMiles||25));
+  return extra?Math.ceil(extra*(r.perMile||0.725)/5)*5:0;
+}
 function calcQuote(key,inp){
   const R=getRates(),r=R[key];if(!r)return null;
   let price=0,notes=[],name=r.label,qty=inp.qty||0;
@@ -49,8 +58,11 @@ function calcQuote(key,inp){
     if((inp.freq||"one-time")!=="one-time")notes.push("Recurring route — price is per service.");
   } else if(key==="housewatch"){
     price=(r.base+(r.size[inp.size]||0))*(r.freq[inp.freq]||1);
-    name=r.label+" — "+(inp.size||"medium")+" home, "+(inp.freq||"monthly")+" (per visit)";
+    var travel=hwTravel(r,inp);
+    price+=travel;
+    name=r.label+" — "+(inp.size||"small")+" home, "+(inp.freq||"monthly")+" (per visit)";
     notes.push("Recurring — bill per visit on the chosen frequency.");
+    if(travel)notes.push((inp.access==="carova"?"Carova access":inp.access==="ocracoke"?"Ocracoke access (ferry)":"Drive from Harbinger, "+(+inp.miles||0)+" mi one-way")+": +$"+travel+" per visit.");
   } else if(key==="junk"){
     price=r.base+r.perEighth*(inp.eighths||1)+r.dumpFee; name=r.label+" — ~"+(inp.eighths||1)+"/8 truck";
     notes.push("Includes ~$"+r.dumpFee+" dump fee estimate; confirm on site.");
@@ -161,7 +173,7 @@ function calcCost(key, inp, costs){
     case "parking":
       return Math.round(((c.base || 0) + (c.perUnit || 0) * qty) * 100) / 100;
     case "housewatch":
-      return c.base || 0;
+      return Math.round(((c.base || 0) + Math.max(0, (+inp.miles || 0) - 25) * 2 * 0.725) * 100) / 100;
     case "junk": {
       var lbs = inp.lbs != null ? inp.lbs : (inp.eighths || 1) * (c.lbsPerEighth || 312.5);
       return Math.round(((c.base || 0) + disposalCost(lbs)) * 100) / 100;
