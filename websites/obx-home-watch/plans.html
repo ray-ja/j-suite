@@ -35,13 +35,40 @@
   </div>
 </div>
 
-<section>
+<section style="padding-bottom:0">
   <div class="wrap">
+    <div class="locpick" id="locpick">
+      <div class="eyebrow">Step 1 · Where is the house?</div>
+      <h2 style="font-size:clamp(22px,3vw,30px)">Pick your location and the prices below fill in.</h2>
+      <div class="locs" role="group" aria-label="Location">
+        <button type="button" data-loc="mainland" data-t="0">Moyock / Coinjock / Grandy</button>
+        <button type="button" data-loc="pointharbor" data-t="0">Point Harbor / Powells Point</button>
+        <button type="button" data-loc="corolla" data-t="10">Corolla</button>
+        <button type="button" data-loc="carova" data-t="60">Carova</button>
+        <button type="button" data-loc="duck" data-t="0">Duck</button>
+        <button type="button" data-loc="southernshores" data-t="0">Southern Shores</button>
+        <button type="button" data-loc="kittyhawk" data-t="0">Kitty Hawk</button>
+        <button type="button" data-loc="kdh" data-t="0">Kill Devil Hills</button>
+        <button type="button" data-loc="nagshead" data-t="0">Nags Head</button>
+        <button type="button" data-loc="manteo" data-t="0">Manteo / Roanoke Island</button>
+        <button type="button" data-loc="rodanthe" data-t="15">Rodanthe / Waves / Salvo</button>
+        <button type="button" data-loc="avon" data-t="30">Avon</button>
+        <button type="button" data-loc="buxton" data-t="40">Buxton / Frisco / Hatteras</button>
+        <button type="button" data-loc="ocracoke" data-t="125">Ocracoke</button>
+      </div>
+      <p class="locnote" id="locnote">Prices include the drive to your house. Standard rate covers Moyock to Duck and Manteo to Nags Head.</p>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:28px">
+  <div class="wrap">
+    <div class="eyebrow center" id="step2">Step 2 · Pick a plan</div>
     <div class="plans">
       <div class="plan">
         <div class="pname">Monthly</div>
         <div class="pwho">For lightly used homes in the quiet season, or for owners who visit often themselves.</div>
-        <div class="pprice">$55&ndash;70<small> / month</small></div>
+        <div class="pprice" data-lo="55" data-hi="70" data-visits="1"><span class="pv">Pick a location above</span><small> / month</small></div>
         <div class="pfreq">1 visit / month</div>
         <ul>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Full interior + exterior checklist</li>
@@ -55,7 +82,7 @@
         <div class="tag">Most owners choose this</div>
         <div class="pname">Bi-weekly</div>
         <div class="pwho">The standard for an empty coastal home. Catches a leak or an HVAC failure while it's still small.</div>
-        <div class="pprice">$100&ndash;130<small> / month</small></div>
+        <div class="pprice" data-lo="100" data-hi="130" data-visits="2"><span class="pv">Pick a location above</span><small> / month</small></div>
         <div class="pfreq">2 visits / month</div>
         <ul>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Everything in Monthly</li>
@@ -68,7 +95,7 @@
       <div class="plan">
         <div class="pname">Weekly</div>
         <div class="pwho">For the November&ndash;March vacancy season, high-value homes, or owners who want eyes on it constantly.</div>
-        <div class="pprice">$190&ndash;250<small> / month</small></div>
+        <div class="pprice" data-lo="190" data-hi="250" data-visits="4"><span class="pv">Pick a location above</span><small> / month</small></div>
         <div class="pfreq">4 visits / month &middot; Nov&ndash;Mar</div>
         <ul>
           <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> Everything in Bi-weekly</li>
@@ -81,8 +108,7 @@
     </div>
     <p class="center" style="margin-top:36px;color:var(--body);font-size:17px;max-width:66ch;margin-left:auto;margin-right:auto">
       Where you land in each range depends on the size of the home: up to 4 bedrooms sits at the low end, 5&ndash;8 bedrooms at the top, and 9+ bedroom estates are quoted individually.
-      One-off checks are welcome too, no plan needed. An on-demand visit starts at $75 on the central beach (quoted for the drive elsewhere), usually within a day, with the full report included. That covers freeze runs as well: when a hard freeze is coming, we'll set your faucets to drip and confirm the heat on request. Plans are month to month, and prepaying the year takes roughly 10% off. We confirm your exact price in writing after the first walk-through.</p>
-    <p class="lede" style="font-size:15px;margin-top:10px"><b>Travel:</b> plan prices are our standard rate, which covers Moyock to Duck and Manteo to Nags Head. North of Duck and south of Nags Head there is a travel charge per visit, priced by address for the drive, usually $10&ndash;40. Carova +$60 per visit. Ocracoke +$125 per visit, ferry included. Details on the <a href="service-area.html" style="color:var(--brass-deep);font-weight:700">service area</a> page.</p>
+      One-off checks are welcome too, no plan needed. An on-demand visit starts at $75 plus travel, usually within a day, with the full report included. That covers freeze runs as well: when a hard freeze is coming, we'll set your faucets to drip and confirm the heat on request. Plans are month to month, and prepaying the year takes roughly 10% off. We confirm your exact price in writing after the first walk-through.</p>
   </div>
 </section>
 
@@ -95,12 +121,11 @@
     <div class="fees">
       <h3><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg> Home watch visits</h3>
       <table>
-        <tr><td>Home Watch Visit, up to 4 bedrooms<small>Full interior and exterior checklist, photo Visit Report the same day.</small></td><td class="p">$55</td></tr>
-        <tr><td>Home Watch Visit, 5&ndash;8 bedrooms</td><td class="p">$70</td></tr>
+        <tr><td>Home Watch Visit, up to 4 bedrooms<small>Full interior and exterior checklist, photo Visit Report the same day.</small></td><td class="p" data-lo="55"><span class="pv">&mdash;</span></td></tr>
+        <tr><td>Home Watch Visit, 5&ndash;8 bedrooms</td><td class="p" data-lo="70"><span class="pv">&mdash;</span></td></tr>
         <tr><td>9+ bedrooms / estate</td><td class="p">custom quote</td></tr>
-        <tr><td>Travel, north of Duck or south of Nags Head<small>Priced by address for the drive.</small></td><td class="p">+$10&ndash;40 / visit</td></tr>
-        <tr><td>Carova / Ocracoke<small>Beach access / ferry, drive included.</small></td><td class="p">+$60 / +$125</td></tr>
-        <tr><td>Extra unscheduled visit<small>You saw weather on the news, a delivery landed, or you just want eyes on it.</small></td><td class="p">$45&ndash;55</td></tr>
+        <tr><td>Travel, included above<small id="travelnote">Standard rate covers Moyock to Duck and Manteo to Nags Head. North of Duck and south of Nags Head there is a per-visit travel charge for the drive.</small></td><td class="p" id="travelcell"><span class="pv">&mdash;</span></td></tr>
+        <tr><td>Extra unscheduled visit<small>You saw weather on the news, a delivery landed, or you just want eyes on it.</small></td><td class="p" data-lo="45" data-hi="55"><span class="pv">&mdash;</span></td></tr>
       </table>
     </div>
 
@@ -115,8 +140,8 @@
     <div class="fees">
       <h3><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 16a4 4 0 0 0-1-7.9A6 6 0 0 0 5 9a4 4 0 0 0-1 7.9"/><path d="m13 12-3 5h4l-3 5"/></svg> Storm &amp; season</h3>
       <table>
-        <tr><td>Storm preparation, per named storm<small>A preparation visit: outdoor furniture stowed, shutters closed, installer let in. Plan members go first. <a href="storm.html" style="color:var(--brass-deep);font-weight:700">Storm service &rarr;</a></small></td><td class="p">$95&ndash;150 flat</td></tr>
-        <tr><td>Post-storm condition report<small>A check as soon as the storm passes, with timestamped photos for your insurer.</small></td><td class="p">$75&ndash;95</td></tr>
+        <tr><td>Storm preparation, per named storm<small>A preparation visit: outdoor furniture stowed, shutters closed, installer let in. Plan members go first. <a href="storm.html" style="color:var(--brass-deep);font-weight:700">Storm service &rarr;</a></small></td><td class="p" data-lo="95" data-hi="150" data-suffix=" flat"><span class="pv">&mdash;</span></td></tr>
+        <tr><td>Post-storm condition report<small>A check as soon as the storm passes, with timestamped photos for your insurer.</small></td><td class="p" data-lo="75" data-hi="95"><span class="pv">&mdash;</span></td></tr>
         <tr><td>Winterize / de-winterize<small>Water, lines and fixtures set for the season, in either direction.</small></td><td class="p">$150&ndash;200 each</td></tr>
       </table>
     </div>
@@ -163,5 +188,36 @@
 </footer>
 <div class="callbar"><a href="tel:+12522075985"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg> Call (252) 207-5985</a></div>
 <script>document.getElementById("yr").textContent=new Date().getFullYear();</script>
+<script>
+(function(){
+  var btns=[].slice.call(document.querySelectorAll("#locpick button"));
+  var travel=null, name="";
+  function fmt(n){return "$"+n;}
+  function paint(){
+    document.querySelectorAll("[data-lo]").forEach(function(el){
+      var pv=el.querySelector(".pv"); if(!pv) return;
+      if(travel==null){ pv.textContent = el.classList.contains("pprice") ? "Pick a location above" : "\u2014"; el.classList.add("unset"); return; }
+      el.classList.remove("unset");
+      var v=+el.getAttribute("data-visits")||1, lo=+el.getAttribute("data-lo")+travel*v, hi=el.getAttribute("data-hi")?+el.getAttribute("data-hi")+travel*v:null;
+      pv.textContent = (hi?fmt(lo)+"\u2013"+hi:fmt(lo)) + (el.getAttribute("data-suffix")||"");
+    });
+    var tc=document.getElementById("travelcell"), tn=document.getElementById("travelnote"), ln=document.getElementById("locnote");
+    if(travel==null){ tc.querySelector(".pv").textContent="\u2014"; return; }
+    tc.querySelector(".pv").textContent = travel ? "+"+fmt(travel)+" / visit" : "included";
+    tn.textContent = travel ? name+" is "+fmt(travel)+" per visit for the drive, already added to every price on this page." : name+" is in our standard area. No travel charge.";
+    ln.textContent = travel ? "Prices below include the "+fmt(travel)+" per-visit drive to "+name+"." : "Prices below are our standard rate. "+name+" has no travel charge.";
+  }
+  function pick(b, scroll){
+    btns.forEach(function(x){x.classList.toggle("on", x===b); x.setAttribute("aria-pressed", x===b?"true":"false");});
+    travel=+b.getAttribute("data-t"); name=b.textContent; paint();
+    try{localStorage.setItem("mphw-loc", b.getAttribute("data-loc"));}catch(e){}
+    if(scroll){ var s=document.getElementById("step2"); if(s) s.scrollIntoView({behavior:"smooth",block:"start"}); }
+  }
+  btns.forEach(function(b){ b.addEventListener("click", function(){ pick(b, true); }); });
+  var pre=(location.hash.match(/loc=([a-z]+)/)||[])[1]; if(!pre){ try{pre=localStorage.getItem("mphw-loc");}catch(e){} }
+  var found=pre&&btns.filter(function(b){return b.getAttribute("data-loc")===pre;})[0];
+  if(found) pick(found,false); else paint();
+})();
+</script>
 </body>
 </html>

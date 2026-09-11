@@ -251,3 +251,18 @@ footer.site b{color:#aab6c6}
 .rpt-disc{margin-top:26px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--body);line-height:1.6}
 .rpt-samp{margin-top:14px;text-align:center;background:var(--navy);color:#c3cede;border-radius:8px;padding:15px 18px;font-size:14px;line-height:1.55}
 .rpt-samp b{color:#fff}
+
+/* plans: location picker */
+.locpick{background:var(--navy);color:#fff;border-radius:16px;padding:34px 30px 26px;margin-top:-6px;text-align:center}
+.locpick .eyebrow{color:var(--brass)}
+.locpick h2{color:#fff;margin-top:6px}
+.locs{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:22px}
+.locs button{font:inherit;font-size:15px;font-weight:600;color:#fff;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.22);border-radius:999px;padding:10px 16px;cursor:pointer;line-height:1.2}
+.locs button:hover{border-color:var(--brass);color:#fff}
+.locs button.on{background:var(--brass);border-color:var(--brass);color:#fff}
+.locs button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.locnote{margin-top:18px;color:#b6c2d0;font-size:15px}
+.eyebrow.center{text-align:center;margin-top:40px}
+.pprice.unset .pv{font-family:var(--sans);font-size:15px;font-weight:600;color:var(--brass-deep)}
+.fees td.p.unset .pv{color:var(--body);font-weight:400}
+@media(max-width:560px){.locpick{padding:26px 16px 20px;border-radius:12px}.locs button{font-size:14px;padding:9px 13px}}
