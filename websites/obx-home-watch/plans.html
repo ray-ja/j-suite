@@ -222,7 +222,7 @@
 
   /* the map: a simplified trace of the road, one shape per pill */
   if(window.L){
-    var map=L.map("locmap",{scrollWheelZoom:false,zoomControl:true,attributionControl:true}).setView([35.85,-75.78],8);
+    var map=L.map("locmap",{scrollWheelZoom:false,zoomControl:true,attributionControl:true,zoomSnap:0.25}).setView([35.85,-75.78],8);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:13,minZoom:7,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
     var Z={
       mainland:  L.polygon([[36.55,-76.30],[36.55,-75.97],[36.42,-75.93],[36.28,-75.87],[36.12,-75.80],[36.06,-75.79],[36.06,-75.88],[36.20,-75.99],[36.36,-76.12],[36.50,-76.30]]),
@@ -244,8 +244,9 @@
       s.on("mouseout",function(){ s.setStyle(style(k)); });
     });
     var all=L.featureGroup(Object.keys(shapes).map(function(k){return shapes[k];}));
-    map.fitBounds(all.getBounds(),{padding:[18,18]});
-    window.addEventListener("resize",function(){ map.invalidateSize(); map.fitBounds(all.getBounds(),{padding:[18,18]}); });
+    function fit(){ map.invalidateSize(); map.fitBounds(all.getBounds(),{padding:[16,16]}); }
+    fit(); setTimeout(fit,50); setTimeout(fit,600);
+    window.addEventListener("resize",fit);
   }
 
   var pre=(location.hash.match(/loc=([a-z]+)/)||[])[1]; if(!pre){ try{pre=localStorage.getItem("mphw-loc");}catch(e){} }
