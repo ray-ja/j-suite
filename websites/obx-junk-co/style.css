@@ -180,3 +180,5 @@ footer.site b{color:#b6bbc2}
 .callbar{position:fixed;left:14px;right:14px;bottom:14px;z-index:60;display:none}
 .callbar a{display:flex;align-items:center;justify-content:center;gap:11px;background:var(--orange);color:#fff;font-weight:800;font-size:18px;padding:17px;border-radius:12px;box-shadow:0 8px 26px rgba(212,83,10,.42)}
 @media(max-width:760px){.callbar{display:block}body{padding-bottom:86px}section{padding:56px 0}}
+
+@media(max-width:480px){.nav{gap:10px;padding:12px 16px}.logo img{height:36px}.btn.big{white-space:normal;text-align:center}}
