@@ -267,7 +267,7 @@ footer.site b{color:#aab6c6}
 .locgrid .locs{justify-content:flex-start;margin-top:0}
 .locgrid .locnote{text-align:left}
 @media(max-width:940px){.locgrid{grid-template-columns:1fr;text-align:center}.locgrid .locs{justify-content:center}.locgrid .locnote{text-align:center}}
-.locmap{height:520px;min-height:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.14);background:#e9eef3}
+.locmap{height:620px;min-height:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.14);background:#e9eef3}
 .locmap .leaflet-container{font-family:var(--sans)}
 .locmap .leaflet-tooltip{font-weight:700;font-size:14px;border-radius:8px;padding:6px 10px}
 .locmap .leaflet-interactive{cursor:pointer}
