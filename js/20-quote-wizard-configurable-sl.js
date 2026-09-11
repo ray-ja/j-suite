@@ -8,7 +8,7 @@ const RATES_DEFAULT={
   windows:{label:"Window cleaning",unit:"panes",hint:"Number of window panes. Interior + exterior costs more (≈1.5×).",tiers:[[20,14],[40,11],[1e9,9]],min:99,intext:1.5,upperAdd:4},
   gutters:{label:"Gutter cleaning",unit:"linear ft",hint:"Total linear feet of gutter — roughly the home's perimeter.",tiers:[[150,1.5],[1e9,1.2]],min:149,stories2:1.3},
   parking:{label:"Parking-lot cleanup",unit:"spaces",hint:"Number of parking spaces — use the Map tool to estimate from satellite.",tiers:[[25,3.2],[100,2.6],[300,2.0],[1e9,1.6]],min:79,freq:{"one-time":1,weekly:0.8,daily:0.7}},
-  housewatch:{label:"House-watch (per visit)",unit:"visit",hint:"Recurring property checks for absentee owners — photo report each visit. Standard rate covers Harbinger–Duck and down through Nags Head (≈25 mi); beyond that the drive is priced per address. Carova/Ocracoke carry a flat access charge instead.",base:55,size:{small:0,medium:15,large:45},freq:{monthly:1,"bi-weekly":0.9,weekly:0.8},freeMiles:25,perMile:0.725,access:{carova:60,ocracoke:125}},
+  housewatch:{label:"House-watch (per visit)",unit:"visit",hint:"Recurring property checks for absentee owners — photo report each visit. Standard rate covers Moyock–Duck and Manteo–Nags Head. North of Duck / south of Nags Head the drive is priced per address on the miles past 25. Carova/Ocracoke carry a flat access charge instead.",base:55,size:{small:0,medium:15,large:45},freq:{monthly:1,"bi-weekly":0.9,weekly:0.8},freeMiles:25,perMile:0.725,access:{carova:60,ocracoke:125}},
   junk:{label:"Junk removal",unit:"load",hint:"Estimate the fraction of a truck bed it fills.",base:120,perEighth:90,dumpFee:60}
  },
  jam:{
@@ -33,6 +33,7 @@ function rnd5(n){return Math.round(n/5)*5;}
 function hwTravel(r,inp){
   var acc=(inp&&inp.access)||"";
   if(r.access&&r.access[acc])return r.access[acc];
+  if(acc!=="north"&&acc!=="south")return 0;
   var extra=Math.max(0,(+(inp&&inp.miles)||0)-(r.freeMiles||25));
   return extra?Math.ceil(extra*(r.perMile||0.725)/5)*5:0;
 }
@@ -173,7 +174,7 @@ function calcCost(key, inp, costs){
     case "parking":
       return Math.round(((c.base || 0) + (c.perUnit || 0) * qty) * 100) / 100;
     case "housewatch":
-      return Math.round(((c.base || 0) + Math.max(0, (+inp.miles || 0) - 25) * 2 * 0.725) * 100) / 100;
+      return Math.round(((c.base || 0) + ((inp.access === "north" || inp.access === "south" || inp.access === "carova" || inp.access === "ocracoke") ? Math.max(0, (+inp.miles || 0) - 25) * 2 * 0.725 : 0)) * 100) / 100;
     case "junk": {
       var lbs = inp.lbs != null ? inp.lbs : (inp.eighths || 1) * (c.lbsPerEighth || 312.5);
       return Math.round(((c.base || 0) + disposalCost(lbs)) * 100) / 100;
