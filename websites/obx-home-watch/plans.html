@@ -10,6 +10,7 @@
 <meta property="og:description" content="Home watch pricing for Outer Banks second homes: visits from $55, bi-weekly plans $100–130/month, storm prep and seasonal services. Real numbers, month to month. Call (252) 207-5985.">
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
@@ -41,22 +42,18 @@
       <div class="eyebrow">Step 1 · Where is the house?</div>
       <h2 style="font-size:clamp(22px,3vw,30px)">Pick your location and the prices below fill in.</h2>
       <div class="locs" role="group" aria-label="Location">
-        <button type="button" data-loc="mainland" data-t="0">Moyock / Coinjock / Grandy</button>
-        <button type="button" data-loc="pointharbor" data-t="0">Point Harbor / Powells Point</button>
-        <button type="button" data-loc="corolla" data-t="10">Corolla</button>
+        <button type="button" data-loc="mainland" data-t="0">Mainland Currituck</button>
+        <button type="button" data-loc="kittyhawk" data-t="0">Kitty Hawk / Southern Shores</button>
+        <button type="button" data-loc="duck" data-t="0">Duck / Corolla</button>
         <button type="button" data-loc="carova" data-t="60">Carova</button>
-        <button type="button" data-loc="duck" data-t="0">Duck</button>
-        <button type="button" data-loc="southernshores" data-t="0">Southern Shores</button>
-        <button type="button" data-loc="kittyhawk" data-t="0">Kitty Hawk</button>
         <button type="button" data-loc="kdh" data-t="0">Kill Devil Hills</button>
         <button type="button" data-loc="nagshead" data-t="0">Nags Head</button>
-        <button type="button" data-loc="manteo" data-t="0">Manteo / Roanoke Island</button>
-        <button type="button" data-loc="rodanthe" data-t="15">Rodanthe / Waves / Salvo</button>
-        <button type="button" data-loc="avon" data-t="30">Avon</button>
-        <button type="button" data-loc="buxton" data-t="40">Buxton / Frisco / Hatteras</button>
+        <button type="button" data-loc="manteo" data-t="0">Manteo</button>
+        <button type="button" data-loc="hatteras" data-t="30">South of Nags Head to Hatteras</button>
         <button type="button" data-loc="ocracoke" data-t="125">Ocracoke</button>
       </div>
-      <p class="locnote" id="locnote">Prices include the drive to your house. Standard rate covers Moyock to Duck and Manteo to Nags Head.</p>
+      <div id="locmap" class="locmap" aria-label="Map of the Outer Banks service areas"></div>
+      <p class="locnote" id="locnote">Tap your area on the map or the list. Prices include the drive to your house.</p>
     </div>
   </div>
 </section>
@@ -188,32 +185,63 @@
 </footer>
 <div class="callbar"><a href="tel:+12522075985"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg> Call (252) 207-5985</a></div>
 <script>document.getElementById("yr").textContent=new Date().getFullYear();</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 (function(){
   var btns=[].slice.call(document.querySelectorAll("#locpick button"));
-  var travel=null, name="";
+  var travel=null, name="", cur="", shapes={};
   function fmt(n){return "$"+n;}
   function paint(){
     document.querySelectorAll("[data-lo]").forEach(function(el){
       var pv=el.querySelector(".pv"); if(!pv) return;
-      if(travel==null){ pv.textContent = el.classList.contains("pprice") ? "Pick a location above" : "\u2014"; el.classList.add("unset"); return; }
+      if(travel==null){ pv.textContent = el.classList.contains("pprice") ? "Pick a location above" : "—"; el.classList.add("unset"); return; }
       el.classList.remove("unset");
       var v=+el.getAttribute("data-visits")||1, lo=+el.getAttribute("data-lo")+travel*v, hi=el.getAttribute("data-hi")?+el.getAttribute("data-hi")+travel*v:null;
-      pv.textContent = (hi?fmt(lo)+"\u2013"+hi:fmt(lo)) + (el.getAttribute("data-suffix")||"");
+      pv.textContent = (hi?fmt(lo)+"–"+hi:fmt(lo)) + (el.getAttribute("data-suffix")||"");
     });
     var tc=document.getElementById("travelcell"), tn=document.getElementById("travelnote"), ln=document.getElementById("locnote");
-    if(travel==null){ tc.querySelector(".pv").textContent="\u2014"; return; }
+    if(travel==null){ tc.querySelector(".pv").textContent="—"; return; }
     tc.querySelector(".pv").textContent = travel ? "+"+fmt(travel)+" / visit" : "included";
     tn.textContent = travel ? name+" is "+fmt(travel)+" per visit for the drive, already added to every price on this page." : name+" is in our standard area. No travel charge.";
     ln.textContent = travel ? "Prices below include the "+fmt(travel)+" per-visit drive to "+name+"." : "Prices below are our standard rate. "+name+" has no travel charge.";
   }
+  function style(k){ var on=k===cur; return {color:on?"#b8894a":"#2f4a6a",weight:on?16:11,opacity:on?1:.75,fillColor:on?"#b8894a":"#2f4a6a",fillOpacity:on?.55:.28}; }
   function pick(b, scroll){
+    cur=b.getAttribute("data-loc");
     btns.forEach(function(x){x.classList.toggle("on", x===b); x.setAttribute("aria-pressed", x===b?"true":"false");});
     travel=+b.getAttribute("data-t"); name=b.textContent; paint();
-    try{localStorage.setItem("mphw-loc", b.getAttribute("data-loc"));}catch(e){}
+    Object.keys(shapes).forEach(function(k){ shapes[k].setStyle(style(k)); if(k===cur&&shapes[k].bringToFront) shapes[k].bringToFront(); });
+    try{localStorage.setItem("mphw-loc", cur);}catch(e){}
     if(scroll){ var s=document.getElementById("step2"); if(s) s.scrollIntoView({behavior:"smooth",block:"start"}); }
   }
   btns.forEach(function(b){ b.addEventListener("click", function(){ pick(b, true); }); });
+
+  /* the map: a simplified trace of the road, one shape per pill */
+  if(window.L){
+    var map=L.map("locmap",{scrollWheelZoom:false,zoomControl:true,attributionControl:true}).setView([35.85,-75.78],8);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{maxZoom:13,minZoom:7,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
+    var Z={
+      mainland:  L.polygon([[36.55,-76.30],[36.55,-75.97],[36.42,-75.93],[36.28,-75.87],[36.12,-75.80],[36.06,-75.79],[36.06,-75.88],[36.20,-75.99],[36.36,-76.12],[36.50,-76.30]]),
+      carova:    L.polyline([[36.55,-75.87],[36.46,-75.85],[36.38,-75.83]]),
+      duck:      L.polyline([[36.38,-75.83],[36.30,-75.80],[36.23,-75.77],[36.16,-75.75]]),
+      kittyhawk: L.polyline([[36.16,-75.75],[36.11,-75.72],[36.06,-75.70]]),
+      kdh:       L.polyline([[36.06,-75.70],[35.98,-75.66]]),
+      nagshead:  L.polyline([[35.98,-75.66],[35.91,-75.62],[35.85,-75.59]]),
+      manteo:    L.polygon([[35.97,-75.70],[35.95,-75.64],[35.88,-75.60],[35.81,-75.62],[35.83,-75.68],[35.91,-75.72]]),
+      hatteras:  L.polyline([[35.77,-75.53],[35.68,-75.48],[35.59,-75.47],[35.45,-75.48],[35.35,-75.50],[35.27,-75.53],[35.23,-75.62],[35.21,-75.70]]),
+      ocracoke:  L.polyline([[35.19,-75.77],[35.15,-75.88],[35.11,-75.98]])
+    };
+    Object.keys(Z).forEach(function(k){
+      var s=Z[k]; s.setStyle(style(k)); s.addTo(map); shapes[k]=s;
+      var b=btns.filter(function(x){return x.getAttribute("data-loc")===k;})[0];
+      s.bindTooltip(b?b.textContent:k,{sticky:true,direction:"top",opacity:.95});
+      s.on("click",function(){ if(b) pick(b,true); });
+      s.on("mouseover",function(){ if(k!==cur) s.setStyle({opacity:1,fillOpacity:.45}); });
+      s.on("mouseout",function(){ s.setStyle(style(k)); });
+    });
+    window.addEventListener("resize",function(){ map.invalidateSize(); });
+  }
+
   var pre=(location.hash.match(/loc=([a-z]+)/)||[])[1]; if(!pre){ try{pre=localStorage.getItem("mphw-loc");}catch(e){} }
   var found=pre&&btns.filter(function(b){return b.getAttribute("data-loc")===pre;})[0];
   if(found) pick(found,false); else paint();
