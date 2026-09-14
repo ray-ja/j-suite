@@ -26,7 +26,7 @@ window.openJunkEst=function(){
   setTimeout(junkCalc,40);
 };
 window.junkCalc=function(){
-  const base={min:125,quarter:200,half:375,tquarter:525,full:700};
+  const base={min:175,quarter:225,half:375,tquarter:525,full:700};   // min = JUNK_MIN ($175: we don't walk out the door for less); was $125, which undercut the loader
   const wt={min:200,quarter:450,half:900,tquarter:1400,full:1800};
   const load=val("je_load")||"half",extra=+val("je_extra")||0;
   const access=parseFloat(val("je_access"))||1,labor=parseFloat(val("je_labor"))||0;
@@ -36,12 +36,12 @@ window.junkCalc=function(){
   const laborAdd=labor*75;
   const special=fr*45+ma*25+ti*8+ew*30+pa*10+ap*25+gy*40;   /* gym: ~250 lb, two-person carry, 20-30 min of unbolting; the weight is added below */
   const lbs=(wt[load]||0)+extra*1800+gy*250;
-  const dump=Math.round(lbs/2000*94);
+  const dump=Math.round(lbs/2000*120);   // customer CHARGE per ton, same as the loader (JUNK_CD_TON); Soundside costs us $90
   let total=Math.ceil((baseHaul+accessAdd+laborAdd+special+dump)/25)*25;
   const floor=Math.ceil((baseHaul*0.55+special+dump)/25)*25;
   const cost=dump+30;
   const b=document.getElementById("je_break");
-  if(b)b.innerHTML=`<div style="font-size:13px;line-height:1.85">Base haul (by volume): <b>${money(baseHaul)}</b><br>Access factor (${access}×): <b>+${money(accessAdd)}</b><br>Extra labor: <b>+${money(laborAdd)}</b><br>Special-item disposal: <b>+${money(special)}</b><br>Landfill fee (est. ${lbs} lb @ $94/ton): <b>+${money(dump)}</b></div><div class="sub" style="margin-top:6px">Rough hard cost (dump+fuel) ≈ ${money(cost)} · don't go below ~${money(floor)}.</div>`;
+  if(b)b.innerHTML=`<div style="font-size:13px;line-height:1.85">Base haul (by volume): <b>${money(baseHaul)}</b><br>Access factor (${access}×): <b>+${money(accessAdd)}</b><br>Extra labor: <b>+${money(laborAdd)}</b><br>Special-item disposal: <b>+${money(special)}</b><br>Landfill fee (est. ${lbs} lb @ $120/ton): <b>+${money(dump)}</b></div><div class="sub" style="margin-top:6px">Rough hard cost (dump+fuel) ≈ ${money(cost)} · don't go below ~${money(floor)}.</div>`;
   const t=document.getElementById("je_total");if(t)t.textContent=money(total);
   window._jeTotal=total;
 };

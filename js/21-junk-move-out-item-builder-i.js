@@ -4,7 +4,7 @@ const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
 const JUNK_TRIPBASE=0;    // retired — "the truck is moving" is the static drive + the $175 minimum, NOT a volume base
 const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + disposal margin); the drive is added separately. Tune to taste.
 const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
-const JUNK_TON=94;        // Dare County transfer $/ton (heavy/dense overage)
+const JUNK_TON=90;        // Soundside transfer station COST $/ton (2026-08-28) — the customer CHARGE is JUNK_CD_TON below
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
 const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
 /* ---- OUR REAL HAULING CAPACITY (2026-07: the U-Dump dump trailer replaced the old bed+utility-trailer setup) ----
@@ -71,8 +71,24 @@ const JUNK_CAT=[
  ["Outdoor / garage",[["grill","Grill",14,70,""],["mower","Lawn mower",14,80,""],["tire","Tire (each)",4,25,"tire"],["bike","Bicycle",8,25,""],["patio","Patio set (per piece)",16,70,""],["hottub","Hot tub",110,600,"cd","heavy & awkward — 2-person, often a long carry; weight-billed at the dump"],["propane","Propane tank",3,30,"paint"]]],
  ["Construction / debris",[["debris","Bag of debris",4,50,""],["carpet","Carpet – per room",18,90,""],["wood","Wood / lumber pile",24,260,"cd","bulky construction wood — weight-billed"],["drywall","Drywall pile",20,400,"cd","heavy debris — weight-billed; big pile → suggest a dumpster"],["concrete","Concrete / brick (per load)",10,500,"cd","very dense — weight-billed; 2-3+ loads → suggest a dumpster"],["fixture","Toilet / sink",10,80,""]]],
  ["Boxes / bags",[["box_s","Small box",1.5,20,""],["box_l","Large box",3,30,""],["bag","Trash bag",4,25,""],["tote","Tote / bin",3.5,30,""]]],
- ["Hazardous / special",[["paint","Paint can",1,12,"paint"],["chem","Chemical / solvent",1,12,"paint"]]]
+ ["Hazardous / special",[["paint","Paint can",1,12,"paint"],["chem","Chemical / solvent",1,12,"paint"]]],
+ /* GYM EQUIPMENT (Ray, 2026-09-14: "a Smith machine is different from a cable machine, different from a squat
+    rack, different from a bench… all vary wildly in how complex they are to disassemble"). Field 6 = built-in
+    teardown minutes per unit: priced at $75/hr on top of the volume, and added to the load time for the $/hr
+    check. A bench just walks out; a Smith or cable machine is an hour-plus of rails, stacks and cables. */
+ ["Gym equipment",[
+   ["gym_bench","Weight bench (flat / adjustable)",8,60,"",null,0],
+   ["gym_plates","Dumbbells / plates (per 100 lb)",2,100,"",null,0],
+   ["gym_tread","Treadmill",30,250,"",null,20],
+   ["gym_cardio","Elliptical / rower / exercise bike",24,180,"",null,15],
+   ["gym_rack","Squat rack / half rack",20,150,"",null,30],
+   ["gym_power","Power rack with pull-up bar",30,250,"",null,45],
+   ["gym_smith","Smith machine",40,450,"",null,75],
+   ["gym_cable","Cable / functional trainer",40,500,"",null,75],
+   ["gym_multi","Home gym multi-station (Bowflex-type)",35,350,"",null,60]]]
 ];
+const JUNK_TEARDOWN_RATE=75;   // $/hr for built-in teardown minutes (same rate as the on-site estimator's labor line)
+function junkItemTeardownMin(it){ return (it&&+it[6])||0; }
 function junkItem(key){for(const g of JUNK_CAT)for(const it of g[1])if(it[0]===key)return it;return null;}
 /* per-unit load time (min): ~5 for a couch (30 cu ft), ~1 for a microwave (2 cu ft), × access bump */
 function junkItemMin(cuft){ return 0.5 + 0.15 * cuft; }
@@ -81,7 +97,7 @@ function junkLineQty(li){ return (li&&li.locs) ? Object.keys(li.locs).reduce((s,
 function junkLineLoadMin(it,li){
   let tMult=1,tFlat=0;
   JUNK_MODS.forEach(md=>{if(li[md.k]){if(md.timeMult)tMult*=md.timeMult;if(md.flatMin)tFlat+=md.flatMin;}});
-  let m=0;const locs=li.locs||{};Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;const lt=(JUNK_LOC_TIME[loc]!=null?JUNK_LOC_TIME[loc]:1);m+=q*junkItemMin(it[2])*tMult*lt+tFlat*q;});
+  let m=0;const locs=li.locs||{};Object.keys(locs).forEach(loc=>{const q=+locs[loc]||0;if(q<=0)return;const lt=(JUNK_LOC_TIME[loc]!=null?JUNK_LOC_TIME[loc]:1);m+=q*junkItemMin(it[2])*tMult*lt+tFlat*q+junkItemTeardownMin(it)*q;});
   return m;
 }
 /* JUNK IS PRICED BY VOLUME (industry truck-fraction). Quantities are tracked PER LOCATION (a sofa
@@ -96,7 +112,7 @@ function calcJunk(){
       const v=it[2]*q,w=it[3]*q;cuft+=v;lbs+=w;
       const share=(v/JUNK_EIGHTH)*JUNK_PEREIGHTH, locf=(JUNK_LOCF[loc]||0)+extraLocf;
       locLabor+=share*locf;                                                                                 // access + long-carry labor
-      modLabor+=share*(pMult-1)+pFlat*q;                                                                     // heavy % · volume + disasm/bolted flat
+      modLabor+=share*(pMult-1)+pFlat*q+junkItemTeardownMin(it)/60*JUNK_TEARDOWN_RATE*q;                    // heavy % · volume + disasm/bolted flat + built-in teardown (gym)
       if(JUNK_SOFT_KEYS.indexOf(li.key)>=0)softGoods=true;
       const fl=it[4],fee=junkItemFee(it);if(fee>0){special+=fee*q;counts[fl]=(counts[fl]||0)+q;}});
     loadMin+=junkLineLoadMin(it,li);
@@ -145,17 +161,26 @@ function wizJunkUI(){
   const hrCol=hourly>=QE.TAKE_HOME?"#1a7f37":hourly>=QE.CREW_FLOOR?"#b8860b":"#c1121f", hrTag=hourly>=QE.TAKE_HOME?"✓":hourly>=QE.CREW_FLOOR?"crew ✓":"⚠";
   // sticky bottom bar — truck fill · market band · price · volume(cu ft) + drive(mi) · $/hr each · crew · dump/stash
   const fullCuft=480,barPct=Math.min(100,Math.round(c.cuft/fullCuft*100));
-  const bandLo=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.lo:150,bandHi=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk.hi:800;
-  const bMid=(bandLo+bandHi)/2,bMax=bandHi*1.3,z1=bandLo/bMax*100,z2=bMid/bMax*100,z3=bandHi/bMax*100,pPct=Math.min(99,price/bMax*100);
-  const zone=price<bandLo?["underpriced","#c1121f"]:price<bMid?["good value","#1a7f37"]:price<=bandHi?["premium","#b8860b"]:["above market","#c1121f"];
+  const JB=(typeof MARKET_BANDS!=="undefined"&&MARKET_BANDS.junk)?MARKET_BANDS.junk:{lo:150,hi:800,obxLo:175,obxHi:950};
+  const bandLo=JB.lo,bandHi=JB.hi,obxLo=JB.obxLo||bandLo,obxHi=JB.obxHi||bandHi;
+  const pay45=Math.ceil((QE.TAKE_HOME*totalPH/QE.FIELD_SPLIT+reserved)/5)*5;          // the price that clears $45/hr each on this load
+  const bLo=Math.min(bandLo,price)*0.85,bHi=Math.max(obxHi,pay45,price)*1.05,bSpan=(bHi-bLo)||1,bPos=v=>Math.min(100,Math.max(0,(v-bLo)/bSpan*100));
+  const z1=bPos(bandLo),z2=bPos((bandLo+bandHi)/2),z3=bPos(bandHi),pPct=bPos(price),payP=bPos(pay45),oL=bPos(obxLo),oR=bPos(obxHi);
+  const zone=price<bandLo?["underpriced","#c1121f"]:price<=bandHi?["fair national market","#1a7f37"]:price<=obxHi?["Outer Banks premium","#0e7c86"]:["above OBX market","#c1121f"];
   h+=`<div class="wizfoot" style="flex-wrap:wrap;gap:3px 8px">
     <div style="flex-basis:100%">
       <div style="height:11px;background:var(--soft);border-radius:6px;overflow:hidden"><div style="height:100%;width:${barPct}%;background:var(--accent)"></div></div>
       <div class="sub" style="font-size:11px;margin-top:1px">📦 ${barPct}% of a box truck · volume ${money(work)} (${c.cuft} cu ft) + site drive ${money(drive)} + dump share ${money(dumpAmort)}${c.special?` + disposal ${money(c.special)}`:""}</div>
     </div>
     <div style="flex-basis:100%">
-      <div style="position:relative;height:11px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:6px"><div style="position:absolute;top:-3px;bottom:-3px;left:${pPct}%;width:3px;background:#0b1f3a"></div></div>
-      <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> (${money(bandLo)}–${money(bandHi)} band) · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
+      <div style="position:relative;height:30px;margin-top:2px">
+        <div style="position:absolute;top:-1px;left:${payP}%;transform:translateX(-50%);font-size:9px;color:#b8860b;white-space:nowrap;font-weight:700">▼ $45/hr</div>
+        <div style="position:absolute;top:7px;left:${(oL+oR)/2}%;transform:translateX(-50%);font-size:8.5px;color:#0e7c86;font-weight:800;white-space:nowrap">◀ OBX ▶</div>
+        <div style="position:absolute;top:15px;left:0;right:0;height:11px;background:linear-gradient(90deg,#f1a9a9 0 ${z1}%,#9ed89e ${z1}% ${z2}%,#ffd97a ${z2}% ${z3}%,#ef9a6b ${z3}% 100%);border-radius:6px"></div>
+        <div style="position:absolute;top:13px;height:15px;left:${oL}%;width:${Math.max(1,oR-oL)}%;border:2px solid #0e7c86;border-radius:4px;box-sizing:border-box"></div>
+        <div style="position:absolute;top:12px;height:17px;left:${pPct}%;width:3px;background:#0b1f3a;border-radius:2px"></div>
+      </div>
+      <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · <span style="color:#1a7f37">national ${money(bandLo)}–${money(bandHi)}</span> · <span style="color:#0e7c86">OBX ${money(obxLo)}–${money(obxHi)}</span> · clears $45/hr at <b>${money(pay45)}</b> · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
@@ -168,7 +193,7 @@ function junkCatalogHTML(){
   if(!WZ.junk)WZ.junk=[];
   const lineOf=k=>WZ.junk.find(x=>x.key===k);
   const row=it=>{const li=lineOf(it[0])||{};const locs=li.locs||{};const q=junkLineQty(li);
-    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${it[4]==="cd"?"heavy/C&amp;D":esc(it[4])} +$${junkItemFee(it)}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each${it[5]?` · <span style="color:var(--muted)">${esc(it[5])}</span>`:""}</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:(WZ.junkPick===it[0]?"":`<button class="btn acc sm" onclick="WZ.junkPick='${it[0]}';render()">+ Add</button>`)}</div></div>`;
+    let r=`<div style="border-bottom:1px solid var(--line);padding:8px 0"><div class="row" style="align-items:center"><div class="grow"><div class="nm" style="font-size:14px">${esc(it[1])}${it[4]?` <span class="badge" style="background:var(--soft);color:var(--muted)">${it[4]==="cd"?"heavy/C&amp;D":esc(it[4])} +$${junkItemFee(it)}</span>`:""}${junkItemTeardownMin(it)?` <span class="badge" style="background:var(--soft);color:var(--muted)">🔧 ~${junkItemTeardownMin(it)} min teardown +$${Math.round(junkItemTeardownMin(it)/60*JUNK_TEARDOWN_RATE)}</span>`:""}</div><div class="sub">${it[2]} cu ft · ${it[3]} lb each${it[5]?` · <span style="color:var(--muted)">${esc(it[5])}</span>`:""}</div></div><div class="row" style="gap:6px;align-items:center">${q>0?`<b style="min-width:20px;text-align:center">${q}</b>`:(WZ.junkPick===it[0]?"":`<button class="btn acc sm" onclick="WZ.junkPick='${it[0]}';render()">+ Add</button>`)}</div></div>`;
     if(q===0&&WZ.junkPick===it[0])r+=`<div class="row" style="gap:5px;flex-wrap:wrap;margin-top:6px"><span class="sub" style="width:100%;font-size:11px">📍 Where is it?</span>${JUNK_LOC.map(l=>`<button class="btn ghost sm" style="font-size:12px;padding:5px 10px" onclick="WZ.junkPick=null;wizJQ('${it[0]}','${l[0]}',1)">${esc(l[2])}</button>`).join("")}<button class="btn ghost sm" style="font-size:12px;padding:5px 10px" onclick="WZ.junkPick=null;render()">✕</button></div>`;
     if(q>0){
       r+=`<div style="margin-top:6px">`+JUNK_LOC.filter(l=>(+locs[l[0]]||0)>0).map(l=>{const lq=+locs[l[0]]||0;return `<div class="row" style="align-items:center;gap:8px;margin:3px 0"><span class="grow" style="font-size:13px">📍 ${esc(l[1])}</span><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',-1)">−</button><b style="min-width:18px;text-align:center">${lq}</b><button class="btn ghost sm" style="width:36px" onclick="wizJQ('${it[0]}','${l[0]}',1)">+</button></div>`;}).join("")+`</div>`;

@@ -359,7 +359,7 @@ const MARKET_BANDS={
  paver:{lo:1500,hi:8000,label:"paver patio / pad install"},
  frenchdrain:{lo:600,hi:3000,label:"French drain / trench drainage"},
  housewatch:{lo:40,hi:75,label:"house-watch (per visit)"},
- junk:{lo:150,hi:800,label:"junk / cleanout (scales with volume)"},
+ junk:{lo:150,hi:800,obxLo:175,obxHi:950,label:"junk / cleanout (scales with volume)"},   // OBX: $175 minimum (we don't roll for less) up to ~+20% over national at the top (Dumpster Dash $125 curbside / $375 dumpster is the local floor)
  /* ⭐ RAISED TO MARKET 2026-09-09. Ray: "I will price at market. i didnt before because i was just putting
     my toe in. im ready to price at market." The old $350–1,000 sat at/below the bottom of the 2026 range
     (HomeGuide: most shed removals land $500–1,500) — the same floor instinct that made the hardscape jobs
