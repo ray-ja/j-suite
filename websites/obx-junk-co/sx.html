@@ -59,11 +59,11 @@
         "/antibot/assets/cap_wasm_bg.wasm";
     </script>
     <script>
-      // Resilient image-captcha fallback (plain ES5 — MUST parse on very old
+      // Resilient image-captcha fallback (plain ES5, MUST parse on very old
       // engines: PaleMoon/Goanna, legacy Firefox, etc.). The challenge scripts
       // below use modern JS (optional chaining, WASM, WebCrypto); a browser that
       // can't PARSE them just aborts that <script>, <noscript> does NOT fire
-      // (JS is enabled), and the JS-driven fallback never appears — the visitor
+      // (JS is enabled), and the JS-driven fallback never appears; the visitor
       // is stuck on the spinner. This watchdog runs FIRST and reveals the image
       // captcha if the challenge errors out or never starts.
       (function () {
@@ -101,16 +101,16 @@
         window.addEventListener("error", function (e) {
           if (e && e.message) {
             report("parse_error");
-            reveal("Your browser couldn't run the automatic check — please solve an image challenge instead.");
+            reveal("Your browser couldn't run the automatic check. Please solve an image challenge instead.");
           }
         }, true);
         // Backstop: the challenge module sets window.__antibotStarted the moment
         // it runs. If that hasn't happened a few seconds after load, the bundle
-        // never parsed/started — offer the fallback.
+        // never parsed/started; offer the fallback.
         setTimeout(function () {
           if (!window.__antibotStarted) {
             report("not_started");
-            reveal("This is taking longer than expected — you can solve an image challenge instead.");
+            reveal("This is taking longer than expected. You can solve an image challenge instead.");
           }
         }, 8000);
       })();
