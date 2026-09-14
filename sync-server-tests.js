@@ -2397,6 +2397,21 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("no quote → org brand as before", t.pubBizOf(STORE0, "obx").name === "OBX Lot Solutions" && t.pubBizOf(STORE0, "jam").name === "Jamieson Automation");
   ok("junk brand keeps the same phone and points at the junk logo asset", t.JUNK_BIZ.phone === "(252) 207-5985" && /logo-junk\.svg$/.test(t.JUNK_BIZ.logo) && require("fs").existsSync(require("path").join(__dirname, "assets", "logo-junk.svg")));
 
+
+  console.log("\n— customer accepts a quote from the hosted page —");
+  const ST = { users: [{ id: "own1", username: "ray", superAdmin: true, role: "owner" }], registry: [], obx: { quotes: [{ id: "qA", num: 32, invoiceToken: "tok_abcdefgh", items: [{ name: "Junk", price: 575, qty: 1, bandKey: "junk" }], total: 575, customerId: "c1" }], customers: [{ id: "c1", name: "Emma" }], messages: [] } };
+  const r1 = t.quoteAcceptApply(ST, "obx", ST.obx.quotes[0], "iPhone", 1000);
+  const qa = r1.store.obx.quotes.find(x => x.id === "qA");
+  ok("accept: quote stamped accepted + acceptedAt, owner gets a Messages ping naming the customer and amount",
+    qa.accepted === true && qa.acceptedAt === 1000 && !!r1.threadId && (r1.store.obx.messages || []).some(m => m && /Emma ACCEPTED quote/.test(m.body || m.text || JSON.stringify(m)) && /575/.test(JSON.stringify(m))), r1.store.obx.messages);
+  const n1 = (r1.store.obx.messages || []).length;
+  const r2 = t.quoteAcceptApply(r1.store, "obx", qa, "iPhone", 2000);
+  ok("accept: a second tap is idempotent (no second ping, acceptedAt unchanged)", r2.already === true && (r2.store.obx.messages || []).length === n1 && r2.store.obx.quotes[0].acceptedAt === 1000);
+  const page = t.renderInvoicePage(t.pubBizOf(ST, "obx", ST.obx.quotes[0]), ST.obx.customers[0], Object.assign({}, ST.obx.quotes[0], { accepted: false }), [], null, null, null);
+  ok("page: a quote shows Accept + Reply (sms to the business line) and no pay button", /Accept this quote/.test(page) && /sms:2522075985/.test(page) && !/Pay online/.test(page));
+  const page2 = t.renderInvoicePage(t.pubBizOf(ST, "obx", qa), ST.obx.customers[0], qa, [], null, null, null);
+  ok("page: an accepted quote shows the accepted state instead of the button", /✓ Accepted/.test(page2) && !/qa_btn/.test(page2));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

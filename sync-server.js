@@ -2259,6 +2259,27 @@ function invLogView(store, org, q, cust, ua, now) {
   }, store);
   return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, biz: built.biz };
 }
+/* CUSTOMER ACCEPTS A QUOTE from the hosted page (Ray, 2026-09-14: "a button on the quote page for her to
+   accept"). Stamps the quote, tells the owner in Messages (its own thread), idempotent on repeat taps. */
+function quoteAcceptApply(store, org, q, ua, now) {
+  now = +now || Date.now();
+  const slab = store[org]; if (!slab || !q) return { store: store, threadId: null, already: false };
+  const rec = (slab.quotes || []).find(x => x && x.id === q.id); if (!rec) return { store: store, threadId: null, already: false };
+  if (rec.accepted) return { store: store, threadId: null, already: true };
+  rec.accepted = true; rec.acceptedAt = now; rec.acceptedUa = String(ua || "").slice(0, 140); rec.updatedAt = now;
+  const users = (store.users || []);
+  const owner = users.find(u => u && !u.kind && !u.deleted && u.superAdmin) || users.find(u => u && !u.kind && !u.deleted && u.role === "owner");
+  if (!owner) return { store: store, threadId: null, already: false };
+  const cust = ((slab.customers) || []).find(c => c && c.id === rec.customerId);
+  const who = (cust && (cust.name || cust.company)) || rec.cust || "Customer";
+  const built = ceoBuildMessage({
+    biz: org, to: owner.id, members: [owner.id],
+    title: "Quote accepted", senderLabel: "Quote watcher",
+    threadId: "thr_quote_accepts_" + org,
+    body: "✅ " + who + " ACCEPTED quote " + invNoOf(rec) + " — " + invMoney(invEff(rec)) + ". Schedule it."
+  }, store);
+  return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, already: false };
+}
 // MIRRORS the client invCleanMatDesc (js/46) — strip Cap/import annotation cruft off a material description.
 function srvCleanMatDesc(desc) {
   let s = String(desc == null ? "" : desc).trim();
@@ -2488,6 +2509,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     tfoot td{border-bottom:none;padding:5px 0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
     .acct td,.acct th{padding-left:18px}.acct td:first-child,.acct th:first-child{padding-left:0}.acct tfoot .tot{font-size:15px;padding-left:18px}.acct tfoot td:first-child.tot{padding-left:0}
     .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
+    .qact{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:10px;font-size:16px}
     .pay2{display:block;text-align:center;background:#fff;border:2px solid ${AC};color:${AC}!important;text-decoration:none;font-weight:700;padding:13px;border-radius:10px;margin-top:10px;font-size:15px}
     .cash{margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:11px 14px;border-radius:8px;font-weight:600;font-size:13px}
     .paidstamp{display:inline-block;margin-top:6px;border:2px solid ${AC};color:${AC};font-weight:800;letter-spacing:2px;padding:3px 12px;border-radius:6px;transform:rotate(-4deg)}
@@ -2526,7 +2548,23 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
       ${(() => {
         // the pay button: shared across billed-together invoices, grayed when everything is settled,
         // customer can pay the balance or a partial amount at checkout
-        if (isQuote) return "";   // a QUOTE has no pay button — nothing is billed yet
+        if (isQuote) {   // a QUOTE has no pay button — nothing is billed yet; it has ACCEPT and REPLY instead
+          const tel = String(biz.phone || "").replace(/[^0-9+]/g, "");
+          const replyBody = encodeURIComponent("About quote " + invNoOf(q) + ": ");
+          const accepted = !!q.accepted;
+          const reply = tel ? `<a class="qact" href="sms:${htmlEsc(tel)}?&body=${replyBody}" style="background:#fff;color:#1a1a1a!important;border:1.5px solid #d1d5db">💬 Reply or change something</a>` : "";
+          const note = `<div class="muted" style="text-align:center;margin-top:8px;font-size:12.5px">Want part of it done, or a smaller scope? Text us and we'll send a revised quote.</div>`;
+          if (accepted) return `<div id="qa" style="margin-top:22px"><div class="qact" style="background:#eef7f1;color:#0a7d4b!important;cursor:default">✓ Accepted${q.acceptedAt ? " on " + htmlEsc(new Date(q.acceptedAt).toLocaleDateString("en-US")) : ""} — we'll reach out to schedule</div>${reply}${note}</div>`;
+          return `<div id="qa" style="margin-top:22px">
+            <button class="qact" id="qa_btn" onclick="qaAccept()" style="width:100%;border:0;cursor:pointer;font:inherit;font-weight:700;margin-top:18px">✓ Accept this quote — ${dueStr}</button>
+            ${reply}${note}
+          </div>
+          <script>function qaAccept(){var b=document.getElementById("qa_btn");if(!b)return;b.disabled=true;b.textContent="Sending…";
+            fetch(location.pathname+"/accept",{method:"POST"}).then(function(r){return r.json();}).then(function(d){
+              if(d&&d.ok){b.outerHTML='<div class="qact" style="background:#eef7f1;color:#0a7d4b!important;cursor:default">✓ Accepted — thank you, we\'ll reach out to schedule</div>';}
+              else{b.disabled=false;b.textContent="Couldn\'t send — tap again or text us";}
+            }).catch(function(){b.disabled=false;b.textContent="Couldn\'t send — tap again or text us";});}</script>`;
+        }
         if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
@@ -4649,6 +4687,18 @@ const server = http.createServer((req, res) => {
 
   // HOSTED PUBLIC INVOICE — GET /i/<token> (no auth: the unguessable per-invoice token IS the capability). Renders
   // the invoice a customer can open in any browser + pay online. 404s an unknown/stale token.
+  if (req.method === "POST" && /^\/i\/[^/?]+\/accept$/.test(req.url.split("?")[0])) {
+    const token = decodeURIComponent(req.url.split("?")[0].slice(3).replace(/\/accept$/, ""));
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    if (!token || token.length < 8) return J(404, { error: "not found" });
+    let store = loadStore(); let q = null, org = null;
+    for (const oid of orgIdsOf(store)) { const f = ((store[oid] && store[oid].quotes) || []).find(x => x && !x.deleted && x.invoiceToken === token); if (f) { q = f; org = oid; break; } }
+    if (!q) return J(404, { error: "not found" });
+    if (q.invoiced || q.paid) return J(200, { ok: true, already: true, invoiced: true });
+    const r = quoteAcceptApply(store, org, q, req.headers["user-agent"]);
+    try { saveStore(r.store); if (r.threadId) pushNotify(r.store, org, r.threadId, "__ceo__").catch(() => {}); } catch (e) { return J(500, { error: "save failed" }); }
+    return J(200, { ok: true, already: !!r.already, acceptedAt: (r.store[org].quotes.find(x => x.id === q.id) || {}).acceptedAt || null });
+  }
   if (req.method === "GET" && req.url.split("?")[0].indexOf("/i/") === 0) {
     const token = decodeURIComponent(req.url.split("?")[0].slice(3));
     const notFound = () => { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#1a1a1a'><h1 style='font-size:26px'>Not published yet</h1><p style='color:#555;max-width:34ch;margin:12px auto'>This quote may still be on its way from the owner's phone. Give it a minute and open the link again, or text us back and we'll resend it.</p></body>"); };
@@ -5681,4 +5731,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

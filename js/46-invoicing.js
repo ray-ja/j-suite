@@ -381,7 +381,7 @@ window.openInvoice = function (quoteId) {
         <tfoot>${invBillMode(q) === "actual" ? "" : invAdjRows(q)}<tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:8px">Total</td><td style="text-align:right;font-weight:800;padding-top:8px">${money2(invGrandTotal(q))}</td></tr>${invTaxRows(q,false)}</tfoot>
       </table>
       ${invModeControl(q)}
-      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${q.invoiceToken ? invViewsHTML(q.id) : ""}${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
+      <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${q.accepted ? `<div class="sub" style="margin-top:4px;color:var(--good);font-weight:700">✅ Customer accepted this quote${q.acceptedAt ? " on " + esc(new Date(q.acceptedAt).toLocaleDateString()) : ""}</div>` : ""}${q.invoiceToken ? invViewsHTML(q.id) : ""}${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
       ${q.paymentLink
         ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money2(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
         : ((typeof finCanView !== "function" || finCanView())
