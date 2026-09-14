@@ -4312,7 +4312,7 @@ const server = http.createServer((req, res) => {
       if (!SITES[id] || !sitePageOk(page)) return J(400, { error: "unknown site or page" });
       let html; try { html = fs.readFileSync(path.join(siteDir(id), page), "utf8"); } catch (e) { return J(404, { error: "page not found" }); }
       const blocks = siteScan(html);
-      return J(200, { ok: true, site: id, page: page, url: SITES[id].url, html: siteStripScripts(siteAnnotate(html, blocks)),
+      return J(200, { ok: true, site: id, page: page, url: SITES[id].url, heroMark: heroMarkRead(html), html: siteStripScripts(siteAnnotate(html, blocks)),
         blocks: blocks.map(b => ({ id: b.id, tag: b.tag, inner: html.slice(b.innerStart, b.innerEnd) })) });
     }
     if (route === "/api/sites/publish" && req.method === "POST") {
@@ -4329,6 +4329,22 @@ const server = http.createServer((req, res) => {
         const who = sc.account ? { name: sc.account.name || sc.account.username || "Ray", email: sc.account.email || "" } : null;
         const job = sitePublishJob(id, page, who, r.applied);
         return J(200, { ok: true, applied: r.applied, job: job.id });
+      });
+    }
+    if (route === "/api/sites/heromark" && req.method === "POST") {
+      return readBodyUtf8(req, 4096, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const id = p && p.site, page = p && p.page;
+        if (!SITES[id] || !sitePageOk(page)) return J(400, { error: "unknown site or page" });
+        const file = path.join(siteDir(id), page); let html;
+        try { html = fs.readFileSync(file, "utf8"); } catch (e) { return J(404, { error: "page not found" }); }
+        const out = heroMarkApply(html, p);
+        if (out == null) return J(400, { error: "this page has no hero graphic, or a value is missing" });
+        if (out === html) return J(200, { ok: true, job: null });
+        try { fs.writeFileSync(file, out); } catch (e) { return J(500, { error: "write failed" }); }
+        const who = sc.account ? { name: sc.account.name || sc.account.username || "Ray", email: sc.account.email || "" } : null;
+        const job = sitePublishJob(id, page, who, 1, "Hero graphic");
+        return J(200, { ok: true, job: job.id, values: heroMarkRead(out) });
       });
     }
     if (route === "/api/sites/job" && req.method === "GET") {
@@ -5600,7 +5616,34 @@ function siteRunStep(job, name, cmd, args, opts, cb) {
   child.on("error", (e) => { clearTimeout(timer); step.ok = false; step.out += "\n" + String(e.message || e); cb(false); });
   child.on("close", (code) => { clearTimeout(timer); step.ok = code === 0; cb(code === 0); });
 }
-function sitePublishJob(siteId, page, who, n) {
+
+/* Hero graphic placement (Ray, 2026-09-14: "Is there a way for me to place and scale the images myself?").
+   The mark's position/size/opacity live as CSS variables on the .hero-mark div; this rewrites ONLY that
+   style attribute, clamped, so nothing else on the page can change through it. */
+const HERO_MARK_LIMITS = { mx: [-80, 60], my: [-80, 60], mh: [40, 260], mo: [0, 0.8] };
+function heroMarkClamp(v) {
+  const out = {};
+  Object.keys(HERO_MARK_LIMITS).forEach(k => {
+    const n = Number(v && v[k]); const [lo, hi] = HERO_MARK_LIMITS[k];
+    out[k] = Number.isFinite(n) ? Math.min(hi, Math.max(lo, k === "mo" ? Math.round(n * 100) / 100 : Math.round(n))) : null;
+  });
+  return out;
+}
+function heroMarkApply(html, vals) {   // → new html, or null when the page has no .hero-mark or a value is missing
+  const v = heroMarkClamp(vals); if (Object.keys(v).some(k => v[k] == null)) return null;
+  const style = 'style="--mx:' + v.mx + '%;--my:' + v.my + '%;--mh:' + v.mh + '%;--mo:' + v.mo + '"';
+  const re = /<div class="hero-mark"([^>]*)>/;
+  const m = re.exec(String(html || "")); if (!m) return null;
+  const attrs = m[1].replace(/\s*style="[^"]*"/, "");
+  return html.replace(re, '<div class="hero-mark"' + attrs + ' ' + style + '>');
+}
+function heroMarkRead(html) {
+  const m = /<div class="hero-mark"[^>]*style="([^"]*)"/.exec(String(html || "")); if (!m) return null;
+  const g = (k, d) => { const r = new RegExp("--" + k + ":(-?[0-9.]+)").exec(m[1]); return r ? Number(r[1]) : d; };
+  return { mx: g("mx", -2), my: g("my", -16), mh: g("mh", 136), mo: g("mo", 0.16) };
+}
+
+function sitePublishJob(siteId, page, who, n, label) {
   const site = SITES[siteId]; const id = "sj_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const job = { id: id, site: siteId, page: page, state: "running", steps: [], url: site.url + "/" + page.replace(/\.html$/, "").replace(/^index$/, ""), started: Date.now() };
   SITE_JOBS[id] = job;
@@ -5608,7 +5651,7 @@ function sitePublishJob(siteId, page, who, n) {
   const nodeBin = path.dirname(process.execPath);
   const env = Object.assign({}, process.env, { PATH: nodeBin + ":" + (process.env.PATH || ""), HOME: os.homedir() });
   const author = (who && who.name ? who.name : "Ray") + " <" + (who && who.email ? who.email : "ray@jsuite.local") + ">";
-  const msg = "Site copy: " + siteId + "/" + page + ", " + n + " text edit" + (n === 1 ? "" : "s") + " (via j-Suite)";
+  const msg = label ? (label + ": " + siteId + "/" + page + " (via j-Suite)") : ("Site copy: " + siteId + "/" + page + ", " + n + " text edit" + (n === 1 ? "" : "s") + " (via j-Suite)");
   const fail = () => { job.state = "failed"; job.ended = Date.now(); };
   siteRunStep(job, "stage", "git", ["add", "--", rel], { env: env }, (ok1) => { if (!ok1) return fail();
     siteRunStep(job, "commit", "git", ["commit", "--author=" + author, "-m", msg, "--", rel], { env: env }, (ok2) => { if (!ok2) return fail();
@@ -5625,4 +5668,4 @@ function sitePublishJob(siteId, page, who, n) {
   return job;
 }
 
-module.exports = { SITES, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

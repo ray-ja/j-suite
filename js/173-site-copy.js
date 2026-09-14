@@ -30,6 +30,16 @@
           '<a class="btn ghost" id="sc_live" href="#" target="_blank" rel="noopener" style="display:none">View live ↗</a>' +
         '</div>' +
         '<div id="sc_log" class="sub" style="display:none;margin-top:8px;white-space:pre-wrap;font-size:12.5px"></div>' +
+        '<div id="sc_hero" style="display:none;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>Hero graphic</b><span class="sub" style="font-size:12.5px">Drag the sliders; the preview moves live. Publish when it looks right.</span></div>' +
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px 16px;margin-top:8px;font-size:13px">' +
+            '<label>Left / right <span id="hm_mx_v"></span><input type="range" id="hm_mx" min="-80" max="60" step="1" oninput="siteHeroPreview()" style="width:100%"></label>' +
+            '<label>Up / down <span id="hm_my_v"></span><input type="range" id="hm_my" min="-80" max="60" step="1" oninput="siteHeroPreview()" style="width:100%"></label>' +
+            '<label>Size <span id="hm_mh_v"></span><input type="range" id="hm_mh" min="40" max="260" step="2" oninput="siteHeroPreview()" style="width:100%"></label>' +
+            '<label>Opacity <span id="hm_mo_v"></span><input type="range" id="hm_mo" min="0" max="80" step="1" oninput="siteHeroPreview()" style="width:100%"></label>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn" id="hm_pub" onclick="siteHeroPublish()">Publish graphic</button><button class="btn ghost" onclick="siteHeroReset()">Back to saved</button></div>' +
+        '</div>' +
         '<iframe id="sc_frame" title="Page preview" style="display:none;width:100%;height:68vh;min-height:420px;border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:10px"></iframe>' +
       '</div>';
   }
@@ -102,6 +112,7 @@
       var html = d.html.replace(/<head([^>]*)>/i, '<head$1><base href="' + d.url + '/" target="_parent">' + editorCss);
       html = html.replace(/<\/body>/i, editorJs + "</body>");
       fr.srcdoc = html; fr.style.display = ""; bar.style.display = "flex";
+      ST.hero = d.heroMark || null; siteHeroInit();
       setStatus("Tap any text to edit it. " + Object.keys(ST.blocks).length + " editable blocks on this page.");
     }).catch(function () { setStatus("Could not load the page", "bad"); });
   }
@@ -147,5 +158,33 @@
       } else { setStatus("Publish failed. Nothing is live yet; tell Claude.", "bad"); $("sc_pub").disabled = false; }
     });
   }
+  /* ── hero graphic sliders: live preview via CSS variables on the iframe's .hero-mark, publish writes the same four numbers ── */
+  var HM = ["mx", "my", "mh", "mo"];
+  function heroEl() { try { return $("sc_frame").contentDocument.querySelector(".hero-mark"); } catch (e) { return null; } }
+  function siteHeroInit() {
+    var box = $("sc_hero"); if (!box) return;
+    if (!ST.hero) { box.style.display = "none"; return; }
+    box.style.display = "";
+    HM.forEach(function (k) { var el = $("hm_" + k); el.value = k === "mo" ? Math.round(ST.hero[k] * 100) : ST.hero[k]; });
+    siteHeroPreview(false);
+  }
+  window.siteHeroPreview = function (apply) {
+    var v = {}; HM.forEach(function (k) { v[k] = +$("hm_" + k).value; });
+    $("hm_mx_v").textContent = v.mx + "%"; $("hm_my_v").textContent = v.my + "%"; $("hm_mh_v").textContent = v.mh + "%"; $("hm_mo_v").textContent = v.mo + "%";
+    var el = heroEl(); if (!el || apply === false) return;
+    el.style.setProperty("--mx", v.mx + "%"); el.style.setProperty("--my", v.my + "%"); el.style.setProperty("--mh", v.mh + "%"); el.style.setProperty("--mo", String(v.mo / 100));
+  };
+  window.siteHeroReset = function () { if (ST.hero) { siteHeroInit(); var el = heroEl(); if (el) HM.forEach(function (k) { el.style.setProperty("--" + k, k === "mo" ? String(ST.hero[k]) : ST.hero[k] + "%"); }); } };
+  window.siteHeroPublish = function () {
+    var v = { site: ST.site, page: ST.page }; HM.forEach(function (k) { v[k] = k === "mo" ? (+$("hm_" + k).value) / 100 : +$("hm_" + k).value; });
+    $("hm_pub").disabled = true; setStatus("Publishing the graphic…");
+    var log = $("sc_log"); log.style.display = ""; log.textContent = "Saving graphic placement…";
+    api("/api/sites/heromark", { method: "POST", body: JSON.stringify(v) }).then(function (d) {
+      $("hm_pub").disabled = false;
+      if (!d || !d.ok) { log.textContent = (d && d.error) || "Publish failed"; setStatus("Not published.", "bad"); return; }
+      if (!d.job) { log.textContent = "Nothing changed."; setStatus("Nothing to publish."); return; }
+      ST.hero = d.values || ST.hero; ST.job = d.job; pollJob();
+    }).catch(function () { $("hm_pub").disabled = false; setStatus("Publish failed (server unreachable)", "bad"); });
+  };
   window.siteCopyInit = siteCopyInit;
 })();

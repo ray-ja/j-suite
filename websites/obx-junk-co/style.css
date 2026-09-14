@@ -184,7 +184,7 @@ footer.site b{color:#b6bbc2}
 @media(max-width:480px){.nav{gap:10px;padding:12px 16px}.logo img{height:36px}.btn.big{white-space:normal;text-align:center}}
 
 /* home hero: the Outer Banks mark, faded, behind the content on the right */
-.hero-mark{position:absolute;right:-2%;top:-16%;height:136%;color:var(--orange);opacity:.16;pointer-events:none;z-index:0}
+.hero-mark{position:absolute;right:var(--mx,-2%);top:var(--my,-16%);height:var(--mh,136%);color:var(--orange);opacity:var(--mo,.16);pointer-events:none;z-index:0}
 .hero-mark svg{height:100%;width:auto;display:block}
 .hero>.wrap{position:relative;z-index:1}
-@media(max-width:760px){.hero-mark{right:-24%;top:-6%;height:112%;opacity:.12}}
+@media(max-width:760px){.hero-mark{right:calc(var(--mx,-2%) - 20%);top:calc(var(--my,-16%) + 8%);height:calc(var(--mh,136%) * .82);opacity:calc(var(--mo,.16) * .8)}}

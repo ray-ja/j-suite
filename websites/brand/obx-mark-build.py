@@ -6,6 +6,7 @@ def geo_rings(fname):
     return [g["coordinates"][0]] if g["type"]=="Polygon" else [poly[0] for poly in g["coordinates"]]
 water=geo_rings(S+"/water-Currituck_Sound.json")+geo_rings(S+"/water-Coinjock_Bay.json")
 water.append([(-75.99,36.40),(-75.884,36.40),(-75.878,36.555),(-75.99,36.555),(-75.99,36.40)])   # meets the clip edge exactly: no sliver
+water.append([(-75.99,36.10),(-75.795,36.10),(-75.795,36.265),(-75.99,36.265),(-75.99,36.10)])   # southern Currituck Sound / Kitty Hawk Bay, missing from the OSM water polygon
 CX=math.cos(math.radians(35.85)); LNG0,LNG1,LAT0,LAT1=-75.92,-75.40,35.06,36.555
 K=1000/(LAT1-LAT0); W=(LNG1-LNG0)*CX*K
 proj=lambda p:((p[0]-LNG0)*CX*K,(LAT1-p[1])*K)
@@ -23,10 +24,11 @@ def simplify(pts,eps):
 def path(r,eps):
     pts=simplify([proj(p) for p in r],eps); return "M"+"L".join(f"{x:.1f} {y:.1f}" for x,y in pts)+"Z"
 big=sorted(land,key=lambda p:-abs(p["area"])); north=big[1]
-islands=[p for p in big[2:] if abs(p["area"])>0.00015 and not (sum(q[1] for q in p["pts"])/len(p["pts"])>36.2 and sum(q[0] for q in p["pts"])/len(p["pts"])<-75.85)]
+cen=lambda p:(sum(q[0] for q in p["pts"])/len(p["pts"]), sum(q[1] for q in p["pts"])/len(p["pts"]))
+islands=[p for p in big[2:] if abs(p["area"])>0.0004 and not (cen(p)[1]>36.2 and cen(p)[0]<-75.85) and cen(p)[0]>-75.80]   # only the real islands: Roanoke, Hatteras, Ocracoke, Bodie bits; no sound marsh
 def rectp(lng0,lng1,lat0,lat1):
     x0,y0=proj((lng0,lat1)); x1,y1=proj((lng1,lat0)); return f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{x1-x0:.1f}" height="{y1-y0:.1f}"/>'
-banks=rectp(-75.884,-75.40,36.40,36.555)+rectp(-75.85,-75.40,36.10,36.40)+rectp(-75.775,-75.40,35.06,36.10)
+banks=rectp(-75.884,-75.40,36.40,36.555)+rectp(-75.85,-75.40,36.26,36.40)+rectp(-75.80,-75.40,36.115,36.26)+rectp(-75.745,-75.40,35.06,36.115)   # hugs the sound side of the banks; mainland tips and uncovered sound water cut out
 def build(pre,eps,stroke):
     st=f' stroke="currentColor" stroke-width="{stroke}" stroke-linejoin="round" stroke-linecap="round"' if stroke else ''
     body=f'<g clip-path="url(#{pre}-banks)"><path d="{path(north["pts"],eps)}"/></g>'+"".join(f'<path d="{path(p["pts"],eps)}"/>' for p in islands)

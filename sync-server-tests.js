@@ -2375,6 +2375,18 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     t.siteLinksOf('<a href="a.html">1</a><a href="tel:+1">x</a><a href="./b.html#top">2</a><a href="https://x.com/c.html">3</a><a href="a.html">1 again</a><a href="mailto:x">m</a><a href="b.html?y=1">2 again</a>').join(",") === "a.html,b.html");
   ok("sites: every configured site has a real folder with pages", Object.keys(t.SITES).every(id => t.siteListPages(id).length > 0), Object.keys(t.SITES).map(id => id + ":" + t.siteListPages(id).length));
 
+
+  console.log("\n— hero graphic placement —");
+  const HM = '<div class="hero"><div class="hero-mark" aria-hidden="true" style="--mx:-2%;--my:-16%;--mh:136%;--mo:0.16"><svg></svg></div><div class="wrap">x</div></div>';
+  ok("read: current values come off the style attribute", JSON.stringify(t.heroMarkRead(HM)) === JSON.stringify({ mx: -2, my: -16, mh: 136, mo: 0.16 }), t.heroMarkRead(HM));
+  const HM2 = t.heroMarkApply(HM, { mx: 10, my: -30, mh: 180, mo: 0.3 });
+  ok("apply: rewrites ONLY the style attribute, everything else byte-identical",
+    HM2 === HM.replace('style="--mx:-2%;--my:-16%;--mh:136%;--mo:0.16"', 'style="--mx:10%;--my:-30%;--mh:180%;--mo:0.3"'), HM2);
+  ok("apply: values are clamped to sane ranges (no 900% mark, no negative opacity)", JSON.stringify(t.heroMarkClamp({ mx: 500, my: -500, mh: 9000, mo: -1 })) === JSON.stringify({ mx: 60, my: -80, mh: 260, mo: 0 }));
+  ok("apply: a page without a hero graphic is refused", t.heroMarkApply('<div class="hero"><div class="wrap">x</div></div>', { mx: 0, my: 0, mh: 100, mo: 0.2 }) === null);
+  ok("apply: a missing value is refused rather than defaulted", t.heroMarkApply(HM, { mx: 0, my: 0, mh: 100 }) === null);
+  ok("apply: works when the div had no style yet", /style="--mx:0%;--my:0%;--mh:100%;--mo:0.2"/.test(t.heroMarkApply('<div class="hero-mark" aria-hidden="true"><svg></svg></div>', { mx: 0, my: 0, mh: 100, mo: 0.2 }) || ""));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
