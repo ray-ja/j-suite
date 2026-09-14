@@ -10,7 +10,7 @@ def geo_rings(fname):
 water=geo_rings(S+"/water-Currituck_Sound.json")+geo_rings(S+"/water-Coinjock_Bay.json")
 water.append([(-75.99,36.40),(-75.884,36.40),(-75.878,36.60),(-75.99,36.60),(-75.99,36.40)])
 water.append([(-75.99,36.10),(-75.795,36.10),(-75.795,36.265),(-75.99,36.265),(-75.99,36.10)])
-CX=math.cos(math.radians(35.85)); LNG0,LNG1,LAT0,LAT1=-76.26,-75.36,35.05,36.58
+CX=math.cos(math.radians(35.85)); LNG0,LNG1,LAT0,LAT1=-76.24,-75.38,35.05,36.58
 K=1000/(LAT1-LAT0); W=(LNG1-LNG0)*CX*K
 proj=lambda p:((p[0]-LNG0)*CX*K,(LAT1-p[1])*K)
 def simplify(pts,eps):
@@ -29,12 +29,14 @@ def path(r,eps=0.8):
 big=sorted(land,key=lambda p:-abs(p["area"])); north=big[1]; dare=big[0]
 cen=lambda p:(sum(q[0] for q in p["pts"])/len(p["pts"]), sum(q[1] for q in p["pts"])/len(p["pts"]))
 islands=[p for p in big[2:] if abs(p["area"])>0.0004 and not (cen(p)[1]>36.2 and cen(p)[0]<-75.85) and cen(p)[0]>-75.80]
+def POLY(pts):
+    return '<polygon points="'+" ".join(f"{proj(p)[0]:.0f},{proj(p)[1]:.0f}" for p in pts)+'"/>'
 def R(lng0,lng1,lat0,lat1):
     x0,y0=proj((lng0,lat1)); x1,y1=proj((lng1,lat0)); return f'<rect x="{x0:.0f}" y="{y0:.0f}" width="{x1-x0:.0f}" height="{y1-y0:.0f}"/>'
 LAND=f'<path d="{path(north["pts"])}"/>'+"".join(f'<path d="{path(p["pts"])}"/>' for p in islands)
 # the nine pill areas: (loc key, clip rects over the land, generous hit rect(s))
 AREAS=[
- ("mainland",  R(-76.26,-75.90,36.02,36.58),                                   R(-76.26,-75.90,36.02,36.58)),
+ ("mainland",  POLY([(-75.88,36.02),(-75.99,36.04),(-76.05,36.13),(-76.09,36.27),(-76.14,36.40),(-76.19,36.58),(-75.88,36.58)]),   R(-76.26,-75.90,36.02,36.58)),   # west edge follows the North River / Northwest River (the county line), not a rectangle
  ("carova",    R(-75.90,-75.36,36.385,36.58),                                  R(-75.90,-75.36,36.385,36.58)),
  ("duck",      R(-75.90,-75.36,36.16,36.385),                                  R(-75.88,-75.36,36.16,36.385)),
  ("kittyhawk", R(-75.90,-75.36,36.05,36.16),                                   R(-75.86,-75.36,36.05,36.16)),
