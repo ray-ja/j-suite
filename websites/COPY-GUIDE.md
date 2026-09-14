@@ -59,3 +59,7 @@ Ray's rules for every site we build (OBX Junk Co, Milepost Home Watch, Jamieson 
 - When text sits after an inline SVG (`<p class="note"><svg…/> text</p>`), a plain-string replace on `<p class="note"> text` misses it. Search the text, not the tag.
 - Commit before `~/deploy.sh`; it resets tracked files to origin/main.
 - Ray reviews live and directs edits. Nothing customer-facing ships as final without his pass.
+
+## Editing words without Claude
+
+Ray edits site text himself in j-Suite: Settings → Websites (owner only). Pick site and page, tap text in the preview, type, Publish. The server keeps every tag byte-for-byte and only accepts word changes (a dropped link, added bold or removed icon is refused with a plain reason); it writes the file, commits under his name, pushes and deploys. Structural changes (new sections, layout, links, prices in the plans picker script) still come through Claude. Server: `siteScan / siteMergeText / siteApplyEdits / sitePublishJob` in sync-server.js; client: js/173-site-copy.js.

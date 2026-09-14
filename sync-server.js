@@ -4296,6 +4296,48 @@ const server = http.createServer((req, res) => {
   /* ── PER-ORG Cloudflare keys (Ray 2026-09-10: every org has its own accounts — keys are org-unique).
      name: cfSites (the Pages/deploy token) | cfDns (the token holding the org's DNS zones). Live-verified
      against Cloudflare on save, like the legacy deploy-key route this supersedes. ── */
+
+  /* ── SITE COPY EDITOR routes (owner only): list sites → load a page annotated for editing → publish edits ── */
+  if (req.url.split("?")[0].indexOf("/api/sites") === 0) {
+    const q = new URL(req.url, "http://x"); const route = q.pathname;
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    if (route === "/api/sites" && req.method === "GET") {
+      return J(200, { ok: true, sites: Object.keys(SITES).map(id => Object.assign({ id: id, pages: siteListPages(id) }, { label: SITES[id].label, org: SITES[id].org, url: SITES[id].url })).filter(x => x.pages.length) });
+    }
+    if (route === "/api/sites/page" && req.method === "GET") {
+      const id = q.searchParams.get("site"), page = q.searchParams.get("page");
+      if (!SITES[id] || !sitePageOk(page)) return J(400, { error: "unknown site or page" });
+      let html; try { html = fs.readFileSync(path.join(siteDir(id), page), "utf8"); } catch (e) { return J(404, { error: "page not found" }); }
+      const blocks = siteScan(html);
+      return J(200, { ok: true, site: id, page: page, url: SITES[id].url, html: siteStripScripts(siteAnnotate(html, blocks)),
+        blocks: blocks.map(b => ({ id: b.id, tag: b.tag, inner: html.slice(b.innerStart, b.innerEnd) })) });
+    }
+    if (route === "/api/sites/publish" && req.method === "POST") {
+      return readBodyUtf8(req, 2e6, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const id = p && p.site, page = p && p.page;
+        if (!SITES[id] || !sitePageOk(page)) return J(400, { error: "unknown site or page" });
+        const file = path.join(siteDir(id), page); let html;
+        try { html = fs.readFileSync(file, "utf8"); } catch (e) { return J(404, { error: "page not found" }); }
+        const r = siteApplyEdits(html, p.edits);
+        if (r.errors.length) return J(409, { ok: false, errors: r.errors });
+        if (!r.applied) return J(200, { ok: true, applied: 0, job: null });
+        try { fs.writeFileSync(file, r.html); } catch (e) { return J(500, { error: "write failed" }); }
+        const who = sc.account ? { name: sc.account.name || sc.account.username || "Ray", email: sc.account.email || "" } : null;
+        const job = sitePublishJob(id, page, who, r.applied);
+        return J(200, { ok: true, applied: r.applied, job: job.id });
+      });
+    }
+    if (route === "/api/sites/job" && req.method === "GET") {
+      const j = SITE_JOBS[q.searchParams.get("id")]; if (!j) return J(404, { error: "no such job" });
+      return J(200, { ok: true, state: j.state, steps: j.steps.map(s => ({ name: s.name, ok: s.ok, out: (s.out || "").slice(-600) })), url: j.url });
+    }
+    return J(404, { error: "no such route" });
+  }
+
   if (req.url.split("?")[0] === "/api/config/orgkeys") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
@@ -5374,4 +5416,178 @@ if (require.main === module) {
     console.log(`Sync server on :${PORT}  | data: ${FILE}  | token ${TOKEN ? "set" : "NOT SET (open!)"}`);
   });
 }
-module.exports = { aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+
+/* ══ SITE COPY EDITOR (Ray, 2026-09-14: "I don't really need to code myself. I just want to do the text.")
+   The page renders inside the app; he taps a text block, types, hits Publish. This side finds the blocks,
+   accepts ONLY word changes (the tag sequence must survive untouched), writes the file, makes a scoped
+   commit under his name, pushes, and deploys the site. Nothing structural can change through here. ══ */
+const SITES = {
+  "obx-junk-co":         { label: "OBX Junk Co",          org: "obx", url: "https://obxjunkco.com",        project: "obx-junk-co",         account: "605665302df6324b53d155b4d12603e5", keyOrg: "obx", legacyToken: ".cf-junkco-token" },
+  "obx-home-watch":      { label: "Milepost Home Watch",  org: "obx", url: "https://mileposthomewatch.com", project: "obx-home-watch",      account: "605665302df6324b53d155b4d12603e5", keyOrg: "obx", legacyToken: ".cf-junkco-token" },
+  "obx-lot-solutions":   { label: "OBX Lot Solutions",    org: "obx", url: "https://obxlotsolutions.com",   project: "obx-lot-solutions",   account: "605665302df6324b53d155b4d12603e5", keyOrg: "obx", legacyToken: ".cf-junkco-token" },
+  "jamieson-automation": { label: "Jamieson Automation",  org: "jam", url: "https://jamiesonautomation.com", project: "jamieson-automation", account: "605665302df6324b53d155b4d12603e5", keyOrg: "obx", legacyToken: ".cf-junkco-token" },
+  "obx-holiday-lights":  { label: "OBX Holiday Lights",   org: "jam", url: "https://obxholidaylights.com",  project: "obx-holiday-lights",  account: "cbcaafc61d9fcc12c8ad2aba50c88a2a", keyOrg: "jam", legacyToken: ".cf-pages-token" }
+};
+const SITE_EDIT_TAGS = ["h1", "h2", "h3", "h4", "p", "li", "small", "summary", "td", "th", "dt", "dd", "button", "figcaption", "label", "blockquote"];
+const SITE_SKIP_TAGS = ["script", "style", "svg", "select", "textarea", "pre", "code", "noscript", "template", "head"];
+const SITE_VOID = { br: 1, img: 1, input: 1, hr: 1, meta: 1, link: 1, source: 1, wbr: 1, area: 1, col: 1, embed: 1, track: 1, param: 1, base: 1 };
+function siteDir(id) { return path.join(__dirname, "websites", id); }
+function sitePageOk(p) { return /^[a-z0-9][a-z0-9\-]{0,60}\.html$/i.test(String(p || "")); }
+function siteScan(html) {   // → [{id, tag, openStart, openEnd, innerStart, innerEnd}] outermost editable text blocks, document order
+  html = String(html || "");
+  const re = /<!--[\s\S]*?-->|<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>/g;
+  const stack = [], blocks = []; let m, inElig = 0;
+  while ((m = re.exec(html))) {
+    if (m[0].slice(0, 4) === "<!--") continue;
+    const tag = m[1].toLowerCase(), isClose = m[0][1] === "/", selfClose = /\/>$/.test(m[0]) || SITE_VOID[tag];
+    if (!isClose) {
+      if (SITE_SKIP_TAGS.indexOf(tag) >= 0) {                 // opaque: jump past its closing tag
+        const ci = html.indexOf("</" + tag, re.lastIndex); if (ci < 0) break;
+        const ce = html.indexOf(">", ci); if (ce < 0) break; re.lastIndex = ce + 1; continue;
+      }
+      if (selfClose) continue;
+      const elig = SITE_EDIT_TAGS.indexOf(tag) >= 0 && inElig === 0;
+      stack.push({ tag: tag, openStart: m.index, openEnd: re.lastIndex, elig: elig });
+      if (elig) inElig++;
+    } else {
+      let i = stack.length - 1; while (i >= 0 && stack[i].tag !== tag) i--; if (i < 0) continue;
+      const popped = stack.splice(i);
+      popped.forEach(x => { if (x.elig) inElig--; });
+      const el = popped[0];
+      if (el.elig) {
+        const inner = html.slice(el.openEnd, m.index);
+        if (inner.replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/gi, "x").trim()) blocks.push({ tag: tag, openStart: el.openStart, openEnd: el.openEnd, innerStart: el.openEnd, innerEnd: m.index });
+      }
+    }
+  }
+  blocks.sort((a, b) => a.openStart - b.openStart);
+  blocks.forEach((b, i) => { b.id = i + 1; });
+  return blocks;
+}
+function siteAnnotate(html, blocks) {   // inject data-ce="id" into each block's opening tag (reverse order keeps offsets valid)
+  let out = String(html || "");
+  blocks.slice().sort((a, b) => b.openStart - a.openStart).forEach(b => {
+    const at = b.openEnd - 1;   // the ">" of the opening tag
+    const selfSlash = out[at - 1] === "/" ? 1 : 0;
+    out = out.slice(0, at - selfSlash) + ' data-ce="' + b.id + '"' + out.slice(at - selfSlash);
+  });
+  return out;
+}
+function siteStripScripts(html) { return String(html || "").replace(/<script\b[\s\S]*?<\/script>/gi, ""); }
+function siteTokens(inner) {   // alternating [text, tag, text, tag, ..., text]; an <svg>…</svg> is ONE opaque tag token
+  const re = /<svg\b[\s\S]*?<\/svg>|<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
+  const texts = [], tags = []; let last = 0, m;
+  while ((m = re.exec(inner))) { texts.push(inner.slice(last, m.index)); tags.push(m[0]); last = re.lastIndex; }
+  texts.push(inner.slice(last));
+  return { texts: texts, tags: tags };
+}
+function siteTagSig(tagTok) {   // shape of one tag token, ignoring attributes: "svg" | "/b" | "a" | "br" | "img" …
+  if (/^<svg\b/i.test(tagTok)) return "svg";
+  if (/^<!--/.test(tagTok)) return "comment";
+  const m = /^<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/.exec(tagTok); if (!m) return "?";
+  const name = m[2].toLowerCase(), close = m[1] === "/";
+  return (close ? "/" : "") + name + ((!close && (/\/>$/.test(tagTok) || SITE_VOID[name])) ? "" : "");
+}
+function siteSigSeq(tags) {   // expand self-closing non-void tags (<path/>) into open+close so browser serialization (<path></path>) compares equal
+  const seq = [];
+  tags.forEach(t => {
+    const sig = siteTagSig(t); if (sig === "comment") return;
+    const m = /^<([a-zA-Z][a-zA-Z0-9-]*)[^>]*\/>$/.exec(t);
+    if (m && !SITE_VOID[m[1].toLowerCase()] && sig !== "svg") { seq.push(sig); seq.push("/" + sig); } else seq.push(sig);
+  });
+  return seq;
+}
+function siteMergeText(origInner, newInner) {   // keep the ORIGINAL tags byte-for-byte, take the NEW words; null if the tag shape changed
+  const o = siteTokens(String(origInner || "")), n = siteTokens(String(newInner || ""));
+  const so = siteSigSeq(o.tags), sn = siteSigSeq(n.tags);
+  if (so.join("|") !== sn.join("|")) return null;
+  /* comments in the original have no text slot in the browser copy; align text slots by walking both */
+  const oTexts = [], nTexts = [];
+  (function () {
+    let oi = 0, ni = 0, ot = 0, nt = 0;
+    while (ot < o.texts.length) {
+      oTexts.push(o.texts[ot]); nTexts.push(n.texts[nt] || "");
+      /* advance: skip comment tags on the original side (they carry an extra text slot) */
+      let tag = o.tags[oi]; ot++; oi++; nt++; ni++;
+      while (tag && siteTagSig(tag) === "comment" && ot < o.texts.length) { oTexts[oTexts.length - 1] += tag + o.texts[ot]; tag = o.tags[oi]; ot++; oi++; }
+    }
+  })();
+  if (/<script\b/i.test(newInner)) return null;
+  let out = "";
+  const clean = (t) => String(t).replace(/\r?\n/g, " ");
+  for (let i = 0; i < o.texts.length; i++) {
+    /* preserve the original's leading/trailing whitespace so indentation and spacing around tags survive */
+    const ow = /^\s*/.exec(o.texts[i])[0], tw = /\s*$/.exec(o.texts[i])[0];
+    const core = clean(n.texts[i] == null ? "" : n.texts[i]).trim();
+    out += (o.texts[i].trim() === "" && core === "") ? o.texts[i] : (ow + core + tw);
+    if (i < o.tags.length) out += o.tags[i];
+  }
+  return out;
+}
+function siteApplyEdits(html, edits) {   // edits: [{id, orig, inner}] → {html, applied, errors:[{id,reason}]}
+  const blocks = siteScan(html); const byId = {}; blocks.forEach(b => { byId[b.id] = b; });
+  const errors = [], plan = [];
+  (Array.isArray(edits) ? edits : []).forEach(e => {
+    const b = byId[+e.id]; if (!b) return errors.push({ id: e.id, reason: "block not found; reload the page" });
+    const cur = html.slice(b.innerStart, b.innerEnd);
+    if (typeof e.orig === "string" && e.orig !== cur) return errors.push({ id: e.id, reason: "this text changed since you opened the page; reload" });
+    const merged = siteMergeText(cur, String(e.inner || ""));
+    if (merged == null) return errors.push({ id: e.id, reason: "only the words can change here (a link, bold or icon was added or removed)" });
+    if (merged === cur) return;
+    plan.push({ b: b, merged: merged });
+  });
+  if (errors.length) return { html: html, applied: 0, errors: errors };
+  plan.sort((a, b) => b.b.innerStart - a.b.innerStart);
+  let out = html; plan.forEach(p => { out = out.slice(0, p.b.innerStart) + p.merged + out.slice(p.b.innerEnd); });
+  return { html: out, applied: plan.length, errors: [] };
+}
+function siteListPages(id) {
+  const dir = siteDir(id); let files = [];
+  try { files = fs.readdirSync(dir).filter(f => /\.html$/i.test(f)).sort(); } catch (e) { return []; }
+  return files.map(f => {
+    let title = f; try { const m = /<title>([^<]*)<\/title>/i.exec(fs.readFileSync(path.join(dir, f), "utf8")); if (m) title = m[1].replace(/\s*\|.*$/, "").trim() || f; } catch (e) {}
+    return { file: f, title: title };
+  });
+}
+function siteDeployToken(site) {
+  try { const k = orgKeysLoad(); const v = k && k[site.keyOrg] && k[site.keyOrg].cfSites; if (v) return String(v).trim(); } catch (e) {}
+  try { return fs.readFileSync(path.join(os.homedir(), site.legacyToken), "utf8").trim(); } catch (e) { return ""; }
+}
+const SITE_JOBS = {};
+function siteRunStep(job, name, cmd, args, opts, cb) {
+  const step = { name: name, ok: null, out: "" }; job.steps.push(step);
+  let child;
+  try { child = require("child_process").spawn(cmd, args, Object.assign({ cwd: __dirname }, opts || {})); }
+  catch (e) { step.ok = false; step.out = String(e.message || e); return cb(false); }
+  const cap = (d) => { step.out = (step.out + String(d)).slice(-4000); };
+  child.stdout.on("data", cap); child.stderr.on("data", cap);
+  const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch (e) {} }, (opts && opts.timeoutMs) || 120000);
+  child.on("error", (e) => { clearTimeout(timer); step.ok = false; step.out += "\n" + String(e.message || e); cb(false); });
+  child.on("close", (code) => { clearTimeout(timer); step.ok = code === 0; cb(code === 0); });
+}
+function sitePublishJob(siteId, page, who, n) {
+  const site = SITES[siteId]; const id = "sj_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const job = { id: id, site: siteId, page: page, state: "running", steps: [], url: site.url + "/" + page.replace(/\.html$/, "").replace(/^index$/, ""), started: Date.now() };
+  SITE_JOBS[id] = job;
+  const rel = "websites/" + siteId + "/" + page;
+  const nodeBin = path.dirname(process.execPath);
+  const env = Object.assign({}, process.env, { PATH: nodeBin + ":" + (process.env.PATH || ""), HOME: os.homedir() });
+  const author = (who && who.name ? who.name : "Ray") + " <" + (who && who.email ? who.email : "ray@jsuite.local") + ">";
+  const msg = "Site copy: " + siteId + "/" + page + ", " + n + " text edit" + (n === 1 ? "" : "s") + " (via j-Suite)";
+  const fail = () => { job.state = "failed"; job.ended = Date.now(); };
+  siteRunStep(job, "stage", "git", ["add", "--", rel], { env: env }, (ok1) => { if (!ok1) return fail();
+    siteRunStep(job, "commit", "git", ["commit", "--author=" + author, "-m", msg, "--", rel], { env: env }, (ok2) => { if (!ok2) return fail();
+      siteRunStep(job, "push", "git", ["push", "origin", "main"], { env: env, timeoutMs: 60000 }, (ok3) => {
+        /* a push failure is not fatal for the site going live; it is reported and the deploy still runs */
+        const tok = siteDeployToken(site);
+        if (!tok) { job.steps.push({ name: "deploy", ok: false, out: "no Cloudflare sites token for " + site.keyOrg + " (Settings → Keys)" }); return fail(); }
+        siteRunStep(job, "deploy", path.join(nodeBin, "npx"), ["--yes", "wrangler@4", "pages", "deploy", siteDir(siteId), "--project-name=" + site.project, "--branch=main", "--commit-dirty=true"],
+          { env: Object.assign({}, env, { CLOUDFLARE_API_TOKEN: tok, CLOUDFLARE_ACCOUNT_ID: site.account, CI: "1" }), timeoutMs: 180000 },
+          (ok4) => { job.state = (ok4 && ok3) ? "done" : (ok4 ? "done-unpushed" : "failed"); job.ended = Date.now(); });
+      });
+    });
+  });
+  return job;
+}
+
+module.exports = { SITES, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

@@ -2302,6 +2302,55 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     return /api\/gads\/ingest/.test(s) && /search_term_view/.test(s) && !/setBid|setBudget|pause\(|enable\(/.test(s);
   })());
 
+
+  console.log("\n— site copy editor: scan / annotate / text-only merge / apply —");
+  const SITE_FIX = `<!doctype html><html><head><title>Plans | X</title><style>p{}</style></head><body>
+<h1>Pick the rhythm<br><em>your house needs.</em></h1>
+<p class="sub">Every plan includes a <a href="x.html">report</a> &amp; more.</p>
+<ul>
+  <li><svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Full interior + exterior checklist</li>
+  <li><p>Nested para</p></li>
+</ul>
+<table><tr><td>Home Watch Visit<small>Full checklist.</small></td><td class="p">$55</td></tr></table>
+<script>var x="<p>not a block</p>";</script>
+<div class="card"><h3>Storm</h3><p>Before the storm.</p></div>
+</body></html>`;
+  const blk = t.siteScan(SITE_FIX);
+  const tagsOf = blk.map(b => b.tag).join(",");
+  ok("scan: outermost text blocks only, in document order, nothing inside <script>/<style>", tagsOf === "h1,p,li,li,td,td,h3,p", tagsOf);
+  ok("scan: an <li> that wraps a <p> is the block (the inner <p> is not a second block)", blk.filter(b => b.tag === "p").length === 2, blk.map(b => b.tag));
+  ok("scan: the <td> that holds a <small> is one block (words inside <small> stay editable within it)", blk.filter(b => b.tag === "small").length === 0);
+  const ann = t.siteAnnotate(SITE_FIX, blk);
+  ok("annotate: every block gets data-ce, ids 1..n, and the source is otherwise untouched",
+    (ann.match(/data-ce="\d+"/g) || []).length === blk.length && ann.replace(/ data-ce="\d+"/g, "") === SITE_FIX);
+  ok("strip: the editor preview carries no scripts (no Clarity, no Leaflet, no tracking from a preview)", !/<script/i.test(t.siteStripScripts(ann)));
+  const li = blk[2], liInner = SITE_FIX.slice(li.innerStart, li.innerEnd);
+  const browserLi = liInner.replace('<path d="M20 6 9 17l-5-5"/>', '<path d="M20 6 9 17l-5-5"></path>').replace("Full interior + exterior checklist", "Full interior and exterior walk-through");
+  const mergedLi = t.siteMergeText(liInner, browserLi);
+  ok("merge: browser re-serialized <path></path> still matches the source's <path/>; the svg bytes are kept verbatim",
+    mergedLi === liInner.replace("Full interior + exterior checklist", "Full interior and exterior walk-through"), mergedLi);
+  const p = blk[1], pInner = SITE_FIX.slice(p.innerStart, p.innerEnd);
+  ok("merge: words change, the <a href> and the &amp; entity survive byte-for-byte",
+    t.siteMergeText(pInner, 'Each plan includes a <a href="x.html">report</a> &amp; more.') === 'Each plan includes a <a href="x.html">report</a> &amp; more.');
+  ok("merge: REFUSES a dropped link (tag shape changed)", t.siteMergeText(pInner, "Each plan includes a report &amp; more.") === null);
+  ok("merge: REFUSES added bold", t.siteMergeText(pInner, 'Each <b>plan</b> includes a <a href="x.html">report</a> &amp; more.') === null);
+  ok("merge: REFUSES a script", t.siteMergeText("Hello", "Hello<script>1</script>") === null);
+  ok("merge: newlines typed in plaintext-only editing become spaces", t.siteMergeText("Hello there", "Hello\nthere") === "Hello there");
+  const h1 = blk[0], h1Inner = SITE_FIX.slice(h1.innerStart, h1.innerEnd);
+  ok("merge: <br> and <em> inside a heading are kept; only the words move",
+    t.siteMergeText(h1Inner, "Choose the schedule<br><em>your house needs.</em>") === "Choose the schedule<br><em>your house needs.</em>");
+  const ap = t.siteApplyEdits(SITE_FIX, [{ id: p.id, orig: pInner, inner: 'Each plan includes a <a href="x.html">report</a> &amp; more.' }, { id: h1.id, orig: h1Inner, inner: "Choose the schedule<br><em>your house needs.</em>" }]);
+  ok("apply: two edits land, everything else is byte-identical", ap.applied === 2 && ap.errors.length === 0
+    && ap.html.indexOf("Each plan includes") > 0 && ap.html.indexOf("Choose the schedule") > 0
+    && ap.html.replace("Each plan includes", "Every plan includes").replace("Choose the schedule", "Pick the rhythm") === SITE_FIX, ap.errors);
+  const stale = t.siteApplyEdits(SITE_FIX, [{ id: p.id, orig: "something else", inner: "x" }]);
+  ok("apply: a stale orig (page changed since it was opened) is refused, nothing written", stale.applied === 0 && stale.errors.length === 1 && stale.html === SITE_FIX);
+  const shape = t.siteApplyEdits(SITE_FIX, [{ id: p.id, orig: pInner, inner: "no link here" }]);
+  ok("apply: a shape change is refused with a plain-words reason", shape.errors.length === 1 && /only the words/.test(shape.errors[0].reason));
+  ok("apply: unchanged text is a no-op (no commit for nothing)", t.siteApplyEdits(SITE_FIX, [{ id: p.id, orig: pInner, inner: pInner }]).applied === 0);
+  ok("pages: only simple .html names are accepted (no traversal)", t.sitePageOk("plans.html") && !t.sitePageOk("../data.json") && !t.sitePageOk("x/y.html") && !t.sitePageOk("style.css"));
+  ok("sites: every configured site has a real folder with pages", Object.keys(t.SITES).every(id => t.siteListPages(id).length > 0), Object.keys(t.SITES).map(id => id + ":" + t.siteListPages(id).length));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
