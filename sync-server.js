@@ -5640,7 +5640,7 @@ function heroMarkApply(html, vals) {   // → new html, or null when the page ha
 function heroMarkRead(html) {
   const m = /<div class="hero-mark"[^>]*style="([^"]*)"/.exec(String(html || "")); if (!m) return null;
   const g = (k, d) => { const r = new RegExp("--" + k + ":(-?[0-9.]+)").exec(m[1]); return r ? Number(r[1]) : d; };
-  return { mx: g("mx", -2), my: g("my", -16), mh: g("mh", 136), mo: g("mo", 0.16) };
+  return { mx: g("mx", 38), my: g("my", -55), mh: g("mh", 210), mo: g("mo", 0.14) };
 }
 
 function sitePublishJob(siteId, page, who, n, label) {
