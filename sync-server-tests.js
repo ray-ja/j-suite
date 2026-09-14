@@ -2318,6 +2318,14 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   const blk = t.siteScan(SITE_FIX);
   const tagsOf = blk.map(b => b.tag).join(",");
   ok("scan: outermost text blocks only, in document order, nothing inside <script>/<style>", tagsOf === "h1,p,li,li,td,td,h3,p", tagsOf);
+  const HDR = `<body><div class="topbar"><div class="wrap"><span>Moyock to Ocracoke · locally owned</span><span><a href="tel:+1">(252) 207-5985</a> · call or text</span></div></div>
+<header><nav class="navlinks"><a href="a.html">What we take</a><a href="b.html">Contact</a></nav><label class="menu-toggle" for="x">Menu</label></header>
+<div class="card"><h3>Card</h3><p>Body</p></div>
+<footer><div>&copy; <span id="yr">2026</span> OBX Junk Co., a service of <b>OBX Lot Solutions</b>.</div><div>Corolla · Duck</div></footer></body>`;
+  const hb = t.siteScan(HDR);
+  ok("scan: top bar spans, nav links, the Menu label and footer lines are blocks (Ray: 'I don't see the header or the footer')",
+    hb.map(x => x.tag).join(",") === "span,span,a,a,label,h3,p,div,div", hb.map(x => x.tag + ":" + HDR.slice(x.innerStart, x.innerEnd).slice(0, 18)));
+  ok("scan: a wrapper div holding block children never becomes a block (the card's h3 and p stay separately editable)", !hb.some(x => x.tag === "div" && /<h3/.test(HDR.slice(x.innerStart, x.innerEnd))));
   ok("scan: an <li> that wraps a <p> is the block (the inner <p> is not a second block)", blk.filter(b => b.tag === "p").length === 2, blk.map(b => b.tag));
   ok("scan: the <td> that holds a <small> is one block (words inside <small> stay editable within it)", blk.filter(b => b.tag === "small").length === 0);
   const ann = t.siteAnnotate(SITE_FIX, blk);

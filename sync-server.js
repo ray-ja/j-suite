@@ -5433,34 +5433,40 @@ const SITE_SKIP_TAGS = ["script", "style", "svg", "select", "textarea", "pre", "
 const SITE_VOID = { br: 1, img: 1, input: 1, hr: 1, meta: 1, link: 1, source: 1, wbr: 1, area: 1, col: 1, embed: 1, track: 1, param: 1, base: 1 };
 function siteDir(id) { return path.join(__dirname, "websites", id); }
 function sitePageOk(p) { return /^[a-z0-9][a-z0-9\-]{0,60}\.html$/i.test(String(p || "")); }
-function siteScan(html) {   // → [{id, tag, openStart, openEnd, innerStart, innerEnd}] outermost editable text blocks, document order
+function siteScan(html) {   // → [{id, tag, openStart, openEnd, innerStart, innerEnd}] outermost text-bearing elements, document order
   html = String(html || "");
   const re = /<!--[\s\S]*?-->|<\/?([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*>/g;
-  const stack = [], blocks = []; let m, inElig = 0;
+  const stack = [], cands = []; let m;
   while ((m = re.exec(html))) {
     if (m[0].slice(0, 4) === "<!--") continue;
     const tag = m[1].toLowerCase(), isClose = m[0][1] === "/", selfClose = /\/>$/.test(m[0]) || SITE_VOID[tag];
     if (!isClose) {
       if (SITE_SKIP_TAGS.indexOf(tag) >= 0) {                 // opaque: jump past its closing tag
         const ci = html.indexOf("</" + tag, re.lastIndex); if (ci < 0) break;
-        const ce = html.indexOf(">", ci); if (ce < 0) break; re.lastIndex = ce + 1; continue;
+        const ce = html.indexOf(">", ci); if (ce < 0) break; re.lastIndex = ce + 1;
+        if (stack.length) stack[stack.length - 1].kids.push([m.index, ce + 1]);   // opaque, but still a child, not the parent's own text
+        continue;
       }
       if (selfClose) continue;
-      const elig = SITE_EDIT_TAGS.indexOf(tag) >= 0 && inElig === 0;
-      stack.push({ tag: tag, openStart: m.index, openEnd: re.lastIndex, elig: elig });
-      if (elig) inElig++;
+      stack.push({ tag: tag, openStart: m.index, openEnd: re.lastIndex, kids: [] });
     } else {
       let i = stack.length - 1; while (i >= 0 && stack[i].tag !== tag) i--; if (i < 0) continue;
-      const popped = stack.splice(i);
-      popped.forEach(x => { if (x.elig) inElig--; });
-      const el = popped[0];
-      if (el.elig) {
-        const inner = html.slice(el.openEnd, m.index);
-        if (inner.replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/gi, "x").trim()) blocks.push({ tag: tag, openStart: el.openStart, openEnd: el.openEnd, innerStart: el.openEnd, innerEnd: m.index });
-      }
+      const el = stack.splice(i)[0];
+      if (stack.length) stack[stack.length - 1].kids.push([el.openStart, re.lastIndex]);
+      const inner = html.slice(el.openEnd, m.index);
+      const textOf = (h) => h.replace(/<svg\b[\s\S]*?<\/svg>/gi, "").replace(/<[^>]*>/g, "").replace(/&[a-z#0-9]+;/gi, "x").trim();
+      if (!textOf(inner)) continue;
+      /* a heading/paragraph/cell-type tag is a block even with inline children. Anything else (div, span, a,
+         nav…) only when it carries text of its OWN, outside its child elements: a wrapper around two spans
+         defers to the spans, a nav defers to its links, a card defers to its heading and paragraph. */
+      let own = inner;
+      el.kids.slice().reverse().forEach(k => { own = own.slice(0, k[0] - el.openEnd) + own.slice(k[1] - el.openEnd); });
+      if (SITE_EDIT_TAGS.indexOf(tag) >= 0 || textOf(own)) cands.push({ tag: tag, openStart: el.openStart, openEnd: el.openEnd, innerStart: el.openEnd, innerEnd: m.index });
     }
   }
-  blocks.sort((a, b) => a.openStart - b.openStart);
+  cands.sort((a, b) => a.openStart - b.openStart || b.innerEnd - a.innerEnd);
+  const blocks = []; let curEnd = -1;   // outermost wins: anything opening inside a kept block is skipped
+  cands.forEach(c => { if (c.openStart < curEnd) return; blocks.push(c); curEnd = c.innerEnd; });
   blocks.forEach((b, i) => { b.id = i + 1; });
   return blocks;
 }
