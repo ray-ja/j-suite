@@ -4651,7 +4651,7 @@ const server = http.createServer((req, res) => {
   // the invoice a customer can open in any browser + pay online. 404s an unknown/stale token.
   if (req.method === "GET" && req.url.split("?")[0].indexOf("/i/") === 0) {
     const token = decodeURIComponent(req.url.split("?")[0].slice(3));
-    const notFound = () => { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Invoice not found</h2><p>This link may be incorrect or no longer active.</p></body>"); };
+    const notFound = () => { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#1a1a1a'><h1 style='font-size:26px'>Not published yet</h1><p style='color:#555;max-width:34ch;margin:12px auto'>This quote may still be on its way from the owner's phone. Give it a minute and open the link again, or text us back and we'll resend it.</p></body>"); };
     if (!token || token.length < 8) return notFound();
     const store = loadStore();
     let q = null, org = null, cust = null;

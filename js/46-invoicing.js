@@ -196,13 +196,37 @@ function invEnsureToken(q) {
 /* TEXT THE LINK (Ray, 2026-09-14: "I can't just send a raw PDF over text message"). Opens the phone's
    messaging app with the customer's number and a short message carrying the hosted page link; she taps
    it, sees the quote, and can save it as a PDF from there. */
+/* Push the quote (with its token) and CONFIRM the hosted page answers before handing the link to anyone.
+   syncRun() coalesces: a call while another run is in flight is a no-op, which is exactly how a link went
+   out before the token existed server-side (Ray, 2026-09-14: "Invoice not found"). So: wait for any run
+   to finish, force a push, then GET the page (preview=1 so it doesn't count as a customer open) until it
+   returns 200, up to ~10 s. */
+async function invPublishAndVerify(q, url) {
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  try {
+    for (let i = 0; i < 30 && typeof _syncInflight !== "undefined" && _syncInflight; i++) await sleep(250);
+    if (typeof SYNC_DIRTY !== "undefined") SYNC_DIRTY = true;
+    if (typeof syncRun === "function") await syncRun("push");
+  } catch (e) {}
+  for (let i = 0; i < 20; i++) {
+    try { const r = await fetch(url + "?preview=1", { cache: "no-store", credentials: "include" }); if (r.status === 200) return true; } catch (e) {}
+    if (i === 6) { try { if (typeof syncRun === "function") await syncRun("push"); } catch (e) {} }   // one more shove halfway through
+    await sleep(500);
+  }
+  return false;
+}
 window.invTextLink = async function (quoteId) {
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
   const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
   if (!origin) { alert("Sync isn't set up on this device, so there's no public address to share from."); return; }
   invEnsureToken(q);
-  try { if (typeof syncRun === "function") await syncRun("auto"); } catch (e) {}
   const url = origin + "/i/" + q.invoiceToken;
+  const live = await invPublishAndVerify(q, url);
+  if (!live) {
+    const st = (typeof S !== "undefined" && S.sync && S.sync.state) ? String(S.sync.state) : "";
+    alert("The link isn't live yet: this device hasn't pushed the quote to the server" + (st ? " (sync shows \"" + st + "\")" : "") + ".\n\nCheck the sync status at the top of the app (a ✓ means synced; if it says offline or not authorized, sign in again), then tap Text the link once more.");
+    return;
+  }
   const cust = (D().customers || []).find(x => x && x.id === q.customerId);
   const tel = String((cust && cust.phone) || "").replace(/[^0-9+]/g, "");
   const brand = (typeof quoteBrand === "function") ? quoteBrand(q).name : ((BIZ[S.biz] || {}).name || "");
