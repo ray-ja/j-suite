@@ -16,6 +16,7 @@ window.openJunkEst=function(){
       <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0">📺 TVs / e-waste <input id="je_ewaste" type="number" value="0" min="0" style="width:74px" oninput="junkCalc()"></label>
       <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0">🪣 Paint / chemical cans <input id="je_paint" type="number" value="0" min="0" style="width:74px" oninput="junkCalc()"></label>
       <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0">🧺 Other appliances (washer/dryer/stove) <input id="je_appl" type="number" value="0" min="0" style="width:74px" oninput="junkCalc()"></label>
+      <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0">🏋️ Gym equipment (treadmill / elliptical / bench / rack) <input id="je_gym" type="number" value="0" min="0" style="width:74px" oninput="junkCalc()"></label>
     </div>
     <div class="card" id="je_break" style="margin-top:12px"></div>
     <div class="card" style="background:var(--accent);color:var(--accent-ink);text-align:center;margin-top:8px"><div style="font-size:13px;font-weight:700">QUOTE TO GIVE ON SITE</div><div id="je_total" style="font-size:32px;font-weight:800;line-height:1.1">$0</div></div>
@@ -29,12 +30,12 @@ window.junkCalc=function(){
   const wt={min:200,quarter:450,half:900,tquarter:1400,full:1800};
   const load=val("je_load")||"half",extra=+val("je_extra")||0;
   const access=parseFloat(val("je_access"))||1,labor=parseFloat(val("je_labor"))||0;
-  const fr=+val("je_freon")||0,ma=+val("je_mattress")||0,ti=+val("je_tire")||0,ew=+val("je_ewaste")||0,pa=+val("je_paint")||0,ap=+val("je_appl")||0;
+  const fr=+val("je_freon")||0,ma=+val("je_mattress")||0,ti=+val("je_tire")||0,ew=+val("je_ewaste")||0,pa=+val("je_paint")||0,ap=+val("je_appl")||0,gy=+val("je_gym")||0;
   const baseHaul=(base[load]||0)+extra*600;
   const accessAdd=Math.round(baseHaul*(access-1));
   const laborAdd=labor*75;
-  const special=fr*45+ma*25+ti*8+ew*30+pa*10+ap*25;
-  const lbs=(wt[load]||0)+extra*1800;
+  const special=fr*45+ma*25+ti*8+ew*30+pa*10+ap*25+gy*40;   /* gym: ~250 lb, two-person carry, 20-30 min of unbolting; the weight is added below */
+  const lbs=(wt[load]||0)+extra*1800+gy*250;
   const dump=Math.round(lbs/2000*94);
   let total=Math.ceil((baseHaul+accessAdd+laborAdd+special+dump)/25)*25;
   const floor=Math.ceil((baseHaul*0.55+special+dump)/25)*25;
