@@ -2357,6 +2357,22 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("apply: a shape change is refused with a plain-words reason", shape.errors.length === 1 && /only the words/.test(shape.errors[0].reason));
   ok("apply: unchanged text is a no-op (no commit for nothing)", t.siteApplyEdits(SITE_FIX, [{ id: p.id, orig: pInner, inner: pInner }]).applied === 0);
   ok("pages: only simple .html names are accepted (no traversal)", t.sitePageOk("plans.html") && !t.sitePageOk("../data.json") && !t.sitePageOk("x/y.html") && !t.sitePageOk("style.css"));
+  const TREE = t.sitePageTree([
+    { file: "contact.html", title: "Contact", links: ["index.html"] },
+    { file: "corolla.html", title: "Corolla", links: ["service-area.html", "contact.html"] },
+    { file: "index.html", title: "Home", links: ["what-we-take.html", "service-area.html", "contact.html", "corolla.html", "promo.html"], navLinks: ["what-we-take.html", "service-area.html", "contact.html"] },
+    { file: "lonely.html", title: "Lonely", links: [] },
+    { file: "promo.html", title: "Promo", links: [] },
+    { file: "service-area.html", title: "Service Area", links: ["corolla.html", "duck.html", "index.html"] },
+    { file: "duck.html", title: "Duck", links: ["service-area.html"] },
+    { file: "what-we-take.html", title: "What We Take", links: ["contact.html"] },
+  ]);
+  ok("page tree: Home, its NAV pages in nav order, each one's children under it, non-nav home links after, orphans last (Ray: 'nested tier list')",
+    TREE.map(p => p.file + "@" + p.depth).join(" ") === "index.html@0 what-we-take.html@1 service-area.html@1 corolla.html@2 duck.html@2 contact.html@1 promo.html@1 lonely.html@0", TREE.map(p => p.file + "@" + p.depth).join(" "));
+  ok("page tree: a town pilled on Home AND listed on Service area sits under Service area, not at the top", TREE.find(p => p.file === "corolla.html").parent === "service-area.html");
+  ok("page tree: an unlinked page is flagged as an orphan", TREE.find(p => p.file === "lonely.html").orphan === true);
+  ok("links: only local .html hrefs, in order, deduped, ignoring #hash/?query and external/tel/mailto",
+    t.siteLinksOf('<a href="a.html">1</a><a href="tel:+1">x</a><a href="./b.html#top">2</a><a href="https://x.com/c.html">3</a><a href="a.html">1 again</a><a href="mailto:x">m</a><a href="b.html?y=1">2 again</a>').join(",") === "a.html,b.html");
   ok("sites: every configured site has a real folder with pages", Object.keys(t.SITES).every(id => t.siteListPages(id).length > 0), Object.keys(t.SITES).map(id => id + ":" + t.siteListPages(id).length));
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");

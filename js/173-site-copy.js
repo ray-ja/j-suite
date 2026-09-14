@@ -66,7 +66,11 @@
     var site = ST.sites.filter(function (s) { return s.id === id; })[0];
     if (!site) { ps.innerHTML = '<option value="">Page</option>'; ps.disabled = true; return; }
     ps.disabled = false;
-    ps.innerHTML = '<option value="">Page…</option>' + site.pages.map(function (p) { return '<option value="' + esc(p.file) + '">' + esc(p.title) + ' · ' + esc(p.file) + '</option>'; }).join("");
+    /* the list is the site's own link tree: Home, then the pages Home links to in nav order, then theirs */
+    ps.innerHTML = '<option value="">Page…</option>' + site.pages.map(function (p) {
+      var pad = ""; for (var i = 0; i < (p.depth || 0); i++) pad += "\u00a0\u00a0\u00a0\u00a0";
+      return '<option value="' + esc(p.file) + '">' + pad + (p.depth ? "\u2514 " : "") + esc(p.title) + (p.orphan ? " (not linked from any page)" : "") + '</option>';
+    }).join("");
     $("sc_frame").style.display = "none"; $("sc_bar").style.display = "none";
   };
 

@@ -5547,13 +5547,42 @@ function siteApplyEdits(html, edits) {   // edits: [{id, orig, inner}] → {html
   let out = html; plan.forEach(p => { out = out.slice(0, p.b.innerStart) + p.merged + out.slice(p.b.innerEnd); });
   return { html: out, applied: plan.length, errors: [] };
 }
+function siteLinksOf(html) {   // local page links in document order, deduped: ["what-we-take.html", ...]
+  const out = []; const re = /href\s*=\s*["']([^"'#?]+\.html)(?:[#?][^"']*)?["']/gi; let m;
+  while ((m = re.exec(String(html || "")))) { const f = m[1].replace(/^\.\//, "").replace(/^\//, ""); if (/^[a-z0-9][a-z0-9\-]*\.html$/i.test(f) && out.indexOf(f) < 0) out.push(f); }
+  return out;
+}
+function sitePageTree(pages) {   // pages: {file, title, links[], navLinks[]} → with depth/parent, in visitor order
+  const byFile = {}; pages.forEach(p => { byFile[p.file] = p; p.depth = null; p.parent = null; p.kids = []; });
+  const root = byFile["index.html"] || pages[0]; if (!root) return [];
+  root.depth = 0;
+  const adopt = (parent, f) => { const c = byFile[f]; if (!c || c === root || c.depth != null) return null; c.depth = parent.depth + 1; c.parent = parent.file; parent.kids.push(c); return c; };
+  /* Home's children are its MAIN NAV in nav order; a town pill on the home page does not make the town a
+     top-level page, it lands under Service area (the first nav page that links to it) instead */
+  const queue = []; (root.navLinks || []).forEach(f => { const c = adopt(root, f); if (c) queue.push(c); });
+  while (queue.length) { const p = queue.shift(); (p.links || []).forEach(f => { const c = adopt(p, f); if (c) queue.push(c); }); }
+  (root.links || []).forEach(f => { const c = adopt(root, f); if (c) { const q = [c]; while (q.length) { const p = q.shift(); (p.links || []).forEach(g => { const d = adopt(p, g); if (d) q.push(d); }); } } });
+  const out = [];
+  (function walk(p) { out.push(p); p.kids.forEach(walk); })(root);
+  pages.filter(p => p.depth == null).sort((x, y) => x.file.localeCompare(y.file)).forEach(p => { p.depth = 0; p.orphan = true; out.push(p); });
+  return out.map(p => ({ file: p.file, title: p.title, depth: p.depth, parent: p.parent, orphan: !!p.orphan }));
+}
 function siteListPages(id) {
   const dir = siteDir(id); let files = [];
   try { files = fs.readdirSync(dir).filter(f => /\.html$/i.test(f)).sort(); } catch (e) { return []; }
-  return files.map(f => {
-    let title = f; try { const m = /<title>([^<]*)<\/title>/i.exec(fs.readFileSync(path.join(dir, f), "utf8")); if (m) title = m[1].replace(/\s*\|.*$/, "").trim() || f; } catch (e) {}
-    return { file: f, title: title };
+  const pages = files.map(f => {
+    let title = f, links = [];
+    let navLinks = [];
+    try {
+      const h = fs.readFileSync(path.join(dir, f), "utf8"); const m = /<title>([^<]*)<\/title>/i.exec(h);
+      if (m) title = m[1].replace(/\s*\|.*$/, "").trim().replace(/&amp;/g, "&").replace(/&ndash;/g, "\u2013").replace(/&#39;/g, "'").replace(/&quot;/g, '"') || f;
+      links = siteLinksOf(h);
+      const nav = /<nav\b[^>]*>([\s\S]*?)<\/nav>/i.exec(h); navLinks = nav ? siteLinksOf(nav[1]) : [];
+    } catch (e) {}
+    if (f === "index.html") title = "Home";
+    return { file: f, title: title, links: links, navLinks: navLinks };
   });
+  return sitePageTree(pages);
 }
 function siteDeployToken(site) {
   try { const k = orgKeysLoad(); const v = k && k[site.keyOrg] && k[site.keyOrg].cfSites; if (v) return String(v).trim(); } catch (e) {}
@@ -5596,4 +5625,4 @@ function sitePublishJob(siteId, page, who, n) {
   return job;
 }
 
-module.exports = { SITES, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
