@@ -229,17 +229,33 @@ window.copyQuote=function(){
   if(navigator.clipboard)navigator.clipboard.writeText(txt);
   alert("Quote copied — paste it into a text or email:\n\n"+txt);
 };
+/* Which BRAND a quote/invoice document wears. Same org (obx), but junk work is OBX JUNK CO. on paper and on
+   the hosted page (Ray, 2026-09-14). The logo is inline SVG so the printed PDF is self-contained. */
+const JUNK_LOGO_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 62" role="img" aria-label="OBX Junk Co."><text x="0" y="34" textLength="250" lengthAdjust="spacingAndGlyphs" font-family="system-ui,-apple-system,Segoe UI Black,Segoe UI,Roboto,Helvetica Neue,Arial Black,Arial,sans-serif" font-size="32" font-weight="900" letter-spacing="-0.5" fill="#14161a">OBX <tspan fill="#f26a1b">JUNK</tspan> CO.</text><rect x="0" y="40" width="250" height="4.5" rx="2.25" fill="#f26a1b"/><text x="1" y="57" font-family="system-ui,-apple-system,Segoe UI Black,Segoe UI,Roboto,Helvetica Neue,Arial Black,Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="5.1" fill="#54504a">WE DO THE LOADING</text></svg>';
+window.quoteIsJunk=function(q){
+  if(!q)return false; if(q.kind==="junk")return true;
+  const items=(q.items||[]).filter(it=>it&&(it.name||it.serviceId));
+  if(items.length&&items.every(it=>it.bandKey==="junk"))return true;
+  return items.length>0&&items.every(it=>/junk|move-out|cleanout|haul/i.test(String(it.name||"")));
+};
+window.quoteBrand=function(q){
+  const biz=S.biz;
+  if(biz==="obx"&&quoteIsJunk(q))return {key:"junk",name:"OBX Junk Co.",phone:"(252) 207-5985",site:"obxjunkco.com",brand:"#14161a",acc:"#f26a1b",logoHtml:'<div style="background:#fff;border-radius:8px;padding:6px 12px;display:inline-block">'+JUNK_LOGO_SVG.replace('<svg ','<svg style="height:44px;width:auto;display:block" ')+'</div>'};
+  const isObx=biz==="obx";
+  return {key:isObx?"obx":"jam",name:isObx?"OBX Lot Solutions":"Jamieson Automation",phone:(BIZ[biz]||{}).phone||"",site:isObx?"obxlotsolutions.com":"jamiesonautomation.com",brand:isObx?"#1B2A4E":"#002052",acc:isObx?"#8BC34A":"#0099E5",logoHtml:null};
+};
 window.printQuote=function(){
   const t=quoteFigures();const biz=S.biz;const isObx=biz==="obx";
-  const brand=isObx?"#1B2A4E":"#002052";const acc=isObx?"#8BC34A":"#0099E5";
-  const name=isObx?"OBX Lot Solutions":"Jamieson Automation";
+  const _b=quoteBrand(Object.assign({},CURQ||{},{items:QITEMS}));
+  const brand=_b.brand;const acc=_b.acc;
+  const name=_b.name;
   const phone=BIZ[biz].phone||"";
   const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   const rows=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`<tr><td>${esc(it.name)}</td><td style="text-align:center">${it.qty||1}</td><td style="text-align:right">${money((it.price||0)*(it.qty||1))}</td></tr>`).join("");
   const nameHtml=name.replace(/ ([^ ]+)$/,' <span style="color:'+acc+'">$1</span>');
   // Logo on the PDF header: OBX logo base64-embedded so the printed quote is fully self-contained (works when Ray opens the app as a local file:// — a served URL would not resolve there).
   const OBX_LOGO="data:image/png;base64,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";
-  const brandHtml=isObx?`<img src="${OBX_LOGO}" alt="${esc(name)}" style="height:48px;max-width:260px;object-fit:contain;background:#fff;border-radius:8px;padding:5px 10px">`:`<div class="n">${nameHtml}</div>`;
+  const brandHtml=_b.logoHtml?_b.logoHtml:(isObx?`<img src="${OBX_LOGO}" alt="${esc(name)}" style="height:48px;max-width:260px;object-fit:contain;background:#fff;border-radius:8px;padding:5px 10px">`:`<div class="n">${nameHtml}</div>`);
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Quote - ${esc(name)}</title>
   <style>body{font-family:Arial,Helvetica,sans-serif;color:#1b2330;margin:0;padding:32px}
   .hd{background:${brand};color:#fff;padding:18px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center}

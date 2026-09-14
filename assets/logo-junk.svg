@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 252 62" role="img" aria-label="OBX Junk Co. — we do the loading">
+  <title>OBX Junk Co. — we do the loading</title>
+  <!-- Print, signage, truck decals and social profiles, where it renders large enough to read the tagline.
+       "WE DO THE LOADING" answers the actual objection (do I have to carry this out?) before anyone calls. -->
+  <text x="0" y="34" textLength="250" lengthAdjust="spacingAndGlyphs"
+        font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="32" font-weight="900" letter-spacing="-0.5"
+        fill="#14161a">OBX <tspan fill="#f26a1b">JUNK</tspan> CO.</text>
+  <rect x="0" y="40" width="250" height="4.5" rx="2.25" fill="#f26a1b"/>
+  <text x="1" y="57" font-family='system-ui,-apple-system,"Segoe UI Black","Segoe UI",Roboto,"Helvetica Neue","Arial Black",Arial,sans-serif' font-size="10" font-weight="700"
+        letter-spacing="5.1" fill="#54504a">WE DO THE LOADING</text>
+</svg>

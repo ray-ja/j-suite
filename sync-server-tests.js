@@ -2387,6 +2387,16 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("apply: a missing value is refused rather than defaulted", t.heroMarkApply(HM, { mx: 0, my: 0, mh: 100 }) === null);
   ok("apply: works when the div had no style yet", /style="--mx:0%;--my:0%;--mh:100%;--mo:0.2"/.test(t.heroMarkApply('<div class="hero-mark" aria-hidden="true"><svg></svg></div>', { mx: 0, my: 0, mh: 100, mo: 0.2 }) || ""));
 
+
+  console.log("\n— junk quotes carry the OBX Junk Co. brand on public pages —");
+  const STORE0 = { registry: [] };
+  ok("junk by kind", t.pubBizOf(STORE0, "obx", { kind: "junk", items: [{ name: "x" }] }).name === "OBX Junk Co.");
+  ok("junk by bandKey on every line", t.pubBizOf(STORE0, "obx", { items: [{ name: "Sofa haul", bandKey: "junk" }, { name: "Demo", bandKey: "junk" }] }).name === "OBX Junk Co.");
+  ok("junk by name (legacy quotes without bandKey)", t.quoteIsJunk({ items: [{ name: "Junk / move-out removal" }] }) === true);
+  ok("a mixed quote (junk + soft wash) stays OBX Lot Solutions", t.pubBizOf(STORE0, "obx", { items: [{ name: "Junk haul", bandKey: "junk" }, { name: "House soft wash", bandKey: "softwash" }] }).name === "OBX Lot Solutions");
+  ok("no quote → org brand as before", t.pubBizOf(STORE0, "obx").name === "OBX Lot Solutions" && t.pubBizOf(STORE0, "jam").name === "Jamieson Automation");
+  ok("junk brand keeps the same phone and points at the junk logo asset", t.JUNK_BIZ.phone === "(252) 207-5985" && /logo-junk\.svg$/.test(t.JUNK_BIZ.logo) && require("fs").existsSync(require("path").join(__dirname, "assets", "logo-junk.svg")));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

@@ -184,6 +184,33 @@ async function invMakePayLink(q) {
 }
 // HOSTED INVOICE LINK — mint (once) an unguessable token, sync it up, and copy the public /i/<token> URL the
 // customer opens in any browser to view the invoice + pay. Owner/admin only.
+/* mint the public token once (the same token serves the quote page and, later, the invoice page) */
+function invEnsureToken(q) {
+  if (q.invoiceToken) return q.invoiceToken;
+  let tok = "";
+  try { tok = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, "0")).join(""); }
+  catch (e) { tok = "inv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+  q.invoiceToken = tok; if (typeof touch === "function") touch(q); if (typeof save === "function") save();
+  return tok;
+}
+/* TEXT THE LINK (Ray, 2026-09-14: "I can't just send a raw PDF over text message"). Opens the phone's
+   messaging app with the customer's number and a short message carrying the hosted page link; she taps
+   it, sees the quote, and can save it as a PDF from there. */
+window.invTextLink = async function (quoteId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+  if (!origin) { alert("Sync isn't set up on this device, so there's no public address to share from."); return; }
+  invEnsureToken(q);
+  try { if (typeof syncRun === "function") await syncRun("auto"); } catch (e) {}
+  const url = origin + "/i/" + q.invoiceToken;
+  const cust = (D().customers || []).find(x => x && x.id === q.customerId);
+  const tel = String((cust && cust.phone) || "").replace(/[^0-9+]/g, "");
+  const brand = (typeof quoteBrand === "function") ? quoteBrand(q).name : ((BIZ[S.biz] || {}).name || "");
+  const first = String((cust && cust.name) || q.cust || "").trim().split(/\s+/)[0];
+  const what = q.invoiced ? "invoice" : "quote";
+  const body = (first ? "Hi " + first + ", " : "Hi, ") + "here's your " + what + " from " + brand + ": " + url + " Tap it to see the details and save a PDF. Reply here with any questions.";
+  location.href = "sms:" + tel + "?&body=" + encodeURIComponent(body);
+};
 window.invShareLink = async function (quoteId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
@@ -211,6 +238,7 @@ function invShareSheet(q, url, copied) {
   modal("Invoice link — " + invNo(q), `
     <a class="btn acc" style="display:block;text-align:center" href="${esc(url)}?preview=1" target="_blank" rel="noopener">👁 Preview — see exactly what they'll see</a>
     <input readonly value="${esc(url)}" onclick="this.select()" style="width:100%;margin-top:10px;font-size:13px">
+    <button class="btn acc" style="width:100%;margin-top:8px" onclick="invTextLink('${q.id}')">💬 Text the link</button>
     <button class="btn ghost" id="inv_copyurl_${q.id}" style="width:100%;margin-top:8px" onclick="invCopyShareUrl('${q.id}')">${copied ? "✓ Copied — paste it into a text or email" : "🔗 Copy link"}</button>
     <div class="sub" style="margin-top:10px;white-space:normal">Every time the customer opens this page you'll get a ping in Messages (and on your phone). Opens from the preview button — or from any browser you've previewed in — are never counted as customer reads.</div>
     ${invViewsHTML(q.id)}
@@ -337,7 +365,7 @@ window.openInvoice = function (quoteId) {
           : `<div class="sub" style="margin-top:8px;white-space:normal">💳 No online-payment link yet.</div>`)}
     </div>${invReceiptsNote(q)}
     ${(q.invoiceToken && S.sync && S.sync.url && (typeof finCanView !== "function" || finCanView())) ? `<a class="btn ghost" style="display:block;width:100%;margin-top:10px;text-align:center" href="${esc(String(S.sync.url).replace(/\/+$/, "") + "/i/" + q.invoiceToken)}?preview=1" target="_blank" rel="noopener">👁 Preview — see what they see</a>` : ""}
-    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:${q.invoiceToken ? 8 : 10}px" onclick="invShareLink('${q.id}')">🔗 Invoice link — send &amp; see opens</button>` : ""}
+    ${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn acc" id="inv_share_${q.id}" style="width:100%;margin-top:${q.invoiceToken ? 8 : 10}px" onclick="invShareLink('${q.id}')">🔗 ${q.invoiced ? "Invoice" : "Quote"} link — send &amp; see opens</button><button class="btn ghost" style="width:100%;margin-top:8px" onclick="invTextLink('${q.id}')">💬 Text the link</button>` : ""}
     <div class="row" style="gap:8px;margin-top:8px">
       ${!q.invoiced ? `<button class="btn acc grow" onclick="invMark('${q.id}')">Mark invoiced</button>` : (!q.paid ? `<button class="btn acc grow" onclick="invMarkPaid('${q.id}')">Mark paid</button>` : ``)}
       <button class="btn ghost grow" onclick="invPrint('${q.id}')">🖨️ Print / PDF</button>
@@ -405,12 +433,13 @@ window.invCopy = function (quoteId) {
 window.invPrint = function (quoteId) {
   const d = D(), q = (d.quotes || []).find(x => x.id === quoteId); if (!q) return;
   const cust = (d.customers || []).find(x => x.id === q.customerId), biz = BIZ[S.biz] || {};
+  const _b = (typeof quoteBrand === "function") ? quoteBrand(q) : null;   // junk work prints as OBX Junk Co.
   const no = invNo(q);
   const billTo = cust ? [cust.name || cust.company, cust.company && cust.name ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer)"];
   const dateStr = fmtDate(q.invoicedDate || q.date || today());
   const amountDue = money2(invAmountDue(q));
   let logoUrl = ""; try { if (biz.logo) logoUrl = new URL(biz.logo, location.href).href; } catch (e) {}
-  const AC = "#0a7d4b";   // OBX green accent
+  const AC = (_b && _b.key === "junk") ? "#f26a1b" : "#0a7d4b";   // junk = orange, OBX = green
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Invoice ${esc(no)}</title><style>
     *{box-sizing:border-box} html,body{margin:0}
@@ -443,7 +472,7 @@ window.invPrint = function (quoteId) {
     </style></head><body>
     <div class="sheet"><div class="bar"></div><div class="pad">
       <div class="top">
-        <div class="biz">${logoUrl ? `<img src="${esc(logoUrl)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${esc(biz.name || "")}</div><div class="muted">${esc(biz.phone || "")}</div></div></div>
+        <div class="biz">${(_b && _b.logoHtml) ? _b.logoHtml : (logoUrl ? `<img src="${esc(logoUrl)}" alt="">` : "")}<div><div class="bizname">${esc((_b && _b.name) || biz.name || "")}</div><div class="muted">${esc(biz.phone || "")}</div></div></div>
         <div class="badge"><div class="lbl">INVOICE</div><div class="muted">${esc(no)}</div><div class="muted">${esc(dateStr)}</div></div>
       </div>
       <div class="billrow">

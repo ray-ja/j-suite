@@ -2203,7 +2203,18 @@ const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", log
    defaulted to OBX's name AND phone — so a guide or invoice served for any other org rendered as
    "OBX Lot Solutions" with OBX's number on it. Fall back to the org's REGISTRY name instead, and
    never inherit another org's phone. */
-function pubBizOf(store, org) {
+/* A junk quote is an OBX JUNK CO. document (Ray, 2026-09-14: "it should say OBX Junk Co with the Junk Co
+   logo, and it still has OBX Lot Solutions"). Same org, same phone, different brand on the page. */
+const JUNK_BIZ = { name: "OBX Junk Co.", phone: "(252) 207-5985", logo: "/assets/logo-junk.svg", site: "obxjunkco.com" };
+function quoteIsJunk(q) {
+  if (!q) return false;
+  if (q.kind === "junk") return true;
+  const items = (q.items || []).filter(it => it && (it.name || it.serviceId));
+  if (items.length && items.every(it => it.bandKey === "junk")) return true;
+  return items.length > 0 && items.every(it => /junk|move-out|cleanout|haul/i.test(String(it.name || "")));
+}
+function pubBizOf(store, org, q) {
+  if (org === "obx" && q && quoteIsJunk(q)) return JUNK_BIZ;
   if (INV_BIZ[org]) return INV_BIZ[org];
   const reg = ((store && store.registry) || []).find(r => r && r.id === org && !r.deleted);
   return { name: (reg && reg.name) || org || "", phone: "", logo: "" };
@@ -2369,7 +2380,7 @@ function invEnsurePayLink(store, org, cust, q, cb) {
   try {
     const slab = store[org] || {};
     scope = invPayScopeOf(slab, cust, q);
-    const biz = pubBizOf(store, org);
+    const biz = pubBizOf(store, org, q);
     const label = (biz.name || "") + " · " + (scope.openCount > 1 ? scope.openNos.join(" + ") : invNoOf(q)) + (cust && cust.name ? " · " + cust.name : "");
     invEnsureScopeLink(store, org, scope, label, (!q.paid && q.paymentLink) || null, cb);
   } catch (e) { cb({ url: (!q.paid && q.paymentLink) || null, paidOff: false, scope: scope }); }
@@ -2457,7 +2468,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     : `<tr><td colspan="2" class="n tot">Total</td><td class="n tot">${invMoney(due)}</td></tr>`;
   const dueStr = invMoney(due);
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Invoice ${htmlEsc(no)} · ${htmlEsc(biz.name || "")}</title><style>
+    <title>${isQuote ? "Quote" : "Invoice"} ${htmlEsc(no)} · ${htmlEsc(biz.name || "")}</title><style>
     *{box-sizing:border-box} html,body{margin:0}
     body{font:15px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;padding:24px}
     .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
@@ -2530,6 +2541,8 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
         return (q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : "";
       })()}
       <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
+      <div class="noprint" style="text-align:center;margin-top:14px"><button onclick="window.print()" style="font:inherit;font-weight:700;padding:10px 18px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer">🖨 Save as PDF / print</button></div>
+      <style>@media print{.noprint{display:none}}</style>
     </div></div>
     </body></html>`;
 }
@@ -4664,7 +4677,7 @@ const server = http.createServer((req, res) => {
     }
     if (!q.invoiced && !_combo) {   // a QUOTE page — never mint a Stripe link for un-billed work
       res.writeHead(200, _hdr);
-      return res.end(renderInvoicePage(pubBizOf(store, org), cust, q, _mats, _acct, null, null));
+      return res.end(renderInvoicePage(pubBizOf(store, org, q), cust, q, _mats, _acct, null, null));
     }
     /* PAY CHOICES (Ray 2026-09-04: "pay either their whole balance or by specific invoice"): after the
        primary scope link, also ensure (a) a whole-account link when the account holds MORE than this
@@ -4672,7 +4685,7 @@ const server = http.createServer((req, res) => {
        first open mints, every later open reuses. Sequential + best-effort: a Stripe hiccup on an extra
        never blocks the page. */
     invEnsurePayLink(store, org, cust, q, (pay) => {
-      const _biz = pubBizOf(store, org);
+      const _biz = pubBizOf(store, org, q);
       const extras = { acct: null, lines: {} };
       const tasks = [];
       if (cust) {
@@ -4708,7 +4721,7 @@ const server = http.createServer((req, res) => {
     const q = slab && (slab.quotes || []).find(function (x) { return x && x.id === qid && !x.deleted; });
     if (!q || !q.sp) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font:16px/1.5 system-ui,sans-serif;text-align:center;padding:60px 24px;color:#555'><h2>Path guide not found</h2></body>"); }
     const cust = slab && (slab.customers || []).find(function (c) { return c && c.id === q.customerId; });
-    const biz = pubBizOf(store, org);
+    const biz = pubBizOf(store, org, q);
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
     return res.end(pathGuideRenderHTML(q, cust, biz, (slab && slab.playbookLib) || []));
   }
@@ -5668,4 +5681,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

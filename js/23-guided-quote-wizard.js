@@ -506,6 +506,13 @@ function wizSyncLegacy(){
   CURQ={cust:WZ.cust.name||"",address:WZ.cust.address||"",invoiced:!!WZ.invoiced,paymentLink:WZ.paymentLink||"",subtotal:sub,discount:disc,total:total};
 }
 window.wizPrint=function(){wizSyncLegacy();printQuote();};
+/* text the hosted quote page from the wizard's review screen; needs the quote saved so the link resolves */
+window.wizTextLink=function(){
+  if(typeof wizLockedAlert==="function"&&wizLockedAlert())return;
+  const q=(typeof wizPersist==="function")?wizPersist():null;   // saves (or updates) the quote so the hosted link resolves
+  if(!q||!q.id){alert("Couldn't save the quote, so there's nothing to link yet.");return;}
+  if(typeof invTextLink==="function")invTextLink(q.id);
+};
 window.wizCopy=function(){wizSyncLegacy();copyQuote();};
 /* draft autosave hook — fleshed out in the autosave chunk; safe no-op clear here */
 function wizClearDraft(){try{localStorage.removeItem("jsuite_wzdraft");}catch(e){}}
@@ -515,7 +522,7 @@ function wizDone(){
     <div class="nm" style="font-size:22px;margin:6px 0">Quote ready</div>
     <div style="font-size:34px;font-weight:800;color:var(--brand-text)">${money(WZ.savedTotal)}</div>
     <div class="muted">for ${esc(WZ.cust.name)}</div>
-    <div class="row" style="gap:8px;margin-top:18px"><button class="btn acc grow" onclick="printQuote()">🖨 Print / share</button><button class="btn ghost grow" onclick="copyQuote()">Copy text</button></div>
+    <div class="row" style="gap:8px;margin-top:18px"><button class="btn acc grow" onclick="wizTextLink()">💬 Text the link</button><button class="btn ghost grow" onclick="printQuote()">🖨 Print / PDF</button><button class="btn ghost grow" onclick="copyQuote()">Copy text</button></div>
     <button class="btn ghost" style="margin-top:8px" onclick="startWizard()">+ New guided quote</button>
     <button class="btn" style="margin-top:8px" onclick="exitWizard()">Done</button>
     <p class="muted" style="margin-top:10px">Saved to ${esc(WZ.cust.name)}'s record — follow up from the Customers tab.</p>
