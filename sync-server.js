@@ -2205,7 +2205,7 @@ const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", log
    never inherit another org's phone. */
 /* A junk quote is an OBX JUNK CO. document (Ray, 2026-09-14: "it should say OBX Junk Co with the Junk Co
    logo, and it still has OBX Lot Solutions"). Same org, same phone, different brand on the page. */
-const JUNK_BIZ = { name: "OBX Junk Co.", phone: "(252) 207-5985", logo: "/assets/logo-junk.svg", site: "obxjunkco.com" };
+const JUNK_BIZ = { name: "OBX Junk Co.", phone: "(252) 207-5985", logo: "/assets/logo-junk.svg", site: "obxjunkco.com", accent: "#f26a1b", wordmark: true };   // wordmark: the logo IS the name, so the page does not print it twice
 function quoteIsJunk(q) {
   if (!q) return false;
   if (q.kind === "junk") return true;
@@ -2443,7 +2443,7 @@ function invAccountOf(slab, cust, q) {
     total: Math.round((curRemaining + rows.reduce((s, r) => s + r.remaining, 0)) * 100) / 100 };
 }
 function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
-  const AC = "#0a7d4b";
+  const AC = (biz && biz.accent) || "#0a7d4b";   // brand accent: OBX green, Junk Co orange
   const isCombo = !!(combo && combo.lines && combo.lines.length > 1);   // billed-together group renders as ONE invoice
   const no = isCombo ? (combo.members + " jobs, billed together") : invNoOf(q);
   const dateStr = invDateOf(isCombo ? combo.date : (q.invoicedDate || q.date));
@@ -2493,12 +2493,12 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     *{box-sizing:border-box} html,body{margin:0}
     body{font:15px/1.55 -apple-system,"Segoe UI",Roboto,system-ui,sans-serif;color:#1a1a1a;background:#eef0f3;padding:24px}
     .sheet{max-width:720px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.09);overflow:hidden}
-    .bar{height:6px;background:linear-gradient(90deg,${AC},#12b877)}
+    .bar{height:6px;background:${AC}}
     .pad{padding:34px 40px}
     .top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
-    .biz{display:flex;align-items:center;gap:12px}.biz img{height:46px;width:auto;border-radius:8px}
+    .biz{display:flex;align-items:center;gap:12px}.biz img{height:46px;width:auto;border-radius:8px}.biz.wm{flex-direction:column;align-items:flex-start;gap:6px}.biz.wm img{height:40px;border-radius:0}
     .bizname{font-size:21px;font-weight:800;letter-spacing:-.2px}.muted{color:#6b7280;font-size:13px}
-    .badge{text-align:right}.badge .lbl{font-size:25px;font-weight:800;color:${AC};letter-spacing:2px}
+    .badge{text-align:right}.badge .lbl{font-size:25px;font-weight:800;color:${AC};letter-spacing:2px}.badge .muted{white-space:nowrap}
     .billrow{display:flex;justify-content:space-between;gap:24px;margin-top:30px;flex-wrap:wrap}
     .lbl2{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;font-weight:700;margin-bottom:5px}
     .due{font-size:26px;font-weight:800}
@@ -2506,7 +2506,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#9ca3af;padding:0 0 10px;border-bottom:2px solid #e5e7eb}
     td{padding:13px 0;border-bottom:1px solid #f1f2f4}
     th.n,td.n{text-align:right;font-variant-numeric:tabular-nums}th.c,td.c{text-align:center}
-    tfoot td{border-bottom:none;padding:5px 0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
+    tfoot td{border-bottom:none;padding:5px 0 5px 14px}tfoot td:first-child{padding-left:0}tfoot .tot{font-weight:800;font-size:18px;border-top:2px solid #1a1a1a;padding-top:13px}
     .acct td,.acct th{padding-left:18px}.acct td:first-child,.acct th:first-child{padding-left:0}.acct tfoot .tot{font-size:15px;padding-left:18px}.acct tfoot td:first-child.tot{padding-left:0}
     .pay{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:28px;font-size:16px}
     .qact{display:block;text-align:center;background:${AC};color:#fff!important;text-decoration:none;font-weight:700;padding:16px;border-radius:10px;margin-top:10px;font-size:16px}
@@ -2520,6 +2520,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     .invtab.on{border-color:${AC};background:#f0fdf4;cursor:default}
     .invtab.on .t{color:#1a1a1a}
     .foot{margin-top:26px;color:#6b7280;font-size:13px;text-align:center;border-top:1px solid #f1f2f4;padding-top:18px}
+    @media(max-width:600px){body{padding:10px}.pad{padding:22px 18px}.top{flex-direction:column;gap:14px}.badge{text-align:left;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.badge .lbl{font-size:20px}.billrow{flex-direction:column;gap:16px}.billrow>div{text-align:left!important}.due{font-size:24px}.bizname{font-size:19px}}
     @media print{body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0;max-width:none}.pay{border:2px solid ${AC}}}
     </style></head><body>
     <div class="sheet"><div class="bar"></div><div class="pad">
@@ -2536,7 +2537,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
         return `<div class="lbl2" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">Your invoices — tap to switch${tot}</div><div class="invtabs">${cur}${rest}</div>`;
       })()}
       <div class="top">
-        <div class="biz">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none'" alt="">` : ""}<div><div class="bizname">${htmlEsc(biz.name || "")}</div><div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
+        <div class="biz${biz.wordmark ? " wm" : ""}">${biz.logo ? `<img src="${htmlEsc(biz.logo)}" onerror="this.style.display='none';${biz.wordmark ? "this.nextElementSibling.querySelector('.bizname').style.display=''" : ""}" alt="${htmlEsc(biz.name || "")}">` : ""}<div>${biz.wordmark ? `<div class="bizname" style="display:none">${htmlEsc(biz.name || "")}</div>` : `<div class="bizname">${htmlEsc(biz.name || "")}</div>`}<div class="muted">${htmlEsc(biz.phone || "")}</div></div></div>
         <div class="badge"><div class="lbl">${isQuote ? "QUOTE" : "INVOICE"}</div><div class="muted">${htmlEsc(isQuote ? "for your approval" : no)}</div><div class="muted">${htmlEsc(dateStr)}</div></div>
       </div>
       <div class="billrow">
