@@ -4700,6 +4700,15 @@ const server = http.createServer((req, res) => {
     try { saveStore(r.store); if (r.threadId) pushNotify(r.store, org, r.threadId, "__ceo__").catch(() => {}); } catch (e) { return J(500, { error: "save failed" }); }
     return J(200, { ok: true, already: !!r.already, acceptedAt: (r.store[org].quotes.find(x => x.id === q.id) || {}).acceptedAt || null });
   }
+  /* PUBLIC OPTION PAGES — GET /p/<slug>: a hand-built quote page (photos + options + estimates) that lives in
+     assets/quotes/<slug>/index.html. Slug-only, index-only, noindex. Ray, 2026-09-14: the waterfall surround options. */
+  if (req.method === "GET" && /^\/p\/[a-z0-9][a-z0-9\-]{1,60}\/?$/.test(req.url.split("?")[0])) {
+    const slug = req.url.split("?")[0].replace(/^\/p\//, "").replace(/\/$/, "");
+    const file = path.join(__dirname, "assets", "quotes", slug, "index.html");
+    if (!fs.existsSync(file)) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font-family:system-ui,sans-serif;text-align:center;padding:60px 20px'><h1>Not found</h1><p>This link may have expired. Text us at (252) 207-5985.</p></body>"); }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" });
+    return res.end(fs.readFileSync(file));
+  }
   if (req.method === "GET" && req.url.split("?")[0].indexOf("/i/") === 0) {
     const token = decodeURIComponent(req.url.split("?")[0].slice(3));
     const notFound = () => { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font-family:system-ui,sans-serif;text-align:center;padding:60px 20px;color:#1a1a1a'><h1 style='font-size:26px'>Not published yet</h1><p style='color:#555;max-width:34ch;margin:12px auto'>This quote may still be on its way from the owner's phone. Give it a minute and open the link again, or text us back and we'll resend it.</p></body>"); };
