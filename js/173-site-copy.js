@@ -34,13 +34,17 @@
       '</div>';
   }
 
-  /* the Data tab is a big template; append our section so secSplit picks it up as its own subpage */
+  /* rData() writes view.innerHTML itself (it returns nothing), so our section is appended to the view
+     right after it runs; secSplit runs after the screen function and carves it into its own subpage */
   var _rData = window.rData;
   if (typeof _rData === "function") {
     window.rData = function () {
-      var h = _rData.apply(this, arguments);
-      if (typeof isOwner === "function" && isOwner()) { h += panelHtml(); setTimeout(siteCopyInit, 0); }
-      return h;
+      var r = _rData.apply(this, arguments);
+      try {
+        var v = document.getElementById("view");
+        if (v && typeof isOwner === "function" && isOwner()) { v.insertAdjacentHTML("beforeend", panelHtml()); setTimeout(siteCopyInit, 0); }
+      } catch (e) {}
+      return r;
     };
   }
 
