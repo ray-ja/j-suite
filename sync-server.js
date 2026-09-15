@@ -2280,6 +2280,32 @@ function quoteAcceptApply(store, org, q, ua, now) {
   }, store);
   return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, already: false };
 }
+
+/* 50% DEPOSIT LINK (Ray, 2026-09-15, Christina's waterfall wall): a fixed-amount Stripe payment link for part of a
+   quote, minted on request and stored on the quote (depositLink / depositAmount). The webhook recognises the
+   metadata and records a partial payment WITHOUT marking the quote paid. */
+function quoteDepositApply(store, org, q, amountCents, url, linkId, now) {
+  now = +now || Date.now();
+  const rec = ((store[org] && store[org].quotes) || []).find(x => x && x.id === q.id); if (!rec) return store;
+  rec.depositLink = url; rec.depositLinkId = linkId; rec.depositAmount = Math.round(amountCents) / 100; rec.depositPct = rec.depositPct || null; rec.updatedAt = now;
+  return store;
+}
+function quoteDepositPaidApply(store, org, q, amount, ref, now) {   // webhook: partial payment recorded, quote stays open
+  now = +now || Date.now();
+  const rec = ((store[org] && store[org].quotes) || []).find(x => x && x.id === q.id); if (!rec) return { store: store, threadId: null, already: true };
+  const payments = Array.isArray(rec.payments) ? rec.payments.slice() : [];
+  if (payments.some(p => p && p.ref === ref)) return { store: store, threadId: null, already: true };
+  payments.push({ id: "pay_stripe_" + String(ref).slice(-24), amount: amount, date: new Date(now).toISOString().slice(0, 10), method: "card", ref: ref, via: "stripe", deposit: true, createdAt: now });
+  rec.payments = payments; rec.depositPaid = true; rec.depositPaidAt = now; rec.updatedAt = now;
+  const users = (store.users || []);
+  const owner = users.find(u => u && !u.kind && !u.deleted && u.superAdmin) || users.find(u => u && !u.kind && !u.deleted && u.role === "owner");
+  if (!owner) return { store: store, threadId: null, already: false };
+  const cust = ((store[org].customers) || []).find(c => c && c.id === rec.customerId);
+  const who = (cust && (cust.name || cust.company)) || rec.cust || "Customer";
+  const built = ceoBuildMessage({ biz: org, to: owner.id, members: [owner.id], title: "Deposit received", senderLabel: "Quote watcher", threadId: "thr_quote_accepts_" + org,
+    body: "💵 " + who + " paid the deposit on quote " + invNoOf(rec) + ": " + invMoney(amount) + " of " + invMoney(invEff(rec)) + ". Schedule it." }, store);
+  return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, already: false };
+}
 // MIRRORS the client invCleanMatDesc (js/46) — strip Cap/import annotation cruft off a material description.
 function srvCleanMatDesc(desc) {
   let s = String(desc == null ? "" : desc).trim();
@@ -2555,10 +2581,12 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
           const accepted = !!q.accepted;
           const reply = tel ? `<a class="qact" href="sms:${htmlEsc(tel)}?&body=${replyBody}" style="background:#fff;color:#1a1a1a!important;border:1.5px solid #d1d5db">💬 Reply or change something</a>` : "";
           const note = `<div class="muted" style="text-align:center;margin-top:8px;font-size:12.5px">Want part of it done, or a smaller scope? Text us and we'll send a revised quote.</div>`;
-          if (accepted) return `<div id="qa" style="margin-top:22px"><div class="qact" style="background:#eef7f1;color:#0a7d4b!important;cursor:default">✓ Accepted${q.acceptedAt ? " on " + htmlEsc(new Date(q.acceptedAt).toLocaleDateString("en-US")) : ""} — we'll reach out to schedule</div>${reply}${note}</div>`;
+          const dep = q.depositLink ? (q.depositPaid ? `<div class="qact" style="background:#eef7f1;color:#0a7d4b!important;cursor:default">✓ Deposit received — ${invMoney(q.depositAmount || 0)}</div>`
+                                     : `<a class="qact" href="${htmlEsc(q.depositLink)}" style="background:#1a1a1a">💳 Pay the ${q.depositPct ? Math.round(q.depositPct * 100) : 50}% deposit — ${invMoney(q.depositAmount || 0)}</a>`) : "";
+          if (accepted) return `<div id="qa" style="margin-top:22px"><div class="qact" style="background:#eef7f1;color:#0a7d4b!important;cursor:default">✓ Accepted${q.acceptedAt ? " on " + htmlEsc(new Date(q.acceptedAt).toLocaleDateString("en-US")) : ""} — we'll reach out to schedule</div>${dep}${reply}${note}</div>`;
           return `<div id="qa" style="margin-top:22px">
             <button class="qact" id="qa_btn" onclick="qaAccept()" style="width:100%;border:0;cursor:pointer;font:inherit;font-weight:700;margin-top:18px">✓ Accept this quote — ${dueStr}</button>
-            ${reply}${note}
+            ${dep}${reply}${note}
           </div>
           <script>function qaAccept(){var b=document.getElementById("qa_btn");if(!b)return;b.disabled=true;b.textContent="Sending…";
             fetch(location.pathname+"/accept",{method:"POST"}).then(function(r){return r.json();}).then(function(d){
@@ -4613,6 +4641,35 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* POST /api/quotes/deposit {org, quoteId, pct} (owner): mint a fixed-amount Stripe link for pct of the quote total */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/quotes/deposit") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    return readBodyUtf8(req, 8192, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const store = loadStore(); const org = p.org; const slab = store[org];
+      const q = slab && (slab.quotes || []).find(x => x && !x.deleted && x.id === p.quoteId);
+      if (!q) return J(404, { error: "quote not found" });
+      const pct = Math.min(1, Math.max(0.05, +p.pct || 0.5));
+      const cents = Math.round(invEff(q) * pct * 100); if (cents < 100) return J(400, { error: "amount too small" });
+      let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+      if (!cfg.stripeKey) return J(400, { error: "no Stripe key on file (Settings → Keys)" });
+      const cust = (slab.customers || []).find(c => c && c.id === q.customerId);
+      const label = ((pubBizOf(store, org, q).name || "") + " · " + Math.round(pct * 100) + "% deposit · " + invNoOf(q) + (cust && cust.name ? " · " + cust.name : "")).slice(0, 120);
+      stripeCall(cfg.stripeKey, "/v1/prices", { currency: "usd", unit_amount: String(cents), "product_data[name]": label }, (st1, pr) => {
+        if (st1 !== 200 || !pr || !pr.id) return J(502, { error: "Stripe refused the price", detail: pr && pr.error && pr.error.message });
+        stripeCall(cfg.stripeKey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1", "metadata[deposit]": "1", "metadata[quoteId]": q.id, "metadata[org]": org }, (st2, pl) => {
+          if (st2 !== 200 || !pl || !pl.url) return J(502, { error: "Stripe refused the link", detail: pl && pl.error && pl.error.message });
+          if (q.depositLinkId) stripeCall(cfg.stripeKey, "/v1/payment_links/" + q.depositLinkId, { active: "false" }, () => {});
+          const st = quoteDepositApply(store, org, q, cents, pl.url, pl.id); const rec = st[org].quotes.find(x => x.id === q.id); rec.depositPct = pct;
+          try { saveStore(st); } catch (e) { return J(500, { error: "save failed" }); }
+          return J(200, { ok: true, url: pl.url, amount: cents / 100, pct: pct });
+        });
+      });
+    });
+  }
   // STRIPE WEBHOOK — POST /api/stripe/webhook. Stripe calls this when a payment link is paid. No token auth: the
   // Stripe SIGNATURE is the auth (verified against the whsec_ signing secret). On checkout.session.completed (paid),
   // find the invoice by its stored stripeLinkId and mark it PAID + record the card payment. Idempotent (skips an
@@ -4635,7 +4692,11 @@ const server = http.createServer((req, res) => {
             const q = qs.find((x) => x && !x.deleted && ((linkId && x.stripeLinkId === linkId) || (metaQuote && x.id === metaQuote)));
             if (q) { matched = q; matchedOrg = oid; break; }
           }
-          if (matched && !matched.paid) {
+          const isDeposit = !!(obj.metadata && String(obj.metadata.deposit) === "1");
+          if (matched && isDeposit) {
+            const r = quoteDepositPaidApply(store, matchedOrg, matched, amount, obj.id);
+            if (!r.already) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
+          } else if (matched && !matched.paid) {
             const paidDate = new Date().toISOString().slice(0, 10);
             const payments = Array.isArray(matched.payments) ? matched.payments.slice() : [];
             if (!payments.some((p) => p && p.ref === obj.id)) payments.push({ id: "pay_stripe_" + String(obj.id).slice(-24), amount: amount, date: paidDate, method: "card", ref: obj.id, via: "stripe", createdAt: Date.now() });
@@ -5741,4 +5802,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

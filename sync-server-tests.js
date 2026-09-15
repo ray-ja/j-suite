@@ -2412,6 +2412,22 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   const page2 = t.renderInvoicePage(t.pubBizOf(ST, "obx", qa), ST.obx.customers[0], qa, [], null, null, null);
   ok("page: an accepted quote shows the accepted state instead of the button", /✓ Accepted/.test(page2) && !/qa_btn/.test(page2));
 
+
+  console.log("\n— 50% deposit link on a quote —");
+  const DS = { users: [{ id: "own1", username: "ray", superAdmin: true, role: "owner" }], registry: [], obx: { quotes: [{ id: "qD", num: 33, invoiceToken: "tok_depositxx", items: [{ name: "Waterfall wall", price: 2200, qty: 1 }], total: 2200, customerId: "c1" }], customers: [{ id: "c1", name: "Christina" }], messages: [] } };
+  const d1 = t.quoteDepositApply(DS, "obx", DS.obx.quotes[0], 110000, "https://buy.stripe.com/dep", "plink_dep");
+  const qd = d1.obx.quotes[0];
+  ok("deposit link stored on the quote with the dollar amount", qd.depositLink === "https://buy.stripe.com/dep" && qd.depositAmount === 1100 && qd.depositLinkId === "plink_dep");
+  const pg = t.renderInvoicePage(t.pubBizOf(DS, "obx", qd), DS.obx.customers[0], qd, [], null, null, null);
+  ok("quote page shows the deposit button next to Accept, still no full-pay button", /Pay the 50% deposit/.test(pg) && /1,100\.00/.test(pg) && /Accept this quote/.test(pg) && !/Pay online/.test(pg));
+  const d2 = t.quoteDepositPaidApply(d1, "obx", qd, 1100, "cs_test_1");
+  const q2 = d2.store.obx.quotes[0];
+  ok("deposit paid: partial payment recorded, quote NOT marked paid, owner pinged", q2.depositPaid === true && q2.payments.length === 1 && q2.payments[0].deposit === true && !q2.paid && !!d2.threadId && (d2.store.obx.messages || []).some(m => /paid the deposit/.test(JSON.stringify(m))));
+  const d3 = t.quoteDepositPaidApply(d2.store, "obx", q2, 1100, "cs_test_1");
+  ok("deposit paid: a replayed webhook is idempotent", d3.already === true && d3.store.obx.quotes[0].payments.length === 1);
+  const pg2 = t.renderInvoicePage(t.pubBizOf(DS, "obx", q2), DS.obx.customers[0], q2, [], null, null, null);
+  ok("quote page after the deposit: shows Deposit received", /Deposit received/.test(pg2) && !/Pay the 50% deposit/.test(pg2));
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
