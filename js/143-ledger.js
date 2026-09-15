@@ -457,7 +457,9 @@ function ledgerIngest(rows, opts) {
     var t = {
       id: "bgt-tx-" + (typeof uid === "function" ? uid() : String(Date.now()) + Math.random().toString(36).slice(2, 6)),
       externalId: r.externalId || "",
-      bookId: r.bookId || bookId,
+      /* ⭐ the PAIRED ACCOUNT'S book wins over the default. Fixed 2026-09-15: every Square (OBX) row had been
+         filed under the Personal book because only the default was ever consulted (js/175 refiles the old ones). */
+      bookId: r.bookId || (function () { var a = (d.budgetAccounts || []).find(function (x) { return x && !x.deleted && x.id === r.accountId; }); return (a && a.bookId) || ""; })() || bookId,
       accountId: r.accountId || opts.accountId || "",
       date: r.date,
       dir: (r.dir === "in") ? "in" : "out",

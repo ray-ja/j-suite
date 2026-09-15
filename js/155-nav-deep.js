@@ -37,6 +37,7 @@ var NAV_DEEP = [
   { group: "money", tab: "finance", sub: "pl",       setter: "finSub", icon: "💹", label: "Job P&L" },
   { group: "money", tab: "finance", sub: "analysis", setter: "finSub", icon: "📈", label: "Analysis" },
   { group: "money", tab: "finance", sub: "history",  setter: "finSub", icon: "📜", label: "Job history" },
+  { group: "money", tab: "finance", sub: "bank",     setter: "finSub", icon: "🏦", label: "Transactions" },
 
   /* ⭐ PEOPLE & PLACES. Ray, 2026-08-26: "you get the people and places, and it drops down to customers,
      but it should have customers, properties and places." It showed one row because `accounts` is one TAB
