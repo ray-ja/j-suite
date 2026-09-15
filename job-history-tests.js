@@ -78,5 +78,7 @@ ok("a quote marked paid with no income entry is flagged, not counted as paid", j
 ok("CSV carries the status column", /^Status,Paid,/.test(jh.jhBuildCSV(merged)) && /Invoiced, not paid/.test(jh.jhBuildCSV(merged)));
 ok("the no-job no-quote income reads as a manual entry, never \"Other\"", jh.jhBuildRows([{ id: "im", date: "2026-06-06", gross: 29000, amount: 29000, split: {}, field: {} }], {}, "", { income: () => ({ id: "im", address: "" }) })[0].type === "Manual income entry");
 
+console.log("— crew toggle —");
+ok("adds, keeps order, removes", jh.jhCrewToggleList(["a"], "b").join() === "a,b" && jh.jhCrewToggleList(["a", "b"], "a").join() === "b" && jh.jhCrewToggleList(null, "x").join() === "x");
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

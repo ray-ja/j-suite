@@ -13,7 +13,9 @@
 
    Owner/admin only — it lives under Finance, which rFinance already gates (finCanView). Crew keep My Pay.
    Read-only: no writes, no new collection, no sync surface. */
-let JH_YEAR = "all", JH_TYPE = "", JH_WHO = "", JH_STATUS_F = "";
+let JH_YEAR = "all", JH_TYPE = "", JH_WHO = "", JH_STATUS_F = "", JH_CREW_OPEN = null;   // JH_CREW_OPEN = row id whose crew picker is open
+/* pure: toggle a member in a crew list, order preserved */
+function jhCrewToggleList(list, id) { list = (list || []).filter(Boolean); return list.indexOf(id) >= 0 ? list.filter(x => x !== id) : list.concat([id]); }
 /* status pills — same colours the Jobs list uses for its stages */
 const JH_STATUS = { paid: { label: "Paid", color: "#1a7f37" }, unsplit: { label: "Paid, no income entry", color: "#c2410c" }, invoiced: { label: "Invoiced, not paid", color: "#e0a800" }, done: { label: "Done, not billed", color: "#97a0ad" } };
 
@@ -164,6 +166,21 @@ if (typeof window !== "undefined") window.jhExport = function () {
 /* the edit buttons. Each row carries up to three records (income entry · job · quote) and Ray edits all of them
    from here: "add buttons in the list that take me to it so I can edit it". A paid row with no crew opens the
    INCOME entry (that is where the crew for the split lives); an unpaid row offers Record payment instead. */
+/* ASSIGN CREW right on the row (Ray, 2026-09-15: "on my job history page can you let me assign the crew there").
+   The SPLIT reads income.crew (js/39 finRollup), the schedule reads job.crew — so both are written together:
+   a paid row updates its income entry AND its job; an unpaid row updates the job (mark-paid copies job.crew
+   onto the income it books). Equal shares; weights stay whatever the income entry carries. */
+if (typeof window !== "undefined") window.jhCrewOpen = function (rowId) { JH_CREW_OPEN = (JH_CREW_OPEN === rowId) ? null : rowId; render(); };
+if (typeof window !== "undefined") window.jhCrewToggle = function (rowId, incomeId, jobId, uid) {
+  const d = D(); let touched = false;
+  const inc = incomeId ? (d.income || []).find(x => x && x.id === incomeId && !x.deleted) : null;
+  const job = jobId ? (d.jobs || []).find(x => x && x.id === jobId && !x.deleted) : null;
+  if (inc) { inc.crew = jhCrewToggleList(inc.crew, uid); if (typeof touch === "function") touch(inc); touched = true; }
+  if (job) { job.crew = jhCrewToggleList(job.crew, uid); if (typeof touch === "function") touch(job); touched = true; }
+  if (!touched) return;
+  if (typeof logChange === "function") logChange("update", inc ? "income" : "job", (inc || job).id, "Crew set from Job history");
+  save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); render();
+};
 if (typeof window !== "undefined") window.jhOpen = function (kind, id, jobId) {
   if (typeof closeModal === "function") closeModal();
   if (kind === "income" && typeof openIncome === "function") openIncome(id || null, jobId || null);
@@ -203,14 +220,14 @@ function rJobHistory() {
     </div>
     ${t.hard ? `<div class="sub" style="margin-top:6px;white-space:normal;text-align:center">Hard costs paid back off the top: ${fm(t.hard)} (disposal, materials, mileage, rental)</div>` : ""}
     ${t.unpaid ? `<div class="sub" style="margin-top:4px;white-space:normal;text-align:center">${t.unpaid} finished job${t.unpaid === 1 ? "" : "s"} not paid yet, ${fm(t.unpaidGross)} quoted. Not in the totals above.</div>` : ""}
-    ${t.unallocated ? `<div class="sub" style="margin-top:4px;white-space:normal;text-align:center;color:var(--danger)">${fm(t.unallocated)} of crew pay is unassigned. Tap Income entry on the row and add the crew.</div>` : ""}</div>`;
+    ${t.unallocated ? `<div class="sub" style="margin-top:4px;white-space:normal;text-align:center;color:var(--danger)">${fm(t.unallocated)} of crew pay is unassigned. Tap Crew on the row and add them.</div>` : ""}</div>`;
 
   if (!rows.length) return h + `<div class="empty"><div class="big">📜</div>No jobs match.<br>A job shows here once it is marked done or its payment is recorded.</div>`;
   h += `<div class="secthd"><h2>Jobs</h2><span class="ct">${rows.length}</span></div><div class="card" style="padding:0">` + rows.map(r => {
     const paid = r.status === "paid";
     const crewLine = r.crew.length
       ? r.crew.map(c => `<span style="white-space:nowrap"><b>${esc(c.name)}</b>${paid ? " " + fm(c.cents) : ""}${c.weight != null && c.weight !== 100 ? ` <span class="sub">(${c.weight}%)</span>` : ""}${Math.round(c.hours * 10) / 10 > 0 ? ` <span class="sub">· ${Math.round(c.hours * 10) / 10}h</span>` : ""}</span>`).join('<span class="sub"> · </span>')
-      : `<span style="color:var(--danger)">no crew assigned${paid ? " · tap Income entry to add them" : ""}</span>`;
+      : `<span style="color:var(--danger)">no crew assigned${paid ? " · tap Crew to add them" : ""}</span>`;
     const extras = [];
     if (r.salesTo) extras.push(`sales credit <b>${esc(r.salesTo.name)}</b> ${fm(r.salesTo.cents)}`);
     if (r.adminTo) extras.push(`admin <b>${esc(r.adminTo.name)}</b> ${fm(r.adminTo.cents)}`);
@@ -220,13 +237,22 @@ function rJobHistory() {
     if (paid) btns.push(btn("income", r.incomeId, "", "✏️ Income entry")); else btns.push(btn("pay", r.quoteId, r.jobId, "💵 Record payment"));
     if (r.jobId) btns.push(btn("job", r.jobId, "", "📋 Job"));
     if (r.quoteId) btns.push(btn("quote", r.quoteId, "", "🧾 Quote"));
+    if (r.incomeId || r.jobId) btns.push(`<button class="btn ${JH_CREW_OPEN === r.id ? "acc" : "ghost"} sm" style="flex:0 0 auto" onclick="jhCrewOpen('${r.id}')">👷 Crew</button>`);
+    let crewPick = "";
+    if (JH_CREW_OPEN === r.id) {
+      const mem = (typeof schedMembers === "function") ? schedMembers() : ((typeof finMembers === "function") ? finMembers() : []);
+      const onIds = new Set(r.crew.map(c => c.id));
+      crewPick = `<div style="margin-top:8px;padding:8px;background:var(--soft);border-radius:8px"><div class="sub" style="margin-bottom:6px;white-space:normal">Who worked it? Tap to add or remove. ${paid ? "Shares re-split evenly." : "Copied to the payment when it is recorded."}</div><div class="row" style="gap:6px;flex-wrap:wrap">`
+        + mem.map(u => `<button class="btn ${onIds.has(u.id) ? "acc" : "ghost"} sm" style="flex:0 0 auto" onclick="jhCrewToggle('${r.id}','${r.incomeId || ""}','${r.jobId || ""}','${u.id}')">${onIds.has(u.id) ? "✓ " : ""}${esc(u.username)}</button>`).join("")
+        + (mem.length ? "" : `<span class="sub">No team accounts to assign — add them in Admin.</span>`) + `</div></div>`;
+    }
     return `<div class="li" style="align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--line)"><div class="grow" style="min-width:0">
         <div class="nm" style="font-size:15px">${esc(r.title)}</div>
         <div class="sub" style="white-space:normal;margin-top:2px">${pill(r.status)} ${r.type !== r.title ? esc(r.type) + " · " : ""}${esc(r.cust)} · ${esc(jhDaysLabel(r.days, fd))}${r.paidDate && r.days.indexOf(r.paidDate) < 0 ? ` · paid ${esc(fd(r.paidDate))}` : ""}</div>
         <div style="display:flex;gap:6px;font-size:13px;margin-top:5px;line-height:1.5"><span style="flex:0 0 auto">👷</span><div style="flex:1;min-width:0;white-space:normal">${crewLine}</div></div>
         ${extras.length ? `<div class="sub" style="white-space:normal;margin-top:2px">${extras.join(" · ")}</div>` : ""}
         ${paid ? `<div class="sub" style="white-space:normal;margin-top:4px">${r.hard ? `hard costs ${fm(r.hard)} → ` : ""}tax ${fm(r.tax)} → business ${fm(r.business)}${r.bizSales ? ` <span title="unclaimed sales share, funds the ads">(incl. ${fm(r.bizSales)} sales)</span>` : ""} → crew pool ${fm(r.fieldPool)}</div>` : `<div class="sub" style="white-space:normal;margin-top:4px">No payment recorded, so nothing has been split yet.</div>`}
-        <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${btns.join("")}</div></div>
+        <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${btns.join("")}</div>${crewPick}</div>
       <div style="text-align:right;flex:0 0 auto;margin-left:8px"><b style="font-size:15px">${r.gross ? fm(r.gross) : "—"}</b><div class="sub" style="font-size:11px">${paid ? "billed" : (r.gross ? "quoted" : "no quote")}</div>
         ${paid ? `<div style="font-size:13px;margin-top:4px;font-weight:700;color:var(--accent)">${fm(r.business)}</div><div class="sub" style="font-size:11px">business</div>` : ""}</div></div>`;
   }).join("") + `</div>`;
@@ -236,5 +262,5 @@ function rJobHistory() {
 if (typeof window !== "undefined") window.rJobHistory = rJobHistory;
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { jhBuildRows: jhBuildRows, jhUnpaidRows: jhUnpaidRows, jhMerge: jhMerge, JH_STATUS: JH_STATUS, jhFilter: jhFilter, jhTotals: jhTotals, jhBuildCSV: jhBuildCSV, jhDaysOf: jhDaysOf, jhDaysLabel: jhDaysLabel };
+  module.exports = { jhCrewToggleList: jhCrewToggleList, jhBuildRows: jhBuildRows, jhUnpaidRows: jhUnpaidRows, jhMerge: jhMerge, JH_STATUS: JH_STATUS, jhFilter: jhFilter, jhTotals: jhTotals, jhBuildCSV: jhBuildCSV, jhDaysOf: jhDaysOf, jhDaysLabel: jhDaysLabel };
 }
