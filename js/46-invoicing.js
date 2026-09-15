@@ -235,6 +235,24 @@ window.invTextLink = async function (quoteId) {
   const body = (first ? "Hi " + first + ", " : "Hi, ") + "here's your " + what + " from " + brand + ": " + url + " Tap it to see the details and save a PDF. Reply here with any questions.";
   location.href = "sms:" + tel + "?&body=" + encodeURIComponent(body);
 };
+/* Final price at the door (Ray, 2026-09-15, mid-job: "easily and quickly edit the total right at the end in case
+   there's last-minute haggling"). Same fields the job page sets (finalPrice + adjNote), versioned the same way; the
+   pay link and the hosted page charge the final price. If a link already exists it is regenerated for the new amount. */
+window.invSaveFinal = function (quoteId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner/admin only."); return; }
+  const prevTotal = invEffectiveTotal(q), prevItems = JSON.parse(JSON.stringify(q.items || []));
+  const v = val("inv_final_" + quoteId);
+  q.finalPrice = (v === "" || v == null) ? 0 : Math.max(0, parseFloat(v) || 0);
+  q.adjNote = val("inv_adjnote_" + quoteId) || "";
+  if (typeof touch === "function") touch(q);
+  if (typeof snapshotQuoteVersion === "function") snapshotQuoteVersion(q, q.adjNote, "final-price", prevTotal, prevItems);
+  if (typeof logChange === "function") logChange("update", "quote", q.id, "Final price " + money2(q.finalPrice || q.total) + (q.cust ? " · " + q.cust : ""));
+  if (typeof save === "function") save();
+  const changed = Math.abs(invEffectiveTotal(q) - prevTotal) > 0.005;
+  if (changed && q.paymentLink && typeof invGenPayLink === "function") { invGenPayLink(q.id); return; }   // re-mint so the card charge matches
+  openInvoice(q.id);
+};
 window.invShareLink = async function (quoteId) {
   if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
@@ -382,6 +400,9 @@ window.openInvoice = function (quoteId) {
       </table>
       ${invModeControl(q)}
       <div class="sub" style="margin-top:8px">Status: ${status} · Due on receipt</div>${q.accepted ? `<div class="sub" style="margin-top:4px;color:var(--good);font-weight:700">✅ Customer accepted this quote${q.acceptedAt ? " on " + esc(new Date(q.acceptedAt).toLocaleDateString()) : ""}</div>` : ""}${q.invoiceToken ? invViewsHTML(q.id) : ""}${invCashNote(q)?`<div class="note" style="margin-top:6px;background:var(--soft);padding:6px 8px;border-radius:6px;white-space:normal">${invCashNote(q)}</div>`:""}
+      ${(!q.paid && (typeof finCanView !== "function" || finCanView())) ? `<label style="margin-top:10px">Final price charged <span class="sub">(if different from the ${money2(q.total || 0)} quote)</span></label>
+      <div class="row" style="gap:8px"><input id="inv_final_${q.id}" type="number" inputmode="decimal" placeholder="${q.total || 0}" value="${q.finalPrice || ""}" style="flex:1"><button class="btn ghost sm" onclick="invSaveFinal('${q.id}')">Save</button></div>
+      <input id="inv_adjnote_${q.id}" placeholder="Reason (e.g. gave a discount, added a load)" value="${esc(q.adjNote || "")}" style="margin-top:6px">` : ""}
       ${q.paymentLink
         ? `<a class="btn acc" style="display:block;margin-top:8px;text-align:center" href="${esc(q.paymentLink)}" target="_blank" rel="noopener">💳 Pay online — ${money2(invAmountDue(q))}</a>${(typeof finCanView !== "function" || finCanView()) ? `<button class="btn ghost sm" id="inv_genlink_${q.id}" style="display:block;width:100%;margin-top:6px" onclick="invGenPayLink('${q.id}')">↻ Regenerate link (if the amount changed)</button>` : ""}`
         : ((typeof finCanView !== "function" || finCanView())
