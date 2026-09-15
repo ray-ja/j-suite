@@ -752,3 +752,39 @@ body.ttd-dragging .tcal-d.ttd-over{outline:2px solid var(--accent);outline-offse
 .ri-line{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
 .ri-lift{font-size:13.5px;font-weight:700;color:var(--accent)}
 .ri-go{flex:0 0 auto;margin-left:auto;width:auto}
+/* ===== FAVORITES (js/176) — pinned screens first, on both layouts ===== */
+/* phone: the favorites are the first buttons of the bottom bar; the wrapper dissolves so they flow as bar items */
+.navfavs{display:contents}
+.navfavhead{display:none}
+nav button.navfav{position:relative}
+nav button.navfav .navstar{display:none}
+nav button.navfav .navbadge{position:absolute;top:4px;right:6px;font-size:10px;font-weight:700;color:var(--danger);background:var(--soft);border-radius:8px;padding:0 5px}
+nav button.navfav .lbl::before{content:"★ ";color:#e0a800;font-size:9px;vertical-align:1px}
+.subnav .navpin{flex:0 0 auto;min-width:0;padding-left:10px;padding-right:10px;color:var(--muted)}
+.subnav .navpin.on{color:#e0a800;border-color:#e0a800}
+@media(min-width:900px){
+  .navfavs{display:block;padding:0 0 8px;border-bottom:1px solid var(--line);margin-bottom:6px}
+  .navfavhead{display:block}
+  nav .navfavs button.navfav{display:flex;flex-direction:row;align-items:center;gap:10px;width:100%;padding:8px 24px;
+    font-size:13.5px;font-weight:500;background:none;border:0;color:var(--muted);text-align:left;cursor:pointer;position:static}
+  nav .navfavs button.navfav .ic{font-size:14px;flex:0 0 auto}
+  nav .navfavs button.navfav .lbl::before{content:none}
+  nav .navfavs button.navfav:hover{color:var(--ink);background:rgba(127,141,160,.08)}
+  nav .navfavs button.navfav.on{color:var(--brand-text);font-weight:700;background:rgba(127,141,160,.10)}
+  nav .navfavs button.navfav .navbadge{position:static;margin-left:auto;font-size:11px;padding:1px 7px;border-radius:9px}
+  nav .navfavs button.navfav .navstar{display:inline}
+  /* the ☆ on every sidebar row: quiet until hover, gold when pinned */
+  nav .navstar{margin-left:auto;font-size:13px;color:var(--muted);opacity:0;padding:0 0 0 8px;cursor:pointer;flex:0 0 auto}
+  nav .navstar.on{opacity:1;color:#e0a800}
+  nav button:hover .navstar{opacity:1}
+  nav .navbadge + .navstar{margin-left:6px}
+  .subnav .navpin{display:none}
+}
+/* favorites: keep every row on one line; the pin on the phone stays an outline */
+.subnav .navpin.on{background:none;color:#e0a800;border:1px solid #e0a800}
+@media(min-width:900px){
+  nav .navfavs button.navfav .lbl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  nav .navkids button.navsub{white-space:nowrap;overflow:hidden}
+  nav .navbadge{flex:0 0 auto}
+  nav .navstar{padding-left:6px;font-size:12px}
+}
