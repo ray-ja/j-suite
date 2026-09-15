@@ -2306,6 +2306,53 @@ function quoteDepositPaidApply(store, org, q, amount, ref, now) {   // webhook: 
     body: "💵 " + who + " paid the deposit on quote " + invNoOf(rec) + ": " + invMoney(amount) + " of " + invMoney(invEff(rec)) + ". Schedule it." }, store);
   return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, already: false };
 }
+/* ⭐ SCOPED PAY LINKS PAY OUT (2026-09-15). Every link the hosted invoice page mints carries metadata.scopeKey
+   (q_<quoteId> · grp_<customerId>_<combinedAt> · acct_<customerId>), NOT a quoteId — so the webhook, which only
+   knew stripeLinkId / metadata.quoteId, could never mark those payments. Christina Jamieson paid her $1,840
+   combined bill through one and nothing moved. This applies a paid checkout to the scope: the open invoices in
+   it, oldest first, each taking up to what it is owed; a quote goes paid when fully covered. Idempotent on the
+   checkout session id. Pings the owner once. */
+function quoteScopePaidApply(store, org, scopeKey, amountCents, ref, now) {
+  now = +now || Date.now();
+  const slab = store[org]; if (!slab || !Array.isArray(slab.quotes)) return { store: store, quoteIds: [], already: false, unmatched: true };
+  const key = String(scopeKey || ""); let members = [];
+  const m1 = /^q_(.+)$/.exec(key), m2 = /^grp_([^_]+)_(\d+)$/.exec(key), m3 = /^acct_(.+)$/.exec(key);
+  const live = slab.quotes.filter(x => x && !x.deleted);
+  if (m1) members = live.filter(x => x.id === m1[1]);
+  else if (m2) members = live.filter(x => x.invoiced && x.customerId === m2[1] && +x.combinedAt === +m2[2]);
+  else if (m3) members = live.filter(x => x.invoiced && x.customerId === m3[1]);
+  if (!members.length) return { store: store, quoteIds: [], already: false, unmatched: true };
+  if (members.some(x => (x.payments || []).some(p => p && p.ref === ref))) return { store: store, quoteIds: [], already: true, unmatched: false };
+  const open = members.filter(x => !x.paid && Math.round((srvDueOf(slab, x) - srvPaidOf(x)) * 100) > 0)
+    .sort((a, b) => String(a.invoicedDate || a.date || "").localeCompare(String(b.invoicedDate || b.date || "")) || String(a.id).localeCompare(String(b.id)));
+  const paidDate = new Date(now).toISOString().slice(0, 10);
+  let left = Math.max(0, Math.round(+amountCents || 0)), upd = [], i = 0;
+  open.forEach(x => {
+    if (left <= 0) return;
+    const owed = Math.round((srvDueOf(slab, x) - srvPaidOf(x)) * 100);
+    const take = Math.min(owed, left); left -= take;
+    const payments = (x.payments || []).slice();
+    payments.push({ id: "pay_stripe_" + String(ref).slice(-24) + (i ? "_" + i : ""), amount: take / 100, date: paidDate, method: "card", ref: ref, via: "stripe", scopeKey: key, createdAt: now });
+    i++;
+    const fully = take >= owed;
+    upd.push(Object.assign({}, x, { payments: payments, paid: fully ? true : !!x.paid, paidDate: fully ? (x.paidDate || paidDate) : (x.paidDate || ""), updatedAt: now }));
+  });
+  if (!upd.length) return { store: store, quoteIds: [], already: true, unmatched: false };
+  let out = mergeState(store, { [org]: { quotes: upd } });
+  let threadId = null;
+  try {
+    const users = (out.users || []);
+    const owner = users.find(u => u && !u.kind && !u.deleted && u.superAdmin) || users.find(u => u && !u.kind && !u.deleted && u.role === "owner");
+    if (owner) {
+      const cust = ((out[org].customers) || []).find(c => c && c.id === upd[0].customerId);
+      const who = (cust && (cust.name || cust.company)) || upd[0].cust || "Customer";
+      const built = ceoBuildMessage({ biz: org, to: owner.id, members: [owner.id], title: "Payment received", senderLabel: "Quote watcher", threadId: "thr_quote_accepts_" + org,
+        body: "💵 " + who + " paid " + invMoney(Math.round(+amountCents || 0) / 100) + " by card: " + upd.map(invNoOf).join(", ") + (left > 0 ? " (+" + invMoney(left / 100) + " over the balance)" : "") + "." }, out);
+      out = mergeState(out, { [built.biz]: { messages: built.records } }); threadId = built.threadId;
+    }
+  } catch (e) {}
+  return { store: out, quoteIds: upd.map(x => x.id), already: false, unmatched: false, overCents: left, threadId: threadId };
+}
 // MIRRORS the client invCleanMatDesc (js/46) — strip Cap/import annotation cruft off a material description.
 function srvCleanMatDesc(desc) {
   let s = String(desc == null ? "" : desc).trim();
@@ -4696,6 +4743,16 @@ const server = http.createServer((req, res) => {
           if (matched && isDeposit) {
             const r = quoteDepositPaidApply(store, matchedOrg, matched, amount, obj.id);
             if (!r.already) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
+          } else if (!matched && obj.metadata && obj.metadata.scopeKey) {
+            /* a hosted-page scoped link (q_ / grp_ / acct_) — see quoteScopePaidApply */
+            const sorg = (obj.metadata.org && store[obj.metadata.org]) ? obj.metadata.org : null;
+            const orgs = sorg ? [sorg] : orgIdsOf(store);
+            for (const oid of orgs) {
+              const r = quoteScopePaidApply(store, oid, obj.metadata.scopeKey, Math.round(+obj.amount_total || 0), obj.id);
+              if (r.unmatched) continue;
+              if (!r.already) { saveStore(r.store); if (r.threadId) pushNotify(r.store, oid, r.threadId, "__ceo__").catch(() => {}); }
+              break;
+            }
           } else if (matched && !matched.paid) {
             const paidDate = new Date().toISOString().slice(0, 10);
             const payments = Array.isArray(matched.payments) ? matched.payments.slice() : [];
@@ -5802,4 +5859,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

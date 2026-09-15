@@ -2428,6 +2428,32 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   const pg2 = t.renderInvoicePage(t.pubBizOf(DS, "obx", q2), DS.obx.customers[0], q2, [], null, null, null);
   ok("quote page after the deposit: shows Deposit received", /Deposit received/.test(pg2) && !/Pay the 50% deposit/.test(pg2));
 
+  /* ---- scoped pay links pay out through the webhook ---- */
+  {
+    const base = { users: [{ id: "u_ray", username: "Rj", role: "owner", updatedAt: 1 }], registry: [{ id: "obx", name: "OBX", updatedAt: 1 }],
+      obx: { customers: [{ id: "c1", name: "Christina Jamieson", updatedAt: 1 }], jobs: [], messages: [], quotes: [
+        { id: "qa", num: 27, customerId: "c1", cust: "Christina Jamieson", items: [{ name: "Downspout", price: 330, qty: 1, unit: "job" }], subtotal: 330, total: 330, invoiced: true, invoicedDate: "2026-09-01", combinedAt: 1788305487211, date: "2026-08-17", updatedAt: 1 },
+        { id: "qb", num: 28, customerId: "c1", cust: "Christina Jamieson", items: [{ name: "Platform", price: 1085, qty: 1, unit: "job" }], subtotal: 1085, total: 1085, invoiced: true, invoicedDate: "2026-09-01", combinedAt: 1788305487211, date: "2026-09-01", updatedAt: 1 },
+        { id: "qc", num: 29, customerId: "c1", cust: "Christina Jamieson", items: [{ name: "Haul", price: 425, qty: 1, unit: "job" }], subtotal: 425, total: 425, invoiced: true, invoicedDate: "2026-09-01", combinedAt: 1788305487211, date: "2026-09-01", updatedAt: 1 },
+        { id: "qd", num: 30, customerId: "c1", cust: "Christina Jamieson", items: [{ name: "Haul 2", price: 375, qty: 1, unit: "job" }], subtotal: 375, total: 375, invoiced: true, invoicedDate: "2026-09-15", date: "2026-09-01", updatedAt: 1 }
+      ] } };
+    const S0 = JSON.parse(JSON.stringify(base));
+    const r1 = t.quoteScopePaidApply(S0, "obx", "grp_c1_1788305487211", 184000, "cs_grp_1");
+    const paid = r1.store.obx.quotes.filter(q => q.paid).map(q => q.id).sort().join();
+    ok("grp_ scope: the three billed-together invoices go paid, the loose one does not", paid === "qa,qb,qc" && !r1.store.obx.quotes.find(q => q.id === "qd").paid, paid);
+    ok("each quote carries its own payment slice with the session as ref", r1.store.obx.quotes.find(q => q.id === "qb").payments[0].amount === 1085 && r1.store.obx.quotes.find(q => q.id === "qa").payments[0].ref === "cs_grp_1");
+    ok("owner pinged once with the invoice numbers", r1.threadId && (r1.store.obx.messages || []).some(m => /paid \$1,840\.00/.test(m.text || m.body || JSON.stringify(m))), (r1.store.obx.messages || []).slice(-1));
+    const r2 = t.quoteScopePaidApply(r1.store, "obx", "grp_c1_1788305487211", 184000, "cs_grp_1");
+    ok("replayed webhook is idempotent", r2.already === true && r1.store.obx.quotes.find(q => q.id === "qa").payments.length === 1);
+    const r3 = t.quoteScopePaidApply(JSON.parse(JSON.stringify(base)), "obx", "acct_c1", 100000, "cs_acct_1");
+    const q3 = r3.store.obx.quotes;
+    ok("acct_ scope with a PARTIAL amount: oldest invoice first, paid until the money runs out, the rest stays open", q3.find(q => q.id === "qa").paid === true && q3.find(q => q.id === "qb").paid === false && q3.find(q => q.id === "qb").payments[0].amount === 670 && q3.find(q => q.id === "qc").payments === undefined, q3.map(q => [q.id, q.paid, (q.payments || []).map(p => p.amount)]));
+    const r4 = t.quoteScopePaidApply(JSON.parse(JSON.stringify(base)), "obx", "q_qd", 37500, "cs_q_1");
+    ok("q_ scope: exactly that quote", r4.quoteIds.join() === "qd" && r4.store.obx.quotes.find(q => q.id === "qd").paid === true);
+    const r5 = t.quoteScopePaidApply(JSON.parse(JSON.stringify(base)), "obx", "grp_c1_999", 100, "cs_x");
+    ok("unknown scope → unmatched, store untouched", r5.unmatched === true && r5.store.obx.quotes.every(q => !q.paid));
+  }
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
