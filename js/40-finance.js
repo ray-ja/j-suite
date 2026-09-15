@@ -119,7 +119,8 @@ function rFinance() {
     <button class="subbtn ${FINSUB === "tax" ? "on" : ""}" onclick="finSub('tax')">🧾 Tax</button>
     <button class="subbtn ${FINSUB === "owed" ? "on" : ""}" onclick="finSub('owed')">💸 A/R</button>
     <button class="subbtn ${FINSUB === "pl" ? "on" : ""}" onclick="finSub('pl')">💹 Job P&L</button>
-    <button class="subbtn ${FINSUB === "analysis" ? "on" : ""}" onclick="finSub('analysis')">📈 Analysis</button></div>`;
+    <button class="subbtn ${FINSUB === "analysis" ? "on" : ""}" onclick="finSub('analysis')">📈 Analysis</button>
+    <button class="subbtn ${FINSUB === "history" ? "on" : ""}" onclick="finSub('history')">📜 History</button></div>`;
   if (FINSUB === "overview" && typeof rFinOverview === "function") { view.innerHTML = sub + '<div class="pgcols">' + rFinOverview() + '</div>'; return; }
   /* ⭐ CARDS LIVE UNDER MONEY. Ray, 2026-08-26: "cards should be under money. Yeah. That makes more sense."
      Composed by adminAllCardsCard() (js/105) — called, not copied. */
@@ -132,6 +133,7 @@ function rFinance() {
   if (FINSUB === "owed" && typeof rReceivables === "function") { view.innerHTML = sub + rReceivables(); return; }
   if (FINSUB === "pl" && typeof rJobPL === "function") { view.innerHTML = sub + rJobPL(); return; }
   if (FINSUB === "analysis" && typeof rJobAnalysis === "function") { view.innerHTML = sub + rJobAnalysis(); return; }
+  if (FINSUB === "history" && typeof rJobHistory === "function") { view.innerHTML = sub + rJobHistory(); return; }   // js/174 — every paid job, who worked it, the split
   if (FINSUB === "tax" && typeof rFinTax === "function") { view.innerHTML = sub + rFinTax(); return; }
   if (FINSUB === "priority" && typeof rFinPriority === "function") { view.innerHTML = sub + rFinPriority(); return; }
   if (FINSUB === "income") { view.innerHTML = sub + rFinIncome(); return; }

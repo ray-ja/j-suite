@@ -50,7 +50,8 @@ console.log("\n--- ⭐ every level-3 screen is now a real destination ---");
 {
   const c = sandbox();
   const fin = c.NAV_DEEP.filter(d => d.tab === "finance");
-  eq("all eleven finance screens are registered", fin.length, 11);
+  eq("all twelve finance screens are registered (Job history added 2026-09-15)", fin.length, 12);
+  ok("📜 Job history among them", fin.some(d => d.sub === "history"));
   ok("⭐ A/R among them — the one he couldn't find", fin.some(d => d.sub === "owed"));
   ok("⭐ ...and it is FIRST, because it's the screen with his money on it", fin[0].sub === "owed", fin.map(d => d.sub));
 
@@ -71,7 +72,7 @@ console.log("\n--- the expanded list: level 2 and level 3 in one ordered run ---
 {
   const c = sandbox();
   const rows = c.navDeepFor("money");
-  eq("every Money destination appears", rows.length, 14);
+  eq("every Money destination appears", rows.length, 15);
   ok("⭐ plain tabs with no third level are listed too", rows.some(r => r.plain && r.tab === "nextcheck"));
   ok("...labelled from TAB_META, not their key", rows.find(r => r.tab === "nextcheck").label === "Next Check");
   ok("⛔ a tab WITH children is represented by them, not by itself as well",

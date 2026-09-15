@@ -18,7 +18,7 @@
     time: "timesheet time sheet hours clock in out timeclock punch",
     pay: "paycheck wages payout take home", nextcheck: "paycheck next check",
     invoices: "billing bill owed", receipts: "expense expenses scan",
-    finance: "money cash income expenses", schedule: "calendar week",
+    finance: "money cash income expenses history past jobs split who worked", schedule: "calendar week",
     accounts: "customers clients properties", team: "crew people staff",
     todo: "tasks task list checklist", map: "pins locations",
     admin: "users roles permissions", data: "settings preferences sync security keys secrets tokens api cloudflare stripe google ads websites site copy text edit publish",
