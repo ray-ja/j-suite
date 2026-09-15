@@ -51,9 +51,32 @@ ok("person filter (Pierce only on i1; Rj on all three via crew/sales/admin)", jh
 console.log("— CSV —");
 const csv = jh.jhBuildCSV(rows);
 const lines = csv.split("\n");
-ok("header + one line per row", lines.length === 4 && /^Paid,Work days,Job,Type,Customer,Billed/.test(lines[0]), lines[0]);
+ok("header + one line per row", lines.length === 4 && /^Status,Paid,Work days,Job,Type,Customer,Billed/.test(lines[0]), lines[0]);
 ok("the title with a comma/dash is quoted safely and the crew column reads 'Name $x (60%)'", /"Junk \/ move-out — 5 items"/.test(csv) === false && /Chase \$[0-9.]+ \(60%\)/.test(csv), csv);
 ok("dates label: single / pair / range", jh.jhDaysLabel(["a"]) === "a" && jh.jhDaysLabel(["a", "b"]) === "a + b" && jh.jhDaysLabel(["a", "b", "c"]) === "a → c (3 days)");
+
+console.log("— unpaid finished jobs join the same list with a status —");
+const jobsArr = [
+  { id: "j1", title: "Junk / move-out — 5 items", done: true, date: "2026-06-22" },                       // paid (income i1)
+  { id: "j9", title: "Fence teardown", done: true, quoteId: "q9", date: "2026-08-02", crew: ["chase"] },   // invoiced, never paid
+  { id: "j8", title: "Brush pile", done: true, date: "2026-08-20" },                                       // done, no quote
+  { id: "j7", title: "Still open", done: false, date: "2026-09-01" },                                      // not done → not history
+  { id: "j6", title: "Dump run", done: true, date: "2026-08-21", sharedJobIds: ["j9"] }                    // a stop-job → not its own row
+];
+const L2 = Object.assign({}, L, { quote: id => id === "q9" ? { id: "q9", cust: "Kim Lee", invoiced: true, total: 350, items: [{ name: "Fence removal" }] } : quotes[id] });
+const un = jh.jhUnpaidRows(jobsArr, income, L2);
+ok("only finished jobs with no income entry (j9 + j8), no open jobs, no stop-jobs", un.map(r => r.jobId).sort().join() === "j8,j9", un.map(r => r.jobId));
+const u9 = un.find(r => r.jobId === "j9"), u8 = un.find(r => r.jobId === "j8");
+ok("invoiced quote → status invoiced, quoted amount as gross, crew names, no split money", u9.status === "invoiced" && u9.gross === 35000 && u9.crew[0].name === "Chase" && u9.crewTotal === 0 && u9.business === 0, u9);
+ok("no quote → status done, no amount", u8.status === "done" && u8.gross === 0, u8);
+const merged = jh.jhMerge(rows, un);
+ok("merged list is newest first across both kinds", merged.map(r => r.id).join() === "i3,j8,j9,i2,i1".replace("j8", "job_j8").replace("j9", "job_j9"), merged.map(r => r.id));
+ok("status filter isolates the unpaid ones", jh.jhFilter(merged, { status: "invoiced" }).length === 1 && jh.jhFilter(merged, { status: "paid" }).length === 3);
+const mt = jh.jhTotals(merged);
+ok("unpaid rows never enter the paid totals (billed unchanged, counted aside)", mt.gross === totals.gross && mt.n === 3 && mt.unpaid === 2 && mt.unpaidGross === 35000, mt);
+ok("a quote marked paid with no income entry is flagged, not counted as paid", jh.jhUnpaidRows([{ id: "jx", done: true, quoteId: "qx" }], [], { quote: () => ({ id: "qx", paid: true, total: 100, items: [{ name: "x" }] }), type: q => q.items[0].name })[0].status === "unsplit");
+ok("CSV carries the status column", /^Status,Paid,/.test(jh.jhBuildCSV(merged)) && /Invoiced, not paid/.test(jh.jhBuildCSV(merged)));
+ok("the no-job no-quote income reads as a manual entry, never \"Other\"", jh.jhBuildRows([{ id: "im", date: "2026-06-06", gross: 29000, amount: 29000, split: {}, field: {} }], {}, "", { income: () => ({ id: "im", address: "" }) })[0].type === "Manual income entry");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
