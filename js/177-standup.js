@@ -84,6 +84,7 @@ if (typeof window !== "undefined") {
     if (typeof touch === "function") touch(dd);
     standupSaveAll(); if (typeof toast === "function") toast("Answer saved"); render();
   };
+  window.standupDontKnow = function (qid) { const el = document.getElementById("su_q_" + qid); if (el) el.value = "I don't know yet"; standupAnswer(qid); };
   window.standupToggleYesterday = function () { window.__suYest = !window.__suYest; render(); };
 }
 
@@ -109,8 +110,11 @@ function standupCardHTML() {
   // questions from Claude / Cap
   if (a.questions.length) {
     h += `<div style="margin-top:10px;padding:8px 10px;background:var(--soft);border-radius:8px"><div class="nm" style="font-size:13px">❓ Questions for you</div>` +
-      a.questions.map(q => `<div style="margin-top:6px"><div style="font-size:13.5px;white-space:normal">${esc(q.q)}</div><div class="row" style="gap:6px;margin-top:4px"><input id="su_q_${esc(q.id)}" placeholder="answer" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')standupAnswer('${esc(q.id)}')"><button class="btn acc sm" style="flex:0 0 auto" onclick="standupAnswer('${esc(q.id)}')">Save</button></div></div>`).join("") + `</div>`;
+      a.questions.map(q => `<div style="margin-top:6px"><div style="font-size:13.5px;white-space:normal">${esc(q.q)}</div><div class="row" style="gap:6px;margin-top:4px"><input id="su_q_${esc(q.id)}" placeholder="answer" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter')standupAnswer('${esc(q.id)}')"><button class="btn acc sm" style="flex:0 0 auto" onclick="standupAnswer('${esc(q.id)}')">Save</button><button class="btn ghost sm" style="flex:0 0 auto" title="Claude will ask again later" onclick="standupDontKnow('${esc(q.id)}')">Don't know yet</button></div></div>`).join("") + `</div>`;
   }
+  const waiting = standupQuestions().filter(q => q && q.answer && !q.acked).length;
+  if (!a.questions.length && waiting) h += `<div class="sub" style="margin-top:8px">✅ All answered · ${waiting} waiting for Claude to act on them (he checks twice an hour on weekdays)</div>`;
+  else if (!a.questions.length) h += `<div class="sub" style="margin-top:8px">No open questions from Claude.</div>`;
   // my record
   h += `<div style="margin-top:10px"><label>Today I'm on</label><textarea id="su_plan" rows="2" placeholder="what you're doing today" style="width:100%">${esc(mine.plan || "")}</textarea>
     <label style="margin-top:6px">In the way</label><input id="su_block" placeholder="blockers, waiting on, need from someone" style="width:100%" value="${esc(mine.blockers || "")}">
