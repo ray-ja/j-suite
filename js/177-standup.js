@@ -29,7 +29,8 @@ function standupAgenda(day, jobs, todos, questions, names) {
   const due = (todos || []).filter(t => t && !t.deleted && !t.done && (t.due || t.planDate) && (t.planDate || t.due) <= day)
     .sort((a, b) => String(a.planDate || a.due) < String(b.planDate || b.due) ? -1 : 1)
     .map(t => ({ id: t.id, title: t.title || t.text || "", when: t.planDate || t.due, overdue: (t.due && t.due < day) || false }));
-  const open = (questions || []).filter(q => q && q.q && !q.answer && !q.deleted);
+  /* askAfter: a follow-up Claude wrote for a later day ("ask about Christina again tomorrow") stays hidden until then */
+  const open = (questions || []).filter(q => q && q.q && !q.answer && !q.deleted && (!q.askAfter || q.askAfter <= day));
   return { day: day, jobs: jobRows, due: due, questions: open };
 }
 /* the Broadcast text the cron posts (plain text, phone-sized) */
