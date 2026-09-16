@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1650" height="720" viewBox="0 0 1650 720" font-family="Helvetica, Arial, sans-serif">
+<style>
+.wall{fill:#f5f1ea;stroke:#333;stroke-width:2} .frame{fill:#222;stroke:#222} .glass{fill:#cfe6f2;stroke:#4a90b8;stroke-width:1} .glassline{fill:#4a90b8}
+.basin{fill:#333;stroke:#111} .basinin{fill:#8fb8d0;stroke:none} .outlet{fill:#e0a800;stroke:#7a5c00} .dim{stroke:#c1121f;stroke-width:1} .dt{font-size:11px;fill:#222} .warn{fill:#c1121f;font-weight:700}
+.h{font-size:14px;font-weight:700;fill:#1B2A4E} .note{font-size:11.5px;fill:#333} .floor{stroke:#777;stroke-width:2;stroke-dasharray:6 4}
+</style>
+<rect width="1650" height="720" fill="#fff"/>
+<text x="230" y="26" font-size="16" font-weight="700" fill="#1B2A4E">Christina Jamieson · waterfall opening · field measurements 2026-09-16 · scale 1 cm = 2 px</text>
+<text x="230" y="40" class="h">FRONT ELEVATION (from the living room)</text>
+<rect x="230" y="80" width="208.0" height="490.0" class="wall"/>
+<rect x="253.5" y="113.0" width="161.0" height="400.0" class="frame"/>
+<rect x="263.5" y="124.0" width="141.0" height="389.0" class="glass"/>
+<text x="334.0" y="293.0" class="dt" text-anchor="middle">glass 70.5 cm (27.8 in) wide</text>
+<rect x="253.0" y="513.0" width="162.0" height="57.0" class="basin"/>
+<rect x="262.5" y="522.5" width="143.0" height="38.0" class="basinin"/>
+<text x="334.0" y="614.0" class="dt" text-anchor="middle">basin 81 cm (31.9 in) wide · frame 4.75 cm (1.9 in)</text>
+<rect x="452.0" y="479.0" width="16.51" height="27.0" class="outlet"/>
+<text x="474.51" y="489.0" class="dt">outlet on the column</text><text x="474.51" y="503.0" class="dt warn">(which side? drawn right)</text>
+<text x="474.51" y="517.0" class="dt">32 cm (12.6 in) to 45.5 cm (17.9 in) off the floor</text>
+<line x1="230" y1="66" x2="438.0" y2="66" class="dim"/><line x1="230" y1="61" x2="230" y2="71" class="dim"/><line x1="438.0" y1="61" x2="438.0" y2="71" class="dim"/><text x="334.0" y="60" class="dt" text-anchor="middle">opening 104 cm (40.9 in) drywall to drywall</text>
+<line x1="253.5" y1="99.0" x2="414.5" y2="99.0" class="dim"/><line x1="253.5" y1="94.0" x2="253.5" y2="104.0" class="dim"/><line x1="414.5" y1="94.0" x2="414.5" y2="104.0" class="dim"/><text x="334.0" y="93.0" class="dt" text-anchor="middle">frame 80.5 cm (31.7 in)</text>
+<line x1="230" y1="588.0" x2="253.5" y2="588.0" class="dim"/><line x1="230" y1="583.0" x2="230" y2="593.0" class="dim"/><line x1="253.5" y1="583.0" x2="253.5" y2="593.0" class="dim"/><text x="241.75" y="604.0" class="dt" text-anchor="middle">11.75 cm (4.6 in)</text>
+<line x1="414.5" y1="588.0" x2="438.0" y2="588.0" class="dim"/><line x1="414.5" y1="583.0" x2="414.5" y2="593.0" class="dim"/><line x1="438.0" y1="583.0" x2="438.0" y2="593.0" class="dim"/><text x="426.25" y="604.0" class="dt" text-anchor="middle">11.75 cm (4.6 in)</text>
+<line x1="208" y1="80" x2="208" y2="570.0" class="dim"/><line x1="203" y1="80" x2="213" y2="80" class="dim"/><line x1="203" y1="570.0" x2="213" y2="570.0" class="dim"/><text x="200" y="329.0" class="dt" text-anchor="end">245 cm (96.5 in) floor to ceiling</text>
+<line x1="160" y1="113.0" x2="160" y2="570.0" class="dim"/><line x1="155" y1="113.0" x2="165" y2="113.0" class="dim"/><line x1="155" y1="570.0" x2="165" y2="570.0" class="dim"/><text x="152" y="345.5" class="dt" text-anchor="end">waterfall 228.5 cm (90.0 in)</text>
+<line x1="518.0" y1="80" x2="518.0" y2="113.0" class="dim"/><line x1="513.0" y1="80" x2="523.0" y2="80" class="dim"/><line x1="513.0" y1="113.0" x2="523.0" y2="113.0" class="dim"/><text x="526.0" y="100.5" class="dt" text-anchor="start">gap 16 cm (6.3 in)</text>
+<line x1="518.0" y1="513.0" x2="518.0" y2="570.0" class="dim"/><line x1="513.0" y1="513.0" x2="523.0" y2="513.0" class="dim"/><line x1="513.0" y1="570.0" x2="523.0" y2="570.0" class="dim"/><text x="526.0" y="545.5" class="dt" text-anchor="start">basin 28.5 cm (11.2 in)</text>
+<text x="334.0" y="140.0" class="dt" text-anchor="middle" style="font-size:10px">frame: top 5.5 cm (2.2 in) · sides 5 cm (2.0 in)</text>
+<line x1="140" y1="570.0" x2="588.0" y2="570.0" class="floor"/><text x="140" y="600.0" class="dt">floor</text>
+<text x="990" y="40" class="h">PLAN (from above) · column depth 65.405 cm (25.8 in)</text>
+<rect x="990" y="80" width="208.0" height="130.81" class="wall"/>
+<text x="1094.0" y="72" class="dt" text-anchor="middle">front (living room)</text>
+<text x="1094.0" y="226.81" class="dt" text-anchor="middle">rear (dining room)</text>
+<rect x="1013.0" y="99.405" width="162.0" height="92.0" class="basin"/>
+<rect x="1022.5" y="108.905" width="143.0" height="73.0" class="basinin"/>
+<rect x="1023.5" y="144.905" width="141.0" height="2" class="glassline"/>
+<rect x="1013.5" y="140.905" width="10.0" height="8.0" class="frame"/><rect x="1164.5" y="140.905" width="10.0" height="8.0" class="frame"/>
+<line x1="968" y1="108.905" x2="968" y2="144.905" class="dim"/><line x1="963" y1="108.905" x2="973" y2="108.905" class="dim"/><line x1="963" y1="144.905" x2="973" y2="144.905" class="dim"/><text x="960" y="130.905" class="dt" text-anchor="end">18 cm (7.1 in)</text>
+<line x1="968" y1="145.905" x2="968" y2="181.905" class="dim"/><line x1="963" y1="145.905" x2="973" y2="145.905" class="dim"/><line x1="963" y1="181.905" x2="973" y2="181.905" class="dim"/><text x="960" y="167.905" class="dt" text-anchor="end">18 cm (7.1 in)</text>
+<line x1="1220.0" y1="99.405" x2="1220.0" y2="191.405" class="dim"/><line x1="1215.0" y1="99.405" x2="1225.0" y2="99.405" class="dim"/><line x1="1215.0" y1="191.405" x2="1225.0" y2="191.405" class="dim"/><text x="1228.0" y="149.405" class="dt" text-anchor="start">basin 46 cm (18.1 in) deep</text>
+<line x1="1013.0" y1="225.405" x2="1175.0" y2="225.405" class="dim"/><line x1="1013.0" y1="220.405" x2="1013.0" y2="230.405" class="dim"/><line x1="1175.0" y1="220.405" x2="1175.0" y2="230.405" class="dim"/><text x="1094.0" y="241.405" class="dt" text-anchor="middle">basin 81 cm (31.9 in)</text>
+<text x="1094.0" y="89.405" class="dt warn" text-anchor="middle">basin drawn centered front-to-back (not measured)</text>
+<rect x="1202.0" y="130.8" width="10" height="16.51" class="outlet"/>
+<line x1="1348.0" y1="80" x2="1348.0" y2="130.8" class="dim"/><line x1="1343.0" y1="80" x2="1353.0" y2="80" class="dim"/><line x1="1343.0" y1="130.8" x2="1353.0" y2="130.8" class="dim"/><text x="1356.0" y="109.4" class="dt" text-anchor="start">outlet 25.4 cm (10.0 in) from front</text>
+<line x1="1348.0" y1="147.31" x2="1348.0" y2="210.81" class="dim"/><line x1="1343.0" y1="147.31" x2="1353.0" y2="147.31" class="dim"/><line x1="1343.0" y1="210.81" x2="1353.0" y2="210.81" class="dim"/><text x="1356.0" y="183.06" class="dt" text-anchor="start">31.75 cm (12.5 in) from rear</text>
+<text x="1094.0" y="259.405" class="dt" text-anchor="middle">outlet cover 8.255 cm (3.3 in) wide, on the column</text>
+<text x="640" y="40" class="h">SIDE SECTION (looking along the wall)</text>
+<rect x="640" y="80" width="130.81" height="490.0" class="wall"/>
+<rect x="659.405" y="513.0" width="92.0" height="57.0" class="basin"/>
+<rect x="704.905" y="124.0" width="2" height="389.0" class="glassline"/>
+<rect x="700.905" y="113.0" width="9.0" height="11.0" class="frame"/>
+<text x="705.405" y="72" class="dt" text-anchor="middle">front ← → rear</text>
+<rect x="634" y="479.0" width="6" height="27.0" class="outlet"/><text x="630" y="475.0" class="dt" text-anchor="end">outlet</text>
+<line x1="792.81" y1="113.0" x2="792.81" y2="570.0" class="dim"/><line x1="787.81" y1="113.0" x2="797.81" y2="113.0" class="dim"/><line x1="787.81" y1="570.0" x2="797.81" y2="570.0" class="dim"/><text x="800.81" y="345.5" class="dt" text-anchor="start">228.5 cm (90.0 in)</text>
+<line x1="840.81" y1="80.0" x2="840.81" y2="113.0" class="dim"/><line x1="835.81" y1="80.0" x2="845.81" y2="80.0" class="dim"/><line x1="835.81" y1="113.0" x2="845.81" y2="113.0" class="dim"/><text x="848.81" y="100.5" class="dt" text-anchor="start">16 cm (6.3 in)</text>
+<line x1="640" y1="588.0" x2="770.81" y2="588.0" class="dim"/><line x1="640" y1="583.0" x2="640" y2="593.0" class="dim"/><line x1="770.81" y1="583.0" x2="770.81" y2="593.0" class="dim"/><text x="705.405" y="604.0" class="dt" text-anchor="middle">column 65.405 cm (25.8 in) deep</text>
+<line x1="610" y1="570.0" x2="870.81" y2="570.0" class="floor"/>
+<text x="230" y="640" class="note">Derived, not measured: glass width 70.5 cm (frame 80.5 minus two 5 cm sides) · 11.75 cm of drywall showing each side of the frame · basin interior 36.5 cm deep, so the glass panel is about 0.5 cm thick.</text>
+<text x="230" y="658" class="note">Checks: 16 cm gap + 228.5 cm waterfall = 244.5 cm, matches the 245 cm ceiling. Column depth 25.75 in from the outlet position = 65.4 cm; the 46 cm basin fits inside it.</text>
+<text x="230" y="676" class="note">Please correct: which side the outlet is on, where the basin sits front-to-back in the column, and whether the 228.5 cm waterfall height includes the basin (drawn as if it does).</text>
+</svg>
