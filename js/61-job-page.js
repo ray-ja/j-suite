@@ -484,6 +484,7 @@ function rJobPage(j) {
 
   // Notes
   let _secNotes = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>
+    ${(typeof jobCallNotesHTML === "function") ? jobCallNotesHTML(j) : ""}
     <textarea id="job_notes" style="min-height:64px" placeholder="What happened, access notes, gotchas…">${esc(j.notes || "")}</textarea>
     <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="jobSaveNotes('${j.id}')">Save notes</button></div>`;
 

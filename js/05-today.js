@@ -43,6 +43,8 @@ function rToday(){
 
   // 0.5) New-crew quick-start — first-login dismissible checklist (js/86). Shows until done/dismissed.
   if(typeof crewQuickStartHTML==="function") h+=crewQuickStartHTML();
+  // 0.6) Stand-up — the 9 o'clock meeting agenda + each person's record for the day (js/177).
+  if(typeof standupCardHTML==="function") h+=standupCardHTML();
 
   // 1) Cap — the conversational secretary at the very top (replaces the old notice board). The notice-board
   //    `ceo` doc is preserved + owner-editable as a compact "📌 Pinned" strip folded inside the Cap panel (js/97).

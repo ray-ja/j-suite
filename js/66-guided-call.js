@@ -89,7 +89,7 @@ function gcSaveCustomer(status) {
 }
 function gcWizFor(c, prop) {
   const me = (typeof curUser === "function") ? curUser() : null;
-  return { step: "pick", cust: { id: c.id, name: c.name, phone: GC.phone || "", address: GC.address || "", source: "Phone call", notes: "", propertyId: prop ? prop.id : "", soldBy: me ? me.id : "" }, items: [], recurring: false, disc: 0, discPct: null, miles: 0, hours: 0, crewN: 1, disposalTrip: false, haul: "pickup", zone: "local", travelMiles: null, svc: null, inp: {}, deep: {}, deepMods: {}, deepSearch: "", id: null, invoiced: false, paid: false, paymentLink: "", finalPrice: 0, adjNote: "" };
+  return { step: "pick", cust: { id: c.id, name: c.name, phone: GC.phone || "", address: GC.address || "", source: "Phone call", notes: (GC.need ? ("📞 Call: " + GC.need + (GC.timeline ? " · when: " + GC.timeline : "")) : ""), propertyId: prop ? prop.id : "", soldBy: me ? me.id : "" }, items: [], recurring: false, disc: 0, discPct: null, miles: 0, hours: 0, crewN: 1, disposalTrip: false, haul: "pickup", zone: "local", travelMiles: null, svc: null, inp: {}, deep: {}, deepMods: {}, deepSearch: "", id: null, invoiced: false, paid: false, paymentLink: "", finalPrice: 0, adjNote: "" };
 }
 window.gcQuoteWith = function (svcKey) {
   if (!(GC.name || GC.phone)) { if (!confirm("No name or phone captured yet — save & quote anyway?")) return; }
