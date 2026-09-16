@@ -2551,7 +2551,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     // customer is being asked to agree to, so it all shows
     rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
       : `<tr><td colspan="3" style="color:#9ca3af">No line items on this quote.</td></tr>`);
-    adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">Adjustment</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
+    adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">${htmlEsc(q.discountLabel || (adj < 0 ? "Discount" : "Adjustment"))}</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
   } else {
     // FIXED: one clean line, one total — no line items on the customer's page (Ray 2026-09-01:
     // "Just have a single total. I don't need line item stuff unless they request it.")
