@@ -2789,7 +2789,7 @@ function orgKeyLegacyMirror(org, name, value) {
 }
 const GADS_FILE = path.join(__dirname, "google-ads-config.json");
 const GADS_REDIRECT = "http://127.0.0.1:8085";
-const GADS_API_VERSION = "v21";
+const GADS_API_VERSION = "v22";
 /* per-org Google Ads config, living inside the org key store (each org gets its own ads account) */
 function gadsLoad(org) { const k = orgKeysLoad(); const o = k[org || "obx"] || {}; return o.gads || {}; }
 function gadsSave(cfg, org) { const k = orgKeysLoad(); const id = org || "obx"; if (!k[id]) k[id] = {}; k[id].gads = cfg; orgKeysSave(k); }
