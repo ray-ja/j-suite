@@ -108,6 +108,7 @@ function standupCardHTML() {
     : `<div class="sub">No jobs on the schedule today.</div>`) + `</div>`;
   if (a.due.length) h += `<div class="sub" style="margin-top:6px;white-space:normal"><b>Due:</b> ` + a.due.slice(0, 5).map(t => esc(t.title) + (t.overdue ? ' <span style="color:var(--danger)">overdue</span>' : "")).join(" · ") + (a.due.length > 5 ? " · +" + (a.due.length - 5) + " more" : "") + `</div>`;
   if (toTag) h += `<div class="sub" style="margin-top:4px"><a href="#" onclick="event.preventDefault();TAB='finance';if(typeof finSub==='function')finSub('bank');">💳 ${toTag} card charge${toTag === 1 ? "" : "s"} to tag</a></div>`;
+  if (typeof junkSlotsWeekLine === "function") h += `<div class="sub" style="margin-top:4px;white-space:normal">${esc(junkSlotsWeekLine())}</div>`;
   // questions from Claude / Cap
   if (a.questions.length) {
     h += `<div style="margin-top:10px;padding:8px 10px;background:var(--soft);border-radius:8px"><div class="nm" style="font-size:13px">❓ Questions for you</div>` +

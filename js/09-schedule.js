@@ -272,6 +272,7 @@ window.openJob=function(id,customerId,presetDate){
     ${(typeof isOwner==="function"&&isOwner())?`<label style="margin-top:12px">🧭 Planned route <span class="sub" style="font-weight:400">· the ordered stops — e.g. a materials supplier</span></label>
     <div id="j_stops"></div>
     <div class="sub muted" style="margin-top:4px;white-space:normal">The job-site position in the route is set on the job page.</div>`:""}
+    ${(typeof junkSlotsHTML==="function")?junkSlotsHTML("j_date","j_time","jobStartDateChanged"):""}
     <div class="row" style="gap:8px"><div class="grow"><label>Start date</label><input id="j_date" type="date" value="${j.date||today()}" onchange="jobStartDateChanged()"></div>
     <div class="grow"><label>Time</label><input id="j_time" type="time" value="${j.time||""}"></div></div>
     <label style="margin-top:6px">Work days <span class="sub" style="font-weight:400">· tap every day you'll work this job (can skip days)</span></label>
@@ -504,6 +505,8 @@ function renderJobCrew(){
 window.toggleJobCrew=function(id){if(JOBCREW.has(id))JOBCREW.delete(id);else JOBCREW.add(id);renderJobCrew();};
 window.saveJob=function(id,isNew){
   const d=D();let j=isNew?{id}:d.jobs.find(x=>x.id===id);
+  /* junk runs Tue/Thu at 9, noon, 3 (js/179) — ask before booking one outside the slots */
+  if(typeof junkSlotConfirm==="function"&&!junkSlotConfirm({title:val("j_title"),date:val("j_date"),time:val("j_time")},j.quoteId?(d.quotes||[]).find(q=>q&&q.id===j.quoteId):null))return;
   j.title=val("j_title");j.customerId=val("j_cust");j.propertyId=val("j_prop");j.date=val("j_date");j.time=val("j_time");j.notes=val("j_notes");
   j.crew=[...JOBCREW];
   // MULTI-DAY: persist the picked work days (deduped, start day always in, sorted). Single-day jobs store [date].

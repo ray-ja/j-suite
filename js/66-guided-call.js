@@ -46,6 +46,7 @@ function gcBody() {
   h += gcStep("6", "CLOSE — set the next step (never skip this)", `"I'd love to swing by and give you an honest free quote — does [day] or [day] work better?"  → Always leave the call with a concrete next step. "I'll call you back" kills the sale. Use the calendar below to offer a real open day.`, "");
   if (typeof CALY !== "undefined" && CALY == null) { const _cd = new Date(); CALY = _cd.getFullYear(); CALM = _cd.getMonth(); }
   h += `<div style="font-weight:800;margin:10px 2px 6px">📅 The calendar — offer them an open day</div>`;
+  if (typeof junkSlotsHTML === "function") h += `<div class="card" style="padding:10px 12px">${junkSlotsHTML(null, null, null)}<div class="sub" style="white-space:normal">Junk hauling books into these. Offer the first two open ones: "Does Tuesday at 9 or Thursday at noon work better?"</div></div>`;
   h += (typeof renderCalendar === "function") ? renderCalendar((typeof actJ === "function") ? actJ().slice().sort((a, b) => (a.date + (a.time || "")) < (b.date + (b.time || "")) ? -1 : 1) : []) : `<div class="card"><div class="muted">Calendar unavailable.</div></div>`;
   h += gcQuotePick();
   h += `<div class="card" style="border-left:4px solid var(--accent)"><div style="font-weight:800;margin-bottom:6px">Couldn't quote on the phone? Save the call:</div>
