@@ -3,6 +3,7 @@ const JUNK_FULL=480;      // cu ft in a standard 18-cu-yd junk truck = industry 
 const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
 const JUNK_TRIPBASE=0;    // retired — "the truck is moving" is the static drive + the $175 minimum, NOT a volume base
 const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + disposal margin); the drive is added separately. Tune to taste.
+const JUNK_CREW_MIN=2;    // Ray, 2026-09-18: "quote off the assumption that everything is a two person job" — nobody runs a one-man crew; the pay check never assumes solo
 const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=90;        // Soundside transfer station COST $/ton (2026-08-28) — the customer CHARGE is JUNK_CD_TON below
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
@@ -156,7 +157,7 @@ function junkDriveCharge(crew){
 }
 /* the engine object for the take-home CHECK: loading person-hours + auto drive + the known dump run */
 function junkEngineObj(c){
-  const crew=WZ.junkCrew||2,mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
+  const crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
   return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14),dumpHrs:50/60,materials:(c.special||0)};
 }
 function wizJunkUI(){
@@ -170,7 +171,7 @@ function wizJunkUI(){
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
   // PRICE = volume + STATIC site drive + this job's amortized DUMP SHARE (by volume) + special-item disposal
-  const _crew=WZ.junkCrew||2,_dr=junkSiteDrive();
+  const _crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),_dr=junkSiteDrive();
   const drive=junkDriveCharge(_crew), dumpAmort=Math.round(junkDumpAmort(c.cuft)), work=c.haul+c.locLabor+c.modLabor;
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
   // $/hr each CHECK — STASHED, so NO dump run on this job; job time = 20-min baseline + load + site drive
@@ -203,7 +204,7 @@ function wizJunkUI(){
       <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · <span style="color:#1a7f37">national ${money(bandLo)}–${money(bandHi)}</span> · <span style="color:#0e7c86">OBX ${money(obxLo)}–${money(obxHi)}</span> · clears $45/hr at <b>${money(pay45)}</b> · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
     </div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
-    <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(1,(WZ.junkCrew||2)-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(WZ.junkCrew||2)+1;render()">+</button></span>
+    <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(JUNK_CREW_MIN,(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))+1;render()">+</button></span>
     <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
     <button class="btn acc grow" onclick="wizAddJunk()">Add to quote</button>
   </div>`;
@@ -282,7 +283,7 @@ window.openTrailerBuy=function(){
 window.wizAddJunk=function(){
   if(!WZ.junk||!WZ.junk.length){alert("Add at least one item first.");return;}
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
-  const c=calcJunk(),crew=WZ.junkCrew||2,_dr=junkSiteDrive();
+  const c=calcJunk(),crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),_dr=junkSiteDrive();
   const drive=junkDriveCharge(crew),dumpAmort=Math.round(junkDumpAmort(c.cuft)),work=c.haul+c.locLabor+c.modLabor;
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
