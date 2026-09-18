@@ -60,7 +60,9 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);ba
 
 .navcta .btn{padding:11px 18px;font-size:16px}
 /* a mid-width band where 5 links + a phone button get tight: shrink the links before anything wraps */
-@media(max-width:1180px){.navlinks{gap:17px;font-size:15.5px}.navcta .btn{padding:10px 15px;font-size:15px}}
+.cta-short{display:none}
+@media(max-width:1180px){.navlinks{gap:15px;font-size:15.5px}.navcta .btn{padding:10px 14px;font-size:15px}.cta-num{display:none}.cta-short{display:inline}}
+@media(max-width:1060px){.navlinks{gap:12px;font-size:14.5px}.navcta{display:none}}
 /* hero */
 .hero{background:var(--ink);color:#fff;position:relative;overflow:hidden;padding:74px 0 78px}
 .hero:before{content:"";position:absolute;right:-180px;top:-150px;width:560px;height:560px;background:radial-gradient(closest-side,rgba(242,106,27,.20),transparent 70%)}
@@ -189,3 +191,7 @@ footer.site b{color:#b6bbc2}
 .hero>.wrap{position:relative}
 .hero>.wrap>*:not(.hero-mark){position:relative;z-index:1}
 @media(max-width:760px){.hero-mark{right:calc(var(--mx,38%) - 30%);top:calc(var(--my,-55%) + 25%);height:calc(var(--mh,210%) * .6);opacity:calc(var(--mo,.14) * .85)}}
+
+/* payment chips (home, contact, pricing): plain type chips, no logos */
+.pays{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:26px}
+.pay{display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-weight:700;font-size:15px;color:var(--ink)}
