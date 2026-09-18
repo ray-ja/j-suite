@@ -3,8 +3,15 @@ const JUNK_FULL=480;      // cu ft in a standard 18-cu-yd junk truck = industry 
 const JUNK_EIGHTH=60;     // cu ft = 1/8 of a standard truck
 const JUNK_TRIPBASE=0;    // retired — "the truck is moving" is the static drive + the $175 minimum, NOT a volume base
 const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + disposal margin); the drive is added separately. Tune to taste.
-const JUNK_CREW_MIN=2;    // Ray, 2026-09-18: "quote off the assumption that everything is a two person job" — nobody runs a one-man crew; the pay check never assumes solo
-const JUNK_MIN=175;       // minimum job ($) — we don't walk out the door for less
+/* ONE-PERSON vs TWO-PERSON (Ray, 2026-09-18, after the two-person-only hour): "Joe's fridges could have been one person
+   easily… curbside… maybe we just have that $300 minimum for a two-man crew, and anything under that is one man… price out
+   both, give them both options." So the crew stepper stays (1 or 2), the MINIMUM depends on the crew, and the footer shows
+   BOTH prices so the phone script can offer "get it to the curb and it's the one-person rate". junkSoloOK() says whether a
+   load is honestly a one-person carry (curb/ground, nothing heavy, no stairs). */
+const JUNK_CREW_MIN=1;
+const JUNK_MIN_BY_CREW={1:175,2:300};
+function junkMinFor(crew){ return JUNK_MIN_BY_CREW[Math.min(2,Math.max(1,crew||2))]; }
+const JUNK_MIN=JUNK_MIN_BY_CREW[1];       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=90;        // Soundside transfer station COST $/ton (2026-08-28) — the customer CHARGE is JUNK_CD_TON below
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
 const JUNK_DUMP_DEFAULT=450; // default roll-off dumpster $ (NC 20-yd ≈ $300–450/wk)
@@ -52,7 +59,7 @@ function junkHaulSuggest(c){
 const JUNK_MH_TRIP_MILES=88, JUNK_MH_TRIP_MIN=120, JUNK_MH_FRIDGES_PER_RUN=4, JUNK_MH_MATTRESSES_PER_RUN=6;
 const JUNK_MH_RUN_COST=Math.round(JUNK_MH_TRIP_MILES*0.725 + (JUNK_MH_TRIP_MIN/60)*(45/0.48));   // ≈ $251 per full run
 const JUNK_MH_TIP=10;                                                                             // tipping per unit at $75/ton
-const JUNK_FEE={freon:Math.round((JUNK_MH_RUN_COST/JUNK_MH_FRIDGES_PER_RUN+JUNK_MH_TIP)/5)*5,        // = $75 per fridge / freezer
+const JUNK_FEE={freon:25,                                                                          // fridge/freezer: stashed at the warehouse, fixed + resold when decent, else batched to Manns Harbor (Ray 2026-09-18: $75 was too high)
                 freon_sm:Math.round((JUNK_MH_RUN_COST/16+JUNK_MH_TIP)/5)*5,                        // = $25 window AC / dehumidifier (16 ride along)
                 mattress:Math.round((JUNK_MH_RUN_COST/JUNK_MH_MATTRESSES_PER_RUN+JUNK_MH_TIP)/5)*5, // = $50 per mattress / box spring
                 tire:8,ewaste:30,paint:10,appliance:25};
@@ -160,6 +167,22 @@ function junkEngineObj(c){
   const crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
   return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14),dumpHrs:50/60,materials:(c.special||0)};
 }
+/* price for a given crew size: volume + drive(crew) + dump share + special, floored at that crew's minimum */
+function junkPriceFor(c,crew){ crew=Math.max(1,crew||2); const work=c.haul+c.locLabor+c.modLabor, drive=junkDriveCharge(crew), da=Math.round(junkDumpAmort(c.cuft)); return Math.max(junkMinFor(crew),Math.ceil((work+drive+da+c.special)/25)*25); }
+/* is this load an honest one-person carry? curb or ground level only, nothing flagged heavy / long carry / disassembly,
+   no single item over JUNK_SOLO_MAX_LB, and no more than JUNK_SOLO_MAX_CUFT total. Returns {ok, why}. */
+const JUNK_SOLO_MAX_LB=250, JUNK_SOLO_MAX_CUFT=120;
+function junkSoloOK(lines){
+  let cuft=0;
+  for(const li of (lines||[])){ const it=junkItem(li.key); if(!it)continue;
+    for(const loc of Object.keys(li.locs||{})){ const q=+li.locs[loc]||0; if(q<=0)continue; if(loc!=="curbside"&&loc!=="ground")return {ok:false,why:"stairs / inside carry"}; cuft+=it[2]*q; }
+    if(li.heavy||li.longcarry||li.disasm||li.bolted)return {ok:false,why:"flagged heavy / long carry / teardown"};
+    if(it[3]>JUNK_SOLO_MAX_LB)return {ok:false,why:it[1]+" is a two-person lift"};
+    if(junkItemTeardownMin(it)>0)return {ok:false,why:"teardown item"};
+  }
+  if(cuft>JUNK_SOLO_MAX_CUFT)return {ok:false,why:"too much volume for one"};
+  return {ok:true,why:""};
+}
 function wizJunkUI(){
   if(!WZ.junk)WZ.junk=[];
   let h=wizHead(3,5,"Junk / move-out — build the load");
@@ -173,7 +196,7 @@ function wizJunkUI(){
   // PRICE = volume + STATIC site drive + this job's amortized DUMP SHARE (by volume) + special-item disposal
   const _crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),_dr=junkSiteDrive();
   const drive=junkDriveCharge(_crew), dumpAmort=Math.round(junkDumpAmort(c.cuft)), work=c.haul+c.locLabor+c.modLabor;
-  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
+  const price=junkPriceFor(c,_crew), priceSolo=junkPriceFor(c,1), priceDuo=junkPriceFor(c,2), solo=junkSoloOK(WZ.junk);
   // $/hr each CHECK — STASHED, so NO dump run on this job; job time = 20-min baseline + load + site drive
   const onsiteHrs=(20+(c.loadMin||0))/60;
   const totalPH=_crew*onsiteHrs+_crew*(_dr.min/60);
@@ -203,6 +226,7 @@ function wizJunkUI(){
       </div>
       <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · <span style="color:#1a7f37">national ${money(bandLo)}–${money(bandHi)}</span> · <span style="color:#0e7c86">OBX ${money(obxLo)}–${money(obxHi)}</span> · clears $45/hr at <b>${money(pay45)}</b> · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
     </div>
+    <div style="flex-basis:100%;font-size:12px;line-height:1.5"><span onclick="WZ.junkCrew=1;render()" style="cursor:pointer;${_crew===1?"font-weight:800":""}">👤 1 person <b>${money(priceSolo)}</b></span>${solo.ok?` <span class="badge" style="background:#e9f1dc;color:#1b2330">curb-ready</span>`:` <span class="sub">(${esc(solo.why)})</span>`} · <span onclick="WZ.junkCrew=2;render()" style="cursor:pointer;${_crew===2?"font-weight:800":""}">👥 2 people <b>${money(priceDuo)}</b></span> <span class="sub">· min $${JUNK_MIN_BY_CREW[1]} / $${JUNK_MIN_BY_CREW[2]} · offer both on the phone</span></div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(JUNK_CREW_MIN,(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))+1;render()">+</button></span>
     <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
@@ -285,7 +309,7 @@ window.wizAddJunk=function(){
   if(WZ.junkBedbug){if(!confirm("Bed bugs flagged — we don't haul bed-bug items. Make sure they're excluded from this quote before continuing."))return;}
   const c=calcJunk(),crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),_dr=junkSiteDrive();
   const drive=junkDriveCharge(crew),dumpAmort=Math.round(junkDumpAmort(c.cuft)),work=c.haul+c.locLabor+c.modLabor;
-  const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
+  const price=junkPriceFor(c,crew);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
   if(c.wgUnits)notes.push(c.wgUnits+" fridge/mattress unit(s) — Manns Harbor transfer station disposal (county recovers the freon); each unit's share of the run + tipping included.");
   if(c.counts.cd)notes.push("Heavy / C&D items — weight-billed at the transfer station; tipping fee included.");
