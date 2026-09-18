@@ -1,0 +1,14 @@
+const A=require("./js/180-address-unit.js");let n=0,f=0;const eq=(a,b,m)=>{n++;if(JSON.stringify(a)!==JSON.stringify(b)){f++;console.log("FAIL",m,a,b);}};
+eq(A.fullAddr({address:"4 Ginguite Trail, Southern Shores, NC 27949",unit:"2A"}),"4 Ginguite Trail, Unit 2A, Southern Shores, NC 27949","unit after street");
+eq(A.fullAddr({address:"4 Ginguite Trail, Southern Shores, NC",unit:"Apt 3"}),"4 Ginguite Trail, Apt 3, Southern Shores, NC","keeps a typed label");
+eq(A.fullAddr({address:"4 Ginguite Trail, Southern Shores, NC",unit:"#7"}),"4 Ginguite Trail, #7, Southern Shores, NC","hash label");
+eq(A.fullAddr({address:"913 Cedar Dr",unit:"B"}),"913 Cedar Dr, Unit B","no commas");
+eq(A.fullAddr({address:"913 Cedar Dr"}),"913 Cedar Dr","no unit = unchanged");
+eq(A.fullAddr({address:"913 Cedar Dr",unit:"  "}),"913 Cedar Dr","blank unit ignored");
+eq(A.fullAddr({unit:"2A"}),"2A","unit only");
+const props=[{id:"p1",address:"1 Main St, Duck, NC",unit:"2A"}],custs=[{id:"c1",address:"9 Elm St, Duck, NC"},{id:"c2"}];
+eq(A.jobAddrFull({propertyId:"p1",customerId:"c1"},props,custs),"1 Main St, Unit 2A, Duck, NC","job uses property with unit");
+eq(A.jobAddrFull({customerId:"c1",address:"5 Oak St"},props,custs),"5 Oak St","job address next");
+eq(A.jobAddrFull({customerId:"c1"},props,custs),"9 Elm St, Duck, NC","then customer");
+eq(A.jobAddrFull({customerId:"c2"},props,custs,id=>[{address:"7 Pine St",unit:"4"}]),"7 Pine St, Unit 4","then first property of customer");
+console.log("=========  "+(n-f)+" passed, "+f+" failed  =========");process.exit(f?1:0);

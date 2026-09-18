@@ -243,6 +243,8 @@ function tcSourceBadge(e) {
   if (s === "odometer") return `<span class="badge" style="background:var(--accent);color:var(--accent-ink)">odometer</span>`;
   if (s === "manual") return `<span class="badge" style="background:var(--brand,#1B2A4E);color:#fff">manual</span>`;
   if (s === "gps") return `<span class="badge" style="background:var(--soft);color:var(--muted)">GPS est</span>`;
+  if (s === "route") return `<span class="badge" style="background:#e9f1dc;color:#1b2330">route (auto)</span>`;
+  if (s === "standard") return `<span class="badge" style="background:#e9f1dc;color:#1b2330">standard route</span>`;
   return "";
 }
 

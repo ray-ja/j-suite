@@ -262,7 +262,7 @@ window.openJob=function(id,customerId,presetDate){
   const _c=j.customerId?d.customers.find(x=>x.id===j.customerId):null;
   const _tel=((_c&&_c.phone)||"").replace(/[^0-9+]/g,"");
   const _p=(j.propertyId&&typeof actProps==="function")?actProps().find(p=>p.id===j.propertyId):null;
-  const _addr=(_p&&_p.address)||j.address||(_c&&_c.address)||(_c&&typeof propsForCust==="function"&&(propsForCust(_c.id)[0]||{}).address)||"";
+  const _addr=(typeof jobAddrFull==="function"?jobAddrFull(j,actProps(),d.customers||[],typeof propsForCust==="function"?propsForCust:null):"")||(_p&&_p.address)||j.address||(_c&&_c.address)||(_c&&typeof propsForCust==="function"&&(propsForCust(_c.id)[0]||{}).address)||"";
   const _contact=(!isNew&&(_tel||_addr))?`<div class="row" style="gap:8px;margin:0 0 12px">${_tel?`<a class="btn ghost sm grow" href="tel:${_tel}" style="text-align:center">📞 Call</a><a class="btn ghost sm grow" href="sms:${_tel}" style="text-align:center">💬 Text</a>`:""}${_addr?`<a class="btn ghost sm grow" href="https://maps.google.com/?q=${encodeURIComponent(_addr)}" target="_blank" rel="noopener" style="text-align:center">🗺️ Directions</a>`:""}</div>`:"";
   modal(isNew?"Schedule job":"Job",`${_contact}
     <label>Job / service</label><input id="j_title" value="${esc(j.title||"")}" placeholder="e.g. Power wash — driveway">
@@ -526,7 +526,8 @@ window.saveJob=function(id,isNew){
 };
 window.toggleJob=function(id){const j=D().jobs.find(x=>x.id===id);j.done=!j.done;
   if(j.done){j.completedAt=now();j.completedBy=((typeof curUser==="function"&&curUser())?curUser().id:null);
-    if(typeof invAutoFlagCleaningForJob==="function")invAutoFlagCleaningForJob(j);  /* CLEANING (Phase 4): flag dirties-with-use gear for cleaning on wrap (idempotent; reopen doesn't clear) */
+    if(typeof invAutoFlagCleaningForJob==="function")invAutoFlagCleaningForJob(j);
+    if(typeof autoMileageOnDone==="function")autoMileageOnDone(j);   /* js/181: route mileage from addresses, no odometer (Ray 2026-09-18) */  /* CLEANING (Phase 4): flag dirties-with-use gear for cleaning on wrap (idempotent; reopen doesn't clear) */
   }else{j.completedAt=null;j.completedBy=null;}  /* ops-brain capture: stamp completion time + who */
   if(typeof logChange==="function")logChange("update","job",id,(j.done?"Completed ":"Reopened ")+(j.title||"job"));touch(j);save();render();};   /* review prompt moved to the INVOICED moment (js/23 wizToggleInvoiced + js/46 invMark) per Ray — ask once you're billing, not at job-done */
 window.delJob=function(id){if(!confirm("Delete this job? It (and its quote) go to the Archive for 60 days — restore it there if needed."))return;

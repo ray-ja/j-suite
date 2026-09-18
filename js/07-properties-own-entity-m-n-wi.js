@@ -11,6 +11,7 @@ window.openProperty=function(id,linkCustId){
   modal(isNew?"New property":"Property",`
     <label>Label</label><input id="p_label" value="${esc(p.label||"")}" placeholder="e.g. Main office, Beach house">
     <label>Address</label><div class="acwrap"><input id="p_addr" value="${esc(p.address||"")}" placeholder="Start typing the address…" oninput="addrSuggest('p_addr','p_box')"><div class="acbox" id="p_box"></div></div>
+    <label>Unit / apt / suite <span class="sub">(optional, line 2)</span></label><input id="p_unit" value="${esc(p.unit||"")}" placeholder="e.g. Unit 2A" autocomplete="off">
     <label>Access notes (gate code, pets, parking…)</label><textarea id="p_access">${esc(p.accessNotes||"")}</textarea>
     <h2 style="margin-top:14px">Linked customers</h2>
     <div id="p_custs"></div>
@@ -29,7 +30,7 @@ window.linkCust=function(cid){if(cid&&PCUSTS.indexOf(cid)<0)PCUSTS.push(cid);ren
 window.unlinkCust=function(cid){PCUSTS=PCUSTS.filter(x=>x!==cid);renderPropCusts();};
 window.saveProperty=function(id,isNew){
   const d=D();let p=isNew?{id:id,lat:null,lng:null,customerIds:[]}:d.properties.find(x=>x.id===id);
-  p.label=val("p_label");p.address=val("p_addr");p.accessNotes=val("p_access");p.customerIds=PCUSTS.slice();
+  p.label=val("p_label");p.address=val("p_addr");p.unit=(val("p_unit")||"").trim();p.accessNotes=val("p_access");p.customerIds=PCUSTS.slice();
   if(!p.label&&!p.address){alert("Add a label or address.");return;}
   if(typeof submitGuard==="function"&&!submitGuard("saveProperty:"+id))return;   // rapid-tap dupe guard
   touch(p);if(isNew)d.properties.push(p);

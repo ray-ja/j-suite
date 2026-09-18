@@ -14,6 +14,7 @@ window.jobResetOpen = function () { window.JOB_OPEN = null; window.JOB_RETURN_TA
 function jobAddr(j) {
   const _p = (j.propertyId && typeof actProps === "function") ? actProps().find(p => p.id === j.propertyId) : null;
   const _c = (typeof actC === "function") ? actC().find(c => c.id === j.customerId) : null;
+  if (typeof jobAddrFull === "function") return jobAddrFull(j, (typeof actProps === "function") ? actProps() : [], (typeof actC === "function") ? actC() : [], (typeof propsForCust === "function") ? propsForCust : null);   // js/180: property unit / line 2 rides along
   return (_p && _p.address) || j.address || (_c && _c.address) || (_c && typeof propsForCust === "function" && (propsForCust(_c.id)[0] || {}).address) || "";
 }
 /* ===== Google Maps link builders — labels at the call site must always say WHERE the link goes (never bare
@@ -481,6 +482,7 @@ function rJobPage(j) {
   _secCosts += (typeof jobRcptCardHTML === "function") ? jobRcptCardHTML(j) : "";
   /* ⚖️ back to the pricing table, fed the receipts (js/169) — the loop-closer Ray asked for 2026-09-01 */
   _secCosts += (typeof rpBtnHTML === "function") ? rpBtnHTML(j) : "";
+  _secCosts += (typeof jobAutoMileageHTML === "function") ? jobAutoMileageHTML(j) : "";   // js/181: route mileage from addresses
 
   // Notes
   let _secNotes = `<div class="card"><div style="font-weight:800;margin-bottom:6px">📝 Notes <span class="sub" style="font-weight:400">· Cap learns from these</span></div>

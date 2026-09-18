@@ -2530,7 +2530,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
   // e.g. a change order the customer needs to see), no pay button, no due-on-receipt language.
   const isQuote = !isCombo && !q.invoiced && !q.paid;
   const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
-  const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", cust.address, cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
+  const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", [cust.address, cust.unit].filter(Boolean).join(", "), cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
   let rows, adjRows;
   if (isCombo) {
     // COMBINED: one invoice, one line per job (each line's own invoice no beneath, settled lines checked).
