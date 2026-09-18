@@ -43,14 +43,18 @@ function junkHaulSuggest(c){
   if(t<=1)return{method:"trailer",label:"One trailer load",note:cap.pctOfBox+"% of the box"+wtNote};
   if(t<=2.2)return{method:"trailer",label:cap.tripsUp+" trailer loads",note:"multi-trip job"+wtNote};
   return{method:"rolloff",label:cap.tripsUp+" trailer loads — consider a roll-off",note:"whole-house volume; a dumpster may beat "+cap.tripsUp+" trips"+wtNote};}
-/* ⭐ FRIDGES + MATTRESSES (Ray, 2026-09-17, final): Soundside will only take one "if it's mixed in with a load of C&D",
-   and we can't conjure a mixed load, so we don't rely on it. EVERY fridge and EVERY mattress is priced as a trip to Dare
-   County's Manns Harbor transfer station ($75/ton; Currituck's Maple is $105 in-county / $115 out, so Dare always wins).
-   Manns Harbor is 50 minutes each way, rounded to two hours of driving, and that run is priced INTO any job that carries
-   one: mileage + the driver's two hours at the loaded rate, once per job, plus tipping per unit. */
-const JUNK_MH_TRIP_MILES=88, JUNK_MH_TRIP_MIN=120;                                                // round trip · two hours
-const JUNK_MH_RUN_COST=Math.round(JUNK_MH_TRIP_MILES*0.725 + (JUNK_MH_TRIP_MIN/60)*(45/0.48));   // ≈ $251 per job that carries a fridge or mattress
-const JUNK_FEE={freon:10,mattress:10,tire:8,ewaste:30,paint:10,appliance:25};                    // freon/mattress = tipping only; the run is added by calcJunk
+/* ⭐ FRIDGES + MATTRESSES (Ray, 2026-09-18): Soundside only takes one "mixed in with a load of C&D", which we can't count
+   on, so they all go to Dare County's Manns Harbor transfer station ($75/ton; Maple is $105/$115, Dare always wins).
+   But we don't run there per job: a single fridge or mattress is STASHED at the warehouse until there's a full load.
+   Manns Harbor is 50 min each way, rounded to two hours, so the run (mileage + two hours at the loaded rate ≈ $251) is
+   AMORTIZED over what the trailer carries on average: 4 fridges or 6 mattresses. Each unit pays its share + tipping. */
+const JUNK_MH_TRIP_MILES=88, JUNK_MH_TRIP_MIN=120, JUNK_MH_FRIDGES_PER_RUN=4, JUNK_MH_MATTRESSES_PER_RUN=6;
+const JUNK_MH_RUN_COST=Math.round(JUNK_MH_TRIP_MILES*0.725 + (JUNK_MH_TRIP_MIN/60)*(45/0.48));   // ≈ $251 per full run
+const JUNK_MH_TIP=10;                                                                             // tipping per unit at $75/ton
+const JUNK_FEE={freon:Math.round((JUNK_MH_RUN_COST/JUNK_MH_FRIDGES_PER_RUN+JUNK_MH_TIP)/5)*5,        // = $75 per fridge / freezer
+                freon_sm:Math.round((JUNK_MH_RUN_COST/16+JUNK_MH_TIP)/5)*5,                        // = $25 window AC / dehumidifier (16 ride along)
+                mattress:Math.round((JUNK_MH_RUN_COST/JUNK_MH_MATTRESSES_PER_RUN+JUNK_MH_TIP)/5)*5, // = $50 per mattress / box spring
+                tire:8,ewaste:30,paint:10,appliance:25};
 const JUNK_CD_TON=120;   // heavy/C&D disposal CHARGE to the customer — Soundside bills us $90/ton (2026-08-28)
                          // ⭐ KEPT at $120 by Ray's call, 2026-08-28: "we dont need to reduce prices that were already in line
                          //    with national and local levels." The spread (~$30/ton) is margin, and it is deliberate.
@@ -73,7 +77,7 @@ window.setTruckCap=function(v){v=parseFloat(v)||JUNK_TRAILER_CUFT;let d=S.obx.do
 const JUNK_CAT=[
  ["Furniture",[["sofa","Sofa / couch",30,100,""],["sectional","Sectional (per piece)",40,130,""],["loveseat","Loveseat",22,80,""],["recliner","Recliner / armchair",20,75,""],["dining_t","Dining table",22,90,""],["chair","Chair (each)",5,15,""],["table_sm","Coffee / end table",6,30,""],["dresser","Dresser",18,110,""],["nightstand","Nightstand",5,30,""],["bookshelf","Bookshelf",12,55,""],["desk","Desk",16,80,""],["wardrobe","Wardrobe / armoire",28,140,""],["bedframe","Bed frame / headboard",12,55,""],["cabinet","China cabinet / hutch",28,140,""]]],
  ["Mattresses",[["mat_t","Mattress – twin / full",12,45,"mattress"],["mat_q","Mattress – queen / king",18,75,"mattress"],["box","Box spring",12,40,"mattress"]]],
- ["Appliances",[["fridge","Refrigerator",32,220,"freon"],["freezer","Chest freezer",25,150,"freon"],["wac","Window AC unit",4,60,"freon"],["dehum","Dehumidifier",4,40,"freon"],["washer","Washer",16,160,"appliance"],["dryer","Dryer",16,110,"appliance"],["stove","Stove / oven",18,150,"appliance"],["dish","Dishwasher",12,80,"appliance"],["wh","Water heater",14,120,"appliance"],["micro","Microwave",2,35,""]]],
+ ["Appliances",[["fridge","Refrigerator",32,220,"freon"],["freezer","Chest freezer",25,150,"freon"],["wac","Window AC unit",4,60,"freon_sm"],["dehum","Dehumidifier",4,40,"freon_sm"],["washer","Washer",16,160,"appliance"],["dryer","Dryer",16,110,"appliance"],["stove","Stove / oven",18,150,"appliance"],["dish","Dishwasher",12,80,"appliance"],["wh","Water heater",14,120,"appliance"],["micro","Microwave",2,35,""]]],
  ["Electronics",[["tv_flat","TV – flat screen",5,35,"ewaste"],["tv_crt","TV – old / CRT",8,80,"ewaste"],["computer","Computer / monitor",3,20,"ewaste"],["e_misc","Box of electronics",3,25,"ewaste"]]],
  ["Outdoor / garage",[["grill","Grill",14,70,""],["mower","Lawn mower",14,80,""],["tire","Tire (each)",4,25,"tire"],["bike","Bicycle",8,25,""],["patio","Patio set (per piece)",16,70,""],["hottub","Hot tub",110,600,"cd","heavy & awkward — 2-person, often a long carry; weight-billed at the dump"],["propane","Propane tank",3,30,"paint"]]],
  ["Construction / debris",[["debris","Bag of debris",4,50,""],["carpet","Carpet – per room",18,90,""],["wood","Wood / lumber pile",24,260,"cd","bulky construction wood — weight-billed"],["drywall","Drywall pile",20,400,"cd","heavy debris — weight-billed; big pile → suggest a dumpster"],["concrete","Concrete / brick (per load)",10,500,"cd","very dense — weight-billed; 2-3+ loads → suggest a dumpster"],["fixture","Toilet / sink",10,80,""]]],
@@ -124,10 +128,9 @@ function calcJunk(){
       const fl=it[4],fee=junkItemFee(it);if(fee>0){special+=fee*q;counts[fl]=(counts[fl]||0)+q;}});
     loadMin+=junkLineLoadMin(it,li);
   });
-  /* any fridge or mattress in the load = a Manns Harbor run, priced once per job */
-  const wgUnits=(counts.freon||0)+(counts.mattress||0);
-  const mhRun=wgUnits>0?JUNK_MH_RUN_COST:0;
-  special+=mhRun;
+  /* fridges + mattresses are stashed for a batched Manns Harbor run; their share is already in special via JUNK_FEE */
+  const wgUnits=(counts.freon||0)+(counts.freon_sm||0)+(counts.mattress||0);
+  const mhRun=0;
   const eighths=cuft/JUNK_EIGHTH;
   const haul=cuft>0?eighths*JUNK_PEREIGHTH:0;                                                               // PURE volume — no base (the static drive + $175 min already cover "the truck is moving")
   let total=0;if(cuft>0)total=Math.max(JUNK_MIN,Math.ceil((haul+locLabor+modLabor+special)/25)*25);          // residential: NO weight surcharge
@@ -162,7 +165,7 @@ function wizJunkUI(){
   h+=`<div class="card" style="padding:10px"><input id="je_search" value="${esc(WZ.junkSearch||"")}" placeholder="🔎 Search items — type TV, carpet, fridge…" autocomplete="off" oninput="wizJSearch()" style="margin:0">${WZ.junkSearch?`<button class="btn ghost sm" style="margin-top:8px" onclick="WZ.junkSearch='';render()">✕ Clear search</button>`:""}</div>`;
   h+=`<div id="je_catalog">`+junkCatalogHTML()+`</div>`;
   const c=calcJunk(),cap=getTruckCap();
-  if(c.wgUnits)h+=`<div class="card" style="border-left:4px solid var(--warn,#c90);font-size:12.5px;line-height:1.5">🚛 ${c.wgUnits} fridge/mattress unit(s): these go to Dare County\u2019s Manns Harbor transfer station ($75/ton, county recovers any freon), about two hours of driving round trip. The price includes that run once: <b>${money(c.mhRun)}</b> plus tipping per unit. Keep fridges upright with the sealed system intact.</div>`;
+  if(c.wgUnits)h+=`<div class="card" style="border-left:4px solid var(--warn,#c90);font-size:12.5px;line-height:1.5">🚛 ${c.wgUnits} fridge/mattress unit(s): Soundside won\u2019t take them, so they get stashed at the warehouse for a batched Manns Harbor run (two hours round trip, $75/ton, county recovers the freon). Each unit carries its share of that run plus tipping: fridge/freezer $${JUNK_FEE.freon}, mattress/box spring $${JUNK_FEE.mattress}, window AC $${JUNK_FEE.freon_sm}. Keep fridges upright with the sealed system intact.</div>`;
   if(c.counts.cd)h+=`<div class="card" style="border-left:4px solid #b8860b;font-size:12.5px;line-height:1.5">🧱 Heavy / C&amp;D in this load — the transfer station bills by <b>weight</b>, so the price includes an estimated tipping fee.${c.loadMin>30?` <b>Big debris load (~${Math.round(c.loadMin)} min to load)</b> — for anything this size, recommend a <b>dumpster rental</b>; that's really a construction-debris job, not a junk haul.`:""}</div>`;
   // Bed bugs — we don't haul them, period. Always ask.
   h+=`<div class="card" style="border-left:4px solid var(--danger)"><label class="toggle" style="margin:0"><input type="checkbox" ${WZ.junkBedbug?"checked":""} onchange="wizJunkBedbug(this.checked)"><span style="margin:0;font-weight:700">🐛 Any bed bugs? — always ask</span></label>${WZ.junkBedbug?`<div style="margin-top:8px;font-size:13px;line-height:1.6;color:var(--danger);font-weight:700">🚫 We don't haul anything with bed bugs. One infestation contaminates the truck and every job after — it's not worth it. Decline the job, or exclude the infested items and quote only the rest.</div>`:`<div class="sub" style="margin-top:4px">Ask the customer before you load. If there are bed bugs, we pass.</div>`}</div>`;
@@ -283,7 +286,7 @@ window.wizAddJunk=function(){
   const drive=junkDriveCharge(crew),dumpAmort=Math.round(junkDumpAmort(c.cuft)),work=c.haul+c.locLabor+c.modLabor;
   const price=Math.max(JUNK_MIN,Math.ceil((work+drive+dumpAmort+c.special)/25)*25);
   const itemCount=WZ.junk.reduce((s,x)=>s+junkLineQty(x),0),notes=[];
-  if(c.wgUnits)notes.push(c.wgUnits+" fridge/mattress unit(s) — Manns Harbor transfer station run (two hours round trip, $75/ton, county recovers the freon); "+money(c.mhRun)+" run + tipping included.");
+  if(c.wgUnits)notes.push(c.wgUnits+" fridge/mattress unit(s) — Manns Harbor transfer station disposal (county recovers the freon); each unit's share of the run + tipping included.");
   if(c.counts.cd)notes.push("Heavy / C&D items — weight-billed at the transfer station; tipping fee included.");
   const _cap=c.cap||junkCapCheck(c.cuft,c.lbs);
   notes.push("≈ "+_cap.trips.toFixed(2)+" trailer load"+(_cap.trips>=1.005?"s":"")+" ("+c.cuft+" cu ft = "+_cap.pctOfBox+"% of the box, "+c.lbs+" lb = "+_cap.pctOfWeight+"% of the 3,600-lb cap) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
