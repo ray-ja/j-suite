@@ -79,7 +79,7 @@ if (typeof window !== "undefined") {
       const dr = (ll && typeof driveFromBase === "function") ? driveFromBase(ll.lat, ll.lng) : null;
       body = ll ? (dr ? `Estimate <b>${dr.roundMiles} mi</b> round trip from base. Booked automatically when the job is marked done.` : `Routing from base… booked automatically when the job is marked done.`) : `<span style="color:var(--danger)">No map location on the property, so mileage can't be figured. Add the address to the property.</span>`;
     }
-    return `<div class="li" style="margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🚗 Mileage (from addresses)</div><div class="sub" style="white-space:normal">${body}</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="amRecalc('${j.id}')">${e ? "Recalculate" : "Book now"}</button></div>`;
+    return `<div class="li" style="margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🚗 Mileage (from addresses)</div><div class="sub" style="white-space:normal">${body}</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="amRecalc('${j.id}')">${e ? "Recalculate" : (other ? "Use route miles instead" : "Book now")}</button></div>`;
   };
 }
 if (typeof module !== "undefined" && module.exports) { module.exports = { amEntryId, amHasOtherMiles, amDriver, amVehicle, amBuildEntry, amRound }; }
