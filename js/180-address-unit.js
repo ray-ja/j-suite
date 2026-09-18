@@ -9,10 +9,12 @@ function fullAddr(rec) {
   if (!a) return u;
   if (!u) return a;
   /* "4 Ginguite Trail, Southern Shores, NC" + "2A" → "4 Ginguite Trail, Unit 2A, Southern Shores, NC" (unit right after the street) */
-  const parts = a.split(",");
+  const parts = a.split(",").map(s => s.trim()).filter(Boolean);
   const label = /^(unit|apt|apartment|suite|ste|#|bldg|building|lot)\b/i.test(u) || /^#/.test(u) ? u : "Unit " + u;
-  if (parts.length > 1) return parts[0].trim() + ", " + label + ", " + parts.slice(1).map(s => s.trim()).join(", ");
-  return a + ", " + label;
+  /* Nominatim writes "1115, Ocean Trail, Corolla, …" (house number as its own part) — the unit goes after the STREET part,
+     i.e. after the first part that has letters in it */
+  let at = parts.findIndex(s => /[a-z]/i.test(s)); if (at < 0) at = parts.length - 1;
+  return parts.slice(0, at + 1).concat([label], parts.slice(at + 1)).join(", ");
 }
 /* the display line for a job: property (with unit) → job address → customer address → customer's first property */
 function jobAddrFull(j, props, custs, propsForCustFn) {

@@ -4,6 +4,8 @@ eq(A.fullAddr({address:"4 Ginguite Trail, Southern Shores, NC",unit:"Apt 3"}),"4
 eq(A.fullAddr({address:"4 Ginguite Trail, Southern Shores, NC",unit:"#7"}),"4 Ginguite Trail, #7, Southern Shores, NC","hash label");
 eq(A.fullAddr({address:"913 Cedar Dr",unit:"B"}),"913 Cedar Dr, Unit B","no commas");
 eq(A.fullAddr({address:"913 Cedar Dr"}),"913 Cedar Dr","no unit = unchanged");
+eq(A.fullAddr({address:"1115, Ocean Trail, Lighthouse Cove, Corolla, NC 27927",unit:"2A"}),"1115, Ocean Trail, Unit 2A, Lighthouse Cove, Corolla, NC 27927","Nominatim style: unit after the street part");
+eq(A.fullAddr({address:"1115",unit:"2A"}),"1115, Unit 2A","number only");
 eq(A.fullAddr({address:"913 Cedar Dr",unit:"  "}),"913 Cedar Dr","blank unit ignored");
 eq(A.fullAddr({unit:"2A"}),"2A","unit only");
 const props=[{id:"p1",address:"1 Main St, Duck, NC",unit:"2A"}],custs=[{id:"c1",address:"9 Elm St, Duck, NC"},{id:"c2"}];
