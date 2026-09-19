@@ -26,6 +26,7 @@
 <meta property="og:description" content="Outer Banks junk removal and demolition: decks, sheds, fences, hot tubs, concrete, boats under 14 ft, furniture, appliances, cleanouts and debris. We tear it out, load it, and haul it off. Moyock to Ocracoke. Call or text (252) 207-5985.">
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="" defer></script><script src="area-map.js" defer></script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"HomeAndConstructionBusiness","name":"OBX Junk Co.","image":"https://www.obxjunkco.com/logo.svg","url":"https://www.obxjunkco.com","telephone":"+1-252-207-5985","priceRange":"$$","areaServed":["Dare County NC","Currituck County NC","Ocracoke NC","Corolla NC","Duck NC","Southern Shores NC","Kitty Hawk NC","Kill Devil Hills NC","Nags Head NC","Manteo NC","Rodanthe NC","Avon NC","Buxton NC","Hatteras NC","Moyock NC","Coinjock NC","Grandy NC"],"address":{"@type":"PostalAddress","addressRegion":"NC","addressLocality":"Outer Banks","addressCountry":"US"},"description":"Junk removal, demolition and cleanouts on the Outer Banks: decks, sheds, fences, hot tubs, concrete, furniture, appliances and debris.","parentOrganization":{"@type":"Organization","name":"OBX Lot Solutions"}}
 </script>
@@ -130,8 +131,8 @@
   <div class="wrap center">
     <div class="eyebrow">How you can pay</div>
     <h2>Pay however you like.</h2>
-    <p class="lede">At the door or from the link we text you after the job. Pay-over-time options come through the same link.</p>
-    <div class="pays"><span class="pay">Cash (bills up to $50)</span><span class="pay">Visa</span><span class="pay">Mastercard</span><span class="pay">American Express</span><span class="pay">Discover</span><span class="pay">Debit cards</span><span class="pay">Tap to pay at the door</span><span class="pay">Apple Pay</span><span class="pay">Google Pay</span><span class="pay">Pay online by link</span><span class="pay">Bank transfer (ACH)</span><span class="pay">Klarna</span><span class="pay">Affirm</span><span class="pay">Afterpay</span><span class="pay">Cash App Pay</span><span class="pay">Amazon Pay</span><span class="pay">Bitcoin</span><span class="pay">Solana</span></div>
+    <p class="lede">At the door, or online from the link we text you. Buy now, pay later is Klarna, Affirm or Afterpay, through the same link.</p>
+    <div class="pays"><span class="pay">Cash (bills up to $50)</span><span class="pay logo"><img src="img/visa.svg" alt="Visa"></span><span class="pay logo"><img src="img/mastercard.svg" alt="Mastercard"></span><span class="pay logo"><img src="img/amex.svg" alt="American Express"></span><span class="pay logo"><img src="img/discover.svg" alt="Discover"></span><span class="pay">Apple Pay</span><span class="pay">Google Pay</span><span class="pay">Pay online</span><span class="pay">Buy now, pay later</span></div>
     <p style="margin-top:22px;color:var(--body);font-size:16px"><a href="pricing.html" style="color:var(--orange-deep);font-weight:700">Before you call: how the price comes together</a></p>
   </div>
 </section>
@@ -141,6 +142,7 @@
     <div class="eyebrow">Where we haul</div>
     <h2>All over the Outer Banks.</h2>
     <p class="lede">All of Dare and Currituck counties, plus Ocracoke: beach, islands and mainland.</p>
+    <div id="areamap" class="areamap compact" role="img" aria-label="Map of the Outer Banks with the OBX Junk Co. service area shaded"></div>
     <div class="towns">
       <a class="town" href="corolla.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg> Corolla</a><a class="town" href="duck.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg> Duck</a>
       <a class="town" href="southern-shores.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg> Southern Shores</a><a class="town" href="kitty-hawk.html"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg> Kitty Hawk</a>
@@ -177,6 +179,6 @@
   </div>
 </footer>
 <div class="callbar"><a href="tel:+12522075985"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg> Call or text for a free quote</a></div>
-<script>document.getElementById("yr").textContent=new Date().getFullYear();</script>
+<script>document.getElementById("yr").textContent=new Date().getFullYear();window.addEventListener("load",function(){obxAreaMap("areamap",{compact:true})});</script>
 </body>
 </html>

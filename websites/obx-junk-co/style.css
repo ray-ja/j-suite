@@ -195,3 +195,14 @@ footer.site b{color:#b6bbc2}
 /* payment chips (home, contact, pricing): plain type chips, no logos */
 .pays{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:26px}
 .pay{display:inline-flex;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:10px 18px;font-weight:700;font-size:15px;color:var(--ink)}
+
+/* service-area map */
+.areamap{height:720px;border-radius:16px;border:1px solid var(--line);overflow:hidden;margin-top:28px;background:#e9eef2}
+.areamap.compact{height:520px}
+@media(max-width:640px){.areamap{height:560px}.areamap.compact{height:460px}}
+.obx-town{background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-weight:700;font-size:12px;color:var(--ink);box-shadow:none}
+.obx-town.obx-shop{color:var(--orange-deep)}
+.obx-legend{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.7;color:var(--ink)}
+.obx-legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:7px}
+.pay.logo{padding:6px 14px}
+.pay.logo img{height:26px;width:auto;display:block}
