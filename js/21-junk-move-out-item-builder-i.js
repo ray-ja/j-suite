@@ -9,7 +9,7 @@ const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + dispo
    BOTH prices so the phone script can offer "get it to the curb and it's the one-person rate". junkSoloOK() says whether a
    load is honestly a one-person carry (curb/ground, nothing heavy, no stairs). */
 const JUNK_CREW_MIN=1;
-const JUNK_MIN_BY_CREW={1:175,2:300};
+const JUNK_MIN_BY_CREW={1:175,2:285};   // Ray 2026-09-19: $285 "sounds a lot cheaper than $300"
 const JUNK_MIN_SOLO_INSIDE=225;   // Ray, 2026-09-19: curbside solo $175, but one person going INSIDE (even ground floor) is at least $225
 function junkAllCurbside(lines){ return (lines||[]).every(li=>Object.keys(li.locs||{}).every(loc=>(+li.locs[loc]||0)<=0||loc==="curbside")); }
 function junkMinFor(crew,lines){ crew=Math.min(2,Math.max(1,crew||2)); if(crew===1&&lines&&!junkAllCurbside(lines))return JUNK_MIN_SOLO_INSIDE; return JUNK_MIN_BY_CREW[crew]; }
