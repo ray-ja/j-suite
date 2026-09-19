@@ -209,3 +209,6 @@ footer.site b{color:#b6bbc2}
 .pay.logo.wide img{height:22px;border-radius:0}
 .pay.cash{gap:8px}
 .pay.cash .ic{color:var(--orange)}
+.pay.bnpl{gap:9px}
+.pay.bnpl img{height:18px;width:auto;display:block}
+.pay.bnpl img[alt=Klarna]{height:20px}
