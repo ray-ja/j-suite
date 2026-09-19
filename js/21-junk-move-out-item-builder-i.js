@@ -10,7 +10,9 @@ const JUNK_PEREIGHTH=55;  // $ per 1/8-truck — the WORK value (loading + dispo
    load is honestly a one-person carry (curb/ground, nothing heavy, no stairs). */
 const JUNK_CREW_MIN=1;
 const JUNK_MIN_BY_CREW={1:175,2:300};
-function junkMinFor(crew){ return JUNK_MIN_BY_CREW[Math.min(2,Math.max(1,crew||2))]; }
+const JUNK_MIN_SOLO_INSIDE=225;   // Ray, 2026-09-19: curbside solo $175, but one person going INSIDE (even ground floor) is at least $225
+function junkAllCurbside(lines){ return (lines||[]).every(li=>Object.keys(li.locs||{}).every(loc=>(+li.locs[loc]||0)<=0||loc==="curbside")); }
+function junkMinFor(crew,lines){ crew=Math.min(2,Math.max(1,crew||2)); if(crew===1&&lines&&!junkAllCurbside(lines))return JUNK_MIN_SOLO_INSIDE; return JUNK_MIN_BY_CREW[crew]; }
 const JUNK_MIN=JUNK_MIN_BY_CREW[1];       // minimum job ($) — we don't walk out the door for less
 const JUNK_TON=90;        // Soundside transfer station COST $/ton (2026-08-28) — the customer CHARGE is JUNK_CD_TON below
 const JUNK_DENSITY=15;    // lb per cu ft treated as normal household junk
@@ -168,7 +170,7 @@ function junkEngineObj(c){
   return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14),dumpHrs:50/60,materials:(c.special||0)};
 }
 /* price for a given crew size: volume + drive(crew) + dump share + special, floored at that crew's minimum */
-function junkPriceFor(c,crew){ crew=Math.max(1,crew||2); const work=c.haul+c.locLabor+c.modLabor, drive=junkDriveCharge(crew), da=Math.round(junkDumpAmort(c.cuft)); return Math.max(junkMinFor(crew),Math.ceil((work+drive+da+c.special)/25)*25); }
+function junkPriceFor(c,crew){ crew=Math.max(1,crew||2); const work=c.haul+c.locLabor+c.modLabor, drive=junkDriveCharge(crew), da=Math.round(junkDumpAmort(c.cuft)); return Math.max(junkMinFor(crew,WZ.junk),Math.ceil((work+drive+da+c.special)/25)*25); }
 /* is this load an honest one-person carry? curb or ground level only, nothing flagged heavy / long carry / disassembly,
    no single item over JUNK_SOLO_MAX_LB, and no more than JUNK_SOLO_MAX_CUFT total. Returns {ok, why}. */
 const JUNK_SOLO_MAX_LB=250, JUNK_SOLO_MAX_CUFT=120;
@@ -226,7 +228,7 @@ function wizJunkUI(){
       </div>
       <div class="sub" style="font-size:11px;margin-top:1px">📊 <b style="color:${zone[1]}">${zone[0]}</b> · <span style="color:#1a7f37">national ${money(bandLo)}–${money(bandHi)}</span> · <span style="color:#0e7c86">OBX ${money(obxLo)}–${money(obxHi)}</span> · clears $45/hr at <b>${money(pay45)}</b> · <b style="color:${hrCol}">~${money(hourly)}/hr each ${hrTag}</b></div>
     </div>
-    <div style="flex-basis:100%;font-size:12px;line-height:1.5"><span onclick="WZ.junkCrew=1;render()" style="cursor:pointer;${_crew===1?"font-weight:800":""}">👤 1 person <b>${money(priceSolo)}</b></span>${solo.ok?` <span class="badge" style="background:#e9f1dc;color:#1b2330">curb-ready</span>`:` <span class="sub">(${esc(solo.why)})</span>`} · <span onclick="WZ.junkCrew=2;render()" style="cursor:pointer;${_crew===2?"font-weight:800":""}">👥 2 people <b>${money(priceDuo)}</b></span> <span class="sub">· min $${JUNK_MIN_BY_CREW[1]} / $${JUNK_MIN_BY_CREW[2]} · offer both on the phone</span></div>
+    <div style="flex-basis:100%;font-size:12px;line-height:1.5"><span onclick="WZ.junkCrew=1;render()" style="cursor:pointer;${_crew===1?"font-weight:800":""}">👤 1 person <b>${money(priceSolo)}</b></span>${solo.ok?` <span class="badge" style="background:#e9f1dc;color:#1b2330">curb-ready</span>`:` <span class="sub">(${esc(solo.why)})</span>`} · <span onclick="WZ.junkCrew=2;render()" style="cursor:pointer;${_crew===2?"font-weight:800":""}">👥 2 people <b>${money(priceDuo)}</b></span> <span class="sub">· min $${JUNK_MIN_BY_CREW[1]} curb / $${JUNK_MIN_SOLO_INSIDE} solo inside / $${JUNK_MIN_BY_CREW[2]} crew · offer both on the phone</span></div>
     <div class="wf-amt"><span class="wf-lab">Quote</span><b>${money(price)}</b></div>
     <span style="white-space:nowrap;font-size:12px">👷<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=Math.max(JUNK_CREW_MIN,(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))-1);render()">−</button>${_crew}<button class="btn ghost sm" style="width:30px;padding:2px;margin:0 2px" onclick="WZ.junkCrew=(Math.max(JUNK_CREW_MIN,WZ.junkCrew||2))+1;render()">+</button></span>
     <button class="btn ghost sm" onclick="WZ.step='pick';render()">←</button>
