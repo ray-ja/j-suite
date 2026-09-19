@@ -2306,6 +2306,16 @@ function quoteDepositPaidApply(store, org, q, amount, ref, now) {   // webhook: 
     body: "💵 " + who + " paid the deposit on quote " + invNoOf(rec) + ": " + invMoney(amount) + " of " + invMoney(invEff(rec)) + ". Schedule it." }, store);
   return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId, already: false };
 }
+/* WEBSITE LEAD → owner DM. Pure: returns {store, threadId}. Thread "thr_web_leads_<org>" (a DM to the owner
+   account) so the phone shows the real body via the push peek, not a generic line. */
+function webLeadNotify(store, org, name, service, phone, addr) {
+  const users = (store.users || []);
+  const owner = users.find(u => u && !u.kind && !u.deleted && u.superAdmin) || users.find(u => u && !u.kind && !u.deleted && u.role === "owner");
+  if (!owner) return { store: store, threadId: null };
+  const body = "🌐 New website lead: " + name + (service ? " — " + service : "") + (phone ? " · " + phone : "") + (addr ? " · " + addr : "") + ". It is in Customers as a Lead.";
+  const built = ceoBuildMessage({ biz: org, to: owner.id, members: [owner.id], title: "Website leads", senderLabel: "Website", threadId: "thr_web_leads_" + org, body: body }, store);
+  return { store: mergeState(store, { [built.biz]: { messages: built.records } }), threadId: built.threadId };
+}
 /* ⭐ SCOPED PAY LINKS PAY OUT (2026-09-15). Every link the hosted invoice page mints carries metadata.scopeKey
    (q_<quoteId> · grp_<customerId>_<combinedAt> · acct_<customerId>), NOT a quoteId — so the webhook, which only
    knew stripeLinkId / metadata.quoteId, could never mark those payments. Christina Jamieson paid her $1,840
@@ -5220,7 +5230,7 @@ const server = http.createServer((req, res) => {
       let d; try { d = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       const cut = (v, n) => String(v == null ? "" : v).replace(/[\r\n\t]+/g, " ").trim().slice(0, n);
       const org = String(q.searchParams.get("org") || "jam");
-      const store = loadStore();
+      let store = loadStore();
       if (!store[org]) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"unknown org"}'); }
       if (!Array.isArray(store[org].customers)) store[org].customers = [];
 
@@ -5265,8 +5275,13 @@ const server = http.createServer((req, res) => {
           });
         }
       }
+      /* 2026-09-19: the old call here was pushNotifyOwner(org, title, body) against a (store, exceptUserId)
+         signature, so it silently did nothing. A website lead now posts a DM to the owner ("Website leads"
+         thread) and tickles their phone the same way a paid deposit does. */
+      const nfy = webLeadNotify(store, org, name, cut(d.service, 60), cut(d.phone, 40), addr);
+      store = nfy.store;
       try { saveStore(store); } catch (e) { res.writeHead(500, { "Content-Type": "application/json" }); return res.end('{"error":"write failed"}'); }
-      try { if (typeof pushNotifyOwner === "function") pushNotifyOwner(org, "New website lead", name + (d.service ? " — " + cut(d.service, 60) : "")); } catch (e) {}
+      try { if (nfy.threadId) pushNotify(store, org, nfy.threadId, null); } catch (e) {}
       res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, id: id }));
     });
   }
@@ -5859,4 +5874,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

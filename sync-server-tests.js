@@ -2454,6 +2454,26 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     ok("unknown scope → unmatched, store untouched", r5.unmatched === true && r5.store.obx.quotes.every(q => !q.paid));
   }
 
+
+/* ---- website lead → owner DM (2026-09-19): the lead route used to call pushNotifyOwner with the wrong
+   arguments and never pinged anyone. webLeadNotify builds the DM the route now posts. ---- */
+  {
+    const S = t;
+  const store = { users: [{ id: "u_owner", username: "Ray", role: "owner", superAdmin: true }, { id: "u_crew", username: "Chase", role: "crew" }], obx: { messages: [], customers: [] } };
+  const r = S.webLeadNotify(store, "obx", "Maria S", "Furniture / appliances", "2520000000", "Kitty Hawk");
+  const msgs = r.store.obx.messages;
+  const thread = msgs.find(m => m.kind === "thread");
+  const msg = msgs.find(m => !m.kind);
+  ok("webLead: thread is a DM to the owner only", thread && thread.type === "dm" && thread.members.length === 1 && thread.members[0] === "u_owner");
+  ok("webLead: stable thread id per org", r.threadId === "thr_web_leads_obx" && thread.threadId === "thr_web_leads_obx");
+  ok("webLead: body names the lead, service, phone, address", msg && /Maria S/.test(msg.body) && /Furniture/.test(msg.body) && /2520000000/.test(msg.body) && /Kitty Hawk/.test(msg.body));
+  const r2 = S.webLeadNotify(r.store, "obx", "Second Lead", "", "", "");
+  ok("webLead: second lead reuses the thread (no duplicate thread record)", r2.store.obx.messages.filter(m => m.kind === "thread").length === 1 && r2.store.obx.messages.filter(m => !m.kind).length === 2);
+  const r3 = S.webLeadNotify({ users: [], obx: { messages: [] } }, "obx", "Nobody", "", "", "");
+  ok("webLead: no owner → no thread, store untouched", r3.threadId === null && r3.store.obx.messages.length === 0);
+  }
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
+
