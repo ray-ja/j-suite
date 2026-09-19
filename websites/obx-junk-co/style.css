@@ -204,5 +204,8 @@ footer.site b{color:#b6bbc2}
 .obx-town.obx-shop{color:var(--orange-deep)}
 .obx-legend{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.7;color:var(--ink)}
 .obx-legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:7px}
-.pay.logo{padding:6px 14px}
-.pay.logo img{height:26px;width:auto;display:block}
+.pay.logo{padding:5px 12px}
+.pay.logo img{height:30px;width:auto;display:block;border-radius:4px}
+.pay.logo.wide img{height:22px;border-radius:0}
+.pay.cash{gap:8px}
+.pay.cash .ic{color:var(--orange)}
