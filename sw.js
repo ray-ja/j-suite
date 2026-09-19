@@ -2,7 +2,7 @@
    fallback. On install it precaches a minimal app shell so a cold offline launch still renders.
    Only registers on secure contexts (https / localhost) — see js/29-boot.js. Over a raw http
    Tailscale IP there is no secure context, so this never runs and nothing breaks. */
-const CACHE = "jsuite-v268";   // bump on every ship: activate purges every non-matching cache, so a stale shell/JS skew can't persist as a blank screen
+const CACHE = "jsuite-v269";   // bump on every ship: activate purges every non-matching cache, so a stale shell/JS skew can't persist as a blank screen
 /* shell = the navigation document + styles + manifest/icons; relative URLs resolve against the
    SW scope (served root). JS modules are picked up by the network-first runtime cache on first load. */
 const SHELL = ["./", "app.css", "manifest.webmanifest", "assets/icon-192.png", "assets/icon-512.png"];
@@ -49,7 +49,7 @@ self.addEventListener("push", e => {
     } catch (_) { /* keep the generic fallback */ }
     return self.registration.showNotification(title, {
       body: body,
-      icon: "assets/icon-192.png", badge: "assets/icon-192.png",
+      icon: "assets/icon-192.png", badge: "assets/badge-96.png",   // badge = the STATUS-BAR glyph: Android wants white-on-transparent, a colour icon shows as a white square (Ray 2026-09-19)
       tag: "jsuite-" + Date.now(), data: { url: "./?tab=messages", tab: "messages" },   // UNIQUE tag per push: rapid messages each alert (a static tag collapsed them silently on iOS)
       vibrate: [200, 100, 200, 100, 400], silent: false, renotify: true, requireInteraction: true   // Ray 2026-09-19: "vibrate my phone and everything" — buzz, make a sound, stay on the shade until tapped (Android honours these; iOS uses the system alert)
     });
