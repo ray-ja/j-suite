@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
   const cut = (v, n) => String(v == null ? "" : v).slice(0, n);
   const lead = {
     email: cut(d.email, 200), name: cut(d.name, 120), phone: cut(d.phone, 40),
-    message: cut(d.message || d.details, 2000),
+    message: cut(d.message || d.details, 2000), address: cut(d.address, 300),
     form: cut(d["form-name"] || d.source || "lead", 60),
     magnet: cut(d.magnet, 120), service: cut(d.service, 80), source: cut(d.source, 60), variant: cut(d.variant, 8),
     ts: new Date().toISOString(), ua: cut(request.headers.get("user-agent"), 200), ref: cut(request.headers.get("referer"), 300)
