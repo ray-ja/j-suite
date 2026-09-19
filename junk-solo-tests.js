@@ -15,7 +15,7 @@ eq(R('junkSoloOK([{key:"sofa",locs:{ground:5}}])').why,"too much volume for one"
 // prices: Joe, two curbside fridges, Corolla
 ctx.WZ.junk=[{key:"fridge",locs:{curbside:2}}];ctx.DRIVE={roundMiles:54.6,min:45};
 const pj1=R("junkPriceFor(calcJunk(),1)"),pj2=R("junkPriceFor(calcJunk(),2)");
-eq([pj1,pj2],[225,285],"Joe: solo $225 / crew $285 (floor)");
+eq([pj1,pj2],[225,300],"Joe: solo $225 / crew $300 (computed, above the floor)");
 // close small job
 ctx.WZ.junk=[{key:"sofa",locs:{ground:1}},{key:"bag",locs:{ground:4}}];ctx.DRIVE={roundMiles:20,min:15};
 eq([R("junkPriceFor(calcJunk(),1)"),R("junkPriceFor(calcJunk(),2)")],[225,285],"close small inside (ground): solo $225 / crew $285");
