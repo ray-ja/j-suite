@@ -4650,8 +4650,14 @@ const server = http.createServer((req, res) => {
           if (req.method === "GET") return list().then(cs => J(200, { ok: true, on: cs.some(x => x.status === "ENABLED"), campaigns: cs })).catch(() => J(502, { error: "Google Ads did not answer" }));
           const on = !!(p && p.on);
           return list().then(cs => {
-            const ops = cs.filter(x => x.status !== (on ? "ENABLED" : "PAUSED")).map(x => ({ update: { resourceName: "customers/" + cid + "/campaigns/" + x.id, status: on ? "ENABLED" : "PAUSED" }, updateMask: "status" }));
-            if (!ops.length) return J(200, { ok: true, on: on, changed: 0, campaigns: cs });
+            /* Off duty pauses whatever is ENABLED and remembers those ids (gads.dutyPaused). Back on re-enables ONLY
+               those, so the two retired campaigns that were paused on purpose (OBX Lot Solutions, OBXLS-search)
+               never wake up by accident. */
+            const remembered = Array.isArray(c.dutyPaused) ? c.dutyPaused.map(String) : [];
+            const targets = on ? cs.filter(x => x.status === "PAUSED" && remembered.indexOf(x.id) >= 0) : cs.filter(x => x.status === "ENABLED");
+            const ops = targets.map(x => ({ update: { resourceName: "customers/" + cid + "/campaigns/" + x.id, status: on ? "ENABLED" : "PAUSED" }, updateMask: "status" }));
+            if (!ops.length) return J(200, { ok: true, on: on, changed: 0, campaigns: cs, note: on && !remembered.length ? "nothing was paused by the switch" : "" });
+            try { const k = orgKeysLoad(); k[org] = k[org] || {}; k[org].gads = k[org].gads || {}; k[org].gads.dutyPaused = on ? [] : targets.map(x => x.id); orgKeysSave(k); } catch (e) {}
             return fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers/" + cid + "/campaigns:mutate", { method: "POST", headers: hdr(at), body: JSON.stringify({ operations: ops, partialFailure: true }) })
               .then(r => r.json().then(b => ({ st: r.status, b })))
               .then(({ st, b }) => { if (st !== 200) return J(502, { error: "Google Ads refused the change", detail: b && b.error && b.error.message }); return list().then(cs2 => J(200, { ok: true, on: on, changed: ops.length, campaigns: cs2 })); });
