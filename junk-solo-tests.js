@@ -21,4 +21,14 @@ ctx.WZ.junk=[{key:"sofa",locs:{ground:1}},{key:"bag",locs:{ground:4}}];ctx.DRIVE
 eq([R("junkPriceFor(calcJunk(),1)"),R("junkPriceFor(calcJunk(),2)")],[225,285],"close small inside (ground): solo $225 / crew $285");
 ctx.WZ.junk=[{key:"sofa",locs:{curbside:1}},{key:"bag",locs:{curbside:4}}];
 eq([R("junkPriceFor(calcJunk(),1)"),R("junkPriceFor(calcJunk(),2)")],[175,285],"close small at the curb: $175 / $285");
+
+// load schedule (Ray 2026-09-20): quarter and under = old volume math; half $350, three-quarter $450, full $525, +$450 per extra load
+ctx.DRIVE={roundMiles:14,min:10};
+const bags=n=>[{key:"bag",locs:{ground:n}}];
+ctx.WZ.junk=bags(31);eq(R("junkPriceFor(calcJunk(),2)"),350,"half trailer (124 cuft) = $350");
+ctx.WZ.junk=bags(46);eq(R("junkPriceFor(calcJunk(),2)"),450,"three-quarter (184 cuft) = $450");
+ctx.WZ.junk=bags(62);eq(R("junkPriceFor(calcJunk(),2)"),525,"full trailer (248 cuft) = $525");
+ctx.WZ.junk=bags(94);eq(R("junkPriceFor(calcJunk(),2)"),775,"1.5 loads = $775");
+ctx.WZ.junk=bags(125);eq(R("junkPriceFor(calcJunk(),2)"),975,"2 loads = $975");
+eq(Math.round(R("junkLoadSchedule(62.5)")),Math.round(R("junkVolumeBase(62.5)")),"quarter load = old volume math (continuous)");
 console.log("=========  "+(n-f)+" passed, "+f+" failed  =========");process.exit(f?1:0);

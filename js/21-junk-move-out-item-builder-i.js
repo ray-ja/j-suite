@@ -169,8 +169,27 @@ function junkEngineObj(c){
   const crew=Math.max(JUNK_CREW_MIN,WZ.junkCrew||2),mode=WZ.junkMode||"dump",loadingHrs=(c.loadMin||0)/60,dr=junkSiteDrive();
   return {crew:crew,onsiteHrs:crew>0?loadingHrs/crew:loadingHrs,siteMiles:dr.rt,siteDriveHrs:dr.min/60,mode:mode,lbs:c.lbs,dtype:"cd",dumpMiles:(typeof DISPOSAL_TRIP_MILES!=="undefined"?DISPOSAL_TRIP_MILES:14),dumpHrs:50/60,materials:(c.special||0)};
 }
-/* price for a given crew size: volume + drive(crew) + dump share + special, floored at that crew's minimum */
-function junkPriceFor(c,crew){ crew=Math.max(1,crew||2); const work=c.haul+c.locLabor+c.modLabor, drive=junkDriveCharge(crew), da=Math.round(junkDumpAmort(c.cuft)); return Math.max(junkMinFor(crew,WZ.junk),Math.ceil((work+drive+da+c.special)/25)*25); }
+/* LOAD SCHEDULE (Ray, 2026-09-20, Shelly's garage): big jobs are priced BY THE TRAILER LOAD, not by a per-eighth rate
+   that was tuned on curbside singles. Two-person, drive inside the included radius, dump share baked in:
+   quarter $285 · half $350 · three-quarter $450 · full $525 · each additional load $450 (pro-rated by fraction).
+   Points between are interpolated. Access labor (stairs, long carry, heavy, teardown), the drive past the radius
+   and special-item fees still add on top. Solo jobs use the same curve; their minimum is what differs. */
+const JUNK_LOAD_CURVE=[[0.5,350],[0.75,450],[1,525]], JUNK_EXTRA_LOAD=450;
+/* under a quarter trailer the old volume math still applies (a curbside single is not a "load"); from a quarter to a
+   half it ramps onto Ray's card so two fridges don't suddenly price like a garage; above a half it IS the card. */
+function junkVolumeBase(cuft){ return (cuft/JUNK_EIGHTH)*JUNK_PEREIGHTH + junkDumpAmort(cuft); }
+function junkLoadSchedule(cuft){
+  cuft=+cuft||0; const loads=cuft/JUNK_MAXLOAD;
+  if(loads<=0)return 0;
+  if(loads<=0.25)return junkVolumeBase(cuft);
+  if(loads<=0.5){const a=junkVolumeBase(JUNK_MAXLOAD*0.25),b=JUNK_LOAD_CURVE[0][1];return a+(b-a)*(loads-0.25)/0.25;}
+  if(loads>1)return JUNK_LOAD_CURVE[JUNK_LOAD_CURVE.length-1][1]+JUNK_EXTRA_LOAD*(loads-1);
+  const pts=JUNK_LOAD_CURVE;
+  for(let i=1;i<pts.length;i++){const x0=pts[i-1][0],y0=pts[i-1][1],x1=pts[i][0],y1=pts[i][1]; if(loads<=x1)return y0+(y1-y0)*(loads-x0)/(x1-x0);}
+  return pts[pts.length-1][1];
+}
+/* price for a given crew size: load schedule + access/mod labor + drive past the radius + special, floored at that crew's minimum */
+function junkPriceFor(c,crew){ crew=Math.max(1,crew||2); const base=junkLoadSchedule(c.cuft), drive=junkDriveCharge(crew); return Math.max(junkMinFor(crew,WZ.junk),Math.ceil((base+c.locLabor+c.modLabor+drive+c.special)/25)*25); }
 /* is this load an honest one-person carry? curb or ground level only, nothing flagged heavy / long carry / disassembly,
    no single item over JUNK_SOLO_MAX_LB, and no more than JUNK_SOLO_MAX_CUFT total. Returns {ok, why}. */
 const JUNK_SOLO_MAX_LB=250, JUNK_SOLO_MAX_CUFT=120;
@@ -316,7 +335,7 @@ window.wizAddJunk=function(){
   if(c.wgUnits)notes.push(c.wgUnits+" fridge/mattress unit(s) — Manns Harbor transfer station disposal (county recovers the freon); each unit's share of the run + tipping included.");
   if(c.counts.cd)notes.push("Heavy / C&D items — weight-billed at the transfer station; tipping fee included.");
   const _cap=c.cap||junkCapCheck(c.cuft,c.lbs);
-  notes.push("≈ "+_cap.trips.toFixed(2)+" trailer load"+(_cap.trips>=1.005?"s":"")+" ("+c.cuft+" cu ft = "+_cap.pctOfBox+"% of the box, "+c.lbs+" lb = "+_cap.pctOfWeight+"% of the 3,600-lb cap) · stash + batched dump · volume "+money(work)+" + site drive "+money(drive)+" + dump share "+money(dumpAmort)+(c.special?" + disposal "+money(c.special):"")+".");
+  notes.push("≈ "+_cap.trips.toFixed(2)+" trailer load"+(_cap.trips>=1.005?"s":"")+" ("+c.cuft+" cu ft = "+_cap.pctOfBox+"% of the box, "+c.lbs+" lb = "+_cap.pctOfWeight+"% of the 3,600-lb cap) · stash + batched dump · load "+money(Math.round(junkLoadSchedule(c.cuft)))+(c.locLabor+c.modLabor>0?" + access/teardown "+money(Math.round(c.locLabor+c.modLabor)):"")+" + site drive "+money(drive)+(c.special?" + disposal "+money(c.special):"")+" (dump share inside the load).");
   if(_cap.overWeight)notes.push("⚖️ WEIGHT-limited: this load hits the "+JUNK_CARGO_LB+"-lb cargo cap at only "+_cap.pctOfBox+"% full (dense debris ~"+_cap.density.toFixed(0)+" lb/cu ft) — price it as "+_cap.tripsUp+" trip"+(_cap.tripsUp>1?"s":"")+", not one.");
   const cost=Math.round((c.special+dumpAmort+_dr.rt*QE.MILEAGE)*100)/100;   // reserved/passthrough: disposal + dump-run reserve + site mileage
   // job time for the pay check — STASHED, no dump run on this job: 20-min on-site baseline + load times + site drive
