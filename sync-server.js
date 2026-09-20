@@ -4624,6 +4624,43 @@ const server = http.createServer((req, res) => {
   /* ── nightly stats push FROM the Google Ads Script (runs in Google's cloud, so it can't hold a user
      token — it authenticates with the dedicated ingestKey minted in the app). Append-only JSONL; one line
      per day per push, newest wins at read time. No OAuth involved — this is the 6-day-freeze workaround. */
+  /* ---- OFF DUTY SWITCH (Ray, 2026-09-20: "it's Sunday and I'm heading to the beach… we shouldn't pay for ads right now
+     either. how fast can we flip that switch?") ----
+     GET  /api/ads/duty?org=obx            → { ok, on, campaigns:[{id,name,status}] }   (owner)
+     POST /api/ads/duty {org, on:true|false} → pauses / enables every ENABLED-or-PAUSED campaign on the org's Google Ads
+     account (search + Local Services) in one call. Uses the org's stored OAuth refresh token; the manager account id
+     comes from gads.managerId when set, else the call goes without login-customer-id. */
+  if (req.url.split("?")[0] === "/api/ads/duty" && (req.method === "GET" || req.method === "POST")) {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const go = (p) => {
+      const org = String((p && p.org) || new URL(req.url, "http://x").searchParams.get("org") || "obx");
+      const c = gadsLoad(org);
+      if (!c.clientId || !c.refreshToken || !c.customerId || !c.developerToken) return J(400, { error: "Google Ads is not connected for this org (Settings → Keys)" });
+      const cid = String(c.customerId).replace(/-/g, "");
+      const hdr = (at) => { const h = { authorization: "Bearer " + at, "developer-token": c.developerToken, "content-type": "application/json" }; if (c.managerId) h["login-customer-id"] = String(c.managerId).replace(/-/g, ""); return h; };
+      fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, refresh_token: c.refreshToken, grant_type: "refresh_token" }).toString() })
+        .then(r => r.json()).then(tj => {
+          if (!tj || !tj.access_token) return J(502, { error: "Google refused the token" });
+          const at = tj.access_token;
+          const list = () => fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers/" + cid + "/googleAds:searchStream", { method: "POST", headers: hdr(at), body: JSON.stringify({ query: "SELECT campaign.id, campaign.name, campaign.status FROM campaign WHERE campaign.status IN ('ENABLED','PAUSED')" }) })
+            .then(r => r.json()).then(j => (Array.isArray(j) ? j : []).flatMap(ch => ch.results || []).map(x => ({ id: String(x.campaign.id), name: x.campaign.name, status: x.campaign.status })));
+          if (req.method === "GET") return list().then(cs => J(200, { ok: true, on: cs.some(x => x.status === "ENABLED"), campaigns: cs })).catch(() => J(502, { error: "Google Ads did not answer" }));
+          const on = !!(p && p.on);
+          return list().then(cs => {
+            const ops = cs.filter(x => x.status !== (on ? "ENABLED" : "PAUSED")).map(x => ({ update: { resourceName: "customers/" + cid + "/campaigns/" + x.id, status: on ? "ENABLED" : "PAUSED" }, updateMask: "status" }));
+            if (!ops.length) return J(200, { ok: true, on: on, changed: 0, campaigns: cs });
+            return fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers/" + cid + "/campaigns:mutate", { method: "POST", headers: hdr(at), body: JSON.stringify({ operations: ops, partialFailure: true }) })
+              .then(r => r.json().then(b => ({ st: r.status, b })))
+              .then(({ st, b }) => { if (st !== 200) return J(502, { error: "Google Ads refused the change", detail: b && b.error && b.error.message }); return list().then(cs2 => J(200, { ok: true, on: on, changed: ops.length, campaigns: cs2 })); });
+          }).catch(() => J(502, { error: "Google Ads did not answer" }));
+        }).catch(() => J(502, { error: "Google did not answer" }));
+    };
+    if (req.method === "GET") return go(null);
+    return readBodyUtf8(req, 4096, (body) => { let p; try { p = JSON.parse(body || "{}"); } catch (e) { return J(400, { error: "bad json" }); } go(p); });
+  }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/gads/ingest") {
     return readBodyUtf8(req, 2e5, (body) => {
       const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
