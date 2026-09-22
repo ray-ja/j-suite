@@ -26,7 +26,9 @@ function researchCanEdit(){
 /* render the longform body readably: escape HTML first, then keep paragraph + line-break structure and lightly
    emphasize ALL-CAPS heading lines so it reads cleanly on a phone. No HTML from the data is ever trusted. */
 function researchRenderBody(body){
-  const safe = esc(body||"");
+  /* URLs become links (2026-09-22, Ray: "add the manual to the app so I can take a look"). Escaped FIRST, then
+     only a strict https?:// run is wrapped, so the data still never injects HTML. */
+  const safe = esc(body||"").replace(/https?:\/\/[^\s<>"']+[^\s<>"'.,;:)]/g, function(u){ return '<a href="'+u+'" target="_blank" rel="noopener" style="color:var(--brand-text);font-weight:600;word-break:break-all">'+u+'</a>'; });
   return safe.split(/\n{2,}/).map(function(block){
     const lines = block.split("\n").map(function(ln){
       const t = ln.trim();
