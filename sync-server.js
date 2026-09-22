@@ -2198,7 +2198,7 @@ function consumeInviteToken(tok) {
 // minimal HTML escape for values interpolated into an outgoing email body (name/username are user-supplied)
 function htmlEsc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 /* ---- HOSTED PUBLIC INVOICE (GET /i/<token>) — server-rendered so a customer can open + pay from any browser ---- */
-const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "(252) 207-5985", logo: "/assets/logo-jam.png" } };
+const INV_BIZ = { obx: { name: "OBX Lot Solutions", phone: "(252) 207-5985", logo: "/assets/logo-obx.png" }, jam: { name: "Jamieson Automation", phone: "(252) 207-5985", logo: "/assets/logo-jam.svg", wordmark: true } };
 /* Branding for a PUBLIC, customer-facing page. INV_BIZ only ever had obx/jam, and the call sites
    defaulted to OBX's name AND phone — so a guide or invoice served for any other org rendered as
    "OBX Lot Solutions" with OBX's number on it. Fall back to the org's REGISTRY name instead, and
