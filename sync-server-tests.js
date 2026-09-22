@@ -2473,6 +2473,18 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("webLead: no owner → no thread, store untouched", r3.threadId === null && r3.store.obx.messages.length === 0);
   }
 
+  {
+    const S = t;
+    const q = { id: "qx", invoiceToken: "abc123", invoiced: true, date: "2026-08-31", total: 456.5, items: [{ price: 55, qty: 8.3 }] };
+    const b = S.invEmailBuild(q, { name: "OB-Xscape Rooms", email: "x@y.z" }, { name: "Jamieson Automation", phone: "(252) 207-5985" }, { name: "Ray" }, "https://app.jsuite.dev/", "Thanks for August.");
+    ok("invEmail: subject names invoice, brand and amount", /^Invoice INV-20260831-QX from Jamieson Automation — \$456\.50$/.test(b.subject), b.subject);
+    ok("invEmail: link is origin + /i/ + token (no double slash)", b.url === "https://app.jsuite.dev/i/abc123" && b.html.indexOf(b.url) >= 0 && b.text.indexOf(b.url) >= 0);
+    ok("invEmail: note is included and escaped", b.html.indexOf("Thanks for August.") >= 0);
+    ok("invEmail: from is the brand on the app sending domain", b.from === "Jamieson Automation <invoices@mail.jsuite.dev>");
+    const b2 = S.invEmailBuild({ id: "q2", invoiceToken: "t", invoiced: false, date: "2026-09-01", total: 100, items: [{ price: 100, qty: 1 }] }, null, { name: "OBX <Junk> Co" }, null, "https://x.y", "<script>");
+    ok("invEmail: quote wording, html-escaped note and brand", /^Quote /.test(b2.subject) && b2.html.indexOf("&lt;script&gt;") >= 0 && b2.html.indexOf("<script>") < 0 && b2.from === "OBX Junk Co <invoices@mail.jsuite.dev>");
+  }
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

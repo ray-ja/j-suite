@@ -2671,17 +2671,45 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     </body></html>`;
 }
 function emailCfg() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) { return {}; } }
-function sendEmail(to, subject, html) {
+function sendEmail(to, subject, html, opts) {
   return new Promise((resolve) => {
-    const cfg = emailCfg(), key = cfg.resendKey || "", from = cfg.resendFrom || "J-Suite <noreply@jsuite.dev>";
+    opts = opts || {};
+    const cfg = emailCfg(), key = cfg.resendKey || "", from = opts.from || cfg.resendFrom || "J-Suite <noreply@jsuite.dev>";
     if (!key || !to) { console.log("[email] not configured (resendKey/recipient) — skipping send"); return resolve({ ok: false, skipped: true }); }
-    const payload = JSON.stringify({ from: from, to: [to], subject: subject, html: html });
+    const body = { from: from, to: [to], subject: subject, html: html };
+    if (opts.replyTo) body.reply_to = [opts.replyTo];
+    if (opts.text) body.text = opts.text;
+    const payload = JSON.stringify(body);
     const r = https.request("https://api.resend.com/emails", { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, (resp) => {
-      let d = ""; resp.on("data", c => d += c); resp.on("end", () => { const ok = resp.statusCode >= 200 && resp.statusCode < 300; if (!ok) console.log("[email] resend " + resp.statusCode + ": " + d.slice(0, 200)); resolve({ ok: ok, status: resp.statusCode }); });
+      let d = ""; resp.on("data", c => d += c); resp.on("end", () => { const ok = resp.statusCode >= 200 && resp.statusCode < 300; if (!ok) console.log("[email] resend " + resp.statusCode + ": " + d.slice(0, 200)); let detail = ""; if (!ok) { try { detail = JSON.parse(d).message || ""; } catch (e) { detail = d.slice(0, 120); } } resolve({ ok: ok, status: resp.statusCode, detail: detail }); });
     });
     r.on("error", (e) => { console.log("[email] send error: " + e.message); resolve({ ok: false, error: e.message }); });
     r.write(payload); r.end();
   });
+}
+/* INVOICE / QUOTE EMAIL (Ray, 2026-09-21: "it should be an email, it usually is"). Pure builder, exported for tests:
+   the From is the org's brand on the app's verified sending domain, Reply-To is the owner so answers land in
+   Ray's inbox, and the body is the same short note the text button sends plus the hosted link. */
+function invEmailBuild(q, cust, biz, owner, origin, note) {
+  const url = String(origin || "").replace(/\/+$/, "") + "/i/" + String((q && q.invoiceToken) || "");
+  const what = (q && q.invoiced) ? "invoice" : "quote";
+  const no = invNoOf(q);
+  const first = String((cust && cust.name) || (q && q.cust) || "").trim().split(/\s+/)[0];
+  const brand = (biz && biz.name) || "";
+  const amount = invMoney(invEff(q));
+  const subject = (what === "invoice" ? "Invoice " : "Quote ") + no + " from " + brand + (amount ? " — " + amount : "");
+  const E = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const noteHtml = note ? "<p style=\"margin:0 0 14px\">" + E(note).replace(/\n/g, "<br>") + "</p>" : "";
+  const html = "<div style=\"font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2330;max-width:560px\">"
+    + "<p style=\"margin:0 0 14px\">" + (first ? "Hi " + E(first) + "," : "Hi,") + "</p>"
+    + noteHtml
+    + "<p style=\"margin:0 0 14px\">Here is your " + what + " from " + E(brand) + (amount ? " for <b>" + E(amount) + "</b>" : "") + ". Open it to see the details, pay online, or save a PDF.</p>"
+    + "<p style=\"margin:0 0 18px\"><a href=\"" + E(url) + "\" style=\"display:inline-block;background:#1b2330;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px\">View " + what + " " + E(no) + "</a></p>"
+    + "<p style=\"margin:0 0 14px;font-size:14px;color:#555\">Or copy this link: " + E(url) + "</p>"
+    + "<p style=\"margin:0\">Reply to this email with any questions." + (biz && biz.phone ? " Or call or text " + E(biz.phone) + "." : "") + "<br>" + E(brand) + (owner && owner.name ? " · " + E(owner.name) : "") + "</p></div>";
+  const text = (first ? "Hi " + first + "," : "Hi,") + "\n\n" + (note ? note + "\n\n" : "") + "Here is your " + what + " from " + brand + (amount ? " for " + amount : "") + ": " + url + "\n\nReply with any questions." + (biz && biz.phone ? " Or call or text " + biz.phone + "." : "");
+  const from = brand ? (brand.replace(/[<>"]/g, "") + " <invoices@mail.jsuite.dev>") : null;
+  return { subject: subject, html: html, text: text, url: url, from: from };
 }
 // per-site base for the reset link, from an ALLOWLISTED Host (prevents Host-header injection into the email)
 function resetBaseUrl(req) {
@@ -4741,6 +4769,32 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  /* POST /api/invoices/email {org, quoteId, to?, note?} (owner): email the hosted quote/invoice link. `to` defaults to the
+     customer's email. Reply-To = the signed-in owner's email. Records the send on the quote (emailedAt/emailedTo). */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/invoices/email") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    return readBodyUtf8(req, 16384, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const store = loadStore(); const org = String(p.org || "obx"); const slab = store[org];
+      const q = slab && (slab.quotes || []).find(x => x && !x.deleted && x.id === p.quoteId);
+      if (!q) return J(404, { error: "quote not found" });
+      if (!q.invoiceToken) return J(400, { error: "no public link on this quote yet — open it in the app first" });
+      const cust = (slab.customers || []).find(c => c && c.id === q.customerId);
+      const to = String(p.to || (cust && cust.email) || "").trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return J(400, { error: "no email address for this customer — add one on their card or type one" });
+      const owner = (store.users || []).find(u => u && u.id === sc.userId) || null;
+      const built = invEmailBuild(q, cust, pubBizOf(store, org, q), owner ? { name: owner.username } : null, resetBaseUrl(req), String(p.note || "").slice(0, 1500));
+      sendEmail(to, built.subject, built.html, { from: built.from, replyTo: owner && owner.email ? owner.email : undefined, text: built.text }).then(r => {
+        if (!r || !r.ok) return J(502, { error: r && r.skipped ? "email is not set up on the server" : "the mail service refused it" + (r && r.detail ? ": " + r.detail : "") });
+        q.emailedAt = Date.now(); q.emailedTo = to; q.updatedAt = Date.now();
+        try { saveStore(store); } catch (e) {}
+        return J(200, { ok: true, to: to, subject: built.subject });
+      });
+    });
+  }
   /* POST /api/quotes/deposit {org, quoteId, pct} (owner): mint a fixed-amount Stripe link for pct of the quote total */
   if (req.method === "POST" && req.url.split("?")[0] === "/api/quotes/deposit") {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
@@ -5917,4 +5971,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

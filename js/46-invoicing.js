@@ -215,6 +215,27 @@ async function invPublishAndVerify(q, url) {
   }
   return false;
 }
+/* ✉️ Email the link (Ray, 2026-09-21: "it should be an email, it usually is"). Server sends from the brand on the app's
+   sending domain with Reply-To = the signed-in owner; defaults to the customer's email, asks for one if missing. */
+window.invEmailLink = async function (quoteId) {
+  const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
+  const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
+  if (!origin) { alert("Sync isn't set up on this device, so there's no public address to share from."); return; }
+  invEnsureToken(q);
+  const live = await invPublishAndVerify(q, origin + "/i/" + q.invoiceToken);
+  if (!live) { alert("The link isn't live yet: this device hasn't pushed the quote to the server. Check the sync status at the top, then try again."); return; }
+  const cust = (D().customers || []).find(x => x && x.id === q.customerId);
+  let to = String((cust && cust.email) || "").trim();
+  if (!to) { to = String(prompt("No email on this customer's card. Send it to:", "") || "").trim(); if (!to) return; }
+  const note = prompt("Add a line to the email? (optional)", "") || "";
+  const btn = document.getElementById("inv_email_" + q.id); if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  try {
+    const r = await fetch(origin + "/api/invoices/email", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + ((S.sync && S.sync.token) || "") }, body: JSON.stringify({ org: S.biz, quoteId: q.id, to: to, note: note }) });
+    const j = await r.json();
+    if (j && j.ok) { if (cust && !cust.email) { cust.email = to; touch(cust); save(); } if (typeof toast === "function") toast("Emailed to " + to); if (btn) btn.textContent = "✓ Emailed to " + to; }
+    else { alert("Couldn't send: " + ((j && j.error) || "no answer")); if (btn) { btn.disabled = false; btn.textContent = "✉️ Email the link"; } }
+  } catch (e) { alert("Couldn't send: offline?"); if (btn) { btn.disabled = false; btn.textContent = "✉️ Email the link"; } }
+};
 window.invTextLink = async function (quoteId) {
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
   const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
@@ -282,6 +303,7 @@ function invShareSheet(q, url, copied) {
     <input readonly value="${esc(url)}" onclick="this.select()" style="width:100%;margin-top:10px;font-size:13px">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="invTextLink('${q.id}')">💬 Text the link</button>
     <button class="btn ghost" id="inv_copyurl_${q.id}" style="width:100%;margin-top:8px" onclick="invCopyShareUrl('${q.id}')">${copied ? "✓ Copied — paste it into a text or email" : "🔗 Copy link"}</button>
+    <button class="btn ghost" id="inv_email_${q.id}" style="width:100%;margin-top:8px" onclick="invEmailLink('${q.id}')">${q.emailedAt ? "✉️ Email again (sent " + new Date(q.emailedAt).toLocaleDateString() + ")" : "✉️ Email the link"}</button>
     <div class="sub" style="margin-top:10px;white-space:normal">Every time the customer opens this page you'll get a ping in Messages (and on your phone). Opens from the preview button — or from any browser you've previewed in — are never counted as customer reads.</div>
     ${invViewsHTML(q.id)}
     <button class="btn ghost sm" style="width:100%;margin-top:12px" onclick="openInvoice('${q.id}')">← Back to invoice</button>
