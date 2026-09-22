@@ -25,10 +25,16 @@ footer{text-align:center;color:var(--muted);font-size:14px;padding:22px 0 0}
 .sec{font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin:26px 0 10px}
 @media(max-width:480px){.gal{grid-template-columns:repeat(2,1fr)}}
   .pricepair{gap:12px}
-  @media(max-width:640px){.pricepair{display:block}.pricepair .notes{margin-top:12px}}
+  @media(max-width:640px){.pricepair{display:block}.pricepair .notes,.pricepair .pc{margin-top:12px}}
   .line span{min-width:0}
   .line{flex-wrap:wrap;gap:4px 10px}
 .g3{grid-template-columns:1fr 1fr 1fr}@media(max-width:520px){.g3{grid-template-columns:1fr}}
+.pc{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;display:flex;flex-direction:column;gap:10px}
+.pc .hd{display:flex;align-items:center;gap:10px}.pc .ltr{width:38px;height:38px;border-radius:10px;background:var(--navy);color:#fff;font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.pc .what{font-size:14px;font-weight:700;line-height:1.3}.pc .reg{display:flex;justify-content:space-between;font-size:14px;color:var(--muted)}.pc .reg s{color:var(--muted)}
+.pc .disc{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#e9f1dc;border-left:4px solid var(--green);border-radius:8px;padding:9px 12px;font-size:14px;font-weight:700;color:#2f4a12}.pc .disc b{font-size:17px;white-space:nowrap}
+.pc .yours{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--line);padding-top:10px}.pc .yours span{font-size:13px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}.pc .yours b{font-size:30px;color:var(--navy);letter-spacing:-.5px}
+.pc .btn{margin:2px 0 0}.pc .ql{text-align:center;font-size:13px;margin:0}.pc .ql a{color:var(--navy)}
 </style></head><body>
 <header><div class="wrap"><div style="font-weight:800;font-size:19px;letter-spacing:-.2px">OBX <span style="color:#8BC34A">Lot Solutions</span><div style="font-size:12px;font-weight:600;color:#b8c4d6;letter-spacing:.4px">HANDYMAN &amp; HOME SERVICES</div></div><a href="tel:+12522075985">(252) 207-5985</a></div></header>
 <div class="wrap">
@@ -52,10 +58,25 @@ footer{text-align:center;color:var(--muted);font-size:14px;padding:22px 0 0}
     <div class="line"><span>Living-room side, <b>Option B</b>: tile on the frame, the top and the basin cover; clay returns and plinth sides</span><b>$2,320</b></div>
     <div class="line"><span><b>Option C</b>: Option A with the light bars left out, both sides</span><b>&minus;$580</b></div>
   </div>
-  <div class="grid2 g3 pricepair" style="margin-top:14px">
-    <div class="notes"><div class="line"><span><b>Option A regular price</b></span><b>$9,170</b></div><div class="line"><span>Family discount, 20%</span><b>&minus;$1,834</b></div><div class="price"><div><b>$7,336</b><br><small>tile on the alcove sides too · your price</small></div></div><a class="btn" href="https://buy.stripe.com/bJe28rfgSajD5W74A0cEw0F" style="margin-top:10px">💳 Deposit for A · $3,668</a><p class="lede" style="font-size:13px;margin:8px 0 0"><a href="/i/d6ef8dd1dcc407f21e00c377fb7d72e2">Written quote A</a></p></div>
-    <div class="notes"><div class="line"><span><b>Option B regular price</b></span><b>$8,720</b></div><div class="line"><span>Family discount, 20%</span><b>&minus;$1,744</b></div><div class="price"><div><b>$6,976</b><br><small>tile on the frame, top and basin cover · your price</small></div></div><a class="btn" href="https://buy.stripe.com/5kQ4gz7Oq8bvfwH1nOcEw0G" style="margin-top:10px">💳 Deposit for B · $3,488</a><p class="lede" style="font-size:13px;margin:8px 0 0"><a href="/i/c05cf903b63a5723caaa3e0217f601c5">Written quote B</a></p></div>
-    <div class="notes"><div class="line"><span><b>Option C regular price</b></span><b>$8,590</b></div><div class="line"><span>Family discount, 20%</span><b>&minus;$1,718</b></div><div class="price"><div><b>$6,872</b><br><small>same as A, no light bars · your price</small></div></div><a class="btn" href="https://buy.stripe.com/7sY5kD0lY9fz4S3c2scEw0H" style="margin-top:10px">💳 Deposit for C · $3,436</a><p class="lede" style="font-size:13px;margin:8px 0 0"><a href="/i/3ab0b3ccb080ff374fd5968bbd1c5e76">Written quote C</a></p></div>
+  <div class="grid2 g3 pricepair" style="margin-top:14px;padding:0">
+    <div class="pc"><div class="hd"><div class="ltr">A</div><div class="what">Tile on the frame, top, alcove sides and basin cover</div></div>
+      <div class="reg"><span>Regular price</span><s>$9,170</s></div>
+      <div class="disc"><span>Family discount 20%</span><b>&minus;$1,834</b></div>
+      <div class="yours"><span>Your price</span><b>$7,336</b></div>
+      <a class="btn" href="https://buy.stripe.com/bJe28rfgSajD5W74A0cEw0F">💳 Deposit for A · $3,668</a>
+      <p class="ql"><a href="/i/d6ef8dd1dcc407f21e00c377fb7d72e2">Written quote A</a> · 50% down, balance when finished</p></div>
+    <div class="pc"><div class="hd"><div class="ltr">B</div><div class="what">Tile on the frame, top and basin cover</div></div>
+      <div class="reg"><span>Regular price</span><s>$8,720</s></div>
+      <div class="disc"><span>Family discount 20%</span><b>&minus;$1,744</b></div>
+      <div class="yours"><span>Your price</span><b>$6,976</b></div>
+      <a class="btn" href="https://buy.stripe.com/5kQ4gz7Oq8bvfwH1nOcEw0G">💳 Deposit for B · $3,488</a>
+      <p class="ql"><a href="/i/c05cf903b63a5723caaa3e0217f601c5">Written quote B</a> · 50% down, balance when finished</p></div>
+    <div class="pc"><div class="hd"><div class="ltr">C</div><div class="what">Same as A, no light bars</div></div>
+      <div class="reg"><span>Regular price</span><s>$8,590</s></div>
+      <div class="disc"><span>Family discount 20%</span><b>&minus;$1,718</b></div>
+      <div class="yours"><span>Your price</span><b>$6,872</b></div>
+      <a class="btn" href="https://buy.stripe.com/7sY5kD0lY9fz4S3c2scEw0H">💳 Deposit for C · $3,436</a>
+      <p class="ql"><a href="/i/3ab0b3ccb080ff374fd5968bbd1c5e76">Written quote C</a> · 50% down, balance when finished</p></div>
   </div>
   <p class="lede" style="font-size:14px;margin:12px 0 0">About 10 working days on site, water off for 6 of them. Everything the water can reach is tiled over a waterproof membrane or topcoated; the clay itself never sits in the splash. A 50% deposit holds your dates and covers the tile and Roman clay order. The balance is due when the whole job is finished, columns and niches included. Pay the deposit under the option you want and that is the one we build.</p>
 
