@@ -217,6 +217,7 @@ async function invPublishAndVerify(q, url) {
 }
 /* ✉️ Email the link (Ray, 2026-09-21: "it should be an email, it usually is"). Server sends from the brand on the app's
    sending domain with Reply-To = the signed-in owner; defaults to the customer's email, asks for one if missing. */
+window.invToggleItemized = function (quoteId, on) { const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return; q.itemized = !!on; touch(q); save(); if (typeof toast === "function") toast(on ? "Customer sees every line" : "Customer sees one total"); };
 window.invEmailLink = async function (quoteId) {
   const q = (D().quotes || []).find(x => x && x.id === quoteId); if (!q) return;
   const origin = (S.sync && S.sync.url ? String(S.sync.url).replace(/\/+$/, "") : "");
@@ -303,6 +304,7 @@ function invShareSheet(q, url, copied) {
     <input readonly value="${esc(url)}" onclick="this.select()" style="width:100%;margin-top:10px;font-size:13px">
     <button class="btn acc" style="width:100%;margin-top:8px" onclick="invTextLink('${q.id}')">💬 Text the link</button>
     <button class="btn ghost" id="inv_copyurl_${q.id}" style="width:100%;margin-top:8px" onclick="invCopyShareUrl('${q.id}')">${copied ? "✓ Copied — paste it into a text or email" : "🔗 Copy link"}</button>
+    <label class="toggle" style="margin:8px 0 0"><input type="checkbox" ${q.itemized ? "checked" : ""} onchange="invToggleItemized('${q.id}',this.checked)"><span style="margin:0;font-size:13px">Show each line item on the customer's invoice</span></label>
     <button class="btn ghost" id="inv_email_${q.id}" style="width:100%;margin-top:8px" onclick="invEmailLink('${q.id}')">${q.emailedAt ? "✉️ Email again (sent " + new Date(q.emailedAt).toLocaleDateString() + ")" : "✉️ Email the link"}</button>
     <div class="sub" style="margin-top:10px;white-space:normal">Every time the customer opens this page you'll get a ping in Messages (and on your phone). Opens from the preview button — or from any browser you've previewed in — are never counted as customer reads.</div>
     ${invViewsHTML(q.id)}

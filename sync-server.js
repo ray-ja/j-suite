@@ -2562,6 +2562,11 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     rows = (items.length ? items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("")
       : `<tr><td colspan="3" style="color:#9ca3af">No line items on this quote.</td></tr>`);
     adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">${htmlEsc(q.discountLabel || (adj < 0 ? "Discount" : "Adjustment"))}</td><td class="n">${adj < 0 ? "−" : "+"}${invMoney(Math.abs(adj))}</td></tr>` : "";
+  } else if (q.itemized && items.length) {
+    // ITEMIZED FIXED (Ray 2026-09-21, the escape-room hours: "show each date as a line item"): opt-in per invoice,
+    // every line with its qty and amount; the grand total still comes from the same R.grand.
+    rows = items.map(it => `<tr><td>${htmlEsc(it.name || "Item")}</td><td class="c">${+it.qty || 1}</td><td class="n">${invMoney((+it.price || 0) * (+it.qty || 1))}</td></tr>`).join("");
+    adjRows = Math.abs(adj) >= 0.005 ? `<tr><td colspan="2" class="n">Subtotal</td><td class="n">${invMoney(sub)}</td></tr><tr><td colspan="2" class="n">${htmlEsc(q.discountLabel || (adj < 0 ? "Discount" : "Adjustment"))}</td><td class="n">${adj < 0 ? "−" : ""}${invMoney(Math.abs(adj))}</td></tr>` : "";
   } else {
     // FIXED: one clean line, one total — no line items on the customer's page (Ray 2026-09-01:
     // "Just have a single total. I don't need line item stuff unless they request it.")
