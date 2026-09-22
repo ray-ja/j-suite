@@ -53,6 +53,14 @@ if (typeof window !== "undefined") {
       h += `<div style="font-weight:800;margin:12px 0 4px">🔨 Order of work <span class="sub" style="font-weight:400">· ${p.stepsDone}/${p.steps} done</span></div>`;
       g.steps.forEach((s, i) => { h += `<label class="li" style="cursor:pointer;padding:7px 0;align-items:flex-start"><input type="checkbox" style="width:22px;height:22px;flex:0 0 auto;margin-top:1px" ${s.done ? "checked" : ""} onchange="guideToggle('${j.id}','steps',${i})"><div class="grow"><div class="nm" style="font-size:14px;font-weight:600;${s.done ? "text-decoration:line-through;opacity:.6" : ""}">${i + 1}. ${E(s.text)}</div>${s.note ? `<div class="sub" style="white-space:normal">${E(s.note)}</div>` : ""}</div></label>`; });
     }
+    if (Array.isArray(g.schedule) && g.schedule.length) {
+      h += `<div style="font-weight:800;margin:12px 0 4px">🗓 Day by day${g.days ? ` <span class="sub" style="font-weight:400">· ${E(g.days)}</span>` : ""}</div>`;
+      g.schedule.forEach(r => { h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${E(r[0])}${r[2] ? ` <span class="sub">· ${E(r[2])}</span>` : ""}</div><div class="sub" style="white-space:normal">${E(r[1])}</div></div></div>`; });
+    }
+    if (Array.isArray(g.sourcing) && g.sourcing.length) {
+      h += `<div style="font-weight:800;margin:12px 0 4px">🏪 Suppliers</div>`;
+      g.sourcing.forEach(r => { h += `<div class="li" style="padding:6px 0"><div class="grow"><div class="nm" style="font-size:14px">${E(r.supplier)}${r.status ? ` <span class="badge" style="background:var(--soft);color:var(--muted)">${E(r.status)}</span>` : ""}</div><div class="sub" style="white-space:normal">${E(r.item)}${r.contact ? ` · ${E(r.contact)}` : ""}${r.lead ? ` · <b>Lead:</b> ${E(r.lead)}` : ""}</div></div></div>`; });
+    }
     if (Array.isArray(g.open) && g.open.length) h += `<div style="font-weight:800;margin:12px 0 4px">❓ Still open</div><div class="sub" style="white-space:normal;line-height:1.6">${g.open.map(x => "• " + E(x)).join("<br>")}</div>`;
     h += `</div>`;
     return h;
