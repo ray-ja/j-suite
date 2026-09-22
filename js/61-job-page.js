@@ -195,11 +195,11 @@ function jobRouteMilesSource(j) {
 /* ===== JOB-PAGE LAYOUT — owner-reorderable section order, saved ORG-WIDE (a docs sentinel "jobLayout", synced
    like financeConfig). Everyone in the org sees the same order. Unknown/new section keys never vanish: the saved
    order is validated against the canonical key list and any missing keys are appended in their default order. ===== */
-const JOB_LAYOUT_KEYS_DEFAULT = ["data", "partof", "change", "askcap", "crew", "vehicles", "clock", "load", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
+const JOB_LAYOUT_KEYS_DEFAULT = ["guide", "data", "partof", "change", "askcap", "crew", "vehicles", "clock", "load", "costs", "matreport", "photos", "notes", "invoice", "closeout", "workdays", "done"];
 /* WORKFLOW TABS — the job page was one endless scroll of 16 look-alike cards. Group them into 4 tabs by what you're
    doing (arriving → working → money → wrapping up) so you tap instead of scroll-hunting. Each key belongs to one tab. */
 const JOB_TABS = [
-  { key: "overview", label: "📋 Overview", secs: ["data", "change", "crew", "vehicles", "partof"] },
+  { key: "overview", label: "📋 Overview", secs: ["guide", "data", "change", "crew", "vehicles", "partof"] },
   { key: "work", label: "🔨 On the job", secs: ["askcap", "clock", "load", "notes", "photos"] },
   { key: "money", label: "💰 Money", secs: ["costs", "matreport", "invoice"] },
   { key: "wrap", label: "✓ Close out", secs: ["closeout", "workdays", "done"] }
@@ -585,6 +585,7 @@ function rJobPage(j) {
   // mode (owner) every section gets a ▲▼ move bar that writes the org-wide order. h already has the fixed header.
   const _sections = [
     { key: "data", label: "📋 Details", html: _secData },
+    { key: "guide", label: "📘 Project guide", html: (typeof jobGuideHTML === "function") ? jobGuideHTML(j) : "" },
     { key: "partof", label: "↳ Part of a bigger job", html: _secPartOf },
     { key: "change", label: "🧾 Change order", html: _secChange },
     { key: "askcap", label: "💬 Ask Cap", html: _secAskCap },
