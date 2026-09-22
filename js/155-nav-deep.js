@@ -119,6 +119,9 @@ function navDeepFor(groupKey) {
   var out = [];
 
   allowed.forEach(function (t) {
+    /* Phase 3 (2026-09-22): `quotes` is the same screen as `jobs`; one row, not two. Other hidden tabs
+       (Route review) are distinct screens and keep their row. */
+    if (t === "quotes") return;
     if (covered.indexOf(t) >= 0) {
       /* level 3: this tab's own screens */
       NAV_DEEP.forEach(function (d) {

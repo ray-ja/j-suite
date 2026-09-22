@@ -162,11 +162,15 @@ const NAV_GROUPS = [
      sales route planner, and then it looks like there's two versions of that." Renamed in
      TAB_META so they read as different, and placed beside Schedule and Time where the day's
      driving belongs. Map comes too — it is where the pins the planner uses get dropped. */
-  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","schedule","time","route","routes"] },
+  /* ⭐ PHASE 3 MERGE (Ray, 2026-09-22 UX audit): `quotes` and `jobs` render the SAME screen (rQuotes) and sat in two
+     menus (Work and Sales). Quotes now lives here with Jobs, hidden from the sub-tab row (NAV_HIDDEN_TABS) so
+     there is one "Jobs" chip, while the tab stays routable (the quote wizard hosts on it). Likewise `routes`
+     (Route review) hides behind Route: js/188 puts a Plan | Review toggle on both screens. */
+  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","quotes","schedule","time","route","routes"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale"] },
-  { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","quotes","recurring"] },
+  { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","recurring"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   // JOURNAL — its own top-level tab (Ray, 2026-08-02: "journal needs to be its own tab"). It was a sub-tab buried
   // inside Life; the entries are the SAME lifeNotes collection (no new collection, no migration), just promoted so
@@ -254,7 +258,12 @@ function navGroupsOrdered(){
 function orgHasTab(tab){ const t=orgTabs(); if(ORG_CORE_TABS.indexOf(tab)>=0) return true; if(ORG_OPTIN_TABS.indexOf(tab)>=0) return !!t && t.indexOf(tab)>=0; return !t || t.indexOf(tab)>=0; }
 function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !msgEnabled() : true)) return false; return (typeof canSee==="function") ? canSee(t) : true; }
 function tabGroup(t){ return NAV_GROUPS.find(g=>g.tabs.indexOf(t)>=0) || NAV_GROUPS[0]; }
+/* tabs that stay routable and keep their group (for highlighting / return) but get NO chip of their own,
+   because another chip in the same group is the same screen or hosts a toggle to it (Phase 3 merges) */
+const NAV_HIDDEN_TABS = ["quotes","routes"];
 function groupTabs(g){ return g.tabs.filter(navCanSee); }
+const NAV_HOST = { quotes:"jobs", routes:"route" };   // hidden tab → the chip that stands for it
+function groupTabsShown(g){ return groupTabs(g).filter(t=>NAV_HIDDEN_TABS.indexOf(t)<0); }
 function renderNav(){
   const nav=document.querySelector("nav"); if(!nav) return;
   const curKey=tabGroup(TAB).key;
@@ -278,14 +287,14 @@ function renderNav(){
 }
 function renderSubnav(){
   const el=document.getElementById("subnav"); if(!el) return;
-  const g=tabGroup(TAB); NAV_LAST[g.key]=TAB; const tabs=groupTabs(g);
+  const g=tabGroup(TAB); NAV_LAST[g.key]=TAB; const tabs=groupTabsShown(g);
   // People & Places: ONE merged sub-tab row — 👥 People (the crew directory / "team" tab) + the accounts screen's
   // four sub-views (Customers · Properties · 📍 Places · 📞 Call Lead), so Places is a top-level sub-tab here
   // instead of a second, buried subnav. ppSubnav (js/06) emits it and the accounts tab's own acctSubnav() yields
   // to it (returns "" inside this group), so there's exactly one row. Respects role gating via `tabs`.
   if(g.key==="team" && typeof ppSubnav==="function"){ el.innerHTML=ppSubnav(tabs); return; }
   el.innerHTML = (tabs.length>1)
-    ? `<div class="subnav">`+tabs.map(t=>`<button class="subbtn ${t===TAB?"on":""}" onclick="navSub('${t}')">${(TAB_META[t]||{}).i||""} ${(TAB_META[t]||{}).l||t}</button>`).join("")+`</div>`
+    ? `<div class="subnav">`+tabs.map(t=>`<button class="subbtn ${(t===TAB||(NAV_HOST[TAB]===t))?"on":""}" onclick="navSub('${t}')">${(TAB_META[t]||{}).i||""} ${(TAB_META[t]||{}).l||t}</button>`).join("")+`</div>`
     : "";
 }
 window.navGroup=function(key){ const g=NAV_GROUPS.find(x=>x.key===key); if(!g) return; const tabs=groupTabs(g); if(!tabs.length) return; TAB=(NAV_LAST[key]&&tabs.indexOf(NAV_LAST[key])>=0)?NAV_LAST[key]:tabs[0]; window.JOB_OPEN=null; if(TAB==="messages"&&typeof msgResetOpen==="function")msgResetOpen(); render(); };

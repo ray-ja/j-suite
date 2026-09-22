@@ -129,8 +129,8 @@ function rToday(){
   if(todayHas("jobs")){
     h+=`<div class="secthd"><h2>📅 Today's jobs</h2><span class="ct">${jobs.length}</span><button class="btn ghost sm" style="margin-left:auto" onclick="openQuickTask()">+ Add</button></div>`;
     if(jobs.length) h+=`<div class="card">`+jobs.map(liJob).join("")+`</div>`;
-    else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a task</button></div>`;
-    else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a task</button></div>`;
+    else if(nextJob) h+=`<div class="card"><div class="sub" style="margin-bottom:8px">No jobs today — next job is <b>${fmtDate(_nextDay(nextJob)||nextJob.date)}</b></div>`+liJob(nextJob)+`<button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="openQuickTask()">+ Add a job</button></div>`;
+    else h+=`<div class="empty">No jobs today.<br><button class="btn ghost sm" style="margin-top:8px" onclick="openQuickTask()">+ Add a job</button></div>`;
   }
 
   // 5) Money first (owner) — open quotes · confirmed (booked) jobs · invoices to send · awaiting payment
@@ -195,7 +195,7 @@ window.openQuickTask=function(afterCreate){
   const crew=(typeof schedMembers==="function")?schedMembers():[];
   const me=(typeof curUser==="function")?curUser():null;
   const tpls=jobTemplates().list.filter(x=>x&&!x.deleted);
-  modal("Add a task / job",`
+  modal("Add a job",`
     ${tpls.length?`<label style="margin-top:0">Common jobs — one tap</label><div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:4px">${tpls.map(t=>`<button class="btn ghost sm" onclick="applyJobTemplate('${t.id}')">🔁 ${esc(t.label||t.title||"Job")}</button>`).join("")}<button class="btn ghost sm" onclick="newJobTemplate()">+ New</button></div><div style="border-top:1px solid var(--line);margin:8px 0"></div>`:`<button class="btn ghost sm" style="margin-bottom:8px;width:100%" onclick="newJobTemplate()">⭐ Save a common job (like a dump run)</button>`}
     <label>What needs doing?</label><input id="qt_title" placeholder="e.g. Clean the chainsaw, sharpen blades…" autocomplete="off">
     <label>Date</label><input id="qt_date" type="date" value="${today()}">
