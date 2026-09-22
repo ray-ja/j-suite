@@ -2716,6 +2716,64 @@ function invEmailBuild(q, cust, biz, owner, origin, note) {
   const from = brand ? (brand.replace(/[<>"]/g, "") + " <invoices@mail.jsuite.dev>") : null;
   return { subject: subject, html: html, text: text, url: url, from: from };
 }
+/* ---------- QUICKBOOKS ONLINE (Ray, 2026-09-22: "exporting from quickbooks is so slow… lets just do the api route") ----------
+   Per-org Intuit app keys + OAuth grant live in org-keys.json under <org>.qbo. Connect = the standard Intuit OAuth2
+   code flow with a signed state, callback lands on THIS server; Pull = every accounting entity + the three reports
+   by year, written to qbo-export/<org>/ as JSON (gitignored), so the books survive cancelling QuickBooks. */
+const QBO_REDIRECT = "https://app.jsuite.dev/api/config/qbo/callback";
+const QBO_API = "https://quickbooks.api.intuit.com/v3/company/";
+const QBO_MINOR = "73";
+const QBO_ENTITIES = ["Account", "Customer", "Vendor", "Item", "Invoice", "Payment", "SalesReceipt", "Bill", "BillPayment", "Purchase", "Deposit", "JournalEntry", "CreditMemo", "Transfer", "VendorCredit", "Estimate", "Employee", "TimeActivity"];
+function qboLoad(org) { const k = orgKeysLoad(); const o = k[org || "obx"] || {}; return o.qbo || {}; }
+function qboSave(cfg, org) { const k = orgKeysLoad(); const id = org || "obx"; if (!k[id]) k[id] = {}; k[id].qbo = cfg; orgKeysSave(k); }
+/* signed state: org + issue time, HMAC'd with the CEO token so the callback can't be forged or aimed at another org */
+function qboStateSecret() { let c = {}; try { c = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {} return String(c.writeToken || c.token || "qbo"); }
+function qboStateMake(org, secret, now) { const t = String(+now || Date.now()); const sig = crypto.createHmac("sha256", secret).update(org + "|" + t).digest("hex").slice(0, 24); return [org, t, sig].join("."); }
+function qboStateOk(state, secret, now) {
+  const m = /^([a-z0-9_\-]{2,40})\.(\d{10,16})\.([0-9a-f]{24})$/i.exec(String(state || "")); if (!m) return null;
+  const sig = crypto.createHmac("sha256", secret).update(m[1] + "|" + m[2]).digest("hex").slice(0, 24);
+  if (sig.length !== m[3].length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(m[3]))) return null;
+  if ((+now || Date.now()) - (+m[2]) > 30 * 60 * 1000) return null;   // a connect link is good for 30 minutes
+  return m[1];
+}
+function qboAuthUrl(clientId, state) {
+  return "https://appcenter.intuit.com/connect/oauth2?" + new URLSearchParams({ client_id: clientId, response_type: "code", scope: "com.intuit.quickbooks.accounting", redirect_uri: QBO_REDIRECT, state: state }).toString();
+}
+/* the year ranges a pull asks reports for: from the company's first transaction year (or 2 years back) to today */
+function qboYearRanges(firstYear, now) { const y0 = Math.max(2000, +firstYear || (new Date(+now || Date.now()).getFullYear() - 2)); const y1 = new Date(+now || Date.now()).getFullYear(); const out = []; for (let y = y0; y <= y1; y++) out.push({ year: y, start: y + "-01-01", end: (y === y1) ? new Date(+now || Date.now()).toISOString().slice(0, 10) : y + "-12-31" }); return out; }
+function qboTokenPost(cfg, form) {
+  const basic = Buffer.from(cfg.clientId + ":" + cfg.clientSecret).toString("base64");
+  return fetch("https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer", { method: "POST", headers: { "Authorization": "Basic " + basic, "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" }, body: new URLSearchParams(form).toString() }).then(r => r.json());
+}
+/* a fresh access token (refreshes when within 5 min of expiry; persists the rotated refresh token) */
+async function qboAccess(org) {
+  const cfg = qboLoad(org);
+  if (!cfg.refreshToken) throw new Error("not connected");
+  if (cfg.accessToken && cfg.accessExp && cfg.accessExp - Date.now() > 5 * 60 * 1000) return cfg.accessToken;
+  const tj = await qboTokenPost(cfg, { grant_type: "refresh_token", refresh_token: cfg.refreshToken });
+  if (!tj || !tj.access_token) throw new Error("QuickBooks refused the refresh token" + (tj && tj.error_description ? ": " + tj.error_description : "") + " — reconnect");
+  cfg.accessToken = tj.access_token; cfg.accessExp = Date.now() + (+tj.expires_in || 3600) * 1000; if (tj.refresh_token) cfg.refreshToken = tj.refresh_token;
+  qboSave(cfg, org); return cfg.accessToken;
+}
+async function qboGet(org, pathAndQuery) {
+  const cfg = qboLoad(org); const at = await qboAccess(org);
+  const sep = pathAndQuery.indexOf("?") >= 0 ? "&" : "?";
+  const r = await fetch(QBO_API + cfg.realmId + "/" + pathAndQuery + sep + "minorversion=" + QBO_MINOR, { headers: { "Authorization": "Bearer " + at, "Accept": "application/json" } });
+  const t = await r.text(); let j; try { j = JSON.parse(t); } catch (e) { j = { raw: t.slice(0, 300) }; }
+  if (!r.ok) throw new Error("QuickBooks " + r.status + " on " + pathAndQuery.split("?")[0] + ": " + ((j.Fault && j.Fault.Error && j.Fault.Error[0] && (j.Fault.Error[0].Detail || j.Fault.Error[0].Message)) || t.slice(0, 200)));
+  return j;
+}
+/* every row of an entity, 1000 at a time */
+async function qboQueryAll(org, entity) {
+  const out = []; let start = 1;
+  for (let i = 0; i < 50; i++) {
+    const q = "select * from " + entity + " startposition " + start + " maxresults 1000";
+    const j = await qboGet(org, "query?query=" + encodeURIComponent(q));
+    const rows = (j.QueryResponse && j.QueryResponse[entity]) || [];
+    out.push(...rows); if (rows.length < 1000) break; start += 1000;
+  }
+  return out;
+}
 // per-site base for the reset link, from an ALLOWLISTED Host (prevents Host-header injection into the email)
 function resetBaseUrl(req) {
   const allow = ["app.jsuite.dev", "dev.jsuite.dev"];
@@ -4589,6 +4647,69 @@ const server = http.createServer((req, res) => {
   }
 
   /* ── GOOGLE ADS config + connect (superAdmin, like the deploy keys). Values are never echoed back. ── */
+  /* ---- QuickBooks Online: /api/config/qbo (status/save), /connect, /callback (browser, no token), /pull ---- */
+  if (req.url.split("?")[0].indexOf("/api/config/qbo") === 0) {
+    const q = new URL(req.url, "http://x");
+    const sub = req.url.split("?")[0].slice("/api/config/qbo".length);
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    if (req.method === "GET" && sub === "/callback") {
+      /* Intuit sends the browser here: ?code=…&state=…&realmId=… . The signed state names the org. */
+      const org = qboStateOk(q.searchParams.get("state"), qboStateSecret());
+      const html = (msg, ok) => { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }); res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font:17px/1.5 system-ui;padding:32px;max-width:520px;margin:auto;color:#1b2330"><h2 style="margin:0 0 10px">' + (ok ? "QuickBooks connected ✓" : "That didn\'t work") + '</h2><p>' + msg + '</p><p style="color:#666">You can close this tab and go back to the app.</p></body>'); };
+      if (!org) return html("The connect link expired or was tampered with. Open the app, Settings → Keys, and tap Connect QuickBooks again.", false);
+      const cfg = qboLoad(org); const code = q.searchParams.get("code"), realm = q.searchParams.get("realmId");
+      if (!code || !realm || !cfg.clientId) return html("QuickBooks sent us back without a code. Try Connect again.", false);
+      return qboTokenPost(cfg, { grant_type: "authorization_code", code: code, redirect_uri: QBO_REDIRECT }).then(tj => {
+        if (!tj || !tj.refresh_token) return html("QuickBooks refused the code" + (tj && tj.error_description ? ": " + tj.error_description : "") + ". Tap Connect again for a fresh one.", false);
+        cfg.refreshToken = tj.refresh_token; cfg.accessToken = tj.access_token; cfg.accessExp = Date.now() + (+tj.expires_in || 3600) * 1000; cfg.realmId = String(realm); cfg.connectedAt = Date.now();
+        try { qboSave(cfg, org); } catch (e) { return html("Connected, but the server could not save the grant.", false); }
+        return qboGet(org, "companyinfo/" + realm).then(ci => { const nm = ci && ci.CompanyInfo && ci.CompanyInfo.CompanyName; if (nm) { cfg.company = nm; qboSave(cfg, org); } html("Connected to <b>" + (nm || "your company") + "</b>. Now tap <b>Pull everything now</b> in the app.", true); }).catch(() => html("Connected. Now tap <b>Pull everything now</b> in the app.", true));
+      }).catch(() => html("Could not reach Intuit to finish. Try Connect again.", false));
+    }
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) return J(403, { error: "forbidden" });
+    const KORG = /^[a-z0-9_\-]{2,40}$/i.test(String(q.searchParams.get("org") || "")) ? q.searchParams.get("org") : "obx";
+    if (req.method === "GET" && !sub) { const c = qboLoad(KORG); return J(200, { ok: true, hasClient: !!(c.clientId && c.clientSecret), connected: !!c.refreshToken, company: c.company || "", realmId: c.realmId ? true : false, lastPull: c.lastPull || null }); }
+    if (req.method === "POST" && !sub) {
+      return readBodyUtf8(req, 8192, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const cid = String(p.clientId || "").trim(), sec = String(p.clientSecret || "").trim();
+        if (!/^[A-Za-z0-9]{20,80}$/.test(cid) || !/^[A-Za-z0-9]{20,80}$/.test(sec)) return J(400, { error: "the Client ID and Client Secret are long letter-and-number strings from Keys & credentials (Production)" });
+        const c = qboLoad(KORG); c.clientId = cid; c.clientSecret = sec; c.refreshToken = ""; c.accessToken = ""; c.realmId = "";
+        try { qboSave(c, KORG); } catch (e) { return J(500, { error: "write failed" }); }
+        return J(200, { ok: true });
+      });
+    }
+    if (req.method === "POST" && sub === "/connect") {
+      const c = qboLoad(KORG); if (!c.clientId) return J(400, { error: "save the Intuit app keys first" });
+      return J(200, { ok: true, url: qboAuthUrl(c.clientId, qboStateMake(KORG, qboStateSecret())) });
+    }
+    if (req.method === "POST" && sub === "/pull") {
+      const c = qboLoad(KORG); if (!c.refreshToken) return J(400, { error: "connect QuickBooks first" });
+      const dir = path.join(__dirname, "qbo-export", KORG); try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+      (async () => {
+        const summary = {};
+        for (const ent of QBO_ENTITIES) { try { const rows = await qboQueryAll(KORG, ent); fs.writeFileSync(path.join(dir, ent + ".json"), JSON.stringify(rows)); summary[ent] = rows.length; } catch (e) { summary[ent] = "error: " + e.message.slice(0, 120); } }
+        let firstYear = null; try { const ci = await qboGet(KORG, "companyinfo/" + c.realmId); fs.writeFileSync(path.join(dir, "CompanyInfo.json"), JSON.stringify(ci)); const st = ci && ci.CompanyInfo && ci.CompanyInfo.CompanyStartDate; if (st) firstYear = +String(st).slice(0, 4); } catch (e) {}
+        try { const acc = JSON.parse(fs.readFileSync(path.join(dir, "Account.json"), "utf8")); const yrs = acc.map(a => +String(a.MetaData && a.MetaData.CreateTime || "").slice(0, 4)).filter(Boolean); if (yrs.length) firstYear = Math.min(firstYear || 9999, ...yrs); } catch (e) {}
+        const ranges = qboYearRanges(firstYear);
+        for (const rg of ranges) {
+          for (const rep of ["ProfitAndLoss", "BalanceSheet", "GeneralLedger", "TrialBalance"]) {
+            for (const method of (rep === "BalanceSheet" ? ["Accrual"] : ["Cash", "Accrual"])) {
+              try { const j = await qboGet(KORG, "reports/" + rep + "?start_date=" + rg.start + "&end_date=" + rg.end + "&accounting_method=" + method + (rep === "GeneralLedger" ? "&columns=tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount,rbal_nat_amount" : "")); fs.writeFileSync(path.join(dir, rep + "-" + rg.year + "-" + method + ".json"), JSON.stringify(j)); summary[rep + " " + rg.year + " " + method] = "ok"; } catch (e) { summary[rep + " " + rg.year + " " + method] = "error: " + e.message.slice(0, 100); }
+            }
+          }
+        }
+        const c2 = qboLoad(KORG); c2.lastPull = Date.now(); c2.lastPullSummary = summary; try { qboSave(c2, KORG); } catch (e) {}
+        fs.writeFileSync(path.join(dir, "_summary.json"), JSON.stringify({ at: new Date().toISOString(), summary }, null, 2));
+        const ents = QBO_ENTITIES.map(e => e + ":" + summary[e]).join(", ");
+        J(200, { ok: true, summary: ents, years: ranges.map(r => r.year).join(", ") });
+      })().catch(e => J(502, { error: e.message }));
+      return;
+    }
+    return J(404, { error: "no such route" });
+  }
   if (req.url.split("?")[0].indexOf("/api/config/googleads") === 0) {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
@@ -5997,4 +6118,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

@@ -133,6 +133,21 @@ function rData(){
         `<input type="password" id="in_orgStripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
          <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('stripeKey','in_orgStripeKey')">Save &amp; verify</button>
          <div id="ok_stripeWebhook" class="sub" style="font-size:12.5px;margin-top:4px"></div>`),false)}
+    ${grp(`📗 QuickBooks Online — ${ORG} <span id="qbo_status" class="sub" style="font-size:12.5px"></span>`,
+      row(`1 · Intuit app keys`,``,
+        `Lets the app read ${ORG}'s QuickBooks company: every transaction, invoice, customer, vendor and the P&amp;L / balance sheet reports.`,
+        `developer.intuit.com → sign in with the QuickBooks login → Dashboard → Create an app → QuickBooks Online and Payments → name it "j-Suite". Under <b>Keys &amp; credentials</b> pick <b>Production</b>, add redirect URI <code>https://app.jsuite.dev/api/config/qbo/callback</code>, fill the app details it asks for (privacy: https://www.obxjunkco.com/privacy · terms: https://www.obxjunkco.com/terms · host domain app.jsuite.dev), then copy the Client ID and Client Secret here.`,
+        `<input id="in_qboClientId" placeholder="Client ID" autocomplete="off" style="width:100%">
+         <input type="password" id="in_qboClientSecret" placeholder="Client Secret" autocomplete="off" style="width:100%;margin-top:6px">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="qboSaveCfg()">Save keys</button>`)
+      +row(`2 · Connect`,``,
+        `Signs in to QuickBooks once and stores a refresh token on the server (good for 100 days of use).`,
+        `Tap Connect, sign in, pick the company, Authorize. It comes back here by itself.`,
+        `<button class="btn ghost" style="width:100%" onclick="qboConnect()">Connect QuickBooks (opens sign-in)</button>`)
+      +row(`3 · Pull everything`,``,
+        `Copies the whole company to the server as files (accounts, customers, vendors, invoices, bills, purchases, payments, journal entries, and the P&amp;L, balance sheet and general ledger by year), so the books survive cancelling QuickBooks.`,
+        `Tap it once after connecting. Takes a minute or two.`,
+        `<button class="btn ghost" style="width:100%" onclick="qboPull()">Pull everything now</button><div id="qbo_pull" class="sub" style="font-size:12.5px;margin-top:4px"></div>`),false)}
     ${grp(`📣 Google Ads — ${ORG} <span id="gads_status" class="sub" style="font-size:12.5px"></span>`,
       row(`1 · OAuth client (JSON file)`,``,
         `Lets the app talk to ${ORG}'s ads account.`,
@@ -373,6 +388,26 @@ window.saveReviewLink=function(){
 
 /* ── Google Ads key management (Ray: keys managed IN THE APP, no terminal) ─────────────────────────────
    Mirrors saveDeployKey's trust model; the server never echoes secrets back, the UI only shows booleans. */
+function qboApi(pathSuffix,opts){
+  const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
+  return fetch(base+"/api/config/qbo"+(pathSuffix||"")+"?org="+encodeURIComponent(S.biz),Object.assign({headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{})},opts||{})).then(r=>r.json());
+}
+window.qboRefreshStatus=function(){
+  const el=document.getElementById("qbo_status"); if(!el)return;
+  qboApi("",{method:"GET"}).then(d=>{ if(!d||!d.ok){el.textContent="";return;} el.textContent=d.connected?"· connected ✓"+(d.company?" · "+d.company:"")+(d.lastPull?" · pulled "+new Date(d.lastPull).toLocaleDateString():""):d.hasClient?"· keys saved, not connected yet":"· not set up"; }).catch(()=>{});
+};
+window.qboSaveCfg=function(){
+  const cid=(val("in_qboClientId")||"").trim(), sec=(val("in_qboClientSecret")||"").trim();
+  if(!cid||!sec){alert("Paste both the Client ID and the Client Secret.");return;}
+  qboApi("",{method:"POST",body:JSON.stringify({clientId:cid,clientSecret:sec})}).then(d=>{ if(!(d&&d.ok)){alert("Save failed: "+((d&&d.error)||"unknown"));return;} ["in_qboClientId","in_qboClientSecret"].forEach(id=>{const e=document.getElementById(id);if(e)e.value="";}); alert("Saved ✓. Now tap Connect QuickBooks."); qboRefreshStatus(); }).catch(()=>alert("Save failed — are you online?"));
+};
+window.qboConnect=function(){
+  qboApi("/connect",{method:"POST",body:"{}"}).then(d=>{ if(!(d&&d.ok&&d.url)){alert("Can't connect yet: "+((d&&d.error)||"unknown"));return;} window.open(d.url,"_blank"); }).catch(()=>alert("Couldn't reach the server."));
+};
+window.qboPull=function(){
+  const el=document.getElementById("qbo_pull"); if(el)el.textContent="Pulling… this takes a minute or two.";
+  qboApi("/pull",{method:"POST",body:"{}"}).then(d=>{ if(!(d&&d.ok)){if(el)el.textContent="Failed: "+((d&&d.error)||"unknown");return;} if(el)el.textContent="Done ✓ "+(d.summary||""); qboRefreshStatus(); }).catch(()=>{ if(el)el.textContent="Couldn't reach the server."; });
+};
 function gadsApi(pathSuffix,opts){
   const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
   return fetch(base+"/api/config/googleads"+(pathSuffix||"")+"?org="+encodeURIComponent(S.biz),Object.assign({headers:Object.assign({"Content-Type":"application/json"},tok?{Authorization:"Bearer "+tok}:{})},opts||{})).then(r=>r.json());
@@ -445,6 +480,7 @@ window.saveOrgKey=function(name,inputId){
     }).catch(()=>alert("Save failed — are you online?"));
 };
 window.orgKeysRefresh=function(){
+  if(typeof qboRefreshStatus==="function")qboRefreshStatus();
   const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
   fetch(base+"/api/config/orgkeys?org="+encodeURIComponent(S.biz),{headers:tok?{Authorization:"Bearer "+tok}:{}}).then(r=>r.json()).then(d=>{
     if(!d||!d.ok)return;

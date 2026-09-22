@@ -2494,6 +2494,18 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     ok("orgKeyNameOk: stripe names allowed, junk refused", S.orgKeyNameOk("stripeKey") && S.orgKeyNameOk("stripeWebhookSecret") && !S.orgKeyNameOk("stripeSecret"));
   }
 
+  {
+    const S = t;
+    const st = S.qboStateMake("jam", "secret", 1000000000000);
+    ok("qbo state: signed, names the org, verifies with the same secret", S.qboStateOk(st, "secret", 1000000000000 + 60000) === "jam");
+    ok("qbo state: wrong secret, tampered org, or >30 min old → null", S.qboStateOk(st, "other", 1000000000000) === null && S.qboStateOk(st.replace(/^jam/, "obx"), "secret", 1000000000000) === null && S.qboStateOk(st, "secret", 1000000000000 + 31 * 60000) === null);
+    const u = S.qboAuthUrl("ABC123", st);
+    ok("qbo auth url: Intuit endpoint, accounting scope, our https callback, the state", /^https:\/\/appcenter\.intuit\.com\/connect\/oauth2\?/.test(u) && u.indexOf("scope=com.intuit.quickbooks.accounting") > 0 && u.indexOf(encodeURIComponent(S.QBO_REDIRECT)) > 0 && u.indexOf("state=" + encodeURIComponent(st)) > 0);
+    const yrs = S.qboYearRanges(2024, Date.parse("2026-09-22T12:00:00Z"));
+    ok("qbo year ranges: first year through today, current year ends today", yrs.length === 3 && yrs[0].start === "2024-01-01" && yrs[0].end === "2024-12-31" && yrs[2].end === "2026-09-22");
+    ok("qbo year ranges: no first year → two years back", S.qboYearRanges(null, Date.parse("2026-09-22T12:00:00Z"))[0].year === 2024);
+  }
+
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
