@@ -130,8 +130,8 @@ function rData(){
       row(`Restricted API key`,`ok_stripeKey`,
         `Pay-online buttons on ${ORG}'s invoices and deposits are minted on THIS Stripe account, so the money lands in ${ORG}'s balance.`,
         `dashboard.stripe.com (signed in to ${ORG}'s account) → Developers → API keys → Create restricted key → write on <b>Products, Prices, Payment Links, Webhook Endpoints</b>, read on <b>Checkout Sessions, Charges, Balance</b>. Paste the rk_live_ value. The paid-invoice webhook registers itself.`,
-        `<input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
-         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('stripeKey','in_stripeKey')">Save &amp; verify</button>
+        `<input type="password" id="in_orgStripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('stripeKey','in_orgStripeKey')">Save &amp; verify</button>
          <div id="ok_stripeWebhook" class="sub" style="font-size:12.5px;margin-top:4px"></div>`),false)}
     ${grp(`📣 Google Ads — ${ORG} <span id="gads_status" class="sub" style="font-size:12.5px"></span>`,
       row(`1 · OAuth client (JSON file)`,``,
