@@ -50,8 +50,12 @@ window.enablePush = async function () {
    State 2 (installed/desktop, permission ungranted) → "Turn on notifications" CTA.
    State 3 (granted) → hidden. Dismiss (×) hides it for THIS session; it returns on next app open.
    Only enables push via an explicit tap — never auto-prompts mid-task. */
+/* Ray, 2026-09-22 (UX audit): the banner sat on top of every screen until dismissed, and came back on every
+   open. Now it shows until dismissed ONCE, remembered on this device; after that "Turn on" lives on the
+   Settings screen (js/187 adds the Notifications card there). */
 let _pushBannerDismissed = false;
-window.dismissPushBanner = function () { _pushBannerDismissed = true; const b = document.getElementById("pushbanner"); if (b) b.style.display = "none"; };
+try { _pushBannerDismissed = localStorage.getItem("jra_push_dismissed") === "1"; } catch (e) {}
+window.dismissPushBanner = function () { _pushBannerDismissed = true; try { localStorage.setItem("jra_push_dismissed", "1"); } catch (e) {} const b = document.getElementById("pushbanner"); if (b) b.style.display = "none"; };
 window.pushInstallHelp = function () { alert("To get message alerts on iPhone:\n1) Tap the Share button (the box with an up-arrow)\n2) Add to Home Screen\n3) Open J-Suite from your home screen\n4) Tap “Turn on” here"); };
 function pushBannerState() {
   if (typeof msgEnabled === "function" && !msgEnabled()) return null;   // messaging off → no point nagging
@@ -60,6 +64,7 @@ function pushBannerState() {
   if (typeof Notification !== "undefined" && window.isSecureContext && Notification.permission !== "granted") return "grant";
   return null;                                                          // unsupported (non-iOS) / not secure → nothing to offer
 }
+window.pushBannerState = pushBannerState;
 function renderPushBanner() {
   const st = _pushBannerDismissed ? null : pushBannerState();
   let b = document.getElementById("pushbanner");
