@@ -161,17 +161,6 @@ function rData(){
         `Google LSA → lead inbox → Ask for reviews → copy link (or the Business Profile review short-link).`,
         `<input id="in_reviewLink" placeholder="https://…" autocomplete="off" style="width:100%" value="${esc(((S.registry||[]).find(r=>r&&r.id===S.biz)||{}).reviewLink||"")}">
          <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveReviewLink()">Save review link</button>`))}
-    ${grp(`💳 Payments — all orgs`,
-      row(`Stripe key`,`sec_stripeKey`,
-        `Makes the card-payment links on invoices.`,
-        `Stripe → Developers → API keys → <b>Create restricted key</b> → Prices, Products &amp; Payment Links set to Write (<code>rk_live_…</code>).`,
-        `<input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
-         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeKey','in_stripeKey')">Save</button>`)
-      +row(`Stripe webhook secret`,`sec_stripeWebhookSecret`,
-        `Flips an invoice to PAID the moment the customer pays.`,
-        `Stripe → Developers → Webhooks → endpoint <code>/api/stripe/webhook</code>, event <b>checkout.session.completed</b> → signing secret (<code>whsec_…</code>).`,
-        `<input type="password" id="in_stripeWebhookSecret" placeholder="whsec_…" autocomplete="off" style="width:100%">
-         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveSecret('stripeWebhookSecret','in_stripeWebhookSecret')">Save</button>`))}
     ${grp(`📧 Email — all orgs`,
       row(`Resend key`,`sec_resendKey`,
         `Lets the app send email (account invites, password resets).`,
@@ -356,7 +345,7 @@ window.loadSecStatus=function(){
   const base=(S.sync&&S.sync.url)||"", tok=(S.sync&&S.sync.token)||"";
   fetch(base+"/api/config/status",{headers:tok?{Authorization:"Bearer "+tok}:{}})
     .then(r=>r.ok?r.json():Promise.reject())
-    .then(d=>{ const mark=(id,set)=>{const e=document.getElementById(id); if(e)e.innerHTML=set?"— <b style='color:#1a9a5a'>set ✓</b>":"— <span style='color:#c0392b'>not set</span>";}; mark("sec_resendKey",d.resendKey); mark("sec_accessAud",d.accessAud); mark("sec_stripeKey",d.stripeKey); mark("sec_stripeWebhookSecret",d.stripeWebhookSecret); })
+    .then(d=>{ const mark=(id,set)=>{const e=document.getElementById(id); if(e)e.innerHTML=set?"— <b style='color:#1a9a5a'>set ✓</b>":"— <span style='color:#c0392b'>not set</span>";}; mark("sec_resendKey",d.resendKey); mark("sec_accessAud",d.accessAud); })
     .catch(()=>{});
 };
 window.saveSecret=function(key,inputId){
