@@ -788,3 +788,35 @@ nav button.navfav .lbl::before{content:"★ ";color:#e0a800;font-size:9px;vertic
   nav .navbadge{flex:0 0 auto}
   nav .navstar{padding-left:6px;font-size:12px}
 }
+/* ---------- PHASE 1 UX (2026-09-22): five-item phone bar, one "+", find anything ---------- */
+/* phone (< 900px): only the four primaries + More show in the bar; the rest live in the More sheet.
+   Every group button still exists in <nav> (hidden), so nothing that looks for them breaks. */
+nav button[data-group]:not([data-phone]){display:none}
+nav .navfavs{display:none}
+nav{overflow-x:hidden;justify-content:space-around}
+nav button.navmore{flex:1 0 auto;min-width:62px;order:5}
+/* the four primaries sit in preference order (Today · Work · Money · People) whatever the menu order is */
+nav button[data-phone="1"]{order:1}nav button[data-phone="2"]{order:2}nav button[data-phone="3"]{order:3}nav button[data-phone="4"]{order:4}
+@media(min-width:900px){
+  nav button[data-group]:not([data-phone]){display:flex}
+  nav button[data-group]{order:0}
+  nav button.navmore{display:none}
+  nav .navfavs{display:block}
+  nav{overflow-x:visible;justify-content:flex-start}
+}
+/* sheets: More / Add / Find */
+.pmhead{font-size:12px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin:14px 2px 8px}
+.pmgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pmbtn{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;font-weight:650;color:var(--ink);cursor:pointer;min-height:72px}
+.pmbtn .ic{font-size:22px;line-height:1}
+.pmbtn.on{border-color:var(--brand-text);color:var(--brand-text)}
+.pmbtn:active{transform:scale(.97)}
+@media(min-width:900px){.pmgrid{grid-template-columns:repeat(4,1fr)}}
+.rsq{width:100%;font-size:17px;padding:12px 14px;margin:2px 0 4px}
+.rsrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);padding:10px 2px;color:var(--ink);cursor:pointer;font:inherit}
+.rsrow:last-child{border-bottom:0}
+.rsrow .nm{font-size:15px;font-weight:650}.rsrow .sub{font-size:13px;color:var(--muted);white-space:normal}
+.rsrow .rsgo{color:var(--muted);font-size:20px;flex:0 0 auto}
+.badge.rsorg{background:var(--soft);color:var(--muted);font-size:11px;margin-left:6px;vertical-align:middle}
+nav button.navmore{position:relative}
+nav button.navmore .navbadge{position:absolute;top:4px;right:10px;font-size:10px;font-weight:700;color:#fff;background:var(--danger);border-radius:8px;padding:0 5px;margin:0}
