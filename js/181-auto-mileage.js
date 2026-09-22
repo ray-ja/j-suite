@@ -17,23 +17,28 @@ function amRound(n) { return Math.round((+n || 0) * 10) / 10; }
 function amHasOtherMiles(entries, jobId) {
   return (entries || []).some(e => e && !e.deleted && e.jobId === jobId && e.milesSource !== "route" && e.milesConfirmed && (+e.miles || 0) > 0);
 }
-/* who drove: the first crew member on the job, else the fallback (the signed-in owner) */
-function amDriver(j, fallbackId) { const c = (j && Array.isArray(j.crew) && j.crew.length) ? j.crew[0] : null; return c || fallbackId || null; }
-/* which truck: the driver's own vehicle from the org truck list, else the first active vehicle */
+/* Ray, 2026-09-22: "on every job just make it so mileage is automatically attributed to me / my truck, with a trip
+   counter on the job that multiplies the mileage." So the driver is always the org's mileage owner (AM_OWNER, Ray)
+   and the truck is his; the job's `trips` (default 1) multiplies the round trip. */
+const AM_OWNER = "mq5bu9z3vc4ey";
+function amDriver(j, fallbackId) { return AM_OWNER || fallbackId || null; }
 function amVehicle(vehicles, driverId) {
   const vs = (vehicles || []).filter(v => v && v.active !== false && (v.kind || "vehicle") === "vehicle");
-  return vs.find(v => v.ownerId === driverId) || vs[0] || null;
+  return vs.find(v => v.ownerId === driverId) || vs.find(v => v.id === "veh_obx_f150") || vs[0] || null;
 }
+function amTrips(j) { const t = Math.round(+(j && j.trips) || 1); return t > 0 ? t : 1; }
 /* build (or refresh) the mileage-only entry; `existing` keeps its id/clock stamps */
 function amBuildEntry(existing, j, roundTripMiles, driverId, driverName, veh, addr, ts) {
   const e = existing || { id: amEntryId(j.id), jobId: j.id, pings: [], stops: [], computedMiles: null, odoStart: null, odoEnd: null, riderRole: "driver", trailerId: null, rodeWith: null, invVehicleId: null, deleted: false };
   const t = (j && j.date) ? new Date(j.date + "T12:00:00").getTime() : ts;
-  const mi = amRound(roundTripMiles);
+  const trips = amTrips(j);
+  const mi = amRound(roundTripMiles * trips);
   e.userId = driverId; e.userName = driverName || "Crew";
   if (e.clockIn == null) e.clockIn = t;
   if (e.clockOut == null) e.clockOut = t;
   e.miles = mi; e.milesConfirmed = true; e.milesSource = "route";
-  e.note = "Route mileage (auto from addresses): base → " + (addr || "job site") + " → base, " + mi + " mi. No hours (mileage only).";
+  e.note = "Route mileage (auto from addresses): base → " + (addr || "job site") + " → base" + (trips > 1 ? " × " + trips + " trips" : "") + ", " + mi + " mi. No hours (mileage only).";
+  e.trips = trips;
   e.vehicleId = veh ? veh.id : null; e.vehicle = veh ? (veh.name + (veh.plate ? " · " + veh.plate : "")) : "";
   e.vehicleOwnerId = (veh && veh.ownerId) || driverId;
   e.rate = AM_RATE; e.deleted = false; e.updatedAt = ts;
@@ -67,19 +72,26 @@ if (typeof window !== "undefined") {
     return { started: true };
   };
   window.amRecalc = function (jobId) { const j = D().jobs.find(x => x && x.id === jobId); if (j) window.autoMileageOnDone(j, { force: true }); };
+  /* the trip counter: saved on the job; if miles are already booked they rebook at the new count */
+  window.amSetTrips = function (jobId, delta) {
+    const j = D().jobs.find(x => x && x.id === jobId); if (!j) return;
+    j.trips = Math.max(1, amTrips(j) + delta); touch(j); save();
+    if (window.amEntryFor(j)) window.autoMileageOnDone(j, { force: true }); else if (typeof render === "function") render();
+  };
   /* the card on the job page (Costs section): what's booked, or the estimate before the job is done */
   window.jobAutoMileageHTML = function (j) {
     const e = window.amEntryFor(j);
     const other = amHasOtherMiles((D().timeclock || []), j.id);
-    let body;
-    if (e) body = `<b>${e.miles} mi</b> round trip · ${esc(e.userName || "")}${e.vehicle ? " · " + esc(e.vehicle) : ""} · ${money(Math.round(e.miles * e.rate * 100) / 100)} at $${e.rate}/mi`;
+    let body; const trips = amTrips(j);
+    const stepper = `<span style="white-space:nowrap;font-size:12.5px;margin-left:8px">🔁 <button class="btn ghost sm" style="width:28px;padding:2px" onclick="amSetTrips('${j.id}',-1)">−</button> ${trips} trip${trips === 1 ? "" : "s"} <button class="btn ghost sm" style="width:28px;padding:2px" onclick="amSetTrips('${j.id}',1)">+</button></span>`;
+    if (e) body = `<b>${e.miles} mi</b>${trips > 1 ? " (" + trips + " round trips)" : " round trip"} · ${esc(e.userName || "")}${e.vehicle ? " · " + esc(e.vehicle) : ""} · ${money(Math.round(e.miles * e.rate * 100) / 100)} at $${e.rate}/mi${stepper}`;
     else if (other) body = `Mileage already logged on this job's time entry, so the auto entry stays out.`;
     else {
       const ll = (typeof jobLatLng === "function") ? jobLatLng(j) : null;
       const dr = (ll && typeof driveFromBase === "function") ? driveFromBase(ll.lat, ll.lng) : null;
-      body = ll ? (dr ? `Estimate <b>${dr.roundMiles} mi</b> round trip from base. Booked automatically when the job is marked done.` : `Routing from base… booked automatically when the job is marked done.`) : `<span style="color:var(--danger)">No map location on the property, so mileage can't be figured. Add the address to the property.</span>`;
+      body = ll ? (dr ? `Estimate <b>${amRound(dr.roundMiles * trips)} mi</b>${trips > 1 ? " (" + trips + " round trips)" : " round trip"} from base, to Ray's truck. Booked automatically when the job is marked done.${stepper}` : `Routing from base… booked automatically when the job is marked done.${stepper}`) : `<span style="color:var(--danger)">No map location on the property, so mileage can't be figured. Add the address to the property.</span>`;
     }
     return `<div class="li" style="margin-top:6px"><div class="grow"><div class="nm" style="font-size:14px">🚗 Mileage (from addresses)</div><div class="sub" style="white-space:normal">${body}</div></div><button class="btn ghost sm" style="flex:0 0 auto" onclick="amRecalc('${j.id}')">${e ? "Recalculate" : (other ? "Use route miles instead" : "Book now")}</button></div>`;
   };
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { amEntryId, amHasOtherMiles, amDriver, amVehicle, amBuildEntry, amRound }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { amEntryId, amHasOtherMiles, amDriver, amVehicle, amBuildEntry, amRound, amTrips, AM_OWNER }; }
