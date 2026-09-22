@@ -4,4 +4,9 @@ eq(G.guideProgress(g), { materialsBought: 1, materials: 3, stepsDone: 1, steps: 
 eq(G.guideProgress(null), { materialsBought: 0, materials: 0, stepsDone: 0, steps: 0, materialsTotal: 0 }, "empty guide");
 eq(G.guideMoney(1467.82), "$1,467.82", "money format");
 eq(G.guideMoney(30), "$30.00", "money format whole");
+eq(G.guideSpend(g, 10), { budget: 25.5, spent: 10, remaining: 15.5, pct: 39, state: "ok" }, "spend: under budget");
+eq(G.guideSpend(g, 22).state, "close", "spend: 85%+ is close");
+eq(G.guideSpend(g, 30).state, "over", "spend: over budget");
+eq(G.guideSpend({ budget: 100, materials: [] }, 50).budget, 100, "explicit budget wins over the list total");
+eq(G.guideSpend({ materials: [] }, 5).state, "none", "no budget → no bar");
 console.log("=========  " + (n - f) + " passed, " + f + " failed  ========="); process.exit(f ? 1 : 0);
