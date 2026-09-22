@@ -126,6 +126,13 @@ function rData(){
         `Cloudflare (the account holding the DOMAINS — can be a different one) → API Tokens → Create → permission <b>Zone · DNS · Edit</b>.`,
         `<input type="password" id="in_cfDns" placeholder="40-character API token" autocomplete="off" style="width:100%">
          <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('cfDns','in_cfDns')">Save &amp; verify</button>`),true)}
+    ${grp(`💳 Stripe — ${ORG}`,
+      row(`Restricted API key`,`ok_stripeKey`,
+        `Pay-online buttons on ${ORG}'s invoices and deposits are minted on THIS Stripe account, so the money lands in ${ORG}'s balance.`,
+        `dashboard.stripe.com (signed in to ${ORG}'s account) → Developers → API keys → Create restricted key → write on <b>Products, Prices, Payment Links, Webhook Endpoints</b>, read on <b>Checkout Sessions, Charges, Balance</b>. Paste the rk_live_ value. The paid-invoice webhook registers itself.`,
+        `<input type="password" id="in_stripeKey" placeholder="rk_live_…" autocomplete="off" style="width:100%">
+         <button class="btn ghost" style="width:100%;margin-top:6px" onclick="saveOrgKey('stripeKey','in_stripeKey')">Save &amp; verify</button>
+         <div id="ok_stripeWebhook" class="sub" style="font-size:12.5px;margin-top:4px"></div>`),false)}
     ${grp(`📣 Google Ads — ${ORG} <span id="gads_status" class="sub" style="font-size:12.5px"></span>`,
       row(`1 · OAuth client (JSON file)`,``,
         `Lets the app talk to ${ORG}'s ads account.`,
@@ -441,7 +448,8 @@ window.saveOrgKey=function(name,inputId){
     .then(r=>r.json()).then(d=>{
       if(!(d&&d.ok)){alert("Save failed: "+((d&&d.error)||"unknown"));return;}
       el.value="";
-      if(d.cfValid===true)alert("Saved ✓ for "+((BIZ[S.biz]||{}).name||S.biz)+" — Cloudflare confirms the token is VALID.");
+      if(name==="stripeKey"){ if(d.stripeValid===false)alert("Saved — but Stripe rejected that key"+(d.detail?": "+d.detail:"")+"."); else if(d.stripeValid===true&&d.webhook)alert("Saved ✓ for "+((BIZ[S.biz]||{}).name||S.biz)+". Stripe accepted the key and the paid-invoice webhook is registered."); else if(d.stripeValid===true)alert("Saved ✓. Stripe accepted the key, but the webhook could not be registered"+(d.detail?": "+d.detail:"")+". Paid invoices on this account will not mark themselves paid until it is."); else alert("Saved ✓."); }
+      else if(d.cfValid===true)alert("Saved ✓ for "+((BIZ[S.biz]||{}).name||S.biz)+" — Cloudflare confirms the token is VALID.");
       else if(d.cfValid===false)alert("Saved — but Cloudflare REJECTED it. Copy the token VALUE (shown once at create/roll), from the right account.");
       else alert("Saved ✓ — couldn't reach Cloudflare to verify just now.");
       orgKeysRefresh();
@@ -452,7 +460,8 @@ window.orgKeysRefresh=function(){
   fetch(base+"/api/config/orgkeys?org="+encodeURIComponent(S.biz),{headers:tok?{Authorization:"Bearer "+tok}:{}}).then(r=>r.json()).then(d=>{
     if(!d||!d.ok)return;
     const set=(id,on)=>{const e=document.getElementById(id);if(e)e.textContent=on?"· saved ✓":"· not set";};
-    set("ok_cfSites",d.cfSites); set("ok_cfDns",d.cfDns);
+    set("ok_cfSites",d.cfSites); set("ok_cfDns",d.cfDns); set("ok_stripeKey",d.stripeKey);
+    const wh=document.getElementById("ok_stripeWebhook"); if(wh)wh.textContent=d.stripeKey?(d.stripeWebhook?"Paid-invoice webhook: registered ✓":"Paid-invoice webhook: not registered"):"";
   }).catch(()=>{});
 };
 

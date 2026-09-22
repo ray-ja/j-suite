@@ -2455,7 +2455,7 @@ function invEnsureScopeLink(store, org, scope, label, fallbackUrl, cb) {
     slab.payLinks = slab.payLinks || [];
     const rec = slab.payLinks.find(r => r && !r.deleted && r.key === scope.key);
     if (rec && rec.amountCents === scope.remainingCents && rec.url) return done(rec.url, false);
-    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
+    const cfg = { stripeKey: stripeKeyFor(org) };
     if (!cfg.stripeKey) return done(fallbackUrl, false);
     label = String(label || "Invoice").replace(/[\r\n]+/g, " ").slice(0, 120);
     stripeCall(cfg.stripeKey, "/v1/prices", { currency: "usd", "custom_unit_amount[enabled]": "true", "custom_unit_amount[preset]": String(scope.remainingCents), "custom_unit_amount[minimum]": "100", "custom_unit_amount[maximum]": String(scope.remainingCents), "product_data[name]": label }, (st1, pr) => {
@@ -2821,7 +2821,14 @@ function orgKeysLoad() {
   return k;
 }
 function orgKeysSave(k) { const tmp = ORG_KEYS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(k, null, 2), { mode: 0o600 }); fs.renameSync(tmp, ORG_KEYS_FILE); try { fs.chmodSync(ORG_KEYS_FILE, 0o600); } catch (e) {} }
-function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns"; }
+function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns" || n === "stripeKey" || n === "stripeWebhookSecret"; }
+/* PER-ORG STRIPE (Ray, 2026-09-21: Jamieson Automation / OBX Holiday Lights get their own Stripe account so their money
+   never lands in DYAD's). An org's key lives in org-keys.json (Settings → Keys, that org's tab); the old global key in
+   ceo-config.json is the fallback so OBX keeps working untouched. Pure over a keys object, exported for tests. */
+function stripeKeyForKeys(keys, cfg, org) { const o = (keys && keys[org]) || {}; return (o.stripeKey && String(o.stripeKey)) || (cfg && cfg.stripeKey) || ""; }
+function stripeKeyFor(org) { let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {} let keys = {}; try { keys = orgKeysLoad(); } catch (e) {} return stripeKeyForKeys(keys, cfg, org); }
+/* every webhook signing secret we know, tagged by org (the global one tagged null) — the webhook tries each */
+function stripeSecretsAll() { let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {} let keys = {}; try { keys = orgKeysLoad(); } catch (e) {} const out = []; Object.keys(keys).forEach(o => { if (keys[o] && keys[o].stripeWebhookSecret) out.push({ org: o, secret: keys[o].stripeWebhookSecret }); }); if (cfg.stripeWebhookSecret) out.push({ org: null, secret: cfg.stripeWebhookSecret }); return out; }
 /* write-through so existing deploy tooling reading the home files stays alive */
 function orgKeyLegacyMirror(org, name, value) {
   try {
@@ -4534,15 +4541,30 @@ const server = http.createServer((req, res) => {
     if (!ORG) return J(400, { error: "org required" });
     if (req.method === "GET") {
       const k = orgKeysLoad(), o = k[ORG] || {};
-      return J(200, { ok: true, org: ORG, cfSites: !!o.cfSites, cfDns: !!o.cfDns, gads: !!(o.gads && o.gads.clientId), gadsConnected: !!(o.gads && o.gads.refreshToken) });
+      return J(200, { ok: true, org: ORG, cfSites: !!o.cfSites, cfDns: !!o.cfDns, gads: !!(o.gads && o.gads.clientId), gadsConnected: !!(o.gads && o.gads.refreshToken), stripeKey: !!o.stripeKey, stripeWebhook: !!o.stripeWebhookSecret });
     }
     if (req.method === "POST") {
       return readBodyUtf8(req, 8192, (body) => {
         let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
         const name = p && p.name, value = String((p && p.value) || "").trim();
-        if (!orgKeyNameOk(name) || !deployKeyValueOk(value)) return J(400, { error: "expected name cfSites|cfDns and a single-line API token (20-200 chars)" });
+        if (!orgKeyNameOk(name) || !deployKeyValueOk(value)) return J(400, { error: "expected name cfSites|cfDns|stripeKey|stripeWebhookSecret and a single-line token (20-200 chars)" });
+        if (name === "stripeKey" && !/^rk_(live|test)_/.test(value)) return J(400, { error: "that is not a RESTRICTED Stripe key (they start with rk_live_)" });
+        if (name === "stripeWebhookSecret" && !/^whsec_/.test(value)) return J(400, { error: "a webhook signing secret starts with whsec_" });
         const k = orgKeysLoad(); if (!k[ORG]) k[ORG] = {}; k[ORG][name] = value;
         try { orgKeysSave(k); orgKeyLegacyMirror(ORG, name, value); } catch (e) { return J(500, { error: "write failed" }); }
+        if (name === "stripeKey" || name === "stripeWebhookSecret") {
+          /* Stripe key: prove it by listing one payment link. Then REGISTER the paid-webhook on that account and store
+             its signing secret, so Ray never handles a whsec_ by hand (same as the DYAD setup on 2026-09-16). */
+          if (name === "stripeWebhookSecret") return J(200, { ok: true });
+          return stripeCall(value, "/v1/payment_links?limit=1", null, (st, r) => {
+            if (st !== 200) return J(200, { ok: true, stripeValid: false, detail: (r && r.error && r.error.message) || ("HTTP " + st) });
+            const hook = "https://app.jsuite.dev/api/stripe/webhook";
+            stripeCall(value, "/v1/webhook_endpoints", { url: hook, "enabled_events[0]": "checkout.session.completed", description: "j-Suite paid-invoice webhook (" + ORG + ")" }, (st2, w) => {
+              if (st2 === 200 && w && w.secret) { const k2 = orgKeysLoad(); k2[ORG] = k2[ORG] || {}; k2[ORG].stripeWebhookSecret = w.secret; k2[ORG].stripeWebhookId = w.id; try { orgKeysSave(k2); } catch (e) {} return J(200, { ok: true, stripeValid: true, webhook: true }); }
+              return J(200, { ok: true, stripeValid: true, webhook: false, detail: (w && w.error && w.error.message) || "webhook not registered (key needs Webhook Endpoints: write)" });
+            });
+          });
+        }
         /* ⚠️ TWO KINDS OF CLOUDFLARE TOKEN (learned the hard way, 2026-09-10): classic USER tokens verify
            at /user/tokens/verify — but newer ACCOUNT-OWNED tokens (53 chars, "cf…") return "Invalid API
            Token" there while being perfectly valid. That false REJECTED sent Ray re-rolling a good token
@@ -4749,11 +4771,10 @@ const server = http.createServer((req, res) => {
     const store = sc && sc.account ? loadStore() : null;
     const manages = sc && sc.account && (sc.superAdmin || (sc.orgs || []).some(o => ["owner", "admin"].indexOf(storedRoleInOrg(store, sc.account.id, o)) >= 0));
     if (!manages) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"owner/admin only"}'); }
-    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
-    const skey = cfg.stripeKey;
-    if (!skey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"Stripe is not set up — paste your restricted key in Settings first"}'); }
     readBodyUtf8(req, 2e4, (body) => {
       let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const skey = stripeKeyFor(String((p && p.org) || "obx").slice(0, 64));
+      if (!skey) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"Stripe is not set up for this org — paste its restricted key in Settings → Keys first"}'); }
       const cents = Math.round(+((p && p.amountCents)) || 0);
       if (!(cents >= 50) || cents > 99999999) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"amount must be between $0.50 and $999,999.99"}'); }   // Stripe min is $0.50
       const label = String((p && p.label) || "Invoice").replace(/[\r\n]+/g, " ").slice(0, 120) || "Invoice";
@@ -4813,8 +4834,8 @@ const server = http.createServer((req, res) => {
       if (!q) return J(404, { error: "quote not found" });
       const pct = Math.min(1, Math.max(0.05, +p.pct || 0.5));
       const cents = Math.round(invEff(q) * pct * 100); if (cents < 100) return J(400, { error: "amount too small" });
-      let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
-      if (!cfg.stripeKey) return J(400, { error: "no Stripe key on file (Settings → Keys)" });
+      const cfg = { stripeKey: stripeKeyFor(org) };
+      if (!cfg.stripeKey) return J(400, { error: "no Stripe key on file for this org (Settings → Keys)" });
       const cust = (slab.customers || []).find(c => c && c.id === q.customerId);
       const label = ((pubBizOf(store, org, q).name || "") + " · " + Math.round(pct * 100) + "% deposit · " + invNoOf(q) + (cust && cust.name ? " · " + cust.name : "")).slice(0, 120);
       stripeCall(cfg.stripeKey, "/v1/prices", { currency: "usd", unit_amount: String(cents), "product_data[name]": label }, (st1, pr) => {
@@ -4834,10 +4855,10 @@ const server = http.createServer((req, res) => {
   // find the invoice by its stored stripeLinkId and mark it PAID + record the card payment. Idempotent (skips an
   // already-paid quote). Always 200 so Stripe doesn't retry a handled event.
   if (req.method === "POST" && req.url.split("?")[0] === "/api/stripe/webhook") {
-    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {}
-    const wsecret = cfg.stripeWebhookSecret;
+    const secrets = stripeSecretsAll();
     readBodyUtf8(req, 1e6, (raw) => {
-      if (!wsecret || !verifyStripeSig(raw, req.headers["stripe-signature"], wsecret)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad signature"}'); }
+      const hit = secrets.find(x => verifyStripeSig(raw, req.headers["stripe-signature"], x.secret));
+      if (!hit) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad signature"}'); }
       let ev = null; try { ev = JSON.parse(raw); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
       try {
         const obj = ev && ev.data && ev.data.object;
@@ -5976,4 +5997,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { SITES, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

@@ -2293,7 +2293,7 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   const _ing = _srv.slice(_srv.indexOf('"/api/gads/ingest"'), _srv.indexOf('"/api/gads/ingest"') + 1400);
   ok("ingest authenticates by the minted key alone and appends JSONL", /ingestKey/.test(_ing) && /appendFileSync/.test(_ing));
   ok("org keys: name allowlist is exactly cfSites|cfDns", t.orgKeyNameOk("cfSites") && t.orgKeyNameOk("cfDns") && !t.orgKeyNameOk("gads") && !t.orgKeyNameOk("../evil") && !t.orgKeyNameOk(""));
-  const _ok = _srv.slice(_srv.indexOf('"/api/config/orgkeys"'), _srv.indexOf('"/api/config/orgkeys"') + 2600);
+  const _ok = _srv.slice(_srv.indexOf('"/api/config/orgkeys"'), _srv.indexOf('"/api/config/orgkeys"') + 5200);
   ok("orgkeys route is superAdmin-gated, org-required, live-verified against Cloudflare", /sc\.superAdmin/.test(_ok) && /org required/.test(_ok) && /tokens\/verify/.test(_ok));
   ok("per-org googleads: the route scopes every load/save by ?org (obx = legacy default)", /gadsLoad\(KORG\)/.test(_srv) && /gadsSave\(c, KORG\)/.test(_srv));
   ok("ingest resolves WHICH org's script key pushed and tags the stats line", /orgHit/.test(_srv) && /org: orgHit/.test(_srv));
@@ -2483,6 +2483,15 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     ok("invEmail: from is the brand on the app sending domain", b.from === "Jamieson Automation <invoices@mail.jsuite.dev>");
     const b2 = S.invEmailBuild({ id: "q2", invoiceToken: "t", invoiced: false, date: "2026-09-01", total: 100, items: [{ price: 100, qty: 1 }] }, null, { name: "OBX <Junk> Co" }, null, "https://x.y", "<script>");
     ok("invEmail: quote wording, html-escaped note and brand", /^Quote /.test(b2.subject) && b2.html.indexOf("&lt;script&gt;") >= 0 && b2.html.indexOf("<script>") < 0 && b2.from === "OBX Junk Co <invoices@mail.jsuite.dev>");
+  }
+
+  {
+    const S = t;
+    const keys = { jam: { stripeKey: "rk_live_JAM" }, obx: {} }, cfg = { stripeKey: "rk_live_DYAD" };
+    ok("stripeKeyFor: org with its own key uses it", S.stripeKeyForKeys(keys, cfg, "jam") === "rk_live_JAM");
+    ok("stripeKeyFor: org without one falls back to the global (DYAD) key", S.stripeKeyForKeys(keys, cfg, "obx") === "rk_live_DYAD" && S.stripeKeyForKeys(keys, cfg, "stone") === "rk_live_DYAD");
+    ok("stripeKeyFor: nothing anywhere → empty string", S.stripeKeyForKeys({}, {}, "jam") === "");
+    ok("orgKeyNameOk: stripe names allowed, junk refused", S.orgKeyNameOk("stripeKey") && S.orgKeyNameOk("stripeWebhookSecret") && !S.orgKeyNameOk("stripeSecret"));
   }
 
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
