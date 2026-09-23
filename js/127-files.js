@@ -157,3 +157,44 @@ if (typeof window !== "undefined") window.pfDel = function (id) {
 
 if (typeof window !== "undefined") { window.pfCardHTML = pfCardHTML; window.actFiles = actFiles; window.pfSize = pfSize; }
 if (typeof module !== "undefined" && module.exports) module.exports = { pfSize: pfSize };
+
+/* ---------- 📎 FILES SCREEN — every org (2026-09-23) ----------
+   Ray: "add an upload menu I can search for in any org to upload to that org's folder." The card above stayed on
+   the personal home; this is the same store (D().personalFiles, one list per org) as a real screen under
+   Reference → Files, a core tab, so it exists in every org and the menu search finds it. Files open in a new
+   tab from the server (jsUploadUrl). */
+if (typeof window !== "undefined") window.rFiles = function () {
+  var v = document.getElementById("view"); if (!v) return;
+  var org = (typeof orgName === "function" && typeof S !== "undefined") ? orgName(S.biz) : "";
+  var list = actFiles().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  var focus = window.PF_FOCUS || ""; window.PF_FOCUS = "";
+  var h = '<div class="secthd"><h2>📎 Files · ' + esc(org) + '</h2><span class="ct">' + list.length + '</span></div>';
+  h += '<div class="card">';
+  if (PF_BUSY) {
+    h += '<div style="font-weight:800">⬆ Uploading' + (PF_TOTAL > 1 ? " " + (PF_DONE + 1) + " of " + PF_TOTAL : "") + '…</div>'
+      + '<div class="sub" style="margin-top:4px;white-space:normal">' + esc(PF_MSG || "") + '</div>'
+      + '<div style="height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:8px"><div style="height:100%;width:' + Math.max(4, Math.min(100, PF_PCT)) + '%;background:var(--accent);transition:width .2s"></div></div>';
+  } else {
+    h += '<div class="row" style="gap:8px;align-items:center"><div class="grow"><div class="nm">Upload to this organization\'s folder</div><div class="sub" style="white-space:normal">Manuals, statements, photos, CSVs. Images, PDF and CSV files. They stay on your own server.</div></div>'
+      + (pfCanUpload() ? '<button class="btn acc" style="flex:0 0 auto" onclick="pfPick()">Upload</button>' : '<div class="sub" style="flex:0 0 auto">needs sign-in</div>') + '</div>';
+    if (PF_MSG) h += '<div class="note" style="margin-top:8px;white-space:normal">' + esc(PF_MSG) + '</div>';
+  }
+  h += '</div>';
+  if (!list.length) h += '<div class="empty">Nothing in this folder yet.</div>';
+  else {
+    h += '<div class="card">' + list.map(function (f) {
+      var url = (typeof jsUploadUrl === "function") ? jsUploadUrl(f.blobId) : "";
+      return '<div class="li" style="align-items:flex-start' + (f.id === focus ? ";background:var(--soft);border-radius:8px;padding:8px" : "") + '"><div class="grow"><div class="nm" style="font-size:15px">' + pfIcon(f) + ' ' + esc(f.note || f.name || "file") + '</div>'
+        + '<div class="sub" style="white-space:normal">' + esc(f.name || "") + ' · ' + esc(pfSize(f.size)) + (f.ts ? ' · ' + esc(new Date(f.ts).toLocaleDateString()) : '') + (f.readAt ? ' · ✓ Claude read it' : '') + '</div>'
+        + '<input placeholder="what is this?" value="' + esc(f.note || "") + '" style="margin-top:6px" oninput="pfNote(\'' + f.id + '\',this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"></div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">' + (url ? '<a class="btn ghost sm" href="' + esc(url) + '" target="_blank" rel="noopener">Open</a>' : '') + '<button class="btn ghost sm" onclick="pfDelScreen(\'' + f.id + '\')">✕</button></div></div>';
+    }).join("") + '</div>';
+  }
+  v.innerHTML = h;
+};
+if (typeof window !== "undefined") window.pfDelScreen = function (id) {
+  if (!confirm("Remove this file from the list?")) return;
+  var f = (D().personalFiles || []).find(function (x) { return x && x.id === id; });
+  if (f) { f.deleted = true; if (typeof touch === "function") touch(f); }
+  if (typeof save === "function") save(); if (typeof render === "function") render();
+};

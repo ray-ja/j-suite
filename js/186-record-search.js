@@ -9,7 +9,7 @@
    module that owns it (openCustomer / openProperty / openJobPage / openQuote / openInvoice). The index is built
    on each keystroke from the in-memory store (a few thousand rows; fast) so nothing is cached stale.
    Pure helpers (index + ranking) are node-testable: record-search-tests.js. */
-const RS_KIND_ORDER = ["customer", "property", "job", "quote"];
+const RS_KIND_ORDER = ["customer", "property", "job", "quote", "file"];
 const RS_LIMIT = 30;
 function rsNorm(s) { return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9@. ]+/g, " ").replace(/\s+/g, " ").trim(); }
 function rsDigits(s) { return String(s == null ? "" : s).replace(/\D+/g, ""); }
@@ -34,6 +34,8 @@ function recordSearchIndex(store, orgIds) {
         sub: [first.slice(0, 60), q.total != null ? "$" + Number(q.total).toLocaleString() : "", state, q.date].filter(Boolean).join(" · "),
         hay: rsNorm([q.num ? "#" + q.num + " " + q.num : "", cname(q.customerId), q.cust, first, q.address, state, q.date].join(" ")), digits: q.num ? String(q.num) : "" });
     });
+    (s.personalFiles || []).filter(f => f && !f.deleted).forEach(f => out.push({ kind: "file", org, id: f.id, title: f.note || f.name || "file", sub: [f.note ? f.name : "", f.ts ? new Date(f.ts).toLocaleDateString() : ""].filter(Boolean).join(" · "),
+      hay: rsNorm([f.note, f.name, f.type].join(" ")), digits: "" }));
   });
   return out;
 }
@@ -61,7 +63,7 @@ function recordSearchRun(rows, q, limit) {
 }
 if (typeof window !== "undefined") {
   const E = s => (typeof esc === "function") ? esc(String(s == null ? "" : s)) : String(s == null ? "" : s);
-  const KIND_LABEL = { customer: "👤 Customers", property: "🏠 Properties", job: "🔨 Jobs", quote: "🧾 Quotes & invoices" };
+  const KIND_LABEL = { customer: "👤 Customers", property: "🏠 Properties", job: "🔨 Jobs", quote: "🧾 Quotes & invoices", file: "📎 Files" };
   let _rsTimer = null;
   function rsOrgIds() { try { const o = (typeof myOrgs === "function") ? myOrgs() : []; const ids = o.map(x => x.id).filter(Boolean); return ids.length ? ids : [S.biz]; } catch (e) { return [S.biz]; } }
   function rsRecent() { try { return JSON.parse(localStorage.getItem("jra_rs_recent") || "[]"); } catch (e) { return []; } }
@@ -103,6 +105,7 @@ if (typeof window !== "undefined") {
       if (q && q.jobId && typeof openJobPage === "function") return openJobPage(q.jobId);
       if (typeof openQuote === "function") return openQuote(id);
     }
+    if (kind === "file" && typeof navSub === "function") { navSub("files"); window.PF_FOCUS = id; }
   };
   window.recordSearchOpen = function () {
     if (typeof modal !== "function") return;

@@ -31,7 +31,8 @@
     playbook: "guides how-to sop", research: "ventures ideas notes",
     workout: "gym exercise lifting", cal: "birthdays dates personal calendar",
     studio: "video clips tiktok footage", shelf: "books reading library",
-    life: "habits trackers", booking: "reservations tickets"
+    life: "habits trackers", booking: "reservations tickets",
+    files: "upload uploads documents document manual manuals pdf attachments folder send file"
   };
   function navSearchIndex() {
     var out = [];

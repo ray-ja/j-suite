@@ -9,11 +9,13 @@ const store = {
     quotes: [{ id: "q1", num: 40, customerId: "c2", items: [{ name: "Junk / curbside pickup" }], total: 175, paid: true, invoiced: true, date: "2026-09-22", jobId: "j1" }]
   },
   jam: { customers: [{ id: "c1", name: "Christina Jamieson" }], quotes: [{ id: "qf", num: 5, customerId: "c1", items: [{ name: "Living-room side" }], total: 6544, date: "2026-09-22" }] },
-  stone: { jobs: [{ id: "js", title: "Christina — waterfall wall", customerId: "c1", customerIdX: 1 }], customers: [{ id: "c1", name: "Christina Jamieson" }] }
+  stone: { jobs: [{ id: "js", title: "Christina — waterfall wall", customerId: "c1", customerIdX: 1 }], customers: [{ id: "c1", name: "Christina Jamieson" }], personalFiles: [{ id: "pf1", name: "RV740D-engine-service-manual.pdf", note: "skid steer engine manual", type: "application/pdf", ts: 1 }, { id: "pf2", name: "old.pdf", deleted: true }] }
 };
 const idx = R.recordSearchIndex(store, ["obx", "jam", "stone"]);
-eq(idx.length, 3 + 2 + 1 + 1 + 1 + 1 + 1 + 1, "index counts every live row across three orgs, skips deleted");
+eq(idx.length, 3 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1, "index counts every live row across three orgs, skips deleted");
 const t = (q, orgs) => R.recordSearchRun(R.recordSearchIndex(store, orgs || ["obx", "jam", "stone"]), q).map(r => r.kind + ":" + r.org + ":" + r.id);
+eq(t("manual"), ["file:stone:pf1"], "a file is found by its label");
+eq(t("rv740d"), ["file:stone:pf1"], "…and by its file name");
 eq(t("renken")[0], "customer:obx:c2", "a surname finds the customer first");
 eq(t("renken").slice(1).sort(), ["job:obx:j1", "property:obx:p1", "quote:obx:q1"], "…then that customer's property, job and quote");
 eq(t("ren"), t("renken"), "a prefix matches the same rows");

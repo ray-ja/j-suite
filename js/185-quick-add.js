@@ -16,7 +16,8 @@ const QUICK_ADD_ROWS = [
   { key: "todo",     tab: "todo",      icon: "✅", label: "To-do",     fn: "openTodo" },
   { key: "receipt",  tab: "receipts",  icon: "📸", label: "Receipt",   fn: "capQuickCapture", alt: "rcptPickFiles" },
   { key: "expense",  tab: "finance",   icon: "💸", label: "Expense",   fn: "openExpense" },
-  { key: "clockin",  tab: "time",      icon: "⏱️", label: "Clock in",  fn: "tcClockInFormHTML" }
+  { key: "clockin",  tab: "time",      icon: "⏱️", label: "Clock in",  fn: "tcClockInFormHTML" },
+  { key: "file",     tab: "files",     icon: "📎", label: "File",      fn: "pfPick" }
 ];
 /* which universal rows to show: the tab must be visible to this user in this org, and the function must exist.
    `has(name)` and `see(tab)` are injected so the picker stays pure. */

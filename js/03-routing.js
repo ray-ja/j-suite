@@ -28,7 +28,7 @@ window.navReturn = function(host, fallback){
 // Authoritative set of routable screen keys — the SAME keys render() dispatches on (below). Any deep-link or
 // notification-driven tab MUST be validated against this so a bad/old value can't route into nothing. Kept next
 // to the dispatch so the two can't drift.
-const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","nextcheck","finance","invoices","receipts","data","approvals","admin","playbook","research","escape","booking","life","journal","shelf","workout","cal","studio","budget","team","products"];
+const ROUTE_TABS=["today","accounts","quotes","jobs","leads","recurring","schedule","messages","map","route","routes","todo","plan","training","market","opps","sites","buildplan","inventory","resale","time","pay","nextcheck","finance","invoices","receipts","data","approvals","admin","playbook","research","escape","booking","life","journal","shelf","workout","cal","studio","budget","team","products","files"];
 /* Is `t` a real, currently-accessible screen? Used to sanitize tabs that arrive from OUTSIDE the app (a ?tab=
    deep link, or the SW's {type:"navigate"} postMessage on a notification click). A notification sent on an OLD
    build can carry a tab that no longer exists — routing to it must never blank the app. Returns true only when
@@ -93,7 +93,7 @@ function render(){
   // screen. So: (1) an unknown TAB still falls back to rToday (the || below), and (2) ANY thrown render is caught
   // and retried on Today; if even Today throws we write a minimal, actionable recovery card — the app NEVER
   // shows a white void.
-  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),journal:(typeof rJournal==="function"?rJournal:rToday),shelf:(typeof rShelf==="function"?rShelf:rToday),workout:(typeof rWorkout==="function"?rWorkout:rToday),cal:(typeof rCal==="function"?rCal:rToday),studio:(typeof rStudio==="function"?rStudio:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday),products:(typeof rProducts==="function"?rProducts:rToday)}[TAB])||rToday;
+  var _screen=({today:rToday,accounts:rAccounts,quotes:rQuotes,jobs:rQuotes,leads:(typeof rLeads==="function"?rLeads:rToday),recurring:(typeof rRecurring==="function"?rRecurring:rToday),schedule:rSchedule,messages:rMessages,map:rMap,route:rSales,todo:rTodos,plan:rPlan,training:rTraining,market:rMarket,opps:rOpps,sites:rSites,buildplan:rBuildPlan,inventory:rInventory,resale:rResale,time:rTime,pay:(typeof rPay==="function"?rPay:rToday),nextcheck:(typeof rNextCheck==="function"?rNextCheck:rToday),finance:rFinance,invoices:(typeof rInvoices==="function"?rInvoices:rToday),receipts:rReceipts,data:rData,approvals:rApprovals,admin:rAdmin,playbook:rPlaybook,research:(typeof rResearch==="function"?rResearch:rToday),escape:(typeof rEscape==="function"?rEscape:rToday),booking:(typeof rBooking==="function"?rBooking:rToday),life:(typeof rLife==="function"?rLife:rToday),journal:(typeof rJournal==="function"?rJournal:rToday),shelf:(typeof rShelf==="function"?rShelf:rToday),workout:(typeof rWorkout==="function"?rWorkout:rToday),cal:(typeof rCal==="function"?rCal:rToday),studio:(typeof rStudio==="function"?rStudio:rToday),budget:(typeof rBudget==="function"?rBudget:rToday),team:(typeof rTeam==="function"?rTeam:rToday),routes:(typeof rRoutes==="function"?rRoutes:rToday),products:(typeof rProducts==="function"?rProducts:rToday),files:(typeof rFiles==="function"?rFiles:rToday)}[TAB])||rToday;
   try{ _screen();
     /* ⭐ split a monolithic screen into section tabs AFTER it has rendered (js/156). Inside the try, so a
        failure here lands in the same blank-screen guard as any other render fault — and secSplit itself
@@ -203,7 +203,9 @@ const NAV_GROUPS = [
   /* ⭐ MAP LIVES HERE. Ray, 2026-08-26: "the map page should be under reference and it should show
      the location of every place and property." It is a reference view of where everything is — not
      a thing you do on a job. */
-  { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research","map"] },
+  /* 📎 FILES is here and is a CORE tab (every org, no registry edit): Ray, 2026-09-23, "add an upload menu I can
+     search for in any org to upload to that org's folder". Each org's list is its own (D().personalFiles). */
+  { key:"ref",       label:"Reference", icon:"📒", tabs:["playbook","research","map","files"] },
   /* "Misc" is where things go to be lost. These are all one thing: planning the business. */
   { key:"grow",      label:"Growth",    icon:"📈", tabs:["plan","market","opps","sites","buildplan","training"] },
   /* ⛔ approvals is NOT a tab. Ray, 2026-08-26: "it doesn't even need a tab. It just needs to be a box on
@@ -217,7 +219,7 @@ const TAB_META = {
   accounts:{l:"Customers",i:"👥"}, route:{l:"Route planner",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, invoices:{l:"Invoices",i:"💳"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Settings",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Route review",i:"🗺️"}, products:{l:"Products",i:"🏷️"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Settings",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, files:{l:"Files",i:"📎"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Route review",i:"🗺️"}, products:{l:"Products",i:"🏷️"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.
@@ -225,7 +227,7 @@ let NAV_LAST = {};   // remember the last sub-tab visited per group
 // directory onto it was pure business noise (Ray, 2026-08-02). It stays visible everywhere it was before: orgs on
 // the null/"full" default (jam, escaperoom) get it implicitly, and OBX — the one org with an explicit tab list —
 // now names it. Only an org that deliberately omits it (personal) loses it.
-const ORG_CORE_TABS = ["today","admin","data"];
+const ORG_CORE_TABS = ["today","admin","data","files"];
 // OPT-IN tabs: org-specific tools that must be EXPLICITLY enabled per org. They are NEVER part of the
 // implicit "all the standard tools" (null tabs → field-services default), so niche tools — the escape-room
 // Rooms board + Booking page, and the personal Life tracker — stay out of OBX / Jamieson (which run on the

@@ -34,7 +34,7 @@ const ADMIN_PAGES = [
   /* ⚠️ and three more the cross-check turned up — real nav destinations that no role could be granted or
      denied because the registry had never heard of them. (`admin` stays out on purpose: it is owner-only
      and gating it per role would let someone lock the owner out of the page that fixes it.) */
-  { tab: "team", label: "People" }, { tab: "products", label: "Products" }, { tab: "nextcheck", label: "Next Check" }
+  { tab: "team", label: "People" }, { tab: "products", label: "Products" }, { tab: "nextcheck", label: "Next Check" }, { tab: "files", label: "Files" }
 ];
 const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew see "pay" (their OWN earnings only — js/86 rPay hard-gates a non-owner/admin to their own userId) but
@@ -44,7 +44,7 @@ const ALL_TABS = ADMIN_PAGES.map(p => p.tab);
 // Crew also reach "data" (Settings) — but rData (js/26) hard-gates its owner/admin-only cards (rate editor, sync
 // config, costs, home base, backups) so a crew member sees ONLY their own settings (sync status, update, theme,
 // their cards, version). Added here so fresh installs + the signed-out crew-equivalent set include it.
-const CREW_PAGES = ["today", "leads", "accounts", "quotes", "jobs", "booking", "schedule", "messages", "map", "route", "todo", "inventory", "resale", "time", "pay", "receipts", "team", "data"];
+const CREW_PAGES = ["today", "leads", "accounts", "quotes", "jobs", "booking", "schedule", "messages", "map", "route", "todo", "inventory", "resale", "time", "pay", "receipts", "team", "data", "files"];
 let ADMIN_SEARCH = "", ADMIN_SORT = "name", ADMIN_EXPANDED = null;   // Team-accounts search / sort / which row is expanded (survives re-render)
 
 /* ----- ACTIONS (Phase 3e — role hierarchy) -----
