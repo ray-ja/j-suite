@@ -5553,6 +5553,81 @@ const server = http.createServer((req, res) => {
      transcription; the client polls status. Transcription is serialised through a one-at-a-time queue
      because there is one GPU. The audio file is written to disk BEFORE any transcription is attempted,
      so a transcription failure never costs the recording — it can always be retried. */
+  /* ---------- ANY-SIZE FILE UPLOAD (chunked, resumable) ----------------------------------------------
+     Ray, 2026-09-23: "it said file too big max 10MB but there should be no limit, it's an internal network
+     transfer… doesn't fail even if connection is lost." Same shape as /api/voice: numbered pieces, each its
+     own `<id>.<n>.part`, a re-send of piece n OVERWRITES (idempotent), `status` says which pieces are here so
+     a phone can resume after a dropped connection or a reload, and `done` assembles them in order into a
+     normal blob at uploads/<id>.<ext> — the same id scheme as /api/upload, so records, /uploads/ serving and
+     Claude's readers see no difference. No size cap beyond the disk.
+
+       POST /api/files/init    {name,size,type,chunk}  -> {ok,id}
+       POST /api/files/chunk?id=..&n=..  <raw bytes>   -> {ok,received}
+       GET  /api/files/status?id=..                    -> {ok,received:[n…],size}
+       POST /api/files/done?id=..                      -> {ok,blobId,bytes}
+
+     ⛔ Anything the browser would RENDER as a document on this origin is refused (html/svg/xml/js/css…):
+     /uploads/ serves by extension. Everything else is served as its type or as a download (nosniff). */
+  if (req.url.split("?")[0].startsWith("/api/files/")) {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    if (!tokOk(tok)) { res.writeHead(401, { "Content-Type": "application/json" }); return res.end('{"error":"unauthorized"}'); }
+    const UP = path.join(__dirname, "uploads"), TMP = path.join(UP, ".files");
+    try { fs.mkdirSync(TMP, { recursive: true }); } catch (e) {}
+    const act = req.url.split("?")[0].slice("/api/files/".length);
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const idOf = () => String(q.searchParams.get("id") || "").replace(/[^a-f0-9]/g, "").slice(0, 32);
+    const metaOf = (id) => { try { return JSON.parse(fs.readFileSync(path.join(TMP, id + ".json"), "utf8")); } catch (e) { return null; } };
+    const partsOf = (id) => fs.readdirSync(TMP).filter(f => f.startsWith(id + ".") && f.endsWith(".part")).map(f => +f.slice(id.length + 1, -5)).filter(n => Number.isInteger(n) && n >= 0).sort((a, b) => a - b);
+    const BLOCK = /\.(html?|xhtml|shtml|svg|xml|xsl|js|mjs|cjs|css|php|exe|msi|bat|cmd|sh|scr|jar|com|vbs|ps1)$/i;
+    if (act === "init" && req.method === "POST") {
+      return readBodyUtf8(req, 2e4, (body) => {
+        let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+        const name = String((p && p.name) || "file").replace(/[^A-Za-z0-9._ -]/g, "-").slice(-120);
+        if (BLOCK.test(name)) return J(400, { error: "that file type could run as a page here; zip it first" });
+        const ext = (path.extname(name).toLowerCase().replace(/[^a-z0-9.]/g, "") || ".bin").slice(0, 12);
+        const size = Math.max(0, +((p && p.size)) || 0), chunk = Math.min(64e6, Math.max(256e3, +((p && p.chunk)) || 4194304));
+        if (!size) return J(400, { error: "empty file" });
+        const id = crypto.randomBytes(12).toString("hex");
+        try { fs.writeFileSync(path.join(TMP, id + ".json"), JSON.stringify({ id, name, ext, size, chunk, type: String((p && p.type) || "").slice(0, 80), started: Date.now() })); }
+        catch (e) { return J(500, { error: "could not open the upload" }); }
+        return J(200, { ok: true, id, chunk });
+      });
+    }
+    if (act === "chunk" && req.method === "POST") {
+      const id = idOf(), n = Math.max(0, parseInt(q.searchParams.get("n") || "-1", 10));
+      const meta = id && metaOf(id); if (!meta || !Number.isInteger(n) || n < 0) return J(404, { error: "unknown upload — start again" });
+      const max = Math.ceil(meta.size / meta.chunk); if (n >= max) return J(400, { error: "piece out of range" });
+      const chunks = []; let len = 0;
+      req.on("data", c => { chunks.push(c); len += c.length; if (len > meta.chunk + 1e6) req.destroy(); });
+      req.on("end", () => {
+        try { fs.writeFileSync(path.join(TMP, id + "." + n + ".part"), Buffer.concat(chunks)); return J(200, { ok: true, received: partsOf(id).length, of: max }); }
+        catch (e) { return J(500, { error: "write failed" }); }
+      });
+      req.on("error", () => {});
+      return;
+    }
+    if (act === "status" && req.method === "GET") {
+      const id = idOf(); const meta = id && metaOf(id); if (!meta) return J(404, { ok: false, error: "unknown upload" });
+      return J(200, { ok: true, id, received: partsOf(id), of: Math.ceil(meta.size / meta.chunk), size: meta.size, name: meta.name });
+    }
+    if (act === "done" && req.method === "POST") {
+      const id = idOf(); const meta = id && metaOf(id); if (!meta) return J(404, { error: "unknown upload" });
+      const max = Math.ceil(meta.size / meta.chunk), have = partsOf(id);
+      if (have.length !== max) { const missing = []; for (let i = 0; i < max; i++) if (have.indexOf(i) < 0) missing.push(i); return J(409, { error: "pieces missing", missing: missing.slice(0, 50) }); }
+      const blobId = id + meta.ext, dest = path.join(UP, blobId);
+      try {
+        const out = fs.openSync(dest, "w");
+        try { for (let i = 0; i < max; i++) { const buf = fs.readFileSync(path.join(TMP, id + "." + i + ".part")); fs.writeSync(out, buf); } } finally { fs.closeSync(out); }
+        const st = fs.statSync(dest);
+        if (st.size !== meta.size) { try { fs.unlinkSync(dest); } catch (e) {} return J(409, { error: "assembled size " + st.size + " does not match " + meta.size + "; upload again" }); }
+        for (let i = 0; i < max; i++) { try { fs.unlinkSync(path.join(TMP, id + "." + i + ".part")); } catch (e) {} }
+        try { fs.unlinkSync(path.join(TMP, id + ".json")); } catch (e) {}
+        return J(200, { ok: true, blobId, bytes: st.size, name: meta.name });
+      } catch (e) { return J(500, { error: "could not finalise" }); }
+    }
+    return J(404, { error: "not found" });
+  }
   if (req.url.split("?")[0].startsWith("/api/voice/")) {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";

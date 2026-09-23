@@ -75,7 +75,9 @@ if (typeof window !== "undefined") window.pfPick = function () {
   if (!pfCanUpload()) { alert("This needs a signed-in, synced device."); return; }
   var inp = document.createElement("input");
   inp.type = "file"; inp.multiple = true;
-  inp.accept = "image/*,application/pdf,text/csv,.csv,.svg";
+  /* any file, any size (2026-09-23): images take the small path (shrunk first); everything else, and anything
+     over 6 MB, goes up in resumable pieces via js/190 */
+  inp.accept = "";
   inp.onchange = function () { var fs = inp.files ? [].slice.call(inp.files) : []; if (fs.length) pfUploadAll(fs); };
   inp.click();
 };
@@ -96,7 +98,10 @@ if (typeof window !== "undefined") window.pfUploadAll = async function (files) {
     PF_DONE = i;
     try {
       pfStep(f.name || "file", 5);
-      var blobId = await jsUpload(f, function (p) { pfStep(f.name || "file", Math.max(5, p)); });
+      var small = /^image\//.test(f.type || "") && f.size <= 6 * 1024 * 1024;
+      var blobId = (small || typeof jsUploadResumable !== "function")
+        ? await jsUpload(f, function (p) { pfStep(f.name || "file", Math.max(5, p)); })
+        : await jsUploadResumable(f, function (p, label) { pfStep((f.name || "file") + (label ? " · " + label : ""), Math.max(5, p)); });
       if (!blobId) throw new Error("no id");
       var d = D(); if (!Array.isArray(d.personalFiles)) d.personalFiles = [];
       var rec = { id: "pf_" + (typeof uid === "function" ? uid() : String(Date.now()) + i),
@@ -175,7 +180,7 @@ if (typeof window !== "undefined") window.rFiles = function () {
       + '<div class="sub" style="margin-top:4px;white-space:normal">' + esc(PF_MSG || "") + '</div>'
       + '<div style="height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:8px"><div style="height:100%;width:' + Math.max(4, Math.min(100, PF_PCT)) + '%;background:var(--accent);transition:width .2s"></div></div>';
   } else {
-    h += '<div class="row" style="gap:8px;align-items:center"><div class="grow"><div class="nm">Upload to this organization\'s folder</div><div class="sub" style="white-space:normal">Manuals, statements, photos, CSVs. Images, PDF and CSV files. They stay on your own server.</div></div>'
+    h += '<div class="row" style="gap:8px;align-items:center"><div class="grow"><div class="nm">Upload to this organization\'s folder</div><div class="sub" style="white-space:normal">Any file, any size: manuals, statements, photos, videos, spreadsheets. A dropped connection resumes where it left off. Files stay on your own server.</div></div>'
       + (pfCanUpload() ? '<button class="btn acc" style="flex:0 0 auto" onclick="pfPick()">Upload</button>' : '<div class="sub" style="flex:0 0 auto">needs sign-in</div>') + '</div>';
     if (PF_MSG) h += '<div class="note" style="margin-top:8px;white-space:normal">' + esc(PF_MSG) + '</div>';
   }
