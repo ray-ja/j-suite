@@ -2656,6 +2656,7 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
               else{b.disabled=false;b.textContent="Couldn\'t send — tap again or text us";}
             }).catch(function(){b.disabled=false;b.textContent="Couldn\'t send — tap again or text us";});}</script>`;
         }
+        if (q.plan && q.plan.status !== "cancelled" && Array.isArray(q.plan.installments) && q.plan.installments.length) return ppPageHTML(q, biz);
         if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
@@ -2715,6 +2716,137 @@ function invEmailBuild(q, cust, biz, owner, origin, note) {
   const text = (first ? "Hi " + first + "," : "Hi,") + "\n\n" + (note ? note + "\n\n" : "") + "Here is your " + what + " from " + brand + (amount ? " for " + amount : "") + ": " + url + "\n\nReply with any questions." + (biz && biz.phone ? " Or call or text " + biz.phone + "." : "");
   const from = brand ? (brand.replace(/[<>"]/g, "") + " <invoices@mail.jsuite.dev>") : null;
   return { subject: subject, html: html, text: text, url: url, from: from };
+}
+/* ---------- PAY PLANS, IN HOUSE (Ray, 2026-09-26: "our own pay over time… no fees… sent and recorded automatically") ----------
+   The schedule lives on the quote (q.plan, see js/192). This side does the three things a phone can't:
+   mint each installment's Stripe link on the org's own account, email it (and remind when late), and mark the
+   installment paid when the webhook says so. The sweep runs every half hour, acts only 8am to 8pm local, and
+   every action is idempotent (sentAt / reminded[] / paidAt on the installment). */
+const PP = require(path.join(__dirname, "js", "192-pay-plans.js"));
+const PP_TICK_MS = 30 * 60 * 1000;
+function ppCfgOf(store, org) { const d = (((store[org] || {}).docs) || []).find(x => x && !x.deleted && x.id === "payPlanConfig"); return PP.ppCfgParse(d && d.text); }
+function ppTodayISO(d) { d = d || new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+/* the email for one installment. Pure; exported for tests. kind = "due" | "reminder" */
+function ppEmailBuild(q, inst, cust, biz, owner, origin, kind) {
+  const E = (v) => String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const url = String(origin || "").replace(/\/+$/, "") + "/i/" + String((q && q.invoiceToken) || "");
+  const total = ((q && q.plan && q.plan.installments) || []).length, no = invNoOf(q), brand = (biz && biz.name) || "";
+  const first = String((cust && cust.name) || (q && q.cust) || "").trim().split(/\s+/)[0];
+  const amt = PP.ppMoney(inst.cents), due = invDateOf(inst.due), late = kind === "reminder";
+  const subject = (late ? "Reminder: payment " : "Payment ") + inst.n + " of " + total + " · " + amt + (late ? " was due " : " due ") + due + " · " + brand;
+  const pay = inst.link ? "<p style=\"margin:0 0 18px\"><a href=\"" + E(inst.link) + "\" style=\"display:inline-block;background:#1b2330;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:8px\">Pay " + E(amt) + " online</a></p>" : "";
+  const html = "<div style=\"font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1b2330;max-width:560px\">"
+    + "<p style=\"margin:0 0 14px\">" + (first ? "Hi " + E(first) + "," : "Hi,") + "</p>"
+    + "<p style=\"margin:0 0 14px\">" + (late ? "A quick reminder: payment " + inst.n + " of " + total + " on invoice " + E(no) + ", <b>" + E(amt) + "</b>, was due " + E(due) + "." : "Payment " + inst.n + " of " + total + " on invoice " + E(no) + " is <b>" + E(amt) + "</b>, due " + E(due) + ".") + "</p>"
+    + pay
+    + "<p style=\"margin:0 0 14px;font-size:14px;color:#555\">Cash or Venmo works too, just let us know. The full schedule is on your invoice: " + E(url) + "</p>"
+    + "<p style=\"margin:0\">Reply to this email with any questions." + (biz && biz.phone ? " Or call or text " + E(biz.phone) + "." : "") + "<br>" + E(brand) + (owner && owner.name ? " · " + E(owner.name) : "") + "</p></div>";
+  const text = (first ? "Hi " + first + "," : "Hi,") + "\n\n" + (late ? "Reminder: payment " : "Payment ") + inst.n + " of " + total + " on invoice " + no + " is " + amt + (late ? ", was due " : ", due ") + due + "." + (inst.link ? "\n\nPay online: " + inst.link : "") + "\n\nCash or Venmo works too. Full schedule: " + url + (biz && biz.phone ? "\n\n" + brand + " · " + biz.phone : "");
+  const from = brand ? (brand.replace(/[<>"]/g, "") + " <invoices@mail.jsuite.dev>") : null;
+  return { subject: subject, html: html, text: text, url: url, from: from };
+}
+/* everything the sweep should act on right now, across orgs. Pure over a store; exported for tests. */
+function ppDueAcross(store, todayISO) {
+  const out = [];
+  orgIdsOf(store || {}).forEach(org => {
+    const cfg = ppCfgOf(store, org);
+    ((store[org] || {}).quotes || []).forEach(q => {
+      if (!q || q.deleted || !q.plan || q.paid) return;
+      const d = PP.ppDueToSend(q.plan, todayISO, cfg);
+      d.send.forEach(n => out.push({ org, quoteId: q.id, n, kind: "due" }));
+      d.remind.forEach(r => out.push({ org, quoteId: q.id, n: r.n, kind: "reminder", day: r.day }));
+    });
+  });
+  return out;
+}
+/* mint a Stripe link for one installment (org's own key), cb(err, {url,id}) */
+function ppMintLink(store, org, q, inst, cb) {
+  const skey = stripeKeyFor(org); if (!skey) return cb(null, null);
+  const cust = ((store[org] || {}).customers || []).find(c => c && c.id === q.customerId);
+  const label = ((pubBizOf(store, org, q).name || "") + " · " + invNoOf(q) + " · payment " + inst.n + " of " + q.plan.installments.length + (cust && cust.name ? " · " + cust.name : "")).slice(0, 120);
+  stripeCall(skey, "/v1/prices", { currency: "usd", unit_amount: String(inst.cents), "product_data[name]": label }, (st1, pr) => {
+    if (st1 !== 200 || !pr || !pr.id) return cb(new Error("Stripe price: " + (((pr || {}).error || {}).message || st1)));
+    stripeCall(skey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1", "metadata[quoteId]": q.id, "metadata[org]": org, "metadata[pp]": "1", "metadata[inst]": String(inst.n) }, (st2, pl) => {
+      if (st2 !== 200 || !pl || !pl.url) return cb(new Error("Stripe link: " + (((pl || {}).error || {}).message || st2)));
+      cb(null, { url: pl.url, id: pl.id });
+    });
+  });
+}
+/* send (or remind) one installment: link → email → owner DM → stamp. Promise<{ok, emailed, link}> */
+function ppSendOne(org, quoteId, n, kind, day) {
+  return new Promise((resolve) => {
+    let store; try { store = loadStore(); } catch (e) { return resolve({ ok: false, error: "store" }); }
+    const q = ((store[org] || {}).quotes || []).find(x => x && !x.deleted && x.id === quoteId);
+    const inst = q && q.plan && (q.plan.installments || []).find(x => x && x.n === n);
+    if (!q || !inst) return resolve({ ok: false, error: "installment not found" });
+    if ((+inst.paidCents || 0) >= (+inst.cents || 0)) return resolve({ ok: false, error: "already paid" });
+    const cust = ((store[org] || {}).customers || []).find(c => c && c.id === q.customerId);
+    const biz = pubBizOf(store, org, q);
+    const owner = (function () { const u = (store.users || []).find(x => x && x.id === "mq5bu9z3vc4ey"); return u ? { name: u.username } : null; })();
+    const origin = "https://app.jsuite.dev";
+    const after = (link) => {
+      const i2 = Object.assign({}, inst); if (link) { i2.link = link.url; i2.linkId = link.id; }
+      const mail = ppEmailBuild(q, i2, cust, biz, owner, origin, kind);
+      const to = cust && cust.email ? String(cust.email).trim() : "";
+      const finish = (emailRes) => {
+        const now = Date.now();
+        if (kind === "reminder") { i2.reminded = (i2.reminded || []).concat([+day]).filter((v, i, a) => a.indexOf(v) === i); i2.remindedAt = now; }
+        else { i2.sentAt = now; i2.sentTo = to || ""; }
+        const plan = Object.assign({}, q.plan, { installments: q.plan.installments.map(x => x.n === n ? i2 : x) });
+        let st2 = mergeState(store, { [org]: { quotes: [Object.assign({}, q, { plan, updatedAt: now })] } });
+        const who = (cust && cust.name) || q.cust || "customer";
+        const body = (kind === "reminder" ? "⏳ Reminder sent" : "⏳ Payment plan bill sent") + ": " + who + ", payment " + n + " of " + q.plan.installments.length + ", " + PP.ppMoney(inst.cents) + " due " + invDateOf(inst.due) + (to ? " → emailed " + to : " → NO EMAIL on file, text them this link: " + (i2.link || mail.url)) + (emailRes && emailRes.ok === false && !emailRes.skipped ? " (email failed: " + (emailRes.error || "?") + ")" : "");
+        const built = ceoBuildMessage({ biz: org, to: "", title: "Payment plans", senderLabel: "Pay over time", threadId: "thr_payplans", body: body }, st2);
+        st2 = mergeState(st2, { [org]: { messages: built.records } });
+        try { saveStore(st2); } catch (e) { return resolve({ ok: false, error: "save failed" }); }
+        pushNotify(st2, org, built.threadId, "__ceo__").catch(() => {});
+        resolve({ ok: true, emailed: to || "", link: i2.link || "", hosted: mail.url });
+      };
+      if (to) sendEmail(to, mail.subject, mail.html, { from: mail.from, text: mail.text, replyTo: "ray@obxlotsolutions.com" }).then(finish).catch(() => finish({ ok: false, error: "send" }));
+      else finish({ ok: false, skipped: true });
+    };
+    if (inst.link) return after(null);
+    ppMintLink(store, org, q, inst, (err, link) => { if (err) console.log("[payplan] link: " + err.message); after(link || null); });
+  });
+}
+/* webhook: an installment link was paid */
+function ppInstallmentPaidApply(store, org, q, n, cents, ref) {
+  const inst = (q.plan.installments || []).find(x => x && x.n === n); if (!inst) return { store, unmatched: true };
+  if (inst.ref && inst.ref === ref) return { store, already: true };
+  const now = Date.now(), paidDate = new Date().toISOString().slice(0, 10);
+  const i2 = Object.assign({}, inst, { paidCents: Math.max(+inst.paidCents || 0, cents), paidAt: now, ref: ref, method: "card" });
+  const plan = Object.assign({}, q.plan, { installments: q.plan.installments.map(x => x.n === n ? i2 : x) });
+  const payments = (Array.isArray(q.payments) ? q.payments.slice() : []);
+  if (!payments.some(p => p && p.ref === ref)) payments.push({ id: "pay_stripe_" + String(ref).slice(-24), amount: cents / 100, date: paidDate, method: "card", ref: ref, via: "stripe", installment: n, createdAt: now });
+  const st = PP.ppStatus(plan, paidDate); const done = st.done;
+  const upd = Object.assign({}, q, { plan: Object.assign(plan, { status: done ? "done" : plan.status }), payments, updatedAt: now }, done ? { paid: true, paidDate: q.paidDate || paidDate } : {});
+  let s2 = mergeState(store, { [org]: { quotes: [upd] } });
+  const cust = ((store[org] || {}).customers || []).find(c => c && c.id === q.customerId);
+  const built = ceoBuildMessage({ biz: org, to: "", title: "Payment plans", senderLabel: "Pay over time", threadId: "thr_payplans", body: "💳 Paid: " + ((cust && cust.name) || q.cust || "customer") + ", payment " + n + " of " + plan.installments.length + ", " + PP.ppMoney(cents) + (done ? ". Plan complete, invoice marked paid." : ". " + PP.ppMoney(st.remainingCents) + " left.") }, s2);
+  s2 = mergeState(s2, { [org]: { messages: built.records } });
+  return { store: s2, threadId: built.threadId, done };
+}
+function ppSweep() {
+  const h = new Date().getHours(); if (h < 8 || h >= 20) return;
+  let store; try { store = loadStore(); } catch (e) { return; }
+  const todo = ppDueAcross(store, ppTodayISO());
+  if (!todo.length) return;
+  (async () => { for (const t of todo) { try { await ppSendOne(t.org, t.quoteId, t.n, t.kind, t.day); } catch (e) { console.log("[payplan] " + e.message); } } })();
+}
+if (require.main === module) {
+  const _ppTimer = setInterval(() => { try { ppSweep(); } catch (e) {} }, PP_TICK_MS);
+  if (_ppTimer.unref) _ppTimer.unref();
+  setTimeout(() => { try { ppSweep(); } catch (e) {} }, 90 * 1000);
+}
+/* the schedule block on the hosted invoice: one pay button per installment */
+function ppPageHTML(q, biz) {
+  const st = PP.ppStatus(q.plan, ppTodayISO());
+  const rows = st.rows.map(r => {
+    const col = r.state === "paid" ? "#0a7d4b" : r.state === "overdue" ? "#b23b3b" : r.state === "due" ? "#6d4a0c" : "#6b7280";
+    const right = r.state === "paid" ? '<span style="color:#0a7d4b;font-weight:700">✓ Paid</span>' : (r.link ? '<a href="' + htmlEsc(r.link) + '" style="display:inline-block;background:#1a1a1a;color:#fff!important;text-decoration:none;font-weight:700;padding:8px 14px;border-radius:8px">Pay ' + PP.ppMoney(r.cents) + '</a>' : '<span style="color:#6b7280">link comes by email ' + (q.plan.autoSend === false ? "" : "before it is due") + '</span>');
+    return '<tr><td style="padding:10px 6px;border-bottom:1px solid #eee"><b>' + r.n + ' of ' + st.rows.length + '</b><div style="font-size:13px;color:' + col + '">' + (r.state === "paid" ? "paid " + (r.paidAt ? htmlEsc(new Date(r.paidAt).toLocaleDateString("en-US")) : "") : r.state === "overdue" ? "was due " + htmlEsc(invDateOf(r.due)) : "due " + htmlEsc(invDateOf(r.due))) + '</div></td><td style="padding:10px 6px;border-bottom:1px solid #eee;text-align:right;font-weight:700">' + PP.ppMoney(r.cents) + '</td><td style="padding:10px 6px;border-bottom:1px solid #eee;text-align:right">' + right + '</td></tr>';
+  }).join("");
+  return '<div style="margin-top:22px"><div style="font-weight:800;font-size:17px;margin-bottom:4px">⏳ Your payment plan</div><div class="muted" style="margin-bottom:8px">' + st.rows.length + ' payments, ' + htmlEsc(PP.ppUnitLabel(q.plan)) + ' · ' + PP.ppMoney(st.paidCents) + ' paid · ' + PP.ppMoney(st.remainingCents) + ' remaining. No financing fee.</div><table style="width:100%;border-collapse:collapse">' + rows + '</table><div class="muted" style="text-align:center;margin-top:10px">Prefer cash or Venmo for a payment? Just let us know' + (biz && biz.phone ? ": " + htmlEsc(biz.phone) : "") + '.</div></div>';
 }
 /* ---------- QUICKBOOKS ONLINE (Ray, 2026-09-22: "exporting from quickbooks is so slow… lets just do the api route") ----------
    Per-org Intuit app keys + OAuth grant live in org-keys.json under <org>.qbo. Connect = the standard Intuit OAuth2
@@ -4885,6 +5017,21 @@ const server = http.createServer((req, res) => {
   // STRIPE PAY LINK — POST /api/stripe/paylink { amountCents, label }. Owner/admin only. Uses the server-side
   // restricted key (never the client) to create a Price (with an inline product) then a Payment Link, and returns
   // its hosted URL. The key is read fresh from ceo-config.json and NEVER logged or echoed.
+  /* POST /api/payplan/send {org, quoteId, n} (owner/admin): send (or resend) one installment now — mints its link if needed, emails the customer, DMs the owner */
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/payplan/send") {
+    const q = new URL(req.url, "http://x");
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
+    const sc = tokenScope(tok);
+    const store = sc && sc.account ? loadStore() : null;
+    const manages = sc && sc.account && (sc.superAdmin || (sc.orgs || []).some(o => ["owner", "admin"].indexOf(storedRoleInOrg(store, sc.account.id, o)) >= 0));
+    if (!manages) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"owner/admin only"}'); }
+    return readBodyUtf8(req, 8192, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"bad json"}'); }
+      const org = String((p && p.org) || "").slice(0, 64), quoteId = String((p && p.quoteId) || "").slice(0, 64), n = parseInt((p && p.n) || "0", 10);
+      if (!org || !quoteId || !(n > 0)) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end('{"error":"org, quoteId, n"}'); }
+      ppSendOne(org, quoteId, n, "due").then(r => { res.writeHead(r.ok ? 200 : 400, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(r)); });
+    });
+  }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/stripe/paylink") {
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
@@ -4994,7 +5141,11 @@ const server = http.createServer((req, res) => {
             if (q) { matched = q; matchedOrg = oid; break; }
           }
           const isDeposit = !!(obj.metadata && String(obj.metadata.deposit) === "1");
-          if (matched && isDeposit) {
+          const ppInst = (obj.metadata && String(obj.metadata.pp) === "1") ? parseInt(obj.metadata.inst || "0", 10) : 0;
+          if (matched && ppInst > 0 && matched.plan) {
+            const r = ppInstallmentPaidApply(store, matchedOrg, matched, ppInst, Math.round(+obj.amount_total || 0), obj.id);
+            if (!r.already && !r.unmatched) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
+          } else if (matched && isDeposit) {
             const r = quoteDepositPaidApply(store, matchedOrg, matched, amount, obj.id);
             if (!r.already) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
           } else if (!matched && obj.metadata && obj.metadata.scopeKey) {
@@ -6193,4 +6344,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
