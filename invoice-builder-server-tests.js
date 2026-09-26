@@ -1,0 +1,26 @@
+/* invoice-builder-server-tests.js — the customer picking an offered plan on the hosted invoice. Pure node. */
+const S = require("./sync-server"); let n = 0, f = 0;
+const eq = (a, b, m) => { n++; if (JSON.stringify(a) !== JSON.stringify(b)) { f++; console.log("FAIL", m, JSON.stringify(a), "want", JSON.stringify(b)); } };
+const ok = (c, m) => eq(!!c, true, m);
+const mk = (extra) => Object.assign({ id: "q1", invoiceToken: "tok", date: "2026-09-20", cust: "Shelly", customerId: "c1", total: 975, invoiced: true, inv: { offerPlan: { on: true, n: 3, unit: "2week", depositPct: 0, firstDays: 7 } } }, extra || {});
+const store = () => ({ registry: [], users: [], obx: { customers: [{ id: "c1", name: "Shelly", email: "s@x.y" }], quotes: [mk()], messages: [] } });
+let st = store(); let r = S.invPlanChooseApply(st, "obx", st.obx.quotes[0], "2026-09-26");
+const q = r.store.obx.quotes.find(x => x.id === "q1");
+ok(!r.error && q.plan && q.plan.status === "active", "plan created from the offer");
+eq(q.plan.installments.map(x => x.cents), [32500, 32500, 32500], "$975 in three");
+eq(q.plan.installments.map(x => x.due), ["2026-10-03", "2026-10-17", "2026-10-31"], "first in 7 days, then every 2 weeks");
+eq(q.plan.chosenBy, "customer", "chosen by the customer");
+eq(r.firstN, 1, "first installment to send");
+ok(r.threadId && r.store.obx.messages.some(m => /Shelly chose pay over time/.test(m.text || m.body || "")), "owner told");
+eq(S.invPlanChooseApply(r.store, "obx", q, "2026-09-26").already, true, "choosing twice is a no-op");
+st = store(); st.obx.quotes[0].inv.offerPlan.on = false;
+eq(S.invPlanChooseApply(st, "obx", st.obx.quotes[0], "2026-09-26").error, "no plan offered on this invoice", "no offer → refused");
+st = store(); st.obx.quotes[0].paid = true;
+eq(S.invPlanChooseApply(st, "obx", st.obx.quotes[0], "2026-09-26").error, "already paid", "paid → refused");
+st = store(); st.obx.quotes[0].inv.offerPlan = { on: true, n: 4, unit: "month", depositPct: 25 };
+r = S.invPlanChooseApply(st, "obx", st.obx.quotes[0], "2026-09-26");
+eq(r.store.obx.quotes[0].plan.installments[0], Object.assign({}, r.store.obx.quotes[0].plan.installments[0], { due: "2026-09-26", cents: 24375, deposit: true }), "25% down is due today");
+st = store(); st.obx.quotes[0].invoiced = false;
+r = S.invPlanChooseApply(st, "obx", st.obx.quotes[0], "2026-09-26");
+eq(r.store.obx.quotes[0].invoiced, true, "choosing a plan on an accepted quote turns it into an invoice");
+console.log("=========  " + (n - f) + " passed, " + f + " failed  ========="); process.exit(f ? 1 : 0);

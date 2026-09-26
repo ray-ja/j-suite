@@ -2539,7 +2539,8 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
   // NOT YET INVOICED → this is a QUOTE page: full line items (the breakdown IS the point of a quote —
   // e.g. a change order the customer needs to see), no pay button, no due-on-receipt language.
   const isQuote = !isCombo && !q.invoiced && !q.paid;
-  const cashPrice = Math.round(due * 0.97 * 100) / 100, cashSave = Math.round((due - cashPrice) * 100) / 100;
+  const invB = IB.invBuilderOf(q); const _cash = IB.invCashPrice(due, invB.cashPct);
+  const cashPrice = _cash.price, cashSave = _cash.save;
   const billTo = cust ? [cust.name || cust.company, (cust.company && cust.name) ? cust.company : "", [cust.address, cust.unit].filter(Boolean).join(", "), cust.phone, cust.email].filter(Boolean) : ["(no customer on file)"];
   let rows, adjRows;
   if (isCombo) {
@@ -2630,10 +2631,12 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
       </div>
       <div class="billrow">
         <div><div class="lbl2">Bill to</div>${billTo.map((l, i) => `<div${i === 0 ? ' style="font-weight:700;color:#1a1a1a"' : ' class="muted"'}>${htmlEsc(l)}</div>`).join("")}</div>
-        <div style="text-align:right"><div class="lbl2">${isQuote ? "Quote total" : (settledAll ? "Amount" : "Amount due")}</div><div class="due">${dueStr}</div>${settledAll ? `<div class="paidstamp">PAID</div>` : (isQuote ? `<div class="muted">nothing due until the work is billed</div>` : `<div class="muted">Due on receipt</div>`)}${(!settledAll && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
+        <div style="text-align:right"><div class="lbl2">${isQuote ? "Quote total" : (settledAll ? "Amount" : "Amount due")}</div><div class="due">${dueStr}</div>${settledAll ? `<div class="paidstamp">PAID</div>` : (isQuote ? `<div class="muted">nothing due until the work is billed</div>` : `<div class="muted">${htmlEsc(IB.invDueLabel(invB, q.invoicedDate || q.date, new Date().toISOString().slice(0, 10)))}</div>`)}${(!settledAll && acct && acct.curPaid >= 0.005) ? `<div class="muted" style="margin-top:4px">Paid to date <span style="color:${AC};font-weight:600">−${invMoney(acct.curPaid)}</span> · balance <span style="color:${acct.curRemaining > 0.005 ? "#b91c1c" : AC};font-weight:700">${invMoney(Math.abs(acct.curRemaining))}${acct.curRemaining < -0.005 ? " credit" : ""}</span></div>` : ""}</div>
       </div>
+      ${invB.intro ? `<div style="margin:18px 0 4px;white-space:pre-wrap;line-height:1.5">${htmlEsc(invB.intro)}</div>` : ""}
       <table><thead><tr><th>Item</th><th class="c">Qty</th><th class="n">Amount</th></tr></thead>
       <tbody>${rows}</tbody><tfoot>${adjRows}${taxRows}</tfoot></table>
+      ${invB.terms ? `<div class="muted" style="margin-top:14px;white-space:pre-wrap;line-height:1.5;font-size:13.5px">${htmlEsc(invB.terms)}</div>` : ""}
       ${(() => {
         // the pay button: shared across billed-together invoices, grayed when everything is settled,
         // customer can pay the balance or a partial amount at checkout
@@ -2657,20 +2660,23 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
             }).catch(function(){b.disabled=false;b.textContent="Couldn\'t send — tap again or text us";});}</script>`;
         }
         if (q.plan && q.plan.status !== "cancelled" && Array.isArray(q.plan.installments) && q.plan.installments.length) return ppPageHTML(q, biz);
+        const offer = (!settledAll && !isCombo && invB.offerPlan && invB.offerPlan.on) ? `<div id="ppo" style="margin-top:14px;border:1.5px solid #d1d5db;border-radius:10px;padding:12px 14px"><div style="font-weight:800">⏳ Pay over time</div><div class="muted" style="margin:2px 0 8px">${htmlEsc(IB.invOfferLabel(invB.offerPlan))}${invB.offerPlan.note ? " · " + htmlEsc(invB.offerPlan.note) : ""}</div><button class="pay2" id="ppo_btn" onclick="ppoChoose()" style="width:100%;margin-top:0;cursor:pointer;font:inherit;font-weight:700">Choose pay over time — ${IB.invOfferLabel(invB.offerPlan).split(",")[0]}</button></div>
+          <script>function ppoChoose(){var b=document.getElementById("ppo_btn");if(!b)return;b.disabled=true;b.textContent="Setting it up…";fetch(location.pathname+"/plan",{method:"POST"}).then(function(r){return r.json();}).then(function(d){if(d&&d.ok){location.reload();}else{b.disabled=false;b.textContent="Couldn't set it up — tap again or text us";}}).catch(function(){b.disabled=false;b.textContent="Couldn't set it up — tap again or text us";});}</script>` : "";
+        if (invB.card === false && !settledAll) return `${cashSave >= 0.005 ? `<div class="cash" style="margin-top:22px">💵 Paying cash or check? Save ${_cash.pct}% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}${offer}`;
         if (settledAll || (pay && pay.paidOff)) return `<div class="pay" style="background:#eef0f3;color:#9ca3af!important;cursor:default">✓ Paid — thank you</div>`;
         if (pay && pay.url) {
           const bal = pay.scope ? pay.scope.remainingCents / 100 : due;
-          const cashP = Math.round(bal * 0.97 * 100) / 100, cashS = Math.round((bal - cashP) * 100) / 100;
+          const _c2 = IB.invCashPrice(bal, invB.cashPct); const cashP = _c2.price, cashS = _c2.save;
           const acctBtn = (extras && extras.acct && extras.acct.cents > Math.round(bal * 100) + 50)
             ? `<a class="pay2" href="${htmlEsc(extras.acct.url)}">Pay your whole account — ${invMoney(extras.acct.cents / 100)}</a>` : "";
           return `<a class="pay" href="${htmlEsc(pay.url)}">💳 Pay online — ${invMoney(bal)}${Math.abs(bal - due) >= 0.005 ? " balance" : ""}</a>
           ${acctBtn}
           <div class="muted" style="text-align:center;margin-top:8px">Pay the full balance, or change the amount at checkout to make a partial payment — split it across cards or payment methods by paying in parts.</div>
-          ${cashS >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashP)} (you save ${invMoney(cashS)})</div>` : ""}`;
+          ${cashS >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save ${_c2.pct}% — ${invMoney(cashP)} (you save ${invMoney(cashS)})</div>` : ""}${offer}`;
         }
-        return (q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save 3% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : "";
+        return ((q.paymentLink && !q.paid) ? `<a class="pay" href="${htmlEsc(q.paymentLink)}">💳 Pay online — ${dueStr}</a>${cashSave >= 0.005 ? `<div class="cash">💵 Paying cash or check? Save ${_cash.pct}% — ${invMoney(cashPrice)} (you save ${invMoney(cashSave)})</div>` : ""}` : "") + offer;
       })()}
-      <div class="foot">Thank you for your business!&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
+      <div class="foot">${htmlEsc(invB.footer || "Thank you for your business!")}&nbsp;·&nbsp;${htmlEsc(biz.name || "")}${biz.phone ? "&nbsp;·&nbsp;" + htmlEsc(biz.phone) : ""}</div>
       <div class="noprint" style="text-align:center;margin-top:14px"><button onclick="window.print()" style="font:inherit;font-weight:700;padding:10px 18px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer">🖨 Save as PDF / print</button></div>
       <style>@media print{.noprint{display:none}}</style>
     </div></div>
@@ -2723,6 +2729,7 @@ function invEmailBuild(q, cust, biz, owner, origin, note) {
    installment paid when the webhook says so. The sweep runs every half hour, acts only 8am to 8pm local, and
    every action is idempotent (sentAt / reminded[] / paidAt on the installment). */
 const PP = require(path.join(__dirname, "js", "192-pay-plans.js"));
+const IB = require(path.join(__dirname, "js", "193-invoice-builder.js"));   // per-invoice terms (js/193)
 const PP_TICK_MS = 30 * 60 * 1000;
 function ppCfgOf(store, org) { const d = (((store[org] || {}).docs) || []).find(x => x && !x.deleted && x.id === "payPlanConfig"); return PP.ppCfgParse(d && d.text); }
 function ppTodayISO(d) { d = d || new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
@@ -2825,6 +2832,23 @@ function ppInstallmentPaidApply(store, org, q, n, cents, ref) {
   const built = ceoBuildMessage({ biz: org, to: "", title: "Payment plans", senderLabel: "Pay over time", threadId: "thr_payplans", body: "💳 Paid: " + ((cust && cust.name) || q.cust || "customer") + ", payment " + n + " of " + plan.installments.length + ", " + PP.ppMoney(cents) + (done ? ". Plan complete, invoice marked paid." : ". " + PP.ppMoney(st.remainingCents) + " left.") }, s2);
   s2 = mergeState(s2, { [org]: { messages: built.records } });
   return { store: s2, threadId: built.threadId, done };
+}
+/* the customer chose the offered plan: q.plan from q.inv.offerPlan. Pure over a store; exported for tests. */
+function invPlanChooseApply(store, org, q, todayISO) {
+  const inv = IB.invBuilderOf(q);
+  if (!inv.offerPlan || !inv.offerPlan.on) return { store, error: "no plan offered on this invoice" };
+  if (q.paid) return { store, error: "already paid" };
+  if (q.plan && q.plan.status === "active") return { store, already: true };
+  const dueCents = Math.round(invEff(q) * 100);
+  if (dueCents < 100) return { store, error: "nothing due" };
+  const plan = IB.invOfferToPlan(inv.offerPlan, dueCents, todayISO, PP.ppSchedule);
+  const now = Date.now();
+  const upd = Object.assign({}, q, { plan, invoiced: true, invoicedDate: q.invoicedDate || todayISO, updatedAt: now });
+  let s2 = mergeState(store, { [org]: { quotes: [upd] } });
+  const cust = ((store[org] || {}).customers || []).find(c => c && c.id === q.customerId);
+  const built = ceoBuildMessage({ biz: org, to: "", title: "Payment plans", senderLabel: "Pay over time", threadId: "thr_payplans", body: "⏳ " + ((cust && cust.name) || q.cust || "A customer") + " chose pay over time on " + invNoOf(q) + ": " + IB.invOfferLabel(inv.offerPlan) + " (" + PP.ppMoney(dueCents) + "). First bill going out now." }, s2);
+  s2 = mergeState(s2, { [org]: { messages: built.records } });
+  return { store: s2, threadId: built.threadId, firstN: plan.installments[0].n };
 }
 function ppSweep() {
   const h = new Date().getHours(); if (h < 8 || h >= 20) return;
@@ -5211,6 +5235,23 @@ const server = http.createServer((req, res) => {
 
   // HOSTED PUBLIC INVOICE — GET /i/<token> (no auth: the unguessable per-invoice token IS the capability). Renders
   // the invoice a customer can open in any browser + pay online. 404s an unknown/stale token.
+  /* the CUSTOMER picks the pay-over-time offer on the hosted invoice (js/193): build the plan from the offered
+     terms, send the first bill at once, tell the owner. The unguessable token is the auth, as with /accept. */
+  if (req.method === "POST" && /^\/i\/[^/?]+\/plan$/.test(req.url.split("?")[0])) {
+    const token = decodeURIComponent(req.url.split("?")[0].slice(3).replace(/\/plan$/, ""));
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    if (!token || token.length < 8) return J(404, { error: "not found" });
+    let store = loadStore(); let q = null, org = null;
+    for (const oid of orgIdsOf(store)) { const f = ((store[oid] && store[oid].quotes) || []).find(x => x && !x.deleted && x.invoiceToken === token); if (f) { q = f; org = oid; break; } }
+    if (!q) return J(404, { error: "not found" });
+    const r = invPlanChooseApply(store, org, q, new Date().toISOString().slice(0, 10));
+    if (r.error) return J(400, { ok: false, error: r.error });
+    if (r.already) return J(200, { ok: true, already: true });
+    try { saveStore(r.store); } catch (e) { return J(500, { error: "save failed" }); }
+    if (r.threadId) pushNotify(r.store, org, r.threadId, "__ceo__").catch(() => {});
+    ppSendOne(org, q.id, r.firstN, "due").then(() => J(200, { ok: true })).catch(() => J(200, { ok: true }));
+    return;
+  }
   if (req.method === "POST" && /^\/i\/[^/?]+\/accept$/.test(req.url.split("?")[0])) {
     const token = decodeURIComponent(req.url.split("?")[0].slice(3).replace(/\/accept$/, ""));
     const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
@@ -6344,4 +6385,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
