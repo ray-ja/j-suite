@@ -80,14 +80,14 @@ console.log("\n--- the expanded list: level 2 and level 3 in one ordered run ---
   ok("⭐ Next Check is NOT its own row any more (it lives behind My Pay)", !rows.some(r => r.tab === "nextcheck"));
   ok("⛔ a tab WITH children is represented by them, not by itself as well",
     !rows.some(r => r.plain && r.tab === "finance"), rows.filter(r => r.plain).map(r => r.tab));
-  ok("order follows the group's own tab order", rows[0].tab === "nextcheck" && rows[rows.length - 1].tab === "routes");
+  ok("order follows the group's own tab order", rows[0].tab === "finance" && rows[rows.length - 1].tab === "routes");
 
   const html = c.navDeepHTML("money");
   ok("⭐ the current screen is marked", /class="navsub on"[^>]*data-deep="finance\/owed"/.test(html), html.slice(0, 300));
   eq("...and only it", (html.match(/navsub on/g) || []).length, 1);
 
   /* role / org gating is INHERITED from groupTabs, never re-implemented */
-  const gated = sandbox({ groupTabs: () => ["nextcheck"] });
+  const gated = sandbox({ groupTabs: () => ["pay"] });
   eq("⭐ a tab this user can't reach contributes nothing", gated.navDeepFor("money").length, 1);
   ok("...and gating comes from groupTabs, the existing authority", /groupTabs\(g\)/.test(CODE(SRC)));
 
@@ -160,8 +160,14 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
      session that matching raw source has found my own writing instead of the code. */
   const h2sIn = (src0, from, to) => { const src = CODE(src0); return [...src.slice(src.indexOf(from), to ? src.indexOf(to) : undefined)
       .matchAll(/<h2[^>]*>([^<]+)</g)].map(m => secKeyOf(unent(m[1].replace(/\$\{[^}]*\}/g, "")))); };
+  const SCH = R("js/09-schedule.js"), TC = R("js/38-timeclock.js"), RT2 = R("js/24-sales-route-planners-osrm-op.js"), INV = R("js/31-inventory.js");
   const screenSubs = {
     finance: [...FIN.matchAll(/finSub\('([a-z]+)'\)/g)].map(m => m[1]),
+    /* Phase 6b (2026-09-26): four more screens registered so the sidebar lists their sub-views */
+    schedule: [...SCH.matchAll(/schedSub\('([a-z]+)'\)/g)].map(m => m[1]).filter(x => x !== "crew"),   // the crew tab was retired
+    time: [...TC.matchAll(/tcSub\('([a-z]+)'\)/g)].map(m => m[1]),
+    route: [...RT2.matchAll(/salesSub\('\$\{s\[0\]\}'\)/g)].length ? ["prospect", "jobs"] : [],
+    inventory: [...INV.matchAll(/invSetView\(\\'([a-z]+)\\'\)/g)].map(m => m[1]),
     budget: [...BUD.matchAll(/budgetSetSub\(\\?'([a-z]+)\\?'\)/g)].map(m => m[1]),
     accounts: [...CUST.matchAll(/ppGo\('accounts','([a-z]+)'\)/g)].map(m => m[1]),
     team: [],
@@ -188,7 +194,7 @@ console.log("\n--- ⛔ 1. nothing becomes unreachable ---");
 
   /* ⚠️ a screen NOT in the registry must keep its own row */
   ok("⛔ receipts keeps its own row — nothing of it is registered", c.navDeepCoveredTabs().indexOf("receipts") < 0);
-  ok("⛔ so does inventory", c.navDeepCoveredTabs().indexOf("inventory") < 0);
+  ok("⭐ inventory IS covered now (Phase 6b): its six views are registered", c.navDeepCoveredTabs().indexOf("inventory") >= 0);
   /* ⭐ admin and settings ARE covered now — their sections are registered, so their in-page tab row is a
      duplicate of the sidebar on desktop, exactly like finance and budget. */
   ok("⭐ settings is covered, so its sections must all be listed", c.navDeepCoveredTabs().indexOf("data") >= 0);
