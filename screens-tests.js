@@ -15,7 +15,11 @@ eq(S.scNarrow(""), false, "nothing");
 /* rule 2 */
 const money = [{ plain: false, tab: "finance" }, { plain: false, tab: "finance" }, { plain: true, tab: "invoices" }, { plain: true, tab: "receipts" }, { plain: true, tab: "pay" }];
 eq(S.scRowRedundant(money, "receipts"), true, "Receipts is a sidebar row → the chip row repeats it");
-eq(S.scRowRedundant(money, "finance"), false, "Finance is covered by its sub-rows, not a plain row (js/03 handles that case)");
+eq(S.scRowRedundant(money, "finance"), true, "Finance is listed through its sub-rows (js/03 hides that row too; both agree)");
+const work = [{ plain: true, tab: "leads" }, { plain: true, tab: "jobs" }, { plain: false, tab: "route" }];
+eq(S.scRowRedundant(work, "quotes", "jobs"), true, "the quote editor runs under the hidden quotes tab; Jobs is its row");
+eq(S.scRowRedundant(work, "routes", "route"), true, "Route review is listed by the Route rows");
+eq(S.scRowRedundant(work, "nextcheck", "pay"), false, "…but only when the host really is in this group");
 eq(S.scRowRedundant([{ plain: true, tab: "messages" }], "messages"), false, "a lone row is not a list; nothing to hide");
 eq(S.scRowRedundant([], "x"), false, "empty");
 /* rule 5 */

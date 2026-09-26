@@ -41,9 +41,10 @@ function scIsPromo(shape) {
 }
 function scNarrow(tab) { return SC_NARROW_TABS.indexOf(String(tab || "")) >= 0; }
 /* the in-page chip row repeats the sidebar when the sidebar lists this tab as a plain row of its group. Pure. */
-function scRowRedundant(rows, tab) {
+function scRowRedundant(rows, tab, host) {
   rows = rows || []; if (rows.length < 2) return false;
-  return rows.some(function (r) { return r && r.plain && r.tab === tab; });
+  var t = host || tab;   // a hidden tab (quotes, routes, nextcheck) is listed by its host row (jobs, route, pay)
+  return rows.some(function (r) { return r && (r.tab === tab || r.tab === t); });
 }
 /* how many trailing paragraphs of a card to fold. paras = [{chars, control}] in document order; the fold
    takes the run of control-free paragraphs at the END and folds it when it totals more than minChars. Pure. */
@@ -70,8 +71,8 @@ if (typeof window !== "undefined") {
     var on = false;
     try {
       if (typeof tabGroup === "function" && typeof navDeepFor === "function") {
-        var g = tabGroup(tab), rows = navDeepFor(g.key);
-        on = scRowRedundant(rows, tab) && !(typeof navDeepRedundant === "function" && navDeepRedundant(g.key, rows));
+        var g = tabGroup(tab), rows = navDeepFor(g.key), host = (typeof NAV_HOST !== "undefined" && NAV_HOST[tab]) || "";
+        on = scRowRedundant(rows, tab, host) && !(typeof navDeepRedundant === "function" && navDeepRedundant(g.key, rows));
       }
     } catch (e) { on = false; }
     document.body.classList.toggle("navrow", on);
@@ -164,10 +165,29 @@ if (typeof window !== "undefined") {
       head.style.display = "none"; body.style.display = "none"; head.parentNode.insertBefore(line, head);
     });
   }
+  /* the job page head: the Crew Guide button and "Edit layout" share a line at desktop width (three rows of
+     controls before the first card became one) */
+  function scJobHead(view) {
+    if (scTier() === "compact") return;
+    var pg = view.querySelector(".jobpg"); if (!pg || pg.querySelector(".sc-jobhead")) return;
+    var kids = Array.prototype.slice.call(pg.children), guides = [], editRow = null;
+    for (var i = 0; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.classList.contains("secthd")) continue;
+      if (k.tagName === "BUTTON" && k.classList.contains("acc") && /Crew Guide/i.test(k.textContent || "")) { guides.push(k); continue; }
+      if (k.classList.contains("row") && k.querySelector("button[onclick^='jobLayoutToggleEdit']")) { editRow = k; break; }
+      if (!(k.textContent || "").trim() && !k.children.length) continue;   // an empty spacer div sits between them
+      if (guides.length) break;
+    }
+    if (!guides.length || !editRow) return;
+    var head = document.createElement("div"); head.className = "sc-jobhead";
+    pg.insertBefore(head, guides[0]); guides.forEach(function (g) { head.appendChild(g); }); head.appendChild(editRow);
+  }
   function scApply(tab) {
     try {
       var view = document.getElementById("view"); if (!view) return;
       scWidth(tab); scNavRow(tab);
+      if (tab === "schedule" && window.JOB_OPEN) scJobHead(view);
       if (tab === "accounts" || tab === "team") scToolbar(view);
       if (tab === "receipts") scReceipts(view);
       if (tab === "messages") scMessages(view);
