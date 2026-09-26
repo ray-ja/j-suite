@@ -115,8 +115,9 @@ function ciEstVsActual(orgId) {
     ciActive(d.jobs).forEach(function (j) {
       var q = j.quoteId ? ciActive(d.quotes).find(function (x) { return x.id === j.quoteId; }) : null;
       var est = ciEstHours(q), act = ciActualHours(j.id, d);
-      /* ⛔ only jobs where BOTH numbers exist — a missing one is not a zero */
-      if (est == null || act == null) return;
+      /* ⛔ only jobs where BOTH numbers exist — a missing one is not a zero; a clock entry that rounds to
+         zero hours has nothing to compare either (it drew "0 person-h · $∞/hr · -100%" on the overview) */
+      if (est == null || act == null || !(act > 0) || !(est > 0)) return;
       rows.push({ jobId: j.id, title: j.title || (q && q.cust) || "Job", date: j.date || "",
                   est: est, actual: act, ratio: Math.round(act / est * 100) / 100,
                   price: +((q && (q.finalPrice || q.total)) || 0) || 0 });

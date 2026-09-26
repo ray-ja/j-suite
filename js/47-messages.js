@@ -107,6 +107,10 @@ function rMessages() {
     if (ot && threadVisible(ot, myUid())) { renderThread(MSG_OPEN); return; }
     MSG_OPEN = null;   // thread gone/invisible → fall back to the inbox
   }
+  view.innerHTML = msgInboxHTML();
+}
+/* the inbox list as HTML — the screen itself above, and the left pane of the desktop list-detail (js/198) */
+function msgInboxHTML() {
   const uid2 = myUid();
   const mine = msgThreads().filter(t => threadVisible(t, uid2)).sort((a, b) => {
     // the broadcast thread is always pinned first, above DMs / job threads
@@ -127,8 +131,9 @@ function rMessages() {
     return `<div class="li" onclick="msgOpen('${t.threadId}')"><div class="grow"><div class="nm">${esc(threadTitle(t))}${t.availAsk ? ` <span class="badge" style="background:#e0a800;color:#1a1a1a">availability</span>` : ``}</div>
       <div class="sub" style="white-space:normal">${snip}${capTick}</div></div>${un ? `<span class="badge" style="background:var(--danger);color:#fff">${un}</span>` : (last ? `<span class="sub">${relTime(last.ts)}</span>` : ``)}${delThread}</div>`;
   }).join("");
-  view.innerHTML = h;
+  return h;
 }
+window.msgInboxHTML = msgInboxHTML;
 
 /* who has read message m in thread tid — Cap (capRead) + crew whose read-marker is at/after m.ts (i.e. they opened the thread after it). Shown on hover; never on the inbox (seeing a preview ≠ opening). */
 function msgReadersTip(tid, m) {

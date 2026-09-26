@@ -56,7 +56,7 @@ function rSchedule(){
   let body=CALVIEW==="week"?renderWeekView(jobs):CALVIEW==="day"?renderDayView(jobs):renderCalendar(jobs);
   let h=sub+toggle+calNavBar()+body;
   // crew-initials legend only matters for the month grid (the cells that draw chips)
-  if(CALVIEW==="month"&&typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Each day shows crew initials — <b style="color:var(--muted)">gray = not confirmed</b>, <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>. Tap a day for the full picture.</div>`;
+  if(CALVIEW==="month"&&typeof schedMembers==="function"&&schedMembers().length)h+=`<div class="sub" style="margin:-2px 6px 10px;white-space:normal">Crew initials appear once someone has answered for that day — <b style="color:var(--accent)">green = available</b>, <b style="color:#e0a800">yellow = part-day</b>, <b style="color:var(--danger)">red = off</b>, <b style="color:var(--muted)">gray = not confirmed</b>. Tap a day for the full picture.</div>`;
   view.innerHTML=h;
 }
 window.schedSub=function(s){SCHEDSUB=s;render();};
@@ -108,7 +108,11 @@ function calDayChips(ds){
   const sty=st=>st==="off"?"background:var(--danger);color:#fff":st==="timeoff"?"background:#b26a00;color:#fff":st==="partial"?"background:#e0a800;color:#1a1a1a":st==="oncall"?"background:#2f6fed;color:#fff":st==="available"?"background:var(--accent);color:var(--accent-ink)":"background:var(--line);color:var(--muted)";
   const lbl=st=>st==="off"?"off":st==="timeoff"?"time off":st==="partial"?"part of day":st==="oncall"?"on call":st==="available"?"available":"not confirmed";
   const norm=s=>s==="off"?"off":s==="timeoff"?"timeoff":s==="partial"?"partial":s==="oncall"?"oncall":s==="on"?"available":"unknown";
-  let chips=mem.slice(0,CAL_CHIP_MAX).map(u=>{const av=availOn(u,ds),st=norm(av.status),ini=userInitials(u);
+  /* a day nobody has answered says nothing — no chips (Phase 8, 2026-09-26: thirty days of gray initials was
+     the loudest thing on the month grid). The moment one person answers, the whole crew shows for that day. */
+  const shown=mem.slice(0,CAL_CHIP_MAX);
+  if(shown.every(u=>norm(availOn(u,ds).status)==="unknown"))return"";
+  let chips=shown.map(u=>{const av=availOn(u,ds),st=norm(av.status),ini=userInitials(u);
     return `<span style="${base};${sty(st)}" title="${esc(u.name||u.username)} — ${esc(av.label||lbl(st))}">${esc(ini)}</span>`;}).join("");
   if(mem.length>CAL_CHIP_MAX)chips+=`<span style="${base};background:var(--soft);color:var(--muted)" title="${mem.length-CAL_CHIP_MAX} more — tap for all">+${mem.length-CAL_CHIP_MAX}</span>`;
   return `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">${chips}</div>`;

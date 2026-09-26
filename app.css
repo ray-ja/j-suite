@@ -882,3 +882,33 @@ nav button.navmore .navbadge{position:absolute;top:4px;right:10px;font-size:10px
 }
 /* the customer form folds behind Edit details; the card opens on money, actions and notes */
 details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-weight:700;color:var(--brand-text);list-style:none;padding:8px 0}details.c360-edit>summary::-webkit-details-marker{display:none}details.c360-edit>summary::before{content:"▸ ";opacity:.7}details.c360-edit[open]>summary::before{content:"▾ "}
+/* ---------- PHASE 8 UX (2026-09-26): every screen, the same rules (js/198) ---------- */
+@media(min-width:900px){
+  /* rule 2: the chip row across the top repeats the sidebar's rows */
+  body.navrow #subnav{display:none}
+  /* segmented controls and sort menus are as wide as their words, not the window */
+  .calviews{max-width:440px}
+  .sc-toolbar{display:flex;gap:10px;align-items:flex-start}
+  .sc-toolbar>.search{flex:1;min-width:0}
+  .sc-toolbar>select{flex:0 0 auto;width:auto;min-width:180px}
+  /* rule 4: secondary actions share a line */
+  .sc-actrow{display:flex;gap:8px;margin-top:8px}
+  .sc-actrow>button{flex:1;min-width:0}
+}
+@media(min-width:1280px){
+  /* rule 1: a form or a single list reads in a column, not across the whole monitor */
+  body[data-narrow]:not(.sheetopen) .wrap,body[data-narrow]:not(.sheetopen) #pushbanner{max-width:1040px;margin-left:max(224px,calc(50vw - 408px))}
+  body[data-narrow]:not(.sheetopen) #subnav{max-width:1040px;margin-left:max(224px,calc(50vw - 408px))}
+  /* rule 6: messages as list + detail */
+  .msg-split{display:grid;grid-template-columns:320px minmax(0,1fr);gap:0 22px;align-items:start}
+  .msg-split>.msg-list{position:sticky;top:0;max-height:calc(100vh - 120px);overflow:auto;padding-right:6px}
+  .msg-split>.msg-list .li{padding:10px 8px;border-radius:10px;cursor:pointer}
+  .msg-split>.msg-list .li.on{background:rgba(127,141,160,.14);box-shadow:inset 3px 0 0 var(--brand-text)}
+  .msg-split>.msg-list .li .nm{font-size:14px}.msg-split>.msg-list .li .sub{font-size:12.5px}
+  .msg-split>.msg-main{min-width:0}
+  .msg-split .msgpane{max-width:none}
+}
+.sc-fold{margin-top:8px}
+@media(min-width:1280px){ .msg-split .msgpane-hd button[onclick*="msgBack"]{display:none} }
+/* the fold wraps whole paragraphs, so it clamps by height (line-clamp only counts inline lines) */
+.sc-fold.db-clamp{display:block;-webkit-line-clamp:unset;max-height:4.6em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}

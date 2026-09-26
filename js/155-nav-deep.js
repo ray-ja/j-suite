@@ -43,12 +43,12 @@ var NAV_DEEP = [
      the Route planner each drew their own chip row inside the page; registering them here lists them in the
      sidebar and lets the in-page row go (body.navdeep), the same treatment Finance got. Through each screen's
      own setter, as always. */
-  { group: "work", tab: "schedule", sub: "calendar", setter: "schedSub", icon: "📅", label: "Calendar" },
-  { group: "work", tab: "schedule", sub: "myavail",  setter: "schedSub", icon: "🙋", label: "My availability" },
-  { group: "work", tab: "time", sub: "clock",  setter: "tcSub", icon: "⏱️", label: "Clock" },
+  { group: "work", tab: "schedule", sub: "calendar", setter: "schedSub", icon: "📅", label: "Calendar", join: true },
+  { group: "work", tab: "schedule", sub: "myavail",  setter: "schedSub", icon: "🙋", label: "My availability", join: true },
+  { group: "work", tab: "time", sub: "clock",  setter: "tcSub", icon: "⏱️", label: "Clock", head: "Clock" },
   { group: "work", tab: "time", sub: "roster", setter: "tcSub", icon: "👥", label: "Who's on the clock", only: function () { return (typeof finCanView === "function") && finCanView(); } },
   { group: "work", tab: "time", sub: "report", setter: "tcSub", icon: "📊", label: "Hours & miles", only: function () { return (typeof finCanView === "function") && finCanView(); } },
-  { group: "work", tab: "route", sub: "prospect", setter: "salesSub", icon: "🚗", label: "Prospecting route" },
+  { group: "work", tab: "route", sub: "prospect", setter: "salesSub", icon: "🚗", label: "Prospecting route", head: "Drive" },
   { group: "work", tab: "route", sub: "jobs",     setter: "salesSub", icon: "🧾", label: "Job route" },
   { group: "inventory", tab: "inventory", sub: "master",   setter: "invSetView", icon: "🧰", label: "Master list" },
   { group: "inventory", tab: "inventory", sub: "buy",      setter: "invSetView", icon: "🛒", label: "To buy" },
@@ -129,6 +129,10 @@ function navDeepCoveredTabs() {
 /* ⭐ EVERY DESTINATION UNDER ONE SIDEBAR GROUP, level 2 and level 3 together, in one ordered list.
    A tab that HAS registered children is represented BY those children — listing "Finance" above its own
    eleven sub-screens would just be another button that goes somewhere vaguer than the row beneath it. */
+/* ⭐ WORK FOLDS LIKE MONEY (Phase 8, 2026-09-26: eleven flat rows under Work). Plain tabs can start a head
+   too, or join the head above them ("+"): Plan = Leads · Jobs · Calendar · My availability; Clock = the three
+   time screens; Recurring stays flat; Drive = the two route planners + Route review. */
+var NAV_PLAIN_HEADS = { "work/leads": "Plan", "work/jobs": "+", "work/routes": "+" };
 function navDeepFor(groupKey) {
   var g = (typeof NAV_GROUPS !== "undefined") ? NAV_GROUPS.find(function (x) { return x.key === groupKey; }) : null;
   if (!g) return [];
@@ -150,8 +154,9 @@ function navDeepFor(groupKey) {
     } else {
       /* level 2: a plain tab with no registered third level */
       var meta = (typeof TAB_META !== "undefined" && TAB_META[t]) || {};
+      var ph = NAV_PLAIN_HEADS[groupKey + "/" + t] || "";
       out.push({ group: groupKey, tab: t, sub: "", setter: "", plain: true,
-                 icon: meta.i || "•", label: meta.l || t });
+                 icon: meta.i || "•", label: meta.l || t, head: ph === "+" ? "" : ph, join: ph === "+" });
     }
   });
   return out;
@@ -221,7 +226,7 @@ function navDeepHTML(groupKey) {
   var sections = [], curSec = null;
   list.forEach(function (d) {
     if (d.head) { curSec = { head: d.head, rows: [] }; sections.push(curSec); }
-    else if (!curSec || (curSec.head && d.tab !== curSec.rows[0].tab)) { curSec = { head: "", rows: [] }; sections.push(curSec); }   // a headless row of ANOTHER tab (Invoices after Finance) is flat, never swallowed by the last head
+    else if (!curSec || (curSec.head && d.tab !== curSec.rows[0].tab && !d.join)) { curSec = { head: "", rows: [] }; sections.push(curSec); }   // a headless row of ANOTHER tab (Invoices after Finance) is flat, never swallowed by the last head — unless it asked to join (NAV_PLAIN_HEADS "+")
     curSec.rows.push(d);
   });
   if (!sections.some(function (x) { return x.head; })) return list.map(rowHTML).join("");
@@ -243,4 +248,4 @@ if (typeof window !== "undefined") {
   window.navDeepCoveredTabs = navDeepCoveredTabs; window.navDeepRedundant = navDeepRedundant;
   window.NAV_BADGES = NAV_BADGES;
 }
-if (typeof module !== "undefined" && module.exports) module.exports = { NAV_DEEP: NAV_DEEP };
+if (typeof module !== "undefined" && module.exports) module.exports = { NAV_DEEP: NAV_DEEP, NAV_PLAIN_HEADS: NAV_PLAIN_HEADS };
