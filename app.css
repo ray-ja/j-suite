@@ -862,3 +862,10 @@ nav button.navmore .navbadge{position:absolute;top:4px;right:10px;font-size:10px
   #pushbanner{max-width:1360px;margin-left:max(224px,calc(50vw - 568px))}
   body.sheetopen .wrap,body.sheetopen #subnav,body.sheetopen #pushbanner{margin-left:max(248px,calc(50vw - 900px));max-width:calc(100vw - 248px - 640px)}
 }
+/* collapsible heads in the sidebar (js/155) */
+@media(min-width:900px){
+  nav button.navheadtog{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;cursor:pointer;text-align:left;padding:8px 24px 4px 24px}
+  nav button.navheadtog .chev{width:12px;font-size:11px;opacity:.7}
+  nav button.navheadtog:hover{color:var(--ink);opacity:1}
+  nav .navsec.closed{display:none}
+}

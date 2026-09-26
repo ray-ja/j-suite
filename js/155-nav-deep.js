@@ -193,29 +193,47 @@ function navDeepGo(tab, sub, setter) {
   if (typeof render === "function") render();                 // ⛔ never silently do nothing
 }
 
+var NAV_HEAD_OPEN = {};   // "group/Head" → true/false, once the user has toggled it (session)
+if (typeof window !== "undefined") window.navHeadToggle = function (k) { var cur = (k in NAV_HEAD_OPEN) ? NAV_HEAD_OPEN[k] : null; var el = document.querySelector('button.navheadtog[onclick*="' + k.replace(/'/g, "\\'") + '"]'); var isOpen = el ? el.classList.contains("open") : !!cur; NAV_HEAD_OPEN[k] = !isOpen; if (typeof renderNav === "function") renderNav(); };
 /* the rows under an expanded sidebar group */
 function navDeepHTML(groupKey) {
   var list = navDeepFor(groupKey);
   if (!list.length) return "";
   if (navDeepRedundant(groupKey, list)) return "";      // ⭐ see navDeepRedundant
   var cur = navDeepCurrent();
-  var lastHead = "";
-  return list.map(function (d) {
-    /* ⭐ a small label starts each logical group — "This device", "This business", "Data & safety" — so a
-       long list reads as sections rather than as one undifferentiated column of buttons. */
-    var head = (d.head && d.head !== lastHead) ? ('<div class="navhead">' + esc(d.head) + '</div>') : "";
-    if (d.head) lastHead = d.head;
+  /* ⭐ HEADS COLLAPSE (Ray, 2026-09-26, a screenshot of the Money group open: 13 finance rows + favorites +
+     More = "desktop menu insanity"). A head is now a row you click; only the head holding the current screen
+     is open unless you open another. Rows without a head stay flat. NN/g: 5 to 7 visible choices, then
+     progressive disclosure. */
+  var rowHTML = function (d) {
     var key = d.tab + "/" + (d.sub || "");
     var badge = NAV_BADGES[key] ? NAV_BADGES[key]() : "";
     var isCur = d.plain ? (typeof TAB !== "undefined" && TAB === d.tab) : (cur === key);
     var go = d.plain ? ('navSub(\'' + d.tab + '\')')
                      : ('navDeepGo(\'' + d.tab + '\',\'' + d.sub + '\',\'' + d.setter + '\')');
-    return head + '<button class="navsub' + (isCur ? " on" : "") + '"'
+    return '<button class="navsub' + (isCur ? " on" : "") + '"'
       + ' data-deep="' + esc(key) + '"'
       + ' onclick="' + go + '">'
       + '<span class="ic">' + d.icon + '</span>' + esc(d.label)
       + (badge ? '<span class="navbadge">' + esc(badge) + '</span>' : '')
       + '</button>';
+  };
+  var sections = [], curSec = null;
+  list.forEach(function (d) {
+    if (d.head) { curSec = { head: d.head, rows: [] }; sections.push(curSec); }
+    else if (!curSec || (curSec.head && d.tab !== curSec.rows[0].tab)) { curSec = { head: "", rows: [] }; sections.push(curSec); }   // a headless row of ANOTHER tab (Invoices after Finance) is flat, never swallowed by the last head
+    curSec.rows.push(d);
+  });
+  if (!sections.some(function (x) { return x.head; })) return list.map(rowHTML).join("");
+  return sections.map(function (sec) {
+    if (!sec.head) return sec.rows.map(rowHTML).join("");
+    var hasCur = sec.rows.some(function (d) { return d.plain ? (typeof TAB !== "undefined" && TAB === d.tab) : (cur === (d.tab + "/" + (d.sub || ""))); });
+    var k = groupKey + "/" + sec.head;
+    var open = (typeof NAV_HEAD_OPEN !== "undefined" && k in NAV_HEAD_OPEN) ? !!NAV_HEAD_OPEN[k] : hasCur;
+    var badges = sec.rows.map(function (d) { var key = d.tab + "/" + (d.sub || ""); return NAV_BADGES[key] ? NAV_BADGES[key]() : ""; }).filter(Boolean);
+    return '<button class="navhead navheadtog' + (open ? " open" : "") + '" onclick="navHeadToggle(\'' + esc(k) + '\')"><span class="chev">' + (open ? "▾" : "▸") + '</span>' + esc(sec.head)
+      + (!open && badges.length ? '<span class="navbadge">' + esc(badges[0]) + '</span>' : (!open ? '<span class="navbadge" style="color:var(--muted)">' + sec.rows.length + '</span>' : ''))
+      + '</button><div class="navsec' + (open ? "" : " closed") + '">' + sec.rows.map(rowHTML).join("") + '</div>';
   }).join("");
 }
 

@@ -47,6 +47,11 @@ if (typeof window !== "undefined") {
     nav.appendChild(more);
     window.PHONE_NAV_PRIMARY = primary;
     phoneMoreBadgeSync();
+    /* a favorite that is ALSO a visible row in the open group is the same button twice: hide the favorite */
+    Array.prototype.slice.call(nav.querySelectorAll("button.navfav[data-fav]")).forEach(function (f) {
+      var key = f.getAttribute("data-fav"); var row = nav.querySelector('button.navsub[data-deep="' + key.replace(/"/g, "") + '"]');
+      if (row && !row.closest(".navsec.closed")) f.style.display = "none";
+    });
     /* DESKTOP (Phase 5, 2026-09-26): the same five-things rule in the sidebar. Primaries and the open group
        stay as rows; everything else folds under a "More" row that expands in place (remembered per device).
        Material 3 calls this a navigation rail with a drawer; the phone bar and the sidebar now agree. */
