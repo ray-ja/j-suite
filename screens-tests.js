@@ -29,6 +29,25 @@ eq(S.scToolbarPair(["div", "search", "select", "div"]), 1, "search then sort →
 eq(S.scToolbarPair(["search", "div", "select"]), -1, "not adjacent → leave alone");
 eq(S.scToolbarPair(["select", "search"]), -1, "wrong order → leave alone");
 eq(S.scToolbarPair([]), -1, "empty");
+/* Phase 9: narrow list screens */
+eq(S.scNarrow("jobs"), true, "the jobs list reads in a column (the side sheet narrows it anyway at 1280+)");
+eq(S.scNarrow("leads"), true, "leads is a list + a call script");
+eq(S.scNarrow("inventory"), false, "inventory keeps the width (qty column)");
+eq(S.scNarrow("budget"), true, "the personal budget is a list");
+eq(S.scNarrow("today"), false, "the personal Today dashboard stays wide");
+/* rule 8 */
+eq(S.scIsQuiet("No completed jobs waiting to be invoiced. A job shows here once it's marked done.", false, 0), true, "empty Ready-to-invoice is quiet");
+eq(S.scIsQuiet("No pending proposals.", false, 0), true, "empty approvals is quiet");
+eq(S.scIsQuiet("Mike Green $5,283 4 open invoices", false, 2), false, "a count means it is not quiet");
+eq(S.scIsQuiet("No standard rate set yet — set one", true, 0), false, "a control is never collapsed");
+eq(S.scIsQuiet("", false, 0), false, "an empty body is not a state line");
+eq(S.scIsQuiet("Standing service contracts that auto-schedule visits", false, 0), false, "an explainer is not a quiet state");
+/* rule 7 */
+eq(S.scIsPromo({ buttons: 1, controls: false, children: 3, chars: 180 }), true, "title + sub + one button is a row");
+eq(S.scIsPromo({ buttons: 2, controls: false, children: 3, chars: 180 }), false, "two buttons is a choice, not a row");
+eq(S.scIsPromo({ buttons: 1, controls: true, children: 3, chars: 180 }), false, "a form stays a form");
+eq(S.scIsPromo({ buttons: 1, controls: false, children: 1, chars: 20 }), false, "a lone button has no headline");
+eq(S.scIsPromo({ buttons: 1, controls: false, children: 3, chars: 900 }), false, "a long card is reading, not a row");
 /* Work heads */
 eq(N.NAV_PLAIN_HEADS["work/leads"], "Plan", "Leads starts the Plan head");
 eq(N.NAV_PLAIN_HEADS["work/routes"], "+", "Route review joins Drive");

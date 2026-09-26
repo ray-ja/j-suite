@@ -912,3 +912,13 @@ details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-we
 @media(min-width:1280px){ .msg-split .msgpane-hd button[onclick*="msgBack"]{display:none} }
 /* the fold wraps whole paragraphs, so it clamps by height (line-clamp only counts inline lines) */
 .sc-fold.db-clamp{display:block;-webkit-line-clamp:unset;max-height:4.6em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+/* ---------- PHASE 9 UX (2026-09-26): the other fifteen screens (js/198) ---------- */
+@media(min-width:900px){
+  /* the jobs sort menu is as wide as its words */
+  #view select[aria-label="Sort jobs"]{flex:0 1 240px!important}
+  /* rule 7: a headline + one button is a row */
+  .card.sc-promo{display:flex;align-items:center;gap:18px;padding-top:14px;padding-bottom:14px}
+  .card.sc-promo>.sc-promo-txt{flex:1;min-width:0}
+  .card.sc-promo>.sc-promo-txt>.sub{margin-top:2px}
+  .card.sc-promo>button.btn{flex:0 0 auto;width:auto;margin:0}
+}
