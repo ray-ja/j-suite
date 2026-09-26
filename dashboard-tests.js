@@ -1,0 +1,26 @@
+/* dashboard-tests.js — Today triage (js/197): tiers, quiet detection, ordering. Pure node. */
+const T = require("./js/197-dashboard.js"); let n = 0, f = 0;
+const eq = (a, b, m) => { n++; if (JSON.stringify(a) !== JSON.stringify(b)) { f++; console.log("FAIL", m, JSON.stringify(a), "want", JSON.stringify(b)); } };
+eq(T.dbTierOf("📥 Approvals"), 0, "approvals act now");
+eq(T.dbTierOf("📞 Follow-ups"), 0, "follow-ups act now");
+eq(T.dbTierOf("🛠 Equipment service"), 0, "equipment act now");
+eq(T.dbTierOf("⏳ Payment plans"), 0, "plans act now");
+eq(T.dbTierOf("📅 Today's jobs"), 0, "today's jobs act now");
+eq(T.dbTierOf("⏳ Awaiting payment"), 1, "money");
+eq(T.dbTierOf("📝 Open quotes"), 1, "money");
+eq(T.dbTierOf("💵 Payouts"), 1, "money");
+eq(T.dbTierOf("👥 Who's working today"), 2, "status");
+eq(T.dbTierOf("🧭 Stand-up · 9:00"), 3, "tools");
+eq(T.dbTierOf("🧭 Cap"), 3, "tools");
+eq(T.dbTierOf("📣 Ads"), 3, "tools");
+eq(T.dbTierOf("Something new"), 2, "unknown → middle");
+eq(T.dbIsQuiet("Nothing waiting for your okay.", false, 0), true, "empty approvals is quiet");
+eq(T.dbIsQuiet("No jobs today. + Add a job", false, 0), true, "no jobs is quiet");
+eq(T.dbIsQuiet("Nothing waiting for your okay.", false, 2), false, "a count on the heading means it is not quiet");
+eq(T.dbIsQuiet("Nothing due. Next: oil in 10 h. Hours… All", true, 0), false, "a card with controls is never collapsed");
+eq(T.dbIsQuiet("Rj Not confirmed Chase Not confirmed", false, 0), true, "nobody confirmed is quiet");
+eq(T.dbIsQuiet("Christina Jamieson $15 due Mike Green $2,235", false, 7), false, "a list with rows is not quiet");
+const blocks = [{ title: "Stand-up" }, { title: "Awaiting payment" }, { title: "Approvals", quiet: true }, { title: "Follow-ups" }, { title: "Who's working today", quiet: true }, { title: "Open quotes" }];
+eq(T.dbOrder(blocks).map(b => b.title), ["Follow-ups", "Approvals", "Awaiting payment", "Open quotes", "Who's working today", "Stand-up"], "act-now first, quiet sinks within its tier, stable otherwise");
+eq(T.dbOrder([]).length, 0, "empty");
+console.log("=========  " + (n - f) + " passed, " + f + " failed  ========="); process.exit(f ? 1 : 0);

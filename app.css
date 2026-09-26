@@ -869,3 +869,16 @@ nav button.navmore .navbadge{position:absolute;top:4px;right:10px;font-size:10px
   nav button.navheadtog:hover{color:var(--ink);opacity:1}
   nav .navsec.closed{display:none}
 }
+/* ---------- PHASE 7 UX (2026-09-26): Today triaged; the customer card opens on the facts ---------- */
+.db-quiet{display:flex;align-items:center;gap:10px;padding:9px 12px;margin:10px 0 4px;background:var(--card);border:1px solid var(--line);border-radius:10px;cursor:pointer;color:var(--muted);font-size:13.5px;-webkit-column-break-inside:avoid;break-inside:avoid}
+.db-quiet .t{font-weight:800;color:var(--ink);white-space:nowrap}.db-quiet .s{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.db-quiet .chev{opacity:.6}
+.db-quiet:hover{border-color:var(--brand-text)}
+.db-clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.db-more{background:none;border:0;color:var(--brand-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;padding:2px 0;margin-top:2px}
+@media(min-width:1800px){
+  .wrap,#pushbanner{max-width:1780px;margin-left:max(224px,calc(50vw - 778px))}
+  .pgcols{column-count:3;column-gap:24px}
+  body.sheetopen .wrap,body.sheetopen #subnav,body.sheetopen #pushbanner{margin-left:248px;max-width:calc(100vw - 248px - 640px)}
+}
+/* the customer form folds behind Edit details; the card opens on money, actions and notes */
+details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-weight:700;color:var(--brand-text);list-style:none;padding:8px 0}details.c360-edit>summary::-webkit-details-marker{display:none}details.c360-edit>summary::before{content:"▸ ";opacity:.7}details.c360-edit[open]>summary::before{content:"▾ "}

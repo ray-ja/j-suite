@@ -41,6 +41,16 @@ if (typeof window !== "undefined") {
         var sheet = document.getElementById("sheet"); if (!sheet || sheet.querySelector("[data-c360]")) return r;
         var first = sheet.querySelector("label"); if (!first) return r;
         var w = document.createElement("div"); w.innerHTML = window.customer360HTML(c); sheet.insertBefore(w.firstChild, first);
+        /* the edit form (Name … Save) folds behind "Edit details": the card opens on the facts, the actions
+           and the notes. Progressive disclosure; the inputs stay in the DOM so saveCustomer() is unchanged. */
+        var saveBtn = Array.prototype.slice.call(sheet.querySelectorAll("button")).find(function (b) { return /^Save$/.test((b.textContent || "").trim()) && /saveCustomer/.test(b.getAttribute("onclick") || ""); });
+        if (saveBtn && !sheet.querySelector("details.c360-edit")) {
+          var det = document.createElement("details"); det.className = "c360-edit"; det.innerHTML = "<summary>Edit details (name, phone, email, status)</summary>";
+          var node = first; var stop = saveBtn.nextSibling;
+          sheet.insertBefore(det, first);
+          while (node && node !== stop) { var nx = node.nextSibling; det.appendChild(node); node = nx; }
+          if (!c.name) det.open = true;
+        }
       } catch (e) {}
       return r;
     };
