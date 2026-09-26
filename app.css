@@ -832,3 +832,33 @@ nav button.navmore .navbadge{position:absolute;top:4px;right:10px;font-size:10px
 .dclsubrow .navpin{flex:0 0 auto}
 /* a sub-tab row that holds only the ☆ pin (Today, To-Do…) is just an empty strip on a phone: hide it */
 #subnav .subnav:has(> .navpin:only-child){display:none}
+/* ---------- PHASE 5 UX (2026-09-26): the desktop adapts by the same rules as the phone ---------- */
+@media(min-width:900px){
+  /* sidebar: primaries + the open group; the rest fold under More */
+  nav button[data-group][data-more]:not(.on){display:none}
+  nav.moreopen button[data-group][data-more]{display:flex}
+  nav button.navmoretog{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:14px;padding:11px 24px;font-size:13px;width:100%;color:var(--muted);background:none;border:0;cursor:pointer;border-top:1px solid var(--line);margin-top:6px;order:10}
+  nav button[data-group][data-more],nav .navkids[data-more]{order:11}
+  nav button.navmoretog .ic{font-size:14px;width:20px;text-align:center}
+  nav button.navmoretog:hover{color:var(--ink)}
+  /* keyboard focus is visible everywhere */
+  button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--brand-text);outline-offset:2px}
+}
+@media(min-width:1280px){
+  /* list-detail: a record opens in a side sheet, the list stays live behind it (Material 3 list-detail) */
+  .overlay{justify-content:flex-end;align-items:stretch;background:rgba(15,20,30,.18);backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+  .overlay.show .sheet{pointer-events:auto}
+  .sheet{max-width:620px;width:620px;height:100vh;max-height:100vh;border-radius:0;padding:26px 28px 40px;box-shadow:-8px 0 30px rgba(16,24,40,.18);border-left:1px solid var(--line)}
+  body.sheetopen .wrap,body.sheetopen #subnav,body.sheetopen #pushbanner{margin-left:248px;margin-right:0;max-width:calc(100vw - 248px - 640px)}
+  body.sheetopen .fab{right:660px}
+  /* prose never runs the full width of a wide screen (NN/g: 50 to 75 characters) */
+  #view .card .sub,#view .card p,#view .card .note,#view .lede{max-width:72ch}
+  /* the job page: two columns of cards */
+  #view .jobgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px;align-items:start}
+  #view .jobgrid>.card{margin-bottom:12px}
+}
+@media(min-width:1600px){
+  .wrap{max-width:1360px;margin-left:max(224px,calc(50vw - 568px))}
+  #pushbanner{max-width:1360px;margin-left:max(224px,calc(50vw - 568px))}
+  body.sheetopen .wrap,body.sheetopen #subnav,body.sheetopen #pushbanner{margin-left:max(248px,calc(50vw - 900px));max-width:calc(100vw - 248px - 640px)}
+}

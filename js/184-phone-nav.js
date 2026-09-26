@@ -47,6 +47,20 @@ if (typeof window !== "undefined") {
     nav.appendChild(more);
     window.PHONE_NAV_PRIMARY = primary;
     phoneMoreBadgeSync();
+    /* DESKTOP (Phase 5, 2026-09-26): the same five-things rule in the sidebar. Primaries and the open group
+       stay as rows; everything else folds under a "More" row that expands in place (remembered per device).
+       Material 3 calls this a navigation rail with a drawer; the phone bar and the sidebar now agree. */
+    var moreOpen = false; try { moreOpen = localStorage.getItem("jra_nav_more") === "1"; } catch (e) {}
+    var rest = btns.filter(function (b) { return primary.indexOf(b.dataset.group) < 0; });
+    rest.forEach(function (b) { b.setAttribute("data-more", "1"); var kids = b.nextElementSibling; if (kids && kids.classList.contains("navkids")) kids.setAttribute("data-more", "1"); });
+    var hidden = rest.filter(function (b) { return b.dataset.group !== curKey; }).length;
+    if (rest.length) {
+      var tog = document.createElement("button"); tog.className = "navmoretog" + (moreOpen ? " open" : ""); tog.setAttribute("data-moretog", "1");
+      tog.innerHTML = '<span class="ic">' + (moreOpen ? "▾" : "▸") + '</span>' + (moreOpen ? "Less" : "More") + (hidden && !moreOpen ? ' <span class="navbadge" style="color:var(--muted)">' + hidden + '</span>' : "");
+      tog.onclick = function () { var on = !nav.classList.contains("moreopen"); nav.classList.toggle("moreopen", on); try { localStorage.setItem("jra_nav_more", on ? "1" : "0"); } catch (e) {} if (typeof renderNav === "function") renderNav(); };
+      nav.insertBefore(tog, rest[0]);
+      nav.classList.toggle("moreopen", moreOpen);
+    }
   }
   /* unread messages used to show on the Messages button; on a phone that button is inside More now, so the
      count rides on More instead (mirrors #msgbadge, which js/47 keeps up to date) */
