@@ -73,9 +73,11 @@ console.log("\n--- the expanded list: level 2 and level 3 in one ordered run ---
 {
   const c = sandbox();
   const rows = c.navDeepFor("money");
-  eq("every Money destination appears", rows.length, 16);
-  ok("⭐ plain tabs with no third level are listed too", rows.some(r => r.plain && r.tab === "nextcheck"));
-  ok("...labelled from TAB_META, not their key", rows.find(r => r.tab === "nextcheck").label === "Next Check");
+  /* Phase 6b (2026-09-26): Next Check hides behind My Pay (a toggle on that screen), so 15 rows, not 16 */
+  eq("every Money destination appears", rows.length, 15);
+  ok("⭐ plain tabs with no third level are listed too", rows.some(r => r.plain && r.tab === "pay"));
+  ok("...labelled from TAB_META, not their key", rows.find(r => r.tab === "pay").label === "My Pay");
+  ok("⭐ Next Check is NOT its own row any more (it lives behind My Pay)", !rows.some(r => r.tab === "nextcheck"));
   ok("⛔ a tab WITH children is represented by them, not by itself as well",
     !rows.some(r => r.plain && r.tab === "finance"), rows.filter(r => r.plain).map(r => r.tab));
   ok("order follows the group's own tab order", rows[0].tab === "nextcheck" && rows[rows.length - 1].tab === "routes");

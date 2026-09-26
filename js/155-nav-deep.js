@@ -39,6 +39,24 @@ var NAV_DEEP = [
   { group: "money", tab: "finance", sub: "history",  setter: "finSub", icon: "📜", label: "Job history" },
   { group: "money", tab: "finance", sub: "bank",     setter: "finSub", icon: "🏦", label: "Transactions" },
 
+  /* ⭐ WORK, LEVEL THREE (Phase 6b, Ray 2026-09-26: "do a pass on sub tabs"). Schedule, Time, Inventory and
+     the Route planner each drew their own chip row inside the page; registering them here lists them in the
+     sidebar and lets the in-page row go (body.navdeep), the same treatment Finance got. Through each screen's
+     own setter, as always. */
+  { group: "work", tab: "schedule", sub: "calendar", setter: "schedSub", icon: "📅", label: "Calendar" },
+  { group: "work", tab: "schedule", sub: "myavail",  setter: "schedSub", icon: "🙋", label: "My availability" },
+  { group: "work", tab: "time", sub: "clock",  setter: "tcSub", icon: "⏱️", label: "Clock" },
+  { group: "work", tab: "time", sub: "roster", setter: "tcSub", icon: "👥", label: "Who's on the clock", only: function () { return (typeof finCanView === "function") && finCanView(); } },
+  { group: "work", tab: "time", sub: "report", setter: "tcSub", icon: "📊", label: "Hours & miles", only: function () { return (typeof finCanView === "function") && finCanView(); } },
+  { group: "work", tab: "route", sub: "prospect", setter: "salesSub", icon: "🚗", label: "Prospecting route" },
+  { group: "work", tab: "route", sub: "jobs",     setter: "salesSub", icon: "🧾", label: "Job route" },
+  { group: "inventory", tab: "inventory", sub: "master",   setter: "invSetView", icon: "🧰", label: "Master list" },
+  { group: "inventory", tab: "inventory", sub: "buy",      setter: "invSetView", icon: "🛒", label: "To buy" },
+  { group: "inventory", tab: "inventory", sub: "vehicles", setter: "invSetView", icon: "🚚", label: "Vehicles" },
+  { group: "inventory", tab: "inventory", sub: "cleaning", setter: "invSetView", icon: "🧽", label: "Needs cleaning" },
+  { group: "inventory", tab: "inventory", sub: "job",      setter: "invSetView", icon: "🏷️", label: "By job type" },
+  { group: "inventory", tab: "inventory", sub: "avail",    setter: "invSetView", icon: "📆", label: "Availability by date" },
+
   /* ⭐ PEOPLE & PLACES. Ray, 2026-08-26: "you get the people and places, and it drops down to customers,
      but it should have customers, properties and places." It showed one row because `accounts` is one TAB
      whose three views live in ACCTSUB — level three again, invisible again. ppGo() is the screen's own
@@ -121,7 +139,7 @@ function navDeepFor(groupKey) {
   allowed.forEach(function (t) {
     /* Phase 3 (2026-09-22): `quotes` is the same screen as `jobs`; one row, not two. Other hidden tabs
        (Route review) are distinct screens and keep their row. */
-    if (t === "quotes") return;
+    if (t === "quotes" || t === "nextcheck") return;   // nextcheck = the owner view of My Pay (js/188 toggle)
     if (covered.indexOf(t) >= 0) {
       /* level 3: this tab's own screens */
       NAV_DEEP.forEach(function (d) {
@@ -142,6 +160,10 @@ function navDeepFor(groupKey) {
 function navDeepCurrent() {
   try {
     if (TAB === "finance" && typeof FINSUB !== "undefined") return "finance/" + FINSUB;
+    if (TAB === "schedule" && typeof SCHEDSUB !== "undefined") return "schedule/" + SCHEDSUB;
+    if (TAB === "time" && typeof TCSUB !== "undefined") return "time/" + (TCSUB === "roster" || TCSUB === "report" ? TCSUB : "clock");
+    if (TAB === "route" && typeof SALESSUB !== "undefined") return "route/" + SALESSUB;
+    if (TAB === "inventory" && typeof INVVIEW !== "undefined") return "inventory/" + INVVIEW;
     if (TAB === "budget" && typeof BUDGET_SUB !== "undefined") return "budget/" + BUDGET_SUB;
     if (TAB === "team") return "team/";
     if (TAB === "accounts" && typeof ACCTSUB !== "undefined") return "accounts/" + ACCTSUB;

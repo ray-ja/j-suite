@@ -264,9 +264,9 @@ function navCanSee(t){ if(t==="messages" && (typeof msgEnabled==="function" ? !m
 function tabGroup(t){ return NAV_GROUPS.find(g=>g.tabs.indexOf(t)>=0) || NAV_GROUPS[0]; }
 /* tabs that stay routable and keep their group (for highlighting / return) but get NO chip of their own,
    because another chip in the same group is the same screen or hosts a toggle to it (Phase 3 merges) */
-const NAV_HIDDEN_TABS = ["quotes","routes"];
+const NAV_HIDDEN_TABS = ["quotes","routes","nextcheck"];   // nextcheck: the owner's view of My Pay (js/188 toggle), Ray 2026-09-26
 function groupTabs(g){ return g.tabs.filter(navCanSee); }
-const NAV_HOST = { quotes:"jobs", routes:"route" };   // hidden tab → the chip that stands for it
+const NAV_HOST = { quotes:"jobs", routes:"route", nextcheck:"pay" };   // hidden tab → the chip that stands for it
 function groupTabsShown(g){ return groupTabs(g).filter(t=>NAV_HIDDEN_TABS.indexOf(t)<0); }
 function renderNav(){
   const nav=document.querySelector("nav"); if(!nav) return;

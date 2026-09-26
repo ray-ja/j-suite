@@ -53,10 +53,20 @@ if (typeof window !== "undefined") {
     ct.setAttribute("data-mg", "1"); ct.style.cursor = "pointer"; ct.title = "Open A/R";
     ct.innerHTML = '<a href="#" onclick="event.preventDefault();navDeepGo(\'finance\',\'owed\',\'finSub\')" style="color:inherit;text-decoration:underline dotted">' + ct.innerHTML + ' ↗</a>';
   }
+  /* My pay | Next check: one screen for pay. Crew see only their own; owner/admin get the toggle. */
+  function mgPay(view, tab) {
+    if (view.querySelector("[data-mg-pay]")) return;
+    var owner = (typeof finCanView === "function") ? finCanView() : false; if (!owner) return;
+    var row = document.createElement("div"); row.className = "subnav"; row.setAttribute("data-mg-pay", "1"); row.style.margin = "0 4px 12px";
+    row.innerHTML = '<button class="subbtn' + (tab === "pay" ? " on" : "") + '" onclick="navSub(\'pay\')">💵 My pay</button>'
+      + '<button class="subbtn' + (tab === "nextcheck" ? " on" : "") + '" onclick="navSub(\'nextcheck\')">🧾 Next check, everyone</button>';
+    mgAfterHeading(view, row);
+  }
   function merge(tab) {
     try {
       var view = document.getElementById("view"); if (!view) return;
       if (tab === "route" || tab === "routes") mgRoute(view, tab);
+      if (tab === "pay" || tab === "nextcheck") mgPay(view, tab);
       if (tab === "plan") mgPlan(view);
       if (tab === "research") mgResearch(view);
       if (tab === "invoices") mgInvoices(view);
