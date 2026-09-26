@@ -66,6 +66,11 @@ if (typeof window !== "undefined") {
     for (var j = start; j < end; j++) box.appendChild(kids[j]);
   }
   window.dclToggle = function (tab) { DCL_OPEN[tab] = !DCL_OPEN[tab]; var b = document.querySelector("[data-dcl='" + tab + "']"); if (b) b.style.display = DCL_OPEN[tab] ? "" : "none"; var c = document.querySelector(".dclrow .dclchip"); if (c) c.classList.toggle("open", !!DCL_OPEN[tab]); };
+  /* sub-key → the head it sits under, from NAV_DEEP (a head applies to the rows that follow it) */
+  function dclHeadsFor(tab) {
+    var out = {}; try { var deep = (typeof NAV_DEEP !== "undefined") ? NAV_DEEP : []; var h = ""; deep.forEach(function (d) { if (!d || d.tab !== tab) return; if (d.head) h = d.head; if (h) out[d.sub] = h; }); } catch (e) {}
+    return out;
+  }
   /* ---- long single-select chip rows → one dropdown (phones) ---- */
   function dclChipRows(view) {
     if (!dclPhone()) return;
@@ -76,7 +81,9 @@ if (typeof window !== "undefined") {
       if (!dclRowToSelect(chips.length, on.length, true)) return;
       if (chips.some(function (b) { return !b.getAttribute("onclick"); })) return;
       var sel = document.createElement("select"); sel.className = "dclselect"; sel.setAttribute("aria-label", "Section");
-      chips.forEach(function (b, i) { var o = document.createElement("option"); o.value = String(i); o.textContent = (b.textContent || "").replace(/\s+/g, " ").trim(); if (b.classList.contains("on")) o.selected = true; sel.appendChild(o); });
+      /* Phase 6: chips grouped the way the sidebar groups them (NAV_DEEP heads), so 13 choices read as 3 */
+      var heads = dclHeadsFor(typeof TAB !== "undefined" ? TAB : ""); var cur = null, curHead = "";
+      chips.forEach(function (b, i) { var m = /\('([^']+)'\)/.exec(b.getAttribute("onclick") || ""); var hd = m && heads[m[1]]; if (hd && hd !== curHead) { curHead = hd; cur = document.createElement("optgroup"); cur.label = hd; sel.appendChild(cur); } var o = document.createElement("option"); o.value = String(i); o.textContent = (b.textContent || "").replace(/\s+/g, " ").trim(); if (b.classList.contains("on")) o.selected = true; (cur && hd ? cur : sel).appendChild(o); });
       sel.onchange = function () { var b = chips[+sel.value]; if (b) b.click(); };
       row.setAttribute("data-dcl-select", "1"); row.style.display = "none";
       row.parentNode.insertBefore(sel, row);

@@ -60,13 +60,19 @@
     var q = Q.trim().toLowerCase();
     if (!q) { box.innerHTML = ""; return; }
     var hits = [];
-    for (var i = 0; i < IDX.length && hits.length < 9; i++) if (IDX[i].s.indexOf(q) >= 0) hits.push(i);
-    box.innerHTML = hits.length
-      ? hits.map(function (i) {
+    for (var i = 0; i < IDX.length && hits.length < 5; i++) if (IDX[i].s.indexOf(q) >= 0) hits.push(i);
+    /* Phase 6 (2026-09-26): the same box finds RECORDS (js/186), so a name typed in the sidebar opens the
+       customer, job or quote — no menu hunt in between */
+    var recs = [];
+    try { if (typeof recordSearchIndex === "function" && typeof recordSearchRun === "function" && q.length >= 2) { var orgs = (typeof myOrgs === "function") ? myOrgs().map(function (o) { return o.id; }) : [S.biz]; recs = recordSearchRun(recordSearchIndex(S, orgs.length ? orgs : [S.biz]), q, 6); } } catch (e) { recs = []; }
+    var KL = { customer: "👤", property: "🏠", job: "🔨", quote: "🧾", file: "📎" };
+    box.innerHTML = (hits.length || recs.length)
+      ? (hits.length ? '<div class="navhead">Screens</div>' : '') + hits.map(function (i) {
           var r = IDX[i];
           return '<button class="navsub" onclick="navSearchPick(' + i + ')"><span class="ic">' + r.icon + '</span>' + esc(r.label)
             + (r.crumb ? '<span class="navbadge">' + esc(r.crumb) + '</span>' : '') + '</button>';
         }).join("")
+        + (recs.length ? '<div class="navhead">Records</div>' + recs.map(function (r) { return '<button class="navsub" onclick="navSearchRec(\'' + esc(r.org) + '\',\'' + esc(r.kind) + '\',\'' + esc(r.id) + '\')"><span class="ic">' + (KL[r.kind] || "•") + '</span>' + esc(r.title) + (r.org !== S.biz ? '<span class="navbadge">' + esc((typeof orgName === "function") ? orgName(r.org) : r.org) + '</span>' : '') + '</button>'; }).join("") : '')
       : '<div class="navhead">No match</div>';
   }
 
@@ -77,6 +83,7 @@
     else if (ev.key === "Escape") { Q = ""; var inp = document.getElementById("navq"); if (inp) inp.value = ""; paintResults(); }
   };
   window.navSearchPick = function (i) { var r = IDX[i]; if (!r) return; Q = ""; FOCUSED = false; r.go(); };
+  window.navSearchRec = function (org, kind, id) { Q = ""; FOCUSED = false; if (typeof recordSearchGo === "function") recordSearchGo(org, kind, id); };
 
   /* renderNav() (js/03) rebuilds nav.innerHTML on every render — so we wrap it and re-inject the box
      each time, restoring the query (and focus) so a background sync can't eat what he was typing. */
@@ -88,7 +95,7 @@
       IDX = navSearchIndex();
       var wrap = document.createElement("div");
       wrap.className = "navsearch";
-      wrap.innerHTML = '<input id="navq" type="search" placeholder="🔍 Search menu" autocomplete="off"'
+      wrap.innerHTML = '<input id="navq" type="search" placeholder="🔍 Find a customer, job, screen…" autocomplete="off"'
         + ' oninput="navSearchInput(this.value)" onkeydown="navSearchKey(event)"'
         + ' onfocus="navSearchFocus(true)" onblur="navSearchFocus(false)">'
         + '<div id="navsr" class="navkids"></div>';

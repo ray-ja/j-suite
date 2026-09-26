@@ -166,11 +166,13 @@ const NAV_GROUPS = [
      menus (Work and Sales). Quotes now lives here with Jobs, hidden from the sub-tab row (NAV_HIDDEN_TABS) so
      there is one "Jobs" chip, while the tab stays routable (the quote wizard hosts on it). Likewise `routes`
      (Route review) hides behind Route: js/188 puts a Plan | Review toggle on both screens. */
-  { key:"work",      label:"Work",      icon:"🔨", tabs:["jobs","quotes","schedule","time","route","routes"] },
+  /* ⭐ PHASE 6 (Ray, 2026-09-26, "still a lot to click through"): SALES IS PART OF WORK. A lead becomes a
+     quote becomes a job becomes a day on the schedule; splitting that pipeline across two menus meant two
+     places to look for one customer. Leads and Recurring now live here, in pipeline order. */
+  { key:"work",      label:"Work",      icon:"🔨", tabs:["leads","jobs","quotes","schedule","time","recurring","route","routes"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
   { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale"] },
-  { key:"sales",     label:"Sales",     icon:"💼", tabs:["leads","recurring"] },
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   // JOURNAL — its own top-level tab (Ray, 2026-08-02: "journal needs to be its own tab"). It was a sub-tab buried
   // inside Life; the entries are the SAME lifeNotes collection (no new collection, no migration), just promoted so

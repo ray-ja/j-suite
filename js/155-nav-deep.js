@@ -25,15 +25,15 @@
 var NAV_DEEP = [
   /* MONEY → Finance. Ordered by how often he actually needs them, not by how they were built:
      what's owed first, because that is the screen with his money on it. */
-  { group: "money", tab: "finance", sub: "owed",     setter: "finSub", icon: "💸", label: "A/R — owed" },
+  { group: "money", tab: "finance", sub: "owed",     setter: "finSub", icon: "💸", label: "A/R — owed", head: "Right now" },
   { group: "money", tab: "finance", sub: "overview", setter: "finSub", icon: "📊", label: "Overview" },
   { group: "money", tab: "finance", sub: "cash",     setter: "finSub", icon: "🏦", label: "Cash" },
-  { group: "money", tab: "finance", sub: "income",   setter: "finSub", icon: "📥", label: "Income" },
+  { group: "money", tab: "finance", sub: "income",   setter: "finSub", icon: "📥", label: "Income", head: "In and out" },
   { group: "money", tab: "finance", sub: "expenses", setter: "finSub", icon: "📤", label: "Expenses" },
   { group: "money", tab: "finance", sub: "payouts",  setter: "finSub", icon: "💵", label: "Payouts" },
   { group: "money", tab: "finance", sub: "priority", setter: "finSub", icon: "🪜", label: "Payout plan" },
   { group: "money", tab: "finance", sub: "paybacks", setter: "finSub", icon: "🚜", label: "Paybacks" },
-  { group: "money", tab: "finance", sub: "tax",      setter: "finSub", icon: "🧾", label: "Tax" },
+  { group: "money", tab: "finance", sub: "tax",      setter: "finSub", icon: "🧾", label: "Tax", head: "Books" },
   { group: "money", tab: "finance", sub: "pl",       setter: "finSub", icon: "💹", label: "Job P&L" },
   { group: "money", tab: "finance", sub: "analysis", setter: "finSub", icon: "📈", label: "Analysis" },
   { group: "money", tab: "finance", sub: "history",  setter: "finSub", icon: "📜", label: "Job history" },
