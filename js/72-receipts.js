@@ -164,7 +164,9 @@ window.jobCloseReceiptsAll = function (jobId) {
    policy — personal gas isn't reimbursed, mileage covers it). This closes the double-dip where someone gassed their
    own truck on a personal card and got the fuel reimbursed AND full mileage as the vehicle owner. */
 function rcptReimbOwed() {
-  const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || ["fuel", "fuel/mileage"].indexOf(e.category || "") >= 0) return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
+  /* an installment posting from a member's own card (js/116 paidBy) is a PAYBACK tracked by its plan — it is
+     not owed back again here (Ray, 2026-09-27: the skid steer is "paid back eventually", like the trailer) */
+  const per = {}; const add = e => { if (!e || e.deleted || e.reimbursedAt || e.source === "installment" || ["fuel", "fuel/mileage"].indexOf(e.category || "") >= 0) return; const who = e.paidBy || e.memberId; if (who) per[who] = (per[who] || 0) + (+e.amount || 0); };   // who = paidBy (receipts) OR memberId (hand-logged expenses) → fixes hand-logged personal-card spend never being owed back
   (D().jobs || []).forEach(j => { if (j && !j.deleted) { plExpenses(j).forEach(add); plMaterials(j).forEach(add); } });
   (D().expenses || []).forEach(add);
   return per;

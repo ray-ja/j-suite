@@ -29,6 +29,9 @@ eq(due[0].amount, 439.24, "per-payment amount");
 eq(M.mtInstallmentsDue(plans, "2026-10").map(d => d.plan + ":" + d.n), ["skid:2", "trailer:1"], "October: skid #2 comes due, trailer #1 still unpaid (one per plan per month)");
 eq(M.mtInstallmentsDue([{ id: "x", total: 100, count: 3, start: "2026-08", paidNs: [] }], "2026-10")[0].amount, 33.33, "rounding: middle payments");
 eq(M.mtInstallmentsDue([{ id: "x", total: 100, count: 3, start: "2026-08", paidNs: [1, 2] }], "2026-10")[0].amount, 33.34, "the last payment absorbs the remainder");
+/* partner debt */
+eq(M.mtPartnerDebt(plans).map(r => r.plan + ":" + r.remaining), ["skid:5204.92", "trailer:10541.74", "future:100"], "remaining per open plan; the paid-off and deleted ones drop");
+eq(M.mtPartnerDebt([]), [], "empty");
 /* cash pick */
 const accts = [
   { id: "a", name: "Square — OBX Lot Solutions", type: "checking", balance: 106.44 },
