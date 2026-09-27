@@ -30,6 +30,14 @@ eq(T.t3Urgency("📞 Follow-ups", "Maria · follow up today"), 2, "due today");
 eq(T.t3Urgency("📞 Follow-ups", "CarlosHeiff · no date"), 4, "undated sinks");
 eq(T.t3Urgency("🛠 Equipment service", "0 h on the meter · set the hour meter"), 4, "housekeeping sinks");
 eq(T.t3Urgency("✅ Top to-dos", "Waterfall tile decision · due 10/02/26"), 3, "dated, not yet due");
+/* the row menu */
+eq(T.t3Actions("✅ Top to-dos"), ["tomorrow", "week", "low", "delete"], "a to-do can be pushed, downgraded or deleted");
+eq(T.t3Actions("📞 Follow-ups"), ["tomorrow", "week", "delete"], "a lead can be pushed or deleted (spam)");
+eq(T.t3Actions("📥 Approvals"), [], "approvals keep their own ✓ ✕");
+eq(T.t3Actions("🛠 Equipment service"), [], "service rows keep Done ✓");
+eq(T.t3Shift("2026-09-27", 1), "2026-09-28", "tomorrow");
+eq(T.t3Shift("2026-09-27", 7), "2026-10-04", "next week crosses the month");
+eq(T.t3Shift("", 1).length, 10, "no date → from today");
 /* marks */
 eq(T.t3Icon("📥 Approvals"), "📥", "leading emoji");
 eq(T.t3Icon("🛠 Equipment service"), "🛠", "a one-codepoint emoji");

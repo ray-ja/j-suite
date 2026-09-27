@@ -56,6 +56,16 @@ function t3Split(text, max) {
 function t3Strip(text) { return String(text || "").replace(/^(?:\s*(?:\p{Extended_Pictographic}|\uFE0F|\u200D|[⚠️✅❌⏳📞🛠🔧])+\s*)+/u, "").trim(); }
 /* how many of the crew are working today from their status labels. Pure. */
 function t3Working(labels) { return (labels || []).filter(function (l) { return !/not confirmed|^off$|time off|^$/i.test(String(l || "").trim()); }).length; }
+/* a row's menu (Ray, 2026-09-27: "a little three dot menu… delete, mark not urgent, push it to the next day").
+   Which actions fit which source. Pure. */
+function t3Actions(src) {
+  var sr = String(src || "");
+  if (/to-dos/i.test(sr)) return ["tomorrow", "week", "low", "delete"];
+  if (/follow-ups/i.test(sr)) return ["tomorrow", "week", "delete"];
+  return [];
+}
+/* an ISO date shifted by n days. Pure. */
+function t3Shift(iso, n) { var d = iso ? new Date(iso + "T12:00:00") : new Date(); if (isNaN(d.getTime())) d = new Date(); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); }
 /* the header strip's chips from the counts. stats = {needs, owed, owedN, jobs, clockedIn}. Pure. */
 function t3Chips(st) {
   st = st || {}; var out = [];
@@ -75,7 +85,8 @@ if (typeof window !== "undefined") {
       if (k.classList.contains("db-quiet")) { cur = { title: (k.querySelector(".t") || k).textContent.trim(), quiet: true, line: k, head: null, nodes: [] }; out.push(cur); return; }
       var isHead = k.classList.contains("secthd") || k.tagName === "H2";
       if (isHead) { if (t3Hidden(k) && cur && cur.quiet && !cur.head) { cur.head = k; return; } cur = { title: (k.querySelector("h2") || k).textContent.trim(), head: k, nodes: [] }; out.push(cur); return; }
-      if (!cur || (k.classList.contains("card") && !cur.quiet && cur.nodes.some(function (n) { return n.classList.contains("card"); }))) { cur = { head: null, nodes: [], title: "" }; out.push(cur); }
+      /* a quiet block owns only the HIDDEN nodes behind its line; the next visible node is a new block */
+      if (!cur || (cur.quiet && !t3Hidden(k)) || (k.classList.contains("card") && !cur.quiet && cur.nodes.some(function (n) { return n.classList.contains("card"); }))) { cur = { head: null, nodes: [], title: "" }; out.push(cur); }
       cur.nodes.push(k);
       if (!cur.title) { var nm = k.querySelector(".nm, b, strong, h3"); cur.title = ((nm && nm.textContent) || k.textContent || "").trim().slice(0, 40); }
     });
@@ -107,6 +118,37 @@ if (typeof window !== "undefined") {
     });
     return rows;
   }
+  /* the ⋯ menu on an inbox row: acts on the record behind the row through the same fields the screens use,
+     soft-deletes only (deleted:true), then saves and re-renders. */
+  var T3_LABELS = { tomorrow: "Push to tomorrow", week: "Next week", low: "Not urgent", delete: "Delete" };
+  function t3RecordFor(el, src) {
+    var html = el.innerHTML, m;
+    if (/to-dos/i.test(src) && (m = html.match(/toggleTodo\('([^']+)'\)|openTodo\('([^']+)'\)/))) { var id = m[1] || m[2]; var td = ((typeof D === "function" && D().todos) || []).find(function (x) { return x && x.id === id; }); return td ? { kind: "todo", rec: td } : null; }
+    if (/follow-ups/i.test(src) && (m = html.match(/openCustomer\('([^']+)'\)/))) { var c = ((typeof D === "function" && D().customers) || []).find(function (x) { return x && x.id === m[1]; }); return c ? { kind: "customer", rec: c } : null; }
+    return null;
+  }
+  function t3Act(el, src, key) {
+    var r = t3RecordFor(el, src); if (!r) return;
+    var rec = r.rec, t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+    if (key === "delete") { var what = r.kind === "customer" ? (rec.name || rec.company || "this lead") : (rec.title || "this to-do"); if (!confirm("Delete " + what + "? It goes to the archive, not the trash.")) return; rec.deleted = true; }
+    else if (key === "tomorrow" || key === "week") { var due = t3Shift(t, key === "week" ? 7 : 1); if (r.kind === "todo") rec.due = due; else rec.next = due; }
+    else if (key === "low") { if (r.kind === "todo") { rec.priority = "Low"; rec.due = t3Shift(rec.due || t, 7); } }
+    rec.updatedAt = Date.now(); if (typeof touch === "function") touch(rec);
+    if (typeof save === "function") save(); if (typeof render === "function") render();
+  }
+  function t3Menu(el, src) {
+    var acts = t3Actions(src); if (!acts.length || el.querySelector(".db-dots")) return;
+    var dots = document.createElement("button"); dots.className = "db-dots"; dots.textContent = "⋯"; dots.title = "More"; dots.setAttribute("aria-label", "More actions");
+    dots.onclick = function (e) {
+      e.stopPropagation(); e.preventDefault();
+      var old = document.querySelector(".db-menu"); if (old) { var was = old.parentNode === el; old.remove(); if (was) return; }
+      var menu = document.createElement("div"); menu.className = "db-menu";
+      acts.forEach(function (k) { var b = document.createElement("button"); b.textContent = T3_LABELS[k] || k; if (k === "delete") b.classList.add("danger"); b.onclick = function (ev) { ev.stopPropagation(); menu.remove(); t3Act(el, src, k); }; menu.appendChild(b); });
+      el.appendChild(menu);
+      setTimeout(function () { document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }); }, 0);
+    };
+    el.appendChild(dots); el.style.position = "relative";
+  }
   function t3Apply() {
     try {
       if (typeof TAB === "undefined" || TAB !== "today") return; if (typeof orgIsPersonalOrg === "function" && orgIsPersonalOrg()) return;
@@ -116,8 +158,7 @@ if (typeof window !== "undefined") {
       var groups = { needs: [], money: [], day: [] };
       blocks.forEach(function (b) { groups[t3Col(b.title)].push(b); });
       col.setAttribute("data-t3", "1");
-      var cols = {};
-      ["needs", "money", "day"].forEach(function (k) { var d = document.createElement("div"); d.className = "db-col " + k; d.setAttribute("data-col", k); cols[k] = d; });
+      var hold = document.createElement("div"); hold.className = "db-hold"; hold.style.display = "none";   // emptied source cards live here, hidden
       /* stats for the strip, read before anything moves */
       var st = { needs: 0, owed: 0, owedN: 0, jobs: 0, clockedIn: false };
       blocks.forEach(function (b) {
@@ -128,8 +169,7 @@ if (typeof window !== "undefined") {
       /* NEEDS YOU */
       var rows = t3Inbox(groups.needs); st.needs = rows.length;
       rows = rows.map(function (r, i) { return { r: r, i: i, u: t3Urgency(r.src, r.el.textContent) }; }).sort(function (a, b) { return a.u - b.u || a.i - b.i; }).map(function (x) { return x.r; });
-      cols.needs.appendChild(t3Head("Needs you", rows.length || null)); if (rows.length) cols.needs.classList.add("hot");
-      var inbox = document.createElement("div"); inbox.className = "card db-inbox"; cols.needs.appendChild(inbox);
+      var inbox = document.createElement("div"); inbox.className = "db-inbox";
       if (!rows.length) { var q = document.createElement("div"); q.className = "db-none"; q.textContent = "Nothing needs you right now."; inbox.appendChild(q); }
       var cap = 6;
       rows.forEach(function (r, i) {
@@ -151,6 +191,7 @@ if (typeof window !== "undefined") {
           }
         }
         if (sub) { var sn = null; sub.childNodes.forEach(function (c) { if (!sn && c.nodeType === 3 && c.textContent.trim()) sn = c; }); if (sn) sn.textContent = t3Strip(sn.textContent); }
+        t3Menu(el, r.src);
         inbox.appendChild(el);
       });
       if (rows.length > cap) {
@@ -159,60 +200,79 @@ if (typeof window !== "undefined") {
         more.onclick = function () { T3.all = !T3.all; paintAll(); }; paintAll();
       }
       /* the emptied source cards stay in the DOM, hidden, so nothing that looks for them breaks */
-      groups.needs.forEach(function (b) { if (b.quiet) { b.line.style.display = "none"; } if (b.head) b.head.style.display = "none"; b.nodes.forEach(function (n) { if (n.parentNode === col) { n.style.display = "none"; cols.needs.appendChild(n); } }); if (b.line && b.line.parentNode === col) cols.needs.appendChild(b.line); if (b.head && b.head.parentNode === col) cols.needs.appendChild(b.head); });
-      /* MONEY */
-      if (groups.money.length) {
-        cols.money.appendChild(t3Head("Money"));
-        groups.money.sort(function (a, b) { return t3MoneyRank(a.title) - t3MoneyRank(b.title); });
-        var panel = document.createElement("div"); panel.className = "card db-panel"; cols.money.appendChild(panel);
-        groups.money.forEach(function (b) {
+      groups.needs.forEach(function (b) { if (b.quiet) { b.line.style.display = "none"; } if (b.head) b.head.style.display = "none"; b.nodes.forEach(function (n) { if (n.parentNode === col) { n.style.display = "none"; hold.appendChild(n); } }); if (b.line && b.line.parentNode === col) hold.appendChild(b.line); if (b.head && b.head.parentNode === col) hold.appendChild(b.head); });
+      /* TILES (Ray, 2026-09-27: "everything should be at a glance unless I want to investigate further…
+         a big number with a picture, colored. Click it and it expands into easy-to-read details.")
+         Every subject is one tile: icon, one big value, one small label, a tone. Its detail is a pane below
+         the tiles that the tile toggles (rule 7); which panes are open is remembered on this device. */
+      var tiles = document.createElement("div"); tiles.className = "db-tiles";
+      var detail = document.createElement("div"); detail.className = "db-detail";
+      var TILE_KEY = "jra_t3_tiles"; var openSet = {}; try { openSet = JSON.parse(localStorage.getItem(TILE_KEY) || "{}") || {}; } catch (e) {}
+      var saveOpen = function () { try { localStorage.setItem(TILE_KEY, JSON.stringify(openSet)); } catch (e) {} };
+      var claimed = [];
+      var addTile = function (o) {
+        var pane = document.createElement("section"); pane.className = "card db-pane"; pane.setAttribute("data-pane", o.key);
+        var ph = document.createElement("div"); ph.className = "row db-panehd"; ph.innerHTML = '<div class="nm">' + t3E(o.title) + '</div>'; pane.appendChild(ph);
+        var body = document.createElement("div"); body.className = "db-panebody"; pane.appendChild(body);
+        (o.nodes || []).forEach(function (n) { body.appendChild(n); n.style.display = ""; });
+        (o.blocks || []).forEach(function (b, bi) {
+          claimed.push(b);
           if (b.head) b.head.classList.add("db-sub");
+          /* one block whose head repeats the pane title: its buttons and count move up, the head goes */
+          if (b.head && (o.blocks || []).length === 1) { Array.prototype.slice.call(b.head.querySelectorAll("button, .ct")).forEach(function (x) { x.style.marginLeft = ""; ph.insertBefore(x, ph.lastElementChild); }); b.head.classList.add("db-hide"); }
           b.nodes.forEach(function (n) { if (n.classList.contains("card")) n.classList.add("db-flat"); });
-          t3Move(panel, b);
+          t3Move(body, b);
+          if (b.line) { b.line.style.display = "none"; if (b.head) b.head.style.display = ""; b.nodes.forEach(function (n) { n.style.display = ""; }); }
         });
-      }
-      /* THE DAY */
-      cols.day.appendChild(t3Head("The day"));
-      groups.day.forEach(function (b) { t3Move(cols.day, b); });
-      /* THE DAY AS A STAT ROW (Ray, 2026-09-27: "a little person icon with the number of people working today…
-         click on that to expand"). Jobs, crew, clock and ads become chips; each chip toggles its card. */
-      var stats = document.createElement("div"); stats.className = "db-stats"; cols.day.querySelector(".db-colhd").after(stats);
-      var statFor = function (b, icon, text, cls) {
-        var target = b.line || b.nodes[0]; if (!target) return;
-        var chip = document.createElement("button"); chip.className = "db-stat" + (cls ? " " + cls : ""); chip.innerHTML = '<span class="ic">' + icon + '</span>' + t3E(text); stats.appendChild(chip);
-        var key = "stat:" + b.title, els = (b.line ? [b.line] : []).concat(b.head ? [b.head] : []).concat(b.nodes);
-        var paint = function () { var open = !!T3[key]; chip.classList.toggle("on", open); els.forEach(function (n) { if (b.line && n !== b.line && !open) return; n.style.display = open ? (n === b.line ? "none" : "") : (n === b.line ? "" : "none"); if (!open && b.line) n.style.display = "none"; }); if (!open && b.line) b.line.style.display = "none"; };
-        chip.onclick = function () { T3[key] = !T3[key]; paint(); if (T3[key] && b.nodes[0]) b.nodes[0].scrollIntoView({ block: "nearest" }); };
-        paint();
+        var tile = document.createElement("button"); tile.className = "db-tile tone-" + (o.tone || "plain"); tile.setAttribute("data-tile", o.key);
+        tile.innerHTML = '<span class="ic">' + o.icon + '</span><span class="val">' + t3E(o.value) + '</span><span class="lbl">' + t3E(o.label) + '</span>';
+        var hide = document.createElement("button"); hide.className = "btn ghost sm"; hide.textContent = "Hide ▴"; hide.style.marginLeft = "auto"; ph.appendChild(hide);
+        var paint = function () { var open = !!openSet[o.key]; tile.classList.toggle("on", open); pane.style.display = open ? "" : "none"; };
+        var toggle = function () { openSet[o.key] = !openSet[o.key]; saveOpen(); paint(); if (openSet[o.key]) { pane.scrollIntoView({ block: "nearest", behavior: "smooth" }); if (o.onOpen) o.onOpen(); } };
+        tile.onclick = toggle; hide.onclick = toggle; paint();
+        tiles.appendChild(tile); detail.appendChild(pane);
       };
-      groups.day.forEach(function (b) {
-        var t = b.title, txt = b.nodes.map(function (n) { return n.textContent || ""; }).join(" ");
-        if (/today's jobs/i.test(t)) { var ct = b.head && b.head.querySelector(".ct"); var nj = ct ? (parseInt(ct.textContent, 10) || 0) : 0; statFor(b, "📅", nj + (nj === 1 ? " job" : " jobs") + " today"); }
-        else if (/who's working/i.test(t)) {
-          var labels = []; b.nodes.forEach(function (n) { n.querySelectorAll(".li > span, .li span[style*='font-weight:700']").forEach(function (x) { labels.push(x.textContent); }); });
-          if (!labels.length && b.line) labels = (b.line.querySelector(".s") || b.line).textContent.split("·").map(function (x) { return x.replace(/^[^A-Za-z]*\w+\s/, "").trim(); });
-          var w = t3Working(labels); statFor(b, "👥", w + " working");
-        }
-        else if (/clock in/i.test(t) && !/clocked in/i.test(t)) { statFor(b, "⏱", "Clock in", "act"); }
-        else if (/clocked in/i.test(t)) { statFor(b, "⏱", "Clocked in", "live"); }
-        else if (/ads|off duty/i.test(t)) { var on = /running/i.test(txt); statFor(b, "📣", on ? "Ads on" : "Ads off"); }
-      });
-      /* rule 4: clock in folds (desktop) */
-      Array.prototype.slice.call(cols.day.querySelectorAll(".card")).forEach(function (card) {
-        var nm = card.firstElementChild; if (!nm || !nm.classList.contains("nm") || !/clock in/i.test(nm.textContent || "") || !card.querySelector("select")) return;
-        card.classList.add("db-clockcard"); if (compact || stats.querySelector(".db-stat.act")) return;
-        var hd = document.createElement("div"); hd.className = "row db-clockhd"; card.insertBefore(hd, nm); hd.appendChild(nm);
-        var btn = document.createElement("button"); btn.className = "btn sm db-clockgo"; hd.appendChild(btn);
-        if (!T3.clock) card.classList.add("folded");
-        t3Toggle(btn, card, "folded", "Clock in…", "Hide ▴", "clock", function (open) { if (open) { var f = card.querySelector("select,input"); if (f) f.focus(); } });
-      });
-      /* rule 4: the stand-up's record folds until there is something to say */
-      var su = cols.day.querySelector("#su_plan");
+      var take = function (re, from) { return from.filter(function (b) { return re.test(b.title); }); };
+      var moneyOf = function (bs) { var v = []; bs.forEach(function (b) { b.nodes.forEach(function (n) { n.querySelectorAll(".li > .nm, .li > div.nm").forEach(function (x) { v.push(x.textContent); }); }); }); return t3Money(v); };
+      /* 1. needs you */
+      addTile({ key: "needs", icon: "🔔", value: String(rows.length), label: rows.length === 1 ? "needs you" : "need you", tone: rows.length ? "danger" : "plain", title: "Needs you", nodes: [inbox] });
+      /* 2. money */
+      var owedB = take(/awaiting payment|invoices to send/i, groups.money);
+      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "owed · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices"), tone: "accent", title: "Owed to you", blocks: owedB });
+      var pipeB = take(/confirmed jobs|open quotes/i, groups.money);
+      if (pipeB.length) addTile({ key: "pipe", icon: "🧾", value: t3Fmt(moneyOf(pipeB)), label: "booked and quoted", tone: "brand", title: "In the pipeline", blocks: pipeB });
+      var payB = take(/payouts/i, groups.money);
+      if (payB.length) {
+        var me = (typeof curUser === "function") ? curUser() : null, mine = "", when = "";
+        payB.forEach(function (b) { b.nodes.forEach(function (n) { var wb = n.querySelector(".sub b"); if (wb) when = wb.textContent.trim(); n.querySelectorAll(".li").forEach(function (li) { var nms = li.querySelectorAll(".nm"); if (nms.length >= 2 && me && nms[0].textContent.trim() === (me.username || "")) mine = nms[nms.length - 1].textContent.trim(); }); }); });
+        if (!mine) { var f = payB[0].nodes[0] && payB[0].nodes[0].querySelector(".li"); var fn = f ? f.querySelectorAll(".nm") : []; mine = fn.length ? fn[fn.length - 1].textContent.trim() : "$0"; }
+        addTile({ key: "pay", icon: "💰", value: mine, label: "my payout" + (when ? " · " + when : ""), tone: "accent", title: "Payouts", blocks: payB });
+      }
+      /* 3. the day */
+      var jobsB = take(/today's jobs/i, groups.day);
+      if (jobsB.length) addTile({ key: "jobs", icon: "📅", value: String(st.jobs), label: st.jobs === 1 ? "job today" : "jobs today", tone: st.jobs ? "brand" : "plain", title: "Today's jobs", blocks: jobsB });
+      var crewB = take(/who's working/i, groups.day);
+      if (crewB.length) {
+        var labels = []; crewB.forEach(function (b) { b.nodes.forEach(function (n) { n.querySelectorAll(".li > span").forEach(function (x) { labels.push(x.textContent); }); }); });
+        var w = t3Working(labels); addTile({ key: "crew", icon: "👥", value: String(w), label: "working today", tone: w ? "brand" : "plain", title: "Who's working today", blocks: crewB });
+      }
+      var clockB = take(/clock in|clocked in/i, groups.day).filter(function (b) { return !/who's/i.test(b.title); });
+      if (clockB.length) { var live = /clocked in/i.test(clockB[0].title); addTile({ key: "clock", icon: "⏱", value: live ? "On" : "Clock in", label: live ? (st.clockedIn === true ? "the clock" : String(st.clockedIn)) : "tap to start", tone: live ? "ok" : "act", title: live ? "Clocked in" : "Clock in", blocks: clockB, onOpen: function () { var fld = detail.querySelector('[data-pane="clock"] select, [data-pane="clock"] input'); if (fld) fld.focus(); } }); }
+      var suB = take(/stand-up/i, groups.day);
+      if (suB.length) { var suTxt = suB[0].nodes.map(function (n) { return n.textContent; }).join(" "); var dueN = (suTxt.match(/overdue/gi) || []).length; addTile({ key: "standup", icon: "🧭", value: "9:00", label: "stand-up" + (dueN ? " · " + dueN + " overdue" : ""), tone: dueN ? "danger" : "plain", title: "Stand-up", blocks: suB }); }
+      var capB = take(/^cap\b|🧭 cap|^🧭 cap/i, groups.day);
+      if (capB.length) { var lm = capB[0].nodes.map(function (n) { var t = n.querySelector("#cap-thread"); return t && t.lastElementChild ? t.lastElementChild.textContent : ""; }).join("").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); addTile({ key: "cap", icon: "🤖", value: "Cap", label: lm ? lm.slice(0, 42) + (lm.length > 42 ? "…" : "") : "ask about today", tone: "plain", title: "Cap", blocks: capB, onOpen: function () { if (typeof capScrollThread === "function") setTimeout(capScrollThread, 20); } }); }
+      var adsB = take(/ads|off duty/i, groups.day);
+      if (adsB.length) { var on = /running/i.test(adsB[0].nodes.map(function (n) { return n.textContent; }).join(" ")); addTile({ key: "ads", icon: "📣", value: on ? "On" : "Off", label: "Google Ads", tone: on ? "ok" : "plain", title: "Ads", blocks: adsB }); }
+      /* anything not claimed keeps a home */
+      var rest = groups.money.concat(groups.day).filter(function (b) { return claimed.indexOf(b) < 0; });
+      if (rest.length) addTile({ key: "more", icon: "•••", value: String(rest.length), label: "more", tone: "plain", title: "More", blocks: rest });
+      /* the stand-up's record folds until there is something to say; the agenda folds under More */
+      var su = detail.querySelector("#su_plan");
       if (su) {
         var rec = su.parentNode, sc = rec.parentNode, blk = document.getElementById("su_block");
         var plan = (su.value || "").trim(), blockers = (blk && (blk.value || "").trim()) || "", has = !!(plan || blockers);
         rec.classList.add("db-surec");
-        /* what stays: the head, the Due line, questions for you, other people's notes. The rest folds. */
         var kids = Array.prototype.slice.call(sc.children), foldSet = [];
         kids.forEach(function (k, i) {
           if (i === 0 || k === rec || k.classList.contains("db-more") || k.classList.contains("db-surec")) return;
@@ -222,12 +282,11 @@ if (typeof window !== "undefined") {
           if (k.querySelector("#su_plan")) return;
           foldSet.push(k);
         });
-        /* one row of actions above my record; the folded agenda sits below it */
         var acts = document.createElement("div"); acts.className = "row db-suacts"; rec.before(acts);
         if (has) { var sum = document.createElement("div"); sum.className = "sub db-susum"; sum.textContent = "You: " + plan + (blockers ? " · ⚠ " + blockers : ""); acts.before(sum); }
-        var w = document.createElement("button"); w.className = "btn ghost sm db-suopen"; acts.appendChild(w);
+        var wbtn = document.createElement("button"); wbtn.className = "btn ghost sm db-suopen"; acts.appendChild(wbtn);
         if (!T3.standup) rec.classList.add("db-fold");
-        t3Toggle(w, rec, "db-fold", has ? "✎ Edit my stand-up ▾" : "✎ Write my stand-up ▾", "Hide ▴", "standup", function (open) { var s2 = sc.querySelector(".db-susum"); if (s2) s2.style.display = open ? "none" : ""; if (open) su.focus(); });
+        t3Toggle(wbtn, rec, "db-fold", has ? "✎ Edit my stand-up ▾" : "✎ Write my stand-up ▾", "Hide ▴", "standup", function (open) { var s2 = sc.querySelector(".db-susum"); if (s2) s2.style.display = open ? "none" : ""; if (open) su.focus(); });
         if (foldSet.length) {
           var wrap = document.createElement("div"); wrap.className = "db-sufold"; if (!T3.suMore) wrap.classList.add("db-fold");
           rec.after(wrap); foldSet.forEach(function (k) { wrap.appendChild(k); });
@@ -235,36 +294,18 @@ if (typeof window !== "undefined") {
           t3Toggle(mb, wrap, "db-fold", "More ▾", "Less ▴", "suMore");
         }
       }
-      /* rule 6: what is elsewhere is not here */
-      var vt = cols.day.querySelector("#cap-voice-toggle"); if (vt && vt.parentNode) vt.parentNode.classList.add("db-voice");
-      var th = cols.day.querySelector("#cap-thread");
-      if (th) {
-        th.classList.add("db-capthread");
-        var capCard = th.closest(".card"), capHd = capCard && capCard.previousElementSibling;
-        var lastMsg = th.lastElementChild;
-        if (capCard && lastMsg && !compact) {
-          var lastLine = document.createElement("div"); lastLine.className = "db-caplast"; lastLine.textContent = (lastMsg.textContent || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); th.after(lastLine);
-          if (!T3.cap) th.classList.add("db-fold");
-          var cb = document.createElement("button"); cb.className = "btn ghost sm db-capgo";
-          if (capHd && capHd.classList.contains("secthd")) capHd.appendChild(cb); else capCard.insertBefore(cb, capCard.firstChild);
-          var paintCap = function (open) { lastLine.style.display = open ? "none" : ""; if (open && typeof capScrollThread === "function") setTimeout(capScrollThread, 20); };
-          t3Toggle(cb, th, "db-fold", "Chat ▾", "Hide ▴", "cap", paintCap); paintCap(!!T3.cap);
-          var ci = capCard.querySelector("#cap-input"); if (ci) ci.addEventListener("focus", function () { if (!T3.cap) cb.click(); });
-        }
-      }
-      var duty = cols.day.querySelector("#duty_card");
-      if (duty) Array.prototype.slice.call(duty.querySelectorAll(".sub")).forEach(function (p) { if (/business profile/i.test(p.textContent || "")) { p.classList.add("db-hide"); duty.title = (p.textContent || "").trim(); } });
-      Array.prototype.slice.call(cols.day.querySelectorAll("button")).forEach(function (b) { if (/snap a receipt/i.test(b.textContent || "")) b.classList.add("db-snap"); });
-      /* rule 1: the strip */
+      /* what is elsewhere is not here */
+      var vt = detail.querySelector("#cap-voice-toggle"); if (vt && vt.parentNode) vt.parentNode.classList.add("db-voice");
+      var duty = detail.querySelector("#duty_card");
+      if (duty) Array.prototype.slice.call(duty.querySelectorAll(".sub")).forEach(function (pp) { if (/business profile/i.test(pp.textContent || "")) { pp.classList.add("db-hide"); duty.title = (pp.textContent || "").trim(); } });
+      Array.prototype.slice.call(detail.querySelectorAll("button")).forEach(function (bt) { if (/snap a receipt/i.test(bt.textContent || "")) bt.classList.add("db-snap"); });
+      /* the date, then the tiles, then whatever is open */
       var hero = document.createElement("div"); hero.className = "db-hero";
-      var d = new Date(); var date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-      hero.innerHTML = '<div class="db-date">' + t3E(date) + '</div><div class="db-chips">' + t3Chips(st).map(function (c) { return '<button class="db-chip' + (c.hot ? " hot" : "") + '" data-go="' + c.key + '">' + t3E(c.text) + '</button>'; }).join("") + '</div>';
-      hero.querySelectorAll(".db-chip").forEach(function (c) { c.onclick = function () { var t = cols[c.getAttribute("data-go")]; if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); }; });
-      col.appendChild(hero); col.appendChild(cols.needs); col.appendChild(cols.money); col.appendChild(cols.day);
-      if (!groups.money.length) cols.money.classList.add("db-empty");
+      var d = new Date(); hero.innerHTML = '<div class="db-date">' + t3E(d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })) + '</div>';
+      col.appendChild(hero); col.appendChild(tiles); col.appendChild(detail); col.appendChild(hold);
     } catch (e) { try { console.warn("today pass skipped:", e); } catch (_) {} }
   }
   if (typeof secSplit === "function") { var _ss9 = secSplit; secSplit = function (tab) { var r = _ss9.apply(this, arguments); t3Apply(); return r; }; window.secSplit = secSplit; }
-  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
+  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Actions = t3Actions; window.t3Shift = t3Shift; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3Actions: t3Actions, t3Shift: t3Shift, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
