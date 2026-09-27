@@ -122,13 +122,13 @@ if (typeof window !== "undefined") {
      soft-deletes only (deleted:true), then saves and re-renders. */
   var T3_LABELS = { tomorrow: "Push to tomorrow", week: "Next week", low: "Not urgent", delete: "Delete" };
   function t3RecordFor(el, src) {
-    var html = el.innerHTML, m;
+    var html = el.outerHTML, m;   // outerHTML: a follow-up row carries its openCustomer(...) on the row ITSELF
     if (/to-dos/i.test(src) && (m = html.match(/toggleTodo\('([^']+)'\)|openTodo\('([^']+)'\)/))) { var id = m[1] || m[2]; var td = ((typeof D === "function" && D().todos) || []).find(function (x) { return x && x.id === id; }); return td ? { kind: "todo", rec: td } : null; }
     if (/follow-ups/i.test(src) && (m = html.match(/openCustomer\('([^']+)'\)/))) { var c = ((typeof D === "function" && D().customers) || []).find(function (x) { return x && x.id === m[1]; }); return c ? { kind: "customer", rec: c } : null; }
     return null;
   }
   function t3Act(el, src, key) {
-    var r = t3RecordFor(el, src); if (!r) return;
+    var r = t3RecordFor(el, src); if (!r) { if (typeof toast === "function") toast("Couldn't find that record"); return; }
     var rec = r.rec, t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
     if (key === "delete") { var what = r.kind === "customer" ? (rec.name || rec.company || "this lead") : (rec.title || "this to-do"); if (!confirm("Delete " + what + "? It goes to the archive, not the trash.")) return; rec.deleted = true; }
     else if (key === "tomorrow" || key === "week") { var due = t3Shift(t, key === "week" ? 7 : 1); if (r.kind === "todo") rec.due = due; else rec.next = due; }
@@ -145,7 +145,7 @@ if (typeof window !== "undefined") {
       var menu = document.createElement("div"); menu.className = "db-menu";
       acts.forEach(function (k) { var b = document.createElement("button"); b.textContent = T3_LABELS[k] || k; if (k === "delete") b.classList.add("danger"); b.onclick = function (ev) { ev.stopPropagation(); menu.remove(); t3Act(el, src, k); }; menu.appendChild(b); });
       el.appendChild(menu);
-      setTimeout(function () { document.addEventListener("click", function once() { menu.remove(); document.removeEventListener("click", once); }); }, 0);
+      setTimeout(function () { var once = function () { menu.remove(); document.removeEventListener("click", once); }; document.addEventListener("click", once); menu.addEventListener("click", function () { document.removeEventListener("click", once); }); }, 0);
     };
     el.appendChild(dots); el.style.position = "relative";
   }
