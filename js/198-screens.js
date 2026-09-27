@@ -158,7 +158,9 @@ if (typeof window !== "undefined") {
       var title = ((head.querySelector("h2") || head).textContent || "").trim(); var ct = head.querySelector(".ct");
       var count = ct ? (parseInt(ct.textContent, 10) || 0) : 0;
       var hasControl = !!body.querySelector("input,select,textarea,button,a,details");
-      if (!scIsQuiet(body.textContent, hasControl, count) || SC_OPEN[tab + "/" + title]) return;
+      var eligible = scIsQuiet(body.textContent, hasControl, count), key = tab + "/" + title;
+      if (eligible && SC_OPEN[key]) { if (!head.querySelector("[data-sc-hide]")) { var hb = document.createElement("button"); hb.className = "btn ghost sm"; hb.setAttribute("data-sc-hide", "1"); hb.style.marginLeft = "auto"; hb.textContent = "Hide ▴"; hb.onclick = function () { delete SC_OPEN[key]; if (typeof render === "function") render(); }; head.appendChild(hb); } return; }
+      if (!eligible) return;
       var line = document.createElement("div"); line.className = "db-quiet";
       line.innerHTML = '<span class="t">' + (typeof esc === "function" ? esc(title) : title) + '</span><span class="s">' + (typeof esc === "function" ? esc(body.textContent.trim()) : body.textContent.trim()) + '</span><span class="chev">▸</span>';
       line.onclick = function () { SC_OPEN[tab + "/" + title] = true; if (typeof render === "function") render(); };

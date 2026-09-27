@@ -32,6 +32,16 @@ function t3Money(texts) {
   return Math.round(sum * 100) / 100;
 }
 function t3Fmt(n) { n = +n || 0; return "$" + (n % 1 ? n.toFixed(2) : String(Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+/* inbox order across types: Cap's approvals first (he is waiting), then overdue, then due today, then the
+   rest; stable inside a rank. Pure. */
+function t3Urgency(src, text) {
+  var t = String(text || ""), sr = String(src || "");
+  if (/approvals/i.test(sr)) return 0;
+  if (/overdue/i.test(t)) return 1;
+  if (/due today|today\b/i.test(t) && !/no jobs today/i.test(t)) return 2;
+  if (/no date|not yet done|set the hour meter/i.test(t)) return 4;
+  return 3;
+}
 /* the header strip's chips from the counts. stats = {needs, owed, owedN, jobs, clockedIn}. Pure. */
 function t3Chips(st) {
   st = st || {}; var out = [];
@@ -58,6 +68,13 @@ if (typeof window !== "undefined") {
       if (!cur.title) { var nm = k.querySelector(".nm, b, strong, h3"); cur.title = ((nm && nm.textContent) || k.textContent || "").trim().slice(0, 40); }
     });
     return out;
+  }
+  /* rule 7 (Ray, 2026-09-27: "things that expand should be able to collapse too"): one toggle for all folds.
+     btn flips `cls` on `target`, swaps its own label, remembers the state in T3[key], and calls `after`. */
+  function t3Toggle(btn, target, cls, openLabel, closeLabel, key, after) {
+    var paint = function () { var open = !target.classList.contains(cls); btn.textContent = open ? closeLabel : openLabel; btn.classList.toggle("acc", !open && /clock in/i.test(openLabel)); btn.classList.toggle("ghost", open || !/clock in/i.test(openLabel)); };
+    btn.onclick = function () { target.classList.toggle(cls); T3[key] = !target.classList.contains(cls); paint(); if (after) after(T3[key]); };
+    paint();
   }
   function t3Move(target, b) { if (b.line) target.appendChild(b.line); if (b.head) target.appendChild(b.head); b.nodes.forEach(function (n) { target.appendChild(n); }); }
   function t3Head(text, count) { var h = document.createElement("div"); h.className = "secthd db-colhd"; h.innerHTML = "<h2>" + t3E(text) + "</h2>" + (count != null ? '<span class="ct">' + t3E(count) + "</span>" : ""); return h; }
@@ -98,6 +115,7 @@ if (typeof window !== "undefined") {
       });
       /* NEEDS YOU */
       var rows = t3Inbox(groups.needs); st.needs = rows.length;
+      rows = rows.map(function (r, i) { return { r: r, i: i, u: t3Urgency(r.src, r.el.textContent) }; }).sort(function (a, b) { return a.u - b.u || a.i - b.i; }).map(function (x) { return x.r; });
       cols.needs.appendChild(t3Head("Needs you", rows.length || null));
       var inbox = document.createElement("div"); inbox.className = "card db-inbox"; cols.needs.appendChild(inbox);
       if (!rows.length) { var q = document.createElement("div"); q.className = "db-none"; q.textContent = "Nothing needs you right now."; inbox.appendChild(q); }
@@ -108,10 +126,13 @@ if (typeof window !== "undefined") {
         el.setAttribute("data-src", r.src); el.title = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300);
         /* a row with its own checkbox (a to-do) has its mark already */
         if (!el.querySelector(":scope > input[type=checkbox]")) { var mark = document.createElement("span"); mark.className = "db-src"; mark.textContent = r.icon; mark.title = r.src; el.insertBefore(mark, el.firstChild); }
-        if (i >= cap && !T3.all) { el.style.display = "none"; el.setAttribute("data-t3-hid", "1"); }
         inbox.appendChild(el);
       });
-      if (rows.length > cap && !T3.all) { var more = document.createElement("button"); more.className = "btn ghost sm db-all"; more.textContent = "All " + rows.length + " →"; more.onclick = function () { T3.all = true; inbox.querySelectorAll("[data-t3-hid]").forEach(function (x) { x.style.display = ""; }); more.remove(); }; inbox.appendChild(more); }
+      if (rows.length > cap) {
+        var more = document.createElement("button"); more.className = "btn ghost sm db-all"; inbox.appendChild(more);
+        var paintAll = function () { more.textContent = T3.all ? "Fewer ▴" : "All " + rows.length + " ▾"; rows.forEach(function (r, i) { if (i >= cap) r.el.style.display = T3.all ? "" : "none"; }); };
+        more.onclick = function () { T3.all = !T3.all; paintAll(); }; paintAll();
+      }
       /* the emptied source cards stay in the DOM, hidden, so nothing that looks for them breaks */
       groups.needs.forEach(function (b) { if (b.quiet) { b.line.style.display = "none"; } if (b.head) b.head.style.display = "none"; b.nodes.forEach(function (n) { if (n.parentNode === col) { n.style.display = "none"; cols.needs.appendChild(n); } }); if (b.line && b.line.parentNode === col) cols.needs.appendChild(b.line); if (b.head && b.head.parentNode === col) cols.needs.appendChild(b.head); });
       /* MONEY */
@@ -132,26 +153,57 @@ if (typeof window !== "undefined") {
       Array.prototype.slice.call(cols.day.querySelectorAll(".card")).forEach(function (card) {
         var nm = card.firstElementChild; if (!nm || !nm.classList.contains("nm") || !/clock in/i.test(nm.textContent || "") || !card.querySelector("select")) return;
         card.classList.add("db-clockcard"); if (compact) return;
-        var btn = document.createElement("button"); btn.className = "btn acc sm db-clockgo"; btn.textContent = "Clock in…";
-        btn.onclick = function () { T3.clock = true; card.classList.remove("folded"); btn.remove(); var f = card.querySelector("select,input"); if (f) f.focus(); };
-        nm.after(btn); if (!T3.clock) card.classList.add("folded");
+        var hd = document.createElement("div"); hd.className = "row db-clockhd"; card.insertBefore(hd, nm); hd.appendChild(nm);
+        var btn = document.createElement("button"); btn.className = "btn sm db-clockgo"; hd.appendChild(btn);
+        if (!T3.clock) card.classList.add("folded");
+        t3Toggle(btn, card, "folded", "Clock in…", "Hide ▴", "clock", function (open) { if (open) { var f = card.querySelector("select,input"); if (f) f.focus(); } });
       });
       /* rule 4: the stand-up's record folds until there is something to say */
       var su = cols.day.querySelector("#su_plan");
       if (su) {
-        var rec = su.parentNode, blk = document.getElementById("su_block"), has = !!((su.value || "").trim() || (blk && (blk.value || "").trim()));
+        var rec = su.parentNode, sc = rec.parentNode, blk = document.getElementById("su_block");
+        var plan = (su.value || "").trim(), blockers = (blk && (blk.value || "").trim()) || "", has = !!(plan || blockers);
         rec.classList.add("db-surec");
-        if (!T3.standup && !has) {
-          rec.classList.add("db-fold");
-          var w = document.createElement("button"); w.className = "btn ghost sm db-suopen"; w.textContent = "✎ Write my stand-up";
-          w.onclick = function () { T3.standup = true; rec.classList.remove("db-fold"); w.remove(); su.focus(); };
-          rec.before(w);
+        /* what stays: the head, the Due line, questions for you, other people's notes. The rest folds. */
+        var kids = Array.prototype.slice.call(sc.children), foldSet = [];
+        kids.forEach(function (k, i) {
+          if (i === 0 || k === rec || k.classList.contains("db-more") || k.classList.contains("db-surec")) return;
+          var txt = (k.textContent || "").trim();
+          if (/^due:/i.test(txt) || /questions for you/i.test(txt) || k.querySelector(".li[style]") && /⚠|plan/.test(txt) && k.querySelector(".nm")) return;
+          if (/^no open questions/i.test(txt)) { k.classList.add("db-hide"); return; }
+          if (k.querySelector("#su_plan")) return;
+          foldSet.push(k);
+        });
+        /* one row of actions above my record; the folded agenda sits below it */
+        var acts = document.createElement("div"); acts.className = "row db-suacts"; rec.before(acts);
+        if (has) { var sum = document.createElement("div"); sum.className = "sub db-susum"; sum.textContent = "You: " + plan + (blockers ? " · ⚠ " + blockers : ""); acts.before(sum); }
+        var w = document.createElement("button"); w.className = "btn ghost sm db-suopen"; acts.appendChild(w);
+        if (!T3.standup) rec.classList.add("db-fold");
+        t3Toggle(w, rec, "db-fold", has ? "✎ Edit my stand-up ▾" : "✎ Write my stand-up ▾", "Hide ▴", "standup", function (open) { var s2 = sc.querySelector(".db-susum"); if (s2) s2.style.display = open ? "none" : ""; if (open) su.focus(); });
+        if (foldSet.length) {
+          var wrap = document.createElement("div"); wrap.className = "db-sufold"; if (!T3.suMore) wrap.classList.add("db-fold");
+          rec.after(wrap); foldSet.forEach(function (k) { wrap.appendChild(k); });
+          var mb = document.createElement("button"); mb.className = "btn ghost sm db-sumore"; acts.appendChild(mb);
+          t3Toggle(mb, wrap, "db-fold", "More ▾", "Less ▴", "suMore");
         }
-        Array.prototype.slice.call(rec.parentNode.querySelectorAll(":scope > .sub")).forEach(function (p) { if (/^no open questions/i.test((p.textContent || "").trim())) p.classList.add("db-hide"); });
       }
       /* rule 6: what is elsewhere is not here */
       var vt = cols.day.querySelector("#cap-voice-toggle"); if (vt && vt.parentNode) vt.parentNode.classList.add("db-voice");
-      var th = cols.day.querySelector("#cap-thread"); if (th) th.classList.add("db-capthread");
+      var th = cols.day.querySelector("#cap-thread");
+      if (th) {
+        th.classList.add("db-capthread");
+        var capCard = th.closest(".card"), capHd = capCard && capCard.previousElementSibling;
+        var lastMsg = th.lastElementChild;
+        if (capCard && lastMsg && !compact) {
+          var lastLine = document.createElement("div"); lastLine.className = "db-caplast db-clamp"; lastLine.textContent = (lastMsg.textContent || "").replace(/\s+/g, " ").trim(); th.after(lastLine);
+          if (!T3.cap) th.classList.add("db-fold");
+          var cb = document.createElement("button"); cb.className = "btn ghost sm db-capgo";
+          if (capHd && capHd.classList.contains("secthd")) capHd.appendChild(cb); else capCard.insertBefore(cb, capCard.firstChild);
+          var paintCap = function (open) { lastLine.style.display = open ? "none" : ""; if (open && typeof capScrollThread === "function") setTimeout(capScrollThread, 20); };
+          t3Toggle(cb, th, "db-fold", "Chat ▾", "Hide ▴", "cap", paintCap); paintCap(!!T3.cap);
+          var ci = capCard.querySelector("#cap-input"); if (ci) ci.addEventListener("focus", function () { if (!T3.cap) cb.click(); });
+        }
+      }
       var duty = cols.day.querySelector("#duty_card");
       if (duty) Array.prototype.slice.call(duty.querySelectorAll(".sub")).forEach(function (p) { if (/business profile/i.test(p.textContent || "")) { p.classList.add("db-hide"); duty.title = (p.textContent || "").trim(); } });
       Array.prototype.slice.call(cols.day.querySelectorAll("button")).forEach(function (b) { if (/snap a receipt/i.test(b.textContent || "")) b.classList.add("db-snap"); });
@@ -165,6 +217,6 @@ if (typeof window !== "undefined") {
     } catch (e) { try { console.warn("today pass skipped:", e); } catch (_) {} }
   }
   if (typeof secSplit === "function") { var _ss9 = secSplit; secSplit = function (tab) { var r = _ss9.apply(this, arguments); t3Apply(); return r; }; window.secSplit = secSplit; }
-  window.t3Col = t3Col; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
+  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3MoneyRank: t3MoneyRank, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }

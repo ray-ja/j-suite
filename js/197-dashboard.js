@@ -58,13 +58,17 @@ if (typeof window !== "undefined") {
       blocks.forEach(function (b) {
         var text = b.nodes.map(function (n) { return n.textContent || ""; }).join(" ");
         var hasControl = b.nodes.some(function (n) { return !!n.querySelector("input, textarea, select") || n.querySelectorAll("button, a").length > 1; });
-        b.quiet = !!b.head && dbIsQuiet(text, hasControl, b.count) && !DB_OPEN[b.title];
+        b.eligible = !!b.head && dbIsQuiet(text, hasControl, b.count);
+        b.quiet = b.eligible && !DB_OPEN[b.title];
+        /* rule 6 (2026-09-27): an opened quiet block can close again */
+        if (b.eligible && DB_OPEN[b.title] && !b.head.querySelector("[data-db-hide]")) { var hb = document.createElement("button"); hb.className = "btn ghost sm"; hb.setAttribute("data-db-hide", "1"); hb.style.marginLeft = "auto"; hb.textContent = "Hide ▴"; hb.onclick = function () { delete DB_OPEN[b.title]; if (typeof render === "function") render(); }; b.head.appendChild(hb); }
         /* rule 3: long lists stop at five */
         b.nodes.forEach(function (n) {
           var rows = Array.prototype.slice.call(n.querySelectorAll(":scope > .li")); if (rows.length <= 5 || n.querySelector("[data-db-more]")) return;
           rows.slice(5).forEach(function (r) { r.style.display = "none"; r.setAttribute("data-db-hid", "1"); });
-          var more = document.createElement("button"); more.className = "btn ghost sm"; more.setAttribute("data-db-more", "1"); more.style.marginTop = "6px"; more.textContent = "All " + rows.length + " →";
-          more.onclick = function () { rows.forEach(function (r) { r.style.display = ""; }); more.remove(); };
+          var more = document.createElement("button"); more.className = "btn ghost sm"; more.setAttribute("data-db-more", "1"); more.style.marginTop = "6px"; var allOpen = false;
+          var paintMore = function () { more.textContent = allOpen ? "Fewer ▴" : "All " + rows.length + " ▾"; rows.slice(5).forEach(function (r) { r.style.display = allOpen ? "" : "none"; }); };
+          more.onclick = function () { allOpen = !allOpen; paintMore(); }; paintMore();
           n.appendChild(more);
         });
         /* rule 4: the stand-up's Due paragraph folds */

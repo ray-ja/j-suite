@@ -22,6 +22,14 @@ eq(T.t3Col(""), "day", "unknown → the day");
 /* money order */
 eq(["💵 Payouts", "📝 Open quotes", "⏳ Awaiting payment", "🔧 Confirmed jobs", "📤 Invoices to send"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b)), ["⏳ Awaiting payment", "📤 Invoices to send", "🔧 Confirmed jobs", "📝 Open quotes", "💵 Payouts"], "owed first, paid out last");
 eq(T.t3MoneyRank("something else"), 5, "unknown sinks to the end");
+/* urgency */
+eq(T.t3Urgency("📥 Approvals", "Learned from a job note · Cap wants your okay"), 0, "approvals first: Cap is waiting");
+eq(T.t3Urgency("✅ Top to-dos", "Skid steer … ⚠ overdue · due 09/19/26"), 1, "overdue next");
+eq(T.t3Urgency("🛠 Equipment service", "Engine oil change 2 h overdue"), 1, "service overdue is overdue");
+eq(T.t3Urgency("📞 Follow-ups", "Maria · follow up today"), 2, "due today");
+eq(T.t3Urgency("📞 Follow-ups", "CarlosHeiff · no date"), 4, "undated sinks");
+eq(T.t3Urgency("🛠 Equipment service", "0 h on the meter · set the hour meter"), 4, "housekeeping sinks");
+eq(T.t3Urgency("✅ Top to-dos", "Waterfall tile decision · due 10/02/26"), 3, "dated, not yet due");
 /* marks */
 eq(T.t3Icon("📥 Approvals"), "📥", "leading emoji");
 eq(T.t3Icon("🛠 Equipment service"), "🛠", "a one-codepoint emoji");

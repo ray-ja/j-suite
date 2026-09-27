@@ -959,10 +959,6 @@ details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-we
 .db-panel .db-flat .li{padding:8px 0}.db-panel .db-flat .li .nm{font-size:14px}.db-panel .db-flat .li .sub{font-size:12.5px}
 .db-panel .db-quiet{margin:6px 0}
 /* rule 4: folds */
-.db-clockcard .db-clockgo{margin-left:auto}
-.db-clockcard.folded{display:flex;align-items:center;gap:12px;padding-top:12px;padding-bottom:12px}
-.db-clockcard.folded>*:not(.nm):not(.db-clockgo){display:none!important}
-.db-clockcard:not(.folded) .db-clockgo{display:none}
 .db-surec.db-fold{display:none}
 .db-suopen{margin-top:10px}
 .db-hide{display:none!important}
@@ -989,3 +985,14 @@ details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-we
 }
 .db-inbox .db-row a.btn{text-decoration:none}
 .db-inbox .db-row>input[type=checkbox]{margin-left:2px}
+/* rule 7: every fold is a toggle */
+.db-clockhd{align-items:center;gap:12px;margin:0}.db-clockhd .nm{flex:1}
+.db-clockcard.folded>*:not(.db-clockhd){display:none!important}
+.db-clockcard.folded{padding-top:12px;padding-bottom:12px}
+.db-clockcard:not(.folded) .db-clockhd{margin-bottom:6px}
+.db-sufold.db-fold,.db-capthread.db-fold{display:none!important}
+.db-susum{white-space:normal;margin-top:8px}
+.db-caplast{font-size:14px;line-height:1.4;padding:8px 10px;background:var(--soft);border-radius:10px;margin-bottom:2px}
+.secthd .db-capgo{margin-left:8px}
+.db-suacts{gap:8px;margin-top:10px;flex-wrap:wrap}
+.db-more{display:block}
