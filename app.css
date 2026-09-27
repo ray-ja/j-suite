@@ -1103,3 +1103,10 @@ body.dark .db-menu{border-color:#3b4756}
 .db-arr button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;cursor:pointer}
 .db-arr button:disabled{opacity:.3;cursor:default}
 .db-tile{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+/* stand-up = the daily harness: the brief first, Cap folded beneath */
+.db-brief{padding:10px 12px;background:var(--soft);border-radius:10px;margin:2px 0 10px}
+.db-brief .nm{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:800}
+.db-brief .sub{font-size:14.5px;line-height:1.45;white-space:normal;margin-top:4px;color:var(--ink)}
+.db-pane .db-capgo{margin:6px 0}
+.db-pane .card{border-top:0!important;border-left:0!important}
+.db-brief .sub+.sub{margin-top:6px}

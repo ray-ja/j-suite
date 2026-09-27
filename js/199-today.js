@@ -372,10 +372,36 @@ if (typeof window !== "undefined") {
       }
       var clockB = take(/clock in|clocked in/i, groups.day).filter(function (b) { return !/who's/i.test(b.title); });
       if (clockB.length) { var live = /clocked in/i.test(clockB[0].title); addTile({ key: "clock", icon: "⏱", value: live ? "On" : "Clock in", label: live ? (st.clockedIn === true ? "the clock" : String(st.clockedIn)) : "tap to start", tone: live ? "ok" : "act", title: live ? "Clocked in" : "Clock in", blocks: clockB, onOpen: function () { var fld = detail.querySelector('[data-pane="clock"] select, [data-pane="clock"] input'); if (fld) fld.focus(); } }); }
-      var suB = take(/stand-up/i, groups.day);
-      if (suB.length) { var suTxt = suB[0].nodes.map(function (n) { return n.textContent; }).join(" "); var dueN = (suTxt.match(/overdue/gi) || []).length; addTile({ key: "standup", icon: "🧭", value: "9:00", label: "stand-up" + (dueN ? " · " + dueN + " overdue" : ""), tone: dueN ? "danger" : "plain", title: "Stand-up", blocks: suB }); }
-      var capB = take(/^cap\b|🧭 cap|^🧭 cap/i, groups.day);
-      if (capB.length) { var lm = capB[0].nodes.map(function (n) { var t = n.querySelector("#cap-thread"); return t && t.lastElementChild ? t.lastElementChild.textContent : ""; }).join("").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); addTile({ key: "cap", icon: "🤖", value: "Cap", label: lm ? lm.slice(0, 42) + (lm.length > 42 ? "…" : "") : "ask about today", tone: "plain", title: "Cap", blocks: capB, onOpen: function () { if (typeof capScrollThread === "function") setTimeout(capScrollThread, 20); } }); }
+      /* STAND-UP = THE DAILY HARNESS (Ray, 2026-09-27: "Cap and stand-up are essentially the same thing. Make a
+         harness for stand-up that gets examined and filled out every day with questions, concerns and important
+         info"). One tile, one sheet: the day's brief (Cap's last message) on top, what is due, the questions
+         waiting for an answer, Ray's own line, and Cap's input at the bottom for anything else. */
+      var suB = take(/stand-up/i, groups.day), capB = take(/^cap\b|🧭 cap|^🧭 cap/i, groups.day);
+      if (suB.length || capB.length) {
+        var suTxt = suB.map(function (b) { return b.nodes.map(function (n) { return n.textContent; }).join(" "); }).join(" ");
+        var qN = 0; suB.forEach(function (b) { b.nodes.forEach(function (n) { qN += n.querySelectorAll("input[id^='su_q_']").length; }); });
+        var overdueN = (suTxt.match(/overdue/gi) || []).length;
+        var written = false; suB.forEach(function (b) { b.nodes.forEach(function (n) { var p = n.querySelector("#su_plan"); if (p && (p.value || "").trim()) written = true; }); });
+        var val = qN ? String(qN) : (written ? "✓" : "9:00"), lbl = qN ? (qN === 1 ? "question for you" : "questions for you") : (written ? "stand-up written" : "stand-up · not written") + (overdueN ? " · " + overdueN + " overdue" : "");
+        addTile({ key: "standup", icon: "🧭", value: val, label: lbl, tone: qN ? "danger" : (written ? "ok" : (overdueN ? "danger" : "plain")), title: "Stand-up", blocks: suB.concat(capB), onOpen: function () { var q = detail.querySelector('[data-pane="standup"] input[id^="su_q_"]'); if (q) q.focus(); } });
+        /* inside the pane: the brief first, Cap's chat folded, its input kept */
+        (function () {
+          var body = detail.querySelector('[data-pane="standup"] .db-panebody'); if (!body) return;
+          var th = body.querySelector("#cap-thread"), capCard = th && th.closest(".card"), capHd = capCard && capCard.previousElementSibling;
+          if (capHd && capHd.classList.contains("secthd")) capHd.classList.add("db-hide");
+          if (th) {
+            var last = th.lastElementChild, raw = last ? ((last.innerText || last.textContent || "")) : "";
+            var paras = raw.replace(/\*\*/g, "").split(/\n\s*\n|\n/).map(function (x) { return x.replace(/\s+/g, " ").trim(); }).filter(Boolean);
+            if (paras.length) { var brief = document.createElement("div"); brief.className = "db-brief"; brief.innerHTML = '<div class="nm">Today\'s brief</div>' + paras.map(function (x) { return '<div class="sub">' + t3E(x) + '</div>'; }).join(""); body.insertBefore(brief, body.firstChild); }
+            /* the stand-up card's own title repeats the pane's */
+            var suNm = body.querySelector(".card .nm"); if (suNm && /stand-up/i.test(suNm.textContent || "")) suNm.classList.add("db-hide");
+            th.classList.add("db-capthread"); if (!T3.cap) th.classList.add("db-fold");
+            var cb = document.createElement("button"); cb.className = "btn ghost sm db-capgo"; capCard.insertBefore(cb, th);
+            t3Toggle(cb, th, "db-fold", "Earlier with Cap ▾", "Hide ▴", "cap", function (open) { if (open && typeof capScrollThread === "function") setTimeout(capScrollThread, 20); });
+            var ci = capCard.querySelector("#cap-input"); if (ci) ci.placeholder = "Ask Cap, or note a concern for the stand-up…";
+          }
+        })();
+      }
       var adsB = take(/ads|off duty/i, groups.day);
       if (adsB.length) { var on = /running/i.test(adsB[0].nodes.map(function (n) { return n.textContent; }).join(" ")); addTile({ key: "ads", icon: "📣", value: on ? "On" : "Off", label: "Google Ads", tone: on ? "ok" : "plain", title: "Ads", blocks: adsB }); }
       /* anything not claimed keeps a home */
