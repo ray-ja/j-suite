@@ -32,16 +32,49 @@ function payPaidByMember(opts) {
 
 /* the canonical per-person earnings view for the active org. opts.from/to optionally scope to a period;
    default = ALL-TIME so it reconciles to the Cash page's pooled "Owed to members". Returns finPerPerson(). */
+/* ⭐ PAY ACCRUES ON COMPLETION (Ray, 2026-09-27: "as soon as the job is complete they are owed their pay. It's
+   not up to the crew when the customer pays; that's the business's responsibility"). Income records are only
+   booked when the customer pays (js/40 syncQuoteIncome), so for PAY ONLY we add a synthetic income entry for
+   every completed job whose quote is not paid yet: same amount, crew and originator the real record would get,
+   dated the day the job was finished. The cash math (js/64) stays on collected money; this touches what people
+   are OWED, never what the business HAS. Pure. */
+function payAccruedIncome(jobs, quotes, income) {
+  const have = {}; (income || []).forEach(e => { if (e && !e.deleted && e.quoteId) have[e.quoteId] = 1; });
+  const out = [];
+  (jobs || []).forEach(j => {
+    if (!j || j.deleted || !j.done || !j.quoteId) return;
+    const q = (quotes || []).find(x => x && x.id === j.quoteId && !x.deleted);
+    if (!q || q.paid || q.reconciledInvoiceId || have[q.id]) return;
+    if (!(q.accepted || q.invoiced)) return;
+    const amount = +(q.finalPrice || q.total || 0); if (!(amount > 0)) return;
+    const when = j.completedAt ? new Date(j.completedAt).toISOString().slice(0, 10) : (j.date || q.date || "");
+    out.push({ id: "acc_q_" + q.id, quoteId: q.id, jobId: j.id, fromQuote: true, accrued: true, amount: amount, date: when,
+      crew: Array.isArray(j.crew) ? j.crew.slice() : [], originator: (q.noSalesCredit ? "" : (q.originator || "")) || "", bookedAt: q.acceptedDate || q.date || "", houseAccount: false, deleted: false });
+  });
+  return out;
+}
 function payPerPerson(opts) {
   opts = opts || {};
   const adminId = (typeof finAdminMember === "function") ? finAdminMember() : "";
-  const inc = (typeof incomeWithWeights === "function") ? incomeWithWeights(actIncome()) : actIncome();   // honor per-job crew share weights (matches the Payouts tab)
+  const d = D();
+  const accrued = payAccruedIncome(d.jobs || [], d.quotes || [], d.income || []).map(e => {   // originator falls back to the customer's soldBy, like js/40
+    if (!e.originator) { const q = (d.quotes || []).find(x => x && x.id === e.quoteId); const c = q && q.customerId ? (d.customers || []).find(x => x && x.id === q.customerId) : null; if (c && c.soldBy && !(q && q.noSalesCredit)) e.originator = c.soldBy; }
+    return e;
+  });
+  const base = actIncome().concat(accrued);
+  const inc = (typeof incomeWithWeights === "function") ? incomeWithWeights(base) : base;   // honor per-job crew share weights (matches the Payouts tab)
   const roll = finRollup(inc, Object.assign({ adminMemberId: adminId }, opts.from ? { from: opts.from } : {}, opts.to ? { to: opts.to } : {}));
   const mil = finMileage(D().timeclock || [], Object.assign({ confirmedOnly: true }, opts.from ? { from: opts.from } : {}, opts.to ? { to: opts.to } : {}));
   const hoursByJob = finHoursByJob(D().timeclock || [], opts.from || opts.to ? { from: opts.from, to: opts.to } : {});
   const payouts = payPaidByMember(opts);
   const pp = finPerPerson(roll, mil, hoursByJob, payouts);
-  return Object.assign(pp, { roll: roll, hoursByJob: hoursByJob, adminId: adminId, fuelOffset: mil.fuelOffset || {} });
+  /* ⭐ REIMBURSEMENTS MAKE THEM WHOLE (Ray, 2026-09-27: "the payouts should include everything they're owed from
+     their own expenses as well. I want that number to be what makes them whole"). Expenses a member fronted and
+     has not been paid back for are part of what they are owed. Cents, like everything else here. */
+  const ro = (typeof rcptReimbOwed === "function") ? rcptReimbOwed() : {};
+  Object.keys(ro).forEach(id => { const c = Math.round((ro[id] || 0) * 100); if (!c) return; const m = pp.member[id] || (pp.member[id] = { field: 0, sales: 0, admin: 0, earned: 0, mileage: 0, paid: 0, owed: 0 }); m.reimb = (m.reimb || 0) + c; m.owed += c; });
+  const accruedCents = accrued.reduce((s, e) => s + Math.round((+e.amount || 0) * 100), 0);
+  return Object.assign(pp, { roll: roll, hoursByJob: hoursByJob, adminId: adminId, fuelOffset: mil.fuelOffset || {}, accruedJobs: accrued.length, accruedCents: accruedCents });
 }
 
 /* per-person, per-job breakdown for ONE member: which jobs they earned a field share on + how much.
@@ -108,7 +141,7 @@ function rPay() {
   h += `<div class="card" style="text-align:center">
     <div class="sub">${esc(isSelf ? "Your pay" : nm + "'s pay")} · to date</div>
     <div style="font-size:30px;font-weight:800;color:var(--accent)">${fm(m.owed)}</div>
-    <div class="sub">still owed (earned + gas reimbursement − paid)</div>
+    <div class="sub">still owed (earned + gas + expenses you fronted − paid)</div>
     <div class="row" style="gap:6px;margin-top:10px;text-align:center">
       <div class="grow"><div class="nm" style="font-size:18px">${fm(m.earned)}</div><div class="sub">earned</div></div>
       <div class="grow" style="border-left:1px solid var(--line)"><div class="nm" style="font-size:18px">${fm(m.mileage)}</div><div class="sub">gas reimb.</div></div>
@@ -124,7 +157,9 @@ function rPay() {
     <div style="border-top:2px solid var(--line);margin:6px 0 0;padding-top:6px"></div>
     <div class="li"><div class="grow"><div class="nm" style="font-weight:800">Total to date</div></div><b>${fm(m.earned + m.mileage)}</b></div>
     <div class="li"><div class="grow"><div class="nm">Already paid</div></div><b>−${fm(m.paid)}</b></div>
+    ${m.reimb ? `<div class="li"><div class="grow"><div class="nm">💳 Expenses you fronted</div><div class="sub" style="white-space:normal">receipts on your own card, not paid back yet — reimbursed in full on top of pay</div></div><b>${fm(m.reimb)}</b></div>` : ""}
     <div class="li"><div class="grow"><div class="nm" style="font-weight:800;color:var(--accent)">Still owed</div></div><b style="color:var(--accent)">${fm(m.owed)}</b></div>
+    ${pp.accruedJobs ? `<div class="sub" style="white-space:normal;margin-top:6px">Pay counts from the day a job is finished, whether or not the customer has paid yet (${pp.accruedJobs} such job${pp.accruedJobs === 1 ? "" : "s"} right now).</div>` : ""}
   </div>`;
 
   // per-job breakdown — which jobs, the person's share (NO margins / NO customer money / NO other crew)
@@ -155,13 +190,16 @@ function finOwedPerPersonHTML() {
   let h = `<div class="card">` + ids.map(id => {
     const m = pp.member[id];
     return `<div class="li" onclick="recordDisbursement('payout',null,'${id}')" style="cursor:pointer;align-items:flex-start"><div class="grow"><div class="nm">${esc(finName(id))}</div>
-      <div class="sub" style="white-space:normal">earned ${fm(m.earned)}${m.mileage ? " + gas " + fm(m.mileage) : ""}${m.paid ? " − paid " + fm(m.paid) : ""}</div></div>
+      <div class="sub" style="white-space:normal">earned ${fm(m.earned)}${m.mileage ? " + gas " + fm(m.mileage) : ""}${m.reimb ? " + expenses " + fm(m.reimb) : ""}${m.paid ? " − paid " + fm(m.paid) : ""}</div></div>
       <div style="text-align:right;flex:0 0 auto"><b style="${m.owed < 0 ? "color:var(--danger)" : ""}">${fm(m.owed)}</b><div class="sub" style="font-size:11px">tap to pay</div></div></div>`;
   }).join("") + `</div>`;
   if (pp.unallocatedField > 0) h += `<div class="card" style="border-left:4px solid var(--accent)"><div class="sub" style="white-space:normal">• ${fm(pp.unallocatedField)} field work is unassigned (jobs recorded with no crew) — assign crew on the income entry so it distributes to a person.</div></div>`;
   return h;
 }
 window.finOwedPerPersonHTML = finOwedPerPersonHTML;
+/* the sum of the per-person rows, for the heading above them (accrues on completion + reimbursements, so it is
+   NOT the collected-only owedBal on the Cash card) */
+window.finOwedPerPersonTotal = function () { try { const pp = payPerPerson(); return Object.keys(pp.member).reduce((s, id) => s + (pp.member[id].owed || 0), 0); } catch (e) { return null; } };
 
 /* ===================== NEW-CREW QUICK-START =====================
    A first-login, dismissible checklist for a freshly-set-up CREW account: set your availability, pick your
@@ -210,4 +248,4 @@ window.crewDismissOnboard = function () {
   render();
 };
 
-if (typeof module !== "undefined" && module.exports) { module.exports = { payPerPerson: payPerPerson, payJobsForMember: payJobsForMember, payPaidByMember: payPaidByMember }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { payPerPerson: payPerPerson, payJobsForMember: payJobsForMember, payPaidByMember: payPaidByMember, payAccruedIncome: payAccruedIncome }; }

@@ -286,7 +286,9 @@ function rFinCash(){
 
   // per-person breakdown of the pooled "Owed to members" — each tappable to record a payout to that member
   if (typeof finOwedPerPersonHTML === "function") {
-    h += `<div class="secthd"><h2>👷 Owed — by person</h2><span class="ct">${fm(a.owedBal)}</span></div>` + finOwedPerPersonHTML();
+    const _ppTot = (typeof finOwedPerPersonTotal === "function") ? finOwedPerPersonTotal() : null;
+    h += `<div class="secthd"><h2>👷 Owed — by person</h2><span class="ct">${fm(_ppTot == null ? a.owedBal : _ppTot)}</span></div>` + finOwedPerPersonHTML()
+      + (_ppTot != null && _ppTot !== a.owedBal ? `<div class="sub" style="white-space:normal;margin:-4px 4px 10px">Pay counts from job completion and includes expenses fronted; the Cash card above counts only money collected, so the two differ by ${fm(_ppTot - a.owedBal)}.</div>` : "");
   }
 
   h += `<div class="secthd"><h2>Record money paid out</h2></div><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">

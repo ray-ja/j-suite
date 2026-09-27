@@ -159,14 +159,13 @@ function rToday(){
   if(todayHas("pay")&&typeof payPerPerson==="function"&&mem.length){
     try{
       const pp=payPerPerson();   // all-time
-      const ro=(typeof rcptReimbOwed==="function")?rcptReimbOwed():{};   // dollars per member
       const rows=owner?mem:mem.filter(u=>me&&u.id===me.id);
       const fmc=c=>money((c||0)/100);
       if(rows.length){
         h+=`<div class="secthd"><h2>💵 Payouts</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="TAB='finance';if(typeof finSub==='function')finSub('payouts');else render()">Details</button>`:""}</div>
-          <div class="card"><div class="sub" style="margin-bottom:6px;white-space:normal">Owed right now, all time: earned + mileage + reimbursements − paid</div>`+
-          rows.map(u=>{const m=pp.member[u.id]||{earned:0,mileage:0,paid:0,owed:0};const reimb=Math.round((ro[u.id]||0)*100);const bal=(m.owed||0)+reimb;
-            return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)}</div><div class="sub" style="white-space:normal">earned ${fmc(m.earned)}${m.mileage?" + mileage "+fmc(m.mileage):""}${reimb?" + reimbursements "+fmc(reimb):""}${m.paid?" − paid "+fmc(m.paid):""}</div></div><div class="nm" style="color:${bal<0?"var(--danger)":"var(--brand-text)"}">${fmc(bal)}</div></div>`;}).join("")+`</div>`;
+          <div class="card"><div class="sub" style="margin-bottom:6px;white-space:normal">Owed right now, all time: pay from the day a job is done + mileage + expenses fronted − paid</div>`+
+          rows.map(u=>{const m=pp.member[u.id]||{earned:0,mileage:0,paid:0,owed:0};const reimb=m.reimb||0;const bal=(m.owed||0);
+            return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)}</div><div class="sub" style="white-space:normal">earned ${fmc(m.earned)}${m.mileage?" + mileage "+fmc(m.mileage):""}${reimb?" + expenses "+fmc(reimb):""}${m.paid?" − paid "+fmc(m.paid):""}</div></div><div class="nm" style="color:${bal<0?"var(--danger)":"var(--brand-text)"}">${fmc(bal)}</div></div>`;}).join("")+`</div>`;
       }
     }catch(e){}
   }
