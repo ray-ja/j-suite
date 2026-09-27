@@ -21,7 +21,10 @@ eq(T.t3Col("📣 Ads"), "day", "the day");
 eq(T.t3Col(""), "day", "unknown → the day");
 /* money order */
 eq(["💵 Payouts", "📝 Open quotes", "⏳ Awaiting payment", "🔧 Confirmed jobs", "📤 Invoices to send"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b)), ["⏳ Awaiting payment", "📤 Invoices to send", "🔧 Confirmed jobs", "📝 Open quotes", "💵 Payouts"], "owed first, paid out last");
-eq(T.t3MoneyRank("something else"), 7, "unknown sinks to the end");
+eq(T.t3MoneyRank("something else"), 10, "unknown sinks to the end");
+eq(T.t3Col("🏦 Cash on hand"), "money", "cash is money");
+eq(T.t3Col("🔁 Fixed costs this month"), "money", "fixed costs are money");
+eq(T.t3Col("⚖️ Left after obligations"), "money", "the delta is money");
 /* urgency */
 eq(T.t3Urgency("📥 Approvals", "Learned from a job note · Cap wants your okay"), 0, "approvals first: Cap is waiting");
 eq(T.t3Urgency("✅ Top to-dos", "Skid steer … ⚠ overdue · due 09/19/26"), 1, "overdue next");

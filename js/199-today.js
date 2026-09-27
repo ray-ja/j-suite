@@ -15,9 +15,9 @@
    Post-render after js/197 (which triages and quiets) and js/198. Nothing is deleted: every original node
    stays in the DOM, hidden or moved, so every handler still fires. Pure helpers tested in today3-tests.js. */
 var T3_NEEDS = /approvals|follow-ups|top to-dos|equipment service|payment plans|need(s)? cleaning|recurring visit|quick-start|quick start/i;
-var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting|next 30 days/i;
+var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting|next 30 days|cash on hand|fixed costs|left after/i;
 /* the money panel reads top-down from what is owed to what is paid out. Pure. */
-var T3_MONEY_ORDER = [/awaiting payment/i, /invoices to send/i, /not expecting/i, /next 30 days/i, /confirmed jobs/i, /open quotes/i, /payouts/i];
+var T3_MONEY_ORDER = [/cash on hand/i, /awaiting payment/i, /invoices to send/i, /not expecting/i, /next 30 days/i, /fixed costs/i, /confirmed jobs/i, /open quotes/i, /payouts/i, /left after/i];
 function t3MoneyRank(title) { var s = String(title || ""); for (var i = 0; i < T3_MONEY_ORDER.length; i++) if (T3_MONEY_ORDER[i].test(s)) return i; return T3_MONEY_ORDER.length; }
 function t3Col(title) { var s = String(title || ""); if (T3_NEEDS.test(s)) return "needs"; if (T3_MONEY.test(s)) return "money"; return "day"; }
 /* the type mark for an inbox row: the head's leading emoji, else a dot. Pure. */
@@ -282,7 +282,9 @@ if (typeof window !== "undefined") {
          a big number with a picture, colored. Click it and it expands into easy-to-read details.")
          Every subject is one tile: icon, one big value, one small label, a tone. Its detail is a pane below
          the tiles that the tile toggles (rule 7); which panes are open is remembered on this device. */
-      var tiles = document.createElement("div"); tiles.className = "db-tiles";
+      var tiles = document.createElement("div"); tiles.className = "db-tilegroups";
+      var tileGroups = {};
+      var tileGroup = function (name) { if (tileGroups[name]) return tileGroups[name]; var w = document.createElement("div"); w.className = "db-tilegroup"; var hd = document.createElement("div"); hd.className = "secthd db-colhd"; hd.innerHTML = "<h2>" + t3E(name) + "</h2>"; var g = document.createElement("div"); g.className = "db-tiles"; w.appendChild(hd); w.appendChild(g); tiles.appendChild(w); tileGroups[name] = g; return g; };
       var detail = document.createElement("div"); detail.className = "db-detail";
       var TILE_KEY = "jra_t3_tiles"; var openSet = {}; try { openSet = JSON.parse(localStorage.getItem(TILE_KEY) || "{}") || {}; } catch (e) {}
       var saveOpen = function () { try { localStorage.setItem(TILE_KEY, JSON.stringify(openSet)); } catch (e) {} };
@@ -306,7 +308,7 @@ if (typeof window !== "undefined") {
         var paint = function () { var open = !!openSet[o.key]; tile.classList.toggle("on", open); pane.style.display = open ? "" : "none"; };
         var toggle = function () { openSet[o.key] = !openSet[o.key]; saveOpen(); paint(); if (openSet[o.key]) { pane.scrollIntoView({ block: "nearest", behavior: "smooth" }); if (o.onOpen) o.onOpen(); } };
         tile.onclick = toggle; paint();   // the tile is the switch both ways (Ray: "Hide is useless, you just click the card again")
-        tiles.appendChild(tile); detail.appendChild(pane);
+        tileGroup(o.group || "Today").appendChild(tile); detail.appendChild(pane);
       };
       var take = function (re, from) { return from.filter(function (b) { return re.test(b.title); }); };
       groups.money.forEach(function (b) { if (/awaiting payment|not expecting/i.test(b.title)) b.nodes.forEach(function (n) { n.querySelectorAll(".li").forEach(function (li) { li.style.position = "relative"; t3Menu(li, b.title); }); }); });
@@ -315,10 +317,13 @@ if (typeof window !== "undefined") {
       addTile({ key: "needs", icon: "🔔", value: String(rows.length), label: rows.length === 1 ? "needs you" : "need you", tone: rows.length ? "danger" : "plain", title: "Needs you", nodes: [inbox] });
       /* 2. money */
       var owedB = take(/awaiting payment|invoices to send|not expecting/i, groups.money);
-      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "invoiced · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Invoiced", blocks: owedB });
+      var ms = window.MT_STATS || null;
+      var cashB = take(/cash on hand/i, groups.money);
+      if (cashB.length && ms) addTile({ group: "Money", key: "cash", icon: "🏦", value: t3Fmt(ms.cashCents / 100), label: ms.accounts ? ("cash on hand · " + ms.accounts + (ms.accounts === 1 ? " account" : " accounts")) : "pick the accounts", tone: ms.accounts ? "ok" : "plain", title: "Cash on hand", blocks: cashB });
+      if (owedB.length) addTile({ group: "Money", key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "invoiced · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Invoiced", blocks: owedB });
       /* next 30 days: what the scheduled jobs are quoted at (Ray: "what our cash flow looks like") */
       var upB = take(/next 30 days/i, groups.money);
-      if (upB.length) { var upAmt = moneyOf(upB), upN = 0; upB.forEach(function (b) { var ct = b.head && b.head.querySelector(".ct"); upN += ct ? (parseInt(ct.textContent, 10) || 0) : 0; }); addTile({ key: "upcoming", icon: "📆", value: t3Fmt(upAmt), label: "next 30 days · " + upN + (upN === 1 ? " job" : " jobs"), tone: "brand", title: "Next 30 days", blocks: upB }); }
+      if (upB.length) { var upAmt = moneyOf(upB), upN = 0; upB.forEach(function (b) { var ct = b.head && b.head.querySelector(".ct"); upN += ct ? (parseInt(ct.textContent, 10) || 0) : 0; }); addTile({ group: "Money", key: "upcoming", icon: "📆", value: t3Fmt(upAmt), label: "next 30 days · " + upN + (upN === 1 ? " job" : " jobs"), tone: "brand", title: "Next 30 days", blocks: upB }); }
       /* "Not expecting" (js/50 recDoubtful) rides in the Owed pane, folded, and never in the tile's number */
       (function () {
         var pane = detail.querySelector('[data-pane="owed"] .db-panebody'); if (!pane) return;
@@ -332,14 +337,18 @@ if (typeof window !== "undefined") {
         tb.onclick = function () { T3.nexp = !T3.nexp; paintN(); }; paintN();
       })();
       var pipeB = take(/confirmed jobs|open quotes/i, groups.money);
-      if (pipeB.length) addTile({ key: "pipe", icon: "🧾", value: t3Fmt(moneyOf(pipeB)), label: "booked and quoted", tone: "brand", title: "In the pipeline", blocks: pipeB });
+      if (pipeB.length) addTile({ group: "Money", key: "pipe", icon: "🧾", value: t3Fmt(moneyOf(pipeB)), label: "booked and quoted", tone: "brand", title: "In the pipeline", blocks: pipeB });
       var payB = take(/payouts/i, groups.money);
       if (payB.length) {
         var me = (typeof curUser === "function") ? curUser() : null, mine = "", when = "";
         payB.forEach(function (b) { b.nodes.forEach(function (n) { var wb = n.querySelector(".sub b"); if (wb) when = wb.textContent.trim(); n.querySelectorAll(".li").forEach(function (li) { var nms = li.querySelectorAll(".nm"); if (nms.length >= 2 && me && nms[0].textContent.trim() === (me.username || "")) mine = nms[nms.length - 1].textContent.trim(); }); }); });
         if (!mine) { var f = payB[0].nodes[0] && payB[0].nodes[0].querySelector(".li"); var fn = f ? f.querySelectorAll(".nm") : []; mine = fn.length ? fn[fn.length - 1].textContent.trim() : "$0"; }
-        addTile({ key: "pay", icon: "💰", value: mine, label: "owed to me · all time", tone: "accent", title: "Payouts · all time", blocks: payB });
+        addTile({ group: "Money", key: "pay", icon: "💰", value: mine, label: "owed to me · all time", tone: "accent", title: "Payouts · all time", blocks: payB });
       }
+      var fixB = take(/fixed costs/i, groups.money);
+      if (fixB.length && ms) addTile({ group: "Money", key: "fixed", icon: "🔁", value: t3Fmt(ms.fixedCents / 100), label: "fixed costs this month", tone: "plain", title: "Fixed costs this month", blocks: fixB });
+      var leftB = take(/left after/i, groups.money);
+      if (leftB.length && ms) addTile({ group: "Money", key: "left", icon: "⚖️", value: (ms.deltaCents < 0 ? "−" : "") + t3Fmt(Math.abs(ms.deltaCents) / 100), label: "left after costs and crew", tone: ms.deltaCents < 0 ? "danger" : "ok", title: "Left after obligations", blocks: leftB });
       /* 3. the day */
       var jobsB = take(/today's jobs/i, groups.day);
       if (jobsB.length) addTile({ key: "jobs", icon: "📅", value: String(st.jobs), label: st.jobs === 1 ? "job today" : "jobs today", tone: st.jobs ? "brand" : "plain", title: "Today's jobs", blocks: jobsB });

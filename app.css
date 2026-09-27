@@ -1091,3 +1091,8 @@ body.dark .db-menu{border-color:#3b4756}
 .db-nexp{margin-top:10px;border-top:1px solid var(--line);padding-top:4px}
 .db-nexp .card{opacity:.75}
 .db-pane .db-flat .li{position:relative}
+/* Money section on Today (js/200): tiles in named groups */
+.db-tilegroups{display:flex;flex-direction:column;gap:14px}
+.db-tilegroup>.db-colhd{margin:0 4px 8px}
+.db-tilegroup>.db-colhd h2{color:var(--muted)}
+.db-tile.tone-danger .val{color:var(--danger)}

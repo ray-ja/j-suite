@@ -182,6 +182,9 @@ function rToday(){
     }catch(e){}
   }
 
+  // 6.5) Money section (js/200): cash on hand, fixed costs this month, left after obligations (owner)
+  if(owner&&todayHas("finance")&&typeof moneyTilesHTML==="function") h+=moneyTilesHTML();
+
   // 7) Top to-dos (owner) — just the top few
   if(todayHas("todo")&&owner&&typeof actTodo==="function"){
     const td0=actTodo().filter(x=>!x.done);
