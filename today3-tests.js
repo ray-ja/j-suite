@@ -38,6 +38,13 @@ eq(T.t3Actions("🛠 Equipment service"), [], "service rows keep Done ✓");
 eq(T.t3Shift("2026-09-27", 1), "2026-09-28", "tomorrow");
 eq(T.t3Shift("2026-09-27", 7), "2026-10-04", "next week crosses the month");
 eq(T.t3Shift("", 1).length, 10, "no date → from today");
+/* done today */
+eq(T.t3SameDay(new Date("2026-09-27T08:00").getTime(), new Date("2026-09-27T23:30").getTime()), true, "same calendar day");
+eq(T.t3SameDay(new Date("2026-09-26T23:59").getTime(), new Date("2026-09-27T00:01").getTime()), false, "midnight splits days");
+const NOW = Date.now();
+eq(T.t3JournalTrim([{ at: NOW - 8 * 864e5 }, { at: NOW - 3600e3 }], NOW).length, 1, "entries older than a week drop");
+eq(T.t3JournalTrim(Array.from({ length: 60 }, (_, i) => ({ at: NOW - i })), NOW).length, 50, "the journal caps at fifty");
+eq(T.t3JournalTrim([], NOW), [], "empty");
 /* marks */
 eq(T.t3Icon("📥 Approvals"), "📥", "leading emoji");
 eq(T.t3Icon("🛠 Equipment service"), "🛠", "a one-codepoint emoji");

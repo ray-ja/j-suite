@@ -1077,3 +1077,12 @@ body.dark .db-tile{border-color:#3b4756}
 .db-menu button:hover{background:var(--soft)}.db-menu button.danger{color:var(--danger)}
 body.dark .db-menu{border-color:#3b4756}
 .db-panehd>.ct{margin-left:8px;color:var(--muted);font-size:13px}.db-panehd>button{margin-left:8px}
+/* Done today, with Undo */
+.db-donetoday{margin-top:10px;border-top:1px solid var(--line);padding-top:6px}
+.db-donehd{background:none;border:0;font:inherit;font-size:13.5px;font-weight:700;color:var(--muted);cursor:pointer;padding:6px 0}
+.db-donehd:hover{color:var(--ink)}
+.db-donerow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);opacity:.85}
+.db-donerow:last-child{border-bottom:0}
+.db-donerow .nm{font-size:14.5px!important;font-weight:600;text-decoration:line-through;color:var(--muted)}
+.db-donerow .sub{font-size:13px}
+.db-donerow .db-src{flex:0 0 26px;text-align:center;font-size:16px}

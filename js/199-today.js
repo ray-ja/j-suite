@@ -66,6 +66,11 @@ function t3Actions(src) {
 }
 /* an ISO date shifted by n days. Pure. */
 function t3Shift(iso, n) { var d = iso ? new Date(iso + "T12:00:00") : new Date(); if (isNaN(d.getTime())) d = new Date(); d.setDate(d.getDate() + (+n || 0)); return d.toISOString().slice(0, 10); }
+/* "Done today" (Ray, 2026-09-27: "I accidentally checked something off. There should be a way right there to see
+   what I've checked off today and undo it."). A per-device journal of what was ticked, logged, pushed or deleted
+   from Needs you; today's entries show under the list with an Undo each. Pure bits here. */
+function t3SameDay(a, b) { var x = new Date(+a || 0), y = new Date(+b || 0); return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate(); }
+function t3JournalTrim(list, now, max) { max = max || 50; var keep = (list || []).filter(function (e) { return e && (now - (+e.at || 0)) < 7 * 864e5; }); return keep.slice(-max); }
 /* the header strip's chips from the counts. stats = {needs, owed, owedN, jobs, clockedIn}. Pure. */
 function t3Chips(st) {
   st = st || {}; var out = [];
@@ -130,7 +135,10 @@ if (typeof window !== "undefined") {
   function t3Act(el, src, key) {
     var r = t3RecordFor(el, src); if (!r) { if (typeof toast === "function") toast("Couldn't find that record"); return; }
     var rec = r.rec, t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
-    if (key === "delete") { var what = r.kind === "customer" ? (rec.name || rec.company || "this lead") : (rec.title || "this to-do"); if (!confirm("Delete " + what + "? It goes to the archive, not the trash.")) return; rec.deleted = true; }
+    var label = r.kind === "customer" ? (rec.name || rec.company || "lead") : (rec.title || "to-do");
+    var undo = r.kind === "customer" ? { deleted: !!rec.deleted, next: rec.next || "" } : { deleted: !!rec.deleted, due: rec.due || "", priority: rec.priority || "" };
+    t3Note({ kind: r.kind, id: rec.id, label: label, what: (T3_LABELS[key] || key).toLowerCase(), undo: undo });
+    if (key === "delete") { var what = r.kind === "customer" ? (rec.name || rec.company || "this lead") : (rec.title || "this to-do"); if (!confirm("Delete " + what + "? It goes to the archive, not the trash.")) { t3Unnote(function (e) { return e.id === rec.id && e.what === "delete"; }); return; } rec.deleted = true; }
     else if (key === "tomorrow" || key === "week") { var due = t3Shift(t, key === "week" ? 7 : 1); if (r.kind === "todo") rec.due = due; else rec.next = due; }
     else if (key === "low") { if (r.kind === "todo") { rec.priority = "Low"; rec.due = t3Shift(rec.due || t, 7); } }
     rec.updatedAt = Date.now(); if (typeof touch === "function") touch(rec);
@@ -148,6 +156,44 @@ if (typeof window !== "undefined") {
       setTimeout(function () { var once = function () { menu.remove(); document.removeEventListener("click", once); }; document.addEventListener("click", once); menu.addEventListener("click", function () { document.removeEventListener("click", once); }); }, 0);
     };
     el.appendChild(dots); el.style.position = "relative";
+  }
+  /* ---- the journal ---- */
+  var T3_JKEY = "jra_t3_done";
+  function t3Journal() { try { return JSON.parse(localStorage.getItem(T3_JKEY) || "[]") || []; } catch (e) { return []; } }
+  function t3JournalSave(list) { try { localStorage.setItem(T3_JKEY, JSON.stringify(t3JournalTrim(list, Date.now()))); } catch (e) {} }
+  function t3Note(e) { var l = t3Journal(); e.at = e.at || Date.now(); e.jid = "j" + e.at + Math.random().toString(36).slice(2, 6); l.push(e); t3JournalSave(l); return e; }
+  function t3Unnote(fn) { t3JournalSave(t3Journal().filter(function (e) { return !fn(e); })); }
+  function t3Undo(jid) {
+    var e = t3Journal().find(function (x) { return x.jid === jid; }); if (!e) return;
+    var d = (typeof D === "function") ? D() : null; if (!d) return; var rec = null;
+    if (e.kind === "todo") rec = (d.todos || []).find(function (x) { return x && x.id === e.id; });
+    else if (e.kind === "customer") rec = (d.customers || []).find(function (x) { return x && x.id === e.id; });
+    else if (e.kind === "svc") rec = (d.inventory || []).find(function (x) { return x && x.id === e.id; });
+    if (!rec) { t3Unnote(function (x) { return x.jid === jid; }); if (typeof render === "function") render(); return; }
+    if (e.kind === "svc" && rec.svc) { rec.svc.log = (rec.svc.log || []).filter(function (l) { return !(l && l.at === e.logAt); }); if (e.undo) { if ("hours" in e.undo) rec.svc.hours = e.undo.hours; if ("hoursAt" in e.undo) rec.svc.hoursAt = e.undo.hoursAt; } }
+    else if (e.undo) Object.keys(e.undo).forEach(function (k) { rec[k] = e.undo[k]; });
+    rec.updatedAt = Date.now(); if (typeof touch === "function") touch(rec);
+    if (typeof logChange === "function") try { logChange("update", e.kind === "svc" ? "inventory" : e.kind, e.id, "Undo: " + (e.label || "")); } catch (_) {}
+    t3Unnote(function (x) { return x.jid === jid; });
+    if (typeof save === "function") save(); if (typeof render === "function") render();
+  }
+  window.t3Undo = t3Undo;
+  /* the tick on a to-do row */
+  if (typeof window.toggleTodo === "function" && !window.toggleTodo._t3) {
+    var _tt = window.toggleTodo;
+    window.toggleTodo = function (id) { try { var td = ((typeof D === "function" && D().todos) || []).find(function (x) { return x && x.id === id; }); if (td) { if (!td.done) t3Note({ kind: "todo", id: id, label: td.title || "to-do", what: "checked off", undo: { done: false } }); else t3Unnote(function (e) { return e.kind === "todo" && e.id === id; }); } } catch (e) {} return _tt.apply(this, arguments); };
+    window.toggleTodo._t3 = 1;
+  }
+  /* Done ✓ on a service row */
+  if (typeof window.svcLog === "function" && !window.svcLog._t3) {
+    var _sl = window.svcLog;
+    window.svcLog = function (id, key) {
+      var i = null, before = 0, h0 = null, ha0 = null; try { i = ((typeof D === "function" && D().inventory) || []).find(function (x) { return x && x.id === id; }); if (i && i.svc) { before = (i.svc.log || []).length; h0 = i.svc.hours; ha0 = i.svc.hoursAt; } } catch (e) {}
+      var r = _sl.apply(this, arguments);
+      try { if (i && i.svc && (i.svc.log || []).length > before) { var last = i.svc.log[i.svc.log.length - 1]; var p = (i.svc.plan || []).find(function (x) { return x && x.key === key; }); t3Note({ kind: "svc", id: id, key: key, logAt: last.at, label: (p && p.label) || key, what: "marked done", undo: { hours: h0, hoursAt: ha0 } }); } } catch (e) {}
+      return r;
+    };
+    window.svcLog._t3 = 1;
   }
   function t3Apply() {
     try {
@@ -198,6 +244,22 @@ if (typeof window !== "undefined") {
         var more = document.createElement("button"); more.className = "btn ghost sm db-all"; inbox.appendChild(more);
         var paintAll = function () { more.textContent = T3.all ? "Fewer ▴" : "All " + rows.length + " ▾"; rows.forEach(function (r, i) { if (i >= cap) r.el.style.display = T3.all ? "" : "none"; }); };
         more.onclick = function () { T3.all = !T3.all; paintAll(); }; paintAll();
+      }
+      /* Done today: what left this list today, each with an Undo */
+      var jn = t3Journal().filter(function (e) { return t3SameDay(e.at, Date.now()); }).reverse();
+      if (jn.length) {
+        var dt = document.createElement("div"); dt.className = "db-donetoday";
+        var dh = document.createElement("button"); dh.className = "db-donehd"; dt.appendChild(dh);
+        var dl = document.createElement("div"); dl.className = "db-donelist"; dt.appendChild(dl);
+        jn.slice(0, 12).forEach(function (e) {
+          var row = document.createElement("div"); row.className = "db-donerow";
+          var ic = e.kind === "todo" ? "✅" : e.kind === "customer" ? "📞" : "🛠";
+          row.innerHTML = '<span class="db-src">' + ic + '</span><div class="grow"><div class="nm">' + t3E(e.label) + '</div><div class="sub">' + t3E(e.what) + ' · ' + t3E(new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + '</div></div>';
+          var ub = document.createElement("button"); ub.className = "btn ghost sm"; ub.textContent = "Undo"; ub.onclick = function () { t3Undo(e.jid); }; row.appendChild(ub); dl.appendChild(row);
+        });
+        var paintDone = function () { var open = !!T3.doneOpen; dh.textContent = (open ? "▾ " : "▸ ") + jn.length + " done today"; dl.style.display = open ? "" : "none"; };
+        dh.onclick = function () { T3.doneOpen = !T3.doneOpen; paintDone(); }; paintDone();
+        inbox.appendChild(dt);
       }
       /* the emptied source cards stay in the DOM, hidden, so nothing that looks for them breaks */
       groups.needs.forEach(function (b) { if (b.quiet) { b.line.style.display = "none"; } if (b.head) b.head.style.display = "none"; b.nodes.forEach(function (n) { if (n.parentNode === col) { n.style.display = "none"; hold.appendChild(n); } }); if (b.line && b.line.parentNode === col) hold.appendChild(b.line); if (b.head && b.head.parentNode === col) hold.appendChild(b.head); });
@@ -306,6 +368,6 @@ if (typeof window !== "undefined") {
     } catch (e) { try { console.warn("today pass skipped:", e); } catch (_) {} }
   }
   if (typeof secSplit === "function") { var _ss9 = secSplit; secSplit = function (tab) { var r = _ss9.apply(this, arguments); t3Apply(); return r; }; window.secSplit = secSplit; }
-  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Actions = t3Actions; window.t3Shift = t3Shift; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
+  window.t3Col = t3Col; window.t3SameDay = t3SameDay; window.t3JournalTrim = t3JournalTrim; window.t3Urgency = t3Urgency; window.t3Actions = t3Actions; window.t3Shift = t3Shift; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3Actions: t3Actions, t3Shift: t3Shift, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3SameDay: t3SameDay, t3JournalTrim: t3JournalTrim, t3Actions: t3Actions, t3Shift: t3Shift, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
