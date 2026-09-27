@@ -335,7 +335,7 @@ if (typeof window !== "undefined") {
         var me = (typeof curUser === "function") ? curUser() : null, mine = "", when = "";
         payB.forEach(function (b) { b.nodes.forEach(function (n) { var wb = n.querySelector(".sub b"); if (wb) when = wb.textContent.trim(); n.querySelectorAll(".li").forEach(function (li) { var nms = li.querySelectorAll(".nm"); if (nms.length >= 2 && me && nms[0].textContent.trim() === (me.username || "")) mine = nms[nms.length - 1].textContent.trim(); }); }); });
         if (!mine) { var f = payB[0].nodes[0] && payB[0].nodes[0].querySelector(".li"); var fn = f ? f.querySelectorAll(".nm") : []; mine = fn.length ? fn[fn.length - 1].textContent.trim() : "$0"; }
-        addTile({ key: "pay", icon: "💰", value: mine, label: "my payout" + (when ? " · " + when : ""), tone: "accent", title: "Payouts", blocks: payB });
+        addTile({ key: "pay", icon: "💰", value: mine, label: "owed to me · all time", tone: "accent", title: "Payouts · all time", blocks: payB });
       }
       /* 3. the day */
       var jobsB = take(/today's jobs/i, groups.day);

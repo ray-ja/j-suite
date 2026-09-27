@@ -152,20 +152,21 @@ function rToday(){
     h+=moneySect("🚫 Not expecting",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid&&q.doubtful));   // js/50 recDoubtful: kept, not counted as owed
   }
 
-  // 6) Payouts — monthly, paid the first workday of next month (owner: everyone; crew: yourself)
-  if(todayHas("pay")&&typeof finRollup==="function"&&typeof finPayouts==="function"&&mem.length){
+  // 6) Payouts — ALL TIME, what each active person is owed right now (Ray, 2026-09-27: "the total amount I'm
+  //    currently owed… from the beginning of the app history… expenses, labor, everything; expanded, everything
+  //    for all the active crew"). Same engine as My Pay and the Finance overview: earned (field + sales + admin)
+  //    + mileage + reimbursements owed − payouts paid. Owner sees everyone; crew see themselves.
+  if(todayHas("pay")&&typeof payPerPerson==="function"&&mem.length){
     try{
-      const ym=(typeof finMonth==="function")?finMonth():t.slice(0,7);
-      const b=(typeof monthBounds==="function")?monthBounds(ym):{from:ym+"-01",to:ym+"-31"};
-      const _inc=(typeof actIncome==="function"?actIncome():[]);const _incW=(typeof incomeWithWeights==="function")?incomeWithWeights(_inc):_inc;   // honor per-job crew share weights (matches Payouts)
-      const roll=finRollup(_incW,{adminMemberId:(typeof finAdminMember==="function"?finAdminMember():""),from:b.from,to:b.to});
-      const mil=(typeof finMileage==="function")?finMileage(D().timeclock||[],{from:b.from,to:b.to,confirmedOnly:true}):{perMember:{}};
-      const pay=finPayouts(roll,mil);
+      const pp=payPerPerson();   // all-time
+      const ro=(typeof rcptReimbOwed==="function")?rcptReimbOwed():{};   // dollars per member
       const rows=owner?mem:mem.filter(u=>me&&u.id===me.id);
+      const fmc=c=>money((c||0)/100);
       if(rows.length){
-        h+=`<div class="secthd"><h2>💵 Payouts</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="TAB='finance';render()">Details</button>`:""}</div>
-          <div class="card"><div class="sub" style="margin-bottom:6px">${esc((typeof finMonthLabel==="function")?finMonthLabel(ym):ym)} · pays <b>${esc(payoutDate(ym))}</b></div>`+
-          rows.map(u=>{const p=pay[u.id]||{total:0}; return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)}</div></div><div class="nm" style="color:var(--brand-text)">${money((p.total||0)/100)}</div></div>`;}).join("")+`</div>`;
+        h+=`<div class="secthd"><h2>💵 Payouts</h2>${owner?`<button class="btn ghost sm" style="margin-left:auto" onclick="TAB='finance';if(typeof finSub==='function')finSub('payouts');else render()">Details</button>`:""}</div>
+          <div class="card"><div class="sub" style="margin-bottom:6px;white-space:normal">Owed right now, all time: earned + mileage + reimbursements − paid</div>`+
+          rows.map(u=>{const m=pp.member[u.id]||{earned:0,mileage:0,paid:0,owed:0};const reimb=Math.round((ro[u.id]||0)*100);const bal=(m.owed||0)+reimb;
+            return `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${esc(u.username)}</div><div class="sub" style="white-space:normal">earned ${fmc(m.earned)}${m.mileage?" + mileage "+fmc(m.mileage):""}${reimb?" + reimbursements "+fmc(reimb):""}${m.paid?" − paid "+fmc(m.paid):""}</div></div><div class="nm" style="color:${bal<0?"var(--danger)":"var(--brand-text)"}">${fmc(bal)}</div></div>`;}).join("")+`</div>`;
       }
     }catch(e){}
   }
