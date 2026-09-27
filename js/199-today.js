@@ -73,6 +73,18 @@ function t3Shift(iso, n) { var d = iso ? new Date(iso + "T12:00:00") : new Date(
    from Needs you; today's entries show under the list with an Undo each. Pure bits here. */
 function t3SameDay(a, b) { var x = new Date(+a || 0), y = new Date(+b || 0); return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate(); }
 function t3JournalTrim(list, now, max) { max = max || 50; var keep = (list || []).filter(function (e) { return e && (now - (+e.at || 0)) < 7 * 864e5; }); return keep.slice(-max); }
+/* ARRANGE (Ray, 2026-09-27: "make it so I can reorder the cards myself, right-click or a long press").
+   The saved order is a list of tile keys per group; tiles not in it keep their default order after the saved
+   ones. ◀ ▶ arrows and drag both edit the same list. Pure. */
+function t3Order(keys, saved) {
+  keys = keys || []; saved = (saved || []).filter(function (k) { return keys.indexOf(k) >= 0; });
+  return saved.concat(keys.filter(function (k) { return saved.indexOf(k) < 0; }));
+}
+function t3MoveKey(keys, key, dir) {
+  var a = (keys || []).slice(), i = a.indexOf(key); if (i < 0) return a;
+  var j = Math.max(0, Math.min(a.length - 1, i + dir)); if (j === i) return a;
+  a.splice(i, 1); a.splice(j, 0, key); return a;
+}
 /* the header strip's chips from the counts. stats = {needs, owed, owedN, jobs, clockedIn}. Pure. */
 function t3Chips(st) {
   st = st || {}; var out = [];
@@ -307,7 +319,8 @@ if (typeof window !== "undefined") {
         tile.innerHTML = '<span class="ic">' + o.icon + '</span><span class="val">' + t3E(o.value) + '</span><span class="lbl">' + t3E(o.label) + '</span>';
         var paint = function () { var open = !!openSet[o.key]; tile.classList.toggle("on", open); pane.style.display = open ? "" : "none"; };
         var toggle = function () { openSet[o.key] = !openSet[o.key]; saveOpen(); paint(); if (openSet[o.key]) { pane.scrollIntoView({ block: "nearest", behavior: "smooth" }); if (o.onOpen) o.onOpen(); } };
-        tile.onclick = toggle; paint();   // the tile is the switch both ways (Ray: "Hide is useless, you just click the card again")
+        tile.onclick = function () { if (T3.arrange) return; toggle(); }; paint();   // the tile is the switch both ways (Ray: "Hide is useless, you just click the card again")
+        tile.setAttribute("data-group", o.group || "Today");
         tileGroup(o.group || "Today").appendChild(tile); detail.appendChild(pane);
       };
       var take = function (re, from) { return from.filter(function (b) { return re.test(b.title); }); };
@@ -400,6 +413,57 @@ if (typeof window !== "undefined") {
       var duty = detail.querySelector("#duty_card");
       if (duty) Array.prototype.slice.call(duty.querySelectorAll(".sub")).forEach(function (pp) { if (/business profile/i.test(pp.textContent || "")) { pp.classList.add("db-hide"); duty.title = (pp.textContent || "").trim(); } });
       Array.prototype.slice.call(detail.querySelectorAll("button")).forEach(function (bt) { if (/snap a receipt/i.test(bt.textContent || "")) bt.classList.add("db-snap"); });
+      /* ARRANGE: saved order per group, then right-click / long-press to rearrange */
+      var ORD_KEY = "jra_t3_order_" + ((typeof S !== "undefined" && S.biz) || "");
+      var ordSaved = {}; try { ordSaved = JSON.parse(localStorage.getItem(ORD_KEY) || "{}") || {}; } catch (e) {}
+      var ordSave = function () { try { localStorage.setItem(ORD_KEY, JSON.stringify(ordSaved)); } catch (e) {} };
+      var groupKeys = function (g) { return Array.prototype.slice.call(g.querySelectorAll(".db-tile")).map(function (x) { return x.getAttribute("data-tile"); }); };
+      var applyOrder = function (name) {
+        var g = tileGroups[name]; if (!g) return;
+        var order = t3Order(groupKeys(g), ordSaved[name]);
+        order.forEach(function (k) { var el = g.querySelector('.db-tile[data-tile="' + k + '"]'); if (el) g.appendChild(el); });
+        ordSaved[name] = order;
+      };
+      Object.keys(tileGroups).forEach(applyOrder);
+      var paintArrange = function () {
+        tiles.classList.toggle("arranging", !!T3.arrange);
+        Object.keys(tileGroups).forEach(function (name) {
+          var g = tileGroups[name], hd = g.previousElementSibling;
+          var done = hd.querySelector(".db-arrdone");
+          if (T3.arrange && !done) { done = document.createElement("button"); done.className = "btn acc sm db-arrdone"; done.textContent = "✓ Done"; done.style.marginLeft = "auto"; done.onclick = function () { T3.arrange = false; paintArrange(); }; hd.appendChild(done); }
+          if (!T3.arrange && done) done.remove();
+          Array.prototype.slice.call(g.querySelectorAll(".db-tile")).forEach(function (tile, i, all) {
+            var bar = tile.querySelector(".db-arr");
+            if (T3.arrange && !bar) {
+              bar = document.createElement("span"); bar.className = "db-arr";
+              var mk = function (dir, txt) { var b = document.createElement("button"); b.textContent = txt; b.disabled = (dir < 0 && i === 0) || (dir > 0 && i === all.length - 1); b.onclick = function (e) { e.stopPropagation(); ordSaved[name] = t3MoveKey(groupKeys(g), tile.getAttribute("data-tile"), dir); applyOrder(name); ordSave(); paintArrange(); }; return b; };
+              bar.appendChild(mk(-1, "◀")); bar.appendChild(mk(1, "▶")); tile.appendChild(bar);
+              tile.setAttribute("draggable", "true");
+            }
+            if (!T3.arrange && bar) { bar.remove(); tile.removeAttribute("draggable"); }
+            tile.classList.toggle("arr", !!T3.arrange);
+          });
+        });
+      };
+      var arrangeOn = function () { T3.arrange = true; paintArrange(); };
+      Object.keys(tileGroups).forEach(function (name) {
+        var g = tileGroups[name];
+        g.addEventListener("contextmenu", function (e) { if (e.target.closest(".db-tile")) { e.preventDefault(); arrangeOn(); } });
+        var pressT = null;
+        g.addEventListener("touchstart", function (e) { var t = e.target.closest(".db-tile"); if (!t) return; pressT = setTimeout(function () { pressT = null; arrangeOn(); try { navigator.vibrate && navigator.vibrate(20); } catch (_) {} }, 550); }, { passive: true });
+        ["touchend", "touchmove", "touchcancel"].forEach(function (ev) { g.addEventListener(ev, function () { if (pressT) { clearTimeout(pressT); pressT = null; } }, { passive: true }); });
+        /* drag (desktop, in arrange mode) */
+        var dragKey = null;
+        g.addEventListener("dragstart", function (e) { var t = e.target.closest(".db-tile"); if (!t || !T3.arrange) { e.preventDefault(); return; } dragKey = t.getAttribute("data-tile"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", dragKey); } catch (_) {} });
+        g.addEventListener("dragover", function (e) { if (!dragKey) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+        g.addEventListener("drop", function (e) {
+          if (!dragKey) return; e.preventDefault(); var over = e.target.closest(".db-tile"); if (!over || over.getAttribute("data-tile") === dragKey) { dragKey = null; return; }
+          var keys = groupKeys(g).filter(function (k) { return k !== dragKey; }); var at = keys.indexOf(over.getAttribute("data-tile"));
+          var rect = over.getBoundingClientRect(); if (e.clientX > rect.left + rect.width / 2) at++;
+          keys.splice(at, 0, dragKey); ordSaved[name] = keys; applyOrder(name); ordSave(); paintArrange(); dragKey = null;
+        });
+      });
+      paintArrange();
       /* the date, then the tiles, then whatever is open */
       var hero = document.createElement("div"); hero.className = "db-hero";
       var d = new Date(); hero.innerHTML = '<div class="db-date">' + t3E(d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })) + '</div>';
@@ -407,6 +471,6 @@ if (typeof window !== "undefined") {
     } catch (e) { try { console.warn("today pass skipped:", e); } catch (_) {} }
   }
   if (typeof secSplit === "function") { var _ss9 = secSplit; secSplit = function (tab) { var r = _ss9.apply(this, arguments); t3Apply(); return r; }; window.secSplit = secSplit; }
-  window.t3Col = t3Col; window.t3SameDay = t3SameDay; window.t3JournalTrim = t3JournalTrim; window.t3Urgency = t3Urgency; window.t3Actions = t3Actions; window.t3Shift = t3Shift; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
+  window.t3Col = t3Col; window.t3Order = t3Order; window.t3MoveKey = t3MoveKey; window.t3SameDay = t3SameDay; window.t3JournalTrim = t3JournalTrim; window.t3Urgency = t3Urgency; window.t3Actions = t3Actions; window.t3Shift = t3Shift; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3SameDay: t3SameDay, t3JournalTrim: t3JournalTrim, t3Actions: t3Actions, t3Shift: t3Shift, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3Order: t3Order, t3MoveKey: t3MoveKey, t3SameDay: t3SameDay, t3JournalTrim: t3JournalTrim, t3Actions: t3Actions, t3Shift: t3Shift, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }

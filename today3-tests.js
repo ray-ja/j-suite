@@ -53,6 +53,14 @@ const NOW = Date.now();
 eq(T.t3JournalTrim([{ at: NOW - 8 * 864e5 }, { at: NOW - 3600e3 }], NOW).length, 1, "entries older than a week drop");
 eq(T.t3JournalTrim(Array.from({ length: 60 }, (_, i) => ({ at: NOW - i })), NOW).length, 50, "the journal caps at fifty");
 eq(T.t3JournalTrim([], NOW), [], "empty");
+/* arrange */
+eq(T.t3Order(["a", "b", "c", "d"], ["c", "a"]), ["c", "a", "b", "d"], "saved keys first, the rest keep their default order");
+eq(T.t3Order(["a", "b"], ["zzz", "b"]), ["b", "a"], "a saved key that no longer exists is ignored");
+eq(T.t3Order(["a", "b"], null), ["a", "b"], "no saved order → default");
+eq(T.t3MoveKey(["a", "b", "c"], "b", 1), ["a", "c", "b"], "move right");
+eq(T.t3MoveKey(["a", "b", "c"], "b", -1), ["b", "a", "c"], "move left");
+eq(T.t3MoveKey(["a", "b", "c"], "a", -1), ["a", "b", "c"], "cannot move past the start");
+eq(T.t3MoveKey(["a", "b", "c"], "x", 1), ["a", "b", "c"], "unknown key → unchanged");
 /* marks */
 eq(T.t3Icon("📥 Approvals"), "📥", "leading emoji");
 eq(T.t3Icon("🛠 Equipment service"), "🛠", "a one-codepoint emoji");
