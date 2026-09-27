@@ -412,6 +412,16 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("logView: an unknown org is a safe no-op (no throw, no ping)", t.invLogView(mkStore(), "nope", q, cust, "", T0).threadId === null);
 })();
 
+// ── Stripe paid events: a card completes "paid" at once; a bank debit completes "unpaid" then succeeds async ──
+{
+  const paid = (type, ps) => ({ type, data: { object: { payment_status: ps } } });
+  ok("stripePaidEvent: a card checkout that completed paid", t.stripePaidEvent(paid("checkout.session.completed", "paid")) === true);
+  ok("stripePaidEvent: an ACH that just completed is NOT paid yet", t.stripePaidEvent(paid("checkout.session.completed", "unpaid")) === false);
+  ok("stripePaidEvent: the ACH settling days later IS paid", t.stripePaidEvent(paid("checkout.session.async_payment_succeeded", "paid")) === true);
+  ok("stripePaidEvent: an unrelated event is ignored", t.stripePaidEvent(paid("payment_intent.succeeded", "paid")) === false);
+  ok("stripePaidEvent: garbage is ignored", t.stripePaidEvent(null) === false && t.stripePaidEvent({}) === false);
+  ok("registration subscribes to both", t.STRIPE_PAID_EVENTS.length === 2 && t.STRIPE_PAID_EVENTS.indexOf("checkout.session.async_payment_succeeded") === 1);
+}
 // ── Stripe webhook signature verification (the paid-webhook's ONLY auth) ──
 (function () {
   const crypto = require("crypto");
