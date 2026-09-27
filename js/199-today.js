@@ -211,7 +211,7 @@ if (typeof window !== "undefined") {
       /* stats for the strip, read before anything moves */
       var st = { needs: 0, owed: 0, owedN: 0, jobs: 0, clockedIn: false };
       blocks.forEach(function (b) {
-        if (/awaiting payment/i.test(b.title) && b.head) { st.processing = t3Money(Array.prototype.slice.call(b.nodes[0] ? b.nodes[0].querySelectorAll(".li") : []).filter(function (li) { return /processing/i.test(li.textContent || ""); }).map(function (li) { var a = li.querySelector(".li > .nm:last-child, div.nm:last-child"); return a ? a.textContent : ""; })); var ct = b.head.querySelector(".ct"); st.owedN = ct ? (parseInt(ct.textContent, 10) || 0) : 0; var vals = []; b.nodes.forEach(function (n) { Array.prototype.slice.call(n.querySelectorAll(".li > .nm, .li > div.nm")).forEach(function (x) { vals.push(x.textContent); }); }); st.owed = t3Money(vals); }
+        if (/awaiting payment/i.test(b.title) && b.head) { st.processing = t3Money(Array.prototype.slice.call(b.nodes[0] ? b.nodes[0].querySelectorAll(".li") : []).filter(function (li) { return /processing/i.test(li.textContent || ""); }).map(function (li) { var a = li.querySelector("div.nm:last-of-type"); return a ? a.textContent : ""; })); var ct = b.head.querySelector(".ct"); st.owedN = ct ? (parseInt(ct.textContent, 10) || 0) : 0; var vals = []; b.nodes.forEach(function (n) { Array.prototype.slice.call(n.querySelectorAll(".li > .nm, .li > div.nm")).forEach(function (x) { vals.push(x.textContent); }); }); st.owed = t3Money(vals); }
         if (/today's jobs/i.test(b.title)) { var c2 = b.head && b.head.querySelector(".ct"); st.jobs = c2 ? (parseInt(c2.textContent, 10) || 0) : 0; }
         if (/clocked in/i.test(b.title)) { var s = b.nodes[0] && b.nodes[0].querySelector(".sub"); st.clockedIn = (s && /since/i.test(s.textContent)) ? s.textContent.trim() : true; }
       });
@@ -323,7 +323,7 @@ if (typeof window !== "undefined") {
         var card = hd.nextElementSibling; if (!card) return;
         var wrap = document.createElement("div"); wrap.className = "db-nexp"; hd.before(wrap);
         var tb = document.createElement("button"); tb.className = "db-donehd"; wrap.appendChild(tb); wrap.appendChild(hd); wrap.appendChild(card);
-        var amt = t3Money(Array.prototype.slice.call(card.querySelectorAll(".li > .nm:last-child")).map(function (x) { return x.textContent; })), n = card.querySelectorAll(".li").length;
+        var amt = t3Money(Array.prototype.slice.call(card.querySelectorAll(".li > div.nm:last-of-type")).map(function (x) { return x.textContent; })), n = card.querySelectorAll(".li").length;
         hd.classList.add("db-hide");
         var paintN = function () { var open = !!T3.nexp; tb.textContent = (open ? "▾ " : "▸ ") + "Not expecting " + t3Fmt(amt) + " · " + n + (n === 1 ? " invoice" : " invoices"); card.style.display = open ? "" : "none"; };
         tb.onclick = function () { T3.nexp = !T3.nexp; paintN(); }; paintN();
