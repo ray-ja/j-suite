@@ -425,6 +425,23 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("ad stats: the dates covered", a.dates.join() === "2026-09-25,2026-09-26");
   ok("ad stats: empty", t.adsStatsAgg([]).clicks === 0 && t.adsStatsAgg(null).costCents === 0);
 }
+// ── ad stats fallback: the nightly push file, newest line per day, Local Services by campaign name ──
+{
+  const fs2 = require("fs"), path2 = require("path"), f = path2.join(__dirname, "google-ads-stats.jsonl"); const had = fs2.existsSync(f);
+  if (!had) {
+    const yd = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    fs2.writeFileSync(f, [
+      JSON.stringify({ at: 1, org: "obx", date: yd, campaigns: [{ name: "LocalServices", clicks: 2, costMicros: 30000000 }, { name: "OBX Junk search", clicks: 5, costMicros: 8000000 }] }),
+      JSON.stringify({ at: 2, org: "obx", date: yd, campaigns: [{ name: "LocalServices", clicks: 3, costMicros: 45000000 }, { name: "OBX Junk search", clicks: 5, costMicros: 8000000 }] }),
+      JSON.stringify({ at: 3, org: "jam", date: yd, campaigns: [{ name: "Lights", clicks: 9, costMicros: 1000000 }] }),
+    ].join("\n") + "\n");
+    const r = t.adsStatsFromFile("obx");
+    ok("fallback: yesterday from the newest push of that day, org-scoped", r && r.yesterday.clicks === 8 && r.yesterday.costCents === 5300 && r.yesterday.byType["Local Services"].clicks === 3);
+    ok("fallback: the month includes yesterday", r && r.month.clicks >= 8);
+    ok("fallback: an org with no lines → null", t.adsStatsFromFile("stone") === null);
+    fs2.unlinkSync(f);
+  } else ok("fallback: skipped (a real stats file exists)", true);
+}
 // ── Stripe paid events: a card completes "paid" at once; a bank debit completes "unpaid" then succeeds async ──
 {
   const paid = (type, ps) => ({ type, data: { object: { payment_status: ps } } });
