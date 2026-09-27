@@ -116,7 +116,7 @@ if (typeof window !== "undefined") {
       /* NEEDS YOU */
       var rows = t3Inbox(groups.needs); st.needs = rows.length;
       rows = rows.map(function (r, i) { return { r: r, i: i, u: t3Urgency(r.src, r.el.textContent) }; }).sort(function (a, b) { return a.u - b.u || a.i - b.i; }).map(function (x) { return x.r; });
-      cols.needs.appendChild(t3Head("Needs you", rows.length || null));
+      cols.needs.appendChild(t3Head("Needs you", rows.length || null)); if (rows.length) cols.needs.classList.add("hot");
       var inbox = document.createElement("div"); inbox.className = "card db-inbox"; cols.needs.appendChild(inbox);
       if (!rows.length) { var q = document.createElement("div"); q.className = "db-none"; q.textContent = "Nothing needs you right now."; inbox.appendChild(q); }
       var cap = 6;
@@ -195,7 +195,7 @@ if (typeof window !== "undefined") {
         var capCard = th.closest(".card"), capHd = capCard && capCard.previousElementSibling;
         var lastMsg = th.lastElementChild;
         if (capCard && lastMsg && !compact) {
-          var lastLine = document.createElement("div"); lastLine.className = "db-caplast db-clamp"; lastLine.textContent = (lastMsg.textContent || "").replace(/\s+/g, " ").trim(); th.after(lastLine);
+          var lastLine = document.createElement("div"); lastLine.className = "db-caplast"; lastLine.textContent = (lastMsg.textContent || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); th.after(lastLine);
           if (!T3.cap) th.classList.add("db-fold");
           var cb = document.createElement("button"); cb.className = "btn ghost sm db-capgo";
           if (capHd && capHd.classList.contains("secthd")) capHd.appendChild(cb); else capCard.insertBefore(cb, capCard.firstChild);

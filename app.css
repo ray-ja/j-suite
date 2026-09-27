@@ -939,25 +939,50 @@ details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-we
 .db-col{min-width:0}
 .db-col.db-empty{display:none}
 .secthd.db-colhd{margin:6px 4px 8px}.secthd.db-colhd h2{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
-/* rule 2: the inbox rows */
-.db-inbox{padding:4px 14px}
-.db-inbox .db-none{color:var(--muted);font-size:14px;padding:10px 0}
-.db-inbox .db-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);margin:0}
+/* rule 2: the inbox rows. TYPE SCALE (Ray, 2026-09-27: "hard to distinguish what's important and what's a
+   description… font size is a big problem"): title 16.5/650 ink, description 14 muted, one clear step apart;
+   nothing is cut off: titles wrap, descriptions get two lines. */
+.db-inbox{padding:6px 16px}
+.db-inbox .db-none{color:var(--muted);font-size:15px;padding:12px 0}
+.db-inbox .db-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);margin:0}
 .db-inbox .db-row:last-of-type{border-bottom:0}
-.db-inbox .db-row.db-asrow{background:none;border-radius:0;box-shadow:none;border-left:0!important;padding:9px 0!important;margin:0}
-.db-inbox .db-src{flex:0 0 22px;text-align:center;font-size:15px;opacity:.9}
-.db-inbox .db-row .nm{font-size:14px!important;font-weight:600;line-height:1.3;white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.db-inbox .db-row .sub{font-size:12.5px;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.db-inbox .db-row input[type=checkbox]{width:18px!important;height:18px!important;flex:0 0 auto}
+.db-inbox .db-row.db-asrow{background:none;border-radius:0;box-shadow:none;border-left:0!important;padding:11px 0!important;margin:0}
+.db-inbox .db-src{flex:0 0 26px;text-align:center;font-size:17px}
+.db-inbox .db-row .nm{font-size:16.5px!important;font-weight:650;line-height:1.35;white-space:normal!important;color:var(--ink)}
+.db-inbox .db-row .sub{font-size:14px;line-height:1.35;color:var(--muted);white-space:normal!important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px}
+.db-inbox .db-row input[type=checkbox]{width:20px!important;height:20px!important;flex:0 0 auto}
 .db-inbox .db-row .badge.p-Low,.db-inbox .db-row .badge.p-Medium{display:none}
-.db-inbox .db-row .btn.sm{padding:6px 10px;font-size:12.5px}
-.db-inbox .db-all{margin:8px 0 6px}
-/* rule 3: the money panel */
-.db-panel{padding:4px 14px 8px}
-.db-panel .secthd.db-sub{margin:10px 0 2px}.db-panel .secthd.db-sub h2{font-size:12.5px;font-weight:800;color:var(--muted)}
+.db-inbox .db-row .btn.sm{padding:8px 12px;font-size:13.5px}
+.db-inbox .db-all{margin:10px 0 6px}
+/* rule 3: the money panel. Sub-heads are ink, not muted, so a section reads as a section; amounts lead. */
+.db-panel{padding:6px 16px 10px}
+.db-panel .secthd.db-sub{margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--line)}
+.db-panel .secthd.db-sub:first-child{border-top:0;padding-top:4px;margin-top:6px}
+.db-panel .secthd.db-sub h2{font-size:14px;font-weight:800;letter-spacing:.3px;color:var(--ink)}
+.db-panel .secthd.db-sub .ct{font-size:13.5px}
 .db-panel .card.db-flat{border:0;box-shadow:none;background:none;padding:0;margin:0 0 4px;border-radius:0}
-.db-panel .db-flat .li{padding:8px 0}.db-panel .db-flat .li .nm{font-size:14px}.db-panel .db-flat .li .sub{font-size:12.5px}
+.db-panel .db-flat .li{padding:10px 0}
+.db-panel .db-flat .li .nm{font-size:16px}
+.db-panel .db-flat .li .sub{font-size:13.5px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.db-panel .db-flat .li>.nm:last-child{font-size:16.5px;font-weight:750;flex:0 0 auto;margin-left:10px}
 .db-panel .db-quiet{margin:6px 0}
+/* COLOR MEANS SOMETHING (Ray: "a lack of color… distinguishing boxes"): each column carries one hue on its
+   head and its card's top rule. Needs you = attention, Money = the accent, The day = the brand. */
+.secthd.db-colhd{margin:6px 4px 10px}.secthd.db-colhd h2{font-size:13px;letter-spacing:1px;text-transform:uppercase;font-weight:800}
+.secthd.db-colhd .ct{font-size:13px;font-weight:700}
+.db-col.needs>.db-colhd h2{color:var(--muted)}.db-col.needs.hot>.db-colhd h2,.db-col.needs.hot>.db-colhd .ct{color:var(--danger)}
+.db-col.money>.db-colhd h2{color:var(--accent-ink)}body.dark .db-col.money>.db-colhd h2{color:var(--accent)}
+.db-col.day>.db-colhd h2{color:var(--brand-text)}
+.db-col.needs>.db-inbox{border-top:4px solid var(--line)}.db-col.needs.hot>.db-inbox{border-top-color:var(--danger)}
+.db-col.money>.db-panel{border-top:4px solid var(--accent)}
+body.dark .db-inbox,body.dark .db-panel,body.dark .db-col.day>.card,body.dark .db-quiet{border-color:#3b4756}
+/* the strip */
+.db-date{font-size:26px}
+.db-chip{font-size:14px;padding:8px 14px}
+/* quiet lines and the day column read at the same scale */
+.db-quiet{font-size:14.5px;padding:11px 14px}.db-quiet .s{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.db-col.day .card .nm{font-size:17px}
+.db-col.day .card .sub{font-size:14px}
 /* rule 4: folds */
 .db-surec.db-fold{display:none}
 .db-suopen{margin-top:10px}
@@ -992,7 +1017,8 @@ details.c360-edit{margin:10px 0}details.c360-edit>summary{cursor:pointer;font-we
 .db-clockcard:not(.folded) .db-clockhd{margin-bottom:6px}
 .db-sufold.db-fold,.db-capthread.db-fold{display:none!important}
 .db-susum{white-space:normal;margin-top:8px}
-.db-caplast{font-size:14px;line-height:1.4;padding:8px 10px;background:var(--soft);border-radius:10px;margin-bottom:2px}
+.db-caplast{font-size:14.5px;line-height:1.45;padding:10px 12px;background:var(--soft);border-radius:10px;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-height:none;-webkit-mask-image:none;mask-image:none;white-space:normal}
 .secthd .db-capgo{margin-left:8px}
 .db-suacts{gap:8px;margin-top:10px;flex-wrap:wrap}
 .db-more{display:block}
+.db-inbox .db-row .nm .sub,.db-inbox .db-row .nm .badge{display:inline;-webkit-line-clamp:unset;font-size:14px;vertical-align:baseline}
