@@ -15,9 +15,9 @@
    Post-render after js/197 (which triages and quiets) and js/198. Nothing is deleted: every original node
    stays in the DOM, hidden or moved, so every handler still fires. Pure helpers tested in today3-tests.js. */
 var T3_NEEDS = /approvals|follow-ups|top to-dos|equipment service|payment plans|need(s)? cleaning|recurring visit|quick-start|quick start/i;
-var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting/i;
+var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting|next 30 days/i;
 /* the money panel reads top-down from what is owed to what is paid out. Pure. */
-var T3_MONEY_ORDER = [/awaiting payment/i, /invoices to send/i, /not expecting/i, /confirmed jobs/i, /open quotes/i, /payouts/i];
+var T3_MONEY_ORDER = [/awaiting payment/i, /invoices to send/i, /not expecting/i, /next 30 days/i, /confirmed jobs/i, /open quotes/i, /payouts/i];
 function t3MoneyRank(title) { var s = String(title || ""); for (var i = 0; i < T3_MONEY_ORDER.length; i++) if (T3_MONEY_ORDER[i].test(s)) return i; return T3_MONEY_ORDER.length; }
 function t3Col(title) { var s = String(title || ""); if (T3_NEEDS.test(s)) return "needs"; if (T3_MONEY.test(s)) return "money"; return "day"; }
 /* the type mark for an inbox row: the head's leading emoji, else a dot. Pure. */
@@ -77,7 +77,7 @@ function t3JournalTrim(list, now, max) { max = max || 50; var keep = (list || []
 function t3Chips(st) {
   st = st || {}; var out = [];
   out.push({ key: "needs", text: st.needs > 0 ? (st.needs + " need" + (st.needs === 1 ? "s" : "") + " you") : "Nothing needs you", hot: st.needs > 0 });
-  if (st.owedN > 0) out.push({ key: "money", text: t3Fmt(st.owed) + " owed · " + st.owedN + " invoice" + (st.owedN === 1 ? "" : "s"), hot: false });
+  if (st.owedN > 0) out.push({ key: "money", text: t3Fmt(st.owed) + " invoiced · " + st.owedN + " invoice" + (st.owedN === 1 ? "" : "s"), hot: false });
   return out;   // the day's own numbers live on the day column's stat row, not here twice
 }
 if (typeof window !== "undefined") {
@@ -315,7 +315,10 @@ if (typeof window !== "undefined") {
       addTile({ key: "needs", icon: "🔔", value: String(rows.length), label: rows.length === 1 ? "needs you" : "need you", tone: rows.length ? "danger" : "plain", title: "Needs you", nodes: [inbox] });
       /* 2. money */
       var owedB = take(/awaiting payment|invoices to send|not expecting/i, groups.money);
-      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "owed · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Owed to you", blocks: owedB });
+      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "invoiced · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Invoiced", blocks: owedB });
+      /* next 30 days: what the scheduled jobs are quoted at (Ray: "what our cash flow looks like") */
+      var upB = take(/next 30 days/i, groups.money);
+      if (upB.length) { var upAmt = moneyOf(upB), upN = 0; upB.forEach(function (b) { var ct = b.head && b.head.querySelector(".ct"); upN += ct ? (parseInt(ct.textContent, 10) || 0) : 0; }); addTile({ key: "upcoming", icon: "📆", value: t3Fmt(upAmt), label: "next 30 days · " + upN + (upN === 1 ? " job" : " jobs"), tone: "brand", title: "Next 30 days", blocks: upB }); }
       /* "Not expecting" (js/50 recDoubtful) rides in the Owed pane, folded, and never in the tile's number */
       (function () {
         var pane = detail.querySelector('[data-pane="owed"] .db-panebody'); if (!pane) return;

@@ -148,6 +148,19 @@ function rToday(){
     h+=moneySect("🔧 Confirmed jobs",booked.filter(q=>!jobDone(q)),q=>q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`);
     // Invoices to send = booked work that's done → ready to bill
     h+=moneySect("📤 Invoices to send",booked.filter(jobDone));
+    /* ⭐ NEXT 30 DAYS (Ray, 2026-09-27: "a card that shows, over the next 30 days, the estimated amount our
+       scheduled jobs will bring in, so I kind of know what our cash flow looks like"). Scheduled, not-done jobs
+       with a work day inside the window, priced from their quote. Tap opens the job. */
+    {
+      const _end=(typeof recurAddDays==="function")?recurAddDays(t,30):t;
+      const _qById=new Map();_aq.forEach(q=>{if(q&&q.id!=null)_qById.set(q.id,q);});
+      const _wd=j=>(typeof jobWorkDays==="function"?jobWorkDays(j):(j.date?[j.date]:[]));
+      const up=_aj.filter(j=>!j.done&&!j.deleted&&_wd(j).some(d=>d>=t&&d<=_end)).map(j=>{const q=j.quoteId?_qById.get(j.quoteId):null;const d=_wd(j).filter(x=>x>=t).sort()[0]||j.date||"";return {j:j,q:q,d:d,amt:q?(q.finalPrice||q.total||0):0};}).sort((a,b)=>String(a.d).localeCompare(String(b.d)));
+      if(up.length){
+        h+=`<div class="secthd"><h2>📆 Next 30 days</h2><span class="ct">${up.length}</span></div><div class="card">`+
+          up.map(x=>`<div class="li" onclick="openJobPage('${x.j.id}')"><div class="grow"><div class="nm">${esc(x.j.title||(x.q&&x.q.cust)||"Job")}</div><div class="sub">${fmtDate(x.d)}${x.j.customerId?" · "+esc(custName(x.j.customerId)):""}${x.q?"":" · <span style=\"color:var(--muted)\">no quote</span>"}</div></div><div class="nm" style="color:var(--brand-text)">${x.amt?money(x.amt):"—"}</div></div>`).join("")+`</div>`;
+      }
+    }
     h+=moneySect("⏳ Awaiting payment",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid&&!q.doubtful));
     h+=moneySect("🚫 Not expecting",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid&&q.doubtful));   // js/50 recDoubtful: kept, not counted as owed
   }

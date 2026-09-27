@@ -21,7 +21,7 @@ eq(T.t3Col("📣 Ads"), "day", "the day");
 eq(T.t3Col(""), "day", "unknown → the day");
 /* money order */
 eq(["💵 Payouts", "📝 Open quotes", "⏳ Awaiting payment", "🔧 Confirmed jobs", "📤 Invoices to send"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b)), ["⏳ Awaiting payment", "📤 Invoices to send", "🔧 Confirmed jobs", "📝 Open quotes", "💵 Payouts"], "owed first, paid out last");
-eq(T.t3MoneyRank("something else"), 6, "unknown sinks to the end");
+eq(T.t3MoneyRank("something else"), 7, "unknown sinks to the end");
 /* urgency */
 eq(T.t3Urgency("📥 Approvals", "Learned from a job note · Cap wants your okay"), 0, "approvals first: Cap is waiting");
 eq(T.t3Urgency("✅ Top to-dos", "Skid steer … ⚠ overdue · due 09/19/26"), 1, "overdue next");
@@ -37,6 +37,7 @@ eq(T.t3Actions("📥 Approvals"), [], "approvals keep their own ✓ ✕");
 eq(T.t3Actions("⏳ Awaiting payment"), ["nexp"], "an open invoice can be marked not expecting");
 eq(T.t3Actions("🚫 Not expecting"), ["exp"], "…and put back");
 eq(T.t3Col("🚫 Not expecting"), "money", "not expecting is money");
+eq(T.t3Col("📆 Next 30 days"), "money", "the next 30 days is money");
 eq(["⏳ Awaiting payment", "🚫 Not expecting", "💵 Payouts"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b))[1], "🚫 Not expecting", "not expecting sits under awaiting");
 eq(T.t3Actions("🛠 Equipment service"), [], "service rows keep Done ✓");
 eq(T.t3Shift("2026-09-27", 1), "2026-09-28", "tomorrow");
@@ -62,8 +63,8 @@ eq(T.t3Money([]), 0, "empty");
 eq(T.t3Fmt(4570), "$4,570", "whole dollars");
 eq(T.t3Fmt(538.5), "$538.50", "cents when there are any");
 /* the strip */
-eq(T.t3Chips({ needs: 3, owed: 4570, owedN: 7, jobs: 0 }).map(c => c.text), ["3 need you", "$4,570 owed · 7 invoices"], "a normal morning: the day's numbers live on the day row, not here");
-eq(T.t3Chips({ needs: 1, owed: 15, owedN: 1, jobs: 2 }).map(c => c.text), ["1 needs you", "$15 owed · 1 invoice"], "singulars");
+eq(T.t3Chips({ needs: 3, owed: 4570, owedN: 7, jobs: 0 }).map(c => c.text), ["3 need you", "$4,570 invoiced · 7 invoices"], "a normal morning: the day's numbers live on the day row, not here");
+eq(T.t3Chips({ needs: 1, owed: 15, owedN: 1, jobs: 2 }).map(c => c.text), ["1 needs you", "$15 invoiced · 1 invoice"], "singulars");
 eq(T.t3Chips({ needs: 0, owedN: 0, jobs: 0 }).map(c => c.text), ["Nothing needs you"], "quiet: no money chip when nothing is owed");
 /* succinct titles */
 eq(T.t3Split("Skid steer arrives this week: finish Christina Jamieson pond fill (quote #31), then invoice the pond + junk haul #2 ($375) together"), { head: "Skid steer arrives this week", rest: "finish Christina Jamieson pond fill (quote #31), then invoice the pond + junk haul #2 ($375) together" }, "cut at the colon");

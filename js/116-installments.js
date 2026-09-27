@@ -24,13 +24,34 @@ function instMonthLabel(start, offset) {
 }
 function instCanRun() { return (typeof finCanView === "function") ? finCanView() : true; }
 
+/* ⭐ PERIODIC PAYMENTS ARE EXPENSES (Ray, 2026-09-27: "the money paid for the skid steer should be included in
+   expenses as well as the monthly trailer payments to Chase. Periodic payments only though, not the total.")
+   Logging a payment now posts that month's payment as a business expense (exp-inst-<plan>-<n>, category
+   tools/equipment); the purchase total never posts. `paidBy` on a plan = the member whose own card the payment
+   leaves (the skid steer is on Ray's Amazon plan), so the expense is reimbursable to them; empty = the business
+   pays it (the trailer, to Chase). Undo removes the expense. */
+function instExpenseId(p, n) { return "exp-inst-" + p.id + "-" + n; }
+function instPostExpense(p, n) {
+  const d = (typeof D === "function") ? D() : null; if (!d) return; d.expenses = d.expenses || [];
+  const id = instExpenseId(p, n); if (d.expenses.some(e => e && e.id === id && !e.deleted)) return;
+  const t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
+  const e = { id: id, amount: instPaymentAmt(p, n), date: t, vendor: (p.payeeName || "") + (p.label ? " · " + p.label : ""), category: "tools/equipment",
+    desc: "Payment " + n + " of " + p.count + " · " + (p.label || "payback") + (p.paidBy ? " (paid from " + ((typeof userName === "function" && userName(p.paidBy)) || "a member") + "'s own card)" : ""),
+    paidBy: p.paidBy || null, attributedTo: p.paidBy || null, source: "installment", ref: p.id + "#" + n, by: (typeof curUser === "function" && curUser() ? curUser().username : ""), ts: Date.now(), deleted: false, updatedAt: Date.now() };
+  d.expenses.push(e); if (typeof touch === "function") touch(e);
+}
+function instUnpostExpense(p, n) {
+  const d = (typeof D === "function") ? D() : null; if (!d) return;
+  const e = (d.expenses || []).find(x => x && x.id === instExpenseId(p, n) && !x.deleted); if (!e) return;
+  e.deleted = true; e.updatedAt = Date.now(); if (typeof touch === "function") touch(e);
+}
 function instPageHTML() {
   if (!instCanRun()) return `<div class="card"><div class="muted">Owner / Admin only.</div></div>`;
   const plans = instActive().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   const M = (n) => (typeof money2 === "function") ? money2(n) : "$" + (Math.round((+n || 0) * 100) / 100).toFixed(2);
   const E = (typeof esc === "function") ? esc : (s => String(s == null ? "" : s));
   let h = `<div class="secthd"><h2>🚜 Paybacks</h2><span class="ct">${plans.length}</span></div>`;
-  h += `<div class="card"><div class="sub" style="white-space:normal">Track paying a partner back for something they fronted (a trailer, a big materials run) over a set number of monthly payments. Repaying what they fronted — <b>not</b> income to them and not a business expense — so this stays off the P&amp;L and 1099.</div></div>`;
+  h += `<div class="card"><div class="sub" style="white-space:normal">Paying someone back for something they fronted, or a purchase on a payment plan, over a set number of monthly payments. Each payment you log posts as that month's expense (the purchase total never does). If a member pays it from their own card, it is owed back to them like any other expense.</div></div>`;
   if (!plans.length) h += `<div class="card"><div class="muted">No payback plans yet. Set one up below.</div></div>`;
   plans.forEach(p => {
     const paid = instPaidCount(p), next = instNextN(p), rem = instRemaining(p), done = paid >= p.count;
@@ -38,7 +59,7 @@ function instPageHTML() {
     h += `<div class="card" style="border-left:4px solid ${done ? "#1e9e5a" : "#6b3fa0"}">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px">
         <div class="grow" style="white-space:normal"><div class="nm">${E(p.label || "Payback")}</div>
-          <div class="sub">to <b>${E(p.payeeName || "?")}</b> · ${M(p.total)} total · ${p.count} payments of ${M(instPer(p))}/mo${p.note ? " · " + E(p.note) : ""}</div></div>
+          <div class="sub">to <b>${E(p.payeeName || "?")}</b> · ${M(p.total)} total · ${p.count} payments of ${M(instPer(p))}/mo${p.paidBy ? " · paid from " + E((typeof userName === "function" && userName(p.paidBy)) || "a member") + "'s card" : ""}${p.note ? " · " + E(p.note) : ""}</div></div>
         <div style="text-align:right;flex:0 0 auto"><div class="nm">${M(rem)}</div><div class="sub">${done ? "✓ paid off" : "remaining"}</div></div>
       </div>
       <div style="background:var(--soft);border-radius:8px;height:8px;margin:8px 0;overflow:hidden"><div style="background:${done ? "#1e9e5a" : "#6b3fa0"};height:100%;width:${pct}%"></div></div>
@@ -64,6 +85,7 @@ function instPageHTML() {
     <div class="row" style="gap:8px;margin-top:8px">
       <div class="grow"><label>First payment (month)</label><input id="inst_start" type="month" value="${thisMonth}"></div>
     </div>
+    <label style="margin-top:8px">Paid from a member's own card? (optional)</label><select id="inst_paidby"><option value="">No, the business pays it</option>${members.map(u => `<option value="${u.id}">${E(u.name || u.username || u.id)}</option>`).join("")}</select>
     <label style="margin-top:8px">Note (optional)</label><input id="inst_note" placeholder="e.g. Chase fronted the whole purchase">
     <button class="btn acc" style="width:100%;margin-top:12px" onclick="instCreate()">Create payback plan</button></div>`;
   return h;
@@ -82,7 +104,7 @@ window.instCreate = function () {
   const members = (typeof finMembers === "function") ? finMembers() : (S.users || []);
   const payee = members.find(u => u && u.id === payeeId) || {};
   const d = D(); if (!Array.isArray(d.installments)) d.installments = [];
-  const rec = { id: "inst_" + (typeof uid === "function" ? uid() : Date.now().toString(36)), payeeId: payeeId, payeeName: payee.name || payee.username || "", label: label, total: Math.round(total * 100) / 100, count: count, start: start, paidNs: [], note: (v("inst_note") || "").trim(), createdBy: (typeof meId === "function" ? meId() : ""), createdAt: (typeof now === "function" ? now() : Date.now()), deleted: false, updatedAt: (typeof now === "function" ? now() : Date.now()) };
+  const rec = { id: "inst_" + (typeof uid === "function" ? uid() : Date.now().toString(36)), payeeId: payeeId, payeeName: payee.name || payee.username || "", label: label, total: Math.round(total * 100) / 100, count: count, start: start, paidNs: [], paidBy: v("inst_paidby") || "", note: (v("inst_note") || "").trim(), createdBy: (typeof meId === "function" ? meId() : ""), createdAt: (typeof now === "function" ? now() : Date.now()), deleted: false, updatedAt: (typeof now === "function" ? now() : Date.now()) };
   d.installments.push(rec);
   if (typeof touch === "function") touch(rec);
   if (typeof logChange === "function") logChange("create", "installment", rec.id, "Payback plan " + label + " · " + rec.count + "×");
@@ -95,13 +117,15 @@ window.instPay = function (id) {
   if (!Array.isArray(p.paidNs)) p.paidNs = [];
   p.paidNs.push(n); p.updatedAt = (typeof now === "function" ? now() : Date.now());
   if (typeof touch === "function") touch(p);
+  instPostExpense(p, n);
   if (typeof logChange === "function") logChange("update", "installment", p.id, "Logged payback " + n + "/" + p.count + " · " + p.label);
   if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 window.instUnpay = function (id) {
   const p = instActive().find(x => x.id === id); if (!p || !(p.paidNs || []).length) return;
-  p.paidNs.sort((a, b) => a - b).pop(); p.updatedAt = (typeof now === "function" ? now() : Date.now());
+  const last = p.paidNs.sort((a, b) => a - b).pop(); p.updatedAt = (typeof now === "function" ? now() : Date.now());
   if (typeof touch === "function") touch(p);
+  instUnpostExpense(p, last);
   if (typeof save === "function") save(); if (typeof render === "function") render();
 };
 window.instDelete = function (id) {
