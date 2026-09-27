@@ -319,7 +319,7 @@ if (typeof window !== "undefined") {
       var owedB = take(/awaiting payment|invoices to send|not expecting/i, groups.money);
       var ms = window.MT_STATS || null;
       var cashB = take(/cash on hand/i, groups.money);
-      if (cashB.length && ms) addTile({ group: "Money", key: "cash", icon: "🏦", value: t3Fmt(ms.cashCents / 100), label: ms.accounts ? ("cash on hand · " + ms.accounts + (ms.accounts === 1 ? " account" : " accounts")) : "pick the accounts", tone: ms.accounts ? "ok" : "plain", title: "Cash on hand", blocks: cashB });
+      if (cashB.length && ms) addTile({ group: "Money", key: "cash", icon: "🏦", value: t3Fmt(Math.round(ms.cashCents / 100)), label: ms.accounts ? ("cash on hand · " + ms.accounts + (ms.accounts === 1 ? " account" : " accounts")) : "pick the accounts", tone: ms.accounts ? "ok" : "plain", title: "Cash on hand", blocks: cashB });
       if (owedB.length) addTile({ group: "Money", key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "invoiced · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Invoiced", blocks: owedB });
       /* next 30 days: what the scheduled jobs are quoted at (Ray: "what our cash flow looks like") */
       var upB = take(/next 30 days/i, groups.money);
@@ -346,9 +346,9 @@ if (typeof window !== "undefined") {
         addTile({ group: "Money", key: "pay", icon: "💰", value: mine, label: "owed to me · all time", tone: "accent", title: "Payouts · all time", blocks: payB });
       }
       var fixB = take(/fixed costs/i, groups.money);
-      if (fixB.length && ms) addTile({ group: "Money", key: "fixed", icon: "🔁", value: t3Fmt(ms.fixedCents / 100), label: "fixed costs this month", tone: "plain", title: "Fixed costs this month", blocks: fixB });
+      if (fixB.length && ms) addTile({ group: "Money", key: "fixed", icon: "🔁", value: t3Fmt(Math.round(ms.fixedCents / 100)), label: "fixed costs this month", tone: "plain", title: "Fixed costs this month", blocks: fixB });
       var leftB = take(/left after/i, groups.money);
-      if (leftB.length && ms) addTile({ group: "Money", key: "left", icon: "⚖️", value: (ms.deltaCents < 0 ? "−" : "") + t3Fmt(Math.abs(ms.deltaCents) / 100), label: "left after costs and crew", tone: ms.deltaCents < 0 ? "danger" : "ok", title: "Left after obligations", blocks: leftB });
+      if (leftB.length && ms) addTile({ group: "Money", key: "left", icon: "⚖️", value: (ms.deltaCents < 0 ? "−" : "") + t3Fmt(Math.round(Math.abs(ms.deltaCents) / 100)), label: "left after costs and crew", tone: ms.deltaCents < 0 ? "danger" : "ok", title: "Left after obligations", blocks: leftB });
       /* 3. the day */
       var jobsB = take(/today's jobs/i, groups.day);
       if (jobsB.length) addTile({ key: "jobs", icon: "📅", value: String(st.jobs), label: st.jobs === 1 ? "job today" : "jobs today", tone: st.jobs ? "brand" : "plain", title: "Today's jobs", blocks: jobsB });
