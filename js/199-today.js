@@ -246,8 +246,20 @@ if (typeof window !== "undefined") {
         more.onclick = function () { T3.all = !T3.all; paintAll(); }; paintAll();
       }
       /* Done today: what left this list today, each with an Undo */
+      /* the records are the truth: a to-do completed today, a lead archived today, a service logged today all
+         count, whoever ticked them and wherever. Anything not yet in the journal is added so Undo can find it. */
+      (function () {
+        try {
+          var d = (typeof D === "function") ? D() : null; if (!d) return; var jl = t3Journal(), now = Date.now(), added = false;
+          var has = function (kind, id, logAt) { return jl.some(function (e) { return e.kind === kind && e.id === id && (logAt == null || e.logAt === logAt); }); };
+          (d.todos || []).forEach(function (td) { if (td && td.done && !td.deleted && t3SameDay(td.updatedAt, now) && !has("todo", td.id)) { jl.push({ kind: "todo", id: td.id, label: td.title || "to-do", what: "checked off", at: +td.updatedAt || now, undo: { done: false }, jid: "d" + td.id }); added = true; } });
+          (d.customers || []).forEach(function (c) { if (c && c.deleted && c.status === "Lead" && t3SameDay(c.updatedAt, now) && !has("customer", c.id)) { jl.push({ kind: "customer", id: c.id, label: c.name || c.company || "lead", what: "deleted", at: +c.updatedAt || now, undo: { deleted: false }, jid: "d" + c.id }); added = true; } });
+          (d.inventory || []).forEach(function (i) { if (!i || !i.svc || !i.svc.log) return; i.svc.log.forEach(function (l) { if (l && t3SameDay(l.at, now) && !has("svc", i.id, l.at)) { var p = (i.svc.plan || []).find(function (x) { return x && x.key === l.key; }); jl.push({ kind: "svc", id: i.id, key: l.key, logAt: l.at, label: (p && p.label) || l.key, what: "marked done", at: +l.at, undo: {}, jid: "d" + i.id + l.at }); added = true; } }); });
+          if (added) t3JournalSave(jl.sort(function (a, b) { return (+a.at || 0) - (+b.at || 0); }));
+        } catch (e) {}
+      })();
       var jn = t3Journal().filter(function (e) { return t3SameDay(e.at, Date.now()); }).reverse();
-      if (jn.length) {
+      {
         var dt = document.createElement("div"); dt.className = "db-donetoday";
         var dh = document.createElement("button"); dh.className = "db-donehd"; dt.appendChild(dh);
         var dl = document.createElement("div"); dl.className = "db-donelist"; dt.appendChild(dl);
@@ -257,7 +269,7 @@ if (typeof window !== "undefined") {
           row.innerHTML = '<span class="db-src">' + ic + '</span><div class="grow"><div class="nm">' + t3E(e.label) + '</div><div class="sub">' + t3E(e.what) + ' · ' + t3E(new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) + '</div></div>';
           var ub = document.createElement("button"); ub.className = "btn ghost sm"; ub.textContent = "Undo"; ub.onclick = function () { t3Undo(e.jid); }; row.appendChild(ub); dl.appendChild(row);
         });
-        var paintDone = function () { var open = !!T3.doneOpen; dh.textContent = (open ? "▾ " : "▸ ") + jn.length + " done today"; dl.style.display = open ? "" : "none"; };
+        var paintDone = function () { var open = !!T3.doneOpen && jn.length > 0; dh.textContent = jn.length ? ((open ? "▾ " : "▸ ") + jn.length + " done today") : "Nothing checked off yet today"; dl.style.display = open ? "" : "none"; dh.disabled = !jn.length; };
         dh.onclick = function () { T3.doneOpen = !T3.doneOpen; paintDone(); }; paintDone();
         inbox.appendChild(dt);
       }
@@ -274,7 +286,7 @@ if (typeof window !== "undefined") {
       var claimed = [];
       var addTile = function (o) {
         var pane = document.createElement("section"); pane.className = "card db-pane"; pane.setAttribute("data-pane", o.key);
-        var ph = document.createElement("div"); ph.className = "row db-panehd"; ph.innerHTML = '<div class="nm">' + t3E(o.title) + '</div>'; pane.appendChild(ph);
+        var ph = document.createElement("div"); ph.className = "row db-panehd"; ph.innerHTML = '<div class="nm">' + t3E(o.title) + '</div><span class="db-paneend"></span>'; pane.appendChild(ph);
         var body = document.createElement("div"); body.className = "db-panebody"; pane.appendChild(body);
         (o.nodes || []).forEach(function (n) { body.appendChild(n); n.style.display = ""; });
         (o.blocks || []).forEach(function (b, bi) {
@@ -288,10 +300,9 @@ if (typeof window !== "undefined") {
         });
         var tile = document.createElement("button"); tile.className = "db-tile tone-" + (o.tone || "plain"); tile.setAttribute("data-tile", o.key);
         tile.innerHTML = '<span class="ic">' + o.icon + '</span><span class="val">' + t3E(o.value) + '</span><span class="lbl">' + t3E(o.label) + '</span>';
-        var hide = document.createElement("button"); hide.className = "btn ghost sm"; hide.textContent = "Hide ▴"; hide.style.marginLeft = "auto"; ph.appendChild(hide);
         var paint = function () { var open = !!openSet[o.key]; tile.classList.toggle("on", open); pane.style.display = open ? "" : "none"; };
         var toggle = function () { openSet[o.key] = !openSet[o.key]; saveOpen(); paint(); if (openSet[o.key]) { pane.scrollIntoView({ block: "nearest", behavior: "smooth" }); if (o.onOpen) o.onOpen(); } };
-        tile.onclick = toggle; hide.onclick = toggle; paint();
+        tile.onclick = toggle; paint();   // the tile is the switch both ways (Ray: "Hide is useless, you just click the card again")
         tiles.appendChild(tile); detail.appendChild(pane);
       };
       var take = function (re, from) { return from.filter(function (b) { return re.test(b.title); }); };

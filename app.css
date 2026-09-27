@@ -1086,3 +1086,5 @@ body.dark .db-menu{border-color:#3b4756}
 .db-donerow .nm{font-size:14.5px!important;font-weight:600;text-decoration:line-through;color:var(--muted)}
 .db-donerow .sub{font-size:13px}
 .db-donerow .db-src{flex:0 0 26px;text-align:center;font-size:16px}
+.db-donehd:disabled{cursor:default;opacity:.7}
+.db-paneend{margin-left:auto}
