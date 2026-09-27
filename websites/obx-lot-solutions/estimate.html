@@ -28,33 +28,7 @@
   </div>
   <p class="meta" style="color:var(--muted);font-size:.85rem;margin-top:12px">Secure checkout by Stripe. Recurring plans bill automatically and save 20%. Prices confirmed on site for variable scope.</p>
 </div>
-<form id="estimate-form" class="formcard" name="estimate" method="POST" action="/lead">
-  <input type="hidden" name="form-name" value="estimate">
-  <p style="display:none"><label>Don't fill this out: <input name="bot-field"></label></p>
-  <h2 style="margin-top:0">Request your estimate</h2>
-  <label>Your name <span class="req">*</span></label><input name="name" required autocomplete="name">
-  <label>Phone <span class="req">*</span></label><input name="phone" type="tel" required autocomplete="tel">
-  <label>Email</label><input name="email" type="email" autocomplete="email">
-  <label>Property address <span class="req">*</span></label><input name="address" required placeholder="Street, town, NC" autocomplete="street-address">
-  <label>What do you need? <span class="req">*</span></label>
-  <div class="checkrow">
-    <label><input type="checkbox" name="services" value="Soft/pressure washing"> Soft/pressure washing</label>
-    <label><input type="checkbox" name="services" value="Home watch"> Home watch</label>
-    <label><input type="checkbox" name="services" value="Junk removal"> Junk removal</label>
-    <label><input type="checkbox" name="services" value="Yard work"> Yard work</label>
-    <label><input type="checkbox" name="services" value="Shed demolition"> Shed demolition</label>
-    <label><input type="checkbox" name="services" value="Moving &amp; loading"> Moving &amp; loading</label>
-    <label><input type="checkbox" name="services" value="Window washing"> Window washing</label>
-    <label><input type="checkbox" name="services" value="Commercial cleanup"> Commercial cleanup</label>
-  </div>
-  <label>Property size / details</label><textarea name="details" placeholder="e.g. 2-story house ~2,400 sq ft; 2-car driveway; roof has algae on the north side"></textarea>
-  <label>Interested in a recurring plan? (save 20%)</label>
-  <select name="recurring"><option>Not sure yet</option><option>Yes — recurring</option><option>One-time for now</option></select>
-  <label>How did you find us?</label>
-  <select name="source"><option>Google</option><option>Referral / word of mouth</option><option>Facebook / Nextdoor</option><option>Saw the truck / sign</option><option>Property manager</option><option>Other</option></select>
-  <button class="btn block navy" type="submit" style="margin-top:18px">Send my estimate request</button>
-  <p class="meta" style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:10px">We'll get back to you the same day during business hours.</p>
-</form>
+<div class="formcard" style="text-align:center"><h2 style="margin-top:0">Text or call for your estimate</h2><p><a class="btn block navy" href="sms:+12522075985">Text (252) 207-5985</a></p><p style="margin-top:10px"><a class="btn block navy" href="tel:+12522075985">Call (252) 207-5985</a></p><p class="meta" style="text-align:center;color:var(--muted);font-size:.85rem;margin-top:10px">Photos help. We reply the same day.</p></div>
 </div></section>
 
 <footer class="site"><div class="wrap"><div class="fgrid"><div><h4>OBX Lot Solutions</h4><p>Exterior cleaning, home watch, and cleanup for the Outer Banks.</p><p>📞 <a href="tel:+12522075985" style="display:inline">(252) 207-5985</a></p></div><div><h4>Services</h4><a href="soft-washing.html">Soft &amp; pressure washing</a><a href="home-watch.html">Home watch</a><a href="services.html#junk">Junk removal</a><a href="services.html#commercial">Commercial cleanup</a></div><div><h4>Company</h4><a href="about.html">About</a><a href="home-watch-checklist.html">Free checklist</a><a href="faq.html">FAQ</a><a href="case-studies.html">Projects</a><a href="blog.html">Resources</a><a href="contact.html">Contact</a></div><div><h4>Service area</h4><p>Corolla · Duck · Southern Shores · Kitty Hawk · Kill Devil Hills · Nags Head · Manteo · Lower Currituck</p></div></div><div class="fbar">© <span id="yr"></span> OBX Lot Solutions</div></div></footer>
