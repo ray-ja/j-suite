@@ -43,10 +43,22 @@ eq(T.t3Money([]), 0, "empty");
 eq(T.t3Fmt(4570), "$4,570", "whole dollars");
 eq(T.t3Fmt(538.5), "$538.50", "cents when there are any");
 /* the strip */
-eq(T.t3Chips({ needs: 3, owed: 4570, owedN: 7, jobs: 0 }).map(c => c.text), ["3 need you", "$4,570 owed · 7 invoices", "No jobs today"], "a normal morning");
-eq(T.t3Chips({ needs: 1, owed: 15, owedN: 1, jobs: 2 }).map(c => c.text), ["1 needs you", "$15 owed · 1 invoice", "2 jobs today"], "singulars");
-eq(T.t3Chips({ needs: 0, owedN: 0, jobs: 0 }).map(c => c.text), ["Nothing needs you", "No jobs today"], "quiet: no money chip when nothing is owed");
-eq(T.t3Chips({ needs: 0, owedN: 0, jobs: 1, clockedIn: "since 9:12 AM" }).map(c => c.text), ["Nothing needs you", "Clocked in · since 9:12 AM"], "clocked in replaces the jobs chip");
+eq(T.t3Chips({ needs: 3, owed: 4570, owedN: 7, jobs: 0 }).map(c => c.text), ["3 need you", "$4,570 owed · 7 invoices"], "a normal morning: the day's numbers live on the day row, not here");
+eq(T.t3Chips({ needs: 1, owed: 15, owedN: 1, jobs: 2 }).map(c => c.text), ["1 needs you", "$15 owed · 1 invoice"], "singulars");
+eq(T.t3Chips({ needs: 0, owedN: 0, jobs: 0 }).map(c => c.text), ["Nothing needs you"], "quiet: no money chip when nothing is owed");
+/* succinct titles */
+eq(T.t3Split("Skid steer arrives this week: finish Christina Jamieson pond fill (quote #31), then invoice the pond + junk haul #2 ($375) together"), { head: "Skid steer arrives this week", rest: "finish Christina Jamieson pond fill (quote #31), then invoice the pond + junk haul #2 ($375) together" }, "cut at the colon");
+eq(T.t3Split("Follow up Maria Schiavello (KDH fridge) if no reply: \"Still want that fridge gone Tuesday? I can hold the 9am.\""), { head: "Follow up Maria Schiavello (KDH fridge) if no reply", rest: "\"Still want that fridge gone Tuesday? I can hold the 9am.\"" }, "cut at the colon, keeps the quote");
+eq(T.t3Split("Google Local Services: in the Leads inbox, fill the Feedback Survey on the Mexican-restaurant dumpster call").head, "Google Local Services", "a short head before the colon");
+eq(T.t3Split("Fix the lawnmower and mow"), { head: "Fix the lawnmower and mow", rest: "" }, "short titles stay whole");
+eq(T.t3Split("Waterfall #33, tile decision, tile as its own line at cost versus leave the price and ask Sally").head.length <= 57, true, "no break → word boundary with an ellipsis");
+eq(T.t3Strip("📞 Text 9/19 9:50am: one refrigerator"), "Text 9/19 9:50am: one refrigerator", "leading phone stripped");
+eq(T.t3Strip("⚠️ Engine oil change"), "Engine oil change", "leading warning stripped");
+eq(T.t3Strip("Engine oil change"), "Engine oil change", "nothing to strip");
+/* who's working */
+eq(T.t3Working(["Not confirmed", "Not confirmed", "Not confirmed"]), 0, "nobody confirmed = 0 working");
+eq(T.t3Working(["Available all day", "Off", "Part of day", "Not confirmed"]), 2, "available + part of day count; off and unconfirmed do not");
+eq(T.t3Working([]), 0, "empty");
 eq(T.t3Chips({ needs: 2 })[0].hot, true, "needs is hot when there is something");
 eq(T.t3Chips({ needs: 0 })[0].hot, false, "…and not when quiet");
 console.log("=========  " + (n - f) + " passed, " + f + " failed  ========="); process.exit(f ? 1 : 0);

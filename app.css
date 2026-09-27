@@ -1022,3 +1022,17 @@ body.dark .db-inbox,body.dark .db-panel,body.dark .db-col.day>.card,body.dark .d
 .db-suacts{gap:8px;margin-top:10px;flex-wrap:wrap}
 .db-more{display:block}
 .db-inbox .db-row .nm .sub,.db-inbox .db-row .nm .badge{display:inline;-webkit-line-clamp:unset;font-size:14px;vertical-align:baseline}
+/* 11d: succinct titles, the day as a stat row (Ray, 2026-09-27) */
+.db-inbox .db-row .nm{font-size:15.5px!important;font-weight:600}
+.db-inbox .db-row .sub{font-size:13.5px}
+.db-inbox .db-row .sub .db-rest{color:var(--muted)}
+.db-stats{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+.db-stat{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 14px;font:inherit;font-size:14px;font-weight:700;color:var(--ink);cursor:pointer}
+.db-stat .ic{font-size:15px}
+.db-stat.on{border-color:var(--brand-text);box-shadow:inset 0 0 0 1px var(--brand-text)}
+.db-stat.act{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.db-stat.live{background:var(--ok-soft);border-color:transparent}
+body.dark .db-stat{border-color:#3b4756}
+body.dark .db-stat.act{color:#0e1a06}
+.db-inbox .db-row .grow>.sub{font-weight:400!important}
+.db-inbox .db-row .grow>.sub b,.db-inbox .db-row .grow>.sub .db-due{font-weight:600}

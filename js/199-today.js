@@ -42,14 +42,26 @@ function t3Urgency(src, text) {
   if (/no date|not yet done|set the hour meter/i.test(t)) return 4;
   return 3;
 }
+/* a to-do's title is often a paragraph. Cut it into a short head and the rest: at the first clause break
+   (colon, dash, semicolon, sentence end) if that comes early enough, else at a word boundary. Pure. */
+function t3Split(text, max) {
+  var t = String(text || "").replace(/\s+/g, " ").trim(); max = max || 56;
+  if (t.length <= max) return { head: t, rest: "" };
+  var m = t.match(/^(.{12,}?)(?::\s|\s[—–-]\s|;\s|\.\s|\?\s)(.+)$/);
+  if (m && m[1].length <= max * 1.3) return { head: m[1].trim(), rest: m[2].trim() };
+  var cut = t.lastIndexOf(" ", max); if (cut < 24) cut = max;
+  return { head: t.slice(0, cut).trim() + "…", rest: t };
+}
+/* leading pictographs on a line ("📞 Text 9/19…", "⚠️ Engine oil change") — the row already has a mark. Pure. */
+function t3Strip(text) { return String(text || "").replace(/^(?:\s*(?:\p{Extended_Pictographic}|\uFE0F|\u200D|[⚠️✅❌⏳📞🛠🔧])+\s*)+/u, "").trim(); }
+/* how many of the crew are working today from their status labels. Pure. */
+function t3Working(labels) { return (labels || []).filter(function (l) { return !/not confirmed|^off$|time off|^$/i.test(String(l || "").trim()); }).length; }
 /* the header strip's chips from the counts. stats = {needs, owed, owedN, jobs, clockedIn}. Pure. */
 function t3Chips(st) {
   st = st || {}; var out = [];
   out.push({ key: "needs", text: st.needs > 0 ? (st.needs + " need" + (st.needs === 1 ? "s" : "") + " you") : "Nothing needs you", hot: st.needs > 0 });
   if (st.owedN > 0) out.push({ key: "money", text: t3Fmt(st.owed) + " owed · " + st.owedN + " invoice" + (st.owedN === 1 ? "" : "s"), hot: false });
-  if (st.clockedIn) out.push({ key: "day", text: "Clocked in" + (st.clockedIn === true ? "" : " · " + st.clockedIn), hot: false });
-  else out.push({ key: "day", text: st.jobs > 0 ? (st.jobs + " job" + (st.jobs === 1 ? "" : "s") + " today") : "No jobs today", hot: false });
-  return out;
+  return out;   // the day's own numbers live on the day column's stat row, not here twice
 }
 if (typeof window !== "undefined") {
   var T3 = { clock: false, standup: false, all: false };   // what the user opened this session
@@ -126,6 +138,19 @@ if (typeof window !== "undefined") {
         el.setAttribute("data-src", r.src); el.title = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 300);
         /* a row with its own checkbox (a to-do) has its mark already */
         if (!el.querySelector(":scope > input[type=checkbox]")) { var mark = document.createElement("span"); mark.className = "db-src"; mark.textContent = r.icon; mark.title = r.src; el.insertBefore(mark, el.firstChild); }
+        /* succinct title, small description (Ray, 2026-09-27: "the money side is done correctly") */
+        var nm = el.querySelector(".nm"), sub = el.querySelector(".grow > .sub") || el.querySelector(":scope > .sub");
+        if (nm) {
+          var tn = null; nm.childNodes.forEach(function (c) { if (!tn && c.nodeType === 3 && c.textContent.trim()) tn = c; });
+          if (tn) {
+            var clean = t3Strip(tn.textContent) + (/\s$/.test(tn.textContent) ? " " : "");
+            if (/to-dos/i.test(r.src)) {
+              var sp = t3Split(clean, 56); tn.textContent = sp.head;
+              if (sp.rest) { if (!sub) { sub = document.createElement("div"); sub.className = "sub"; nm.after(sub); } sub.innerHTML = '<span class="db-rest">' + t3E(sp.rest) + '</span>' + (sub.innerHTML.trim() ? ' · ' + sub.innerHTML : ''); }
+            } else tn.textContent = clean;
+          }
+        }
+        if (sub) { var sn = null; sub.childNodes.forEach(function (c) { if (!sn && c.nodeType === 3 && c.textContent.trim()) sn = c; }); if (sn) sn.textContent = t3Strip(sn.textContent); }
         inbox.appendChild(el);
       });
       if (rows.length > cap) {
@@ -149,10 +174,33 @@ if (typeof window !== "undefined") {
       /* THE DAY */
       cols.day.appendChild(t3Head("The day"));
       groups.day.forEach(function (b) { t3Move(cols.day, b); });
+      /* THE DAY AS A STAT ROW (Ray, 2026-09-27: "a little person icon with the number of people working today…
+         click on that to expand"). Jobs, crew, clock and ads become chips; each chip toggles its card. */
+      var stats = document.createElement("div"); stats.className = "db-stats"; cols.day.querySelector(".db-colhd").after(stats);
+      var statFor = function (b, icon, text, cls) {
+        var target = b.line || b.nodes[0]; if (!target) return;
+        var chip = document.createElement("button"); chip.className = "db-stat" + (cls ? " " + cls : ""); chip.innerHTML = '<span class="ic">' + icon + '</span>' + t3E(text); stats.appendChild(chip);
+        var key = "stat:" + b.title, els = (b.line ? [b.line] : []).concat(b.head ? [b.head] : []).concat(b.nodes);
+        var paint = function () { var open = !!T3[key]; chip.classList.toggle("on", open); els.forEach(function (n) { if (b.line && n !== b.line && !open) return; n.style.display = open ? (n === b.line ? "none" : "") : (n === b.line ? "" : "none"); if (!open && b.line) n.style.display = "none"; }); if (!open && b.line) b.line.style.display = "none"; };
+        chip.onclick = function () { T3[key] = !T3[key]; paint(); if (T3[key] && b.nodes[0]) b.nodes[0].scrollIntoView({ block: "nearest" }); };
+        paint();
+      };
+      groups.day.forEach(function (b) {
+        var t = b.title, txt = b.nodes.map(function (n) { return n.textContent || ""; }).join(" ");
+        if (/today's jobs/i.test(t)) { var ct = b.head && b.head.querySelector(".ct"); var nj = ct ? (parseInt(ct.textContent, 10) || 0) : 0; statFor(b, "📅", nj + (nj === 1 ? " job" : " jobs") + " today"); }
+        else if (/who's working/i.test(t)) {
+          var labels = []; b.nodes.forEach(function (n) { n.querySelectorAll(".li > span, .li span[style*='font-weight:700']").forEach(function (x) { labels.push(x.textContent); }); });
+          if (!labels.length && b.line) labels = (b.line.querySelector(".s") || b.line).textContent.split("·").map(function (x) { return x.replace(/^[^A-Za-z]*\w+\s/, "").trim(); });
+          var w = t3Working(labels); statFor(b, "👥", w + " working");
+        }
+        else if (/clock in/i.test(t) && !/clocked in/i.test(t)) { statFor(b, "⏱", "Clock in", "act"); }
+        else if (/clocked in/i.test(t)) { statFor(b, "⏱", "Clocked in", "live"); }
+        else if (/ads|off duty/i.test(t)) { var on = /running/i.test(txt); statFor(b, "📣", on ? "Ads on" : "Ads off"); }
+      });
       /* rule 4: clock in folds (desktop) */
       Array.prototype.slice.call(cols.day.querySelectorAll(".card")).forEach(function (card) {
         var nm = card.firstElementChild; if (!nm || !nm.classList.contains("nm") || !/clock in/i.test(nm.textContent || "") || !card.querySelector("select")) return;
-        card.classList.add("db-clockcard"); if (compact) return;
+        card.classList.add("db-clockcard"); if (compact || stats.querySelector(".db-stat.act")) return;
         var hd = document.createElement("div"); hd.className = "row db-clockhd"; card.insertBefore(hd, nm); hd.appendChild(nm);
         var btn = document.createElement("button"); btn.className = "btn sm db-clockgo"; hd.appendChild(btn);
         if (!T3.clock) card.classList.add("folded");
@@ -217,6 +265,6 @@ if (typeof window !== "undefined") {
     } catch (e) { try { console.warn("today pass skipped:", e); } catch (_) {} }
   }
   if (typeof secSplit === "function") { var _ss9 = secSplit; secSplit = function (tab) { var r = _ss9.apply(this, arguments); t3Apply(); return r; }; window.secSplit = secSplit; }
-  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
+  window.t3Col = t3Col; window.t3Urgency = t3Urgency; window.t3Split = t3Split; window.t3Strip = t3Strip; window.t3Working = t3Working; window.t3Icon = t3Icon; window.t3Money = t3Money; window.t3Chips = t3Chips;
 }
-if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { t3Col: t3Col, t3Split: t3Split, t3Strip: t3Strip, t3Working: t3Working, t3MoneyRank: t3MoneyRank, t3Urgency: t3Urgency, t3Icon: t3Icon, t3Money: t3Money, t3Fmt: t3Fmt, t3Chips: t3Chips }; }
