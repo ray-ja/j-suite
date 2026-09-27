@@ -390,11 +390,12 @@ if (typeof window !== "undefined") {
           var th = body.querySelector("#cap-thread"), capCard = th && th.closest(".card"), capHd = capCard && capCard.previousElementSibling;
           if (capHd && capHd.classList.contains("secthd")) capHd.classList.add("db-hide");
           if (th) {
-            var last = th.lastElementChild, raw = last ? ((last.innerText || last.textContent || "")) : "";
+            /* the thread is folded (display:none), so innerText gives no line breaks: read the <br>s ourselves */
+            var last = th.lastElementChild, raw = last ? String(last.innerHTML || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ") : "";
             var paras = raw.replace(/\*\*/g, "").split(/\n\s*\n|\n/).map(function (x) { return x.replace(/\s+/g, " ").trim(); }).filter(Boolean);
             if (paras.length) { var brief = document.createElement("div"); brief.className = "db-brief"; brief.innerHTML = '<div class="nm">Today\'s brief</div>' + paras.map(function (x) { return '<div class="sub">' + t3E(x) + '</div>'; }).join(""); body.insertBefore(brief, body.firstChild); }
             /* the stand-up card's own title repeats the pane's */
-            var suNm = body.querySelector(".card .nm"); if (suNm && /stand-up/i.test(suNm.textContent || "")) suNm.classList.add("db-hide");
+            var suNm = body.querySelector(".db-panebody > .card .nm"); if (suNm && /stand-up/i.test(suNm.textContent || "")) suNm.classList.add("db-hide");
             th.classList.add("db-capthread"); if (!T3.cap) th.classList.add("db-fold");
             var cb = document.createElement("button"); cb.className = "btn ghost sm db-capgo"; capCard.insertBefore(cb, th);
             t3Toggle(cb, th, "db-fold", "Earlier with Cap ▾", "Hide ▴", "cap", function (open) { if (open && typeof capScrollThread === "function") setTimeout(capScrollThread, 20); });
