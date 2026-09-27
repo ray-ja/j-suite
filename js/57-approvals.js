@@ -6,7 +6,16 @@
 
 /* every org on this device that carries proposals (Ray, 2026-09-27: Stoneworks was invisible here because this
    list was hard-coded to obx + jam); the registry is the source, so a new org needs nothing */
-function apprBizes() { try { return ((typeof S !== "undefined" && S.registry) || []).filter(function (r) { return r && r.id && !r.deleted && S[r.id] && Array.isArray(S[r.id].pendingChanges); }).map(function (r) { return r.id; }); } catch (e) { return ["obx", "jam"]; } }
+/* Ray, 2026-09-27 (after the first cut pulled his journal suggestions into OBX): a BUSINESS Today shows only its
+   own org's proposals; the PERSONAL org is the aggregate and shows every org's. */
+function apprBizes() {
+  try {
+    var here = (typeof S !== "undefined" && S.biz) || "";
+    var personal = (typeof orgIsPersonalOrg === "function") && orgIsPersonalOrg();
+    var all = ((typeof S !== "undefined" && S.registry) || []).filter(function (r) { return r && r.id && !r.deleted && S[r.id] && Array.isArray(S[r.id].pendingChanges); }).map(function (r) { return r.id; });
+    return personal ? all : all.filter(function (id) { return id === here; });
+  } catch (e) { return ["obx", "jam"]; }
+}
 const APPR_BIZES = { forEach: function (fn) { apprBizes().forEach(fn); }, indexOf: function (x) { return apprBizes().indexOf(x); }, get length() { return apprBizes().length; } };
 // business collections Cap may propose into (mirror of server PROPOSE_COLLECTIONS) — excludes system/meta
 const APPR_WRITABLE = ["customers", "quotes", "jobs", "todos", "mktTracker", "docs", "places", "properties", "inventory", "timeclock", "income", "expenses", "resale", "knowledge"];
