@@ -15,7 +15,7 @@
    Post-render after js/197 (which triages and quiets) and js/198. Nothing is deleted: every original node
    stays in the DOM, hidden or moved, so every handler still fires. Pure helpers tested in today3-tests.js. */
 var T3_NEEDS = /approvals|follow-ups|top to-dos|equipment service|payment plans|need(s)? cleaning|recurring visit|quick-start|quick start/i;
-var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting|next 30 days|cash on hand|fixed costs|left after/i;
+var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting|next 30 days|cash on hand|fixed costs|left after|clicks yesterday|ad spend/i;
 /* the money panel reads top-down from what is owed to what is paid out. Pure. */
 var T3_MONEY_ORDER = [/cash on hand/i, /awaiting payment/i, /invoices to send/i, /not expecting/i, /next 30 days/i, /fixed costs/i, /confirmed jobs/i, /open quotes/i, /payouts/i, /left after/i];
 function t3MoneyRank(title) { var s = String(title || ""); for (var i = 0; i < T3_MONEY_ORDER.length; i++) if (T3_MONEY_ORDER[i].test(s)) return i; return T3_MONEY_ORDER.length; }
@@ -336,7 +336,10 @@ if (typeof window !== "undefined") {
       if (owedB.length) addTile({ group: "Money", key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "invoiced · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Invoiced", blocks: owedB });
       /* next 30 days: what the scheduled jobs are quoted at (Ray: "what our cash flow looks like") */
       var upB = take(/next 30 days/i, groups.money);
-      if (upB.length) { var upAmt = moneyOf(upB), upN = 0; upB.forEach(function (b) { var ct = b.head && b.head.querySelector(".ct"); upN += ct ? (parseInt(ct.textContent, 10) || 0) : 0; }); addTile({ group: "Money", key: "upcoming", icon: "📆", value: t3Fmt(upAmt), label: "next 30 days · " + upN + (upN === 1 ? " job" : " jobs"), tone: "brand", title: "Next 30 days", blocks: upB }); }
+      /* LEADS (Ray, 2026-09-27): clicks yesterday, expected value over the next 30 days, ad spend this month */
+      var clB = take(/clicks yesterday/i, groups.money), spB = take(/ad spend/i, groups.money);
+      if (clB.length) addTile({ group: "Leads", key: "clicks", icon: "🖱", value: "…", label: "clicks yesterday", tone: "plain", title: "Clicks yesterday", blocks: clB });
+      if (upB.length) { var upAmt = moneyOf(upB), upN = 0; upB.forEach(function (b) { var ct = b.head && b.head.querySelector(".ct"); upN += ct ? (parseInt(ct.textContent, 10) || 0) : 0; }); addTile({ group: "Leads", key: "upcoming", icon: "📆", value: t3Fmt(upAmt), label: "next 30 days · " + upN + (upN === 1 ? " job" : " jobs"), tone: "brand", title: "Next 30 days", blocks: upB }); }
       /* "Not expecting" (js/50 recDoubtful) rides in the Owed pane, folded, and never in the tile's number */
       (function () {
         var pane = detail.querySelector('[data-pane="owed"] .db-panebody'); if (!pane) return;
@@ -349,6 +352,8 @@ if (typeof window !== "undefined") {
         var paintN = function () { var open = !!T3.nexp; tb.textContent = (open ? "▾ " : "▸ ") + "Not expecting " + t3Fmt(amt) + " · " + n + (n === 1 ? " invoice" : " invoices"); card.style.display = open ? "" : "none"; };
         tb.onclick = function () { T3.nexp = !T3.nexp; paintN(); }; paintN();
       })();
+      if (spB.length) addTile({ group: "Leads", key: "spend", icon: "💸", value: "…", label: "ads this month", tone: "plain", title: "Ad spend this month", blocks: spB });
+      if (typeof adsPaint === "function") setTimeout(adsPaint, 0);
       var pipeB = take(/confirmed jobs|open quotes/i, groups.money);
       if (pipeB.length) addTile({ group: "Money", key: "pipe", icon: "🧾", value: t3Fmt(moneyOf(pipeB)), label: "booked and quoted", tone: "brand", title: "In the pipeline", blocks: pipeB });
       var payB = take(/payouts/i, groups.money);

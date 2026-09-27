@@ -3081,6 +3081,21 @@ const GADS_FILE = path.join(__dirname, "google-ads-config.json");
 const GADS_REDIRECT = "http://127.0.0.1:8085";
 const GADS_API_VERSION = "v22";
 /* per-org Google Ads config, living inside the org key store (each org gets its own ads account) */
+/* campaign rows (GAQL results) → { clicks, costCents, byType:{ "Local Services":{clicks,costCents}, "Google Ads":{…} }, dates:[…] }. Pure. */
+const ADS_STATS_CACHE = {};
+function adsStatsAgg(rows) {
+  const out = { clicks: 0, costCents: 0, byType: {}, dates: [] };
+  (rows || []).forEach(r => {
+    const m = (r && r.metrics) || {}, ch = String((r && r.campaign && r.campaign.advertisingChannelType) || "");
+    const type = ch === "LOCAL_SERVICES" ? "Local Services" : "Google Ads";
+    const clicks = +m.clicks || 0, cents = Math.round((+m.costMicros || 0) / 10000);
+    out.clicks += clicks; out.costCents += cents;
+    const t = out.byType[type] || (out.byType[type] = { clicks: 0, costCents: 0 }); t.clicks += clicks; t.costCents += cents;
+    const d = r && r.segments && r.segments.date; if (d && out.dates.indexOf(d) < 0) out.dates.push(d);
+  });
+  out.dates.sort();
+  return out;
+}
 function gadsLoad(org) { const k = orgKeysLoad(); const o = k[org || "obx"] || {}; return o.gads || {}; }
 function gadsSave(cfg, org) { const k = orgKeysLoad(); const id = org || "obx"; if (!k[id]) k[id] = {}; k[id].gads = cfg; orgKeysSave(k); }
 /* the downloaded OAuth client JSON — accepts the "installed" (desktop) or "web" wrapper */
@@ -4988,6 +5003,35 @@ const server = http.createServer((req, res) => {
      POST /api/ads/duty {org, on:true|false} → pauses / enables every ENABLED-or-PAUSED campaign on the org's Google Ads
      account (search + Local Services) in one call. Uses the org's stored OAuth refresh token; the manager account id
      comes from gads.managerId when set, else the call goes without login-customer-id. */
+  /* ---- AD STATS (Ray, 2026-09-27: "clicks yesterday, midnight to midnight; ad spend this month, first to last
+     day; between Local Services and Google Ads") ----
+     GET /api/ads/stats?org=obx → { ok, yesterday:{date, clicks, byType}, month:{ym, costCents, byType}, at }
+     Two GAQL reads on the campaign resource (DURING YESTERDAY / THIS_MONTH, in the account's own time zone),
+     split by advertising_channel_type (LOCAL_SERVICES vs everything else). Cached 30 min per org. */
+  if (req.url.split("?")[0] === "/api/ads/stats" && req.method === "GET") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const org = String(new URL(req.url, "http://x").searchParams.get("org") || "obx");
+    const hit = ADS_STATS_CACHE[org]; if (hit && Date.now() - hit.at < 30 * 60e3) return J(200, Object.assign({ cached: true }, hit.data));
+    const c = gadsLoad(org);
+    if (!c.clientId || !c.refreshToken || !c.customerId || !c.developerToken) return J(400, { error: "Google Ads is not connected for this org (Settings → Keys)" });
+    const cid = String(c.customerId).replace(/-/g, "");
+    const hdr = (at) => { const h = { authorization: "Bearer " + at, "developer-token": c.developerToken, "content-type": "application/json" }; if (c.managerId) h["login-customer-id"] = String(c.managerId).replace(/-/g, ""); return h; };
+    const q = (at, range) => fetch("https://googleads.googleapis.com/" + GADS_API_VERSION + "/customers/" + cid + "/googleAds:searchStream", { method: "POST", headers: hdr(at), body: JSON.stringify({ query: "SELECT campaign.name, campaign.advertising_channel_type, metrics.clicks, metrics.cost_micros, segments.date FROM campaign WHERE segments.date DURING " + range }) })
+      .then(r => r.json()).then(j => (Array.isArray(j) ? j : []).flatMap(ch => ch.results || []));
+    fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, refresh_token: c.refreshToken, grant_type: "refresh_token" }).toString() })
+      .then(r => r.json()).then(tj => {
+        if (!tj || !tj.access_token) return J(502, { error: "Google refused the token" });
+        return Promise.all([q(tj.access_token, "YESTERDAY"), q(tj.access_token, "THIS_MONTH")]).then(([y, m]) => {
+          const data = { ok: true, yesterday: adsStatsAgg(y), month: adsStatsAgg(m), at: Date.now() };
+          ADS_STATS_CACHE[org] = { at: Date.now(), data: data };
+          J(200, data);
+        }).catch(() => J(502, { error: "Google Ads did not answer" }));
+      }).catch(() => J(502, { error: "Google did not answer" }));
+    return;
+  }
   if (req.url.split("?")[0] === "/api/ads/duty" && (req.method === "GET" || req.method === "POST")) {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
     const sc = tokenScope(tok);
@@ -6419,4 +6463,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { adsStatsAgg, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

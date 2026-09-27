@@ -412,6 +412,19 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("logView: an unknown org is a safe no-op (no throw, no ping)", t.invLogView(mkStore(), "nope", q, cust, "", T0).threadId === null);
 })();
 
+// ── ad stats: campaign rows split Local Services vs Google Ads, micros → cents ──
+{
+  const rows = [
+    { campaign: { name: "LocalServices", advertisingChannelType: "LOCAL_SERVICES" }, metrics: { clicks: "3", costMicros: "45000000" }, segments: { date: "2026-09-26" } },
+    { campaign: { name: "OBX Junk search", advertisingChannelType: "SEARCH" }, metrics: { clicks: "7", costMicros: "12340000" }, segments: { date: "2026-09-26" } },
+    { campaign: { name: "OBX Junk search", advertisingChannelType: "SEARCH" }, metrics: { clicks: "2", costMicros: "1000000" }, segments: { date: "2026-09-25" } },
+  ];
+  const a = t.adsStatsAgg(rows);
+  ok("ad stats: clicks and cost sum across rows", a.clicks === 12 && a.costCents === 5834);
+  ok("ad stats: split by channel", a.byType["Local Services"].clicks === 3 && a.byType["Local Services"].costCents === 4500 && a.byType["Google Ads"].clicks === 9 && a.byType["Google Ads"].costCents === 1334);
+  ok("ad stats: the dates covered", a.dates.join() === "2026-09-25,2026-09-26");
+  ok("ad stats: empty", t.adsStatsAgg([]).clicks === 0 && t.adsStatsAgg(null).costCents === 0);
+}
 // ── Stripe paid events: a card completes "paid" at once; a bank debit completes "unpaid" then succeeds async ──
 {
   const paid = (type, ps) => ({ type, data: { object: { payment_status: ps } } });

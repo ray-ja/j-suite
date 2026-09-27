@@ -117,6 +117,39 @@ if (typeof window !== "undefined") {
       return h;
     } catch (e) { try { console.warn("money tiles skipped:", e); } catch (_) {} return ""; }
   };
+  /* ---- LEADS: ad clicks yesterday + ad spend this month (Ray, 2026-09-27) ----
+     Fetched from /api/ads/stats (owner, cached 30 min server-side); rendered as two sections js/199 tiles under
+     "Leads". While the answer is in flight the tiles read "…"; on arrival the tiles and cards update in place. */
+  window.ADS_STATS = window.ADS_STATS || { data: null, at: 0, busy: false, err: "" };
+  function adsOwner() { try { var u = (typeof curUser === "function") ? curUser() : null; return !!(u && u.superAdmin) || ((typeof isOwner === "function") && isOwner()); } catch (e) { return false; } }
+  function adsMoney(c) { return mtM(c); }
+  function adsPaint() {
+    var st = window.ADS_STATS, d = st.data;
+    var clicksTile = document.querySelector('.db-tile[data-tile="clicks"]'), spendTile = document.querySelector('.db-tile[data-tile="spend"]');
+    var y = d && d.yesterday, m = d && d.month;
+    var yDate = y && y.dates && y.dates.length ? y.dates[0] : "";
+    if (clicksTile) { clicksTile.querySelector(".val").textContent = d ? String(y.clicks) : (st.err ? "—" : "…"); clicksTile.querySelector(".lbl").textContent = d ? ("clicks yesterday" + (yDate ? " · " + yDate.slice(5).replace("-", "/") : "")) : (st.err || "clicks yesterday"); }
+    if (spendTile) { spendTile.querySelector(".val").textContent = d ? adsMoney(m.costCents) : (st.err ? "—" : "…"); spendTile.querySelector(".lbl").textContent = d ? ("ads this month · " + adsMoney((m.byType["Local Services"] || {}).costCents || 0) + " LSA · " + adsMoney((m.byType["Google Ads"] || {}).costCents || 0) + " search") : (st.err || "ads this month"); }
+    var rows = function (agg) { if (!agg) return '<div class="sub">' + mtE(st.err || "Loading…") + '</div>'; var t = agg.byType || {}; return ["Local Services", "Google Ads"].map(function (k) { var v = t[k] || { clicks: 0, costCents: 0 }; return '<div class="li"><div class="grow"><div class="nm" style="font-size:15px">' + mtE(k) + '</div><div class="sub">' + v.clicks + (v.clicks === 1 ? " click" : " clicks") + '</div></div><div class="nm" style="color:var(--brand-text)">' + adsMoney(v.costCents) + '</div></div>'; }).join(""); };
+    var c1 = document.getElementById("ads_clicks_body"); if (c1) c1.innerHTML = rows(y) + (y ? '<div class="sub" style="margin-top:6px">' + (yDate ? "Midnight to midnight, " + mtE(yDate) : "Yesterday") + ' in the account\'s time zone.</div>' : "");
+    var c2 = document.getElementById("ads_spend_body"); if (c2) c2.innerHTML = rows(m) + (m ? '<div class="sub" style="margin-top:6px">First of the month to today' + (d.at ? " · as of " + mtE(new Date(d.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })) : "") + '. Local Services bills per lead; Google Ads per click.</div>' : "");
+  }
+  window.adsPaint = adsPaint;
+  window.adsStatsFetch = function (force) {
+    var st = window.ADS_STATS; if (st.busy) return; if (!force && st.data && Date.now() - st.at < 30 * 60e3) { adsPaint(); return; }
+    st.busy = true;
+    var org = (typeof S !== "undefined" && S.biz) || "obx";
+    fetch("./api/ads/stats?org=" + encodeURIComponent(org), { headers: { "Authorization": "Bearer " + ((typeof S !== "undefined" && S.sync && S.sync.token) || "") } }).then(function (r) { return r.json(); }).then(function (j) {
+      st.busy = false; if (j && j.ok) { st.data = j; st.at = Date.now(); st.err = ""; } else st.err = (j && j.error) || "no answer";
+      adsPaint();
+    }).catch(function () { st.busy = false; st.err = "offline"; adsPaint(); });
+  };
+  window.adsSectionsHTML = function () {
+    if (!adsOwner()) return "";
+    setTimeout(function () { try { window.adsStatsFetch(false); } catch (e) {} }, 30);
+    return '<div class="secthd"><h2>🖱 Clicks yesterday</h2></div><div class="card"><div id="ads_clicks_body"><div class="sub">Loading…</div></div></div>'
+      + '<div class="secthd"><h2>💸 Ad spend this month</h2></div><div class="card"><div id="ads_spend_body"><div class="sub">Loading…</div></div></div>';
+  };
   window.mtRecurringVendors = mtRecurringVendors; window.mtInstallmentsDue = mtInstallmentsDue; window.mtPartnerDebt = mtPartnerDebt; window.mtCashPick = mtCashPick; window.mtDelta = mtDelta;
 }
 if (typeof module !== "undefined" && module.exports) { module.exports = { mtMedian: mtMedian, mtPartnerDebt: mtPartnerDebt, mtRecurringVendors: mtRecurringVendors, mtInstallmentsDue: mtInstallmentsDue, mtCashPick: mtCashPick, mtDelta: mtDelta }; }

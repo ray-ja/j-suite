@@ -23,6 +23,8 @@ eq(T.t3Col(""), "day", "unknown → the day");
 eq(["💵 Payouts", "📝 Open quotes", "⏳ Awaiting payment", "🔧 Confirmed jobs", "📤 Invoices to send"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b)), ["⏳ Awaiting payment", "📤 Invoices to send", "🔧 Confirmed jobs", "📝 Open quotes", "💵 Payouts"], "owed first, paid out last");
 eq(T.t3MoneyRank("something else"), 10, "unknown sinks to the end");
 eq(T.t3Col("🏦 Cash on hand"), "money", "cash is money");
+eq(T.t3Col("🖱 Clicks yesterday"), "money", "clicks ride the money pipeline into the Leads group");
+eq(T.t3Col("💸 Ad spend this month"), "money", "ad spend too");
 eq(T.t3Col("🔁 Fixed costs this month"), "money", "fixed costs are money");
 eq(T.t3Col("⚖️ Left after obligations"), "money", "the delta is money");
 /* urgency */
