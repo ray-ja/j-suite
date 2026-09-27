@@ -15,9 +15,9 @@
    Post-render after js/197 (which triages and quiets) and js/198. Nothing is deleted: every original node
    stays in the DOM, hidden or moved, so every handler still fires. Pure helpers tested in today3-tests.js. */
 var T3_NEEDS = /approvals|follow-ups|top to-dos|equipment service|payment plans|need(s)? cleaning|recurring visit|quick-start|quick start/i;
-var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs/i;
+var T3_MONEY = /awaiting payment|open quotes|payouts|invoices to send|confirmed jobs|not expecting/i;
 /* the money panel reads top-down from what is owed to what is paid out. Pure. */
-var T3_MONEY_ORDER = [/awaiting payment/i, /invoices to send/i, /confirmed jobs/i, /open quotes/i, /payouts/i];
+var T3_MONEY_ORDER = [/awaiting payment/i, /invoices to send/i, /not expecting/i, /confirmed jobs/i, /open quotes/i, /payouts/i];
 function t3MoneyRank(title) { var s = String(title || ""); for (var i = 0; i < T3_MONEY_ORDER.length; i++) if (T3_MONEY_ORDER[i].test(s)) return i; return T3_MONEY_ORDER.length; }
 function t3Col(title) { var s = String(title || ""); if (T3_NEEDS.test(s)) return "needs"; if (T3_MONEY.test(s)) return "money"; return "day"; }
 /* the type mark for an inbox row: the head's leading emoji, else a dot. Pure. */
@@ -60,6 +60,8 @@ function t3Working(labels) { return (labels || []).filter(function (l) { return 
    Which actions fit which source. Pure. */
 function t3Actions(src) {
   var sr = String(src || "");
+  if (/awaiting payment/i.test(sr)) return ["nexp"];
+  if (/not expecting/i.test(sr)) return ["exp"];
   if (/to-dos/i.test(sr)) return ["tomorrow", "week", "low", "delete"];
   if (/follow-ups/i.test(sr)) return ["tomorrow", "week", "delete"];
   return [];
@@ -125,7 +127,7 @@ if (typeof window !== "undefined") {
   }
   /* the ⋯ menu on an inbox row: acts on the record behind the row through the same fields the screens use,
      soft-deletes only (deleted:true), then saves and re-renders. */
-  var T3_LABELS = { tomorrow: "Push to tomorrow", week: "Next week", low: "Not urgent", delete: "Delete" };
+  var T3_LABELS = { tomorrow: "Push to tomorrow", week: "Next week", low: "Not urgent", delete: "Delete", nexp: "Not expecting this", exp: "Expecting this again" };
   function t3RecordFor(el, src) {
     var html = el.outerHTML, m;   // outerHTML: a follow-up row carries its openCustomer(...) on the row ITSELF
     if (/to-dos/i.test(src) && (m = html.match(/toggleTodo\('([^']+)'\)|openTodo\('([^']+)'\)/))) { var id = m[1] || m[2]; var td = ((typeof D === "function" && D().todos) || []).find(function (x) { return x && x.id === id; }); return td ? { kind: "todo", rec: td } : null; }
@@ -133,6 +135,7 @@ if (typeof window !== "undefined") {
     return null;
   }
   function t3Act(el, src, key) {
+    if (key === "nexp" || key === "exp") { var qm = el.outerHTML.match(/openQuote\('([^']+)'\)|openInvoice\('([^']+)'\)/); if (qm && typeof recToggleDoubtful === "function") recToggleDoubtful(qm[1] || qm[2]); return; }
     var r = t3RecordFor(el, src); if (!r) { if (typeof toast === "function") toast("Couldn't find that record"); return; }
     var rec = r.rec, t = (typeof today === "function") ? today() : new Date().toISOString().slice(0, 10);
     var label = r.kind === "customer" ? (rec.name || rec.company || "lead") : (rec.title || "to-do");
@@ -208,7 +211,7 @@ if (typeof window !== "undefined") {
       /* stats for the strip, read before anything moves */
       var st = { needs: 0, owed: 0, owedN: 0, jobs: 0, clockedIn: false };
       blocks.forEach(function (b) {
-        if (/awaiting payment/i.test(b.title) && b.head) { var ct = b.head.querySelector(".ct"); st.owedN = ct ? (parseInt(ct.textContent, 10) || 0) : 0; var vals = []; b.nodes.forEach(function (n) { Array.prototype.slice.call(n.querySelectorAll(".li > .nm, .li > div.nm")).forEach(function (x) { vals.push(x.textContent); }); }); st.owed = t3Money(vals); }
+        if (/awaiting payment/i.test(b.title) && b.head) { st.processing = t3Money(Array.prototype.slice.call(b.nodes[0] ? b.nodes[0].querySelectorAll(".li") : []).filter(function (li) { return /processing/i.test(li.textContent || ""); }).map(function (li) { var a = li.querySelector(".li > .nm:last-child, div.nm:last-child"); return a ? a.textContent : ""; })); var ct = b.head.querySelector(".ct"); st.owedN = ct ? (parseInt(ct.textContent, 10) || 0) : 0; var vals = []; b.nodes.forEach(function (n) { Array.prototype.slice.call(n.querySelectorAll(".li > .nm, .li > div.nm")).forEach(function (x) { vals.push(x.textContent); }); }); st.owed = t3Money(vals); }
         if (/today's jobs/i.test(b.title)) { var c2 = b.head && b.head.querySelector(".ct"); st.jobs = c2 ? (parseInt(c2.textContent, 10) || 0) : 0; }
         if (/clocked in/i.test(b.title)) { var s = b.nodes[0] && b.nodes[0].querySelector(".sub"); st.clockedIn = (s && /since/i.test(s.textContent)) ? s.textContent.trim() : true; }
       });
@@ -306,12 +309,25 @@ if (typeof window !== "undefined") {
         tiles.appendChild(tile); detail.appendChild(pane);
       };
       var take = function (re, from) { return from.filter(function (b) { return re.test(b.title); }); };
+      groups.money.forEach(function (b) { if (/awaiting payment|not expecting/i.test(b.title)) b.nodes.forEach(function (n) { n.querySelectorAll(".li").forEach(function (li) { li.style.position = "relative"; t3Menu(li, b.title); }); }); });
       var moneyOf = function (bs) { var v = []; bs.forEach(function (b) { b.nodes.forEach(function (n) { n.querySelectorAll(".li > .nm, .li > div.nm").forEach(function (x) { v.push(x.textContent); }); }); }); return t3Money(v); };
       /* 1. needs you */
       addTile({ key: "needs", icon: "🔔", value: String(rows.length), label: rows.length === 1 ? "needs you" : "need you", tone: rows.length ? "danger" : "plain", title: "Needs you", nodes: [inbox] });
       /* 2. money */
-      var owedB = take(/awaiting payment|invoices to send/i, groups.money);
-      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "owed · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices"), tone: "accent", title: "Owed to you", blocks: owedB });
+      var owedB = take(/awaiting payment|invoices to send|not expecting/i, groups.money);
+      if (owedB.length) addTile({ key: "owed", icon: "💵", value: t3Fmt(st.owed), label: "owed · " + st.owedN + (st.owedN === 1 ? " invoice" : " invoices") + (st.processing ? " · " + t3Fmt(st.processing) + " processing" : ""), tone: "accent", title: "Owed to you", blocks: owedB });
+      /* "Not expecting" (js/50 recDoubtful) rides in the Owed pane, folded, and never in the tile's number */
+      (function () {
+        var pane = detail.querySelector('[data-pane="owed"] .db-panebody'); if (!pane) return;
+        var hd = Array.prototype.slice.call(pane.querySelectorAll(".secthd.db-sub")).find(function (h) { return /not expecting/i.test(h.textContent || ""); }); if (!hd) return;
+        var card = hd.nextElementSibling; if (!card) return;
+        var wrap = document.createElement("div"); wrap.className = "db-nexp"; hd.before(wrap);
+        var tb = document.createElement("button"); tb.className = "db-donehd"; wrap.appendChild(tb); wrap.appendChild(hd); wrap.appendChild(card);
+        var amt = t3Money(Array.prototype.slice.call(card.querySelectorAll(".li > .nm:last-child")).map(function (x) { return x.textContent; })), n = card.querySelectorAll(".li").length;
+        hd.classList.add("db-hide");
+        var paintN = function () { var open = !!T3.nexp; tb.textContent = (open ? "▾ " : "▸ ") + "Not expecting " + t3Fmt(amt) + " · " + n + (n === 1 ? " invoice" : " invoices"); card.style.display = open ? "" : "none"; };
+        tb.onclick = function () { T3.nexp = !T3.nexp; paintN(); }; paintN();
+      })();
       var pipeB = take(/confirmed jobs|open quotes/i, groups.money);
       if (pipeB.length) addTile({ key: "pipe", icon: "🧾", value: t3Fmt(moneyOf(pipeB)), label: "booked and quoted", tone: "brand", title: "In the pipeline", blocks: pipeB });
       var payB = take(/payouts/i, groups.money);

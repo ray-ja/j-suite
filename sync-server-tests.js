@@ -422,6 +422,25 @@ ok("calToken STRIP: the caller KEEPS their own calToken (own feed URL still work
   ok("stripePaidEvent: garbage is ignored", t.stripePaidEvent(null) === false && t.stripePaidEvent({}) === false);
   ok("registration subscribes to both", t.STRIPE_PAID_EVENTS.length === 2 && t.STRIPE_PAID_EVENTS.indexOf("checkout.session.async_payment_succeeded") === 1);
 }
+// ── processing: an ACH checkout completes unpaid → payPending on the scope's open invoices; failed → cleared; settled → cleared + paid ──
+{
+  const mk = () => ({ obx: { quotes: [
+    { id: "qa", customerId: "c1", invoiced: true, paid: false, total: 375, finalPrice: 375, invoicedDate: "2026-09-15", updatedAt: 1 },
+    { id: "qb", customerId: "c1", invoiced: true, paid: false, total: 15, invoicedDate: "2026-09-16", updatedAt: 1 },
+    { id: "qc", customerId: "c1", invoiced: true, paid: true, total: 100, invoicedDate: "2026-09-01", updatedAt: 1 },
+    { id: "qd", customerId: "c2", invoiced: true, paid: false, total: 500, updatedAt: 1 } ] } });
+  const r = t.quoteScopePendingApply(mk(), "obx", "acct_c1", 39000, "pi_x", 5000);
+  ok("pending: the account scope's OPEN invoices are marked processing", r.quoteIds.sort().join() === "qa,qb");
+  const qa = r.store.obx.quotes.find(q => q.id === "qa");
+  ok("pending: the mark carries ref, amount and time; nothing is paid", qa.payPending && qa.payPending.ref === "pi_x" && qa.payPending.amount === 390 && qa.paid === false);
+  ok("pending: a paid invoice and another customer are untouched", !r.store.obx.quotes.find(q => q.id === "qc").payPending && !r.store.obx.quotes.find(q => q.id === "qd").payPending);
+  const c = t.quoteScopePendingApply(r.store, "obx", "acct_c1", 0, "pi_x", 6000, true);
+  ok("failed: the mark is cleared", c.store.obx.quotes.find(q => q.id === "qa").payPending === null && c.store.obx.quotes.find(q => q.id === "qb").payPending === null);
+  ok("pending: an unknown scope is unmatched", t.quoteScopePendingApply(mk(), "obx", "acct_nobody", 1, "x", 1).unmatched === true);
+  const s2 = t.quoteScopePaidApply(r.store, "obx", "acct_c1", 39000, "pi_x", 7000);
+  ok("settled: the same ref pays them and clears processing", s2.store.obx.quotes.find(q => q.id === "qa").paid === true && !s2.store.obx.quotes.find(q => q.id === "qa").payPending);
+  ok("registration subscribes to the failed event too", t.STRIPE_HOOK_EVENTS.length === 3 && t.STRIPE_HOOK_EVENTS[2] === "checkout.session.async_payment_failed");
+}
 // ── Stripe webhook signature verification (the paid-webhook's ONLY auth) ──
 (function () {
   const crypto = require("crypto");

@@ -21,7 +21,7 @@ eq(T.t3Col("📣 Ads"), "day", "the day");
 eq(T.t3Col(""), "day", "unknown → the day");
 /* money order */
 eq(["💵 Payouts", "📝 Open quotes", "⏳ Awaiting payment", "🔧 Confirmed jobs", "📤 Invoices to send"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b)), ["⏳ Awaiting payment", "📤 Invoices to send", "🔧 Confirmed jobs", "📝 Open quotes", "💵 Payouts"], "owed first, paid out last");
-eq(T.t3MoneyRank("something else"), 5, "unknown sinks to the end");
+eq(T.t3MoneyRank("something else"), 6, "unknown sinks to the end");
 /* urgency */
 eq(T.t3Urgency("📥 Approvals", "Learned from a job note · Cap wants your okay"), 0, "approvals first: Cap is waiting");
 eq(T.t3Urgency("✅ Top to-dos", "Skid steer … ⚠ overdue · due 09/19/26"), 1, "overdue next");
@@ -34,6 +34,10 @@ eq(T.t3Urgency("✅ Top to-dos", "Waterfall tile decision · due 10/02/26"), 3, 
 eq(T.t3Actions("✅ Top to-dos"), ["tomorrow", "week", "low", "delete"], "a to-do can be pushed, downgraded or deleted");
 eq(T.t3Actions("📞 Follow-ups"), ["tomorrow", "week", "delete"], "a lead can be pushed or deleted (spam)");
 eq(T.t3Actions("📥 Approvals"), [], "approvals keep their own ✓ ✕");
+eq(T.t3Actions("⏳ Awaiting payment"), ["nexp"], "an open invoice can be marked not expecting");
+eq(T.t3Actions("🚫 Not expecting"), ["exp"], "…and put back");
+eq(T.t3Col("🚫 Not expecting"), "money", "not expecting is money");
+eq(["⏳ Awaiting payment", "🚫 Not expecting", "💵 Payouts"].sort((a, b) => T.t3MoneyRank(a) - T.t3MoneyRank(b))[1], "🚫 Not expecting", "not expecting sits under awaiting");
 eq(T.t3Actions("🛠 Equipment service"), [], "service rows keep Done ✓");
 eq(T.t3Shift("2026-09-27", 1), "2026-09-28", "tomorrow");
 eq(T.t3Shift("2026-09-27", 7), "2026-10-04", "next week crosses the month");

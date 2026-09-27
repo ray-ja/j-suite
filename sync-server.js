@@ -2322,6 +2322,25 @@ function webLeadNotify(store, org, name, service, phone, addr) {
    combined bill through one and nothing moved. This applies a paid checkout to the scope: the open invoices in
    it, oldest first, each taking up to what it is owed; a quote goes paid when fully covered. Idempotent on the
    checkout session id. Pings the owner once. */
+/* PROCESSING (Ray, 2026-09-27: "Christina should be marked as processing until it is accepted or declined"). A bank
+   debit's checkout completes with payment_status "unpaid" and settles (or fails) days later. Until then the open
+   invoices behind the link carry payPending = {ref, amount, at}; the UI shows "processing"; nothing is counted paid. */
+function quoteScopeMembers(slab, scopeKey) {
+  const key = String(scopeKey || ""); const live = (slab && Array.isArray(slab.quotes) ? slab.quotes : []).filter(x => x && !x.deleted);
+  const m1 = /^q_(.+)$/.exec(key), m2 = /^grp_([^_]+)_(\d+)$/.exec(key), m3 = /^acct_(.+)$/.exec(key);
+  if (m1) return live.filter(x => x.id === m1[1]);
+  if (m2) return live.filter(x => x.invoiced && x.customerId === m2[1] && +x.combinedAt === +m2[2]);
+  if (m3) return live.filter(x => x.invoiced && x.customerId === m3[1]);
+  return [];
+}
+function quoteScopePendingApply(store, org, scopeKey, amountCents, ref, now, clear) {
+  now = +now || Date.now();
+  const slab = store[org]; if (!slab) return { store: store, quoteIds: [], unmatched: true };
+  const open = quoteScopeMembers(slab, scopeKey).filter(x => !x.paid);
+  if (!open.length) return { store: store, quoteIds: [], unmatched: true };
+  const upd = open.map(x => Object.assign({}, x, clear ? { payPending: null, updatedAt: now } : { payPending: { ref: String(ref || ""), amount: Math.round(+amountCents || 0) / 100, at: now, scopeKey: String(scopeKey || "") }, updatedAt: now }));
+  return { store: mergeState(store, { [org]: { quotes: upd } }), quoteIds: upd.map(x => x.id), unmatched: false };
+}
 function quoteScopePaidApply(store, org, scopeKey, amountCents, ref, now) {
   now = +now || Date.now();
   const slab = store[org]; if (!slab || !Array.isArray(slab.quotes)) return { store: store, quoteIds: [], already: false, unmatched: true };
@@ -2343,6 +2362,7 @@ function quoteScopePaidApply(store, org, scopeKey, amountCents, ref, now) {
     const take = Math.min(owed, left); left -= take;
     const payments = (x.payments || []).slice();
     payments.push({ id: "pay_stripe_" + String(ref).slice(-24) + (i ? "_" + i : ""), amount: take / 100, date: paidDate, method: "card", ref: ref, via: "stripe", scopeKey: key, createdAt: now });
+    x = Object.assign({}, x, { payPending: null });   // settled: no longer "processing"
     i++;
     const fully = take >= owed;
     upd.push(Object.assign({}, x, { payments: payments, paid: fully ? true : !!x.paid, paidDate: fully ? (x.paidDate || paidDate) : (x.paidDate || ""), updatedAt: now }));
@@ -3043,6 +3063,7 @@ function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns" || n === "str
    app would never have heard it clear): cards complete with payment_status "paid" at once; bank debits complete
    "unpaid" and fire checkout.session.async_payment_succeeded days later. Both mean the money landed. */
 const STRIPE_PAID_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded"];
+const STRIPE_HOOK_EVENTS = STRIPE_PAID_EVENTS.concat(["checkout.session.async_payment_failed"]);   // failed: clears "processing"
 function stripePaidEvent(ev) { const o = ev && ev.data && ev.data.object; return !!(ev && STRIPE_PAID_EVENTS.indexOf(ev.type) >= 0 && o && o.payment_status === "paid"); }
 function stripeKeyForKeys(keys, cfg, org) { const o = (keys && keys[org]) || {}; return (o.stripeKey && String(o.stripeKey)) || (cfg && cfg.stripeKey) || ""; }
 function stripeKeyFor(org) { let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) {} let keys = {}; try { keys = orgKeysLoad(); } catch (e) {} return stripeKeyForKeys(keys, cfg, org); }
@@ -4778,7 +4799,7 @@ const server = http.createServer((req, res) => {
           return stripeCall(value, "/v1/payment_links?limit=1", null, (st, r) => {
             if (st !== 200) return J(200, { ok: true, stripeValid: false, detail: (r && r.error && r.error.message) || ("HTTP " + st) });
             const hook = "https://app.jsuite.dev/api/stripe/webhook";
-            stripeCall(value, "/v1/webhook_endpoints", { url: hook, "enabled_events[0]": STRIPE_PAID_EVENTS[0], "enabled_events[1]": STRIPE_PAID_EVENTS[1], description: "j-Suite paid-invoice webhook (" + ORG + ")" }, (st2, w) => {
+            stripeCall(value, "/v1/webhook_endpoints", { url: hook, "enabled_events[0]": STRIPE_HOOK_EVENTS[0], "enabled_events[1]": STRIPE_HOOK_EVENTS[1], "enabled_events[2]": STRIPE_HOOK_EVENTS[2], description: "j-Suite paid-invoice webhook (" + ORG + ")" }, (st2, w) => {
               if (st2 === 200 && w && w.secret) { const k2 = orgKeysLoad(); k2[ORG] = k2[ORG] || {}; k2[ORG].stripeWebhookSecret = w.secret; k2[ORG].stripeWebhookId = w.id; try { orgKeysSave(k2); } catch (e) {} return J(200, { ok: true, stripeValid: true, webhook: true }); }
               return J(200, { ok: true, stripeValid: true, webhook: false, detail: (w && w.error && w.error.message) || "webhook not registered (key needs Webhook Endpoints: write)" });
             });
@@ -5193,6 +5214,14 @@ const server = http.createServer((req, res) => {
             if (!payments.some((p) => p && p.ref === obj.id)) payments.push({ id: "pay_stripe_" + String(obj.id).slice(-24), amount: amount, date: paidDate, method: "card", ref: obj.id, via: "stripe", createdAt: Date.now() });
             const upd = Object.assign({}, matched, { paid: true, paidDate: matched.paidDate || paidDate, payments: payments, updatedAt: Date.now() });
             saveStore(mergeState(store, { [matchedOrg]: { quotes: [upd] } }));   // per-record LWW merge → only this quote is asserted, everything else preserved
+          }
+        } else if (ev && obj && obj.metadata && obj.metadata.scopeKey && ((ev.type === "checkout.session.completed" && obj.payment_status === "unpaid") || ev.type === "checkout.session.async_payment_failed")) {
+          /* a bank debit started (processing) or bounced (clear) on a scoped link */
+          const failed = ev.type === "checkout.session.async_payment_failed";
+          const store2 = loadStore(); const sorg = (obj.metadata.org && store2[obj.metadata.org]) ? obj.metadata.org : null;
+          for (const oid of (sorg ? [sorg] : orgIdsOf(store2))) {
+            const r = quoteScopePendingApply(store2, oid, obj.metadata.scopeKey, Math.round(+obj.amount_total || 0), obj.payment_intent || obj.id, Date.now(), failed);
+            if (r.unmatched) continue; saveStore(r.store); break;
           }
         }
       } catch (e) {}
@@ -6390,4 +6419,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { stripePaidEvent, STRIPE_PAID_EVENTS, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

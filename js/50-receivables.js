@@ -21,8 +21,22 @@ function quotePaidAmt(q) { return (q.payments || []).filter(p => p && !p.deleted
 function quoteBalAmt(q) { return Math.max(0, quoteTotalAmt(q) - quotePaidAmt(q)); }
 function recAgeBucket(days) { return days <= 0 ? "Current" : days <= 30 ? "1–30" : days <= 60 ? "31–60" : days <= 90 ? "61–90" : "90+"; }
 
+/* ⭐ NOT EXPECTING (Ray, 2026-09-27, on Mike Green's four open invoices: "he's likely to not pay… I shouldn't be
+   expecting that money. I don't want it on the card"). q.doubtful = true keeps the invoice, its history and its
+   pay link, but takes it OUT of every "owed" number (Today, A/R, Invoices, the customer card) and lists it under
+   its own head, "Not expecting". Reversible from the same menu. Never a write-off: nothing is forgiven. */
+function recDoubtful(q) { return !!(q && q.doubtful); }
+window.recToggleDoubtful = function (quoteId) {
+  if (typeof finCanView === "function" && !finCanView()) { alert("Owner / Admin only."); return; }
+  const q = (D().quotes || []).find(x => x.id === quoteId); if (!q) return;
+  q.doubtful = !q.doubtful; q.doubtfulAt = q.doubtful ? now() : null;
+  touch(q); if (typeof logChange === "function") logChange("update", "quote", q.id, q.doubtful ? "Not expecting payment" : "Expecting payment again");
+  save(); if (typeof closeModal === "function") closeModal(); render();
+};
 function recBuckets() {
-  const qs = (typeof actQ === "function" ? actQ() : []).filter(q => q && quoteTotalAmt(q) > 0 && !q.paid);
+  const all = (typeof actQ === "function" ? actQ() : []).filter(q => q && quoteTotalAmt(q) > 0 && !q.paid);
+  const doubtful = all.filter(q => q.invoiced && recDoubtful(q)).sort((a, b) => quoteBalAmt(b) - quoteBalAmt(a));
+  const qs = all.filter(q => !recDoubtful(q));
   const unbilled = qs.filter(q => q.accepted && !q.invoiced)
     .sort((a, b) => (recJobDone(b) - recJobDone(a)) || String(a.acceptedDate || a.date || "").localeCompare(String(b.acceptedDate || b.date || "")));
   const awaiting = qs.filter(q => q.invoiced && !q.paid)
@@ -31,7 +45,7 @@ function recBuckets() {
   const overdue = awaiting.filter(q => recDaysOld(q.invoicedDate || q.date) > REC_OVERDUE_DAYS);
   const aging = { "Current": 0, "1–30": 0, "31–60": 0, "61–90": 0, "90+": 0 };
   awaiting.forEach(q => { aging[recAgeBucket(recDaysOld(q.invoicedDate || q.date))] += quoteBalAmt(q); });
-  return { unbilled, awaiting, overdue, owed: sum(awaiting), toBill: sum(unbilled), aging };
+  return { unbilled, awaiting, overdue, owed: sum(awaiting), toBill: sum(unbilled), aging, doubtful, notExpecting: sum(doubtful) };
 }
 
 function recContactBtns(q) {
@@ -54,7 +68,7 @@ function recRow(q, kind) {
   if (kind === "unbilled") {
     const done = recJobDone(q);
     const sub = (done ? "✅ job done · " : "") + (q.acceptedDate ? "accepted " + fmtDate(q.acceptedDate) : (q.date ? fmtDate(q.date) : "")) || "&nbsp;";
-    return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${who} · ${money(quoteTotalAmt(q))}${recStageBadge(q)}</div><div class="sub" style="white-space:normal">${sub}</div></div>
+    return `<div class="li" style="align-items:center"><div class="grow"><div class="nm">${who} · ${money(quoteTotalAmt(q))}${recStageBadge(q)}</div><div class="sub" style="white-space:normal">${sub}${q.payPending ? ` · <b style="color:var(--brand-text)">⏳ processing</b> (bank payment started ${fmtDate(new Date(q.payPending.at).toISOString().slice(0, 10))})` : ""}</div></div>
       <div class="row" style="gap:6px;flex:0 0 auto">${recContactBtns(q)}<button class="btn acc sm" onclick="openInvoice('${q.id}')">🧾 Bill</button></div></div>`;
   }
   const age = recDaysOld(q.invoicedDate || q.date), over = age > REC_OVERDUE_DAYS;
@@ -84,6 +98,7 @@ function rReceivables() {
   }
   if (b.unbilled.length) h += `<div class="secthd"><h2>🧾 Ready to bill — send these</h2><span class="ct">${money(b.toBill)}</span></div><div class="card">${b.unbilled.map(q => recRow(q, "unbilled")).join("")}</div>`;
   if (b.awaiting.length) h += `<div class="secthd"><h2>💸 Awaiting payment</h2><span class="ct">${money(b.owed)}</span></div><div class="card">${b.awaiting.map(q => recRow(q, "awaiting")).join("")}</div>`;
+  if (b.doubtful.length) h += `<div class="secthd"><h2>🚫 Not expecting</h2><span class="ct">${money(b.notExpecting)}</span></div><div class="card" style="opacity:.8"><div class="sub" style="white-space:normal;margin-bottom:6px">Invoiced, still open, but not counted as owed. Nothing is forgiven; "Expecting again" puts one back.</div>${b.doubtful.map(q => recRow(q, "doubtful")).join("")}</div>`;
   return h;
 }
 
@@ -98,6 +113,7 @@ window.recordPayment = function (quoteId) {
     <label>Method</label><select id="pay_method">${PAY_METHODS.map(m => `<option>${m}</option>`).join("")}</select>
     <label>Reference — check # / confirmation (optional)</label><input id="pay_ref" placeholder="optional">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="savePayment('${q.id}')">Record payment</button>
+    <button class="btn ghost sm" style="margin-top:8px;width:100%" onclick="recToggleDoubtful('${q.id}')">${q.doubtful ? "✅ Expecting this again" : "🚫 Not expecting this"}</button>
     ${pays.length ? `<div class="sub" style="font-weight:700;margin-top:14px">Payments so far</div>` + pays.map(p => `<div class="li"><div class="grow"><div class="nm" style="font-size:15px">${money(p.amount)} <span class="sub" style="font-weight:400">${esc(p.method || "")}</span></div><div class="sub">${fmtDate(p.date)}${p.ref ? " · " + esc(p.ref) : ""}</div></div><button class="btn ghost sm" onclick="delPayment('${q.id}','${p.id}')">✕</button></div>`).join("") : ""}`);
 };
 window.savePayment = function (quoteId) {

@@ -140,7 +140,7 @@ function rToday(){
     // a booked quote's job is "done" once its linked job is checked off (matches the pipeline split: to-do vs ready-to-bill)
     const jobDone=q=>{ if(!q.jobId)return false; const j=_jByIdToday.get(q.jobId); return !!(j&&j.done); };
     const moneySect=(title,arr,go)=>arr.length?`<div class="secthd"><h2>${title}</h2><span class="ct">${arr.length}</span></div><div class="card">`+
-      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="${(go&&go(q))||`openQuote('${q.id}')`}"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
+      arr.slice().sort((a,b)=>((a.date||"")<(b.date||"")?1:-1)).map(q=>`<div class="li" onclick="${(go&&go(q))||`openQuote('${q.id}')`}"><div class="grow"><div class="nm">${esc(q.cust||custName(q.customerId)||"—")}</div><div class="sub">${typeof quoteType==="function"?esc(quoteType(q)):""}${q.date?" · "+fmtDate(q.date):""}${q.payPending?` · <span style="color:var(--brand-text);font-weight:700">⏳ processing</span>`:""}</div></div><div class="nm" style="color:var(--brand-text)">${money(q.finalPrice||q.total)}</div></div>`).join("")+`</div>`:"";
     const _aq=actQ();   // active quotes, computed ONCE (was re-filtered on every actQ() call below)
     const booked=_aq.filter(q=>!q.deleted&&q.accepted&&!q.invoiced&&!q.paid);   // accepted, not yet invoiced
     h+=moneySect("📝 Open quotes",_aq.filter(q=>!q.deleted&&!q.accepted&&!q.invoiced&&!q.paid));
@@ -148,7 +148,8 @@ function rToday(){
     h+=moneySect("🔧 Confirmed jobs",booked.filter(q=>!jobDone(q)),q=>q.jobId?`openJobPage('${q.jobId}')`:`openQuote('${q.id}')`);
     // Invoices to send = booked work that's done → ready to bill
     h+=moneySect("📤 Invoices to send",booked.filter(jobDone));
-    h+=moneySect("⏳ Awaiting payment",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid));
+    h+=moneySect("⏳ Awaiting payment",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid&&!q.doubtful));
+    h+=moneySect("🚫 Not expecting",_aq.filter(q=>!q.deleted&&q.invoiced&&!q.paid&&q.doubtful));   // js/50 recDoubtful: kept, not counted as owed
   }
 
   // 6) Payouts — monthly, paid the first workday of next month (owner: everyone; crew: yourself)

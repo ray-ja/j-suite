@@ -580,7 +580,8 @@ function rInvoices() {
   const notBilled = qs.filter(q => !q.invoiced && !q.paid);
   const ready = notBilled.filter(q => invReadyState(q) === "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const inprog = notBilled.filter(q => invReadyState(q) !== "done").sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-  const awaiting = qs.filter(q => q.invoiced && !q.paid).sort((a, b) => (invAgeDays(b) || 0) - (invAgeDays(a) || 0));
+  const awaiting = qs.filter(q => q.invoiced && !q.paid && !q.doubtful).sort((a, b) => (invAgeDays(b) || 0) - (invAgeDays(a) || 0));
+  const notExpecting = qs.filter(q => q.invoiced && !q.paid && q.doubtful);   // js/50 recDoubtful: open, kept, not counted
   const paid = qs.filter(q => q.paid).sort((a, b) => String(b.paidDate || b.date || "").localeCompare(String(a.paidDate || a.date || ""))).slice(0, 20);
   const arTotal = awaiting.reduce((s, q) => s + invRemaining(q), 0);   // the REMAINDER — partial payments already netted
 
