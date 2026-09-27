@@ -172,7 +172,7 @@ function finGeneralLedger(){
   });
   (typeof actDisb === "function" ? actDisb() : []).forEach(x => {
     const amt = finCents(x.amount); if (!amt) return;
-    const map = { payout: "Wages / labor", tax: "Income tax paid", draw: "Owner draw", salestax: "Sales tax payable" };
+    const map = { payout: "Wages / labor", reimb: "Expense reimbursements", tax: "Income tax paid", draw: "Owner draw", salestax: "Sales tax payable" };
     push(x.date, map[x.type] || x.type || "Disbursement", [{ acct: map[x.type] || "Other", dr: amt, cr: 0 }, { acct: "Cash", dr: 0, cr: amt }]);
   });
   const tb = {}; let dr = 0, cr = 0;
@@ -292,11 +292,12 @@ function rFinCash(){
   h += `<div class="secthd"><h2>Record money paid out</h2></div><div class="card"><div class="row" style="gap:8px;flex-wrap:wrap">
     <button class="btn ghost grow" onclick="recordDisbursement('payout')">👷 Payout paid</button>
     <button class="btn ghost grow" onclick="recordDisbursement('tax')">🏦 Tax payment</button>
+    <button class="btn ghost grow" onclick="recordDisbursement('reimb')">💳 Reimbursement</button>
     <button class="btn ghost grow" onclick="recordDisbursement('draw')">🏢 Owner draw</button></div></div>`;
 
   const disb = (typeof actDisb === "function" ? actDisb() : []).slice().sort((x, y) => (x.date < y.date ? 1 : -1)).slice(0, 12);
   if (disb.length) h += `<div class="secthd"><h2>Recent</h2></div><div class="card">` + disb.map(d => {
-    const lbl = d.type === "tax" ? "🏦 Tax payment" : d.type === "salestax" ? "🧾 Sales tax remittance" : d.type === "payout" ? ("👷 Payout" + (d.memberId ? " · " + finName(d.memberId) : "")) : "🏢 Owner draw";
+    const lbl = d.type === "tax" ? "🏦 Tax payment" : d.type === "salestax" ? "🧾 Sales tax remittance" : d.type === "payout" ? ("👷 Payout" + (d.memberId ? " · " + finName(d.memberId) : "")) : d.type === "reimb" ? ("💳 Reimbursement" + (d.memberId ? " · " + finName(d.memberId) : "")) : "🏢 Owner draw";
     return `<div class="li" onclick="recordDisbursement('${d.type}','${d.id}')" style="cursor:pointer"><div class="grow"><div class="nm">${money(d.amount)} <span class="sub" style="font-weight:400">${esc(lbl)}</span></div><div class="sub">${fmtDate(d.date)}${d.note ? " · " + esc(d.note) : ""}</div></div></div>`;
   }).join("") + `</div>`;
   return h;
@@ -307,12 +308,15 @@ window.recordDisbursement = function(type, id, presetMember){
   const d = D(); const ex = id ? (d.disbursements || []).find(x => x && x.id === id) : null;
   const t0 = ex ? ex.type : type, members = finMembers();
   const selMember = ex ? ex.memberId : (presetMember || "");   // per-person breakdown can preselect the member to pay
-  const title = t0 === "tax" ? "Tax payment" : t0 === "salestax" ? "Sales tax remittance" : t0 === "payout" ? "Payout paid" : "Owner draw";
+  /* "reimb" (2026-09-27): money handed to a member for expenses they fronted. NOT pay: the engine leaves it out of
+     "owed for work" (byType("payout") only) and the cash math already counted the expense when it was recorded,
+     so recording it as a payout double-counted it and showed Pierce "overpaid". */
+  const title = t0 === "tax" ? "Tax payment" : t0 === "salestax" ? "Sales tax remittance" : t0 === "payout" ? "Payout paid" : t0 === "reimb" ? "Reimbursement paid" : "Owner draw";
   modal((ex ? "Edit " : "Record ") + title, `
     <div class="row" style="gap:8px"><div class="grow"><label>Amount ($)</label><input id="db_amt" type="number" inputmode="decimal" value="${ex ? ex.amount : ""}"></div>
       <div class="grow"><label>Date</label><input id="db_date" type="date" value="${ex ? ex.date : today()}"></div></div>
-    ${t0 === "payout" ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${selMember === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
-    <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "salestax" ? "e.g. NCDOR E-500 filing" : t0 === "payout" ? "e.g. June payout" : "what for"}">
+    ${(t0 === "payout" || t0 === "reimb") ? `<label>Member (optional)</label><select id="db_member"><option value="">— general —</option>${members.map(u => `<option value="${u.id}" ${selMember === u.id ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select>` : ""}
+    <label>Note (optional)</label><input id="db_note" value="${ex ? esc(ex.note || "") : ""}" placeholder="${t0 === "tax" ? "e.g. Q2 estimated federal" : t0 === "salestax" ? "e.g. NCDOR E-500 filing" : t0 === "payout" ? "e.g. June payout" : t0 === "reimb" ? "e.g. Lowe's run on his card, 9/22" : "what for"}">
     <button class="btn acc" style="margin-top:12px;width:100%" onclick="saveDisbursement('${t0}','${ex ? ex.id : ""}')">Save</button>
     ${ex ? `<button class="btn ghost sm" style="margin-top:8px;width:100%;color:var(--danger)" onclick="delDisbursement('${ex.id}')">Delete</button>` : ""}`);
 };
@@ -324,7 +328,7 @@ window.saveDisbursement = function(type, id){
   if (!e) { e = { id: uid() }; d.disbursements.push(e); }
   e.type = type; e.amount = amt; e.date = val("db_date") || today(); e.memberId = (document.getElementById("db_member") ? val("db_member") : e.memberId) || ""; e.note = val("db_note") || ""; e.deleted = false; e.updatedAt = now();
   if (typeof touch === "function") touch(e);
-  if (typeof logChange === "function") logChange(id ? "update" : "create", "disbursement", e.id, (type === "tax" ? "Tax payment " : type === "salestax" ? "Sales tax remittance " : type === "payout" ? "Payout " : "Draw ") + money(amt));
+  if (typeof logChange === "function") logChange(id ? "update" : "create", "disbursement", e.id, (type === "tax" ? "Tax payment " : type === "salestax" ? "Sales tax remittance " : type === "payout" ? "Payout " : type === "reimb" ? "Reimbursement " : "Draw ") + money(amt));
   save(); closeModal(); render();
 };
 window.delDisbursement = function(id){
