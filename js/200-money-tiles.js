@@ -8,10 +8,10 @@
                          synced accounts (Plaid, js/150). Which accounts count is a per-business pick, stored in
                          this org's docs as `cashAccounts` {ids}. Nothing in the app says which account is OBX's,
                          so the default is a name match and the pane lets Ray tick the right ones.
-     🔁 Fixed costs    = what this month has to pay: vendors that charged in at least two of the last three months
-                         (median), plus anything Ray adds by hand (docs `fixedCosts` {items}). Paybacks to partners
-                         (js/116) are NOT monthly: "we just need to pay him back eventually" (Ray) — they are listed
-                         under Left, never subtracted.
+     🔁 Fixed costs    = a hand-kept monthly list (docs `fixedCosts` {items:[{id,label,amount,note}]}). Ray,
+                         2026-09-27: "our only fixed cost is insurance". Guessing from repeat charges was wrong
+                         (materials runs, per-transaction card fees). Paybacks to partners (js/116) are NOT monthly:
+                         "we just need to pay him back eventually" — they are listed under Left, never subtracted.
      ⚖️ Left after     = cash − fixed costs − what the crew is owed (js/86, all time, on completion).
    Pure helpers tested in money-tiles-tests.js. */
 function mtMedian(a) { a = (a || []).slice().sort(function (x, y) { return x - y; }); if (!a.length) return 0; var m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; }
@@ -93,13 +93,14 @@ if (typeof window !== "undefined") {
       }
       h += '</div>';
       /* fixed costs */
-      /* paybacks to partners are NOT monthly obligations (Ray): they are listed under Left, not here */
-      var rec = mtRecurringVendors(D().expenses || [], t), fdoc = mtDoc("fixedCosts"), manual = (fdoc && fdoc.items) || [];
+      /* a hand-kept list only (Ray, 2026-09-27: "Home Depot is not a fixed cost… we are on the Square free plan.
+         Our only fixed cost is insurance"). Guessing from repeat charges put materials runs and card fees here.
+         Paybacks to partners are not monthly obligations either: they are listed under Left, not here. */
+      var fdoc = mtDoc("fixedCosts"), manual = (fdoc && fdoc.items) || [];
       var fixedCents = 0;
-      var rows = [].concat(rec.map(function (r) { fixedCents += Math.round(r.monthly * 100); return { l: r.vendor, s: "charged " + r.months + " of the last 3 months", c: Math.round(r.monthly * 100) }; }))
-        .concat(manual.map(function (m) { fixedCents += Math.round((+m.amount || 0) * 100); return { l: m.label, s: "added by hand", c: Math.round((+m.amount || 0) * 100), del: m.id }; }));
+      var rows = manual.map(function (m) { fixedCents += Math.round((+m.amount || 0) * 100); return { l: m.label, s: m.note || "monthly", c: Math.round((+m.amount || 0) * 100), del: m.id }; });
       h += '<div class="secthd"><h2>🔁 Fixed costs this month</h2><span class="ct">' + mtM(fixedCents) + '</span></div><div class="card">'
-        + (rows.length ? rows.map(function (r) { return '<div class="li"><div class="grow"><div class="nm" style="font-size:15px">' + mtE(r.l) + '</div><div class="sub">' + mtE(r.s) + '</div></div><div class="nm" style="color:var(--brand-text)">' + mtM(r.c) + '</div>' + (r.del ? '<button class="btn ghost sm" onclick="mtFixedDel(\'' + mtE(r.del) + '\')">✕</button>' : '') + '</div>'; }).join("") : '<div class="sub">Nothing recurring found yet.</div>')
+        + (rows.length ? rows.map(function (r) { return '<div class="li"><div class="grow"><div class="nm" style="font-size:15px">' + mtE(r.l) + '</div><div class="sub">' + mtE(r.s) + '</div></div><div class="nm" style="color:var(--brand-text)">' + mtM(r.c) + '</div>' + (r.del ? '<button class="btn ghost sm" onclick="mtFixedDel(\'' + mtE(r.del) + '\')">✕</button>' : '') + '</div>'; }).join("") : '<div class="sub" style="white-space:normal">Nothing listed. Add what bills every month no matter what: insurance, software, a lease.</div>')
         + '<button class="btn ghost sm" style="margin-top:8px" onclick="mtFixedAdd()">+ Add a monthly cost</button></div>';
       /* left after obligations */
       var owedCents = 0; try { if (typeof finOwedPerPersonTotal === "function") owedCents = finOwedPerPersonTotal() || 0; } catch (e) {}

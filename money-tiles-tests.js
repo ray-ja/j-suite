@@ -1,20 +1,8 @@
 /* money-tiles-tests.js — cash on hand, fixed costs, delta (js/200). Pure node. */
 const M = require("./js/200-money-tiles.js"); let n = 0, f = 0;
 const eq = (a, b, m) => { n++; if (JSON.stringify(a) !== JSON.stringify(b)) { f++; console.log("FAIL", m, JSON.stringify(a), "want", JSON.stringify(b)); } };
-/* recurring vendors */
-const ex = [
-  { vendor: "Square", amount: 33, date: "2026-08-03" }, { vendor: "Square", amount: 33, date: "2026-09-03" },
-  { vendor: "Next Insurance", amount: 61, date: "2026-07-10" }, { vendor: "Next Insurance", amount: 61, date: "2026-08-10" }, { vendor: "Next Insurance", amount: 64, date: "2026-09-10" },
-  { vendor: "Lowe's", amount: 360, date: "2026-06-25" }, { vendor: "Lowe's", amount: 264, date: "2026-07-25" },
-  { vendor: "Ace Hardware", amount: 944, date: "2026-06-05" },
-  { vendor: "Rj · skid steer", amount: 473.17, date: "2026-09-14", source: "installment" },
-  { vendor: "Old", amount: 5, date: "2026-05-01" }, { vendor: "Old", amount: 5, date: "2026-04-01" },
-];
-const rec = M.mtRecurringVendors(ex, "2026-09-27");
-eq(rec.map(r => r.vendor), ["Next Insurance", "Square"], "two-of-three-months vendors, biggest first; June-only, installment postings and old ones excluded");
-eq(rec[0].monthly, 61, "median of the monthly totals");
-eq(rec[1].months, 2, "months seen");
-eq(M.mtRecurringVendors([], "2026-09-27"), [], "empty");
+/* recurring-vendor guessing is kept as a helper but NOT used for fixed costs (Ray: Home Depot and Square fees are not fixed costs) */
+eq(M.mtRecurringVendors([{ vendor: "Square", amount: 33, date: "2026-08-03" }, { vendor: "Square", amount: 33, date: "2026-09-03" }], "2026-09-27").length, 1, "the helper still works");
 /* installments due */
 const plans = [
   { id: "skid", label: "Skid steer", payeeName: "Rj", total: 5678.09, count: 12, start: "2026-09", paidNs: [1], paidBy: "ray" },
