@@ -264,17 +264,30 @@ async function syncRun(mode){
   if(mode==="pull"&&S.sync.last&&(now()-S.sync.last<4000)&&!SYNC_DIRTY)return; // throttle redundant pulls
   if(_syncInflight)return;                                                      // coalesce; post-success reschedules if dirty
   const seq=_editSeq;_syncInflight=true;setSyncState("syncing");
-  const _pushState={users:S.users,registry:S.registry||[]};(typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]).forEach(id=>{_pushState[id]=S[id];});   // push EVERY org slab (obx, jam, + any created org), not just obx/jam
-  const sentSig=JSON.stringify(_pushState);
+  /* DELTA SYNC (js/201, 2026-09-30): push only the records stamped since the last successful push (minus a
+     10-min overlap) and ask for only the records stamped since the last pull (`since` = the server's own clock
+     from its last reply, so device drift never enters it). A FULL round trip still happens on "Sync now", on an
+     empty store, every 15 min, and when a partial reply names an org this device hasn't got. Without js/201
+     loaded this is exactly the old whole-store round trip. */
+  const _orgIds=(typeof clientOrgIds==="function"?clientOrgIds():["obx","jam"]);
+  const _delta=(typeof syncDeltaOf==="function"&&typeof syncMergeInto==="function"&&typeof syncWantFull==="function");
+  const _startedAt=now();
+  const _full=!_delta||syncWantFull(S.sync,mode,storeIsEmpty(),_startedAt);
+  const _floor=_full?0:((S.sync.pushedAt||0)-SYNC_DELTA_WINDOW_MS);
+  const _pushState={users:S.users,registry:S.registry||[]};
+  if(_delta){const d=syncDeltaOf(S,_orgIds,_floor);Object.keys(d).forEach(function(id){_pushState[id]=d[id];});}
+  else{_orgIds.forEach(id=>{_pushState[id]=S[id];});}   // push EVERY org slab (obx, jam, + any created org), not just obx/jam
+  const _since=_full?0:(S.sync.since||0);
   // WATCHDOG: a hung request (Cloudflare holding the connection, a stalled mobile/Firefox network) would otherwise
-  // leave _syncInflight=true and the badge stuck on "⟳ Syncing…" FOREVER — no error, no recovery. Abort after 20s so
+  // leave _syncInflight=true and the badge stuck on "⟳ Syncing…" FOREVER — no error, no recovery. Abort after 45s so
   // it falls into the catch → "offline" + exponential retry, exactly like any other network failure. (The version
-  // checker in js/83 already does this; the sync fetch was the one request with no timeout.)
+  // checker in js/83 already does this; the sync fetch was the one request with no timeout.) 45s not 20s: a FULL
+  // round trip on a weak LTE signal was aborting at 20s while the server was fine (2026-09-30).
   var _syncAC=null,_syncTO=null;
-  try{if(typeof AbortController!=="undefined"){_syncAC=new AbortController();_syncTO=setTimeout(function(){try{_syncAC.abort();}catch(e){}},20000);}}catch(e){}
+  try{if(typeof AbortController!=="undefined"){_syncAC=new AbortController();_syncTO=setTimeout(function(){try{_syncAC.abort();}catch(e){}},45000);}}catch(e){}
   try{
     const res=await fetch(S.sync.url.replace(/\/+$/,"")+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},signal:_syncAC?_syncAC.signal:undefined,
-      body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),state:_pushState})});
+      body:JSON.stringify({token:S.sync.token,userId:((typeof curUser==="function"&&curUser())?curUser().id:undefined),since:_since,state:_pushState})});
     if(_syncTO){clearTimeout(_syncTO);_syncTO=null;}
     if(res.status===401){window.AUTH_401=true;S.sync.token="";save();_syncInflight=false;setSyncState("offline");syMsg("Not authorized — sign in again.");render();return;}
     if(!res.ok)throw new Error("HTTP "+res.status);
@@ -283,7 +296,7 @@ async function syncRun(mode){
     window.AUTH_401=false;_retryN=0;
     window.SHARED_TOKEN_MODE=!!data.shared;   // legacy shared-token device → non-locking "sign in again to add members" nudge (never logs out / clears the token)
     if(typeof renderSharedTokenNudge==="function")renderSharedTokenNudge();
-    const changed=JSON.stringify(data.state)!==sentSig;
+    const _partial=!!data.partial&&!_full&&_delta;   // a partial reply is only honoured when we asked for one
     // IN-FLIGHT EDIT GUARD (fixes "odometer not saving"): this server response was computed from _pushState, the
     // snapshot taken BEFORE the request. If the user saved an edit AFTER that snapshot (_editSeq advanced), applying
     // the response would WHOLESALE-CLOBBER that edit (S[org]=response[org] overwrites the just-saved record). So do
@@ -292,10 +305,17 @@ async function syncRun(mode){
     // lost. (Local edits already carry a newer updatedAt via touch(), so the server keeps them.)
     if(_editSeq!==seq){ _syncInflight=false; SYNC_DIRTY=true; setSyncState("synced"); scheduleAutoPush(); return; }
     window.__syncApplying=true;
-    Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;   // apply every org slab the server returned
+    var changed=false;
+    if(_delta){var _mr=syncMergeInto(S,data.state,_partial);changed=_mr.changed;if(_mr.needFull)S.sync.fullAt=0;}   // partial → per-record LWW into the local slabs; full → slabs replaced. A new org in a partial reply forces the next tick full.
+    else{var _before=JSON.stringify(_pushState);Object.keys(data.state).forEach(function(k){var v=data.state[k];if(k!=="users"&&k!=="registry"&&v&&typeof v==="object"&&!Array.isArray(v))S[k]=v;});changed=JSON.stringify(data.state)!==_before;}   // apply every org slab the server returned
+    if(data.state.users)S.users=data.state.users;if(data.state.registry)S.registry=data.state.registry;
     var _keep=new Set((S.registry||[]).map(function(r){return r&&r.id;}));Object.keys(S).forEach(function(k){if(k!=="users"&&k!=="registry"&&k!=="sync"&&k!=="biz"&&S[k]&&typeof S[k]==="object"&&!Array.isArray(S[k])&&!_keep.has(k))delete S[k];});   // ISOLATION: drop org slabs we're not a member of (server preserves them → loss-free)
     if(!S[S.biz]&&(S.registry||[]).length)S.biz=S.registry[0].id;   // the active org must be one we actually have
-    S.sync.last=now();save();
+    S.sync.last=now();
+    if(+data.now>0)S.sync.since=+data.now;   // next pull asks for records since the SERVER's clock at this reply
+    S.sync.pushedAt=_startedAt;              // everything stamped before this tick has now reached the server
+    if(_full)S.sync.fullAt=_startedAt;       // the 15-min full-round-trip clock restarts
+    save();
     window.__syncApplying=false;
     if(typeof checkForcedLogout==="function"&&checkForcedLogout()){_syncInflight=false;return;}   // an owner signed this account out everywhere
 

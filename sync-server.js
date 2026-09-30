@@ -21,6 +21,7 @@ const plaid = require("./plaid.js");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const os = require("os");
 let QB = null; try { QB = require("./qb-bridge"); } catch (e) {}
 const AvailResolve = require("./availability-resolve");   // shared client/server availability logic
@@ -1992,6 +1993,38 @@ function projectForUser(store, myOrgs, me) {   // the ONLY thing /sync returns �
   for (const oid of myOrgs) if (store[oid]) out[oid] = store[oid];
   out.registry = (store.registry || []).filter(r => r && (isSuper || set.has(r.id)));
   return out;
+}
+/* DELTA PULL (2026-09-30): a client that sends `since` (the server `now` it got on its last successful sync)
+   gets back only the records stamped at/after since − window, per org collection. users and registry always
+   go back whole (small; the client's isolation prune keys off registry). Tombstones ride along because a soft
+   delete bumps updatedAt. A record with no stamp is always returned (never left behind). Every org slab the
+   caller may see is still present as a key (possibly with no collections) so a device can notice a NEW org
+   and ask for a full pull. since<=0 → the full projection, exactly as before (old clients never send since). */
+const SYNC_SINCE_WINDOW_MS = 10 * 60 * 1000;   // overlap: honest phone-clock drift (record stamps are DEVICE clocks) + a failed round trip
+function projectSince(state, since, windowMs) {
+  if (!(+since > 0)) return state;
+  const floor = +since - (windowMs == null ? SYNC_SINCE_WINDOW_MS : windowMs);
+  const out = { users: state.users, registry: state.registry };
+  Object.keys(state || {}).forEach(k => {
+    if (k === "users" || k === "registry") return;
+    const slab = state[k]; if (!slab || typeof slab !== "object" || Array.isArray(slab)) return;
+    const o = {};
+    Object.keys(slab).forEach(c => { const a = slab[c]; if (!Array.isArray(a)) return; const p = a.filter(r => r && (!r.updatedAt || (+r.updatedAt || 0) >= floor)); if (p.length) o[c] = p; });
+    out[k] = o;
+  });
+  return out;
+}
+/* JSON reply, gzipped when the caller accepts it (the phone always does). Cloudflare compresses on the public
+   path already; this covers the Tailscale/LAN path and costs ~60 ms of CPU on the 2.4 MB full state. */
+function sendJson(req, res, obj) {
+  const body = JSON.stringify(obj);
+  const ae = String((req && req.headers && req.headers["accept-encoding"]) || "");
+  if (/\bgzip\b/.test(ae) && body.length > 4096) {
+    res.writeHead(200, { "Content-Type": "application/json", "Content-Encoding": "gzip", "Vary": "Accept-Encoding" });
+    return res.end(zlib.gzipSync(body, { level: 6 }));
+  }
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(body);
 }
 function saveStore(s) { const tmp = FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(s)); fs.renameSync(tmp, FILE); }   // atomic write: a crash mid-write can't leave a half-written/corrupt data.json
 
@@ -5657,6 +5690,8 @@ const server = http.createServer((req, res) => {
       if (!((TOKEN && payload.token === TOKEN) || puid)) { res.writeHead(401); return res.end('{"error":"unauthorized"}'); }
       const syncUserId = puid || (typeof payload.userId === "string" ? payload.userId : null);   // legacy shared token falls back to the client-claimed id
       noteActive(syncUserId);   // ops-brain last-active (in-memory; doesn't affect the merge)
+      const since = (+payload.since > 0) ? +payload.since : 0;   // delta pull: the server `now` this device got on its last successful sync (0 / absent = full)
+      const nowMs = Date.now();                                    // stamped BEFORE the merge so the next `since` can't skip anything merged in this request
       const pre = loadStore();
       if (puid) { const _acct = (pre.users || []).find(u => u && u.id === puid); if (_acct && _acct.logoutAt && (+tokRec.issued || 0) < _acct.logoutAt) { res.writeHead(401); return res.end('{"error":"session ended — sign in again"}'); } }   // "log out everywhere": a token issued before the account's logoutAt is dead
       // pre-merge message ids per org, for the new-message push dedupe below. Built over EVERY real
@@ -5672,8 +5707,8 @@ const server = http.createServer((req, res) => {
       const incomingState = (me && me.superAdmin) ? afterMsg : sanitizeCustomJobWrites(afterMsg, pre, syncUserId);   // WORKSHOP: only owner/admin may write customJobs; finance/broadcast/propose jobs require owner (super-admin bypasses)
       const merged = mergeState(pre, incomingState);
       saveStore(merged);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, shared: !puid, state: projectForUser(merged, myOrgs, me) }));   // READ isolation: only the caller's orgs go back. `shared` = this device is on the legacy shared token (no per-user id) → the client shows a non-locking "sign in again to add members" nudge
+      const proj = projectForUser(merged, myOrgs, me);   // READ isolation: only the caller's orgs go back. `shared` = this device is on the legacy shared token (no per-user id) → the client shows a non-locking "sign in again to add members" nudge
+      sendJson(req, res, { ok: true, shared: !puid, now: nowMs, partial: since > 0, state: since > 0 ? projectSince(proj, since) : proj });
       // best-effort push: tickle recipients of genuinely-new human messages (DMs + broadcasts) synced in
       try {
         const nowMs = Date.now(), incoming = payload.state || {};
@@ -6474,4 +6509,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
