@@ -5,17 +5,26 @@ Writes obx-holiday-lights-<season>-square.svg/.png (1200x1200) and -landscape.sv
 import re, sys, subprocess, os
 SEASONS = {
   # ground, mark, wordmark ink, tagline ink, tagline text, optional ring of little lights (colour or None)
-  "christmas": dict(bg="#153b2c", mark="#e6b85a", ink="#f6efe2", tag="#e6b85a", tagline="CHRISTMAS LIGHTING", lights="#f6e3a1"),
-  "parties":   dict(bg="#101725", mark="#d99420", ink="#ffffff", tag="#d99420", tagline="PARTY LIGHTING", lights="#ffe9b3"),
-  "halloween": dict(bg="#120d14", mark="#f08a24", ink="#f6efe2", tag="#c9a0ff", tagline="HALLOWEEN LIGHTING", lights="#f08a24"),
+  "christmas": dict(bg="#153b2c", mark="#e6b85a", ink="#f6efe2", tag="#e6b85a", tagline="CHRISTMAS LIGHTING", lights=["#e8463c", "#5fd67f", "#4f8cff", "#f2c14e", "#fff3d1"]),   # classic C9 colours, glowing
+  "parties":   dict(bg="#101725", mark="#d99420", ink="#ffffff", tag="#d99420", tagline="PARTY LIGHTING", lights=["#ffe9b3"]),
+  "halloween": dict(bg="#120d14", mark="#f08a24", ink="#f6efe2", tag="#c9a0ff", tagline="HALLOWEEN LIGHTING", lights=["#f08a24", "#a86cff"]),
   "plain":     dict(bg="#faf8f5", mark="#d99420", ink="#101725", tag="#a06a09", tagline="CHRISTMAS · PARTIES", lights=None),
 }
 season = (sys.argv[1] if len(sys.argv) > 1 else "christmas").lower()
 P = SEASONS[season]
 inner = re.search(r'<g fill="#14161a">(.*)</g>', open("dyad-mark.svg", encoding="utf8").read(), re.S).group(1)
-def ring(cx, cy, r, n, col, dot):
+GLOW = '<defs><filter id="glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="{sd}"/></filter></defs>'
+def ring(cx, cy, r, n, cols, dot):
+    """a string of C9 bulbs around the mark: each bulb is a soft glow halo + a bright core, colours cycling"""
     import math
-    return "".join('<circle cx="%.1f" cy="%.1f" r="%d" fill="%s" opacity="%.2f"/>' % (cx + r * math.cos(2 * math.pi * i / n - math.pi / 2), cy + r * math.sin(2 * math.pi * i / n - math.pi / 2), dot, col, 0.55 + 0.45 * (i % 2)) for i in range(n))
+    out = GLOW.format(sd=dot * 1.1)
+    for i in range(n):
+        a = 2 * math.pi * i / n - math.pi / 2
+        x, y, c = cx + r * math.cos(a), cy + r * math.sin(a), cols[i % len(cols)]
+        out += '<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" opacity=".55" filter="url(#glow)"/>' % (x, y, dot * 2.2, c)
+        out += '<circle cx="%.1f" cy="%.1f" r="%d" fill="%s"/>' % (x, y, dot, c)
+        out += '<circle cx="%.1f" cy="%.1f" r="%.1f" fill="#ffffff" opacity=".85"/>' % (x - dot * .3, y - dot * .3, dot * .3)
+    return out
 sq = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" width="1200" height="1200">\n<rect width="1200" height="1200" fill="%s"/>\n' % P["bg"]
 if P["lights"]: sq += ring(600, 600, 470, 24, P["lights"], 11) + "\n"
 sq += '<svg x="200" y="200" width="800" height="800" viewBox="199 199 627 627"><g fill="%s">%s</g></svg>\n</svg>\n' % (P["mark"], inner)
