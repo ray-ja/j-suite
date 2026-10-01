@@ -4,9 +4,9 @@
 /holiday-lights        /christmas          301
 /xmas                  /christmas          301
 /lights                /christmas          301
-/parties               /birthdays          301
-/party-lighting        /birthdays          301
-/birthday              /birthdays          301
+/parties               /christmas          302
+/party-lighting        /christmas          302
+/birthday              /christmas          302
 /quote                 /contact            301
 /estimate              /contact            301
 /rentals               /property-managers  301
@@ -14,3 +14,5 @@
 /prices                /pricing            301
 # Halloween is off for 2026 (Ray, 2026-10-01): page kept, hidden behind a temporary redirect
 /halloween             /christmas          302
+# Parties are off for now (Ray, 2026-10-01): page kept, hidden behind a temporary redirect
+/birthdays             /christmas          302

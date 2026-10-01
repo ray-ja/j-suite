@@ -8,7 +8,7 @@ SEASONS = {
   "christmas": dict(bg="#153b2c", mark="#e6b85a", ink="#f6efe2", tag="#e6b85a", tagline="CHRISTMAS LIGHTING", lights=["#e8463c", "#5fd67f", "#4f8cff", "#f2c14e", "#fff3d1"]),   # classic C9 colours, glowing
   "parties":   dict(bg="#101725", mark="#d99420", ink="#ffffff", tag="#d99420", tagline="PARTY LIGHTING", lights=["#ffe9b3"]),
   "halloween": dict(bg="#120d14", mark="#f08a24", ink="#f6efe2", tag="#c9a0ff", tagline="HALLOWEEN LIGHTING", lights=["#f08a24", "#a86cff"]),
-  "plain":     dict(bg="#faf8f5", mark="#d99420", ink="#101725", tag="#a06a09", tagline="CHRISTMAS · PARTIES", lights=None),
+  "plain":     dict(bg="#faf8f5", mark="#d99420", ink="#101725", tag="#a06a09", tagline="CHRISTMAS LIGHTING", lights=None),
 }
 season = (sys.argv[1] if len(sys.argv) > 1 else "christmas").lower()
 P = SEASONS[season]
