@@ -28,7 +28,7 @@ img,svg{max-width:100%}
 
 /* icons — thin line art, inherit currentColor, never emoji */
 .ic{width:1.15em;height:1.15em;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:-.18em}
-.ic-lg{width:30px;height:30px;stroke-width:1.6}
+.ic-lg{width:30px;height:30px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 
 /* top bar */
 .topbar{background:var(--ink);color:#a9adb5;font-size:14.5px}
@@ -54,6 +54,8 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);ba
 #nav-check,.menu-toggle,.mobilemenu{display:none}
 @media(max-width:860px){
   .navlinks,.navcta{display:none}
+  .logo{min-width:0}
+  .logo img{height:auto;width:min(230px,calc(100vw - 130px))}   /* the 46px-tall wordmark was wider than a phone allows and pushed the Menu button off the right edge */
   .menu-toggle{display:flex;align-items:center;font-size:15px;font-weight:800;cursor:pointer;border:1.5px solid var(--line);border-radius:9px;padding:9px 14px}
   #nav-check:checked~.mobilemenu{display:flex;flex-direction:column}
   .mobilemenu{background:#fff;border-top:1px solid var(--line);padding:8px 22px 18px}
