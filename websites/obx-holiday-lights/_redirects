@@ -12,3 +12,5 @@
 /rentals               /property-managers  301
 /property-management   /property-managers  301
 /prices                /pricing            301
+# Halloween is off for 2026 (Ray, 2026-10-01): page kept, hidden behind a temporary redirect
+/halloween             /christmas          302

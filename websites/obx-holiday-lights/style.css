@@ -66,6 +66,7 @@ header.site{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.98);ba
 .navcta .btn{padding:11px 18px;font-size:16px}
 /* a mid-width band where 5 links + a phone button get tight: shrink the links before anything wraps */
 @media(max-width:1180px){.navlinks{gap:17px;font-size:15.5px}.navcta .btn{padding:10px 15px;font-size:15px}}
+@media(max-width:1400px) and (min-width:861px){.navcta .btn .num{display:none}.navcta .btn{padding:11px 13px}}   /* five links + Get a quote + the phone number clipped the header at 1366 (2026-10-01); keep the phone icon, drop the digits until there is room */
 /* hero */
 .hero{background:var(--ink);color:#fff;position:relative;overflow:hidden;padding:74px 0 78px}
 .hero:before{content:"";position:absolute;right:-180px;top:-150px;width:560px;height:560px;background:radial-gradient(closest-side,rgba(242,106,27,.20),transparent 70%)}
