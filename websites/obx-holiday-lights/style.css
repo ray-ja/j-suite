@@ -191,3 +191,54 @@ footer.site b{color:#b6bbc2}
 .season{display:inline-block;font-size:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   color:var(--orange-deep);border:1px solid var(--line);border-radius:999px;padding:5px 12px;margin-bottom:14px}
 .night .season{color:#f0b544;border-color:rgba(255,255,255,.18)}
+
+/* ---- festive pass (Ray, 2026-10-02: "more colorful and festive") ----
+   The product is Christmas lights, so the page gets the bulbs: a multicolour C9 strand (red, green, gold, blue,
+   warm white) wherever the single amber strand was, soft coloured bokeh in the night hero, cranberry eyebrows
+   and season pills, and the card icons cycling through the bulb colours. Amber stays the one button colour. */
+:root{
+  --red:#c8322b; --red-soft:#ff5a4e; --green:#2e8b57; --green-soft:#58e08a; --blue:#3c6fd1; --blue-soft:#5ea2ff; --gold-soft:#ffd666; --white-soft:#fff2c2;
+  --strand-bg:
+    radial-gradient(circle at 17px 14px,var(--red-soft) 3.4px,rgba(255,90,78,.32) 6px,transparent 8.5px),
+    radial-gradient(circle at 51px 14px,var(--green-soft) 3.4px,rgba(88,224,138,.32) 6px,transparent 8.5px),
+    radial-gradient(circle at 85px 14px,var(--gold-soft) 3.4px,rgba(255,214,102,.32) 6px,transparent 8.5px),
+    radial-gradient(circle at 119px 14px,var(--blue-soft) 3.4px,rgba(94,162,255,.32) 6px,transparent 8.5px),
+    radial-gradient(circle at 153px 14px,var(--white-soft) 3.4px,rgba(255,242,194,.32) 6px,transparent 8.5px),
+    linear-gradient(transparent 8px,rgba(255,255,255,.16) 8px,rgba(255,255,255,.16) 9px,transparent 9px);
+  --strand-size:170px 26px;
+}
+.strand{height:26px;background:var(--strand-bg);background-size:var(--strand-size);background-repeat:repeat-x;border-top:0;opacity:1}
+@media (prefers-reduced-motion:no-preference){
+  .strand{animation:twinkle 3.8s ease-in-out infinite}
+  @keyframes twinkle{0%,100%{opacity:1}50%{opacity:.78}}
+}
+/* the night hero gets soft coloured bokeh behind the words, like lights out of focus */
+.hero{background:#0f1526}
+.hero:before{background:radial-gradient(closest-side,rgba(242,193,78,.22),transparent 70%)}
+.hero:after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:
+  radial-gradient(circle at 80% 22%,rgba(232,70,60,.26),transparent 14%),
+  radial-gradient(circle at 92% 62%,rgba(88,224,138,.20),transparent 12%),
+  radial-gradient(circle at 66% 88%,rgba(94,162,255,.20),transparent 12%),
+  radial-gradient(circle at 73% 50%,rgba(255,214,102,.22),transparent 10%),
+  radial-gradient(circle at 56% 18%,rgba(255,242,194,.14),transparent 8%)}
+.hero-grid{z-index:1}
+/* a strand above every final call-to-action band too, so the page ends the way it starts */
+.final{position:relative;padding-top:96px}
+.final:before{content:"";position:absolute;left:0;right:0;top:0;height:26px;background:var(--strand-bg);background-size:var(--strand-size);background-repeat:repeat-x}
+/* eyebrows and season pills in cranberry; the pill on the night hero in red with white text */
+.eyebrow{color:var(--red)}
+.band .eyebrow{color:rgba(255,255,255,.9)}
+.season{background:var(--red);color:#fff;border-color:transparent}
+.night .season{background:var(--red);color:#fff;border-color:transparent}
+/* card icons cycle through the bulb colours */
+.card:nth-child(4n+1) .ic-lg{color:var(--red)}
+.card:nth-child(4n+2) .ic-lg{color:var(--green)}
+.card:nth-child(4n+3) .ic-lg{color:var(--orange)}
+.card:nth-child(4n+4) .ic-lg{color:var(--blue)}
+/* step numbers: red, green, gold */
+.step:nth-child(3n+1) .n{background:rgba(232,70,60,.22);color:#ff8a80}
+.step:nth-child(3n+2) .n{background:rgba(88,224,138,.18);color:#8af0ae}
+.step:nth-child(3n+3) .n{background:rgba(255,214,102,.18);color:var(--gold-soft)}
+/* checklist ticks in green, town pins in red */
+.checkrow li .ic{color:var(--green)}
+.town .ic{color:var(--red)}
