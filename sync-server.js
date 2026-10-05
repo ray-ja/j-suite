@@ -5386,6 +5386,16 @@ const server = http.createServer((req, res) => {
     try { saveStore(r.store); if (r.threadId) pushNotify(r.store, org, r.threadId, "__ceo__").catch(() => {}); } catch (e) { return J(500, { error: "save failed" }); }
     return J(200, { ok: true, already: !!r.already, acceptedAt: (r.store[org].quotes.find(x => x.id === q.id) || {}).acceptedAt || null });
   }
+  /* STATIC INTAKE FORM PAGE — GET /intake/<slug>: a self-contained HTML page Game-Ops generates (its own public
+     key and its own tunnel URL baked in) and hands over as an untracked file in assets/intake/. This server only
+     serves the file; the page posts to Game-Ops directly. Ray, 2026-10-05 (option 2 on board #188). noindex. */
+  if (req.method === "GET" && /^\/intake\/[a-z0-9][a-z0-9\-]{1,60}$/.test(req.url.split("?")[0])) {
+    const slug = req.url.split("?")[0].replace(/^\/intake\//, "");
+    const file = path.join(__dirname, "assets", "intake", slug + ".html");
+    if (!fs.existsSync(file)) { res.writeHead(404, { "Content-Type": "text/plain" }); return res.end("not found"); }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY" });
+    return res.end(fs.readFileSync(file));
+  }
   /* PUBLIC OPTION PAGES — GET /p/<slug>: a hand-built quote page (photos + options + estimates) that lives in
      assets/quotes/<slug>/index.html. Slug-only, index-only, noindex. Ray, 2026-09-14: the waterfall surround options. */
   if (req.method === "GET" && /^\/p\/[a-z0-9][a-z0-9\-]{1,60}\/?$/.test(req.url.split("?")[0])) {
