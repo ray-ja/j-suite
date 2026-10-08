@@ -28,4 +28,14 @@ list = F.navFavToggleList(list, "finance/bank");
 ok("pin again = unpin", list.join() === "schedule/", list);
 list = []; for (let i = 0; i < 20; i++) list = F.navFavToggleList(list, "t" + i + "/");
 ok("capped at " + F.NAVFAV_MAX + " (oldest dropped)", list.length === F.NAVFAV_MAX && list[0] === "t8/", list);
+/* per-org (Ray, 2026-10-08) */
+const legacy = ["finance/bank", "schedule/"];
+ok("an org with no list of its own falls back to the legacy flat list (nothing pinned disappears)", F.navFavListFor(undefined, "obx", legacy).join() === "finance/bank,schedule/");
+let by = F.navFavSetFor(undefined, "obx", F.navFavToggleList(F.navFavListFor(undefined, "obx", legacy), "todo/"));
+ok("first pin inside an org copies the fallback into the org's own list and adds to it", by.obx.join() === "finance/bank,schedule/,todo/", by);
+ok("another org still sees the legacy list, untouched by obx's pin", F.navFavListFor(by, "lights", legacy).join() === "finance/bank,schedule/", F.navFavListFor(by, "lights", legacy));
+by = F.navFavSetFor(by, "lights", ["research/"]);
+ok("each org keeps its own list; setting one never changes another", by.obx.length === 3 && by.lights.join() === "research/" && F.navFavListFor(by, "lights", legacy).join() === "research/");
+ok("an empty own list is honoured (unpinning everything in an org does not resurrect the legacy list)", F.navFavListFor(F.navFavSetFor(by, "lights", []), "lights", legacy).length === 0);
+ok("no org id → legacy list, and a write with no org id is a no-op on the map", F.navFavListFor(by, "", legacy).join() === "finance/bank,schedule/" && Object.keys(F.navFavSetFor(by, "", ["x/"])).join() === "obx,lights");
 console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);

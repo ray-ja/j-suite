@@ -13,8 +13,13 @@
    HOW TO PIN: desktop rows carry a ☆ on the right; on the phone a ☆ sits at the end of the sub-tab row and pins
    the screen you are on. Tap again to unpin. Order = the order you pinned (unpin + re-pin moves one to the end).
 
-   STORED on the signed-in account (u.navFavs), which already syncs — so it follows him from phone to desktop.
-   Signed-out devices fall back to localStorage. Never more than a label-and-key list; nothing else changes. */
+   STORED on the signed-in account, which already syncs — so it follows him from phone to desktop.
+   Signed-out devices fall back to localStorage. Never more than a label-and-key list; nothing else changes.
+
+   PER ORG (Ray, 2026-10-08: "the favorites list should be per org"): u.navFavsByOrg = { <orgId>: [keys] }.
+   The old flat u.navFavs stays as the fallback for an org that has no list of its own yet, so nothing he
+   pinned disappears; the first pin or unpin inside an org copies that fallback into the org's own list and
+   from then on the org is independent. Pure helpers below (navFavListFor / navFavSetFor) are node-tested. */
 const NAVFAV_MAX = 12;
 
 /* ===================== pure (node-testable) ===================== */
@@ -30,6 +35,15 @@ function navFavResolve(key, deep, tabMeta, canSee) {
   const m = (tabMeta || {})[tab]; if (!m) return null;
   return { key: key, tab: tab, sub: "", setter: "", icon: m.i || "•", label: m.l || tab, plain: true };
 }
+/* per-org read: the org's own list if it has one, else the legacy flat list (u.navFavs or the localStorage one) */
+function navFavListFor(byOrg, org, legacy) {
+  if (byOrg && org && Array.isArray(byOrg[org])) return byOrg[org].filter(Boolean);
+  return (Array.isArray(legacy) ? legacy : []).filter(Boolean);
+}
+/* per-org write: returns a NEW byOrg map with this org's list set; other orgs untouched */
+function navFavSetFor(byOrg, org, list) {
+  const out = Object.assign({}, byOrg || {}); if (org) out[org] = (list || []).filter(Boolean); return out;
+}
 function navFavToggleList(list, key, max) {
   list = (list || []).filter(Boolean); max = max || NAVFAV_MAX;
   if (list.indexOf(key) >= 0) return list.filter(k => k !== key);
@@ -38,15 +52,18 @@ function navFavToggleList(list, key, max) {
 
 /* ===================== storage ===================== */
 function navFavUser() { return (typeof curUser === "function") ? curUser() : null; }
+function navFavOrg() { return (typeof S !== "undefined" && S && S.biz) ? String(S.biz) : ""; }
+function navFavLocal() { try { return JSON.parse(localStorage.getItem("jra_navfavs_byorg") || "{}") || {}; } catch (e) { return {}; } }
+function navFavLocalLegacy() { try { return JSON.parse(localStorage.getItem("jra_navfavs") || "[]") || []; } catch (e) { return []; } }
 function navFavList() {
-  const u = navFavUser();
-  if (u && Array.isArray(u.navFavs)) return u.navFavs.filter(Boolean);
-  try { return JSON.parse(localStorage.getItem("jra_navfavs") || "[]") || []; } catch (e) { return []; }
+  const u = navFavUser(), org = navFavOrg();
+  if (u) return navFavListFor(u.navFavsByOrg, org, u.navFavs);
+  return navFavListFor(navFavLocal(), org, navFavLocalLegacy());
 }
 function navFavSave(list) {
-  const u = navFavUser();
-  if (u) { u.navFavs = list; if (typeof touch === "function") touch(u); if (typeof save === "function") save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); }
-  else { try { localStorage.setItem("jra_navfavs", JSON.stringify(list)); } catch (e) {} }
+  const u = navFavUser(), org = navFavOrg();
+  if (u) { u.navFavsByOrg = navFavSetFor(u.navFavsByOrg, org, list); if (typeof touch === "function") touch(u); if (typeof save === "function") save(); if (typeof scheduleAutoPush === "function") scheduleAutoPush(); }
+  else { try { localStorage.setItem("jra_navfavs_byorg", JSON.stringify(navFavSetFor(navFavLocal(), org, list))); } catch (e) {} }
 }
 function navFavIs(key) { return navFavList().indexOf(key) >= 0; }
 /* the key of whatever is on screen right now */
@@ -138,5 +155,5 @@ function navFavDecorateDeep(nav) {
 })();
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { navFavKeyOf: navFavKeyOf, navFavResolve: navFavResolve, navFavToggleList: navFavToggleList, NAVFAV_MAX: NAVFAV_MAX };
+  module.exports = { navFavKeyOf: navFavKeyOf, navFavResolve: navFavResolve, navFavToggleList: navFavToggleList, navFavListFor: navFavListFor, navFavSetFor: navFavSetFor, NAVFAV_MAX: NAVFAV_MAX };
 }
