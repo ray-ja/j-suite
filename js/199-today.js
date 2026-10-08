@@ -409,7 +409,15 @@ if (typeof window !== "undefined") {
         })();
       }
       var adsB = take(/ads|off duty/i, groups.day);
-      if (adsB.length) { var on = /running/i.test(adsB[0].nodes.map(function (n) { return n.textContent; }).join(" ")); addTile({ key: "ads", icon: "📣", value: on ? "On" : "Off", label: "Google Ads", tone: on ? "ok" : "plain", title: "Ads", blocks: adsB }); }
+      if (adsB.length) {
+        var adsTxt = adsB[0].nodes.map(function (n) { return n.textContent; }).join(" ");
+        var adsOn = /running/i.test(adsTxt) ? true : /paused/i.test(adsTxt) ? false : null;   // null = still checking (js/182 fetches after render)
+        addTile({ key: "ads", icon: "📣", value: adsOn === null ? "…" : adsOn ? "On" : "Off", label: "Google Ads", tone: adsOn ? "ok" : "plain", title: "Ads", blocks: adsB });
+        if (!window.__t3DutyHook) { window.__t3DutyHook = true; window.addEventListener("duty-updated", function (ev) {
+          var t = document.querySelector('.db-tile[data-tile="ads"]'); if (!t) return; var on = ev.detail && ev.detail.on;
+          var v = t.querySelector(".val"); if (v) v.textContent = on === null || on === undefined ? (ev.detail && ev.detail.err ? "—" : "…") : on ? "On" : "Off";
+          t.classList.toggle("tone-ok", on === true); t.classList.toggle("tone-plain", on !== true);
+        }); } }
       /* anything not claimed keeps a home */
       var rest = groups.money.concat(groups.day).filter(function (b) { return claimed.indexOf(b) < 0; });
       if (rest.length) addTile({ key: "more", icon: "•••", value: String(rest.length), label: "more", tone: "plain", title: "More", blocks: rest });

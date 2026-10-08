@@ -5,7 +5,12 @@
    server (GET /api/ads/duty) and flips ALL campaigns on the org's account (search + Local Services) with one POST.
    The Google Business Profile "open now" label has no API hookup here; the card links to the GBP app instead. */
 if (typeof window !== "undefined") {
-  window.DUTY = window.DUTY || { state: null, busy: false, err: "" };
+  /* state is PER ORG (2026-10-08: OBX's "paused" leaked into Holiday Lights' tile because one global answer was reused
+     across the org switch). window.DUTY stays as the view of the CURRENT org; DUTY_BY_ORG holds each org's answer. */
+  window.DUTY_BY_ORG = window.DUTY_BY_ORG || {};
+  function dutyFor(org) { return (window.DUTY_BY_ORG[org] = window.DUTY_BY_ORG[org] || { state: null, busy: false, err: "" }); }
+  Object.defineProperty(window, "DUTY", { configurable: true, get: function () { return dutyFor(dutyOrg()); } });
+  function dutyNotify() { try { window.dispatchEvent(new CustomEvent("duty-updated", { detail: { org: dutyOrg(), on: DUTY.state ? !!DUTY.state.on : null, err: DUTY.err } })); } catch (e) {} }
   function dutyHdr() { return { "Content-Type": "application/json", "Authorization": "Bearer " + ((typeof S !== "undefined" && S.sync && S.sync.token) || "") }; }
   function dutyOrg() { return (typeof S !== "undefined" && S.biz) || "obx"; }
   function dutyIsOwner() { try { const u = (typeof curUser === "function") ? curUser() : null; return !!(u && (u.superAdmin || u.role === "owner")); } catch (e) { return false; } }
@@ -13,8 +18,8 @@ if (typeof window !== "undefined") {
     if (!dutyIsOwner()) return;
     fetch("./api/ads/duty?org=" + encodeURIComponent(dutyOrg()), { headers: dutyHdr() }).then(r => r.json()).then(j => {
       if (j && j.ok) { DUTY.state = j; DUTY.err = ""; } else { DUTY.err = (j && j.error) || "no answer"; }
-      const el = document.getElementById("duty_card"); if (el) el.outerHTML = window.offDutyCardHTML();
-    }).catch(() => { DUTY.err = "offline"; const el = document.getElementById("duty_card"); if (el) el.outerHTML = window.offDutyCardHTML(); });
+      const el = document.getElementById("duty_card"); if (el) el.outerHTML = window.offDutyCardHTML(); dutyNotify();
+    }).catch(() => { DUTY.err = "offline"; const el = document.getElementById("duty_card"); if (el) el.outerHTML = window.offDutyCardHTML(); dutyNotify(); });
   };
   window.dutySet = function (on) {
     if (DUTY.busy) return;
@@ -23,8 +28,8 @@ if (typeof window !== "undefined") {
       DUTY.busy = false;
       if (j && j.ok) { DUTY.state = j; DUTY.err = ""; if (typeof toast === "function") toast(on ? "Ads are back on" : "Ads paused. Nothing is spending."); }
       else { DUTY.err = (j && j.error) || "no answer"; if (typeof toast === "function") toast("Couldn't reach Google Ads: " + DUTY.err); }
-      const el2 = document.getElementById("duty_card"); if (el2) el2.outerHTML = window.offDutyCardHTML();
-    }).catch(() => { DUTY.busy = false; DUTY.err = "offline"; const el2 = document.getElementById("duty_card"); if (el2) el2.outerHTML = window.offDutyCardHTML(); });
+      const el2 = document.getElementById("duty_card"); if (el2) el2.outerHTML = window.offDutyCardHTML(); dutyNotify();
+    }).catch(() => { DUTY.busy = false; DUTY.err = "offline"; const el2 = document.getElementById("duty_card"); if (el2) el2.outerHTML = window.offDutyCardHTML(); dutyNotify(); });
   };
   window.offDutyCardHTML = function () {
     if (!dutyIsOwner()) return "";

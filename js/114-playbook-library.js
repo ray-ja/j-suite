@@ -286,6 +286,10 @@ function pbLibNorm(name){ return String(name==null?"":name).toLowerCase().replac
    seeded). Never throws. Mirrors pbSeedTax/pbSeedPlants (js/63). */
 window.pbLibSeed = function(){
   try{
+    /* OBX Lot Solutions only (Ray, 2026-10-05 and 2026-10-08: the plant/process guides do not belong in Jamieson,
+       Holiday Lights or any other org). The seed used to run for whichever org was open and resurrected archived
+       copies by id. */
+    if (typeof S === "undefined" || !S || S.biz !== "obx") return 0;
     const d = (typeof D==="function") ? D() : null; if(!d) return 0;
     if(!Array.isArray(d.playbookLib)) d.playbookLib = [];
     const have = {}; d.playbookLib.forEach(function(r){ if(r&&!r.deleted&&r.key) have[r.key]=1; });

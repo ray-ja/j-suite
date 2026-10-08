@@ -17,7 +17,7 @@ function rPlaybook(){
   // PLANT STARTER — one-tap load of the coastal-NC / OBX plant playbook (species IDs + how/when to prune-or-remove
   // each) so Cap's landscaping site-survey (js/113) and any plant-care answer come from ground truth. Insert-if-absent
   // (your edits stick). The SAME facts are mirrored server-side (LAND_PLAYBOOK) into the survey vision prompt.
-  const _plantMissing = (typeof plantSeedMissing === "function") ? plantSeedMissing() : 0;
+  const _plantMissing = (typeof plantSeedMissing === "function" && S.biz === "obx") ? plantSeedMissing() : 0;   // landscaping starter: OBX Lot Solutions only (Ray, 2026-10-08)
   if(_plantMissing>0) h+=`<div class="card" style="border-left:4px solid #1a7f37"><div class="nm" style="font-size:14px">🌿 Plant playbook (coastal NC · OBX)</div><div class="sub" style="white-space:normal;margin:2px 0 8px">Load ${_plantMissing} starter fact${_plantMissing===1?"":"s"} on the common OBX species — crape myrtle, live oak, wax myrtle, oleander, pampas, palms… — and how/when to prune or remove each in zone 8a. Feeds Cap's landscaping site-survey.</div><button class="btn acc sm" onclick="pbSeedPlants()">🌿 Load OBX plant playbook</button></div>`;
   h+=`<input class="search" id="pb_search" placeholder="Search the playbook…" value="${esc(PB_SEARCH)}" oninput="pbSearch(this.value)">`;
   h+= list.length
