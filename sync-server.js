@@ -5386,6 +5386,23 @@ const server = http.createServer((req, res) => {
     try { saveStore(r.store); if (r.threadId) pushNotify(r.store, org, r.threadId, "__ceo__").catch(() => {}); } catch (e) { return J(500, { error: "save failed" }); }
     return J(200, { ok: true, already: !!r.already, acceptedAt: (r.store[org].quotes.find(x => x.id === q.id) || {}).acceptedAt || null });
   }
+  /* AZEROTH (interj session, Ray approved 2026-10-09): a temporary just-for-fun page for Ray's WoW friend group, served
+     by a Python service on this workstation (systemd --user azeroth.service, 127.0.0.1:8796). Everything under
+     /azeroth/ is reverse-proxied to it, prefix kept (the service accepts either); /azeroth redirects to /azeroth/ so the
+     page's relative API calls resolve. Public, no token: the service protects votes per name with its own browser key
+     and only accepts names on Ray's list. Nothing of J-Suite's is reachable through it. Remove this block when the
+     season is over. */
+  if (req.url.split("?")[0] === "/azeroth") { res.writeHead(302, { Location: "/azeroth/" + (req.url.indexOf("?") >= 0 ? req.url.slice(req.url.indexOf("?")) : "") }); return res.end(); }
+  if (req.url.indexOf("/azeroth/") === 0) {
+    const up = http.request({ host: "127.0.0.1", port: 8796, method: req.method, path: req.url, headers: Object.assign({}, req.headers, { host: "127.0.0.1:8796", "x-forwarded-for": clientIp(req), "x-forwarded-proto": "https", "x-forwarded-host": String(req.headers.host || "") }) }, (ur) => {
+      const h = Object.assign({}, ur.headers); delete h["transfer-encoding"]; h["x-robots-tag"] = "noindex";
+      res.writeHead(ur.statusCode || 502, h); ur.pipe(res);
+    });
+    up.setTimeout(30000, () => { try { up.destroy(new Error("timeout")); } catch (e) {} });
+    up.on("error", () => { if (!res.headersSent) { res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Azeroth is down for a moment. Try again shortly."); } else { try { res.end(); } catch (e) {} } });
+    req.pipe(up);
+    return;
+  }
   /* STATIC INTAKE FORM PAGE — GET /intake/<slug>: a self-contained HTML page Game-Ops generates (its own public
      key and its own tunnel URL baked in) and hands over as an untracked file in assets/intake/. This server only
      serves the file; the page posts to Game-Ops directly. Ray, 2026-10-05 (option 2 on board #188). noindex. */
