@@ -3886,6 +3886,92 @@ if (require.main === module) {
   if (_remTimer.unref) _remTimer.unref();
 }
 
+
+/* ---------- OB-XSCAPE MONTHLY INVOICE (Ray, 2026-10-09: "automatically send them on the first of each month,
+   although you should go through them first to make sure they all look accurate") ------------------------------
+   The escape room is the ONE customer billed hourly from the time clock (Ray's rule: $55/hr, 1-hour minimum per
+   visit, same rate any hour). On the 1st, the sweep builds last month's invoice from jam.timeclock for the customer,
+   runs the accuracy checks, and:
+     clean   → files it as an invoiced quote (same shape as q_jam_escape_202608), emails the link to the customer's
+               address, and DMs Ray a summary;
+     flagged → files it as a DRAFT (invoiced:false, not emailed) and DMs Ray the problems to fix; it is sent by hand.
+   Checks: an OPEN shift, a shift over 12 h (a missed clock-out), two shifts that overlap, and a month with no shifts.
+   Pure parts (escapeInvoiceBuild) are node-tested; the sweep is idempotent per month (quote id q_jam_escape_<yyyymm>). */
+const ESCAPE_CUSTOMER_ID = "mt072nljqgcdu", ESCAPE_ORG = "jam", ESCAPE_RATE = 55, ESCAPE_MIN_HOURS = 1, ESCAPE_LONG_SHIFT_H = 12;
+const ESCAPE_TZ = "America/New_York";
+function escapeLocal(ms) { return new Date(new Date(ms).toLocaleString("en-US", { timeZone: ESCAPE_TZ })); }
+function escapeFmtTime(ms) { return new Date(ms).toLocaleString("en-US", { timeZone: ESCAPE_TZ, hour: "numeric", minute: "2-digit" }).toLowerCase(); }
+function escapeMonthOf(ms) { const d = escapeLocal(ms); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function escapePrevMonth(nowMs) { const d = escapeLocal(nowMs); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }
+function escapeDur(h) { const m = Math.round(h * 60); if (m < 60) return m + " min"; const hh = Math.floor(m / 60), mm = m % 60; return mm ? hh + "h " + mm + "m" : hh + "h"; }
+/* build {ym, items, hours, total, problems, shifts} for one month from a timeclock array (pure) */
+function escapeInvoiceBuild(timeclock, ym, nowMs) {
+  nowMs = nowMs || Date.now();
+  const sh = (timeclock || []).filter(t => t && !t.deleted && t.customerId === ESCAPE_CUSTOMER_ID && t.clockIn && escapeMonthOf(t.clockIn) === ym).sort((a, b) => a.clockIn - b.clockIn);
+  const problems = [], items = [];
+  if (!sh.length) problems.push("No clocked shifts for OB-Xscape in " + ym + ".");
+  sh.forEach((t, i) => {
+    const d = escapeLocal(t.clockIn), day = d.toLocaleString("en-US", { month: "short", day: "numeric" });
+    if (!t.clockOut) { problems.push(day + ": shift is still OPEN (clocked in " + escapeFmtTime(t.clockIn) + ", no clock-out)."); return; }
+    const h = (t.clockOut - t.clockIn) / 36e5;
+    if (h <= 0) { problems.push(day + ": clock-out is before clock-in."); return; }
+    if (h > ESCAPE_LONG_SHIFT_H) problems.push(day + ": " + escapeDur(h) + " shift (" + escapeFmtTime(t.clockIn) + " to " + escapeFmtTime(t.clockOut) + "), looks like a missed clock-out.");
+    const prev = sh[i - 1]; if (prev && prev.clockOut && t.clockIn < prev.clockOut) problems.push(day + ": overlaps the previous shift.");
+    const billed = Math.max(ESCAPE_MIN_HOURS, Math.round(h * 100) / 100);
+    const name = "Service call, " + day + " (" + (h < ESCAPE_MIN_HOURS ? escapeDur(h) + ", billed at the 1-hour minimum" : escapeDur(h)) + ")";
+    items.push({ serviceId: "", name: name, unit: "hr", price: ESCAPE_RATE, qty: billed, cost: 0, notes: [] });
+  });
+  const hours = Math.round(items.reduce((a, x) => a + x.qty, 0) * 100) / 100;
+  const total = Math.round(hours * ESCAPE_RATE * 100) / 100;
+  return { ym: ym, items: items, hours: hours, total: total, problems: problems, shifts: sh.length };
+}
+function escapeInvoiceRecord(built, nowMs, sendIt) {
+  const [y, m] = built.ym.split("-"); const last = new Date(+y, +m, 0).getDate();
+  const monthName = new Date(+y, +m - 1, 1).toLocaleString("en-US", { month: "long" });
+  return { id: "q_jam_escape_" + y + m, customerId: ESCAPE_CUSTOMER_ID, cust: "OB-Xscape Rooms", propertyId: "", address: "1 Ocean Blvd, Southern Shores, NC",
+    date: y + "-" + m + "-" + String(last).padStart(2, "0"), items: built.items, recurring: false, subtotal: built.total, discount: 0, manualDisc: 0, total: built.total, cost: 0, paymentLink: "",
+    invoiced: !!sendIt, invoicedDate: sendIt ? escapeMonthOf(nowMs) + "-" + String(escapeLocal(nowMs).getDate()).padStart(2, "0") : "", invoiceToken: crypto.randomBytes(16).toString("hex"), paid: false, finalPrice: 0, adjNote: "", taxable: false,
+    hours: built.hours, crewN: 1, haul: "pickup", num: 1, accepted: true, acceptedDate: y + "-" + m + "-01", jobId: "job_jam_escape_20260819",
+    notes: monthName + " " + y + " service hours for OB-Xscape Rooms. Standard rate $55/hr; every visit bills at a 1-hour minimum. Hours from the time clock." + (sendIt ? "" : " DRAFT, built with open questions; not sent."),
+    updatedAt: nowMs, editedBy: "__ceo__", editedAt: nowMs, autoBuilt: true, deleted: false };
+}
+function escapeInvoiceSweep(force) {
+  let store; try { store = loadStore(); } catch (e) { return; }
+  const now = Date.now(), loc = escapeLocal(now);
+  if (!force && loc.getDate() !== 1) return;                                   // the 1st only
+  const ym = escapePrevMonth(now); const slab = store[ESCAPE_ORG] || {};
+  if ((slab.quotes || []).some(q => q && !q.deleted && q.id === "q_jam_escape_" + ym.replace("-", ""))) return;   // already filed this month
+  const built = escapeInvoiceBuild(slab.timeclock || [], ym, now);
+  const clean = built.problems.length === 0 && built.items.length > 0;
+  const rec = escapeInvoiceRecord(built, now, clean);
+  const cust = (slab.customers || []).find(c => c && c.id === ESCAPE_CUSTOMER_ID) || {};
+  const to = String(cust.email || "").trim();
+  const ray = (store.users || []).find(u => u && !u.kind && u.id === "mq5bu9z3vc4ey");
+  const finish = (sent, extra) => {
+    const lines = ["OB-Xscape invoice for " + ym + ": " + built.items.length + " visits, " + built.hours + " h, $" + built.total.toFixed(2) + "."];
+    if (sent) lines.push("Sent to " + to + ".");
+    else if (clean) lines.push("Built and filed, but NOT sent: " + extra + " Open it in Jamieson → Invoices and send it by hand.");
+    else { lines.push("Filed as a DRAFT, not sent. Fix these on the time clock, then send it from Jamieson → Invoices:"); built.problems.forEach(pr => lines.push("• " + pr)); }
+    const msg = ceoBuildMessage({ biz: ESCAPE_ORG, to: "mq5bu9z3vc4ey", members: ["mq5bu9z3vc4ey"], title: "OB-Xscape invoices", senderLabel: "Invoices", threadId: "thr_escape_invoices", body: lines.join("\n").slice(0, 1500) }, store);
+    const patch = { [ESCAPE_ORG]: { quotes: [rec], messages: msg.records } };
+    store = mergeState(store, patch);
+    try { saveStore(store); } catch (e) {}
+    pushNotify(store, ESCAPE_ORG, msg.threadId, "__ceo__").catch(() => {});
+    console.log("[escape-invoice] " + ym + " " + (sent ? "sent" : clean ? "filed, not sent" : "draft with " + built.problems.length + " problems"));
+  };
+  if (!clean) return finish(false);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return finish(false, "the customer has no email address on the card.");
+  const built2 = invEmailBuild(rec, cust, pubBizOf(store, ESCAPE_ORG, rec), ray ? { name: ray.username } : null, (emailCfg().appUrl) || "https://app.jsuite.dev", "");
+  sendEmail(to, built2.subject, built2.html, { from: built2.from, replyTo: ray && ray.email ? ray.email : undefined, text: built2.text }).then(r => {
+    if (r && r.ok) { rec.emailedAt = Date.now(); rec.emailedTo = to; finish(true); }
+    else finish(false, "the mail service refused it" + (r && r.detail ? " (" + r.detail + ")" : "") + ".");
+  }).catch(() => finish(false, "the mail service did not answer."));
+}
+if (require.main === module) {
+  const _escTimer = setInterval(() => { try { const h = escapeLocal(Date.now()).getHours(); if (h >= 8) escapeInvoiceSweep(); } catch (e) {} }, 30 * 60 * 1000);   // every 30 min; acts only on the 1st, from 8 AM Eastern, once
+  if (_escTimer.unref) _escTimer.unref();
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -6536,4 +6622,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { escapeInvoiceBuild, escapeInvoiceRecord, escapePrevMonth, ESCAPE_RATE, projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

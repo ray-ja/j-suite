@@ -2565,6 +2565,40 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     ok("qbo year ranges: no first year → two years back", S.qboYearRanges(null, Date.parse("2026-09-22T12:00:00Z"))[0].year === 2024);
   }
 
+
+console.log("\n— OB-Xscape monthly invoice (escapeInvoiceBuild) —");
+(function () {
+  const H = 36e5, C = "mt072nljqgcdu";
+  const sep = (d, h, m) => new Date("2026-09-" + String(d).padStart(2, "0") + "T" + String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":00-04:00").getTime();
+  const tc = [
+    { id: "a", customerId: C, clockIn: sep(2, 12, 40), clockOut: sep(2, 13, 26) },                 // 46 min → 1-hour minimum
+    { id: "b", customerId: C, clockIn: sep(4, 11, 35), clockOut: sep(4, 16, 6) },                  // 4.52 h
+    { id: "c", customerId: "someone-else", clockIn: sep(5, 9, 0), clockOut: sep(5, 12, 0) },       // not the escape room
+    { id: "d", customerId: C, clockIn: sep(30, 18, 0), clockOut: sep(30, 20, 14) },                // evening, still $55
+    { id: "e", customerId: C, clockIn: new Date("2026-10-01T14:28:00-04:00").getTime(), clockOut: new Date("2026-10-01T16:19:00-04:00").getTime() }, // October, excluded
+    { id: "z", customerId: C, clockIn: sep(1, 9, 0), clockOut: sep(1, 10, 0), deleted: true },     // deleted, excluded
+  ];
+  const b = t.escapeInvoiceBuild(tc, "2026-09");
+  ok("picks only the escape room's September shifts", b.items.length === 3 && b.shifts === 3, b.items.map(i => i.name));
+  ok("a 46-minute visit bills at the 1-hour minimum and says so", b.items[0].qty === 1 && /1-hour minimum/.test(b.items[0].name), b.items[0]);
+  ok("hours round to 2 dp, $55 flat at any hour", b.items[1].qty === 4.52 && b.items[2].qty === 2.23 && b.items[2].price === 55, b.items);
+  ok("totals", b.hours === 7.75 && b.total === 426.25, [b.hours, b.total]);
+  ok("a clean month has no problems", b.problems.length === 0, b.problems);
+  const bad = t.escapeInvoiceBuild(tc.concat([
+    { id: "open", customerId: C, clockIn: sep(11, 14, 21) },                                        // still open
+    { id: "long", customerId: C, clockIn: sep(25, 12, 35), clockOut: sep(26, 14, 13) },            // 25.6 h, missed clock-out
+    { id: "ovl", customerId: C, clockIn: sep(4, 15, 0), clockOut: sep(4, 17, 0) },                  // overlaps b
+  ]), "2026-09");
+  ok("an open shift is flagged and not billed", bad.problems.some(p => /OPEN/.test(p)) && !bad.items.some(i => /Sep 11/.test(i.name)), bad.problems);
+  ok("a 25-hour shift is flagged as a missed clock-out (still listed so Ray sees the number)", bad.problems.some(p => /missed clock-out/.test(p) && /Sep 25/.test(p)), bad.problems);
+  ok("overlapping shifts are flagged", bad.problems.some(p => /overlaps/.test(p)), bad.problems);
+  ok("an empty month is a problem, not a $0 invoice", t.escapeInvoiceBuild(tc, "2026-07").problems.length === 1);
+  ok("previous month resolves in Eastern time", t.escapePrevMonth(new Date("2026-10-01T00:30:00-04:00").getTime()) === "2026-09" && t.escapePrevMonth(new Date("2026-01-01T12:00:00-05:00").getTime()) === "2025-12");
+  const rec = t.escapeInvoiceRecord(b, new Date("2026-10-01T08:00:00-04:00").getTime(), true);
+  ok("the filed record has the August shape: id by month, invoiced, token, dated the last day of the month", rec.id === "q_jam_escape_202609" && rec.invoiced === true && rec.invoiceToken.length === 32 && rec.date === "2026-09-30" && rec.total === 426.25 && rec.customerId === C, rec);
+  const draft = t.escapeInvoiceRecord(bad, Date.now(), false);
+  ok("a flagged month files as a draft, not invoiced", draft.invoiced === false && /DRAFT/.test(draft.notes));
+})();
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();
