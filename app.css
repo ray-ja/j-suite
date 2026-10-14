@@ -453,6 +453,13 @@
      stacks UNDER the dev bar when both are present. Owner-preview (view-as) and being mid-shift rarely
      coincide, but if they do, this sits under that bar too so nothing overlaps. */
   #odobanner{position:fixed;top:0;left:0;right:0;height:28px;z-index:62;border:none;cursor:pointer;background:#c0392b;color:#fff;font:700 13px/28px -apple-system,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;width:100%}
+  /* bank feed stopped (js/202): same slot as the odometer bar; stacks under it when both show */
+  #bankbanner{position:fixed;top:0;left:0;right:0;height:28px;z-index:62;border:none;cursor:pointer;background:#c0392b;color:#fff;font:700 13px/28px -apple-system,'Segoe UI',Roboto,Arial,sans-serif;text-align:center;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 10px;width:100%}
+  body.has-bank-banner{padding-top:28px}
+  body.has-bank-banner header{top:28px}
+  body.has-bank-banner.has-odo-banner{padding-top:56px}
+  body.has-bank-banner.has-odo-banner #bankbanner{top:28px}
+  body.has-bank-banner.has-odo-banner header{top:56px}
   body.has-odo-banner{padding-top:28px}
   body.has-odo-banner header{top:28px}
   body.has-odo-banner.has-dev-banner{padding-top:52px}

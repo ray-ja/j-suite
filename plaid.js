@@ -155,14 +155,21 @@ function plaidVerify(orgId, userId, cb) {
 }
 
 /* ---------- the connect flow ---------- */
-function plaidLinkToken(orgId, userId, cb) {
-  plaidCall(orgId, "/link/token/create", {
+function plaidLinkToken(orgId, userId, cb, itemId) {
+  const body = {
     client_name: "j-Suite",
     language: "en",
     country_codes: ["US"],
-    user: { client_user_id: String(userId || "owner") },
-    products: ["transactions"]
-  }, cb);
+    user: { client_user_id: String(userId || "owner") }
+  };
+  /* ⭐ UPDATE MODE (Ray, 2026-10-14: "the feed stopped? i should get an alert"). When a bank answers
+     ITEM_LOGIN_REQUIRED the fix is a fresh sign-in on the SAME item, not a new connection: Link opened with
+     the item's access token keeps the item id, the account pairing and the cursor, so the feed resumes where
+     it stopped. Plaid: pass access_token and NO products for update mode. */
+  const it = itemId ? (plaidCfg(orgId).items[itemId] || null) : null;
+  if (itemId && !(it && it.accessToken)) return void setImmediate(() => cb(new Error("unknown bank connection")));
+  if (it) body.access_token = it.accessToken; else body.products = ["transactions"];
+  plaidCall(orgId, "/link/token/create", body, cb);
 }
 
 /* exchange the browser's short-lived public_token for the long-lived access_token, and remember it */
@@ -321,6 +328,48 @@ function plaidForget(orgId, itemId) {
   return true;
 }
 /* ⛔ NEVER includes an access token — this is what the client is allowed to see */
+/* ---------- ⭐ A FEED THAT STOPS MUST SAY SO (Ray, 2026-10-14) ------------------------------------------
+   Navy Federal asked for a fresh sign-in on 2026-09-08. The 3x/day pull logged ITEM_LOGIN_REQUIRED to a file
+   nobody reads for five weeks while the app kept showing September balances as if they were live. Every
+   sync now leaves a mark on the item: lastError on failure (cleared by the next success), and plaidProblems()
+   turns the marks plus plain silence into a list the app, Today and a DM all read from the same place. */
+const PLAID_STALE_MS = 48 * 3600 * 1000;   // 3 pulls a day; two missed days is a stopped feed, not a hiccup
+function plaidNoteSync(orgId, itemId, err) {
+  const all = plaidLoad();
+  const c = all[orgId] || {};
+  if (!c.items || !c.items[itemId]) return false;
+  const it = c.items[itemId];
+  if (err) it.lastError = { code: (err && err.plaidCode) || "", message: String((err && err.message) || err || "failed").slice(0, 300), at: Date.now() };
+  else delete it.lastError;
+  plaidSave(all);
+  return true;
+}
+/* pure: which connections are stopped, and why, in words Ray can act on */
+function plaidProblems(items, nowMs) {
+  nowMs = nowMs || Date.now();
+  const out = [];
+  Object.keys(items || {}).forEach(id => {
+    const it = items[id] || {}; const n = Object.keys(it.accounts || {}).length;
+    const synced = it.syncedAt || 0, err = it.lastError || null;
+    let reason = "", since = 0;
+    if (err && err.code === "ITEM_LOGIN_REQUIRED") { reason = "needs a fresh sign-in"; since = synced || err.at; }
+    else if (err) { reason = "the last pull failed: " + (err.message || err.code || "unknown error"); since = synced || err.at; }
+    else if (it.cursor && synced && nowMs - synced > PLAID_STALE_MS) { reason = "no update for " + Math.floor((nowMs - synced) / 864e5) + " days"; since = synced; }
+    if (!reason) return;
+    out.push({ itemId: id, label: it.label || "Bank", accounts: n, reason: reason, since: since, code: (err && err.code) || "", alertedAt: it.alertedAt || 0 });
+  });
+  return out;
+}
+/* remember the DM so it goes once a day, not three times */
+function plaidNoteAlert(orgId, itemId, at) {
+  const all = plaidLoad();
+  const c = all[orgId] || {};
+  if (!c.items || !c.items[itemId]) return false;
+  c.items[itemId].alertedAt = at || Date.now();
+  plaidSave(all);
+  return true;
+}
+
 function plaidStatus(orgId) {
   const c = plaidCfg(orgId);
   return {
@@ -329,13 +378,15 @@ function plaidStatus(orgId) {
       itemId: id, label: c.items[id].label || "Bank",
       linkedAt: c.items[id].linkedAt || 0, syncedAt: c.items[id].syncedAt || 0,
       everSynced: !!c.items[id].cursor,
+      lastError: c.items[id].lastError ? { code: c.items[id].lastError.code || "", message: c.items[id].lastError.message || "", at: c.items[id].lastError.at || 0 } : null,
       accounts: c.items[id].accounts || {},
       known: c.items[id].known || []
-    }))
+    })),
+    problems: plaidProblems(c.items, Date.now())
   };
 }
 
-module.exports = { plaidVerify, PLAID_IGNORE, plaidRefreshAccounts,
+module.exports = { plaidNoteSync, plaidProblems, plaidNoteAlert, PLAID_STALE_MS, plaidVerify, PLAID_IGNORE, plaidRefreshAccounts,
   PLAID_FILE, PLAID_HOSTS, plaidCfg, plaidReady, plaidCall, plaidLinkToken, plaidExchange,
   plaidToRow, plaidSyncItem, plaidCommitCursor, plaidMapAccount, plaidForget, plaidStatus, plaidLoad, plaidSave, plaidSaveAccounts, plaidSetConfig, PLAID_SHARED
 };

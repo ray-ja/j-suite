@@ -59,12 +59,15 @@ function bankRefresh(cb) {
 }
 
 /* ---------- connect ---------- */
-function bankConnect() {
+/* ⭐ bankConnect(itemId) = RECONNECT (Plaid update mode): same connection, fresh sign-in, pairing and cursor
+   kept, so the feed resumes where it stopped (Ray, 2026-10-14, after Navy Federal sat dead for five weeks). */
+function bankConnect(itemId) {
   if (!bankCanLink()) {
     alert("Bank linking needs the app open over its https address, not from a file.");
     return;
   }
-  fetch(bankApiBase() + "/api/plaid/link-token", { method: "POST", headers: bankHeaders(), body: JSON.stringify({ org: bankOrg() }) })
+  var reconnect = !!itemId;
+  fetch(bankApiBase() + "/api/plaid/link-token", { method: "POST", headers: bankHeaders(), body: JSON.stringify({ org: bankOrg(), itemId: itemId || "" }) })
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j || !j.link_token) throw new Error(j && j.error ? j.error : "no link token");
@@ -74,6 +77,11 @@ function bankConnect() {
           token: j.link_token,
           onSuccess: function (publicToken, meta) {
             var label = (meta && meta.institution && meta.institution.name) || "Bank";
+            if (reconnect) {   /* nothing to exchange: the item is the same one; a pull clears the error mark */
+              if (typeof toast === "function") toast("Reconnected " + label + ", pulling…");
+              bankSync(itemId);
+              return;
+            }
             fetch(bankApiBase() + "/api/plaid/exchange", { method: "POST", headers: bankHeaders(),
               body: JSON.stringify({ org: bankOrg(), public_token: publicToken, label: label }) })
               .then(function (r) { return r.json(); })
@@ -343,10 +351,15 @@ function bankCardHTML(opts) {
     h += '<div class="sub" style="white-space:normal;margin-bottom:8px">Running against Plaid\'s <b>sandbox</b> — '
       + 'test banks only, no real accounts.</div>';
   }
+  var probs = {}; (st.problems || []).forEach(function (p) { probs[p.itemId] = p; });
   (st.items || []).forEach(function (it) {
+    var p = probs[it.itemId];
     h += '<div class="li"><div class="grow"><div class="nm">' + esc(it.label) + '</div>'
       + '<div class="sub">' + (it.syncedAt ? 'last checked ' + esc(new Date(it.syncedAt).toISOString().slice(0, 10))
-                                           : 'never pulled yet') + '</div></div>'
+                                           : 'never pulled yet') + '</div>'
+      + (p ? '<div class="sub" style="white-space:normal;color:var(--danger);font-weight:700">⚠️ Feed stopped: ' + esc(p.reason) + '</div>' : '')
+      + '</div>'
+      + (p ? '<button class="btn acc sm" style="flex:0 0 auto;width:auto" onclick="bankConnect(\'' + esc(it.itemId) + '\')">Reconnect</button>' : '')
       + '<button class="btn ghost sm" style="flex:0 0 auto;width:auto" onclick="bankSync(\'' + esc(it.itemId) + '\')">Get transactions</button></div>';
     h += bankPairHTML(it);
   });

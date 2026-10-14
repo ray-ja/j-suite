@@ -184,7 +184,9 @@ console.log("\n--- ⛔ 4. the access token never reaches the browser ---");
 
   /* the status route is what serves this */
   ok("the status route returns exactly that object", /plaidStatus\(org\)/.test(CODE(SRV)));
-  ok("⛔ no route ever returns an access token", !/accessToken/.test(CODE(SRV)));
+  /* scoped to the Plaid route block: QuickBooks (qbo*) legitimately keeps its own accessToken elsewhere */
+  const PLAID_BLOCK = CODE(SRV).split('indexOf("/api/plaid/") === 0')[1].split('route === "commit"')[0];
+  ok("⛔ no Plaid route ever returns an access token", !/accessToken|access_token/.test(PLAID_BLOCK));
 
   try { if (had) fs.copyFileSync(tmp, plaid.PLAID_FILE); else fs.unlinkSync(plaid.PLAID_FILE); fs.unlinkSync(tmp); } catch (e) {}
 }
@@ -559,6 +561,66 @@ console.log("\n--- ⛔ an account list belongs to the ITEM, not to a transaction
   ok("...and the unmentioned ones keep their balances",
     known.find(k => k.id === "B").balance === 5.03 && known.find(k => k.id === "C").balance === 16898.66);
   try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+}
+
+console.log("\n--- ⭐ 9. a feed that stops must say so (Ray, 2026-10-14) ---");
+{
+  const DAY = 864e5, now = Date.parse("2026-10-14T12:00:00Z");
+  const items = {
+    dead:  { label: "Navy Federal Credit Union", cursor: "c", syncedAt: now - 36 * DAY, accounts: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 },
+             lastError: { code: "ITEM_LOGIN_REQUIRED", message: "the login details of this item have changed", at: now - 1000 } },
+    quiet: { label: "Chase", cursor: "c", syncedAt: now - 3 * DAY, accounts: { x: 1 } },
+    fine:  { label: "Discover", cursor: "c", syncedAt: now - 2 * 3600 * 1000, accounts: { y: 1 } },
+    fresh: { label: "Just linked", cursor: "", syncedAt: 0, accounts: {} },
+    broke: { label: "Citi", cursor: "c", syncedAt: now - 3600 * 1000, accounts: { z: 1 }, lastError: { code: "", message: "Plaid HTTP 500", at: now - 100 } }
+  };
+  const probs = plaid.plaidProblems(items, now);
+  const by = {}; probs.forEach(p => by[p.itemId] = p);
+  eq("⭐ a sign-in request is a problem, in words", by.dead && by.dead.reason, "needs a fresh sign-in");
+  eq("...dated from the last GOOD pull, not the failure", by.dead && by.dead.since, now - 36 * DAY);
+  eq("...and it says how many accounts went dark", by.dead && by.dead.accounts, 7);
+  ok("⭐ silence for two days is a problem even with no error", by.quiet && /no update for 3 days/.test(by.quiet.reason));
+  ok("a connection pulled two hours ago is fine", !by.fine);
+  ok("a connection that has never pulled yet is not 'stopped'", !by.fresh);
+  ok("any other failure is reported with its message", by.broke && /Plaid HTTP 500/.test(by.broke.reason));
+  eq("the stale threshold is two days (three pulls a day)", plaid.PLAID_STALE_MS, 48 * 3600 * 1000);
+
+  /* lastError is written by every sync and cleared by the next good one */
+  const fsx = require("fs"), osx = require("os"), pathx = require("path");
+  const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), "plaid-note-"));
+  fsx.writeFileSync(pathx.join(dir, "plaid-config.json"), JSON.stringify({ o: { items: { i1: { accessToken: "t", itemId: "i1", label: "B", cursor: "c", accounts: {} } } } }));
+  const mod9 = { exports: {} }, ctx9 = { module: mod9, exports: mod9.exports, require, __dirname: dir, console, process, setImmediate, Buffer };
+  vm.createContext(ctx9); vm.runInContext(R("plaid.js"), ctx9);
+  const P2 = mod9.exports;   /* same module, pointed at the temp folder: the real plaid-config.json is never touched */
+  P2.plaidNoteSync("o", "i1", Object.assign(new Error("the login details of this item have changed"), { plaidCode: "ITEM_LOGIN_REQUIRED" }));
+  let st = P2.plaidStatus("o");
+  eq("⭐ a failed sync leaves its code on the item", st.items[0].lastError && st.items[0].lastError.code, "ITEM_LOGIN_REQUIRED");
+  eq("...and status lists it as a problem", st.problems.length, 1);
+  ok("...with the message, never the token", !/"t"/.test(JSON.stringify(st)) && !/accessToken/.test(JSON.stringify(st)));
+  P2.plaidNoteAlert("o", "i1", 12345);
+  eq("the DM stamp is kept so it goes once a day", P2.plaidStatus("o").problems[0].alertedAt, 12345);
+  P2.plaidNoteSync("o", "i1", null);
+  st = P2.plaidStatus("o");
+  ok("⭐ the next good sync clears the mark", !st.items[0].lastError);
+  try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+
+  /* the wiring */
+  const PL = R("plaid.js"), BAN = R("js/202-bank-feed-banner.js"), CL = R("js/150-bank-link.js");
+  ok("⭐ update mode: the link token carries the item's access token and no products", /body\.access_token = it\.accessToken; else body\.products/.test(PL));
+  ok("the link-token route passes the item id through", /plaidLinkToken\(org, acct\.id, [\s\S]{0,400}p2\.itemId \|\| ""\)/.test(SRV));
+  ok("⭐ the sync route marks every result", /plaid\.plaidNoteSync\(org, p2\.itemId, err \|\| null\)/.test(SRV));
+  ok("...and a failure DMs the owner, once a day", /plaidAlertMaybe\(org, store, acct\.id\)/.test(SRV) && /24 \* 3600 \* 1000/.test(SRV.split("plaidAlertMaybe = ")[1].split("const q = new URL")[0]));
+  ok("...on the one thread, not a new one each time", /threadId: "thr_bank_feed"/.test(SRV));
+  ok("the status read also checks for a feed that went quiet", /plaidAlertMaybe\(org, loadStore\(\), acct\.id\)/.test(SRV));
+  ok("⭐ the banner module is in the shell after the delta-sync module", /201-sync-delta\.js"><\/script>\s*<script src="js\/202-bank-feed-banner\.js">/.test(SHELL));
+  ok("the banner reads the same status the bank card does", /BANK_STATUS\.problems/.test(BAN));
+  ok("...says the bank, how many accounts, why, and since when", /p\.label/.test(BAN) && /p\.accounts/.test(BAN) && /p\.reason/.test(BAN) && /p\.since/.test(BAN));
+  ok("...and tapping it reconnects (update mode), not a new link", /bankConnect\(p\.itemId\)/.test(BAN));
+  ok("the banner never shows on the login screen", /signedout/.test(BAN));
+  ok("the banner re-asks at most every 10 minutes", /10 \* 60 \* 1000/.test(BAN));
+  ok("⭐ the bank card shows a Reconnect button on a stopped feed", /Feed stopped/.test(CL) && /onclick="bankConnect\(\\'' \+ esc\(it\.itemId\)/.test(CL));
+  ok("...a reconnect skips the exchange and pulls instead", /if \(reconnect\) \{[\s\S]{0,300}bankSync\(itemId\)/.test(CL));
+  ok("the bar has its CSS slot like the odometer bar", /#bankbanner\{position:fixed/.test(R("app.css")) && /body\.has-bank-banner\.has-odo-banner header\{top:56px\}/.test(R("app.css")));
 }
 
 console.log("\n=========  " + pass + " passed, " + fail + " failed  =========\n");

@@ -4562,6 +4562,24 @@ const server = http.createServer((req, res) => {
      ⛔ The access token never leaves this process; the browser sees a four-hour link_token and nothing more.
      Transactions still land PENDING, exactly like a CSV — a bank feed cannot move a number on its own. */
   if (req.url.split("?")[0].indexOf("/api/plaid/") === 0) {
+    /* ⭐ A STOPPED BANK FEED DMs THE OWNER ONCE A DAY (Ray, 2026-10-14: "i should get an alert / warning
+       banner for that"). The cron pull and the in-app button both come through these routes, so this is the
+       one place that sees every failure. plaid-config remembers alertedAt per connection → one DM per day per
+       bank, never three. The same problems list drives the header banner (js/202) and the bank card. */
+    const plaidAlertMaybe = (org, store, ownerId) => {
+      try {
+        const now = Date.now(), probs = plaid.plaidProblems(plaid.plaidCfg(org).items, now).filter(p => now - (p.alertedAt || 0) > 24 * 3600 * 1000);
+        if (!probs.length || !ownerId) return;
+        const lines = probs.map(p => "• " + p.label + " (" + p.accounts + (p.accounts === 1 ? " account" : " accounts") + "): " + p.reason
+          + (p.since ? ", last good pull " + new Date(p.since).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }) : "") + ".");
+        const body = "Bank feed stopped. Balances and transactions on these accounts are not current:\n" + lines.join("\n")
+          + "\nOpen Budget → Bank and tap Reconnect; the feed picks up where it left off.";
+        const msg = ceoBuildMessage({ biz: org, to: ownerId, members: [ownerId], title: "Bank feed", senderLabel: "Bank feed", threadId: "thr_bank_feed", body: body.slice(0, 1500) }, store);
+        saveStore(mergeState(store, { [org]: { messages: msg.records } }));
+        probs.forEach(p => plaid.plaidNoteAlert(org, p.itemId, now));
+        pushNotify(loadStore(), org, msg.threadId, "__ceo__").catch(() => {});
+      } catch (e) {}
+    };
     const q = new URL(req.url, "http://x");
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || q.searchParams.get("token") || "";
     const acct = apiAccount(tok);
@@ -4572,6 +4590,7 @@ const server = http.createServer((req, res) => {
       const org = q.searchParams.get("org") || "";
       if (!acct || orgsForUser(loadStore(), acct).indexOf(org) < 0) return void deny(403, "forbidden");
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      plaidAlertMaybe(org, loadStore(), acct.id);   // a feed that went quiet without an error still gets noticed
       return void res.end(JSON.stringify(plaid.plaidStatus(org)));   // ⛔ contains no key, by construction
     }
 
@@ -4597,8 +4616,8 @@ const server = http.createServer((req, res) => {
         return void plaid.plaidLinkToken(org, acct.id, (err, j) => {
           if (err) return void deny(400, err.message);
           res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-          res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration }));
-        });
+          res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration, update: !!p2.itemId }));
+        }, p2.itemId || "");   /* itemId = update mode: same connection, fresh sign-in */
       }
       if (route === "exchange") {
         return void plaid.plaidExchange(org, p2.public_token, p2.label, (err, out) => {
@@ -4616,7 +4635,8 @@ const server = http.createServer((req, res) => {
       }
       if (route === "sync") {
         return void plaid.plaidSyncItem(org, p2.itemId, (err, out) => {
-          if (err) { res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
+          plaid.plaidNoteSync(org, p2.itemId, err || null);   // the mark the banner, the card and the DM all read
+          if (err) { plaidAlertMaybe(org, store, acct.id); res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
           plaid.plaidSaveAccounts(org, p2.itemId, out.accounts);
           const cfg = plaid.plaidCfg(org), map = (cfg.items[p2.itemId] || {}).accounts || {};
           const rows = out.added.concat(out.modified).map(t => plaid.plaidToRow(t, map)).filter(Boolean);
