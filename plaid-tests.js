@@ -602,13 +602,32 @@ console.log("\n--- ⭐ 9. a feed that stops must say so (Ray, 2026-10-14) ---");
   P2.plaidNoteSync("o", "i1", null);
   st = P2.plaidStatus("o");
   ok("⭐ the next good sync clears the mark", !st.items[0].lastError);
+
+  /* ⭐ a quiet item re-asks for balances once they're stale (Ray, 2026-10-15: Navy Federal back after 5 weeks, nothing re-anchored) */
+  (() => {
+    const calls = [];
+    vm.runInContext("plaidCall = function (org, ep, body, cb) { __calls.push(ep); if (ep === '/transactions/sync') return cb(null, { added: [], modified: [], removed: [], has_more: false, next_cursor: 'c2', accounts: [] }); if (ep === '/accounts/balance/get') return cb(null, { accounts: [{ account_id: 'a1', name: 'EveryDay Checking', mask: '5377', type: 'depository', subtype: 'checking', balances: { current: 191.43 } }] }); cb(new Error('unexpected ' + ep)); }", Object.assign(ctx9, { __calls: calls }));
+    let out1 = null; P2.plaidSyncItem("o", "i1", (e, o) => { out1 = o; });   /* the stub answers synchronously, so the result is in hand on the next line */
+    eq("no accounts in a quiet sync + never balanced → balance/get is asked", calls.join(","), "/transactions/sync,/accounts/balance/get");
+    eq("...and its accounts ride out with the (empty) rows", out1 && out1.accounts.length === 1 && out1.accounts[0].balances.current, 191.43);
+    eq("...the cursor still advances", out1 && out1.cursor, "c2");
+    P2.plaidNoteSync("o", "i1", null, true);
+    ok("the route's note stamps when balances came", P2.plaidCfg("o").items.i1.balancedAt > Date.now() - 5000);
+    calls.length = 0; let out2 = null; P2.plaidSyncItem("o", "i1", (e, o) => { out2 = o; });
+    eq("⭐ fresh balances → no billed call on the next quiet sync", calls.join(","), "/transactions/sync");
+    P2.plaidNoteSync("o", "i1", Object.assign(new Error("x"), { plaidCode: "ITEM_LOGIN_REQUIRED" }), true);
+    const stamp = P2.plaidCfg("o").items.i1.balancedAt;
+    ok("a failed sync never counts as balanced", P2.plaidCfg("o").items.i1.balancedAt === stamp && !!P2.plaidCfg("o").items.i1.lastError);
+    P2.plaidNoteSync("o", "i1", null, false);
+  })();
+  ok("the sync route tells the note whether balances came", /plaidNoteSync\(org, p2\.itemId, err \|\| null, !!\(out && out\.accounts && out\.accounts\.length\)\)/.test(SRV));
   try { fsx.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
 
   /* the wiring */
   const PL = R("plaid.js"), BAN = R("js/202-bank-feed-banner.js"), CL = R("js/150-bank-link.js");
   ok("⭐ update mode: the link token carries the item's access token and no products", /body\.access_token = it\.accessToken; else body\.products/.test(PL));
-  ok("the link-token route passes the item id through", /plaidLinkToken\(org, acct\.id, [\s\S]{0,400}p2\.itemId \|\| ""\)/.test(SRV));
-  ok("⭐ the sync route marks every result", /plaid\.plaidNoteSync\(org, p2\.itemId, err \|\| null\)/.test(SRV));
+  ok("the link-token route passes the item id through", /plaidLinkToken\(org, acct\.id, [\s\S]{0,800}p2\.itemId \|\| ""\)/.test(SRV));
+  ok("⭐ the sync route marks every result", /plaid\.plaidNoteSync\(org, p2\.itemId, err \|\| null, /.test(SRV));
   ok("...and a failure DMs the owner, once a day", /plaidAlertMaybe\(org, store, acct\.id\)/.test(SRV) && /24 \* 3600 \* 1000/.test(SRV.split("plaidAlertMaybe = ")[1].split("const q = new URL")[0]));
   ok("...on the one thread, not a new one each time", /threadId: "thr_bank_feed"/.test(SRV));
   ok("the status read also checks for a feed that went quiet", /plaidAlertMaybe\(org, loadStore\(\), acct\.id\)/.test(SRV));

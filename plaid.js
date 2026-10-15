@@ -245,9 +245,20 @@ function plaidSyncItem(orgId, itemId, cb) {
       (j.modified || []).forEach(t => modified.push(t));
       (j.removed || []).forEach(r => { if (r && r.transaction_id) removed.push(r.transaction_id); });
       if (j.has_more && pages++ < 40) return page(j.next_cursor);
-      cb(null, { itemId: itemId, cursor: j.next_cursor || startCursor,
-                 added: added, modified: modified, removed: removed,
-                 accounts: j.accounts || [] });
+      const done = (accounts) => cb(null, { itemId: itemId, cursor: j.next_cursor || startCursor,
+                 added: added, modified: modified, removed: removed, accounts: accounts || [] });
+      /* ⭐ A QUIET ITEM RETURNS NO ACCOUNTS. /transactions/sync only lists accounts when it has rows, so
+         a connection restored after weeks away (Ray, 2026-10-15: Navy Federal back after 5 weeks, "+0 new,
+         0 balances re-anchored" while his checking had gone from $2,035 to $191) left every balance anchor
+         stale until a transaction happened to arrive. When the item's balances haven't been seen for the
+         stale window, ask /accounts/balance/get once; it's a billed call, so never on a fresh item. */
+      if ((j.accounts || []).length) return done(j.accounts);
+      const seen = item.balancedAt || 0;
+      if (Date.now() - seen < PLAID_STALE_MS) return done([]);
+      plaidCall(orgId, "/accounts/balance/get", { access_token: item.accessToken }, (e2, b) => {
+        if (e2) return done([]);   // balances are a bonus here; the rows and cursor still land
+        done((b && b.accounts) || []);
+      });
     });
   };
   page(startCursor);
@@ -334,13 +345,14 @@ function plaidForget(orgId, itemId) {
    sync now leaves a mark on the item: lastError on failure (cleared by the next success), and plaidProblems()
    turns the marks plus plain silence into a list the app, Today and a DM all read from the same place. */
 const PLAID_STALE_MS = 48 * 3600 * 1000;   // 3 pulls a day; two missed days is a stopped feed, not a hiccup
-function plaidNoteSync(orgId, itemId, err) {
+function plaidNoteSync(orgId, itemId, err, hadBalances) {
   const all = plaidLoad();
   const c = all[orgId] || {};
   if (!c.items || !c.items[itemId]) return false;
   const it = c.items[itemId];
   if (err) it.lastError = { code: (err && err.plaidCode) || "", message: String((err && err.message) || err || "failed").slice(0, 300), at: Date.now() };
   else delete it.lastError;
+  if (!err && hadBalances) it.balancedAt = Date.now();   // when balances last rode in; plaidSyncItem asks for them again once this is stale
   plaidSave(all);
   return true;
 }

@@ -4648,7 +4648,7 @@ const server = http.createServer((req, res) => {
       }
       if (route === "sync") {
         return void plaid.plaidSyncItem(org, p2.itemId, (err, out) => {
-          plaid.plaidNoteSync(org, p2.itemId, err || null);   // the mark the banner, the card and the DM all read
+          plaid.plaidNoteSync(org, p2.itemId, err || null, !!(out && out.accounts && out.accounts.length));   // the mark the banner, the card and the DM all read; and when balances last came
           console.log("[plaid] sync item=" + p2.itemId + " org=" + org + (err ? " FAILED: " + (err.code || "") + " " + err.message : " ok rows=" + ((out && out.rows && out.rows.length) || 0)));
           if (err) { plaidAlertMaybe(org, store, acct.id); res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
           plaid.plaidSaveAccounts(org, p2.itemId, out.accounts);
