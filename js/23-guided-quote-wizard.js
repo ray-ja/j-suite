@@ -1,7 +1,11 @@
 /* ---------- GUIDED QUOTE WIZARD ---------- */
 let WZON=false,WZ=null;
 const WZ_SVC={obx:[["softwash","🏠 House soft wash"],["roofwash","🧽 Roof soft wash"],["pressure","🚗 Driveway / concrete"],["deck","🪵 Deck / patio"],["windows","🪟 Windows"],["gutters","🏚️ Gutters"],["downspout","🔧 Gutter / downspout repair"],["lotclear","🌲 Lot / land clearing"],["brush","🍂 Brush & yard debris"],["storm","🌀 Storm cleanup"],["parking","🅿️ Parking lot"],["housewatch","👁️ House-watch"],["junk","🗑️ Junk removal"],["demo","🏚️ Shed / structure demo"],["teardown","🔨 Deck / fence / concrete teardown"],["paver","🧱 Paver patio / pad"],["frenchdrain","💧 French drain"],["steppath","🪨 Stepping-stone path"],["landscape","🌿 Landscaping / plant care"],["handyman","🔧 Handyman / custom job"],["custom","✏️ Custom line"]],
-  jam:[["rental","🏠 Rental-Ready (per door)"],["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]]};
+  jam:[["rental","🏠 Rental-Ready (per door)"],["lock","🔒 Smart locks"],["camera","🎥 Cameras"],["network","📶 Networking / WiFi"],["starlink","🛰️ Starlink"],["labor","🔧 Tech labor"],["custom","✏️ Custom line"]],
+  /* lights: every line is a flat rate-card item (js/01 CATALOG.lights) picked on the review screen; the wizard only needs
+     the custom-line calculator to get there. stone quotes live in jam (Ray, 2026-09-22) but the org must not crash. */
+  lights:[["custom","🎄 Lights line (rate card on the next screen)"]],
+  stone:[["custom","✏️ Custom line"]]};
 const WZ_FIELDS={
  softwash:[{k:"qty",t:"num",label:"Wall area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"stories",t:"sel",label:"Stories",opts:[["1","1 story"],["2","2 stories"],["3","3 stories"]]},{k:"heavy",t:"chk",label:"Heavy algae / soiling"}],
  roofwash:[{k:"qty",t:"num",label:"Roof area (sq ft)",ph:"e.g. 2000",warn:8000},{k:"steep",t:"chk",label:"Steep or hard access"},{k:"heavy",t:"chk",label:"Heavy soiling"}],
@@ -116,7 +120,7 @@ window.wizCustNext=function(){
   if(miss.length){document.getElementById("wc_err").innerHTML='<span style="color:var(--danger)">Please fill in: '+miss.join(", ")+" (required).</span>";return;}
   WZ.step=(WZ.items&&WZ.items.length)?"review":"pick";render();
 };
-function wizPick(){const list=WZ_SVC[S.biz];
+function wizPick(){const list=WZ_SVC[S.biz]||WZ_SVC.stone;
   return wizHead(2,5,"What do they need?")+`<div class="card"><div class="muted" style="margin-bottom:8px">Tap a service to price it. You can add several.</div>
     <div class="grid2">`+list.map(s=>`<button class="btn ghost" style="text-align:left;margin-bottom:8px" onclick="wizSetSvc('${s[0]}')">${s[1]}</button>`).join("")+`</div></div>
     ${WZ.items.length?`<button class="btn acc" style="margin-top:4px" onclick="WZ.step='review';render()">Review ${WZ.items.length} item(s) →</button>`:""}`;}

@@ -19,7 +19,7 @@ const RATES_DEFAULT={
   labor:{label:"Tech labor",hint:"Hourly for custom or uncatalogued work.",rate:125}
  }
 };
-function getRates(){try{const d=D().docs.find(x=>x.id==="rates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz]));}
+function getRates(){try{const d=D().docs.find(x=>x.id==="rates"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz]||{}));}
 function setRates(obj){let d=D().docs.find(x=>x.id==="rates");if(d){d.text=JSON.stringify(obj);d.updatedAt=now();}else D().docs.push({id:"rates",text:JSON.stringify(obj),updatedAt:now()});save();}
 /* COGS layer — Part 2: cost overlay (same persisted-doc pattern as getRates/setRates). */
 function getCosts(){try{const d=D().docs.find(x=>x.id==="costs"&&!x.deleted);if(d)return JSON.parse(d.text);}catch(e){}return JSON.parse(JSON.stringify(COST_DEFAULT));}

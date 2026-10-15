@@ -1,5 +1,26 @@
 /* ---------- service catalogs ---------- */
 const CATALOG = {
+  /* OBX Holiday Lights — the internal rate card applied 2026-10-05 (Research tab: research_obx_holiday_lights_rate_card).
+     Full service: we own the lights, cut to the house, timer, season maintenance, January takedown, storage.
+     One discount per booking (early bird 10% by Oct 31 OR portfolio 5/10/15%), deposit 50% at booking, $800 minimum. */
+  lights: [
+    {id:"hl1",cat:"Roofline",name:"Roofline, single story (per ft)",price:8,unit:"each"},
+    {id:"hl2",cat:"Roofline",name:"Roofline, two story (per ft)",price:9.5,unit:"each"},
+    {id:"hl3",cat:"Roofline",name:"Roofline, three story or steep (per ft)",price:11.5,unit:"each"},
+    {id:"hl4",cat:"Roofline",name:"Lift rental for three-story work (per day, at cost)",price:250,unit:"each"},
+    {id:"hl5",cat:"Railings & posts",name:"Deck / porch railing (per ft)",price:6,unit:"each"},
+    {id:"hl6",cat:"Railings & posts",name:"Column / porch post (each)",price:110,unit:"each"},
+    {id:"hl7",cat:"Trees & shrubs",name:"Tree (per ft of height, $200 min)",price:30,unit:"each"},
+    {id:"hl8",cat:"Trees & shrubs",name:"Bush / shrub (each)",price:75,unit:"each"},
+    {id:"hl9",cat:"Wreaths & garland",name:"Wreath 24 in, hung with bow",price:100,unit:"each"},
+    {id:"hl10",cat:"Wreaths & garland",name:"Wreath 36 in, hung with bow",price:200,unit:"each"},
+    {id:"hl11",cat:"Wreaths & garland",name:"Wreath 48 in, hung with bow",price:400,unit:"each"},
+    {id:"hl12",cat:"Wreaths & garland",name:"Wreath 60 in, hung with bow",price:800,unit:"each"},
+    {id:"hl13",cat:"Wreaths & garland",name:"Lit garland (per ft)",price:20,unit:"each"},
+    {id:"hl14",cat:"Windows & doors",name:"Window or door outline (each)",price:65,unit:"each"},
+    {id:"hl15",cat:"Packages",name:"Front roofline package (from)",price:800,unit:"flat"},
+    {id:"hl16",cat:"Packages",name:"Renewal: rehang of last year's lights (flat, set per house)",price:0,unit:"quote"}
+  ],
   obx: [
     // ===== CORE LANES — 2026-07 reposition: trees · landscaping · land clearing · junk/C&D (see business-positioning memory) =====
     {id:"tr1",cat:"Tree Service",name:"Tree removal (quote)",price:0,unit:"quote"},
@@ -128,7 +149,12 @@ const CATALOG = {
   ]
 };
 const BIZ={obx:{name:"OBX Lot Solutions",logo:"assets/logo-obx.png",recurring:true,phone:"(252) 207-5985"},
-           jam:{name:"Jamieson Automation",logo:"assets/logo-jam.png",recurring:false,phone:""}};
+           jam:{name:"Jamieson Automation",logo:"assets/logo-jam.png",recurring:false,phone:""},
+           /* Ray, 2026-10-15: the lights org had no entry here, so the quote wizard crashed on "What do they need?"
+              and a lights quote printed as Jamieson Automation. Lights is its own org (never tied to DYAD/OBX);
+              stone bills through jam but gets a name so nothing indexes undefined. */
+           lights:{name:"OBX Holiday Lights",logo:"assets/logo-lights.svg",recurring:false,phone:"(252) 207-5985"},
+           stone:{name:"OBX Stoneworks",logo:"",recurring:false,phone:"(252) 207-5985"}};
 const STATUSES=["Lead","Contacted","Quoted","Won","Lost"];
 const TYPES=["Property Mgr / HOA","Retail / Commercial","Residential","Landscaper (partner)","Other"];
 

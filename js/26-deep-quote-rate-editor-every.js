@@ -45,7 +45,7 @@ window.openCostsEditor=function(){if(typeof settingsCanConfig==="function"&&!set
   <div class="row" style="gap:8px;margin-top:10px"><button class="btn acc grow" onclick="saveCostsEditor()">Save</button><button class="btn ghost grow" onclick="resetCosts()">Reset to defaults</button></div>`);};
 window.saveCostsEditor=function(){try{const o=JSON.parse(document.getElementById("costs_json").value);setCosts(o);closeModal();alert("Job costs saved.");}catch(e){const el=document.getElementById("costs_err");if(el)el.innerHTML='<span style="color:var(--danger)">Invalid format: '+esc(e.message)+'</span>';}};
 window.resetCosts=function(){if(!confirm("Reset job costs to defaults?"))return;setCosts(JSON.parse(JSON.stringify(COST_DEFAULT)));closeModal();alert("Job costs reset to defaults.");};
-window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz])));closeModal();alert("Reset to defaults.");};
+window.resetRates=function(){if(!confirm("Reset pricing rates to defaults?"))return;setRates(JSON.parse(JSON.stringify(RATES_DEFAULT[S.biz]||{})));closeModal();alert("Reset to defaults.");};
 /* Owner/admin may configure the SENSITIVE Settings sections (sync URL/token, pricing rate & COGS editors, home
    base, archive, backups). A CREW member opening Settings ("data" tab) sees ONLY their own stuff — sync status,
    Update-now, dark mode, their cards, version — never the pricing/secret config. Hidden = unreachable; the

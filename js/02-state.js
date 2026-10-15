@@ -489,7 +489,7 @@ function save(){localStorage.setItem(KEY,JSON.stringify(S));
   /* auto-sync: any local write queues a debounced push (skipped while applying a pulled merge) */
   if(!window.__syncApplying&&typeof scheduleAutoPush==="function")scheduleAutoPush();}
 function D(){return S[S.biz]}
-function cat(){return CATALOG[S.biz]}
+function cat(){return CATALOG[S.biz]||[]}
 function uid(){return now().toString(36)+Math.random().toString(36).slice(2,7)}
 // MULTI-ORG (Phase 2): the registry lists the organizations; S.biz is the ACTIVE org id; D()=S[S.biz].
 function myOrgs(){ const ids=(typeof myOrgIds==="function")?myOrgIds():null; return (S.registry||[]).filter(r=>r&&!r.deleted&&(!ids||!ids.length||ids.indexOf(r.id)>=0)); }   // the signed-in user's orgs (all for super-admin; all as a safe fallback if not-yet-migrated)

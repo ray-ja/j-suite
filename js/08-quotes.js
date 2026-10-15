@@ -222,7 +222,7 @@ function quoteTotalsParts(t){
 window.copyQuote=function(){
   const t=quoteFigures();const who=val("q_custfree")||(val("q_cust")?custName(val("q_cust")):"")||(CURQ&&CURQ.cust)||"";
   let lines=QITEMS.filter(it=>it.serviceId||it.name).map(it=>`• ${it.name}${it.qty>1?" ×"+it.qty:""} — ${money(it.price*it.qty)}`);
-  let txt=`${S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation"} — Quote\n`+
+  let txt=`${(BIZ[S.biz]&&BIZ[S.biz].name)||(S.biz==="obx"?"OBX Lot Solutions":"Jamieson Automation")} — Quote\n`+
     (who?`For: ${who}\n`:"")+
     "\n"+lines.join("\n")+(()=>{const p=quoteTotalsParts(t);return p?`\n\n${p.subLabel}: ${p.subAmt}\n${p.adjLabel}: ${p.adjAmt}`:"";})()+`\n\nTotal: ${money(t.total)}`+
     (BIZ[S.biz].phone?`\n\n${BIZ[S.biz].phone}`:"");
@@ -241,6 +241,8 @@ window.quoteIsJunk=function(q){
 window.quoteBrand=function(q){
   const biz=S.biz;
   if(biz==="obx"&&quoteIsJunk(q))return {key:"junk",name:"OBX Junk Co.",phone:"(252) 207-5985",site:"obxjunkco.com",brand:"#14161a",acc:"#f26a1b",logoHtml:'<div style="background:#fff;border-radius:8px;padding:6px 12px;display:inline-block">'+JUNK_LOGO_SVG.replace('<svg ','<svg style="height:44px;width:auto;display:block" ')+'</div>'};
+  if(biz==="lights")return {key:"lights",name:"OBX Holiday Lights",phone:(BIZ[biz]||{}).phone||"",site:"obxholidaylights.com",brand:"#101725",acc:"#d99420",logoHtml:null};   // site palette: ink + amber (websites/obx-holiday-lights/style.css)
+  if(biz==="stone")return {key:"stone",name:"OBX Stoneworks",phone:(BIZ[biz]||{}).phone||"",site:"",brand:"#2b2b2b",acc:"#8a6d3b",logoHtml:null};
   const isObx=biz==="obx";
   return {key:isObx?"obx":"jam",name:isObx?"OBX Lot Solutions":"Jamieson Automation",phone:(BIZ[biz]||{}).phone||"",site:isObx?"obxlotsolutions.com":"jamiesonautomation.com",brand:isObx?"#1B2A4E":"#002052",acc:isObx?"#8BC34A":"#0099E5",logoHtml:null};
 };
