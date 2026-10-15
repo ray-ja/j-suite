@@ -2465,6 +2465,12 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     ok("quote page: option tabs link every option, the current one highlighted", html.indexOf('href="/i/tok1"') >= 0 && html.indexOf('href="/i/tok3"') >= 0 && /class="opttab cur" href="\/i\/tok2"/.test(html) && html.indexOf("Your options") >= 0 && html.indexOf("$1,322.40") >= 0);
     const plain = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, slab.quotes[1], [], null, null, null, { options: [] });
     const hid = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, Object.assign({}, slab.quotes[1], { hideItems: true, items: [{ name: "Roofline, two story: 78 ft", price: 1053, qty: 1 }, { name: "Wreath", price: 200, qty: 1 }], total: 1856.8 }), [], null, null, null, { options: [] });
+    // q.pageNote (Ray, 2026-10-15, Christina's portfolio quote: "explain what she gets in the package on the quote link"):
+    // a customer-facing paragraph under "What's included", quotes only; q.notes stays internal
+    const pn = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, Object.assign({}, slab.quotes[1], { pageNote: "The show: five songs <choreographed> to the house.\nThe sound: car radios tune in." }), [], null, null, null, { options: [] });
+    ok("quote page: pageNote renders under What's included, escaped, line breaks kept", pn.indexOf("What's included") >= 0 && pn.indexOf("five songs &lt;choreographed&gt; to the house.\nThe sound") >= 0);
+    const pnInv = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, Object.assign({}, slab.quotes[1], { pageNote: "Show note", invoiced: true, invoicedDate: "2026-10-15" }), [], null, null, null, { options: [] });
+    ok("invoice page: pageNote is a quote thing, not shown once invoiced", pnInv.indexOf("What's included") < 0 && pnInv.indexOf("Show note") < 0);
     ok("quote page: hideItems shows one named row at the total, no items, no subtotal or discount", hid.indexOf("Roofline, two story") < 0 && hid.indexOf("Wreath") < 0 && hid.indexOf("Subtotal") < 0 && hid.indexOf("Discount") < 0 && hid.indexOf("Dancing lights") >= 0 && hid.split("$1,856.80").length >= 3);
     ok("quote page: no option strip without a set", plain.indexOf("Your options") < 0 && plain.indexOf("class=\"opttab") < 0);
   })();
