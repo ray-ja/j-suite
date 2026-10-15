@@ -2622,6 +2622,11 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     rows = `<tr><td>Labor &amp; installation</td><td class="c">1</td><td class="n">${invMoney(laborLine)}</td></tr>`
       + (R.actualList.length ? `<tr><td colspan="3" style="padding-top:10px;font-weight:700">Materials (at cost)</td></tr>` + R.actualList.map(m => `<tr><td>${htmlEsc(srvCleanMatDesc(m.desc) || m.desc || "Material")}</td><td class="c">1</td><td class="n">${invMoney(+m.amount || 0)}</td></tr>`).join("") : "");
     adjRows = "";
+  } else if (isQuote && q.hideItems) {
+    // QUOTE, TOTAL ONLY (Ray, 2026-10-15, Christina's lights options: "Don't show line items, only the total"):
+    // one named row at the quoted price; the breakdown stays in the app for the owner.
+    rows = `<tr><td>${htmlEsc(q.optionLabel || srvShortTitle(q))}</td><td class="c">1</td><td class="n">${invMoney(eff)}</td></tr>`;
+    adjRows = "";
   } else if (isQuote) {
     // QUOTE: the full line items — a quote's breakdown (incl. change orders) is exactly what the
     // customer is being asked to agree to, so it all shows

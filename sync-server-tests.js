@@ -2464,6 +2464,8 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
     const html = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, slab.quotes[1], [], null, null, null, { options: opts });
     ok("quote page: option tabs link every option, the current one highlighted", html.indexOf('href="/i/tok1"') >= 0 && html.indexOf('href="/i/tok3"') >= 0 && /class="opttab cur" href="\/i\/tok2"/.test(html) && html.indexOf("Your options") >= 0 && html.indexOf("$1,322.40") >= 0);
     const plain = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, slab.quotes[1], [], null, null, null, { options: [] });
+    const hid = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, Object.assign({}, slab.quotes[1], { hideItems: true, items: [{ name: "Roofline, two story: 78 ft", price: 1053, qty: 1 }, { name: "Wreath", price: 200, qty: 1 }], total: 1856.8 }), [], null, null, null, { options: [] });
+    ok("quote page: hideItems shows one named row at the total, no items, no subtotal or discount", hid.indexOf("Roofline, two story") < 0 && hid.indexOf("Wreath") < 0 && hid.indexOf("Subtotal") < 0 && hid.indexOf("Discount") < 0 && hid.indexOf("Dancing lights") >= 0 && hid.split("$1,856.80").length >= 3);
     ok("quote page: no option strip without a set", plain.indexOf("Your options") < 0 && plain.indexOf("class=\"opttab") < 0);
   })();
   ok("lights org → OBX Holiday Lights wordmark, its own phone", (function(){ const b = t.pubBizOf(STORE0, "lights", { items: [{ name: "Roofline, two story (per ft)" }] }); return b.name === "OBX Holiday Lights" && b.wordmark === true && /logo-lights\.svg$/.test(b.logo) && b.phone === "(252) 207-5985"; })());
