@@ -2454,6 +2454,18 @@ console.log("— Access SSO: signed-JWT verification is FORGERY-PROOF (the secur
   ok("junk by name (legacy quotes without bandKey)", t.quoteIsJunk({ items: [{ name: "Junk / move-out removal" }] }) === true);
   ok("a mixed quote (junk + soft wash) stays OBX Lot Solutions", t.pubBizOf(STORE0, "obx", { items: [{ name: "Junk haul", bandKey: "junk" }, { name: "House soft wash", bandKey: "softwash" }] }).name === "OBX Lot Solutions");
   ok("no quote → org brand as before", t.pubBizOf(STORE0, "obx").name === "OBX Lot Solutions" && t.pubBizOf(STORE0, "jam").name === "Jamieson Automation");
+  (function () {
+    const cust = { id: "c1", name: "Christina" };
+    const mk = (id, num, total, extra) => Object.assign({ id: id, num: num, customerId: "c1", items: [{ name: "Roofline", price: total, qty: 1 }], total: total, invoiceToken: "tok" + num, optionsGroup: "g1", date: "2026-10-15" }, extra || {});
+    const slab = { quotes: [mk("a", 1, 1322.4, { optionLabel: "Warm white" }), mk("b", 2, 1856.8, { optionLabel: "Dancing lights" }), mk("c", 3, 804), mk("d", 4, 500, { invoiced: true }), mk("e", 5, 300, { customerId: "c2" }), mk("f", 6, 100, { optionsGroup: "" }), mk("g", 7, 50, { invoiceToken: "" })], customers: [cust] };
+    const opts = t.invOptionsOf(slab, cust, slab.quotes[1]);
+    ok("quote options: same group + customer + unbilled + linked, in quote order, current marked", opts.length === 3 && opts.map(o => o.label).join("|") === "Warm white|Dancing lights|Option C" && opts[1].current === true && opts[0].current === false && opts[2].token === "tok3");
+    ok("quote options: a lone quote in a group gets no tabs; no group → none", t.invOptionsOf({ quotes: [slab.quotes[0]], customers: [cust] }, cust, slab.quotes[0]).length === 0 && t.invOptionsOf(slab, cust, slab.quotes[5]).length === 0);
+    const html = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, slab.quotes[1], [], null, null, null, { options: opts });
+    ok("quote page: option tabs link every option, the current one highlighted", html.indexOf('href="/i/tok1"') >= 0 && html.indexOf('href="/i/tok3"') >= 0 && /class="opttab cur" href="\/i\/tok2"/.test(html) && html.indexOf("Your options") >= 0 && html.indexOf("$1,322.40") >= 0);
+    const plain = t.renderInvoicePage({ name: "OBX Holiday Lights" }, cust, slab.quotes[1], [], null, null, null, { options: [] });
+    ok("quote page: no option strip without a set", plain.indexOf("Your options") < 0 && plain.indexOf("class=\"opttab") < 0);
+  })();
   ok("lights org → OBX Holiday Lights wordmark, its own phone", (function(){ const b = t.pubBizOf(STORE0, "lights", { items: [{ name: "Roofline, two story (per ft)" }] }); return b.name === "OBX Holiday Lights" && b.wordmark === true && /logo-lights\.svg$/.test(b.logo) && b.phone === "(252) 207-5985"; })());
   ok("a lights quote never reads as junk", t.pubBizOf(STORE0, "lights", { kind: "junk", items: [{ name: "x" }] }).name === "OBX Holiday Lights");
   ok("junk brand keeps the same phone and points at the junk logo asset", t.JUNK_BIZ.phone === "(252) 207-5985" && /logo-junk\.svg$/.test(t.JUNK_BIZ.logo) && require("fs").existsSync(require("path").join(__dirname, "assets", "logo-junk.svg")));
