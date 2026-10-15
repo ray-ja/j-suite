@@ -4626,6 +4626,7 @@ const server = http.createServer((req, res) => {
       }
       if (route === "link-token") {
         return void plaid.plaidLinkToken(org, acct.id, (err, j) => {
+          console.log("[plaid] link-token " + (p2.itemId ? "UPDATE item=" + p2.itemId : "new") + " org=" + org + " user=" + acct.id + (err ? " FAILED: " + err.message : ""));   // the only trace of a reconnect attempt (2026-10-15: Ray tried, nothing said whether Link opened)
           if (err) return void deny(400, err.message);
           res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
           res.end(JSON.stringify({ link_token: j.link_token, expiration: j.expiration, update: !!p2.itemId }));
@@ -4648,6 +4649,7 @@ const server = http.createServer((req, res) => {
       if (route === "sync") {
         return void plaid.plaidSyncItem(org, p2.itemId, (err, out) => {
           plaid.plaidNoteSync(org, p2.itemId, err || null);   // the mark the banner, the card and the DM all read
+          console.log("[plaid] sync item=" + p2.itemId + " org=" + org + (err ? " FAILED: " + (err.code || "") + " " + err.message : " ok rows=" + ((out && out.rows && out.rows.length) || 0)));
           if (err) { plaidAlertMaybe(org, store, acct.id); res.writeHead(400, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: err.message, code: err.plaidCode || "" })); }
           plaid.plaidSaveAccounts(org, p2.itemId, out.accounts);
           const cfg = plaid.plaidCfg(org), map = (cfg.items[p2.itemId] || {}).accounts || {};
