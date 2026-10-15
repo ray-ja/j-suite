@@ -2599,6 +2599,21 @@ console.log("\n— OB-Xscape monthly invoice (escapeInvoiceBuild) —");
   const draft = t.escapeInvoiceRecord(bad, Date.now(), false);
   ok("a flagged month files as a draft, not invoiced", draft.invoiced === false && /DRAFT/.test(draft.notes));
 })();
+
+  console.log("\n— outbound email: Ray is blind-copied on everything (Ray, 2026-10-15) —");
+  (() => {
+    const cfg = { resendFrom: "J-Suite <noreply@mail.jsuite.dev>", bcc: "ray@example.com" };
+    const b = t.emailBodyBuild("cust@example.com", "Invoice", "<p>hi</p>", { replyTo: "owner@example.com", text: "hi" }, cfg);
+    ok("a customer mail carries the bcc and keeps to/from/reply-to intact", b.bcc && b.bcc.length === 1 && b.bcc[0] === "ray@example.com" && b.to[0] === "cust@example.com" && b.reply_to[0] === "owner@example.com" && b.from === cfg.resendFrom && b.text === "hi", b);
+    const self = t.emailBodyBuild("Ray@Example.com", "DM", "<p>x</p>", {}, cfg);
+    ok("mail addressed to Ray himself is not double-sent (case-insensitive)", !self.bcc, self);
+    const acct = t.emailBodyBuild("crew@example.com", "Reset your J-Suite password", "<p>x</p>", { noBcc: true }, cfg);
+    ok("account mails (reset / invite) opt out: the link is the recipient's secret", !acct.bcc, acct);
+    const none = t.emailBodyBuild("cust@example.com", "Invoice", "<p>x</p>", {}, { resendFrom: "x" });
+    ok("no bcc configured → no bcc field (nothing undefined on the wire)", !("bcc" in none), none);
+    const srv = require("fs").readFileSync(require("path").join(__dirname, "sync-server.js"), "utf8");
+    ok("the two account mails pass noBcc and every other sendEmail call does not", /Reset your J-Suite password", html, \{ noBcc: true \}/.test(srv) && /set your password", html, \{ noBcc: true \}/.test(srv) && (srv.match(/noBcc: true/g) || []).length === 2);
+  })();
   console.log("\n=========  " + pass + " passed, " + fail + " failed  =========");
   process.exit(fail ? 1 : 0);
 })();

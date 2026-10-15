@@ -2736,14 +2736,26 @@ function renderInvoicePage(biz, cust, q, mats, acct, pay, combo, extras) {
     </body></html>`;
 }
 function emailCfg() { try { return JSON.parse(fs.readFileSync(path.join(__dirname, "ceo-config.json"), "utf8")); } catch (e) { return {}; } }
+/* Ray, 2026-10-15: "Anytime you send an email, I need you to send it to my email as well, so I can see what you
+   sent. Blind copy me." → every outbound mail carries ceo-config.json `bcc` (his address, server-side only).
+   Skipped when the mail is addressed to him already, and for account mails (password reset / invite links are
+   the recipient's secret, not something to copy around). Pure builder, exported for tests. */
+function emailBodyBuild(to, subject, html, opts, cfg) {
+  opts = opts || {}; cfg = cfg || {};
+  const from = opts.from || cfg.resendFrom || "J-Suite <noreply@jsuite.dev>";
+  const body = { from: from, to: [to], subject: subject, html: html };
+  if (opts.replyTo) body.reply_to = [opts.replyTo];
+  if (opts.text) body.text = opts.text;
+  const bcc = String(cfg.bcc || "").trim();
+  if (bcc && !opts.noBcc && bcc.toLowerCase() !== String(to || "").trim().toLowerCase()) body.bcc = [bcc];
+  return body;
+}
 function sendEmail(to, subject, html, opts) {
   return new Promise((resolve) => {
     opts = opts || {};
-    const cfg = emailCfg(), key = cfg.resendKey || "", from = opts.from || cfg.resendFrom || "J-Suite <noreply@jsuite.dev>";
+    const cfg = emailCfg(), key = cfg.resendKey || "";
     if (!key || !to) { console.log("[email] not configured (resendKey/recipient) — skipping send"); return resolve({ ok: false, skipped: true }); }
-    const body = { from: from, to: [to], subject: subject, html: html };
-    if (opts.replyTo) body.reply_to = [opts.replyTo];
-    if (opts.text) body.text = opts.text;
+    const body = emailBodyBuild(to, subject, html, opts, cfg);
     const payload = JSON.stringify(body);
     const r = https.request("https://api.resend.com/emails", { method: "POST", headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } }, (resp) => {
       let d = ""; resp.on("data", c => d += c); resp.on("end", () => { const ok = resp.statusCode >= 200 && resp.statusCode < 300; if (!ok) console.log("[email] resend " + resp.statusCode + ": " + d.slice(0, 200)); let detail = ""; if (!ok) { try { detail = JSON.parse(d).message || ""; } catch (e) { detail = d.slice(0, 120); } } resolve({ ok: ok, status: resp.statusCode, detail: detail }); });
@@ -5656,7 +5668,7 @@ const server = http.createServer((req, res) => {
         const html = '<p>Tap below to set a new J-Suite password. This link expires in 30 minutes and can be used once.</p>' +
           '<p><a href="' + link + '">Reset my password</a></p>' +
           '<p>If you did not request this, ignore this email — your password will not change.</p>';
-        sendEmail(u.email, "Reset your J-Suite password", html).catch(() => {});
+        sendEmail(u.email, "Reset your J-Suite password", html, { noBcc: true }).catch(() => {});
       }
       res.writeHead(200, { "Content-Type": "application/json" });   // identical response whether or not the account exists
       res.end('{"ok":true}');
@@ -5730,7 +5742,7 @@ const server = http.createServer((req, res) => {
           '<p>You\'ve been added to J-Suite. Your username is <b>' + htmlEsc(acct.username) + '</b>.</p>' +
           '<p>Tap below to set your password and sign in. This link expires in 7 days.</p>' +
           '<p><a href="' + link + '">Set my password</a></p>';
-        if (emailConfigured) sendEmail(email, "Welcome to J-Suite — set your password", html).catch(() => {});
+        if (emailConfigured) sendEmail(email, "Welcome to J-Suite — set your password", html, { noBcc: true }).catch(() => {});
         const user = { id: acct.id, username: acct.username, name: acct.name, email: acct.email, role: acct.role, status: "invited" };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, user: user, emailed: emailConfigured, link: link }));   // ALWAYS return the link so the owner can also copy/text it as a backup, even when it was emailed
@@ -6642,4 +6654,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { escapeInvoiceBuild, escapeInvoiceRecord, escapePrevMonth, ESCAPE_RATE, projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { emailBodyBuild, escapeInvoiceBuild, escapeInvoiceRecord, escapePrevMonth, ESCAPE_RATE, projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
