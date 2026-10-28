@@ -172,7 +172,7 @@ const NAV_GROUPS = [
   { key:"work",      label:"Work",      icon:"🔨", tabs:["leads","jobs","quotes","schedule","time","recurring","route","routes"] },
   { key:"escape",    label:"Rooms",     icon:"🚪", tabs:["escape"] },
   // Inventory now also carries ♻️ Resale (both are gear/stuff — folded in to trim a top-level menu)
-  { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale","buy"] },   // 🛒 Buy list (js/203): what to buy, priced at every vendor
+  { key:"inventory", label:"Inventory", icon:"🧰", tabs:["products","inventory","resale","buy"] },   // 🛒 Price tool (js/203): what to buy, priced at every vendor (Ray named it, 2026-10-28)
   { key:"life",      label:"Life",      icon:"🌱", tabs:["life"] },
   // JOURNAL — its own top-level tab (Ray, 2026-08-02: "journal needs to be its own tab"). It was a sub-tab buried
   // inside Life; the entries are the SAME lifeNotes collection (no new collection, no migration), just promoted so
@@ -221,7 +221,7 @@ const TAB_META = {
   accounts:{l:"Customers",i:"👥"}, route:{l:"Route planner",i:"🚗"}, messages:{l:"Messages",i:"💬"},
   pay:{l:"My Pay",i:"💵"}, nextcheck:{l:"Next Check",i:"🧾"}, finance:{l:"Finance",i:"💰"}, receipts:{l:"Receipts",i:"📸"}, invoices:{l:"Invoices",i:"💳"}, approvals:{l:"Approvals",i:"📥"},
   plan:{l:"Plan",i:"📈"}, market:{l:"Market",i:"📊"}, opps:{l:"Opps",i:"💡"}, sites:{l:"Sites",i:"💻"}, buildplan:{l:"Build Plan",i:"🏗️"}, training:{l:"Train",i:"🎓"},
-  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Settings",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, files:{l:"Files",i:"📎"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Route review",i:"🗺️"}, products:{l:"Products",i:"🏷️"}, buy:{l:"Buy list",i:"🛒"}
+  todo:{l:"To-Do",i:"✅"}, inventory:{l:"Inventory",i:"🧰"}, resale:{l:"Resale",i:"♻️"}, data:{l:"Settings",i:"⚙️"}, admin:{l:"Admin",i:"🛡️"}, playbook:{l:"Playbook",i:"📒"}, research:{l:"Research",i:"📚"}, files:{l:"Files",i:"📎"}, escape:{l:"Rooms",i:"🚪"}, life:{l:"Life",i:"🌱"}, journal:{l:"Journal",i:"📓"}, shelf:{l:"Shelf",i:"📚"}, workout:{l:"Workout",i:"🏋️"}, cal:{l:"Calendar",i:"📅"}, studio:{l:"Studio",i:"🎬"}, budget:{l:"Budget",i:"💵"}, team:{l:"Team",i:"🧑‍🤝‍🧑"}, routes:{l:"Route review",i:"🗺️"}, products:{l:"Products",i:"🏷️"}, buy:{l:"Price tool",i:"🛒"}
 };
 let NAV_LAST = {};   // remember the last sub-tab visited per group
 // MULTI-ORG (Phase 5): per-org TOOL VISIBILITY. registry[org].tabs = the enabled tab set (null/absent = all → obx/jam unchanged). Core tabs are always on so an org is never left without home/admin/settings.

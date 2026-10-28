@@ -167,7 +167,7 @@ function buyHTML() {
   var items = all.filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; });
   var open = items.filter(buyIsOpen);
   var t = buyTotals(items);
-  var h = '<div class="secthd"><h2>🛒 Buy list</h2>'
+  var h = '<div class="secthd"><h2>🛒 Price tool</h2>'
     + '<button class="btn ghost sm" style="margin-left:auto" onclick="openBuyItem(null)">＋ Item</button>'
     + '<button class="btn ghost sm" onclick="buyPasteList()">📋 Paste list</button>'
     + '<button class="btn ghost sm" onclick="buyPasteLink()">🔗 Paste link</button></div>';
@@ -240,7 +240,7 @@ if (typeof window !== "undefined") {
         + (hist.length ? '<div class="muted" style="font-size:11px;margin-top:4px">History: ' + hist.map(function (p) { return buyMoney(p.price) + (p.ship ? "+" + buyMoney(p.ship) : "") + (p.at ? " (" + esc(p.at) + ")" : ""); }).join(" → ") + ' → now</div>' : '')
         + '</div>';
     }).join("");
-    modal(isNew ? "Add to the buy list" : "Buy list item",
+    modal(isNew ? "Add to the price tool" : "Price tool item",
       '<label style="margin-top:0">Item</label><input id="bi_name" value="' + esc(x.name) + '" autocomplete="off">'
       + '<div class="row" style="gap:8px;flex-wrap:wrap"><div style="flex:0 0 70px"><label>Qty</label><input id="bi_qty" type="number" inputmode="numeric" value="' + esc(x.qty || 1) + '"></div>'
       + '<div class="grow"><label>List</label><input id="bi_list" value="' + esc(x.list || "") + '" list="bi_lists" placeholder="e.g. Stone course"><datalist id="bi_lists">' + buyLists().map(function (l) { return '<option value="' + esc(l) + '">'; }).join("") + '</datalist></div>'
@@ -281,7 +281,7 @@ if (typeof window !== "undefined") {
     if (typeof save === "function") save(); if (typeof closeModal === "function") closeModal(); render();
   };
   window.delBuyItem = function (id) {
-    if (!confirm("Remove this item from the buy list?")) return;
+    if (!confirm("Remove this item from the price tool?")) return;
     var x = (D().buyItems || []).filter(function (y) { return y && y.id === id; })[0];
     if (x) { x.deleted = true; if (typeof touch === "function") touch(x); if (typeof save === "function") save(); }
     if (typeof closeModal === "function") closeModal(); render();
@@ -293,7 +293,7 @@ if (typeof window !== "undefined") {
     var inv = x.invId ? d.inventory.filter(function (i) { return i && i.id === x.invId; })[0] : null;
     if (!inv) {
       var c = buyChosen(x), co = c ? buyOffer(x, c.v) : null;
-      inv = { id: "inv_buy_" + x.id, name: x.name, cat: "tool", have: true, qty: String(x.qty || 1), price: "", brand: (co && co.brand) || "", tags: [], section: x.list || "", notes: "Marked owned on the buy list " + (typeof today === "function" ? today() : "") + (x.spec ? ". " + x.spec : "") };
+      inv = { id: "inv_buy_" + x.id, name: x.name, cat: "tool", have: true, qty: String(x.qty || 1), price: "", brand: (co && co.brand) || "", tags: [], section: x.list || "", notes: "Marked owned on the price tool " + (typeof today === "function" ? today() : "") + (x.spec ? ". " + x.spec : "") };
       d.inventory.push(inv); x.invId = inv.id;
     }
     inv.have = true; inv.deleted = false; if (typeof touch === "function") touch(inv);
@@ -310,7 +310,7 @@ if (typeof window !== "undefined") {
     var tday = typeof today === "function" ? today() : "", stamp = typeof now === "function" ? now() : Date.now();
     items.forEach(function (x) { x.recheckAt = tday; if (typeof touch === "function") touch(x); });
     if (!d.todos) d.todos = [];
-    var td = { id: "td_buy_recheck_" + stamp.toString(36), title: "Buy list: recheck prices on " + items.length + " item" + (items.length === 1 ? "" : "s") + (BUY_LIST ? " (" + BUY_LIST + ")" : "") + " at Amazon, Home Depot, Walmart" + (items.some(function (x) { return buyLanded(buyOffer(x, "amazon"), x.qty) > 100; }) ? ", Lowe's" : "") + " — Ray tapped Recheck", due: tday, done: false, deleted: false, source: "buy-list" };
+    var td = { id: "td_buy_recheck_" + stamp.toString(36), title: "Price tool: recheck prices on " + items.length + " item" + (items.length === 1 ? "" : "s") + (BUY_LIST ? " (" + BUY_LIST + ")" : "") + " at Amazon, Home Depot, Walmart" + (items.some(function (x) { return buyLanded(buyOffer(x, "amazon"), x.qty) > 100; }) ? ", Lowe's" : "") + " — Ray tapped Recheck", due: tday, done: false, deleted: false, source: "buy-list" };
     if (typeof touch === "function") touch(td); d.todos.push(td);
     if (typeof save === "function") save(); render();
     modal("Recheck asked", '<div class="muted" style="font-size:13px">' + items.length + ' items stamped and a to-do written. I run the check and write the prices back; the table shows "was $…" on anything that moved.</div>');

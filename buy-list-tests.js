@@ -125,7 +125,7 @@ ok("the server lists buyItems in COLLECTIONS", t.COLLECTIONS ? t.COLLECTIONS.inc
 const SHELL = fs.readFileSync(path.join(__dirname, "Business App (v1).html"), "utf8");
 ok("the shell loads js/203 before boot", SHELL.indexOf("js/203-buy-list.js") > 0 && SHELL.indexOf("js/203-buy-list.js") < SHELL.indexOf("js/29-boot.js"));
 const ROUT = fs.readFileSync(path.join(__dirname, "js", "03-routing.js"), "utf8");
-ok("routing: the buy tab has a screen, a label and a menu", /buy:\(typeof rBuy/.test(ROUT) && /buy:\{l:"Buy list"/.test(ROUT) && /"resale","buy"\]/.test(ROUT));
+ok("routing: the buy tab has a screen, a label and a menu", /buy:\(typeof rBuy/.test(ROUT) && /buy:\{l:"Price tool"/.test(ROUT) && /"resale","buy"\]/.test(ROUT));
 
 /* realistic pre-feature store (no buyItems anywhere) + a store that already has buyItems: both must survive untouched */
 const legacy = {
