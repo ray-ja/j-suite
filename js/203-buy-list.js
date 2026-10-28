@@ -43,6 +43,7 @@ var BUY_LIST = null;   /* null = every list */
 function buyVendor(k) { for (var i = 0; i < BUY_VENDORS.length; i++) if (BUY_VENDORS[i].k === k) return BUY_VENDORS[i]; return { k: k || "other", l: k || "Other", s: "—" }; }
 function actBuy() { return (D().buyItems || []).filter(function (x) { return x && !x.deleted; }); }
 function buyLists() { var seen = []; actBuy().forEach(function (x) { var l = x.list || "Unfiled"; if (seen.indexOf(l) < 0) seen.push(l); }); return seen.sort(); }
+function buyClampQty(n) { n = Math.round(+n || 1); return n < 1 ? 1 : n > 999 ? 999 : n; }
 function buyIsOpen(it) { return !!(it && !it.deleted && BUY_OPEN[it.status || "need"]); }
 
 /* a store link → which vendor and which product id. Pure. */
@@ -206,7 +207,7 @@ function buyHTML() {
       + (it.pick && it.pickWhy ? '<div class="buy-sub buy-diffs" style="white-space:normal"><b>Pick:</b> ' + esc(buyVendor(it.pick).l) + ' — ' + esc(it.pickWhy) + '</div>' : '')
       + '</td>'
       + '<td class="buy-wide">' + esc(brand) + '</td><td class="buy-wide c">' + esc(pack) + '</td>'
-      + '<td class="c">' + (it.qty || 1) + '</td><td class="buy-wide" style="white-space:normal">' + esc(it.forJob || "") + '</td>'
+      + '<td class="c buy-qty" onclick="event.stopPropagation()"><button class="buy-step" onclick="buyQty(\'' + it.id + '\',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(\'' + it.id + '\',1)" aria-label="one more">+</button></td><td class="buy-wide" style="white-space:normal">' + esc(it.forJob || "") + '</td>'
       + BUY_VENDORS.map(function (v) { return buyCell(it, v.k); }).join("")
       + '<td><span class="badge">' + esc(it.status || "need") + '</span></td></tr>';
   });
@@ -218,6 +219,12 @@ function buyHTML() {
 /* ---- actions ---- */
 if (typeof window !== "undefined") {
   window.buySetList = function (l) { BUY_LIST = l; render(); };
+  /* quantity is adjusted on the row itself (Ray, 2026-10-28: "quantity should be something I want to be able to adjust") */
+  window.buyQty = function (id, delta) {
+    var x = (D().buyItems || []).filter(function (y) { return y && y.id === id; })[0]; if (!x) return;
+    x.qty = buyClampQty((+x.qty || 1) + delta);
+    if (typeof touch === "function") touch(x); if (typeof save === "function") save(); render();
+  };
   window.openBuyItem = function (id) {
     var isNew = !id;
     var x = isNew ? { id: "buy_" + uid(), list: BUY_LIST || "", name: "", qty: 1, spec: "", forJob: "", status: "need", note: "", pick: "", pickWhy: "", offers: [] } : actBuy().filter(function (y) { return y.id === id; })[0];
@@ -373,4 +380,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyHTML: buyHTML };

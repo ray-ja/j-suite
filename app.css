@@ -152,6 +152,8 @@
   .buy-t .buy-delta{font-size:11px}
   .buy-t .buy-pickmark{color:var(--accent);font-weight:800}
   .buy-good{color:var(--accent-ink)} body.dark .buy-good{color:var(--accent)}
+  .buy-t td.buy-qty{white-space:nowrap} .buy-t td.buy-qty b{display:inline-block;min-width:22px;text-align:center}
+  .buy-t .buy-step{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:16px;line-height:1;cursor:pointer;padding:0}
   @media (min-width:760px){ .buy-t .buy-narrow{display:none} }
   @media (max-width:759px){ .buy-t .buy-wide{display:none} }
   .tldr{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}

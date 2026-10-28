@@ -104,6 +104,10 @@ eq("the store run leaves a picked-away line out", Object.keys(B.buyStoreRun([tro
 eq("differences line lists every vendor note in order", B.buyDiffs(trowel), [{ v: "hd", s: "HD", text: "HDX economy 9 in, plastic handle" }]);
 eq("open = need or cart only", [B.buyIsOpen({ status: "need" }), B.buyIsOpen({ status: "cart" }), B.buyIsOpen({ status: "later" }), B.buyIsOpen({ status: "own" }), B.buyIsOpen({ status: "need", deleted: true })], [true, true, false, false, false]);
 
+eq("quantity stepper clamps to 1..999", [B.buyClampQty(0), B.buyClampQty(-3), B.buyClampQty(2.4), B.buyClampQty(5000)], [1, 1, 2, 999]);
+const SRC203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf8");
+ok("the Qty cell carries a − / + stepper that does not open the row", /buy-step[^\n]*buyQty\(/.test(SRC203) && /buy-qty" onclick="event.stopPropagation\(\)"/.test(SRC203));
+
 console.log("\n--- price history ---");
 const first = B.buyWithHistory(null, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-28");
 eq("first save: no history, stamped today", [first.hist, first.checkedAt], [[], "2026-10-28"]);
