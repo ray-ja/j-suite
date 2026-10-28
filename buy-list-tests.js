@@ -108,6 +108,25 @@ eq("quantity stepper clamps to 1..999", [B.buyClampQty(0), B.buyClampQty(-3), B.
 const SRC203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf8");
 ok("the Qty cell carries a − / + stepper that does not open the row", /buy-step[^\n]*buyQty\(/.test(SRC203) && /buy-qtycell" onclick="event.stopPropagation\(\)"/.test(SRC203));
 
+console.log("\n--- send to Price tool: the browser button payload ---");
+global.atob = global.atob || (s => Buffer.from(s, "base64").toString("binary"));
+const payload = { url: "https://www.homedepot.com/p/QEP-Epoxy-Float/100136259?store=3519", title: "QEP 4 in. x 9-1/2 in. Epoxy Grout Float", price: "$11.52", brand: "QEP", img: "https://images.thdstatic.com/productImages/x.jpg", pickup: "Free Pickup Today at Kill Devil Hills", eta: "" };
+const b64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const dec = B.buyInboxDecode(b64);
+eq("payload round-trips through the URL-safe base64", dec && dec.title, payload.title);
+eq("garbage decodes to null", [B.buyInboxDecode("%%%"), B.buyInboxDecode(""), B.buyInboxDecode(Buffer.from("{\"x\":1}").toString("base64"))], [null, null, null]);
+const off = B.buyInboxOffer(dec, "2026-10-28");
+eq("a Home Depot page becomes a verified HD offer with sku, price, pickup and picture", [off.v, off.sku, off.price, off.pickup, off.src, off.img, off.brand, off.checkedAt], ["hd", "100136259", 11.52, true, "verified", payload.img, "QEP", "2026-10-28"]);
+eq("the pickup line is kept as the difference note", off.diff, "Free Pickup Today at Kill Devil Hills");
+eq("out of stock at the store is not pickup", B.buyInboxOffer({ url: "https://www.homedepot.com/p/311174620", price: "19.98", pickup: "Out of stock at Kill Devil Hills" }).pickup, false);
+eq("Amazon pages never count as pickup", B.buyInboxOffer({ url: "https://www.amazon.com/dp/B003HIWR08", price: "$109.00", pickup: "Pickup available" }).pickup, false);
+eq("a link from some other shop files under other (Lancaster Lime Works is a real supplier)", B.buyInboxOffer({ url: "https://lancasterlimeworks.com/product/lime-putty/", price: "$105" }).v, "other");
+eq("not a link at all is refused", B.buyInboxOffer({ url: "lime putty", price: "5" }), null);
+eq("a non-http image is dropped", B.buyInboxOffer({ url: "https://www.walmart.com/ip/13891909169", price: "12.53", img: "data:image/png;base64,xx" }).img, "");
+const href = B.buyBookmarkletHref();
+ok("the bookmark is a javascript: link that opens the app with ?tab=buy&buy=", /^javascript:\(function/.test(href) && /app\.jsuite\.dev\/\?tab=buy&buy=/.test(href) && href.length < 6000);
+ok("the bookmark carries no token or password", !/token|password|Bearer/i.test(href));
+
 console.log("\n--- price history ---");
 const first = B.buyWithHistory(null, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-28");
 eq("first save: no history, stamped today", [first.hist, first.checkedAt], [[], "2026-10-28"]);

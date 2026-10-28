@@ -147,6 +147,35 @@ function buyDiffs(item) {
   return BUY_VENDORS.map(function (v) { var o = buyOffer(item, v.k); return o && o.diff ? { v: v.k, s: v.s, text: o.diff } : null; }).filter(Boolean);
 }
 
+/* ---- SEND TO PRICE TOOL (the browser button) ----
+   Home Depot, Lowe's and Walmart block automated price pulls; Ray on his own phone or laptop is not automated.
+   The bookmark below runs on the product page he is looking at, reads title / price / brand / picture / the
+   pickup line off that page, and opens the app with the payload in the URL (?buy=…). No token travels in the
+   bookmark; the app is already signed in. The payload lands as a card on the Price tool: pick the item (or a
+   new one) and it becomes a VERIFIED offer under the right store, picture included. Pure parts are tested. */
+function buyInboxDecode(b64) {
+  try { var j = JSON.parse(decodeURIComponent(escape(atob(String(b64 || "").replace(/-/g, "+").replace(/_/g, "/"))))); return (j && j.url) ? j : null; } catch (e) { return null; }
+}
+function buyInboxOffer(p, at) {
+  var u = buyParseUrl(p.url); if (!u) return null;
+  var price = parseFloat(String(p.price || "").replace(/[^0-9.]/g, "")) || 0;
+  var pick = /pickup|in stock at|aisle|bay \d/i.test(String(p.pickup || "")) && !/not (available|sold)|out of stock|ship(ping)? only|unavailable/i.test(String(p.pickup || ""));
+  return { v: u.v, sku: u.sku, url: u.url, price: price, ship: 0, pickup: u.v === "hd" || u.v === "lowes" ? pick : false, eta: String(p.eta || "").slice(0, 40), seller: String(p.seller || "").slice(0, 60), brand: String(p.brand || "").slice(0, 40), pack: "", diff: String(p.pickup || "").slice(0, 80), src: "verified", checkedAt: at || "", hist: [], img: /^https?:\/\//.test(String(p.img || "")) ? String(p.img).slice(0, 400) : "" };
+}
+/* the bookmark's code, kept as a function so it reads as code; toString() builds the javascript: link */
+function buyBookmarkletFn() {
+  var q = function (s) { var e = document.querySelector(s); return e ? (e.content || e.getAttribute("content") || e.textContent || e.src || "").trim() : ""; };
+  var ld = ""; try { document.querySelectorAll("script[type=\"application/ld+json\"]").forEach(function (x) { var j = JSON.parse(x.textContent); [].concat(j).forEach(function (o) { if (o && (o["@type"] === "Product" || (o["@graph"] || []).some(function (g) { return g["@type"] === "Product"; }))) { var p = o["@type"] === "Product" ? o : o["@graph"].filter(function (g) { return g["@type"] === "Product"; })[0]; var of = [].concat(p.offers || [])[0] || {}; ld = { price: of.price || of.lowPrice || "", brand: (p.brand && (p.brand.name || p.brand)) || "", img: [].concat(p.image || [])[0] || "", name: p.name || "" }; } }); }); } catch (e) {}
+  var price = (ld && ld.price) || q("#corePrice_feature_div .a-offscreen") || q("[data-testid=price] .sui-text-9xl, [data-testid=price]") || q("[itemprop=price]") || q("meta[property=\"product:price:amount\"]") || q(".item-price-dollar") || ((document.body.innerText.match(/\$\s?\d{1,4}(?:[.,]\d\d)/) || [])[0] || "");
+  var pickup = ((document.body.innerText.match(/(Free Pickup[^\n.]{0,60}|Pickup[^\n.]{0,60}|In stock at[^\n.]{0,40}|Aisle \d+[^\n.]{0,30}|Out of stock[^\n.]{0,30}|Not sold in stores|Unavailable at[^\n.]{0,40})/) || [])[0] || "");
+  var p = { url: location.href.split("?")[0].split("#")[0], title: (ld && ld.name) || q("meta[property=\"og:title\"]") || q("#productTitle") || document.title, price: price, brand: (ld && ld.brand) || q("#bylineInfo") || q("meta[property=\"product:brand\"]") || "", img: (ld && ld.img) || q("meta[property=\"og:image\"]") || q("#landingImage") || "", pickup: pickup, eta: ((document.body.innerText.match(/(?:Get it|Arrives|FREE delivery|Delivery)[^\n.]{0,40}/) || [])[0] || "").slice(0, 40) };
+  var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(p)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  window.open("https://app.jsuite.dev/?tab=buy&buy=" + b64, "_blank");
+}
+function buyBookmarkletHref() { return "javascript:(" + buyBookmarkletFn.toString().replace(/\s+/g, " ") + ")()"; }
+var BUY_INBOX = null;
+if (typeof window !== "undefined") { try { var _bp = new URLSearchParams(location.search).get("buy"); if (_bp) { BUY_INBOX = buyInboxDecode(_bp); try { sessionStorage.setItem("jra_buy_inbox", _bp); } catch (e) {} } else { var _bs = sessionStorage.getItem("jra_buy_inbox"); if (_bs) BUY_INBOX = buyInboxDecode(_bs); } } catch (e) {} }
+
 /* ---- render ---- */
 function buyImg(it) { var c = buyChosen(it), co = c ? buyOffer(it, c.v) : null; if (co && co.img) return co.img; var o = ((it && it.offers) || []).filter(function (x) { return x && x.img; })[0]; return o ? o.img : ""; }
 function buyMoney(n) { return (typeof money2 === "function") ? money2(n) : "$" + (Math.round(n * 100) / 100).toFixed(2); }
@@ -208,6 +237,13 @@ function buyHTML() {
     h += '<div class="subnav" style="margin-bottom:10px"><button class="subbtn ' + (!BUY_LIST ? "on" : "") + '" onclick="buySetList(null)">All</button>'
       + lists.map(function (l) { return '<button class="subbtn ' + (BUY_LIST === l ? "on" : "") + '" onclick="buySetList(' + JSON.stringify(l).replace(/"/g, "&quot;") + ')">' + esc(l) + '</button>'; }).join("") + '</div>';
   }
+  if (BUY_INBOX) {
+    var ib = BUY_INBOX, iu = buyParseUrl(ib.url), iv = iu ? buyVendor(iu.v) : null;
+    var iopts = all.filter(buyIsOpen).sort(function (a, c2) { return String(a.name).localeCompare(String(c2.name)); }).map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join("");
+    h += '<div class="card buy-inbox"><div class="buy-card-hd">' + (ib.img ? '<img class="buy-img buy-img-lg" src="' + esc(ib.img) + '" alt="">' : "") + '<div style="flex:1"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">From your browser · ' + (iv ? esc(iv.l) : "unknown store") + '</div><div class="buy-card-name">' + esc(ib.title || ib.url) + '</div><div class="buy-card-line">' + (ib.price ? '<b class="buy-price">' + esc(ib.price) + '</b> ' : '<span class="muted">no price read, type it</span> ') + esc([ib.brand, ib.pickup, ib.eta].filter(Boolean).join(" · ")) + '</div></div></div>'
+      + '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><div style="flex:1 1 180px"><label style="margin-top:0">Which item</label><select id="bx_item"><option value="">New item…</option>' + iopts + '</select></div><div style="flex:0 0 110px"><label style="margin-top:0">Price</label><input id="bx_price" type="number" step="0.01" inputmode="decimal" value="' + esc(String(ib.price || "").replace(/[^0-9.]/g, "")) + '"></div>'
+      + '<button class="btn acc" onclick="buyInboxSave()">Save to Price tool</button><button class="btn ghost sm" onclick="buyInboxDrop()">Dismiss</button></div></div>';
+  }
   if (!items.length) return h + '<div class="card"><div class="muted">Nothing on the list. Paste the list you were given, or add one item.</div></div>';
   var order = { need: 0, cart: 1, ordered: 2, received: 3, later: 4, own: 5, skip: 6 };
   /* totals: what it costs to buy what is left, at Amazon alone vs the chosen store for each line */
@@ -246,6 +282,9 @@ function buyHTML() {
       + '<td><span class="badge">' + esc(it.status || "need") + '</span></td></tr>';
   });
   h += '</tbody></table></div>';
+  h += '<details class="card buy-fold" style="margin-top:10px"><summary>🔖 Get the browser button</summary><div style="font-size:13px;line-height:1.45;margin-top:6px">Drag this link to your bookmarks bar, or on the phone: bookmark any page, then edit the bookmark and paste the code below as its address. On a Home Depot, Walmart, Lowe\'s or Amazon product page, tap it and the price, brand, picture and pickup line land here as a verified offer.</div>'
+    + '<div style="margin:8px 0"><a class="btn ghost sm" href="' + esc(buyBookmarkletHref()) + '" onclick="event.preventDefault();alert(\'Drag me to the bookmarks bar instead of clicking.\')">🛒 Send to Price tool</a> <button class="btn ghost sm" onclick="buyCopyBookmarklet()">Copy the code</button></div>'
+    + '<textarea id="buy_bm" rows="2" readonly style="font-size:11px">' + esc(buyBookmarkletHref()) + '</textarea></details>';
   h += '<div class="muted buy-foot">Landed = price × qty + shipping. Bold is the cheapest; ✓ is your pick when you chose something else on purpose. ≈ means the price came from a web search, not the store page: check it in the store app before you drive. "was" shows the last price we had.</div>';
   return h;
 }
@@ -253,6 +292,21 @@ function buyHTML() {
 /* ---- actions ---- */
 if (typeof window !== "undefined") {
   window.buySetList = function (l) { BUY_LIST = l; render(); };
+  window.buyInboxDrop = function () { BUY_INBOX = null; try { sessionStorage.removeItem("jra_buy_inbox"); history.replaceState(null, "", location.pathname); } catch (e) {} render(); };
+  window.buyInboxSave = function () {
+    if (!BUY_INBOX) return; var d = D(); if (!d.buyItems) d.buyItems = [];
+    var tday = typeof today === "function" ? today() : "", p = {}; for (var k in BUY_INBOX) p[k] = BUY_INBOX[k]; p.price = val("bx_price") || p.price;
+    var off = buyInboxOffer(p, tday); if (!off) { alert("That link is not from a store I know."); return; }
+    var id = val("bx_item"), x = id ? d.buyItems.filter(function (y) { return y && y.id === id; })[0] : null;
+    if (!x) { x = { id: "buy_" + uid(), list: BUY_LIST || "Unfiled", name: String(p.title || "").slice(0, 80) || "New item", qty: 1, spec: "", forJob: "", status: "need", note: "", pick: "", pickWhy: "", offers: [], deleted: false }; d.buyItems.push(x); }
+    var prev = (x.offers || []).filter(function (o) { return o && o.v === off.v; })[0] || null;
+    x.offers = (x.offers || []).filter(function (o) { return o && o.v !== off.v; });
+    if (prev && !off.img) off.img = prev.img || ""; if (prev && !off.brand) off.brand = prev.brand || ""; if (prev) off.pack = prev.pack || "";
+    x.offers.push(buyWithHistory(prev, off, tday));
+    if (typeof touch === "function") touch(x); if (typeof save === "function") save();
+    window.buyInboxDrop();
+  };
+  window.buyCopyBookmarklet = function () { var t = document.getElementById("buy_bm"); if (!t) return; t.select(); try { document.execCommand("copy"); } catch (e) {} if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value); alert("Copied. Make a bookmark and paste it as the address."); };
   /* quantity is adjusted on the row itself (Ray, 2026-10-28: "quantity should be something I want to be able to adjust") */
   window.buyQty = function (id, delta) {
     var x = (D().buyItems || []).filter(function (y) { return y && y.id === id; })[0]; if (!x) return;
@@ -414,4 +468,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };
