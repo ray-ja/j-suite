@@ -93,6 +93,30 @@ const run = B.buyStoreRun(planItems);
 eq("store run groups by the winning store", Object.keys(run), ["hd"]);
 eq("the goggles are on the Home Depot run at landed cost, flagged as a snippet", [run.hd[0].landed, run.hd[0].src, run.hd[0].qty], [25.94, "snippet", 2]);
 
+console.log("\n--- cheaper is not always better: a pick overrides the cheapest ---");
+const trowel = { qty: 1, status: "need", pick: "amazon", pickWhy: "the cheap one is 4 in, I need 5", offers: [{ v: "amazon", sku: "B089CZHX7M", price: 12.27, src: "verified", brand: "QEP", pack: "1" }, { v: "hd", sku: "203713868", price: 2.96, pickup: true, src: "snippet", diff: "HDX economy 9 in, plastic handle" }] };
+eq("the cheapest is still Home Depot", B.buyBest(trowel).v, "hd");
+eq("but the chosen vendor is his pick", [B.buyChosen(trowel).v, B.buyChosen(trowel).picked, B.buyChosen(trowel).landed], ["amazon", true, 12.27]);
+eq("a pick with no price falls back to the cheapest", B.buyChosen({ qty: 1, pick: "lowes", offers: trowel.offers }).v, "hd");
+eq("totals follow the pick (and count it)", [B.buyTotals([trowel]).best, B.buyTotals([trowel]).picked], [12.27, 1]);
+eq("the Amazon plan includes a picked Amazon line even when a store is cheaper", B.buyAmazonPlan([trowel]), [{ asin: "B089CZHX7M", qty: 1 }]);
+eq("the store run leaves a picked-away line out", Object.keys(B.buyStoreRun([trowel])), []);
+eq("differences line lists every vendor note in order", B.buyDiffs(trowel), [{ v: "hd", s: "HD", text: "HDX economy 9 in, plastic handle" }]);
+eq("open = need or cart only", [B.buyIsOpen({ status: "need" }), B.buyIsOpen({ status: "cart" }), B.buyIsOpen({ status: "later" }), B.buyIsOpen({ status: "own" }), B.buyIsOpen({ status: "need", deleted: true })], [true, true, false, false, false]);
+
+console.log("\n--- price history ---");
+const first = B.buyWithHistory(null, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-28");
+eq("first save: no history, stamped today", [first.hist, first.checkedAt], [[], "2026-10-28"]);
+const same = B.buyWithHistory(first, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-29");
+eq("same price again: nothing added to history", same.hist.length, 0);
+const moved = B.buyWithHistory(first, { v: "amazon", price: 19.98, ship: 11.62 }, "2026-11-04");
+eq("a price change keeps the old price with its date", moved.hist, [{ at: "2026-10-28", price: 22.40, ship: 11.62 }]);
+eq("the last previous price is what the cell shows as was", B.buyPrev(moved).price, 22.40);
+const shipMoved = B.buyWithHistory(moved, { v: "amazon", price: 19.98, ship: 0 }, "2026-11-10");
+eq("a shipping change counts too; history grows newest-last", shipMoved.hist.map(h => h.ship), [11.62, 11.62]);
+eq("an unpriced previous offer (link only) is not history", B.buyWithHistory({ v: "hd", url: "x" }, { v: "hd", price: 5, url: "x" }, "2026-10-28").hist.length, 0);
+const html = B.buyHTML ? null : null;   /* buyHTML needs the DOM store; rendering is covered by load-smoke + the screenshots */
+
 console.log("\n--- data layer: buyItems is a real collection (zero loss) ---");
 const STATE = fs.readFileSync(path.join(__dirname, "js", "02-state.js"), "utf8");
 ok("blank() creates buyItems", /buyItems:\[\]/.test(STATE));

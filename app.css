@@ -139,10 +139,21 @@
   .otable th{position:sticky;top:0;background:var(--soft);color:var(--muted);font-size:11px}
   .otable td:first-child{white-space:normal;min-width:150px;font-weight:600}
   .otable tr:hover td{background:var(--soft)}
-  /* BUY LIST (js/203): the cheapest landed offer in a row is bold and green; a web-search price keeps its ≈ */
+  /* BUY LIST (js/203): links take the text colour (Ray, 2026-10-28, dark mode: "the dark blue is really hard to
+     read"); the cheapest landed offer in a row is bold in the accent; ✓ marks his pick; ≈ marks a web-search
+     price. Brand / Pack / For are columns on desktop and a line under the item on the phone. */
+  .buy-t a{color:var(--ink);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
   .buy-t td.buy-best{font-weight:700}
-  .buy-t td.buy-best a{color:var(--ok,#2a7a4a)}
+  .buy-t td.buy-best a{color:var(--accent-ink)}
+  body.dark .buy-t td.buy-best a{color:var(--accent)}
   .buy-t td.buy-c{white-space:nowrap}
+  .buy-t .buy-sub{font-size:10px;white-space:nowrap;font-weight:400}
+  .buy-t .buy-diffs{color:var(--muted);margin-top:2px}
+  .buy-t .buy-delta{font-size:11px}
+  .buy-t .buy-pickmark{color:var(--accent);font-weight:800}
+  .buy-good{color:var(--accent-ink)} body.dark .buy-good{color:var(--accent)}
+  @media (min-width:760px){ .buy-t .buy-narrow{display:none} }
+  @media (max-width:759px){ .buy-t .buy-wide{display:none} }
   .tldr{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
   .tldr .t{flex:1 1 28%;min-width:92px;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;border-radius:12px;padding:11px 10px}
   .tldr .t .v{font-size:18px;font-weight:800;line-height:1.1}
