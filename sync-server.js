@@ -3120,6 +3120,79 @@ function orgKeysLoad() {
   return k;
 }
 function orgKeysSave(k) { const tmp = ORG_KEYS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(k, null, 2), { mode: 0o600 }); fs.renameSync(tmp, ORG_KEYS_FILE); try { fs.chmodSync(ORG_KEYS_FILE, 0o600); } catch (e) {} }
+/* ---------- PRICE TOOL: hands-free rechecks through Apify (Ray OK'd pay-per-use, 2026-10-28) ----------
+   Home Depot, Walmart and Amazon block our own browser; Apify's store actors do the fetching and bill per result
+   (about function orgKeysSave(k) { const tmp = ORG_KEYS_FILE + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(k, null, 2), { mode: 0o600 }); fs.renameSync(tmp, ORG_KEYS_FILE); try { fs.chmodSync(ORG_KEYS_FILE, 0o600); } catch (e) {} }
+-5 per 1,000, the free plan carries $5 a month). The token lives in org-keys.json under apify.token
+   (one account for the whole app). POST /api/buy/recheck {org, ids?} (super-admin bearer) runs one actor per
+   vendor over the open items' offers, writes price / rating / review count / picture / pickup back onto the
+   offers WITH HISTORY (old price kept with its date), stamps checkedAt, saves. Nothing is ordered. GET
+   /api/buy/status says whether the token is on file so the client can fall back to the to-do path.
+   Pure parts (plan / input / map / apply) are exported for buy-list-tests.js. */
+const BUY_APIFY = {
+  amazon:  { actor: "scrape.badger~amazon-product-scraper", input: (rows) => ({ mode: "Product Detail", asins: rows.map(r => r.sku), domain: "com", zip: "27964" }) },
+  hd:      { actor: "khadinakbar~home-depot-scraper", input: (rows) => ({ productUrls: rows.map(r => r.url || ("https://www.homedepot.com/p/" + r.sku)), deliveryZip: "27948", storeId: "3650", includeProductDetails: false, includeReviews: false }) },   // storeId: Kill Devil Hills / Kitty Hawk per a store listing, unverified; the zip localizes regardless
+  walmart: { actor: "fatihtahta~walmart-scraper", input: (rows) => ({ startUrls: rows.map(r => r.url || ("https://www.walmart.com/ip/" + r.sku)), enrich_data: true, limit: rows.length }) }
+};
+function buyApifyPlan(slab, ids) {
+  const out = { amazon: [], hd: [], walmart: [] }, want = ids && ids.length ? new Set(ids) : null;
+  ((slab && slab.buyItems) || []).forEach(it => {
+    if (!it || it.deleted || (it.status && it.status !== "need" && it.status !== "cart")) return;
+    if (want && !want.has(it.id)) return;
+    (it.offers || []).forEach(o => { if (o && out[o.v] && (o.sku || o.url)) out[o.v].push({ id: it.id, sku: o.sku || "", url: o.url || "" }); });
+  });
+  return out;
+}
+const numOf = (v) => { if (v == null) return 0; if (typeof v === "object") return numOf(v.value != null ? v.value : v.current_price != null ? v.current_price : v.raw); const n = parseFloat(String(v).replace(/[^0-9.]/g, "")); return isFinite(n) ? n : 0; };
+function buyApifyMap(vendor, r) {
+  if (!r || typeof r !== "object") return null;
+  if (vendor === "amazon") {
+    const img = Array.isArray(r.images) ? (typeof r.images[0] === "string" ? r.images[0] : (r.images[0] && (r.images[0].link || r.images[0].url))) : (r.image || r.main_image || "");
+    return { key: String(r.asin || "").toUpperCase(), price: numOf(r.price), rating: numOf(r.rating), reviews: r.ratings_total != null ? numOf(r.ratings_total) : "", img: img || "", title: r.title || "", brand: r.brand || "", avail: r.availability || (r.in_stock === false ? "out of stock" : ""), pickup: false };
+  }
+  if (vendor === "hd") {
+    if (r.recordType && r.recordType !== "product") return null;
+    return { key: String(r.productId || ((r.url || "").match(/\/(\d{6,})/) || [])[1] || ""), price: numOf(r.price), rating: numOf(r.rating), reviews: r.reviewsCount != null ? numOf(r.reviewsCount) : "", img: r.thumbnail || (Array.isArray(r.images) && r.images[0]) || "", title: r.title || "", brand: r.brand || "", avail: [r.availabilityText, r.storeName, r.storeQuantity != null ? r.storeQuantity + " in store" : ""].filter(Boolean).join(" · "), pickup: r.pickupAvailable === true };
+  }
+  if (vendor === "walmart") {
+    const url = r.url || r.product_url || r.link || "";
+    return { key: String(r.id || r.item_id || r.product_id || (url.match(/\/ip\/(?:.*?\/)?(\d{5,})/) || [])[1] || ""), price: numOf(r.pricing && (r.pricing.current_price != null ? r.pricing.current_price : r.pricing.display_price)) || numOf(r.price), rating: numOf(r.metrics && r.metrics.average_rating), reviews: r.metrics && r.metrics.review_count != null ? numOf(r.metrics.review_count) : "", img: (r.media && r.media.primary_image_url) || r.image || "", title: r.name || r.title || "", brand: r.brand || "", avail: (r.availability && r.availability.status) || "", pickup: false, seller: (r.seller && r.seller.name) || "" };
+  }
+  return null;
+}
+/* write mapped results onto the matching offers; the old price stays in hist with its date. Returns {updated, moved}. */
+function buyApifyApply(slab, vendor, mapped, today) {
+  let updated = 0, moved = 0; const byKey = {};
+  (mapped || []).forEach(m => { if (m && m.key) byKey[m.key] = m; });
+  ((slab && slab.buyItems) || []).forEach(it => {
+    if (!it || it.deleted) return;
+    (it.offers || []).forEach(o => {
+      if (!o || o.v !== vendor) return;
+      const m = byKey[o.sku] || (o.url && Object.values(byKey).find(x => o.url.indexOf(x.key) >= 0));
+      if (!m || !(m.price > 0)) return;
+      const prevPrice = +o.price || 0; if (!Array.isArray(o.hist)) o.hist = [];
+      if (prevPrice > 0 && Math.abs(prevPrice - m.price) > 0.004) { o.hist = (o.hist || []).concat([{ at: o.checkedAt || "", price: prevPrice, ship: +o.ship || 0 }]).slice(-24); moved++; }
+      o.price = Math.round(m.price * 100) / 100; o.src = "verified"; o.checkedAt = today;
+      if (m.rating) o.rating = Math.round(m.rating * 10) / 10; if (m.reviews !== "" && m.reviews != null) o.reviews = m.reviews;
+      if (m.img && !o.img) o.img = String(m.img).slice(0, 400); if (m.brand && !o.brand) o.brand = String(m.brand).slice(0, 40);
+      if (vendor === "hd") o.pickup = !!m.pickup; if (m.avail) o.diff = (o.diff && !/in store|stock|pickup/i.test(o.diff) ? o.diff + " · " : "") + String(m.avail).slice(0, 80);
+      if (m.seller && !o.seller) o.seller = String(m.seller).slice(0, 60);
+      it.updatedAt = Date.now(); it.recheckAt = ""; updated++;
+    });
+  });
+  return { updated, moved };
+}
+function apifyToken() { try { const k = orgKeysLoad(); return (k && k.apify && k.apify.token) || ""; } catch (e) { return ""; } }
+function apifyRunSync(actor, input, cb) {
+  const tok = apifyToken(); if (!tok) return cb(0, null, "no-apify");
+  const body = JSON.stringify(input);
+  const r = https.request("https://api.apify.com/v2/acts/" + actor + "/run-sync-get-dataset-items?timeout=280&format=json&clean=true", { method: "POST", headers: { "Authorization": "Bearer " + tok, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (resp) => {
+    let s = ""; resp.on("data", d => s += d); resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} cb(resp.statusCode, j, j && j.error ? (j.error.message || j.error.type) : ""); });
+  });
+  r.on("error", e => cb(0, null, String((e && e.message) || e)));
+  r.setTimeout(295000, () => { try { r.destroy(); } catch (e) {} cb(0, null, "Apify run timed out"); });
+  r.write(body); r.end();
+}
 function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns" || n === "stripeKey" || n === "stripeWebhookSecret"; }
 /* PER-ORG STRIPE (Ray, 2026-09-21: Jamieson Automation / OBX Holiday Lights get their own Stripe account so their money
    never lands in DYAD's). An org's key lives in org-keys.json (Settings → Keys, that org's tab); the old global key in
@@ -5368,6 +5441,37 @@ const server = http.createServer((req, res) => {
     });
   }
   /* POST /api/quotes/deposit {org, quoteId, pct} (owner): mint a fixed-amount Stripe link for pct of the quote total */
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/buy/status") {
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ apify: !!apifyToken() }));
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/buy/recheck") {
+    const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
+    const sc = tokenScope(tok);
+    if (!sc || !sc.superAdmin) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end('{"error":"forbidden"}'); }
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    if (!apifyToken()) return J(400, { error: "no-apify" });
+    return readBodyUtf8(req, 65536, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const store0 = loadStore(); const org = p.org; if (!store0[org]) return J(404, { error: "org not found" });
+      const plan = buyApifyPlan(store0[org], Array.isArray(p.ids) ? p.ids : null);
+      const vendors = Object.keys(plan).filter(v => plan[v].length && (!p.vendors || p.vendors.indexOf(v) >= 0));
+      if (!vendors.length) return J(200, { ok: true, ran: {}, note: "nothing open with a store id or link" });
+      const today = new Date().toISOString().slice(0, 10); const ran = {}; let pending = vendors.length;
+      vendors.forEach(v => {
+        apifyRunSync(BUY_APIFY[v].actor, BUY_APIFY[v].input(plan[v]), (code, items, err) => {
+          const mapped = Array.isArray(items) ? items.map(r => buyApifyMap(v, r)).filter(Boolean) : [];
+          ran[v] = { asked: plan[v].length, got: mapped.length, status: code, error: err || "" };
+          if (--pending === 0) {
+            const store = loadStore(); let updated = 0, moved = 0;   /* re-read: the runs took minutes, other writes may have landed */
+            vendors.forEach(v2 => { const m = ran[v2].mapped || []; const a = buyApifyApply(store[org], v2, m, today); ran[v2].updated = a.updated; ran[v2].moved = a.moved; updated += a.updated; moved += a.moved; delete ran[v2].mapped; });
+            try { saveStore(store); } catch (e) { return J(500, { error: "save failed" }); }
+            J(200, { ok: true, updated, moved, ran });
+          }
+          ran[v].mapped = mapped;
+        });
+      });
+    });
+  }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/quotes/deposit") {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
     const sc = tokenScope(tok);
@@ -6676,4 +6780,4 @@ function sitePublishJob(siteId, page, who, n, label) {
   return job;
 }
 
-module.exports = { emailBodyBuild, escapeInvoiceBuild, escapeInvoiceRecord, escapePrevMonth, ESCAPE_RATE, projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, invOptionsOf, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };
+module.exports = { buyApifyPlan, buyApifyMap, buyApifyApply, BUY_APIFY, emailBodyBuild, escapeInvoiceBuild, escapeInvoiceRecord, escapePrevMonth, ESCAPE_RATE, projectSince, SYNC_SINCE_WINDOW_MS, sendJson, adsStatsAgg, adsStatsFromFile, stripePaidEvent, STRIPE_PAID_EVENTS, STRIPE_HOOK_EVENTS, quoteScopeMembers, quoteScopePendingApply, invPlanChooseApply, ppEmailBuild, ppDueAcross, ppInstallmentPaidApply, ppPageHTML, SITES, qboStateMake, qboStateOk, qboAuthUrl, qboYearRanges, QBO_REDIRECT, stripeKeyForKeys, invEmailBuild, webLeadNotify, quoteScopePaidApply, quoteDepositApply, quoteDepositPaidApply, quoteAcceptApply, quoteIsJunk, pubBizOf, JUNK_BIZ, invOptionsOf, heroMarkApply, heroMarkRead, heroMarkClamp, siteLinksOf, sitePageTree, siteScan, siteAnnotate, siteStripScripts, siteMergeText, siteApplyEdits, siteListPages, sitePageOk, aiOnce, aiSend, AI_HTTP_TIMEOUT_MS, RCPT_VISION_MAX_TOKENS, PERSONAL_TOOLS, capParsePersonalAction, remindersDue, reminderSweep, JOURNAL_EXTRACT_SYSTEM, callAnthropicSys, voiceVocab, orgAiFor, orgAiStatus, pubBizOf, auditDiff, mergeState, mergeColl, migrateStore, hoistJobLineItems, migrateBudgetBooks, migrateCustomJobs, sanitizeUserWrites, sanitizeMessageDeletes, sanitizeRegistryWrites, sanitizeCustomJobWrites, customJobIsFinance, customJobNeedsOwner, msgAdminInOrg, orgIdsOf, accountById, membershipsOfStore, orgsForUser, writerOwnsOrg, writerManagesOrg, roleManagesMembers, storedRoleInOrg, scopedIncoming, projectUsers, projectForUser, orgAiContext, orgAiScopedContext, callAnthropic, callAnthropicTask, capTodayContext, orgIsPersonal, orgBlobIds, orgExportBundle, orgImportApply, orgDeleteApply, orgExportToDisk, ORG_EXPORT_DIR, capPersonalContext, PERSONAL_COMPANION_SYSTEM, callAnthropicAssistant, capParseAction, CAP_TOOLS, rcptParseSuggestion, rcptVisionModel, resolveModel, AI_MODELS, AI_FN_DEFAULTS, callAnthropicVision, rcptOwnedByOrg, landParseSurvey, landVisionModel, landPhotoOwnedByOrg, callAnthropicVisionSys, callGeminiImage, SHOW_AFTER_PROMPT, crewBriefParse, verifyLogin, ceoSetReceipt, ceoSetCapRead, scryptHash, scryptVerify, isScrypt, maybeUpgradeHash, accountLocked, noteFailedLogin, clearFailedLogin, makeResetToken, consumeResetToken, makeInviteToken, consumeInviteToken, hashPw, hashPwFallback, accountByName, accountByEmail, verifyAccessJwt, rateCheck, visionRateCheck, clientIp, tokenExpired, TOKEN_TTL_MS, stripeForm, verifyStripeSig, deployKeyTarget, deployKeyValueOk, gadsParseClient, gadsCustomerIdOk, gadsCodeFromInput, gadsIngestOk, orgKeyNameOk, renderInvoicePage, invNoOf, invViewGate, invLogView, invAccountOf, invComboOf, srvDueOf, srvPaidOf, srvMatsOf, srvShortTitle, invPayScopeOf, invAcctScopeOf, invEnsureScopeLink, invEnsurePayLink, loadStore, saveStore, userByCalToken, buildIcs, jobsForUser, icsEscape, icsFold, ceoProjection, ceoTokenOk, ceoBuildMessage, ceoBuildProposal, pushNotify, pushWorthy, pushNotifyOwner, pushPeek, vapidJwt, noteActive, readBodyUtf8 };

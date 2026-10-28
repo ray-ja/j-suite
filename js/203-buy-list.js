@@ -448,14 +448,35 @@ if (typeof window !== "undefined") {
     var d = D(), items = actBuy().filter(function (x) { return buyIsOpen(x) && (!BUY_LIST || (x.list || "Unfiled") === BUY_LIST); });
     if (!items.length) { modal("Recheck prices", '<div class="muted">Nothing open to recheck on this list.</div>'); return; }
     if (!confirm("Ask for a fresh price check on " + items.length + " item" + (items.length === 1 ? "" : "s") + "? The new prices land in the table with today's date and the old ones stay as history.")) return;
+    /* hands-free path first: the server runs the store lookups through Apify when the token is on file */
+    var base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""), tok = (S.sync && S.sync.token) || "";
+    if (tok && /^https?:/.test(base)) {
+      modal("Checking prices…", '<div class="muted" style="font-size:13px">Asking the stores for ' + items.length + ' items. This takes a minute or two; the page updates when it is done.</div>');
+      fetch(base + "/api/buy/recheck", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: JSON.stringify({ org: S.biz, ids: items.map(function (x) { return x.id; }) }) })
+        .then(function (r) { return r.json().then(function (j) { return { st: r.status, j: j }; }); })
+        .then(function (o) {
+          if (o.st === 200 && o.j && o.j.ok) {
+            var done = function () { render(); modal("Prices checked", '<div style="font-size:13px">' + (o.j.updated || 0) + ' prices refreshed, ' + (o.j.moved || 0) + ' moved since last time.' + Object.keys(o.j.ran || {}).map(function (v) { var r = o.j.ran[v]; return '<div class="muted">' + esc(buyVendor(v).l) + ": " + r.got + " of " + r.asked + (r.error ? " · " + esc(r.error) : "") + '</div>'; }).join("") + '</div>'); };
+            if (typeof syncNow === "function") { try { var pr = syncNow(); if (pr && pr.then) pr.then(done, done); else setTimeout(done, 1500); } catch (e) { done(); } } else done();
+            return;
+          }
+          if (o.j && o.j.error === "no-apify") return buyRecheckTodo(items, d);
+          modal("Price check failed", '<div class="muted" style="font-size:13px">' + esc((o.j && o.j.error) || ("status " + o.st)) + '</div>');
+        }).catch(function (e) { buyRecheckTodo(items, d); });
+      return;
+    }
+    buyRecheckTodo(items, d);
+  };
+  /* no Apify token yet: stamp the items and leave me a to-do (I run the cart read + a web check by hand) */
+  function buyRecheckTodo(items, d) {
     var tday = typeof today === "function" ? today() : "", stamp = typeof now === "function" ? now() : Date.now();
     items.forEach(function (x) { x.recheckAt = tday; if (typeof touch === "function") touch(x); });
     if (!d.todos) d.todos = [];
     var td = { id: "td_buy_recheck_" + stamp.toString(36), title: "Price tool: recheck prices on " + items.length + " item" + (items.length === 1 ? "" : "s") + (BUY_LIST ? " (" + BUY_LIST + ")" : "") + " at Amazon, Home Depot, Walmart" + (items.some(function (x) { return buyLanded(buyOffer(x, "amazon"), x.qty) > 100; }) ? ", Lowe's" : "") + " — Ray tapped Recheck", due: tday, done: false, deleted: false, source: "buy-list" };
     if (typeof touch === "function") touch(td); d.todos.push(td);
     if (typeof save === "function") save(); render();
-    modal("Recheck asked", '<div class="muted" style="font-size:13px">' + items.length + ' items stamped and a to-do written. I run the check and write the prices back; the table shows "was $…" on anything that moved.</div>');
-  };
+    modal("Recheck asked", '<div class="muted" style="font-size:13px">' + items.length + ' items stamped and a to-do written. No Apify token is on file yet, so I run the check and write the prices back; the table shows "was $…" on anything that moved.</div>');
+  }
   window.buyPasteList = function () {
     modal("Paste a list", '<div class="muted" style="font-size:12px">One item per line. "- Name, qty 2, $18.70" with the link on the next line works, so does "Name x2 $18.70 https://…".</div>'
       + '<label>List name</label><input id="bp_list" value="' + esc(BUY_LIST || "") + '" placeholder="e.g. Stone course">'

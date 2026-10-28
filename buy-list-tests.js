@@ -150,6 +150,39 @@ eq("Walmart cart link follows the pick, item|qty form", cl.walmart.url, "https:/
 eq("Home Depot has no cart link, just the tap-each list", [cl.hd.url, cl.hd.n, cl.hd.rows[0].qty, cl.hd.rows[0].landed], ["", 1, 3, 34.56]);
 eq("owned lines stay out of every cart", cl.amazon.n + cl.walmart.n + cl.hd.n + cl.lowes.n, 4);
 
+console.log("\n--- hands-free recheck through Apify (server side, pure parts) ---");
+const slab = { buyItems: [
+  { id: "a", status: "cart", qty: 1, offers: [{ v: "amazon", sku: "B0001YXFFM", price: 18.70, checkedAt: "2026-10-28", src: "verified" }, { v: "hd", sku: "324485176", url: "https://www.homedepot.com/p/324485176", price: 12.97, pickup: true, src: "snippet", checkedAt: "2026-10-28" }] },
+  { id: "b", status: "later", qty: 1, offers: [{ v: "amazon", sku: "B000000001", price: 5 }] },
+  { id: "c", status: "need", qty: 1, offers: [{ v: "walmart", sku: "13891909169", url: "https://www.walmart.com/ip/13891909169", price: 12.53, src: "snippet" }, { v: "lowes", url: "x", price: 1 }] },
+  { id: "d", status: "need", qty: 1, deleted: true, offers: [{ v: "amazon", sku: "B000000002", price: 5 }] }
+] };
+const plan = t.buyApifyPlan(slab);
+eq("the plan takes open items only, one row per store offer with an id or link", [plan.amazon.map(r => r.sku), plan.hd.map(r => r.sku), plan.walmart.map(r => r.sku)], [["B0001YXFFM"], ["324485176"], ["13891909169"]]);
+eq("ids narrow the plan", t.buyApifyPlan(slab, ["c"]).amazon.length + t.buyApifyPlan(slab, ["c"]).walmart.length, 1);
+eq("Amazon input is the actor's Product Detail shape", t.BUY_APIFY.amazon.input(plan.amazon), { mode: "Product Detail", asins: ["B0001YXFFM"], domain: "com", zip: "27964" });
+eq("Home Depot input carries the product URLs plus the local zip", t.BUY_APIFY.hd.input(plan.hd).productUrls, ["https://www.homedepot.com/p/324485176"]);
+eq("Walmart input is startUrls", t.BUY_APIFY.walmart.input(plan.walmart).startUrls, ["https://www.walmart.com/ip/13891909169"]);
+const am = t.buyApifyMap("amazon", { asin: "b0001yxffm", title: "Uvex Stealth", brand: "Uvex", price: { value: 17.99, currency: "USD", raw: "$17.99" }, rating: 4.6, ratings_total: 3120, images: [{ link: "https://m.media-amazon.com/images/I/x.jpg" }], in_stock: true });
+eq("Amazon record maps (asin upper-cased, structured price unwrapped)", [am.key, am.price, am.rating, am.reviews, am.img], ["B0001YXFFM", 17.99, 4.6, 3120, "https://m.media-amazon.com/images/I/x.jpg"]);
+const hd = t.buyApifyMap("hd", { recordType: "product", productId: "324485176", title: "HDX goggles", brand: "HDX", price: 12.97, rating: 4.1, reviewsCount: 7, thumbnail: "https://images.thdstatic.com/x.jpg", pickupAvailable: true, availabilityText: "In stock", storeName: "Kill Devil Hills", storeQuantity: 14 });
+eq("Home Depot record maps with pickup and the store line", [hd.key, hd.price, hd.reviews, hd.pickup, hd.avail], ["324485176", 12.97, 7, true, "In stock · Kill Devil Hills · 14 in store"]);
+eq("Home Depot review records are skipped", t.buyApifyMap("hd", { recordType: "review", reviewRating: 5 }), null);
+const wm = t.buyApifyMap("walmart", { url: "https://www.walmart.com/ip/Mainstays/13891909169", name: "Mainstays scale", brand: "Mainstays", pricing: { current_price: 11.97, display_price: "$11.97" }, metrics: { average_rating: 4.4, review_count: 812 }, media: { primary_image_url: "https://i5.walmartimages.com/x.jpg" }, availability: { status: "IN_STOCK" }, seller: { name: "Walmart.com" } });
+eq("Walmart record maps (id from the url, nested price / metrics / media)", [wm.key, wm.price, wm.rating, wm.reviews, wm.seller], ["13891909169", 11.97, 4.4, 812, "Walmart.com"]);
+eq("junk records map to null", [t.buyApifyMap("amazon", null), t.buyApifyMap("hd", "x"), t.buyApifyMap("other", {})], [null, null, null]);
+const slab2 = JSON.parse(JSON.stringify(slab));
+const ap = t.buyApifyApply(slab2, "amazon", [am], "2026-11-04");
+eq("apply updates the matching offer, keeps the old price in history with its date", [ap.updated, ap.moved, slab2.buyItems[0].offers[0].price, slab2.buyItems[0].offers[0].hist, slab2.buyItems[0].offers[0].checkedAt, slab2.buyItems[0].offers[0].rating, slab2.buyItems[0].offers[0].reviews, slab2.buyItems[0].offers[0].img], [1, 1, 17.99, [{ at: "2026-10-28", price: 18.70, ship: 0 }], "2026-11-04", 4.6, 3120, "https://m.media-amazon.com/images/I/x.jpg"]);
+const ap2 = t.buyApifyApply(slab2, "hd", [hd], "2026-11-04");
+eq("apply on Home Depot: a snippet becomes verified, pickup follows the store, the store line lands in the note", [ap2.updated, slab2.buyItems[0].offers[1].src, slab2.buyItems[0].offers[1].pickup, slab2.buyItems[0].offers[1].diff, slab2.buyItems[0].offers[1].hist.length], [1, "verified", true, "In stock · Kill Devil Hills · 14 in store", 0]);
+eq("apply never touches other vendors, deleted items, or unmatched offers", [slab2.buyItems[2].offers[0].price, slab2.buyItems[3].offers[0].price, t.buyApifyApply(slab2, "walmart", [{ key: "999", price: 1 }], "2026-11-04").updated], [12.53, 5, 0]);
+eq("a zero price from the store is ignored, not written", t.buyApifyApply(slab2, "amazon", [{ key: "B0001YXFFM", price: 0 }], "2026-11-05").updated, 0);
+const S203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf8");
+ok("the client tries /api/buy/recheck first and falls back to the to-do on no-apify", /\/api\/buy\/recheck/.test(S203) && /no-apify/.test(S203) && /function buyRecheckTodo/.test(S203));
+const SRV = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+ok("the server route is super-admin only and reads the token from org-keys (never the request)", /\/api\/buy\/recheck"\) \{[\s\S]{0,400}superAdmin/.test(SRV) && /function apifyToken\(\) \{[^\n]*orgKeysLoad/.test(SRV));
+
 console.log("\n--- price history ---");
 const first = B.buyWithHistory(null, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-28");
 eq("first save: no history, stamped today", [first.hist, first.checkedAt], [[], "2026-10-28"]);
