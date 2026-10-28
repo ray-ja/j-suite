@@ -19,7 +19,7 @@ const ADMIN_PAGES = [
   { tab: "training", label: "Train" }, { tab: "market", label: "Market" },
   { tab: "opps", label: "Opps" }, { tab: "sites", label: "Sites" },
   { tab: "buildplan", label: "Build Plan" }, { tab: "inventory", label: "Inventory" },
-  { tab: "resale", label: "Resale" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
+  { tab: "resale", label: "Resale" }, { tab: "buy", label: "Buy list" }, { tab: "escape", label: "Room board" }, { tab: "life", label: "Life" }, { tab: "budget", label: "Budget" },
   { tab: "playbook", label: "Playbook" }, { tab: "research", label: "Research" },
   { tab: "time", label: "Time" }, { tab: "pay", label: "My Pay" }, { tab: "finance", label: "Finance" }, { tab: "invoices", label: "Invoices" }, { tab: "routes", label: "Route review" }, { tab: "receipts", label: "Receipts" }, { tab: "data", label: "Settings" },
   /* ⚠️ THESE FIVE WERE MISSING FROM THE REGISTRY ENTIRELY, and it was not a cosmetic gap. ADMIN_PAGES

@@ -139,6 +139,10 @@
   .otable th{position:sticky;top:0;background:var(--soft);color:var(--muted);font-size:11px}
   .otable td:first-child{white-space:normal;min-width:150px;font-weight:600}
   .otable tr:hover td{background:var(--soft)}
+  /* BUY LIST (js/203): the cheapest landed offer in a row is bold and green; a web-search price keeps its ≈ */
+  .buy-t td.buy-best{font-weight:700}
+  .buy-t td.buy-best a{color:var(--ok,#2a7a4a)}
+  .buy-t td.buy-c{white-space:nowrap}
   .tldr{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
   .tldr .t{flex:1 1 28%;min-width:92px;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;border-radius:12px;padding:11px 10px}
   .tldr .t .v{font-size:18px;font-weight:800;line-height:1.1}
