@@ -106,7 +106,7 @@ eq("open = need or cart only", [B.buyIsOpen({ status: "need" }), B.buyIsOpen({ s
 
 eq("quantity stepper clamps to 1..999", [B.buyClampQty(0), B.buyClampQty(-3), B.buyClampQty(2.4), B.buyClampQty(5000)], [1, 1, 2, 999]);
 const SRC203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf8");
-ok("the Qty cell carries a − / + stepper that does not open the row", /buy-step[^\n]*buyQty\(/.test(SRC203) && /buy-qty" onclick="event.stopPropagation\(\)"/.test(SRC203));
+ok("the Qty cell carries a − / + stepper that does not open the row", /buy-step[^\n]*buyQty\(/.test(SRC203) && /buy-qtycell" onclick="event.stopPropagation\(\)"/.test(SRC203));
 
 console.log("\n--- price history ---");
 const first = B.buyWithHistory(null, { v: "amazon", price: 22.40, ship: 11.62 }, "2026-10-28");

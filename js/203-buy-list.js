@@ -148,6 +148,7 @@ function buyDiffs(item) {
 }
 
 /* ---- render ---- */
+function buyImg(it) { var c = buyChosen(it), co = c ? buyOffer(it, c.v) : null; if (co && co.img) return co.img; var o = ((it && it.offers) || []).filter(function (x) { return x && x.img; })[0]; return o ? o.img : ""; }
 function buyMoney(n) { return (typeof money2 === "function") ? money2(n) : "$" + (Math.round(n * 100) / 100).toFixed(2); }
 function buyCell(it, v) {
   var o = buyOffer(it, v), l = buyLanded(o, it.qty);
@@ -157,7 +158,7 @@ function buyCell(it, v) {
   if (o.pickup) sub.push("pickup"); else if (+o.ship > 0) sub.push("+" + buyMoney(+o.ship) + " ship"); else sub.push("free ship");
   if (o.eta) sub.push(esc(o.eta));
   if (prev && Math.abs(prev.price - (+o.price || 0)) > 0.004) sub.push((+o.price > prev.price ? "↑" : "↓") + " was " + buyMoney(prev.price));
-  return '<td class="buy-c' + (isBest ? ' buy-best' : '') + (isPick ? ' buy-pick' : '') + '">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">' : '') + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? '</a>' : '')
+  return '<td class="buy-c' + (isBest ? ' buy-best' : '') + (isPick ? ' buy-pick' : '') + '"><span class="buy-price">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">' : '') + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? '</a>' : '') + '</span>'
     + (isPick ? ' <span class="buy-pickmark" title="your pick">✓</span>' : '')
     + (isBest || d == null || d === 0 ? '' : ' <span class="muted buy-delta">+' + buyMoney(d) + '</span>')
     + '<div class="muted buy-sub">' + sub.join(" · ") + '</div></td>';
@@ -184,7 +185,7 @@ function buyCard(it) {
   var line = [brand, pack ? "pack of " + esc(pack) : "", it.forJob ? "for " + esc(it.forJob) : "", it.spec ? esc(it.spec) : ""].filter(Boolean).join(" · ");
   var diffs = buyDiffs(it), q = '\'' + it.id + '\'';
   return '<div class="card buy-card' + (dim ? " buy-dim" : "") + '">'
-    + '<div class="buy-card-hd" onclick="openBuyItem(' + q + ')"><div class="buy-card-name">' + esc(it.name) + '</div><span class="badge">' + esc(it.status || "need") + '</span></div>'
+    + '<div class="buy-card-hd" onclick="openBuyItem(' + q + ')">' + (buyImg(it) ? '<img class="buy-img buy-img-lg" src="' + esc(buyImg(it)) + '" alt="" loading="lazy">' : "") + '<div class="buy-card-name">' + esc(it.name) + '</div><span class="badge">' + esc(it.status || "need") + '</span></div>'
     + '<div class="buy-card-row"><div class="muted buy-card-line" onclick="openBuyItem(' + q + ')">' + (line || "&nbsp;") + '</div>'
     + '<div class="buy-qty"><button class="buy-step" onclick="buyQty(' + q + ',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(' + q + ',1)" aria-label="one more">+</button></div></div>'
     + '<div class="buy-tiles">' + BUY_VENDORS.map(function (v) { return buyTile(it, v.k); }).join("") + '</div>'
@@ -233,14 +234,14 @@ function buyHTML() {
     var pack = (co && co.pack) || ((it.offers || []).filter(function (o) { return o && o.pack; })[0] || {}).pack || "";
     var diffs = buyDiffs(it);
     h += '<tr' + (dim ? ' style="opacity:.55"' : '') + ' onclick="openBuyItem(\'' + it.id + '\')" style="cursor:pointer">'
-      + '<td>' + esc(it.name)
+      + '<td><div class="buy-name">' + (buyImg(it) ? '<img class="buy-img" src="' + esc(buyImg(it)) + '" alt="" loading="lazy">' : "") + '<span>' + esc(it.name) + '</span></div>'
       + (it.spec ? '<div class="muted buy-sub" style="white-space:normal">' + esc(it.spec) + '</div>' : '')
       + '<div class="muted buy-sub buy-narrow" style="white-space:normal">' + [brand, pack ? "pack of " + esc(pack) : "", it.forJob ? "for " + esc(it.forJob) : ""].filter(Boolean).join(" · ") + '</div>'
       + (diffs.length ? '<div class="buy-sub buy-diffs" style="white-space:normal">' + diffs.map(function (d) { return '<b>' + d.s + ':</b> ' + esc(d.text); }).join(' · ') + '</div>' : '')
       + (it.pick && it.pickWhy ? '<div class="buy-sub buy-diffs" style="white-space:normal"><b>Pick:</b> ' + esc(buyVendor(it.pick).l) + ' — ' + esc(it.pickWhy) + '</div>' : '')
       + '</td>'
-      + '<td class="buy-wide">' + esc(brand) + '</td><td class="buy-wide c">' + esc(pack) + '</td>'
-      + '<td class="c buy-qty" onclick="event.stopPropagation()"><button class="buy-step" onclick="buyQty(\'' + it.id + '\',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(\'' + it.id + '\',1)" aria-label="one more">+</button></td><td class="buy-wide buy-for">' + esc(it.forJob || "") + '</td>'
+      + '<td class="buy-wide buy-brand">' + esc(brand) + '</td><td class="buy-wide c">' + esc(pack) + '</td>'
+      + '<td class="c buy-qtycell" onclick="event.stopPropagation()"><div class="buy-qty"><button class="buy-step" onclick="buyQty(\'' + it.id + '\',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(\'' + it.id + '\',1)" aria-label="one more">+</button></div></td><td class="buy-wide buy-for">' + esc(it.forJob || "") + '</td>'
       + BUY_VENDORS.map(function (v) { return buyCell(it, v.k); }).join("")
       + '<td><span class="badge">' + esc(it.status || "need") + '</span></td></tr>';
   });
@@ -413,4 +414,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyHTML: buyHTML };
