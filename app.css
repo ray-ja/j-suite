@@ -142,20 +142,30 @@
   /* BUY LIST (js/203): links take the text colour (Ray, 2026-10-28, dark mode: "the dark blue is really hard to
      read"); the cheapest landed offer in a row is bold in the accent; ✓ marks his pick; ≈ marks a web-search
      price. Brand / Pack / For are columns on desktop and a line under the item on the phone. */
-  .buy-t a{color:var(--ink);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px}
-  .buy-t td.buy-best{font-weight:700}
-  .buy-t td.buy-best a{color:var(--accent-ink)}
-  body.dark .buy-t td.buy-best a{color:var(--accent)}
-  .buy-t td.buy-c{white-space:nowrap}
-  .buy-t .buy-sub{font-size:10px;white-space:nowrap;font-weight:400}
-  .buy-t .buy-diffs{color:var(--muted);margin-top:2px}
-  .buy-t .buy-delta{font-size:11px}
-  .buy-t .buy-pickmark{color:var(--accent);font-weight:800}
-  .buy-good{color:var(--accent-ink)} body.dark .buy-good{color:var(--accent)}
-  .buy-t td.buy-qty{white-space:nowrap} .buy-t td.buy-qty b{display:inline-block;min-width:22px;text-align:center}
-  .buy-t .buy-step{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:16px;line-height:1;cursor:pointer;padding:0}
-  @media (min-width:760px){ .buy-t .buy-narrow{display:none} }
-  @media (max-width:759px){ .buy-t .buy-wide{display:none} }
+  .buy-t a,.buy-tile a{color:var(--ink);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+  .buy-t{font-size:13px} .buy-t th,.buy-t td{padding:9px 10px;vertical-align:top} .buy-t td:first-child{min-width:190px}
+  .buy-t td.buy-best,.buy-tile.buy-best .buy-tile-p{font-weight:700}
+  .buy-t td.buy-best a,.buy-tile.buy-best .buy-tile-p a,.buy-good{color:var(--accent-ink)}
+  body.dark .buy-t td.buy-best a,body.dark .buy-tile.buy-best .buy-tile-p a,body.dark .buy-good{color:var(--accent)}
+  .buy-t td.buy-c{white-space:nowrap} .buy-t td.buy-for{min-width:140px;white-space:normal}
+  .buy-t .buy-sub{font-size:11px;white-space:nowrap;font-weight:400;margin-top:2px}
+  .buy-t .buy-diffs{color:var(--muted);margin-top:3px}
+  .buy-t .buy-delta,.buy-tile .buy-delta{font-size:11px;color:var(--muted)}
+  .buy-pickmark{color:var(--accent);font-weight:800}
+  .buy-foot{font-size:12px;margin-top:8px;line-height:1.45}
+  .buy-qty{white-space:nowrap;display:inline-flex;align-items:center;gap:4px} .buy-qty b{display:inline-block;min-width:26px;text-align:center;font-size:15px}
+  .buy-step{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:18px;line-height:1;cursor:pointer;padding:0}
+  /* phone cards */
+  .buy-card{padding:12px 14px;margin-bottom:10px} .buy-card.buy-dim{opacity:.6}
+  .buy-card-hd{display:flex;align-items:flex-start;gap:8px;cursor:pointer} .buy-card-name{font-size:16px;font-weight:700;line-height:1.3;flex:1}
+  .buy-card-row{display:flex;align-items:center;gap:8px;margin-top:4px} .buy-card-line{flex:1;font-size:13px;line-height:1.35;cursor:pointer}
+  .buy-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .buy-tile{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--soft)} .buy-tile.buy-best{border-color:var(--accent)} .buy-tile.buy-pick{box-shadow:inset 0 0 0 1px var(--accent)}
+  .buy-tile-v{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em} .buy-tile-p{font-size:18px;margin-top:2px} .buy-tile-s{font-size:12px;color:var(--muted);margin-top:2px}
+  .buy-tile-none .buy-tile-p{font-size:14px}
+  .buy-fold{margin-top:8px;font-size:13px;line-height:1.4} .buy-fold summary{cursor:pointer;color:var(--muted);font-weight:600} .buy-fold div{margin-top:4px}
+  @media (min-width:760px){ .buy-t .buy-narrow{display:none} .buy-cards{display:none} }
+  @media (max-width:759px){ .buy-t .buy-wide{display:none} .buy-tablewrap{display:none} }
   .tldr{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
   .tldr .t{flex:1 1 28%;min-width:92px;background:linear-gradient(135deg,var(--brand),var(--accent));color:#fff;border-radius:12px;padding:11px 10px}
   .tldr .t .v{font-size:18px;font-weight:800;line-height:1.1}

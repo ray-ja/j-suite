@@ -162,6 +162,37 @@ function buyCell(it, v) {
     + (isBest || d == null || d === 0 ? '' : ' <span class="muted buy-delta">+' + buyMoney(d) + '</span>')
     + '<div class="muted buy-sub">' + sub.join(" · ") + '</div></td>';
 }
+/* PHONE: one card per item (Ray, 2026-10-28: "a lot of small text and tiny little area"). Name and the status
+   chip on the first line, one muted line of brand · pack · job, the quantity stepper, then the four stores as
+   tiles with the landed price large; the Differences fold is a native <details>, so it opens and closes. */
+function buyTile(it, v) {
+  var vd = buyVendor(v), o = buyOffer(it, v), l = buyLanded(o, it.qty);
+  if (!o || l == null) return '<div class="buy-tile buy-tile-none"><div class="buy-tile-v">' + esc(vd.l) + '</div><div class="buy-tile-p muted">' + (o && o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">link</a>' : '—') + '</div></div>';
+  var b = buyBest(it), c = buyChosen(it), isBest = b && b.v === v, isPick = c && c.picked && c.v === v, d = buyDelta(it, v), prev = buyPrev(o);
+  var sub = o.pickup ? "pickup" : (+o.ship > 0 ? "+" + buyMoney(+o.ship) + " ship" : "free ship");
+  if (o.eta) sub += " · " + esc(o.eta);
+  var was = (prev && Math.abs(prev.price - (+o.price || 0)) > 0.004) ? '<div class="buy-tile-s">' + (+o.price > prev.price ? "↑" : "↓") + " was " + buyMoney(prev.price) + '</div>' : "";
+  return '<div class="buy-tile' + (isBest ? " buy-best" : "") + (isPick ? " buy-pick" : "") + '"><div class="buy-tile-v">' + esc(vd.l) + (isPick ? ' <span class="buy-pickmark">✓</span>' : "") + '</div>'
+    + '<div class="buy-tile-p">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">' : "") + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? "</a>" : "") + '</div>'
+    + '<div class="buy-tile-s">' + sub + (isBest || d == null || d === 0 ? "" : ' · <span class="buy-delta">+' + buyMoney(d) + "</span>") + '</div>' + was + '</div>';
+}
+function buyCard(it) {
+  var dim = it.status === "own" || it.status === "skip" || it.status === "received";
+  var c = buyChosen(it), co = c ? buyOffer(it, c.v) : null;
+  var brand = (co && co.brand) || ((it.offers || []).filter(function (o) { return o && o.brand; })[0] || {}).brand || "";
+  var pack = (co && co.pack) || ((it.offers || []).filter(function (o) { return o && o.pack; })[0] || {}).pack || "";
+  var line = [brand, pack ? "pack of " + esc(pack) : "", it.forJob ? "for " + esc(it.forJob) : "", it.spec ? esc(it.spec) : ""].filter(Boolean).join(" · ");
+  var diffs = buyDiffs(it), q = '\'' + it.id + '\'';
+  return '<div class="card buy-card' + (dim ? " buy-dim" : "") + '">'
+    + '<div class="buy-card-hd" onclick="openBuyItem(' + q + ')"><div class="buy-card-name">' + esc(it.name) + '</div><span class="badge">' + esc(it.status || "need") + '</span></div>'
+    + '<div class="buy-card-row"><div class="muted buy-card-line" onclick="openBuyItem(' + q + ')">' + (line || "&nbsp;") + '</div>'
+    + '<div class="buy-qty"><button class="buy-step" onclick="buyQty(' + q + ',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(' + q + ',1)" aria-label="one more">+</button></div></div>'
+    + '<div class="buy-tiles">' + BUY_VENDORS.map(function (v) { return buyTile(it, v.k); }).join("") + '</div>'
+    + (diffs.length || (it.pick && it.pickWhy) ? '<details class="buy-fold"><summary>Differences</summary>'
+        + diffs.map(function (d) { return '<div><b>' + esc(buyVendor(d.v).l) + ':</b> ' + esc(d.text) + '</div>'; }).join("")
+        + (it.pick && it.pickWhy ? '<div><b>Your pick, ' + esc(buyVendor(it.pick).l) + ':</b> ' + esc(it.pickWhy) + '</div>' : "") + '</details>' : "")
+    + '</div>';
+}
 function rBuy() { view.innerHTML = buyHTML(); }
 function buyHTML() {
   var all = actBuy(), lists = buyLists();
@@ -177,6 +208,7 @@ function buyHTML() {
       + lists.map(function (l) { return '<button class="subbtn ' + (BUY_LIST === l ? "on" : "") + '" onclick="buySetList(' + JSON.stringify(l).replace(/"/g, "&quot;") + ')">' + esc(l) + '</button>'; }).join("") + '</div>';
   }
   if (!items.length) return h + '<div class="card"><div class="muted">Nothing on the list. Paste the list you were given, or add one item.</div></div>';
+  var order = { need: 0, cart: 1, ordered: 2, received: 3, later: 4, own: 5, skip: 6 };
   /* totals: what it costs to buy what is left, at Amazon alone vs the chosen store for each line */
   var saving = Math.round((t.amazon - t.best) * 100) / 100;
   var lastCheck = ""; items.forEach(function (it) { (it.offers || []).forEach(function (o) { if (o && o.checkedAt && o.checkedAt > lastCheck) lastCheck = o.checkedAt; }); });
@@ -190,10 +222,11 @@ function buyHTML() {
     + (lastCheck ? '<div><div class="muted" style="font-size:11px">Prices checked</div>' + esc(typeof fmtDate === "function" ? fmtDate(lastCheck) : lastCheck) + (pendingRecheck ? ' <span class="muted" style="font-size:11px">· recheck asked</span>' : '') + '</div>' : '')
     + '<div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap"><button class="btn ghost sm" onclick="buyRecheck()">🔄 Recheck prices</button><button class="btn ghost sm" onclick="buyCopyAmazonPlan()">📦 Amazon plan</button><button class="btn ghost sm" onclick="buyShowStoreRun()">🏬 Store run</button></div>'
     + '</div>';
-  h += '<div class="card" style="padding:0;overflow:auto"><table class="otable buy-t"><thead><tr><th>Item</th><th class="buy-wide">Brand</th><th class="buy-wide c">Pack</th><th class="c">Qty</th><th class="buy-wide">For</th>'
+  var sorted = items.slice().sort(function (a, b) { return (order[a.status] || 0) - (order[b.status] || 0) || String(a.name).localeCompare(String(b.name)); });
+  h += '<div class="buy-cards">' + sorted.map(buyCard).join("") + '</div>';
+  h += '<div class="card buy-tablewrap" style="padding:0;overflow:auto"><table class="otable buy-t"><thead><tr><th>Item</th><th class="buy-wide">Brand</th><th class="buy-wide c">Pack</th><th class="c">Qty</th><th class="buy-wide">For</th>'
     + BUY_VENDORS.map(function (v) { return '<th>' + esc(v.l) + '</th>'; }).join("") + '<th>Status</th></tr></thead><tbody>';
-  var order = { need: 0, cart: 1, ordered: 2, received: 3, later: 4, own: 5, skip: 6 };
-  items.slice().sort(function (a, b) { return (order[a.status] || 0) - (order[b.status] || 0) || String(a.name).localeCompare(String(b.name)); }).forEach(function (it) {
+  sorted.forEach(function (it) {
     var dim = it.status === "own" || it.status === "skip" || it.status === "received";
     var c = buyChosen(it), co = c ? buyOffer(it, c.v) : null;
     var brand = (co && co.brand) || ((it.offers || []).filter(function (o) { return o && o.brand; })[0] || {}).brand || "";
@@ -207,12 +240,12 @@ function buyHTML() {
       + (it.pick && it.pickWhy ? '<div class="buy-sub buy-diffs" style="white-space:normal"><b>Pick:</b> ' + esc(buyVendor(it.pick).l) + ' — ' + esc(it.pickWhy) + '</div>' : '')
       + '</td>'
       + '<td class="buy-wide">' + esc(brand) + '</td><td class="buy-wide c">' + esc(pack) + '</td>'
-      + '<td class="c buy-qty" onclick="event.stopPropagation()"><button class="buy-step" onclick="buyQty(\'' + it.id + '\',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(\'' + it.id + '\',1)" aria-label="one more">+</button></td><td class="buy-wide" style="white-space:normal">' + esc(it.forJob || "") + '</td>'
+      + '<td class="c buy-qty" onclick="event.stopPropagation()"><button class="buy-step" onclick="buyQty(\'' + it.id + '\',-1)" aria-label="one fewer">−</button><b>' + (it.qty || 1) + '</b><button class="buy-step" onclick="buyQty(\'' + it.id + '\',1)" aria-label="one more">+</button></td><td class="buy-wide buy-for">' + esc(it.forJob || "") + '</td>'
       + BUY_VENDORS.map(function (v) { return buyCell(it, v.k); }).join("")
       + '<td><span class="badge">' + esc(it.status || "need") + '</span></td></tr>';
   });
   h += '</tbody></table></div>';
-  h += '<div class="muted" style="font-size:11px;margin-top:6px">Landed = price × qty + shipping. Bold is the cheapest; ✓ is your pick when you chose something else on purpose. ≈ means the price came from a web search, not the store page: check it in the store app before you drive. "was" shows the last price we had.</div>';
+  h += '<div class="muted buy-foot">Landed = price × qty + shipping. Bold is the cheapest; ✓ is your pick when you chose something else on purpose. ≈ means the price came from a web search, not the store page: check it in the store app before you drive. "was" shows the last price we had.</div>';
   return h;
 }
 
@@ -380,4 +413,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyHTML: buyHTML };
