@@ -147,6 +147,37 @@ function buyDiffs(item) {
   return BUY_VENDORS.map(function (v) { var o = buyOffer(item, v.k); return o && o.diff ? { v: v.k, s: v.s, text: o.diff } : null; }).filter(Boolean);
 }
 
+/* ---- reviews, the per-item store selector, and cart links ----
+   Ray, 2026-10-28: "a little selector I can use to pick which one I want to go with… I would also like to see
+   the reviews… low number of reviews… should be flagged." An offer carries rating (0-5) and reviews (count).
+   Under 5 reviews is "unreliable", under 25 "few reviews"; no count at all says so. Tapping a store's price
+   on an item picks that store (tap again to go back to cheapest). Cart links: Amazon's add-to-cart form and
+   Walmart's affiliate add-to-cart URL take a list of items; Home Depot and Lowe's have no such link, so
+   those are a tap-each list. */
+var BUY_REVIEW_FEW = 25, BUY_REVIEW_UNRELIABLE = 5;
+function buyReviewFlag(o) {
+  if (!o || !(+o.price > 0)) return "";
+  var n = +o.reviews; if (!(n >= 0) || o.reviews == null || o.reviews === "") return "no review count";
+  if (n < BUY_REVIEW_UNRELIABLE) return "unreliable: " + n + " review" + (n === 1 ? "" : "s");
+  if (n < BUY_REVIEW_FEW) return "few reviews: " + n;
+  return "";
+}
+function buyReviewText(o) { if (!o || !(+o.rating > 0)) return ""; return "★" + (Math.round(+o.rating * 10) / 10) + (o.reviews != null && o.reviews !== "" ? " · " + (+o.reviews).toLocaleString() : ""); }
+function buyTogglePick(item, v) { return (item && item.pick === v) ? "" : v; }
+function buyCartLinks(items) {
+  var amz = [], wmt = [], hd = [], low = [];
+  (items || []).forEach(function (it) {
+    if (!buyIsOpen(it)) return; var c = buyChosen(it); if (!c) return; var o = buyOffer(it, c.v); if (!o) return;
+    var q = Math.max(1, +it.qty || 1), row = { name: it.name, qty: q, url: o.url || "", sku: o.sku || "", landed: c.landed };
+    if (c.v === "amazon" && o.sku) amz.push(row); else if (c.v === "walmart" && o.sku) wmt.push(row); else if (c.v === "hd") hd.push(row); else if (c.v === "lowes") low.push(row);
+  });
+  return {
+    amazon: { n: amz.length, rows: amz, url: amz.length ? "https://www.amazon.com/gp/aws/cart/add.html?" + amz.map(function (r, i) { return "ASIN." + (i + 1) + "=" + r.sku + "&Quantity." + (i + 1) + "=" + r.qty; }).join("&") : "" },
+    walmart: { n: wmt.length, rows: wmt, url: wmt.length ? "https://affil.walmart.com/cart/addToCart?items=" + wmt.map(function (r) { return r.sku + "|" + r.qty; }).join(",") : "" },
+    hd: { n: hd.length, rows: hd, url: "" }, lowes: { n: low.length, rows: low, url: "" }
+  };
+}
+
 /* ---- SEND TO PRICE TOOL (the browser button) ----
    Home Depot, Lowe's and Walmart block automated price pulls; Ray on his own phone or laptop is not automated.
    The bookmark below runs on the product page he is looking at, reads title / price / brand / picture / the
@@ -160,15 +191,15 @@ function buyInboxOffer(p, at) {
   var u = buyParseUrl(p.url); if (!u) return null;
   var price = parseFloat(String(p.price || "").replace(/[^0-9.]/g, "")) || 0;
   var pick = /pickup|in stock at|aisle|bay \d/i.test(String(p.pickup || "")) && !/not (available|sold)|out of stock|ship(ping)? only|unavailable/i.test(String(p.pickup || ""));
-  return { v: u.v, sku: u.sku, url: u.url, price: price, ship: 0, pickup: u.v === "hd" || u.v === "lowes" ? pick : false, eta: String(p.eta || "").slice(0, 40), seller: String(p.seller || "").slice(0, 60), brand: String(p.brand || "").slice(0, 40), pack: "", diff: String(p.pickup || "").slice(0, 80), src: "verified", checkedAt: at || "", hist: [], img: /^https?:\/\//.test(String(p.img || "")) ? String(p.img).slice(0, 400) : "" };
+  return { v: u.v, sku: u.sku, url: u.url, price: price, ship: 0, pickup: u.v === "hd" || u.v === "lowes" ? pick : false, eta: String(p.eta || "").slice(0, 40), seller: String(p.seller || "").slice(0, 60), brand: String(p.brand || "").slice(0, 40), pack: "", diff: String(p.pickup || "").slice(0, 80), src: "verified", checkedAt: at || "", hist: [], img: /^https?:\/\//.test(String(p.img || "")) ? String(p.img).slice(0, 400) : "", rating: +p.rating || 0, reviews: (p.reviews === "" || p.reviews == null) ? "" : (parseInt(String(p.reviews).replace(/[^0-9]/g, ""), 10) || 0) };
 }
 /* the bookmark's code, kept as a function so it reads as code; toString() builds the javascript: link */
 function buyBookmarkletFn() {
   var q = function (s) { var e = document.querySelector(s); return e ? (e.content || e.getAttribute("content") || e.textContent || e.src || "").trim() : ""; };
-  var ld = ""; try { document.querySelectorAll("script[type=\"application/ld+json\"]").forEach(function (x) { var j = JSON.parse(x.textContent); [].concat(j).forEach(function (o) { if (o && (o["@type"] === "Product" || (o["@graph"] || []).some(function (g) { return g["@type"] === "Product"; }))) { var p = o["@type"] === "Product" ? o : o["@graph"].filter(function (g) { return g["@type"] === "Product"; })[0]; var of = [].concat(p.offers || [])[0] || {}; ld = { price: of.price || of.lowPrice || "", brand: (p.brand && (p.brand.name || p.brand)) || "", img: [].concat(p.image || [])[0] || "", name: p.name || "" }; } }); }); } catch (e) {}
+  var ld = ""; try { document.querySelectorAll("script[type=\"application/ld+json\"]").forEach(function (x) { var j = JSON.parse(x.textContent); [].concat(j).forEach(function (o) { if (o && (o["@type"] === "Product" || (o["@graph"] || []).some(function (g) { return g["@type"] === "Product"; }))) { var p = o["@type"] === "Product" ? o : o["@graph"].filter(function (g) { return g["@type"] === "Product"; })[0]; var of = [].concat(p.offers || [])[0] || {}; var ar = p.aggregateRating || {}; ld = { price: of.price || of.lowPrice || "", brand: (p.brand && (p.brand.name || p.brand)) || "", img: [].concat(p.image || [])[0] || "", name: p.name || "", rating: ar.ratingValue || "", reviews: ar.reviewCount || ar.ratingCount || "" }; } }); }); } catch (e) {}
   var price = (ld && ld.price) || q("#corePrice_feature_div .a-offscreen") || q("[data-testid=price] .sui-text-9xl, [data-testid=price]") || q("[itemprop=price]") || q("meta[property=\"product:price:amount\"]") || q(".item-price-dollar") || ((document.body.innerText.match(/\$\s?\d{1,4}(?:[.,]\d\d)/) || [])[0] || "");
   var pickup = ((document.body.innerText.match(/(Free Pickup[^\n.]{0,60}|Pickup[^\n.]{0,60}|In stock at[^\n.]{0,40}|Aisle \d+[^\n.]{0,30}|Out of stock[^\n.]{0,30}|Not sold in stores|Unavailable at[^\n.]{0,40})/) || [])[0] || "");
-  var p = { url: location.href.split("?")[0].split("#")[0], title: (ld && ld.name) || q("meta[property=\"og:title\"]") || q("#productTitle") || document.title, price: price, brand: (ld && ld.brand) || q("#bylineInfo") || q("meta[property=\"product:brand\"]") || "", img: (ld && ld.img) || q("meta[property=\"og:image\"]") || q("#landingImage") || "", pickup: pickup, eta: ((document.body.innerText.match(/(?:Get it|Arrives|FREE delivery|Delivery)[^\n.]{0,40}/) || [])[0] || "").slice(0, 40) };
+  var p = { url: location.href.split("?")[0].split("#")[0], title: (ld && ld.name) || q("meta[property=\"og:title\"]") || q("#productTitle") || document.title, price: price, brand: (ld && ld.brand) || q("#bylineInfo") || q("meta[property=\"product:brand\"]") || "", img: (ld && ld.img) || q("meta[property=\"og:image\"]") || q("#landingImage") || "", pickup: pickup, eta: ((document.body.innerText.match(/(?:Get it|Arrives|FREE delivery|Delivery)[^\n.]{0,40}/) || [])[0] || "").slice(0, 40), rating: (ld && ld.rating) || ((q("#acrPopover") || (document.body.innerText.match(/(\d\.\d) out of 5/) || [])[1] || "").match(/\d\.\d/) || [""])[0], reviews: (ld && ld.reviews) || ((q("#acrCustomerReviewText") || (document.body.innerText.match(/([\d,]+)\s+(?:global )?(?:ratings|reviews)/i) || [])[1] || "").replace(/[^0-9]/g, "")) };
   var b64 = btoa(unescape(encodeURIComponent(JSON.stringify(p)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   window.open("https://app.jsuite.dev/?tab=buy&buy=" + b64, "_blank");
 }
@@ -187,10 +218,12 @@ function buyCell(it, v) {
   if (o.pickup) sub.push("pickup"); else if (+o.ship > 0) sub.push("+" + buyMoney(+o.ship) + " ship"); else sub.push("free ship");
   if (o.eta) sub.push(esc(o.eta));
   if (prev && Math.abs(prev.price - (+o.price || 0)) > 0.004) sub.push((+o.price > prev.price ? "↑" : "↓") + " was " + buyMoney(prev.price));
-  return '<td class="buy-c' + (isBest ? ' buy-best' : '') + (isPick ? ' buy-pick' : '') + '"><span class="buy-price">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">' : '') + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? '</a>' : '') + '</span>'
+  var rv = buyReviewText(o), rf = buyReviewFlag(o);
+  return '<td class="buy-c buy-tap' + (isBest ? ' buy-best' : '') + (isPick ? ' buy-pick' : '') + '" onclick="event.stopPropagation();buyPick(\'' + it.id + '\',\'' + v + '\')" title="tap to buy this one here"><span class="buy-price">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' : '') + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? '</a>' : '') + '</span>'
     + (isPick ? ' <span class="buy-pickmark" title="your pick">✓</span>' : '')
     + (isBest || d == null || d === 0 ? '' : ' <span class="muted buy-delta">+' + buyMoney(d) + '</span>')
-    + '<div class="muted buy-sub">' + sub.join(" · ") + '</div></td>';
+    + '<div class="muted buy-sub">' + sub.join(" · ") + '</div>'
+    + (rv || rf ? '<div class="buy-sub buy-rev">' + rv + (rf ? ' <span class="buy-flag">' + esc(rf) + '</span>' : '') + '</div>' : '') + '</td>';
 }
 /* PHONE: one card per item (Ray, 2026-10-28: "a lot of small text and tiny little area"). Name and the status
    chip on the first line, one muted line of brand · pack · job, the quantity stepper, then the four stores as
@@ -202,9 +235,11 @@ function buyTile(it, v) {
   var sub = o.pickup ? "pickup" : (+o.ship > 0 ? "+" + buyMoney(+o.ship) + " ship" : "free ship");
   if (o.eta) sub += " · " + esc(o.eta);
   var was = (prev && Math.abs(prev.price - (+o.price || 0)) > 0.004) ? '<div class="buy-tile-s">' + (+o.price > prev.price ? "↑" : "↓") + " was " + buyMoney(prev.price) + '</div>' : "";
-  return '<div class="buy-tile' + (isBest ? " buy-best" : "") + (isPick ? " buy-pick" : "") + '"><div class="buy-tile-v">' + esc(vd.l) + (isPick ? ' <span class="buy-pickmark">✓</span>' : "") + '</div>'
-    + '<div class="buy-tile-p">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener">' : "") + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? "</a>" : "") + '</div>'
-    + '<div class="buy-tile-s">' + sub + (isBest || d == null || d === 0 ? "" : ' · <span class="buy-delta">+' + buyMoney(d) + "</span>") + '</div>' + was + '</div>';
+  var rv = buyReviewText(o), rf = buyReviewFlag(o);
+  return '<div class="buy-tile buy-tap' + (isBest ? " buy-best" : "") + (isPick ? " buy-pick" : "") + '" onclick="buyPick(\'' + it.id + '\',\'' + v + '\')"><div class="buy-tile-v">' + esc(vd.l) + (isPick ? ' <span class="buy-pickmark">✓ buying here</span>' : "") + '</div>'
+    + '<div class="buy-tile-p">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' : "") + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? "</a>" : "") + '</div>'
+    + '<div class="buy-tile-s">' + sub + (isBest || d == null || d === 0 ? "" : ' · <span class="buy-delta">+' + buyMoney(d) + "</span>") + '</div>' + was
+    + (rv || rf ? '<div class="buy-tile-s buy-rev">' + rv + (rf ? ' <span class="buy-flag">' + esc(rf) + '</span>' : '') + '</div>' : '') + '</div>';
 }
 function buyCard(it) {
   var dim = it.status === "own" || it.status === "skip" || it.status === "received";
@@ -247,7 +282,7 @@ function buyHTML() {
   if (!items.length) return h + '<div class="card"><div class="muted">Nothing on the list. Paste the list you were given, or add one item.</div></div>';
   var order = { need: 0, cart: 1, ordered: 2, received: 3, later: 4, own: 5, skip: 6 };
   /* totals: what it costs to buy what is left, at Amazon alone vs the chosen store for each line */
-  var saving = Math.round((t.amazon - t.best) * 100) / 100;
+  var saving = Math.round((t.amazon - t.best) * 100) / 100, cl = buyCartLinks(items);
   var lastCheck = ""; items.forEach(function (it) { (it.offers || []).forEach(function (o) { if (o && o.checkedAt && o.checkedAt > lastCheck) lastCheck = o.checkedAt; }); });
   var pendingRecheck = items.filter(function (it) { return buyIsOpen(it) && it.recheckAt && (!lastCheck || it.recheckAt > lastCheck); }).length;
   h += '<div class="card" style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline">'
@@ -257,7 +292,12 @@ function buyHTML() {
     + (saving > 0.5 ? '<div><div class="muted" style="font-size:11px">Saved by splitting</div><b class="buy-good">' + buyMoney(saving) + '</b></div>' : '')
     + (t.unpriced ? '<div><div class="muted" style="font-size:11px">No price yet</div>' + t.unpriced + '</div>' : '')
     + (lastCheck ? '<div><div class="muted" style="font-size:11px">Prices checked</div>' + esc(typeof fmtDate === "function" ? fmtDate(lastCheck) : lastCheck) + (pendingRecheck ? ' <span class="muted" style="font-size:11px">· recheck asked</span>' : '') + '</div>' : '')
-    + '<div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap"><button class="btn ghost sm" onclick="buyRecheck()">🔄 Recheck prices</button><button class="btn ghost sm" onclick="buyCopyAmazonPlan()">📦 Amazon plan</button><button class="btn ghost sm" onclick="buyShowStoreRun()">🏬 Store run</button></div>'
+    + '<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button class="btn ghost sm" onclick="buyRecheck()">🔄 Recheck prices</button>'
+    + (cl.amazon.n ? '<a class="btn acc sm" href="' + esc(cl.amazon.url) + '" target="_blank" rel="noopener" onclick="buyNoteCart(\'amazon\')">🛒 Amazon cart · ' + cl.amazon.n + '</a>' : "")
+    + (cl.walmart.n ? '<a class="btn acc sm" href="' + esc(cl.walmart.url) + '" target="_blank" rel="noopener">🛒 Walmart cart · ' + cl.walmart.n + '</a>' : "")
+    + (cl.hd.n ? '<button class="btn ghost sm" onclick="buyShowStoreRun(\'hd\')">🏬 Home Depot list · ' + cl.hd.n + '</button>' : "")
+    + (cl.lowes.n ? '<button class="btn ghost sm" onclick="buyShowStoreRun(\'lowes\')">🏬 Lowe\'s list · ' + cl.lowes.n + '</button>' : "")
+    + '<button class="btn ghost sm" onclick="buyCopyAmazonPlan()">📦 Amazon plan</button></div>'
     + '</div>';
   var sorted = items.slice().sort(function (a, b) { return (order[a.status] || 0) - (order[b.status] || 0) || String(a.name).localeCompare(String(b.name)); });
   h += '<div class="buy-cards">' + sorted.map(buyCard).join("") + '</div>';
@@ -285,13 +325,19 @@ function buyHTML() {
   h += '<details class="card buy-fold" style="margin-top:10px"><summary>🔖 Get the browser button</summary><div style="font-size:13px;line-height:1.45;margin-top:6px">Drag this link to your bookmarks bar, or on the phone: bookmark any page, then edit the bookmark and paste the code below as its address. On a Home Depot, Walmart, Lowe\'s or Amazon product page, tap it and the price, brand, picture and pickup line land here as a verified offer.</div>'
     + '<div style="margin:8px 0"><a class="btn ghost sm" href="' + esc(buyBookmarkletHref()) + '" onclick="event.preventDefault();alert(\'Drag me to the bookmarks bar instead of clicking.\')">🛒 Send to Price tool</a> <button class="btn ghost sm" onclick="buyCopyBookmarklet()">Copy the code</button></div>'
     + '<textarea id="buy_bm" rows="2" readonly style="font-size:11px">' + esc(buyBookmarkletHref()) + '</textarea></details>';
-  h += '<div class="muted buy-foot">Landed = price × qty + shipping. Bold is the cheapest; ✓ is your pick when you chose something else on purpose. ≈ means the price came from a web search, not the store page: check it in the store app before you drive. "was" shows the last price we had.</div>';
+  h += '<div class="muted buy-foot">Landed = price × qty + shipping. Bold is the cheapest; ✓ is your pick when you chose something else on purpose. ≈ means the price came from a web search, not the store page: check it in the store app before you drive. "was" shows the last price we had. Tap a store\'s price to buy that one there; tap again to go back to cheapest. Review counts under ' + BUY_REVIEW_FEW + ' are flagged.</div>';
   return h;
 }
 
 /* ---- actions ---- */
 if (typeof window !== "undefined") {
   window.buySetList = function (l) { BUY_LIST = l; render(); };
+  window.buyPick = function (id, v) {
+    var x = (D().buyItems || []).filter(function (y) { return y && y.id === id; })[0]; if (!x) return;
+    if (!buyOffer(x, v) || buyLanded(buyOffer(x, v), x.qty) == null) return;   /* nothing to pick without a price */
+    x.pick = buyTogglePick(x, v); if (!x.pick) x.pickWhy = "";
+    if (typeof touch === "function") touch(x); if (typeof save === "function") save(); render();
+  };
   window.buyInboxDrop = function () { BUY_INBOX = null; try { sessionStorage.removeItem("jra_buy_inbox"); history.replaceState(null, "", location.pathname); } catch (e) {} render(); };
   window.buyInboxSave = function () {
     if (!BUY_INBOX) return; var d = D(); if (!d.buyItems) d.buyItems = [];
@@ -457,8 +503,9 @@ if (typeof window !== "undefined") {
     var done = function () { modal("Amazon plan", '<div class="muted" style="font-size:12px">' + plan.length + ' items we are buying at Amazon. This is what the cart scripts read; nothing is ordered from here.</div><textarea rows="6" style="margin-top:8px" readonly>' + esc(txt) + '</textarea>'); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, done); else done();
   };
-  window.buyShowStoreRun = function () {
-    var items = actBuy().filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; }), g = buyStoreRun(items), keys = Object.keys(g);
+  window.buyNoteCart = function (v) { /* the cart link opened in a new tab; nothing to record yet (ordering stays Ray's) */ };
+  window.buyShowStoreRun = function (only) {
+    var items = actBuy().filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; }), g = buyStoreRun(items), keys = Object.keys(g).filter(function (k) { return !only || k === only; });
     if (!keys.length) { modal("Store run", '<div class="muted">Everything open is an Amazon buy right now, so there is no store run.</div>'); return; }
     modal("Store run", keys.map(function (k) {
       var rows = g[k], sum = rows.reduce(function (s, r) { return s + r.landed; }, 0);
@@ -468,4 +515,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyReviewFlag: buyReviewFlag, buyReviewText: buyReviewText, buyTogglePick: buyTogglePick, buyCartLinks: buyCartLinks, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };
