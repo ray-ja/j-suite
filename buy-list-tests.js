@@ -195,10 +195,17 @@ t.buyApifyApply(slab3, "hd", [t.buyApifyMap("hd", { recordType: "product", produ
 eq("Home Depot without a pickup field keeps the pickup it had", [slab3.buyItems[0].offers[0].pickup, slab3.buyItems[0].offers[0].src], [true, "verified"]);
 t.buyApifyApply(slab3, "walmart", [wm], "2026-11-02");
 eq("Walmart apply writes price, ship, seller and keeps the snippet price as history", [slab3.buyItems[0].offers[1].price, slab3.buyItems[0].offers[1].ship, slab3.buyItems[0].offers[1].seller, slab3.buyItems[0].offers[1].hist[0].price], [48.99, 0, "HCY Wholesale", 22.94]);
+eq("an Amazon price in another currency is ignored (the CAD2671 first aid kit)", t.buyApifyMap("amazon", { asin: "B0B3BRH4H2", price: { value: 2671, currency: "USD", symbol: "CAD", raw: "CAD2671" } }).price, 0);
+const slab4 = { buyItems: [{ id: "f", status: "cart", qty: 1, offers: [{ v: "amazon", sku: "B0B3BRH4H2", price: 26.99, src: "verified", checkedAt: "2026-10-28" }] }] };
+const ap4 = t.buyApifyApply(slab4, "amazon", [{ key: "B0B3BRH4H2", price: 267.1 }], "2026-11-02");
+eq("a price that jumps past 3x is held back and flagged, the old price stays", [ap4.updated, ap4.flagged, slab4.buyItems[0].offers[0].price, /kept \$26\.99/.test(slab4.buyItems[0].offers[0].flag)], [0, 1, 26.99, true]);
+t.buyApifyApply(slab4, "amazon", [{ key: "B0B3BRH4H2", price: 29.83 }], "2026-11-03");
+eq("a sane price next time writes and clears the flag", [slab4.buyItems[0].offers[0].price, slab4.buyItems[0].offers[0].flag], [29.83, undefined]);
 eq("a zero price from the store is ignored, not written", t.buyApifyApply(slab2, "amazon", [{ key: "B0001YXFFM", price: 0 }], "2026-11-05").updated, 0);
 const S203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf8");
 ok("the client tries /api/buy/recheck first and falls back to the to-do on no-apify", /\/api\/buy\/recheck/.test(S203) && /no-apify/.test(S203) && /function buyRecheckTodo/.test(S203));
 const SRV = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
+ok("the table shows the flag", /o\.flag \? '<div class="buy-sub buy-flag">/.test(S203) && /o\.flag \? '<div class="buy-tile-s buy-flag">/.test(S203));
 ok("every store's results are attached before the apply runs (the last store used to be dropped)", /error: err \|\| "", mapped: mapped \}/.test(SRV) && !/\n\s*ran\[v\]\.mapped = mapped;/.test(SRV));
 ok("the recheck runs in the background: the route answers started, the runner polls past run-sync's 5-minute cap", /started: true/.test(SRV) && /function apifyRun\(/.test(SRV) && /waitForFinish=60/.test(SRV) && !/run-sync-get-dataset-items/.test(SRV));
 ok("one recheck at a time per org", /BUY_RECHECK\[org\] && BUY_RECHECK\[org\]\.running/.test(SRV));

@@ -3150,7 +3150,9 @@ function buyApifyMap(vendor, r) {
   if (!r || typeof r !== "object") return null;
   if (vendor === "amazon") {
     const img = Array.isArray(r.images) ? (typeof r.images[0] === "string" ? r.images[0] : (r.images[0] && (r.images[0].link || r.images[0].url))) : (r.image || r.main_image || "");
-    return { key: String(r.asin || "").toUpperCase(), price: numOf(r.price), rating: numOf(r.rating), reviews: r.ratings_total != null ? numOf(r.ratings_total) : "", img: img || "", title: r.title || "", brand: r.brand || "", avail: r.availability || (r.in_stock === false ? "out of stock" : ""), pickup: false };
+    /* 2026-11-02: one item came back as {value:2671, raw:"CAD2671"} (a Canadian page); only a "$" price counts */
+    const usd = !(r.price && typeof r.price === "object" && r.price.raw && !/^\s*(US)?\$/.test(String(r.price.raw)));
+    return { key: String(r.asin || "").toUpperCase(), price: usd ? numOf(r.price) : 0, rating: numOf(r.rating), reviews: r.ratings_total != null ? numOf(r.ratings_total) : "", img: img || "", title: r.title || "", brand: r.brand || "", avail: r.availability || (r.in_stock === false ? "out of stock" : ""), pickup: false };
   }
   if (vendor === "hd") {
     if (r.recordType && r.recordType !== "product") return null;
@@ -3171,7 +3173,7 @@ function buyApifyMap(vendor, r) {
 }
 /* write mapped results onto the matching offers; the old price stays in hist with its date. Returns {updated, moved}. */
 function buyApifyApply(slab, vendor, mapped, today) {
-  let updated = 0, moved = 0; const byKey = {};
+  let updated = 0, moved = 0, flagged = 0; const byKey = {};
   (mapped || []).forEach(m => { if (m && m.key) byKey[m.key] = m; });
   ((slab && slab.buyItems) || []).forEach(it => {
     if (!it || it.deleted) return;
@@ -3180,6 +3182,9 @@ function buyApifyApply(slab, vendor, mapped, today) {
       const m = byKey[o.sku] || (o.url && Object.values(byKey).find(x => o.url.indexOf(x.key) >= 0));
       if (!m || !(m.price > 0)) return;
       const prevPrice = +o.price || 0; if (!Array.isArray(o.hist)) o.hist = [];
+      /* a jump past 3x either way is far more likely a bad read than a real price: keep the old one, flag it */
+      if (prevPrice > 0 && (m.price > prevPrice * 3 || m.price < prevPrice / 3)) { o.flag = "Store check said $" + (Math.round(m.price * 100) / 100) + " on " + today + "; kept $" + prevPrice + ". Look before buying."; it.updatedAt = Date.now(); flagged++; return; }
+      if (o.flag) delete o.flag;
       if (prevPrice > 0 && Math.abs(prevPrice - m.price) > 0.004) { o.hist = (o.hist || []).concat([{ at: o.checkedAt || "", price: prevPrice, ship: +o.ship || 0 }]).slice(-24); moved++; }
       o.price = Math.round(m.price * 100) / 100; o.src = "verified"; o.checkedAt = today;
       if (m.rating) o.rating = Math.round(m.rating * 10) / 10; if (m.reviews !== "" && m.reviews != null) o.reviews = m.reviews;
@@ -3192,7 +3197,7 @@ function buyApifyApply(slab, vendor, mapped, today) {
       it.updatedAt = Date.now(); it.recheckAt = ""; updated++;
     });
   });
-  return { updated, moved };
+  return { updated, moved, flagged };
 }
 function apifyToken() { try { const k = orgKeysLoad(); return (k && k.apify && k.apify.token) || ""; } catch (e) { return ""; } }
 /* async run: start, poll until the run ends (Amazon's accurate actor needs ~6-7 min for 25 items, past the
@@ -5495,7 +5500,7 @@ const server = http.createServer((req, res) => {
           ran[v] = { asked: plan[v].length, got: mapped.length, status: code, error: err || "", mapped: mapped };
           if (--pending === 0) {
             const store = loadStore(); let updated = 0, moved = 0;   /* re-read: the runs took minutes, other writes may have landed */
-            vendors.forEach(v2 => { const m = ran[v2].mapped || []; const a = buyApifyApply(store[org], v2, m, today); ran[v2].updated = a.updated; ran[v2].moved = a.moved; updated += a.updated; moved += a.moved; delete ran[v2].mapped; });
+            vendors.forEach(v2 => { const m = ran[v2].mapped || []; const a = buyApifyApply(store[org], v2, m, today); ran[v2].updated = a.updated; ran[v2].moved = a.moved; ran[v2].flagged = a.flagged; updated += a.updated; moved += a.moved; delete ran[v2].mapped; });
             let saveErr = ""; try { saveStore(store); } catch (e) { saveErr = "save failed"; }
             Object.assign(job, { running: false, doneAt: Date.now(), updated, moved, ran, error: saveErr });
           }

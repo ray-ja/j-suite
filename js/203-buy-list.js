@@ -205,7 +205,8 @@ function buyCartSheet(cl) {
 function buyRecheckSummary(rc) {
   var E = (typeof esc === "function") ? esc : String;
   if (!rc) return '<div class="muted">No check has run yet.</div>';
-  return '<div style="font-size:13px">' + (rc.updated || 0) + ' prices refreshed, ' + (rc.moved || 0) + ' moved since last time.'
+  var fl = 0; Object.keys(rc.ran || {}).forEach(function (v) { fl += +(rc.ran[v].flagged || 0); });
+  return '<div style="font-size:13px">' + (rc.updated || 0) + ' prices refreshed, ' + (rc.moved || 0) + ' moved since last time.' + (fl ? ' ' + fl + ' looked wrong and were held back (marked ⚠ in the table).' : '')
     + Object.keys(rc.ran || {}).map(function (v) { var r = rc.ran[v]; return '<div class="muted">' + E(buyVendor(v).l) + ': ' + (r.got || 0) + ' of ' + (r.asked || 0) + (r.error ? ' · ' + E(r.error) : '') + '</div>'; }).join("")
     + (rc.error ? '<div class="muted">' + E(rc.error) + '</div>' : '') + '</div>';
 }
@@ -255,7 +256,8 @@ function buyCell(it, v) {
     + (isPick ? ' <span class="buy-pickmark" title="your pick">✓</span>' : '')
     + (isBest || d == null || d === 0 ? '' : ' <span class="muted buy-delta">+' + buyMoney(d) + '</span>')
     + '<div class="muted buy-sub">' + sub.join(" · ") + '</div>'
-    + (rv || rf ? '<div class="buy-sub buy-rev">' + rv + (rf ? ' <span class="' + (/^no review/.test(rf) ? "buy-noflag" : "buy-flag") + '">' + esc(rf) + '</span>' : '') + '</div>' : '') + '</td>';
+    + (rv || rf ? '<div class="buy-sub buy-rev">' + rv + (rf ? ' <span class="' + (/^no review/.test(rf) ? "buy-noflag" : "buy-flag") + '">' + esc(rf) + '</span>' : '') + '</div>' : '')
+    + (o.flag ? '<div class="buy-sub buy-flag">⚠ ' + esc(o.flag) + '</div>' : '') + '</td>';
 }
 /* PHONE: one card per item (Ray, 2026-10-28: "a lot of small text and tiny little area"). Name and the status
    chip on the first line, one muted line of brand · pack · job, the quantity stepper, then the four stores as
@@ -271,7 +273,8 @@ function buyTile(it, v) {
   return '<div class="buy-tile buy-tap' + (isBest ? " buy-best" : "") + (isPick ? " buy-pick" : "") + '" onclick="buyPick(\'' + it.id + '\',\'' + v + '\')"><div class="buy-tile-v">' + esc(vd.l) + (isPick ? ' <span class="buy-pickmark">✓ buying here</span>' : "") + '</div>'
     + '<div class="buy-tile-p">' + (o.url ? '<a href="' + esc(o.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">' : "") + (o.src === "snippet" ? "≈" : "") + buyMoney(l) + (o.url ? "</a>" : "") + '</div>'
     + '<div class="buy-tile-s">' + sub + (isBest || d == null || d === 0 ? "" : ' · <span class="buy-delta">+' + buyMoney(d) + "</span>") + '</div>' + was
-    + (rv || rf ? '<div class="buy-tile-s buy-rev">' + rv + (rf ? ' <span class="' + (/^no review/.test(rf) ? "buy-noflag" : "buy-flag") + '">' + esc(rf) + '</span>' : '') + '</div>' : '') + '</div>';
+    + (rv || rf ? '<div class="buy-tile-s buy-rev">' + rv + (rf ? ' <span class="' + (/^no review/.test(rf) ? "buy-noflag" : "buy-flag") + '">' + esc(rf) + '</span>' : '') + '</div>' : '')
+    + (o.flag ? '<div class="buy-tile-s buy-flag">⚠ ' + esc(o.flag) + '</div>' : '') + '</div>';
 }
 function buyCard(it) {
   var dim = it.status === "own" || it.status === "skip" || it.status === "received";
