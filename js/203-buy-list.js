@@ -168,7 +168,7 @@ function buyCartLinks(items) {
   var amz = [], wmt = [], hd = [], low = [];
   (items || []).forEach(function (it) {
     if (!buyIsOpen(it)) return; var c = buyChosen(it); if (!c) return; var o = buyOffer(it, c.v); if (!o) return;
-    var q = Math.max(1, +it.qty || 1), row = { name: it.name, qty: q, url: o.url || "", sku: o.sku || "", landed: c.landed };
+    var q = Math.max(1, +it.qty || 1), row = { name: it.name, qty: q, url: o.url || "", sku: o.sku || "", landed: c.landed, src: o.src || "" };
     if (c.v === "amazon" && o.sku) amz.push(row); else if (c.v === "walmart" && o.sku) wmt.push(row); else if (c.v === "hd") hd.push(row); else if (c.v === "lowes") low.push(row);
   });
   return {
@@ -176,6 +176,29 @@ function buyCartLinks(items) {
     walmart: { n: wmt.length, rows: wmt, url: wmt.length ? "https://affil.walmart.com/cart/addToCart?items=" + wmt.map(function (r) { return r.sku + "|" + r.qty; }).join(",") : "" },
     hd: { n: hd.length, rows: hd, url: "" }, lowes: { n: low.length, rows: low, url: "" }
   };
+}
+
+/* ONE BUTTON FOR THE CARTS (Ray, 2026-11-02: "one button that I can click and it opens my cart to all these
+   different websites"). The sheet has one row per store with the line count, the landed total and an Open
+   button. Amazon and Walmart take a cart link that adds every line at once; Home Depot and Lowe's publish no
+   such link, so their rows open the tap-each list (every line is a link to its product page, Add to cart is
+   one more tap there). "Open all" fires every cart link in one tap; a browser that blocks the second tab
+   shows a pop-up prompt once, then remembers. Nothing is ordered from here. */
+function buyCartSheet(cl) {
+  var keys = ["amazon", "walmart", "hd", "lowes"], rows = [], links = [], E = (typeof esc === "function") ? esc : String;
+  keys.forEach(function (k) {
+    var c = cl[k]; if (!c || !c.n) return;
+    var sum = c.rows.reduce(function (s, r) { return s + (+r.landed || 0); }, 0), snip = c.rows.filter(function (r) { return r.src === "snippet"; }).length;
+    if (c.url) links.push(c.url);
+    rows.push({ k: k, label: buyVendor(k).l, n: c.n, sum: Math.round(sum * 100) / 100, url: c.url || "", snippets: snip });
+  });
+  var h = rows.map(function (r) {
+    return '<div class="row" style="gap:10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center"><div class="grow"><b>' + E(r.label) + '</b><div class="muted" style="font-size:12px">' + r.n + ' line' + (r.n === 1 ? '' : 's') + ' · ' + buyMoney(r.sum) + (r.snippets ? ' · ' + r.snippets + ' price' + (r.snippets === 1 ? '' : 's') + ' not verified yet' : '') + '</div></div>'
+      + (r.url ? '<a class="btn acc sm" href="' + E(r.url) + '" target="_blank" rel="noopener" onclick="buyNoteCart(\'' + r.k + '\')">Open cart</a>' : '<button class="btn ghost sm" onclick="buyShowStoreRun(\'' + r.k + '\')">Tap-each list</button>') + '</div>';
+  }).join("");
+  if (!rows.length) h = '<div class="muted">Nothing open to buy on this list.</div>';
+  else if (links.length > 1) h += '<div style="margin-top:10px"><button class="btn acc" onclick="buyOpenAllCarts()">Open all ' + links.length + ' carts</button><div class="muted" style="font-size:12px;margin-top:4px">If only one tab opens, allow pop-ups for this site once.</div></div>';
+  return { html: h, rows: rows, links: links };
 }
 
 /* ---- SEND TO PRICE TOOL (the browser button) ----
@@ -293,10 +316,7 @@ function buyHTML() {
     + (t.unpriced ? '<div><div class="muted" style="font-size:11px">No price yet</div>' + t.unpriced + '</div>' : '')
     + (lastCheck ? '<div><div class="muted" style="font-size:11px">Prices checked</div>' + esc(typeof fmtDate === "function" ? fmtDate(lastCheck) : lastCheck) + (pendingRecheck ? ' <span class="muted" style="font-size:11px">· recheck asked</span>' : '') + '</div>' : '')
     + '<div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button class="btn ghost sm" onclick="buyRecheck()">🔄 Recheck prices</button>'
-    + (cl.amazon.n ? '<a class="btn acc sm" href="' + esc(cl.amazon.url) + '" target="_blank" rel="noopener" onclick="buyNoteCart(\'amazon\')">🛒 Amazon cart · ' + cl.amazon.n + '</a>' : "")
-    + (cl.walmart.n ? '<a class="btn acc sm" href="' + esc(cl.walmart.url) + '" target="_blank" rel="noopener">🛒 Walmart cart · ' + cl.walmart.n + '</a>' : "")
-    + (cl.hd.n ? '<button class="btn ghost sm" onclick="buyShowStoreRun(\'hd\')">🏬 Home Depot list · ' + cl.hd.n + '</button>' : "")
-    + (cl.lowes.n ? '<button class="btn ghost sm" onclick="buyShowStoreRun(\'lowes\')">🏬 Lowe\'s list · ' + cl.lowes.n + '</button>' : "")
+    + (open.length ? '<button class="btn acc sm" onclick="buyOpenCarts()">🛒 Open my carts · ' + (cl.amazon.n + cl.walmart.n + cl.hd.n + cl.lowes.n) + '</button>' : "")
     + '<button class="btn ghost sm" onclick="buyCopyAmazonPlan()">📦 Amazon plan</button></div>'
     + '</div>';
   var sorted = items.slice().sort(function (a, b) { return (order[a.status] || 0) - (order[b.status] || 0) || String(a.name).localeCompare(String(b.name)); });
@@ -525,6 +545,14 @@ if (typeof window !== "undefined") {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, done); else done();
   };
   window.buyNoteCart = function (v) { /* the cart link opened in a new tab; nothing to record yet (ordering stays Ray's) */ };
+  window.buyOpenCarts = function () {
+    var items = actBuy().filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; });
+    modal("My carts", buyCartSheet(buyCartLinks(items)).html);
+  };
+  window.buyOpenAllCarts = function () {
+    var items = actBuy().filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; }), links = buyCartSheet(buyCartLinks(items)).links;
+    links.forEach(function (u) { window.open(u, "_blank", "noopener"); });
+  };
   window.buyShowStoreRun = function (only) {
     var items = actBuy().filter(function (x) { return !BUY_LIST || (x.list || "Unfiled") === BUY_LIST; }), g = buyStoreRun(items), keys = Object.keys(g).filter(function (k) { return !only || k === only; });
     if (!keys.length) { modal("Store run", '<div class="muted">Everything open is an Amazon buy right now, so there is no store run.</div>'); return; }
@@ -536,4 +564,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyReviewFlag: buyReviewFlag, buyReviewText: buyReviewText, buyTogglePick: buyTogglePick, buyCartLinks: buyCartLinks, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyReviewFlag: buyReviewFlag, buyReviewText: buyReviewText, buyTogglePick: buyTogglePick, buyCartLinks: buyCartLinks, buyCartSheet: buyCartSheet, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };

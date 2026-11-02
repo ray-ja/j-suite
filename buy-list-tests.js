@@ -150,6 +150,15 @@ eq("Walmart cart link follows the pick, item|qty form", cl.walmart.url, "https:/
 eq("Home Depot has no cart link, just the tap-each list", [cl.hd.url, cl.hd.n, cl.hd.rows[0].qty, cl.hd.rows[0].landed], ["", 1, 3, 34.56]);
 eq("owned lines stay out of every cart", cl.amazon.n + cl.walmart.n + cl.hd.n + cl.lowes.n, 4);
 
+console.log("\n--- one button for the carts (the sheet) ---");
+const sh = B.buyCartSheet(cl);
+eq("the sheet has one row per store that has lines, in store order", sh.rows.map(r => r.k), ["amazon", "walmart", "hd"]);
+eq("Amazon and Walmart rows carry their cart link; Home Depot has none", sh.rows.map(r => !!r.url), [true, true, false]);
+eq("Open all fires only the stores with a cart link", sh.links.length, 2);
+eq("each row totals its landed lines", sh.rows.map(r => r.sum), [86.84, 12.53, 34.56]);
+ok("the Home Depot row opens the tap-each list, not a cart", /buyShowStoreRun\('hd'\)/.test(sh.html) && /Open cart/.test(sh.html) && /Open all 2 carts/.test(sh.html));
+eq("an empty list says so and offers no Open all", [B.buyCartSheet(B.buyCartLinks([])).rows.length, /Open all/.test(B.buyCartSheet(B.buyCartLinks([])).html)], [0, false]);
+
 console.log("\n--- hands-free recheck through Apify (server side, pure parts) ---");
 const slab = { buyItems: [
   { id: "a", status: "cart", qty: 1, offers: [{ v: "amazon", sku: "B0001YXFFM", price: 18.70, checkedAt: "2026-10-28", src: "verified" }, { v: "hd", sku: "324485176", url: "https://www.homedepot.com/p/324485176", price: 12.97, pickup: true, src: "snippet", checkedAt: "2026-10-28" }] },
