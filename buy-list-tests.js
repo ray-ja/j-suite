@@ -139,7 +139,7 @@ eq("review text without a count", B.buyReviewText({ rating: 5 }), "★5");
 eq("tapping a store picks it; tapping the picked one clears", [B.buyTogglePick({ pick: "" }, "hd"), B.buyTogglePick({ pick: "hd" }, "hd"), B.buyTogglePick({ pick: "hd" }, "amazon")], ["hd", "", "amazon"]);
 const cartItems = [
   { status: "need", qty: 2, offers: [{ v: "amazon", sku: "B0001YXFFM", price: 18.70 }] },
-  { status: "cart", qty: 1, offers: [{ v: "amazon", sku: "B007IASPW0", price: 49.44 }, { v: "hd", sku: "316634462", url: "https://www.homedepot.com/p/316634462", price: 129.99, pickup: true }] },
+  { status: "need", qty: 1, offers: [{ v: "amazon", sku: "B007IASPW0", price: 49.44 }, { v: "hd", sku: "316634462", url: "https://www.homedepot.com/p/316634462", price: 129.99, pickup: true }] },
   { status: "need", qty: 1, pick: "walmart", offers: [{ v: "amazon", sku: "B0113UZJE2", price: 10.99 }, { v: "walmart", sku: "13891909169", url: "https://www.walmart.com/ip/13891909169", price: 12.53 }] },
   { status: "need", qty: 3, offers: [{ v: "hd", sku: "100136259", url: "https://www.homedepot.com/p/100136259", price: 11.52, pickup: true }, { v: "amazon", sku: "B08B3B4YW3", price: 21.99 }] },
   { status: "own", qty: 1, offers: [{ v: "amazon", sku: "B000000000", price: 1 }] }
@@ -150,6 +150,15 @@ eq("Walmart cart link follows the pick, item|qty form", cl.walmart.url, "https:/
 eq("Home Depot has no cart link, just the tap-each list", [cl.hd.url, cl.hd.n, cl.hd.rows[0].qty, cl.hd.rows[0].landed], ["", 1, 3, 34.56]);
 eq("owned lines stay out of every cart", cl.amazon.n + cl.walmart.n + cl.hd.n + cl.lowes.n, 4);
 
+const inCartItems = [
+  { status: "cart", qty: 2, offers: [{ v: "amazon", sku: "B0001YXFFM", price: 18.70 }] },
+  { status: "need", qty: 1, offers: [{ v: "amazon", sku: "B007IASPW0", price: 70.99 }] }
+];
+const icl = B.buyCartLinks(inCartItems);
+eq("lines already in the Amazon cart stay out of the add link (it would double them)", [icl.amazon.url, icl.amazon.inCart, icl.amazon.adds], ["https://www.amazon.com/gp/aws/cart/add.html?ASIN.1=B007IASPW0&Quantity.1=1", 1, 1]);
+const allIn = B.buyCartLinks([inCartItems[0]]);
+eq("when every Amazon line is already in the cart, the button just opens the cart", allIn.amazon.url, "https://www.amazon.com/gp/cart/view.html");
+ok("the sheet says how many are already in the cart", /1 already in your cart/.test(B.buyCartSheet(icl).html) && /all already in your cart/.test(B.buyCartSheet(allIn).html));
 console.log("\n--- one button for the carts (the sheet) ---");
 const sh = B.buyCartSheet(cl);
 eq("the sheet has one row per store that has lines, in store order", sh.rows.map(r => r.k), ["amazon", "walmart", "hd"]);

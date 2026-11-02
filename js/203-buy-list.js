@@ -168,11 +168,14 @@ function buyCartLinks(items) {
   var amz = [], wmt = [], hd = [], low = [];
   (items || []).forEach(function (it) {
     if (!buyIsOpen(it)) return; var c = buyChosen(it); if (!c) return; var o = buyOffer(it, c.v); if (!o) return;
-    var q = Math.max(1, +it.qty || 1), row = { name: it.name, qty: q, url: o.url || "", sku: o.sku || "", landed: c.landed, src: o.src || "" };
+    var q = Math.max(1, +it.qty || 1), row = { name: it.name, qty: q, url: o.url || "", sku: o.sku || "", landed: c.landed, src: o.src || "", inCart: it.status === "cart" };
     if (c.v === "amazon" && o.sku) amz.push(row); else if (c.v === "walmart" && o.sku) wmt.push(row); else if (c.v === "hd") hd.push(row); else if (c.v === "lowes") low.push(row);
   });
   return {
-    amazon: { n: amz.length, rows: amz, url: amz.length ? "https://www.amazon.com/gp/aws/cart/add.html?" + amz.map(function (r, i) { return "ASIN." + (i + 1) + "=" + r.sku + "&Quantity." + (i + 1) + "=" + r.qty; }).join("&") : "" },
+    /* the add link puts quantities ON TOP of what the cart already holds, so lines marked "cart" (already in it)
+       stay out of the link; when everything is already there the button just opens the cart (Ray, 2026-11-02) */
+    amazon: (function () { var add = amz.filter(function (r) { return !r.inCart; }), have = amz.length - add.length;
+      return { n: amz.length, rows: amz, inCart: have, adds: add.length, url: add.length ? "https://www.amazon.com/gp/aws/cart/add.html?" + add.map(function (r, i) { return "ASIN." + (i + 1) + "=" + r.sku + "&Quantity." + (i + 1) + "=" + r.qty; }).join("&") : (amz.length ? "https://www.amazon.com/gp/cart/view.html" : "") }; })(),
     walmart: { n: wmt.length, rows: wmt, url: wmt.length ? "https://affil.walmart.com/cart/addToCart?items=" + wmt.map(function (r) { return r.sku + "|" + r.qty; }).join(",") : "" },
     hd: { n: hd.length, rows: hd, url: "" }, lowes: { n: low.length, rows: low, url: "" }
   };
@@ -193,7 +196,7 @@ function buyCartSheet(cl) {
     rows.push({ k: k, label: buyVendor(k).l, n: c.n, sum: Math.round(sum * 100) / 100, url: c.url || "", snippets: snip });
   });
   var h = rows.map(function (r) {
-    return '<div class="row" style="gap:10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center"><div class="grow"><b>' + E(r.label) + '</b><div class="muted" style="font-size:12px">' + r.n + ' line' + (r.n === 1 ? '' : 's') + ' · ' + buyMoney(r.sum) + (r.snippets ? ' · ' + r.snippets + ' price' + (r.snippets === 1 ? '' : 's') + ' not verified yet' : '') + '</div></div>'
+    return '<div class="row" style="gap:10px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center"><div class="grow"><b>' + E(r.label) + '</b><div class="muted" style="font-size:12px">' + r.n + ' line' + (r.n === 1 ? '' : 's') + ' · ' + buyMoney(r.sum) + (r.k === "amazon" && cl.amazon.inCart ? (cl.amazon.adds ? ' · adds ' + cl.amazon.adds + ', ' + cl.amazon.inCart + ' already in your cart' : ' · all already in your cart') : '') + (r.snippets ? ' · ' + r.snippets + ' price' + (r.snippets === 1 ? '' : 's') + ' not verified yet' : '') + '</div></div>'
       + (r.url ? '<a class="btn acc sm" href="' + E(r.url) + '" target="_blank" rel="noopener" onclick="buyNoteCart(\'' + r.k + '\')">Open cart</a>' : '<button class="btn ghost sm" onclick="buyShowStoreRun(\'' + r.k + '\')">Tap-each list</button>') + '</div>';
   }).join("");
   if (!rows.length) h = '<div class="muted">Nothing open to buy on this list.</div>';
