@@ -200,6 +200,11 @@ const S203 = fs.readFileSync(path.join(__dirname, "js", "203-buy-list.js"), "utf
 ok("the client tries /api/buy/recheck first and falls back to the to-do on no-apify", /\/api\/buy\/recheck/.test(S203) && /no-apify/.test(S203) && /function buyRecheckTodo/.test(S203));
 const SRV = fs.readFileSync(path.join(__dirname, "sync-server.js"), "utf8");
 ok("every store's results are attached before the apply runs (the last store used to be dropped)", /error: err \|\| "", mapped: mapped \}/.test(SRV) && !/\n\s*ran\[v\]\.mapped = mapped;/.test(SRV));
+ok("the recheck runs in the background: the route answers started, the runner polls past run-sync's 5-minute cap", /started: true/.test(SRV) && /function apifyRun\(/.test(SRV) && /waitForFinish=60/.test(SRV) && !/run-sync-get-dataset-items/.test(SRV));
+ok("one recheck at a time per org", /BUY_RECHECK\[org\] && BUY_RECHECK\[org\]\.running/.test(SRV));
+ok("the app polls the status until the server says done", /function buyRecheckPoll/.test(S203) && /\/api\/buy\/status\?org=/.test(S203));
+const sum = B.buyRecheckSummary({ updated: 35, moved: 18, ran: { hd: { asked: 22, got: 23 }, amazon: { asked: 25, got: 0, error: "run timed-out" } } });
+ok("the finished summary names each store and any error", /35 prices refreshed, 18 moved/.test(sum) && /Home Depot: 23 of 22/.test(sum) && /Amazon: 0 of 25 · run timed-out/.test(sum));
 ok("a network error on Recheck shows the error, it does not fall back to a hand check", !/catch\(function \(e\) \{ buyRecheckTodo/.test(S203));
 ok("the server route is super-admin only and reads the token from org-keys (never the request)", /\/api\/buy\/recheck"\) \{[\s\S]{0,400}superAdmin/.test(SRV) && /function apifyToken\(\) \{[^\n]*orgKeysLoad/.test(SRV));
 

@@ -201,6 +201,15 @@ function buyCartSheet(cl) {
   return { html: h, rows: rows, links: links };
 }
 
+/* what the finished server recheck says, one line per store */
+function buyRecheckSummary(rc) {
+  var E = (typeof esc === "function") ? esc : String;
+  if (!rc) return '<div class="muted">No check has run yet.</div>';
+  return '<div style="font-size:13px">' + (rc.updated || 0) + ' prices refreshed, ' + (rc.moved || 0) + ' moved since last time.'
+    + Object.keys(rc.ran || {}).map(function (v) { var r = rc.ran[v]; return '<div class="muted">' + E(buyVendor(v).l) + ': ' + (r.got || 0) + ' of ' + (r.asked || 0) + (r.error ? ' · ' + E(r.error) : '') + '</div>'; }).join("")
+    + (rc.error ? '<div class="muted">' + E(rc.error) + '</div>' : '') + '</div>';
+}
+
 /* ---- SEND TO PRICE TOOL (the browser button) ----
    Home Depot, Lowe's and Walmart block automated price pulls; Ray on his own phone or laptop is not automated.
    The bookmark below runs on the product page he is looking at, reads title / price / brand / picture / the
@@ -471,22 +480,34 @@ if (typeof window !== "undefined") {
     /* hands-free path first: the server runs the store lookups through Apify when the token is on file */
     var base = ((S.sync && S.sync.url) || location.origin).replace(/\/+$/, ""), tok = (S.sync && S.sync.token) || "";
     if (tok && /^https?:/.test(base)) {
-      modal("Checking prices…", '<div class="muted" style="font-size:13px">Asking the stores for ' + items.length + ' items. This takes a minute or two; the page updates when it is done.</div>');
-      fetch(base + "/api/buy/recheck", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: JSON.stringify({ org: S.biz, ids: items.map(function (x) { return x.id; }) }) })
+      var auth = { "Content-Type": "application/json", Authorization: "Bearer " + tok };
+      modal("Checking prices…", '<div class="muted" style="font-size:13px">Asking Amazon, Home Depot and Walmart about ' + items.length + ' items. Home Depot and Walmart answer in about a minute; Amazon takes 5 to 7. You can leave this screen. The prices land on their own.</div>');
+      fetch(base + "/api/buy/recheck", { method: "POST", headers: auth, body: JSON.stringify({ org: S.biz, ids: items.map(function (x) { return x.id; }) }) })
         .then(function (r) { return r.json().then(function (j) { return { st: r.status, j: j }; }); })
         .then(function (o) {
-          if (o.st === 200 && o.j && o.j.ok) {
-            var done = function () { render(); modal("Prices checked", '<div style="font-size:13px">' + (o.j.updated || 0) + ' prices refreshed, ' + (o.j.moved || 0) + ' moved since last time.' + Object.keys(o.j.ran || {}).map(function (v) { var r = o.j.ran[v]; return '<div class="muted">' + esc(buyVendor(v).l) + ": " + r.got + " of " + r.asked + (r.error ? " · " + esc(r.error) : "") + '</div>'; }).join("") + '</div>'); };
-            if (typeof syncNow === "function") { try { var pr = syncNow(); if (pr && pr.then) pr.then(done, done); else setTimeout(done, 1500); } catch (e) { done(); } } else done();
-            return;
-          }
           if (o.j && o.j.error === "no-apify") return buyRecheckTodo(items, d);
-          modal("Price check failed", '<div class="muted" style="font-size:13px">' + esc((o.j && o.j.error) || ("status " + o.st)) + '</div>');
+          if (!(o.st === 200 && o.j && o.j.ok)) return modal("Price check failed", '<div class="muted" style="font-size:13px">' + esc((o.j && o.j.error) || ("status " + o.st)) + '</div>');
+          if (o.j.note) return modal("Prices checked", '<div class="muted" style="font-size:13px">' + esc(o.j.note) + '</div>');
+          buyRecheckPoll(base, auth, Date.now());
         }).catch(function (e) { modal("Price check failed", '<div class="muted" style="font-size:13px">Could not reach the server (' + esc(String((e && e.message) || e)) + '). Nothing changed; try Recheck again when you have signal.</div>'); });
       return;
     }
     buyRecheckTodo(items, d);
   };
+  /* the check runs on the server; ask every 20 s until it says done (up to 25 min), then pull the new prices */
+  function buyRecheckPoll(base, auth, t0) {
+    var org = S.biz;
+    fetch(base + "/api/buy/status?org=" + encodeURIComponent(org), { headers: auth }).then(function (r) { return r.json(); }).then(function (st) {
+      var rc = st && st.recheck;
+      if (rc && !rc.running && rc.doneAt && rc.doneAt >= t0 - 60000) {
+        var done = function () { render(); modal("Prices checked", buyRecheckSummary(rc)); };
+        if (typeof syncNow === "function") { try { var pr = syncNow(); if (pr && pr.then) pr.then(done, done); else setTimeout(done, 1500); } catch (e) { done(); } } else done();
+        return;
+      }
+      if (Date.now() - t0 > 25 * 60000) return;
+      setTimeout(function () { buyRecheckPoll(base, auth, t0); }, 20000);
+    }).catch(function () { if (Date.now() - t0 < 25 * 60000) setTimeout(function () { buyRecheckPoll(base, auth, t0); }, 30000); });
+  }
   /* no Apify token yet: stamp the items and leave me a to-do (I run the cart read + a web check by hand) */
   function buyRecheckTodo(items, d) {
     var tday = typeof today === "function" ? today() : "", stamp = typeof now === "function" ? now() : Date.now();
@@ -564,4 +585,4 @@ if (typeof window !== "undefined") {
   };
   window.rBuy = rBuy; window.buyHTML = buyHTML; window.actBuy = actBuy;
 }
-if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyReviewFlag: buyReviewFlag, buyReviewText: buyReviewText, buyTogglePick: buyTogglePick, buyCartLinks: buyCartLinks, buyCartSheet: buyCartSheet, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };
+if (typeof module !== "undefined") module.exports = { BUY_VENDORS: BUY_VENDORS, BUY_STATUS: BUY_STATUS, buyParseUrl: buyParseUrl, buyLanded: buyLanded, buyBest: buyBest, buyChosen: buyChosen, buyDelta: buyDelta, buyWithHistory: buyWithHistory, buyPrev: buyPrev, buyTotals: buyTotals, buyParseList: buyParseList, buyAmazonPlan: buyAmazonPlan, buyStoreRun: buyStoreRun, buyOffer: buyOffer, buyDiffs: buyDiffs, buyIsOpen: buyIsOpen, buyClampQty: buyClampQty, buyCard: buyCard, buyTile: buyTile, buyImg: buyImg, buyReviewFlag: buyReviewFlag, buyReviewText: buyReviewText, buyTogglePick: buyTogglePick, buyCartLinks: buyCartLinks, buyCartSheet: buyCartSheet, buyRecheckSummary: buyRecheckSummary, buyInboxDecode: buyInboxDecode, buyInboxOffer: buyInboxOffer, buyBookmarkletHref: buyBookmarkletHref, buyHTML: buyHTML };

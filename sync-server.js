@@ -3195,16 +3195,34 @@ function buyApifyApply(slab, vendor, mapped, today) {
   return { updated, moved };
 }
 function apifyToken() { try { const k = orgKeysLoad(); return (k && k.apify && k.apify.token) || ""; } catch (e) { return ""; } }
-function apifyRunSync(actor, input, cb) {
-  const tok = apifyToken(); if (!tok) return cb(0, null, "no-apify");
-  const body = JSON.stringify(input);
-  const r = https.request("https://api.apify.com/v2/acts/" + actor + "/run-sync-get-dataset-items?timeout=280&format=json&clean=true", { method: "POST", headers: { "Authorization": "Bearer " + tok, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (resp) => {
-    let s = ""; resp.on("data", d => s += d); resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} cb(resp.statusCode, j, j && j.error ? (j.error.message || j.error.type) : ""); });
+/* async run: start, poll until the run ends (Amazon's accurate actor needs ~6-7 min for 25 items, past the
+   5-minute cap of run-sync), then read the dataset. cb(statusCode, items, error). */
+function apifyReq(method, url, body, cb) {
+  const tok = apifyToken(); const b = body ? JSON.stringify(body) : "";
+  const r = https.request(url, { method, headers: { "Authorization": "Bearer " + tok, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(b) } }, (resp) => {
+    let s = ""; resp.on("data", d => s += d); resp.on("end", () => { let j = null; try { j = JSON.parse(s); } catch (e) {} cb(resp.statusCode, j); });
   });
-  r.on("error", e => cb(0, null, String((e && e.message) || e)));
-  r.setTimeout(295000, () => { try { r.destroy(); } catch (e) {} cb(0, null, "Apify run timed out"); });
-  r.write(body); r.end();
+  r.on("error", e => cb(0, { error: { message: String((e && e.message) || e) } })); r.setTimeout(120000, () => { try { r.destroy(); } catch (e) {} });
+  if (b) r.write(b); r.end();
 }
+function apifyRun(actor, input, cb, maxMs) {
+  if (!apifyToken()) return cb(0, null, "no-apify");
+  const t0 = Date.now(), limit = maxMs || 20 * 60000;
+  apifyReq("POST", "https://api.apify.com/v2/acts/" + actor + "/runs?waitForFinish=60", input, (code, j) => {
+    let run = j && j.data; if (!run || !run.id) return cb(code, null, (j && j.error && (j.error.message || j.error.type)) || "run did not start");
+    const step = () => {
+      if (/^(SUCCEEDED|FAILED|ABORTED|TIMED-OUT)$/.test(run.status)) {
+        if (run.status !== "SUCCEEDED") return cb(400, null, "run " + run.status.toLowerCase());
+        return apifyReq("GET", "https://api.apify.com/v2/datasets/" + run.defaultDatasetId + "/items?clean=true&format=json", null, (c2, items) => cb(c2, Array.isArray(items) ? items : null, Array.isArray(items) ? "" : "no results"));
+      }
+      if (Date.now() - t0 > limit) { apifyReq("POST", "https://api.apify.com/v2/actor-runs/" + run.id + "/abort", null, () => {}); return cb(0, null, "took over " + Math.round(limit / 60000) + " minutes, stopped"); }
+      apifyReq("GET", "https://api.apify.com/v2/actor-runs/" + run.id + "?waitForFinish=60", null, (c3, j3) => { if (j3 && j3.data && j3.data.status) run = j3.data; step(); });
+    };
+    step();
+  });
+}
+/* one recheck at a time per org; the last result stays in memory for GET /api/buy/status */
+const BUY_RECHECK = {};
 function orgKeyNameOk(n) { return n === "cfSites" || n === "cfDns" || n === "stripeKey" || n === "stripeWebhookSecret"; }
 /* PER-ORG STRIPE (Ray, 2026-09-21: Jamieson Automation / OBX Holiday Lights get their own Stripe account so their money
    never lands in DYAD's). An org's key lives in org-keys.json (Settings → Keys, that org's tab); the old global key in
@@ -5454,7 +5472,7 @@ const server = http.createServer((req, res) => {
   }
   /* POST /api/quotes/deposit {org, quoteId, pct} (owner): mint a fixed-amount Stripe link for pct of the quote total */
   if (req.method === "GET" && req.url.split("?")[0] === "/api/buy/status") {
-    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ apify: !!apifyToken() }));
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); const org = (req.url.split("?")[1] || "").replace(/^.*\borg=([^&]*).*$/, "$1"); return res.end(JSON.stringify({ apify: !!apifyToken(), recheck: (org && BUY_RECHECK[decodeURIComponent(org)]) || null }));
   }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/buy/recheck") {
     const tok = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || "";
@@ -5468,19 +5486,22 @@ const server = http.createServer((req, res) => {
       const plan = buyApifyPlan(store0[org], Array.isArray(p.ids) ? p.ids : null);
       const vendors = Object.keys(plan).filter(v => plan[v].length && (!p.vendors || p.vendors.indexOf(v) >= 0));
       if (!vendors.length) return J(200, { ok: true, ran: {}, note: "nothing open with a store id or link" });
+      if (BUY_RECHECK[org] && BUY_RECHECK[org].running) return J(200, { ok: true, started: false, running: true, startedAt: BUY_RECHECK[org].startedAt });
       const today = new Date().toISOString().slice(0, 10); const ran = {}; let pending = vendors.length;
+      const job = BUY_RECHECK[org] = { running: true, startedAt: Date.now(), vendors: vendors, asked: vendors.reduce((n, v) => n + plan[v].length, 0) };
       vendors.forEach(v => {
-        apifyRunSync(BUY_APIFY[v].actor, BUY_APIFY[v].input(plan[v]), (code, items, err) => {
+        apifyRun(BUY_APIFY[v].actor, BUY_APIFY[v].input(plan[v]), (code, items, err) => {
           const mapped = Array.isArray(items) ? items.map(r => buyApifyMap(v, r)).filter(Boolean) : [];
           ran[v] = { asked: plan[v].length, got: mapped.length, status: code, error: err || "", mapped: mapped };
           if (--pending === 0) {
             const store = loadStore(); let updated = 0, moved = 0;   /* re-read: the runs took minutes, other writes may have landed */
             vendors.forEach(v2 => { const m = ran[v2].mapped || []; const a = buyApifyApply(store[org], v2, m, today); ran[v2].updated = a.updated; ran[v2].moved = a.moved; updated += a.updated; moved += a.moved; delete ran[v2].mapped; });
-            try { saveStore(store); } catch (e) { return J(500, { error: "save failed" }); }
-            J(200, { ok: true, updated, moved, ran });
+            let saveErr = ""; try { saveStore(store); } catch (e) { saveErr = "save failed"; }
+            Object.assign(job, { running: false, doneAt: Date.now(), updated, moved, ran, error: saveErr });
           }
         });
       });
+      return J(200, { ok: true, started: true, asked: job.asked, vendors: vendors });
     });
   }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/quotes/deposit") {
