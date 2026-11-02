@@ -482,7 +482,7 @@ if (typeof window !== "undefined") {
           }
           if (o.j && o.j.error === "no-apify") return buyRecheckTodo(items, d);
           modal("Price check failed", '<div class="muted" style="font-size:13px">' + esc((o.j && o.j.error) || ("status " + o.st)) + '</div>');
-        }).catch(function (e) { buyRecheckTodo(items, d); });
+        }).catch(function (e) { modal("Price check failed", '<div class="muted" style="font-size:13px">Could not reach the server (' + esc(String((e && e.message) || e)) + '). Nothing changed; try Recheck again when you have signal.</div>'); });
       return;
     }
     buyRecheckTodo(items, d);

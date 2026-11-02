@@ -3132,7 +3132,9 @@ function orgKeysSave(k) { const tmp = ORG_KEYS_FILE + ".tmp"; fs.writeFileSync(t
 const BUY_APIFY = {
   amazon:  { actor: "scrape.badger~amazon-product-scraper", input: (rows) => ({ mode: "Product Detail", asins: rows.map(r => r.sku), domain: "com", zip: "27964" }) },
   hd:      { actor: "khadinakbar~home-depot-scraper", input: (rows) => ({ productUrls: rows.map(r => r.url || ("https://www.homedepot.com/p/" + r.sku)), deliveryZip: "27948", storeId: "3650", includeProductDetails: false, includeReviews: false }) },   // storeId: Kill Devil Hills / Kitty Hawk per a store listing, unverified; the zip localizes regardless
-  walmart: { actor: "fatihtahta~walmart-scraper", input: (rows) => ({ startUrls: rows.map(r => r.url || ("https://www.walmart.com/ip/" + r.sku)), enrich_data: true, limit: rows.length }) }
+  /* 2026-11-02: fatihtahta's actor FAILED and e-commerce's hit Walmart captchas on a live test; Axesso's lookup
+     returned the burlap item in 9 s (price, seller, fulfillment, reviews), so Walmart runs through it */
+  walmart: { actor: "axesso_data~walmart-lookup-product-scraper", input: (rows) => ({ input: rows.map(r => ({ url: r.url || ("https://www.walmart.com/ip/" + r.sku) })) }) }
 };
 function buyApifyPlan(slab, ids) {
   const out = { amazon: [], hd: [], walmart: [] }, want = ids && ids.length ? new Set(ids) : null;
@@ -3152,11 +3154,18 @@ function buyApifyMap(vendor, r) {
   }
   if (vendor === "hd") {
     if (r.recordType && r.recordType !== "product") return null;
-    return { key: String(r.productId || ((r.url || "").match(/\/(\d{6,})/) || [])[1] || ""), price: numOf(r.price), rating: numOf(r.rating), reviews: r.reviewsCount != null ? numOf(r.reviewsCount) : "", img: r.thumbnail || (Array.isArray(r.images) && r.images[0]) || "", title: r.title || "", brand: r.brand || "", avail: [r.availabilityText, r.storeName, r.storeQuantity != null ? r.storeQuantity + " in store" : ""].filter(Boolean).join(" · "), pickup: r.pickupAvailable === true };
+    return { key: String(r.productId || ((r.url || "").match(/\/(\d{6,})/) || [])[1] || ""), price: numOf(r.price), rating: numOf(r.rating), reviews: r.reviewsCount != null ? numOf(r.reviewsCount) : "", img: r.thumbnail || (Array.isArray(r.images) && r.images[0]) || "", title: r.title || "", brand: r.brand || "", avail: [r.availabilityText, r.storeName, r.storeQuantity != null ? r.storeQuantity + " in store" : ""].filter(Boolean).join(" · "), pickup: r.pickupAvailable === true, pickupKnown: typeof r.pickupAvailable === "boolean" };
   }
   if (vendor === "walmart") {
-    const url = r.url || r.product_url || r.link || "";
-    return { key: String(r.id || r.item_id || r.product_id || (url.match(/\/ip\/(?:.*?\/)?(\d{5,})/) || [])[1] || ""), price: numOf(r.pricing && (r.pricing.current_price != null ? r.pricing.current_price : r.pricing.display_price)) || numOf(r.price), rating: numOf(r.metrics && r.metrics.average_rating), reviews: r.metrics && r.metrics.review_count != null ? numOf(r.metrics.review_count) : "", img: (r.media && r.media.primary_image_url) || r.image || "", title: r.name || r.title || "", brand: r.brand || "", avail: (r.availability && r.availability.status) || "", pickup: false, seller: (r.seller && r.seller.name) || "" };
+    /* Axesso shape: { statusCode, url, product:{usItemId, priceInfo.currentPrice.price, sellerDisplayName, fulfillmentType,
+       availabilityStatus, imageInfo, shippingOption.shipPrice, pickupOption.accessTypes, fulfillmentOptions}, reviews:{totalReviewCount, averageOverallRating} } */
+    const p = r.product; if (!p || typeof p !== "object") return null;
+    const rv = r.reviews || {}, url = r.url || p.canonicalUrl || "";
+    const img = (p.imageInfo && ((p.imageInfo.allImages && p.imageInfo.allImages[0] && p.imageInfo.allImages[0].url) || p.imageInfo.thumbnailUrl)) || "";
+    const pickup = !!((p.pickupOption && Array.isArray(p.pickupOption.accessTypes) && p.pickupOption.accessTypes.length) || (Array.isArray(p.fulfillmentOptions) && p.fulfillmentOptions.some(f => f && /PICKUP/i.test(f.type || "") && (f.availabilityStatus || "AVAILABLE") === "AVAILABLE")));
+    const sp = p.shippingOption && p.shippingOption.shipPrice;
+    const third = p.fulfillmentType === "MARKETPLACE" || (p.sellerDisplayName && !/^walmart(\.com)?$/i.test(p.sellerDisplayName));
+    return { key: String(p.usItemId || (url.match(/\/ip\/(?:.*?\/)?(\d{5,})/) || [])[1] || ""), price: numOf(p.priceInfo && p.priceInfo.currentPrice && p.priceInfo.currentPrice.price), rating: numOf(rv.averageOverallRating || p.averageRating), reviews: rv.totalReviewCount != null ? numOf(rv.totalReviewCount) : "", img: img, title: p.name || "", brand: p.brand || "", avail: [String(p.availabilityStatus || "").replace(/_/g, " ").toLowerCase(), pickup ? "store pickup" : "ship only", third ? "marketplace seller" : ""].filter(Boolean).join(" · "), pickup: pickup, ship: sp && sp.price != null ? numOf(sp.price) : null, seller: p.sellerDisplayName || "" };
   }
   return null;
 }
@@ -3175,8 +3184,11 @@ function buyApifyApply(slab, vendor, mapped, today) {
       o.price = Math.round(m.price * 100) / 100; o.src = "verified"; o.checkedAt = today;
       if (m.rating) o.rating = Math.round(m.rating * 10) / 10; if (m.reviews !== "" && m.reviews != null) o.reviews = m.reviews;
       if (m.img && !o.img) o.img = String(m.img).slice(0, 400); if (m.brand && !o.brand) o.brand = String(m.brand).slice(0, 40);
-      if (vendor === "hd") o.pickup = !!m.pickup; if (m.avail) o.diff = (o.diff && !/in store|stock|pickup/i.test(o.diff) ? o.diff + " · " : "") + String(m.avail).slice(0, 80);
-      if (m.seller && !o.seller) o.seller = String(m.seller).slice(0, 60);
+      if (typeof m.pickup === "boolean" && (vendor === "walmart" || m.pickupKnown)) o.pickup = m.pickup;
+      if (vendor === "hd" && m.pickupKnown) o.pickup = m.pickup;
+      if (m.ship != null && isFinite(m.ship)) o.ship = Math.round(m.ship * 100) / 100;
+      if (m.avail) o.diff = (o.diff && !/in store|stock|pickup/i.test(o.diff) ? o.diff + " · " : "") + String(m.avail).slice(0, 80);
+      if (m.seller) o.seller = String(m.seller).slice(0, 60);
       it.updatedAt = Date.now(); it.recheckAt = ""; updated++;
     });
   });
@@ -5460,14 +5472,13 @@ const server = http.createServer((req, res) => {
       vendors.forEach(v => {
         apifyRunSync(BUY_APIFY[v].actor, BUY_APIFY[v].input(plan[v]), (code, items, err) => {
           const mapped = Array.isArray(items) ? items.map(r => buyApifyMap(v, r)).filter(Boolean) : [];
-          ran[v] = { asked: plan[v].length, got: mapped.length, status: code, error: err || "" };
+          ran[v] = { asked: plan[v].length, got: mapped.length, status: code, error: err || "", mapped: mapped };
           if (--pending === 0) {
             const store = loadStore(); let updated = 0, moved = 0;   /* re-read: the runs took minutes, other writes may have landed */
             vendors.forEach(v2 => { const m = ran[v2].mapped || []; const a = buyApifyApply(store[org], v2, m, today); ran[v2].updated = a.updated; ran[v2].moved = a.moved; updated += a.updated; moved += a.moved; delete ran[v2].mapped; });
             try { saveStore(store); } catch (e) { return J(500, { error: "save failed" }); }
             J(200, { ok: true, updated, moved, ran });
           }
-          ran[v].mapped = mapped;
         });
       });
     });
