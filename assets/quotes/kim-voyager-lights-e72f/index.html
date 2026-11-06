@@ -102,10 +102,10 @@ var GROUPS=[
   {id:"bs",view:"back",kind:"mini",label:"Back stair handrails",note:"72 ft",price:72*6},
   {id:"bp",view:"back",kind:"mini",label:"Back deck posts",note:"14",price:14*110}]},
  {name:"Wreaths and garland",sub:"",items:[
-  {id:"wg",view:"front",kind:"decor",label:"Wreath on the center peak",sizes:[["36 in",200],["48 in",400],["60 in",800]],size:1,on:true},
-  {id:"wd",view:"front",kind:"decor",label:"Wreaths on the small peaks",note:"Two 24 in",price:2*100},
-  {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",100],["36 in",200]],size:1},
-  {id:"wr",view:"front",kind:"decor",label:"Wreaths on the top deck railing",note:"Six 24 in",price:6*100},
+  {id:"wg",view:"front",kind:"decor",label:"Wreath on the center peak",sizes:[["36 in",110],["48 in",175],["60 in",325]],size:1,on:true},
+  {id:"wd",view:"front",kind:"decor",label:"Wreaths on the small peaks",note:"Two 24 in",price:2*60},
+  {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",60],["36 in",110]],size:1},
+  {id:"wr",view:"front",kind:"decor",label:"Wreaths on the top deck railing",note:"Six 24 in",price:6*60},
   {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"50 ft",price:50*20},
   {id:"gp",view:"front",kind:"decor",label:"Garland, top deck railing",note:"69 ft",price:69*20},
   {id:"gd",view:"front",kind:"decor",label:"Garland, front door",note:"20 ft",price:20*20}]},
@@ -130,7 +130,7 @@ function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h
   cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
 function layerOf(i,v){return i.layers?i.layers[v]:(i.view===v?i.id:null)}
-function layerSrc(i,v){var L=layerOf(i,v);return i.kind==="decor"?L+".webp":L+"-"+st.roof+".jpg"}
+function layerSrc(i,v){var L=layerOf(i,v);return i.kind==="decor"?L+".webp":L+"-"+st.roof+".jpg?v=3"}
 function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
  if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
   pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return layerOf(i,st.view)}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
