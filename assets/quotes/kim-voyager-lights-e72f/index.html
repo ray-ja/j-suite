@@ -67,8 +67,7 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 </div></div>
 <main class="wrap">
 <h2>Colors</h2>
-<div class="clabel">Roofline</div><div class="colors" id="cRoof"></div>
-<div class="clabel">Railings, columns, trees</div><div class="colors" id="cMini"></div>
+<div class="colors" id="cRoof"></div>
 <div id="groups"></div>
 <h2>Total</h2>
 <div class="sum" id="sum"></div>
@@ -132,7 +131,7 @@ function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
   cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
-function layerSrc(i){return i.kind==="decor"?i.id+".webp":i.id+"-"+(i.kind==="roof"?st.roof:st.mini)+".jpg"}
+function layerSrc(i){return i.kind==="decor"?i.id+".webp":i.id+"-"+st.roof+".jpg"}
 function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
  if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
   pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return i.view===st.view}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
@@ -141,20 +140,20 @@ function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
   var want=IMG+layerSrc(i);if(on&&el.getAttribute("src")!==want)el.setAttribute("src",want);el.classList.toggle("off",!on)})}
 function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
 function render(){
- drawColors($("cRoof"),"roof");drawColors($("cMini"),"mini");
+ drawColors($("cRoof"),"roof");
  drawPic();
  Array.prototype.forEach.call(document.querySelectorAll(".views button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-view")===st.view))});
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var i=ALL.filter(function(x){return x.id===id})[0];var on=!!st.on[id];
   el.classList.toggle("on",on);el.querySelector("input").checked=on;el.querySelector(".amt").textContent=money(priceOf(i));var s=el.querySelector("select");if(s)s.value=String(st.size[id]||0)});
  var L=lines(),sub=L.reduce(function(a,x){return a+x.amt},0),tot=L.length?Math.max(sub,MIN):0;
  var html=L.length?L.map(function(x){return '<div class="ln"><span>'+esc(x.label)+'</span><b>'+money(x.amt)+'</b></div>'}).join(""):'<p class="empty">Nothing picked yet.</p>';
- html+='<div class="ln"><span>Colors: roofline '+esc(colorName(st.roof).toLowerCase())+', railings and trees '+esc(colorName(st.mini).toLowerCase())+'</span><b></b></div>';
+ html+='<div class="ln"><span>Color: '+esc(colorName(st.roof).toLowerCase())+'</span><b></b></div>';
  if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
  html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div>';
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
- var msg="758 Voyager picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nRoofline: "+colorName(st.roof)+". Railings and trees: "+colorName(st.mini)+".\nTotal "+money(tot)+".\nKim";
+ var msg="758 Voyager picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\nKim";
  $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
- try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof,m:st.mini})))}catch(e){}
+ try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof})))}catch(e){}
 }
 document.querySelector(".views").onclick=function(e){var b=e.target.closest("button");if(!b)return;st.view=b.getAttribute("data-view");render()};
 $("copyBtn").onclick=function(){var m=this.getAttribute("data-msg"),b=this;function done(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy my picks"},1800)}
