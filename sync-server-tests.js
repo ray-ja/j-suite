@@ -2619,6 +2619,7 @@ console.log("\n— OB-Xscape monthly invoice (escapeInvoiceBuild) —");
   const rec = t.escapeInvoiceRecord(b, new Date("2026-10-01T08:00:00-04:00").getTime(), true);
   ok("the filed record has the August shape: id by month, invoiced, token, dated the last day of the month", rec.id === "q_jam_escape_202609" && rec.invoiced === true && rec.invoiceToken.length === 32 && rec.date === "2026-09-30" && rec.total === 426.25 && rec.customerId === C, rec);
   const draft = t.escapeInvoiceRecord(bad, Date.now(), false);
+  ok("monthly escape invoice takes the next number in the org (not a hardcoded 1)", t.escapeNextNum([{ num: 1 }, { num: 5, deleted: true }, { num: 2 }, null]) === 6 && t.escapeNextNum([]) === 1);
   ok("a flagged month files as a draft, not invoiced", draft.invoiced === false && /DRAFT/.test(draft.notes));
 })();
 
