@@ -130,7 +130,7 @@ function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h
   cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
 function layerOf(i,v){return i.layers?i.layers[v]:(i.view===v?i.id:null)}
-function layerSrc(i,v){var L=layerOf(i,v);return i.kind==="decor"?L+".webp?v=5":L+"-"+st.roof+".jpg?v=4"}
+function layerSrc(i,v){var L=layerOf(i,v);return i.kind==="decor"?L+".webp?v=6":L+"-"+st.roof+".jpg?v=4"}
 function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
  if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
   pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return layerOf(i,st.view)}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
