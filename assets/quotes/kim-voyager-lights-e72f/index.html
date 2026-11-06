@@ -7,13 +7,16 @@ body{margin:0;font:16px/1.5 var(--sans);color:var(--ink);background:var(--paper)
 .wrap{max-width:860px;margin:0 auto;padding:0 16px}
 header{background:var(--ink);color:#fff}header .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}
 header img{height:34px;width:auto}header a{color:var(--glow);font-weight:700;text-decoration:none;white-space:nowrap;font-size:15px}
-.hero{background:var(--ink);color:#fff;padding:0 0 22px}
-.hero figure{margin:0;position:relative;border-radius:14px;overflow:hidden;background:#0b111c;aspect-ratio:4/3}
-.hero figure img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .35s}
-.hero figcaption{position:absolute;left:10px;bottom:10px;background:rgba(16,23,37,.72);color:#fff;font-size:12.5px;padding:4px 10px;border-radius:999px}
-.hero h1{font-family:var(--serif);font-weight:600;font-size:30px;line-height:1.15;margin:20px 0 6px;text-wrap:balance}
+.hero{background:var(--ink);color:#fff;padding:0 0 18px}
+.stage{position:sticky;top:0;z-index:4;background:var(--ink);padding:8px 0 10px}
+.stage figure{margin:0;position:relative;border-radius:12px;overflow:hidden;background:#0b111c;isolation:isolate;max-height:46vh;display:flex;justify-content:center}
+.stage .pic{position:relative;max-height:46vh;aspect-ratio:var(--ar,4/3);width:100%}
+.stage .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transition:opacity .3s}
+.stage .pic img.lt{mix-blend-mode:screen}
+.stage .pic img.off{opacity:0}
+.hero h1{font-family:var(--serif);font-weight:600;font-size:28px;line-height:1.15;margin:14px 0 0}
 .hero p{margin:0;color:#c9cfdb;max-width:58ch}
-.views{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.views{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .views button{font:600 13.5px var(--sans);background:var(--ink2);color:#dfe4ee;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:7px 13px;cursor:pointer}
 .views button[aria-pressed=true]{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
@@ -50,19 +53,18 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 .bar .t{font-size:13px;color:#c9cfdb}.bar .t b{display:block;color:#fff;font-size:21px;font-variant-numeric:tabular-nums}
 .bar a{background:var(--gold);color:var(--ink);font-weight:800;text-decoration:none;padding:12px 18px;border-radius:10px;white-space:nowrap}
 @media(max-width:520px){.ph{display:none}header img{max-width:60vw;height:auto;max-height:34px}.hero h1{font-size:25px}.colors{grid-template-columns:repeat(3,1fr)}}
-@media(prefers-reduced-motion:reduce){.hero figure img{transition:none}}
+@media(prefers-reduced-motion:reduce){.stage .pic img{transition:none}}
 </style></head><body>
 <header><div class="wrap"><img src="/assets/quotes/kim-voyager-lights-e72f/logo.svg" alt="OBX Holiday Lights"></div></header>
-<section class="hero"><div class="wrap">
-<figure><img id="heroImg" src="/assets/quotes/kim-voyager-lights-e72f/warm.jpg" alt="758 Voyager lit for the holidays"></figure>
-<div class="views" role="group" aria-label="Preview">
+<section class="hero"><div class="wrap"><h1>758 Voyager</h1></div></section>
+<div class="stage"><div class="wrap">
+<figure><div class="pic" id="pic" role="img" aria-label="758 Voyager with your picks lit"></div></figure>
+<div class="views" role="group" aria-label="View">
 <button type="button" data-view="front" aria-pressed="true">Front</button>
-<button type="button" data-view="roofline" aria-pressed="false">Roofline</button>
 <button type="button" data-view="back" aria-pressed="false">Back</button>
-<button type="button" data-view="day" aria-pressed="false">Daytime</button>
+<button type="button" data-view="side" aria-pressed="false">Side</button>
 </div>
-<h1>758 Voyager</h1>
-</div></section>
+</div></div>
 <main class="wrap">
 <h2>Colors</h2>
 <div class="clabel">Roofline</div><div class="colors" id="cRoof"></div>
@@ -89,31 +91,32 @@ var COLORS=[
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
 var GROUPS=[
  {name:"Roofline",sub:"",items:[
-  {id:"rf",label:"Front roofline",note:"90 ft",price:90*11.5,on:true},
-  {id:"rb",label:"Back roofline",note:"75 ft",price:75*11.5},
-  {id:"rs",label:"Side peaks",note:"110 ft",price:110*11.5}]},
+  {id:"rf",view:"front",kind:"roof",label:"Front roofline",note:"90 ft",price:90*11.5,on:true},
+  {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5},
+  {id:"rs",view:"side",kind:"roof",label:"Side peaks",note:"110 ft",price:110*11.5}]},
  {name:"Front",sub:"",items:[
-  {id:"fu",label:"Top deck railing",note:"69 ft",price:69*6,on:true},
-  {id:"fp",label:"Porch railing",note:"64 ft",price:64*6,on:true},
-  {id:"fs",label:"Front stair handrails",note:"50 ft",price:50*6,on:true},
-  {id:"fc",label:"Porch columns",note:"14",price:14*110,on:true}]},
- {name:"Back",sub:"",shot:"back.jpg",items:[
-  {id:"bd",label:"Back deck railings",note:"110 ft",price:110*6},
-  {id:"bs",label:"Back stair handrails",note:"72 ft",price:72*6},
-  {id:"bp",label:"Back deck posts",note:"7",price:7*110}]},
+  {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:69*6,on:true},
+  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:64*6,on:true},
+  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"50 ft",price:50*6,on:true},
+  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"14",price:14*110,on:true}]},
+ {name:"Back",sub:"",items:[
+  {id:"bd",view:"back",kind:"mini",label:"Back deck railings",note:"110 ft",price:110*6},
+  {id:"bs",view:"back",kind:"mini",label:"Back stair handrails",note:"72 ft",price:72*6},
+  {id:"bp",view:"back",kind:"mini",label:"Back deck posts",note:"7",price:7*110}]},
  {name:"Wreaths and garland",sub:"",items:[
-  {id:"wg",label:"Wreath on the center peak",sizes:[["36 in",200],["48 in",400],["60 in",800]],size:1,on:true},
-  {id:"wd",label:"Wreaths on the side peaks",note:"Two 24 in",price:2*100},
-  {id:"wf",label:"Front door wreath",sizes:[["24 in",100],["36 in",200]],size:1},
-  {id:"wr",label:"Wreaths on the porch railing",note:"Six 24 in",price:6*100},
-  {id:"gs",label:"Garland, stair rails",note:"50 ft",price:50*20},
-  {id:"gp",label:"Garland, porch railing",note:"45 ft",price:45*20},
-  {id:"gd",label:"Garland, front door",note:"20 ft",price:20*20}]},
+  {id:"wg",view:"front",kind:"decor",label:"Wreath on the center peak",sizes:[["36 in",200],["48 in",400],["60 in",800]],size:1,on:true},
+  {id:"wd",view:"front",kind:"decor",label:"Wreaths on the small peaks",note:"Two 24 in",price:2*100},
+  {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",100],["36 in",200]],size:1},
+  {id:"wr",view:"front",kind:"decor",label:"Wreaths on the top deck railing",note:"Six 24 in",price:6*100},
+  {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"50 ft",price:50*20},
+  {id:"gp",view:"front",kind:"decor",label:"Garland, top deck railing",note:"69 ft",price:69*20},
+  {id:"gd",view:"front",kind:"decor",label:"Garland, front door",note:"20 ft",price:20*20}]},
  {name:"Yard",sub:"",items:[
-  {id:"tp",label:"Pine trees by the pool",note:"18 ft and 24 ft",price:(18+24)*30},
-  {id:"tf",label:"Front corner pine",note:"15 ft",price:450},
-  {id:"sh",label:"Front shrubs",note:"6",price:6*75}]}];
+  {id:"tp",view:"back",kind:"mini",label:"Pine trees by the pool",note:"18 ft and 24 ft",price:(18+24)*30},
+  {id:"tf",view:"front",kind:"mini",label:"Front corner pine",note:"15 ft",price:450},
+  {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"6",price:6*75}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
+var VIEWS={front:{base:"baseF.jpg"},back:{base:"baseB.jpg"},side:{base:"baseS.jpg"}};
 var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};
 ALL.forEach(function(i){st.on[i.id]=!!i.on;if(i.sizes)st.size[i.id]=i.size||0});
 try{var h=decodeURIComponent(location.hash.slice(1));if(/^p=/.test(h)){var o=JSON.parse(h.slice(2));if(o&&o.on){st.on={};o.on.forEach(function(k){st.on[k]=true});st.size=o.sz||st.size;st.roof=o.r||st.roof;st.mini=o.m||st.mini}}}catch(e){}
@@ -123,18 +126,23 @@ function priceOf(i){return i.sizes?i.sizes[st.size[i.id]||0][1]:i.price}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function colorName(id){for(var k=0;k<COLORS.length;k++)if(COLORS[k].id===id)return COLORS[k].name;return id}
 function drawColors(el,key){el.innerHTML=COLORS.map(function(c){return '<button type="button" data-c="'+c.id+'" aria-pressed="'+(st[key]===c.id)+'"><span class="dots">'+c.dots.map(function(d){return '<i style="background:'+d+';color:'+d+'"></i>'}).join("")+'</span>'+esc(c.name)+'</button>'}).join("");
- el.onclick=function(e){var b=e.target.closest("button");if(!b)return;st[key]=b.getAttribute("data-c");if(key==="roof")st.view="front";render()}}
+ el.onclick=function(e){var b=e.target.closest("button");if(!b)return;st[key]=b.getAttribute("data-c");render()}}
 function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h2>'+esc(g.name)+'</h2>'+(g.sub?'<p class="sub">'+esc(g.sub)+'</p>':'')+(g.shot?'<div class="shot"><img loading="lazy" src="'+IMG+g.shot+'" alt="Back of the house lit, from the pool"></div>':'')+'<div class="items">'+g.items.map(function(i){
  return '<label class="item" data-id="'+i.id+'"><input type="checkbox"><span class="box"></span><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+'</small>':'')+(i.sizes?'<select aria-label="Size">'+i.sizes.map(function(s,k){return '<option value="'+k+'">'+esc(s[0])+' · '+money(s[1])+'</option>'}).join("")+'</select>':'')+'</span><span class="amt"></span></label>'}).join("")+'</div>'}).join("");
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
-  cb.onchange=function(){st.on[id]=cb.checked;render()};
+  cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
+function layerSrc(i){return i.kind==="decor"?i.id+".webp":i.id+"-"+(i.kind==="roof"?st.roof:st.mini)+".jpg"}
+function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
+ if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
+  pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return i.view===st.view}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
+  var b=pic.querySelector(".bs");b.onload=function(){pic.style.setProperty("--ar",b.naturalWidth+"/"+b.naturalHeight)}}
+ Array.prototype.forEach.call(pic.querySelectorAll("img[data-id]"),function(el){var i=ALL.filter(function(x){return x.id===el.getAttribute("data-id")})[0];var on=!!st.on[i.id];
+  var want=IMG+layerSrc(i);if(on&&el.getAttribute("src")!==want)el.setAttribute("src",want);el.classList.toggle("off",!on)})}
 function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
 function render(){
  drawColors($("cRoof"),"roof");drawColors($("cMini"),"mini");
- var c=COLORS.filter(function(x){return x.id===st.roof})[0]||COLORS[0];
- var src=st.view==="front"?c.img:st.view==="roofline"?"roofline.jpg":st.view==="back"?"back.jpg":"day.jpg";
- var hi=$("heroImg");if(hi.getAttribute("src")!==IMG+src){hi.src=IMG+src}
+ drawPic();
  Array.prototype.forEach.call(document.querySelectorAll(".views button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-view")===st.view))});
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var i=ALL.filter(function(x){return x.id===id})[0];var on=!!st.on[id];
   el.classList.toggle("on",on);el.querySelector("input").checked=on;el.querySelector(".amt").textContent=money(priceOf(i));var s=el.querySelector("select");if(s)s.value=String(st.size[id]||0)});
