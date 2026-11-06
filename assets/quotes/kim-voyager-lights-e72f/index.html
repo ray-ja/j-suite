@@ -90,9 +90,8 @@ var COLORS=[
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
 var GROUPS=[
  {name:"Roofline",sub:"",items:[
-  {id:"rf",view:"front",kind:"roof",label:"Front roofline",note:"90 ft",price:90*11.5,on:true},
-  {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5},
-  {id:"rs",view:"side",kind:"roof",label:"Side peaks",note:"110 ft",price:110*11.5}]},
+  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*11.5,on:true},
+  {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5}]},
  {name:"Front",sub:"",items:[
   {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:69*6,on:true},
   {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:64*6,on:true},
@@ -131,13 +130,14 @@ function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
   cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
-function layerSrc(i){return i.kind==="decor"?i.id+".webp":i.id+"-"+st.roof+".jpg"}
+function layerOf(i,v){return i.layers?i.layers[v]:(i.view===v?i.id:null)}
+function layerSrc(i,v){var L=layerOf(i,v);return i.kind==="decor"?L+".webp":L+"-"+st.roof+".jpg"}
 function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
  if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
-  pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return i.view===st.view}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
+  pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'">'+ALL.filter(function(i){return layerOf(i,st.view)}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="'+(i.kind==="decor"?"dc":"lt")+' off">'}).join("");
   var b=pic.querySelector(".bs");b.onload=function(){pic.style.setProperty("--ar",b.naturalWidth+"/"+b.naturalHeight)}}
  Array.prototype.forEach.call(pic.querySelectorAll("img[data-id]"),function(el){var i=ALL.filter(function(x){return x.id===el.getAttribute("data-id")})[0];var on=!!st.on[i.id];
-  var want=IMG+layerSrc(i);if(on&&el.getAttribute("src")!==want)el.setAttribute("src",want);el.classList.toggle("off",!on)})}
+  var want=IMG+layerSrc(i,st.view);if(on&&el.getAttribute("src")!==want)el.setAttribute("src",want);el.classList.toggle("off",!on)})}
 function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
 function render(){
  drawColors($("cRoof"),"roof");
