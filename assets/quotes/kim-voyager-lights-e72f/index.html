@@ -52,39 +52,30 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 @media(max-width:520px){.ph{display:none}header img{max-width:60vw;height:auto;max-height:34px}.hero h1{font-size:25px}.colors{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-motion:reduce){.hero figure img{transition:none}}
 </style></head><body>
-<header><div class="wrap"><img src="/assets/logo-lights.svg" alt="OBX Holiday Lights"><a href="sms:+12522075985">Text Ray<span class="ph"> · (252) 207-5985</span></a></div></header>
+<header><div class="wrap"><img src="/assets/quotes/kim-voyager-lights-e72f/logo.svg" alt="OBX Holiday Lights"></div></header>
 <section class="hero"><div class="wrap">
-<figure><img id="heroImg" src="/assets/quotes/kim-voyager-lights-e72f/warm.jpg" alt="758 Voyager lit for the holidays"><figcaption id="heroCap">Preview · warm white</figcaption></figure>
+<figure><img id="heroImg" src="/assets/quotes/kim-voyager-lights-e72f/warm.jpg" alt="758 Voyager lit for the holidays"></figure>
 <div class="views" role="group" aria-label="Preview">
-<button type="button" data-view="front" aria-pressed="true">Front, lit</button>
-<button type="button" data-view="roofline" aria-pressed="false">Roofline only</button>
-<button type="button" data-view="back" aria-pressed="false">Back and pool</button>
-<button type="button" data-view="day" aria-pressed="false">Today</button>
+<button type="button" data-view="front" aria-pressed="true">Front</button>
+<button type="button" data-view="roofline" aria-pressed="false">Roofline</button>
+<button type="button" data-view="back" aria-pressed="false">Back</button>
+<button type="button" data-view="day" aria-pressed="false">Daytime</button>
 </div>
-<h1>Holiday lighting for 758 Voyager</h1>
-<p>Pick what you'd like lit and your colors. The total updates as you go. When it looks right, text your picks to Ray.</p>
+<h1>758 Voyager</h1>
 </div></section>
 <main class="wrap">
 <h2>Colors</h2>
-<p class="sub">Same price in any color.</p>
-<div class="clabel">Roofline bulbs</div><div class="colors" id="cRoof"></div>
-<div class="clabel">Railings, columns and trees</div><div class="colors" id="cMini"></div>
+<div class="clabel">Roofline</div><div class="colors" id="cRoof"></div>
+<div class="clabel">Railings, columns, trees</div><div class="colors" id="cMini"></div>
 <div id="groups"></div>
-<h2>Your quote</h2>
+<h2>Total</h2>
 <div class="sum" id="sum"></div>
-<a class="btn gold" id="sendBtn" href="#">Text my picks to Ray</a>
+<a class="btn gold" id="sendBtn" href="#">Send my picks</a>
 <button class="btn" id="copyBtn" type="button">Copy my picks</button>
-<h2>Included</h2>
-<ul class="inc">
-<li>Our commercial-grade lights, cut to fit the house</li>
-<li>Installation, timers and power planning</li>
-<li>Bulb and strand fixes all season</li>
-<li>Takedown in January and storage until next year</li>
-</ul>
-<p class="note">Footage is estimated from our visit and photos, and is confirmed on install day. 50% deposit books your date; the balance is due on install day. Card, or cash or check with a 3% discount.</p>
-<footer>OBX Holiday Lights · (252) 207-5985 · obxholidaylights.com<br>Prepared November 2026 for Kim Baumstark</footer>
+<p class="note">Includes lights, install, service all season, January takedown and storage. 50% deposit, balance on install day.</p>
+<footer>OBX Holiday Lights · (252) 207-5985</footer>
 </main>
-<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b></div><a href="#sum" id="barBtn">Review picks</a></div></div>
+<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b></div><a href="#sum" id="barBtn">Review</a></div></div>
 <script>
 (function(){
 var IMG="/assets/quotes/kim-voyager-lights-e72f/";
@@ -97,31 +88,31 @@ var COLORS=[
  {id:"redwhite",name:"Red and white",dots:["#ff4b3e","#f5f5f5","#ff4b3e"],img:"redwhite.jpg"},
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
 var GROUPS=[
- {name:"Roofline",sub:"Large C9 bulbs, 12 inches apart.",items:[
-  {id:"rf",label:"Front roofline",note:"Eaves, the center peak and both small peaks · about 90 ft",price:90*11.5,on:true},
-  {id:"rb",label:"Back roofline",note:"Back eave and peak · about 75 ft",price:75*11.5},
-  {id:"rs",label:"Both side peaks",note:"About 110 ft",price:110*11.5}]},
- {name:"Front porches and stairs",sub:"Mini lights along the top rail, or wrapped around the columns.",items:[
-  {id:"fu",label:"Top deck railing",note:"Front and both ends · about 69 ft",price:69*6,on:true},
-  {id:"fp",label:"Porch railing",note:"Front and both ends · about 64 ft",price:64*6,on:true},
-  {id:"fs",label:"Front stair handrails",note:"Both sides · 25 ft each",price:50*6,on:true},
-  {id:"fc",label:"Porch columns, wrapped",note:"14 columns",price:14*110,on:true}]},
- {name:"Back of the house",sub:"The pool side.",shot:"back.jpg",items:[
-  {id:"bd",label:"Back deck railings",note:"Both levels · about 110 ft",price:110*6},
-  {id:"bs",label:"Back stair handrails",note:"Two flights, both sides · about 72 ft",price:72*6},
-  {id:"bp",label:"Back deck posts, wrapped",note:"7 posts",price:7*110}]},
- {name:"Wreaths and garland",sub:"Lit wreaths with a bow, and lit garland.",items:[
+ {name:"Roofline",sub:"",items:[
+  {id:"rf",label:"Front roofline",note:"90 ft",price:90*11.5,on:true},
+  {id:"rb",label:"Back roofline",note:"75 ft",price:75*11.5},
+  {id:"rs",label:"Side peaks",note:"110 ft",price:110*11.5}]},
+ {name:"Front",sub:"",items:[
+  {id:"fu",label:"Top deck railing",note:"69 ft",price:69*6,on:true},
+  {id:"fp",label:"Porch railing",note:"64 ft",price:64*6,on:true},
+  {id:"fs",label:"Front stair handrails",note:"50 ft",price:50*6,on:true},
+  {id:"fc",label:"Porch columns",note:"14",price:14*110,on:true}]},
+ {name:"Back",sub:"",shot:"back.jpg",items:[
+  {id:"bd",label:"Back deck railings",note:"110 ft",price:110*6},
+  {id:"bs",label:"Back stair handrails",note:"72 ft",price:72*6},
+  {id:"bp",label:"Back deck posts",note:"7",price:7*110}]},
+ {name:"Wreaths and garland",sub:"",items:[
   {id:"wg",label:"Wreath on the center peak",sizes:[["36 in",200],["48 in",400],["60 in",800]],size:1,on:true},
-  {id:"wd",label:"Wreaths on both small peaks",note:"Two 24 in",price:2*100},
+  {id:"wd",label:"Wreaths on the side peaks",note:"Two 24 in",price:2*100},
   {id:"wf",label:"Front door wreath",sizes:[["24 in",100],["36 in",200]],size:1},
-  {id:"wr",label:"Wreaths on the porch railings",note:"Six 24 in",price:6*100},
-  {id:"gs",label:"Garland on the front stair rails",note:"Both sides · about 50 ft",price:50*20},
-  {id:"gp",label:"Garland on the porch railing",note:"About 45 ft",price:45*20},
-  {id:"gd",label:"Garland around the front door",note:"About 20 ft",price:20*20}]},
+  {id:"wr",label:"Wreaths on the porch railing",note:"Six 24 in",price:6*100},
+  {id:"gs",label:"Garland, stair rails",note:"50 ft",price:50*20},
+  {id:"gp",label:"Garland, porch railing",note:"45 ft",price:45*20},
+  {id:"gd",label:"Garland, front door",note:"20 ft",price:20*20}]},
  {name:"Yard",sub:"",items:[
-  {id:"tp",label:"Pine trees by the pool",note:"Two trees, about 18 ft and 24 ft",price:(18+24)*30},
-  {id:"tf",label:"Front corner pine",note:"About 15 ft",price:450},
-  {id:"sh",label:"Front bed shrubs",note:"6 shrubs",price:6*75}]}];
+  {id:"tp",label:"Pine trees by the pool",note:"18 ft and 24 ft",price:(18+24)*30},
+  {id:"tf",label:"Front corner pine",note:"15 ft",price:450},
+  {id:"sh",label:"Front shrubs",note:"6",price:6*75}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
 var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};
 ALL.forEach(function(i){st.on[i.id]=!!i.on;if(i.sizes)st.size[i.id]=i.size||0});
@@ -143,8 +134,7 @@ function render(){
  drawColors($("cRoof"),"roof");drawColors($("cMini"),"mini");
  var c=COLORS.filter(function(x){return x.id===st.roof})[0]||COLORS[0];
  var src=st.view==="front"?c.img:st.view==="roofline"?"roofline.jpg":st.view==="back"?"back.jpg":"day.jpg";
- var cap=st.view==="front"?"Preview · "+c.name.toLowerCase():st.view==="roofline"?"Preview · roofline only":st.view==="back"?"Preview · back, warm white":"Today";
- var hi=$("heroImg");if(hi.getAttribute("src")!==IMG+src){hi.src=IMG+src}$("heroCap").textContent=cap;
+ var hi=$("heroImg");if(hi.getAttribute("src")!==IMG+src){hi.src=IMG+src}
  Array.prototype.forEach.call(document.querySelectorAll(".views button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-view")===st.view))});
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var i=ALL.filter(function(x){return x.id===id})[0];var on=!!st.on[id];
   el.classList.toggle("on",on);el.querySelector("input").checked=on;el.querySelector(".amt").textContent=money(priceOf(i));var s=el.querySelector("select");if(s)s.value=String(st.size[id]||0)});
@@ -154,7 +144,7 @@ function render(){
  if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
  html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div>';
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
- var msg="Hi Ray, my lighting picks for 758 Voyager:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nRoofline: "+colorName(st.roof)+". Railings and trees: "+colorName(st.mini)+".\nTotal "+money(tot)+".\nKim";
+ var msg="758 Voyager picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nRoofline: "+colorName(st.roof)+". Railings and trees: "+colorName(st.mini)+".\nTotal "+money(tot)+".\nKim";
  $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
  try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof,m:st.mini})))}catch(e){}
 }
