@@ -8,11 +8,13 @@ import numpy as np, json
 LOOK = {
   "kinds": {
     "c9":   {"core": 2.2, "coreI": 2.0, "white": 0.30, "halo": 3.0, "haloI": 0.55, "glow": 8.0, "glowI": 0.07,
-             "r0": 5.0, "R": 64, "spillI": 1.5},
-    "mini": {"core": 0.95, "coreI": 2.2, "white": 0.25, "halo": 1.6, "haloI": 0.55, "glow": 4.0, "glowI": 0.06,
-             "r0": 3.0, "R": 32, "spillI": 0.9, "vary": 0.45},
+             "r0": 8.0, "R": 96, "spillI": 1.1, "floor": 0.4},
+    "mini": {"core": 0.95, "coreI": 2.4, "white": 0.3, "halo": 1.4, "haloI": 0.45, "glow": 3.5, "glowI": 0.035,
+             "r0": 2.5, "R": 28, "spillI": 0.4, "vary": 0.45},
     "net":  {"core": 1.2, "coreI": 2.4, "white": 0.35, "halo": 1.6, "haloI": 0.5, "glow": 4.5, "glowI": 0.06,
-             "r0": 6.0, "R": 48, "spillI": 1.3, "vary": 0.7}
+             "r0": 6.0, "R": 48, "spillI": 1.3, "vary": 0.7},
+    "tree": {"core": 0.95, "coreI": 2.8, "white": 0.6, "halo": 1.5, "haloI": 0.45, "glow": 3.5, "glowI": 0.03,
+             "r0": 3.5, "R": 30, "spillI": 0.35, "vary": 0.55}
   },
   "albedoGain": 0.5,
   "albedoTint": 0.35,

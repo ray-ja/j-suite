@@ -5,8 +5,16 @@ import sys, os, json, time, shutil
 import numpy as np
 from PIL import Image, ImageDraw
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from trace import mask, along, strands, scatter, wobble
-from look import LOOK, compose, ambient
+from trace import mask, along, strands, scatter, wobble, wrap, spiral
+from look import LOOK, compose, ambient, albedo, s2l
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def out_dir(spec, spec_root):
+  """Where the page's light files go. "out" is relative to the repo (e.g. assets/quotes/<slug>/lights),
+  so a spec works from any checkout; an absolute path is used as-is."""
+  o = spec["out"]
+  return o if os.path.isabs(o) else os.path.join(REPO, o)
 
 def falloff_kernel(r0, R):
   yy, xx = np.mgrid[-R:R+1, -R:R+1].astype(np.float32); d = np.hypot(xx, yy)
@@ -20,23 +28,39 @@ def convolve(img, ker):
   return out[oy:oy+H, ox:ox+W].astype(np.float32)
 
 def points(run, path, W, H, sky=None):
-  m = mask(path, W, H, run.get("y"), run.get("x"), run.get("minSpeck", 25))
+  if isinstance(path, list):   # several traces for one run (e.g. two takes of the same tiers): union them
+    m = np.zeros((H, W), bool)
+    for p in path: m |= mask(p, W, H, run.get("y"), run.get("x"), run.get("minSpeck", 25), run.get("bridge", 0))
+  elif path: m = mask(path, W, H, run.get("y"), run.get("x"), run.get("minSpeck", 25), run.get("bridge", 0))
+  else: m = np.zeros((H, W), bool)
+  if run.get("lines"):   # hand-drawn segments [[x0,y0,x1,y1],...] for short bits the model missed
+    from PIL import ImageDraw
+    im = Image.fromarray(m.astype(np.uint8)*255); dr = ImageDraw.Draw(im)
+    for x0, y0, x1, y1 in run["lines"]: dr.line((x0, y0, x1, y1), fill=255, width=3)
+    m = np.asarray(im) > 0
   if sky is not None and run.get("mode", "line") != "line": m = m & ~sky   # nets and trees: no bulbs in the gaps where sky shows
   mode = run.get("mode", "line"); d = run["spacing"]
-  if mode == "line":
+  if mode == "line" and run.get("spiral"):   # {"pitch": px per turn, "radius": px}
+    sp = run["spiral"]; pts = spiral(m, sp["pitch"], sp["radius"], sp.get("perTurn", 6))
+  elif mode == "line":
     pts = along(m, d)
     if run.get("wobble"): pts = wobble(pts, run["wobble"])
   elif mode == "net": pts = scatter(m, d)
   else: pts = strands(m, d, run.get("gap"), run.get("slope", 0.0 if mode == "net" else 0.3), run.get("amp"))
+  for w in run.get("wraps", []):   # trunks / columns / posts: {"from":[x,y],"to":[x,y],"width":10,"turns":8}
+    pts += wrap(w["from"], w["to"], w["width"], w["turns"], w.get("spacing", d))
   return pts + [tuple(p) for p in run.get("extra", [])], m
 
-def irradiance(pts, kind, sky, W, H):
+def irradiance(pts, kind, sky, W, H, boost=None):
+  """Light reaching each pixel from this run's bulbs, per bulb group (n % 4). boost: per-pixel multiplier (see floor)."""
   P = LOOK["kinds"][kind]; ker = falloff_kernel(P["r0"], P["R"]); maps = []
   for g in range(4):
     imp = np.zeros((H, W), np.float32)
     for n, (x, y) in enumerate(pts):
       if n % 4 == g and 0 <= x < W and 0 <= y < H: imp[int(y), int(x)] += 1
-    irr = np.maximum(convolve(imp, ker), 0); irr[sky] = 0; maps.append(irr)
+    irr = np.maximum(convolve(imp, ker), 0); irr[sky] = 0
+    if boost is not None: irr = irr*boost
+    maps.append(irr)
   return maps
 
 def encode(maps, W, H):
@@ -55,7 +79,7 @@ def main():
   spec_path = sys.argv[1]; root = os.path.dirname(os.path.abspath(spec_path)); S = json.load(open(spec_path))
   only = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else None
   rel = lambda p: p if os.path.isabs(p) else os.path.join(root, p)
-  W, H = S["size"]; out = rel(S["out"]); qa = rel(S.get("qa", "qa")); os.makedirs(out, exist_ok=True); os.makedirs(qa, exist_ok=True)
+  W, H = S["size"]; out = out_dir(S, root); qa = rel(S.get("qa", "qa")); os.makedirs(out, exist_ok=True); os.makedirs(qa, exist_ok=True)
   old = json.load(open(os.path.join(out, "lights.json"))) if os.path.exists(os.path.join(out, "lights.json")) else {"runs": {}}
   L = {"w": W, "h": H, "stamp": int(time.time()), "look": LOOK, "views": {}, "runs": {}}
   bases, skies = {}, {}
@@ -68,8 +92,14 @@ def main():
   for rid, run in S["runs"].items():
     if only and rid not in only and rid in old["runs"]:
       L["runs"][rid] = old["runs"][rid]; continue
-    t = time.time(); pts, m = points(run, rel(run["guide"]), W, H, skies[run["view"]]); traces[rid] = m
-    maps = irradiance(pts, run["kind"], skies[run["view"]], W, H)
+    t = time.time(); g = run.get("guide"); g = [rel(x) for x in g] if isinstance(g, list) else (rel(g) if g else None)
+    pts, m = points(run, g, W, H, skies[run["view"]]); traces[rid] = m
+    # floor: roofline light still warms dark shingles (they have sheen); baked here so it only applies to this kind
+    fl = LOOK["kinds"][run["kind"]].get("floor"); boost = None
+    if fl:
+      a = albedo(s2l(bases[run["view"]]/255.0), np.asarray(L["views"][run["view"]]["ambient"], np.float32)).mean(2)
+      boost = np.minimum(np.maximum(a, fl)/np.maximum(a, 1e-3), 4.0).astype(np.float32)
+    maps = irradiance(pts, run["kind"], skies[run["view"]], W, H, boost)
     png, scale = encode(maps, W, H); png.save(os.path.join(out, "irr-%s.png" % rid), optimize=True)
     L["runs"][rid] = {"view": run["view"], "kind": run["kind"], "scale": round(scale, 5), "pts": [int(c) for p in pts for c in p]}
     print("%-4s %-5s %4d bulbs  %.1fs" % (rid, run["kind"], len(pts), time.time() - t))

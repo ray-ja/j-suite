@@ -4,7 +4,7 @@
   1195,
   896
  ],
- "out": "/home/rzy/j-suite/.claude/worktrees/agent-a9d94ba03ea73e576/assets/quotes/kim-voyager-lights-e72f/lights",
+ "out": "assets/quotes/kim-voyager-lights-e72f/lights",
  "qa": "qa",
  "views": {
   "front": {
@@ -35,8 +35,12 @@
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "wobble": 1.5,
-   "describe": "along the top rail of the white balcony railings directly below the roof, just under the dormer windows (about 45 percent of the way down the image): the left balcony, the center balcony and the right balcony, each across its full width. Do NOT draw on the lower railing beside the front door"
+   "describe": "along the top rail of the white balcony railings directly below the roof, just under the dormer windows (about 45 percent of the way down the image): the left balcony, the center balcony and the right balcony, each across its full width. Do NOT draw on the lower railing beside the front door",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
   },
   "fp": {
    "view": "front",
@@ -48,130 +52,26 @@
     480,
     896
    ],
-   "extra": [
+   "describe": "along the top rail of the white railing at the SAME level as the front door, where the front staircase arrives (about 60 percent of the way down the image, below the second row of windows). Draw it on the left section and the right section of that railing, full width from the left corner of the house to the right corner. Do NOT draw on the higher balconies near the roof. Do not draw on the stair handrails",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   },
+   "lines": [
     [
      447,
-     528
-    ],
-    [
-     451,
-     532
-    ],
-    [
-     455,
-     528
-    ],
-    [
-     459,
-     532
-    ],
-    [
-     463,
-     528
-    ],
-    [
-     467,
-     532
-    ],
-    [
-     471,
-     528
-    ],
-    [
-     475,
-     532
-    ],
-    [
-     479,
-     528
-    ],
-    [
-     483,
-     532
-    ],
-    [
-     487,
-     528
-    ],
-    [
-     491,
-     532
-    ],
-    [
-     495,
-     528
-    ],
-    [
-     499,
-     532
-    ],
-    [
+     530,
      503,
-     528
+     530
     ],
     [
      597,
-     532
-    ],
-    [
-     601,
-     534
-    ],
-    [
-     605,
-     532
-    ],
-    [
-     609,
-     534
-    ],
-    [
-     613,
-     532
-    ],
-    [
-     617,
-     534
-    ],
-    [
-     621,
-     532
-    ],
-    [
-     625,
-     534
-    ],
-    [
-     629,
-     532
-    ],
-    [
-     633,
-     534
-    ],
-    [
-     637,
-     532
-    ],
-    [
-     641,
-     534
-    ],
-    [
-     645,
-     532
-    ],
-    [
-     649,
-     534
-    ],
-    [
+     533,
      653,
-     532
+     533
     ]
-   ],
-   "wobble": 1.5,
-   "describe": "along the top rail of the white railing at the SAME level as the front door, where the front staircase arrives (about 60 percent of the way down the image, below the second row of windows). Draw it on the left section and the right section of that railing, full width from the left corner of the house to the right corner. Do NOT draw on the higher balconies near the roof. Do not draw on the stair handrails"
+   ]
   },
   "fs": {
    "view": "front",
@@ -179,8 +79,12 @@
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "wobble": 2,
-   "describe": "along the top of both handrails of the big front staircase, from the bottom post to the porch"
+   "describe": "along the top of both handrails of the big front staircase, from the bottom post to the porch",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
   },
   "fc": {
    "view": "front",
@@ -220,8 +124,12 @@
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "wobble": 1.5,
-   "describe": "along the top rail of the white deck railings on the two upper deck levels of the house: the upper deck railing just below the roof eave, and the middle deck railing one level below it. Follow each railing across the full width of the house. Do NOT draw on the roof, the roof eaves, the walls or the stair handrails"
+   "describe": "along the top rail of the white deck railings on the two upper deck levels of the house: the upper deck railing just below the roof eave, and the middle deck railing one level below it. Follow each railing across the full width of the house. Do NOT draw on the roof, the roof eaves, the walls or the stair handrails",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
   },
   "bs": {
    "view": "back",
@@ -229,8 +137,12 @@
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "wobble": 2,
-   "describe": "along the top of the handrails of both staircases (ground to middle deck, and middle deck to top deck), both sides of each staircase"
+   "describe": "along the top of the handrails of both staircases (ground to middle deck, and middle deck to top deck), both sides of each staircase",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
   },
   "bp": {
    "view": "back",
@@ -243,14 +155,32 @@
   },
   "tp": {
    "view": "back",
-   "guide": "guides/tp.png",
-   "kind": "net",
-   "mode": "wrap",
-   "spacing": 5,
-   "slope": 0.1,
-   "gap": 20,
-   "amp": 5,
-   "describe": "the two pine trees on the right side of the photo, following the shape of their foliage"
+   "guide": [
+    "guides/tp-tiers-b.png",
+    "guides/tp-tiers-a.png"
+   ],
+   "kind": "tree",
+   "mode": "line",
+   "spacing": 4,
+   "wobble": 1.5,
+   "bridge": 2,
+   "minSpeck": 6,
+   "describe": "trace the lower outer edge of EVERY branch tier of the two pine trees on the right side of the photo, following how each tier droops from the trunk side out to the branch tips; one line per tier, about 8 to 14 per tree",
+   "wraps": [
+    {
+     "from": [
+      1031,
+      666
+     ],
+     "to": [
+      1017,
+      582
+     ],
+     "width": 10,
+     "turns": 9,
+     "spacing": 3
+    }
+   ]
   }
  },
  "previewPalettes": [

@@ -5,8 +5,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 here = os.path.dirname(os.path.abspath(__file__))
 house, dst = sys.argv[1], sys.argv[2]
-out_dir = json.load(open(os.path.join(house, "house.json")))["out"]
-out_dir = out_dir if os.path.isabs(out_dir) else os.path.join(house, out_dir)
+sys.path.insert(0, here); from build import out_dir as _od
+out_dir = _od(json.load(open(os.path.join(house, "house.json"))), house)
 L = json.load(open(os.path.join(out_dir, "lights.json")))
 rows = []
 for arg in sys.argv[3:]:

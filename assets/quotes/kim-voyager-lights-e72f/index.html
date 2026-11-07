@@ -79,7 +79,7 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 <footer>OBX Holiday Lights · (252) 207-5985</footer>
 </main>
 <div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b></div><a href="#sum" id="barBtn">Review</a></div></div>
-<script src="/assets/lights/render.js?v=2"></script>
+<script src="/assets/lights/render.js?v=3"></script>
 <script>
 (function(){
 var IMG="/assets/quotes/kim-voyager-lights-e72f/";
@@ -116,7 +116,7 @@ var GROUPS=[
   {id:"tp",view:"back",kind:"mini",label:"Pine trees by the pool",note:"18 ft and 24 ft",price:(18+24)*30},
   {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"6",price:6*75}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
-var VIEWS={front:{base:"baseF.jpg"},back:{base:"baseB.jpg"},side:{base:"baseS.jpg"}};
+var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"},side:{base:"lights/base-side.jpg"}};
 var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};
 ALL.forEach(function(i){st.on[i.id]=!!i.on;if(i.sizes)st.size[i.id]=i.size||0});
 try{var h=decodeURIComponent(location.hash.slice(1));if(/^p=/.test(h)){var o=JSON.parse(h.slice(2));if(o&&o.on){st.on={};o.on.forEach(function(k){st.on[k]=true});st.size=o.sz||st.size;st.roof=o.r||st.roof;st.mini=o.m||st.mini}}}catch(e){}

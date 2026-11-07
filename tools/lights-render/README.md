@@ -26,12 +26,17 @@ In `house.json`, per view: `base` photo and `sky` (mask path, made for you). Per
 | key | meaning |
 |---|---|
 | `view` | which photo |
-| `kind` | `c9` (roofline bulbs), `mini` (rails, columns, posts), `net` (shrubs, trees) |
-| `mode` | `line` (bulbs along a traced line), `net` (scattered over a filled shape), `wrap` (draped strands over a tree) |
-| `spacing` | px between bulbs: c9 13, mini 4, net 6, wrap 5 |
+| `kind` | `c9` (roofline bulbs), `mini` (rails, columns, posts), `net` (shrub nets), `tree` (strands on trees) |
+| `mode` | `line` (bulbs along a traced line), `net` (scattered over a filled shape), `wrap` (draped strands over a filled tree, fallback) |
+| `spacing` | px between bulbs: c9 13, mini 4, net 6, tree 4 |
 | `describe` | where the lights go, plain words. The model reads this. Say the level ("same level as the front door", "about 60 percent down the image") |
 | `guide` | where the trace is saved |
-| optional | `wobble` 1.5-2 (minis wrapped on a rail), `gap`/`slope`/`amp` (tree strands), `y`/`x` [min,max] crop, `extra` [[x,y],...] hand-placed bulbs, `minSpeck` |
+| `spiral` | rails (all $6/ft railings): `{"pitch": 7, "radius": 2.2, "perTurn": 6}` = minis spiral-wrapped on the handrail, front half of each turn shows |
+| `wraps` | trunks, posts: `[{"from":[x,y],"to":[x,y],"width":10,"turns":9,"spacing":3}]` spiral between two points, no trace needed |
+| `lines` | `[[x0,y0,x1,y1],...]` hand-drawn segments added to the trace (short bits the model missed); they get the same spiral |
+| optional | `guide` may be a list (union of several takes), `bridge` 1-2 (join dashed traces), `y`/`x` [min,max] crop, `extra` [[x,y],...] loose bulbs, `minSpeck`, `gap`/`slope`/`amp` (wrap mode) |
+
+Trees: trace the tier edges as lines, not a fill. Words that work: "trace the lower outer edge of EVERY branch tier ... following how each tier droops from the trunk side out to the branch tips; one line per tier". Run it twice and list both files in `guide`. The model can't trace trunks; use `wraps`.
 
 Then:
 
@@ -41,7 +46,8 @@ python3 tools/lights-render/guides.py ~/lights-houses/<slug>/house.json      # t
 python3 tools/lights-render/build.py  ~/lights-houses/<slug>/house.json      # bulbs, spill maps, QA
 ```
 
-Set `"out"` to `<repo>/assets/quotes/<page slug>/lights` so the page can load it.
+Set `"out"` to `assets/quotes/<page slug>/lights`. It is relative to the repo that holds the tool, so the spec works from any checkout.
+`tracecheck.py base.jpg out.jpg take1.png take2.png --crop x0,y0,x1,y1` overlays raw traces to pick the better take.
 
 ## QA, every house
 
@@ -60,7 +66,9 @@ Set `"out"` to `<repo>/assets/quotes/<page slug>/lights` so the page can load it
 LightsRender.load("/assets/quotes/<slug>/lights/").then(h => h.draw(canvas, "front", ["rf", "fu"], "warm"))
 ```
 
-`draw` paints the whole lit photo onto the canvas (about 40-90 ms on a laptop). Palettes and the look live in
+`draw` paints the whole lit photo onto the canvas. Only the 16 px blocks a lit run touches are recomputed. Measured toggles on Kim:
+20-30 ms on a laptop, under 100 ms at 4x CPU throttle, under 145 ms at 6x; first open of a view 0.4-0.7 s (once).
+Roofline glow on dark shingles: c9 `floor` raises their albedo, baked into the c9 spill maps at build time so nets and trees are unaffected. Palettes and the look live in
 `look.py` (`LOOK`) and are copied into `lights.json` at build time; after changing the look, run
 `build.py house.json --only none` to refresh `lights.json` without retracing.
 
