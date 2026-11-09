@@ -76,7 +76,7 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 <div class="sum" id="sum"></div>
 <a class="btn gold" id="sendBtn" href="#">Send my picks</a>
 <button class="btn" id="copyBtn" type="button">Copy my picks</button>
-<p class="note">Includes lights, install, service all season, January takedown and storage. 50% deposit, balance on install day.</p>
+<p class="note">Our lights, installed, serviced all season, taken down in January and stored. The lights stay ours. 50% deposit, balance on install day.</p>
 <footer>OBX Holiday Lights · (252) 207-5985</footer>
 </main>
 <div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b><span id="barDate"></span></div><a href="#sum" id="barBtn">Review</a></div></div>
@@ -91,7 +91,7 @@ var MIN=800, DEP=0.5;
 var BOOKED=null, BUFFER=2;
 /* sourced 2026-11-09: Christmas Lights Etc (GA) / Christmas Designers (TX) / Amazon to 27949, all in stock */
 var LEAD={roof:6,mini:6,net:6,garland:6,wreath:{24:5,36:6,48:8,60:10},color:{warm:0,cool:0,multi:0,redwhite:0,bluewhite:0}};
-var LEADKEY={rf:"roof",rb:"roof",fu:"mini",fp:"mini",fs:"mini",fc:"mini",bd:"mini",bs:"mini",bp:"mini",sh:"net",gs:"garland",gp:"garland",gd:"garland",wd:24,wr:24};
+var LEADKEY={tp1:"mini",rf:"roof",rb:"roof",fu:"mini",fp:"mini",fs:"mini",fc:"mini",bd:"mini",bs:"mini",bp:"mini",sh:"net",gs:"garland",gp:"garland",gd:"garland",wd:24,wr:24};
 var COLORS=[
  {id:"warm",name:"Warm white",dots:["#ffd27a","#ffd27a","#ffd27a"],img:"warm.jpg"},
  {id:"cool",name:"Cool white",dots:["#eef4ff","#eef4ff","#eef4ff"],img:"cool.jpg"},
@@ -100,8 +100,8 @@ var COLORS=[
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
 var GROUPS=[
  {name:"Roofline",sub:"",items:[
-  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*11.5,base:true},
-  {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5}]},
+  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*10,base:true},
+  {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*10}]},
  {name:"Front",sub:"",items:[
   {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:210,on:true},
   {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:190,on:true},
@@ -120,6 +120,7 @@ var GROUPS=[
   {id:"gp",view:"front",kind:"decor",label:"Garland, top deck railing",note:"69 ft",price:828},
   {id:"gd",view:"front",kind:"decor",label:"Garland, front door",note:"20 ft",price:240}]},
  {name:"Yard",sub:"",items:[
+  {id:"tp1",view:"back",kind:"tree",label:"Pine tree by the pool",note:"24 ft",price:24*30},
   {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"6",price:6*75}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
 var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"},side:{base:"lights/base-side.jpg"}};
