@@ -93,14 +93,14 @@ console.log("\n--- elements ---");
   const r = hl.hlCalc({ roofFt: 100, storeys: 1, bushes: 4, columns: 2, windows: 6, garlandFt: 18,
                         wreaths: [{ in: 48, qty: 1 }, { in: 24, qty: 2 }] });
   eq("bushes", r.bushPrice, 300);
-  eq("columns", r.columnPrice, 220);
+  eq("columns at $40 each", r.columnPrice, 80);
   eq("windows", r.windowPrice, 372);
-  eq("garland at $17/ft", r.garlandPrice, 306);
-  eq("a 48in wreath is $300 and two 24in are $100 each", r.wreathPrice, 500);
+  eq("garland at $8/ft", r.garlandPrice, 144);
+  eq("a 48in wreath is $175 and two 24in are $60 each", r.wreathPrice, 295);
   const odd = hl.hlCalc({ roofFt: 100, wreaths: [{ in: 36, qty: 1 }] });
-  eq("a 36in wreath falls into the 32in tier", odd.wreathPrice, 175);
+  eq("a 36in wreath is the 36in tier", odd.wreathPrice, 110);
   const huge = hl.hlCalc({ roofFt: 100, wreaths: [{ in: 72, qty: 1 }] });
-  eq("anything above 60in takes the top tier", huge.wreathPrice, 500);
+  eq("anything above 60in takes the top tier", huge.wreathPrice, 325);
 }
 
 console.log("\n--- property-manager portfolio pricing ---");

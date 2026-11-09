@@ -35,22 +35,22 @@ const HL_RATES = {
            src: "Thumbtack: 'most installers charge twice as much on the second story' (labour component). Fixr: roofs 16 ft+ run $3.50-6/ft with a 20-25% multi-level adder." },
   roof3: { v: 11.5, lo: 11, hi: 12, conf: "medium",
            src: "Angi: 3-storey jobs $700-1,800. HomeGuide: 3-storey $750-5,000. Plus a ~20% 'dangerous job' adder. No explicit pitch adder is published anywhere — pros capture steepness by measuring every peak." },
-  rail:  { v: 6,  lo: 5,  hi: 7,  conf: "low",
+  rail:  { v: 3,  lo: 3,  hi: 7,  conf: "low",   /* Ray 2026-11-09: $3/ft, a railing is 10-20 min of work */
            src: "NO published deck-railing rate exists — genuine industry gap. Nearest anchor: fence-line $5-8/ft (ChristmasLightsHQ). Priced BELOW roofline because deck rails are installed from the deck, at ground-level productivity." },
   treeFt:{ v: 45, lo: 30, hi: 60, conf: "high",
            src: "$30-60 per VERTICAL FOOT of tree height — ChristmasLights.io. ChristmasLightsHQ: $25-50/strand at roughly one strand per vertical foot, with a '$300 minimum on any tree'. Consumer guides quote far less (Fixr: 6-ft tree $75-125) — expect anchoring pushback." },
   bush:  { v: 75, lo: 50, hi: 100, conf: "medium", src: "ChristmasLightsHQ $50-150 each; QuoteIQ $25-75. Midpoint taken." },
-  column:{ v: 110, lo: 75, hi: 150, conf: "medium", src: "ChristmasLightsHQ $75-150 per column/porch post." },
+  column:{ v: 40, lo: 40, hi: 150, conf: "medium", /* Ray 2026-11-09: $40 each */ src: "ChristmasLightsHQ $75-150 per column/porch post." },
   window:{ v: 62, lo: 50, hi: 75, conf: "medium", src: "ChristmasLightsHQ $50-100 each; QuoteIQ $20-50." },
-  garland:{ v: 17, lo: 15, hi: 20, conf: "high",
+  garland:{ v: 8, lo: 8, hi: 20, conf: "high",   /* Ray 2026-11-09: $8/ft, our garland, reused yearly (a rental) */
            src: "$15-20/ft installed (~$125-175 per 9-ft section) — ChristmasLightsHQ wreath & garland guide. Commercial runs over 100 ft drop to $12-15/ft." }
 };
-/* wreaths price by DIAMETER, not linear anything */
+/* wreaths price by DIAMETER, not linear anything. Ray 2026-11-09: rental prices, they stay ours */
 const HL_WREATHS = [
-  { in: 24, price: 100, src: "$75-125 installed with bow — ChristmasLightsHQ" },
-  { in: 32, price: 175, src: "30-36in: $150-225" },
-  { in: 48, price: 300, src: "48in: $250-500" },
-  { in: 60, price: 500, src: "60in: $400-800. Price top-of-range for a third-storey gable — that source charges no height premium, we should." }
+  { in: 24, price: 60, src: "$75-125 installed with bow — ChristmasLightsHQ" },
+  { in: 36, price: 110, src: "30-36in: $150-225" },
+  { in: 48, price: 175, src: "48in: $250-500" },
+  { in: 60, price: 325, src: "60in: $400-800. Price top-of-range for a third-storey gable — that source charges no height premium, we should." }
 ];
 
 const HL_MIN_JOB   = 1000;   // ⚠️ NOT his $375 trade minimum — that is one third of the full-service floor.

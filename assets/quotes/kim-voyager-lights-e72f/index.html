@@ -31,6 +31,7 @@ h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
 .items{display:flex;flex-direction:column;gap:8px}
 .item{display:flex;align-items:center;gap:12px;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;user-select:none}
 .item.on{border-color:var(--gold);background:#fffaf0}
+.item.base{cursor:default}
 .item input{position:absolute;opacity:0;pointer-events:none}
 .box{width:24px;height:24px;border-radius:7px;border:2px solid #c8bfb2;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
 .item.on .box{background:var(--gold);border-color:var(--gold)}.item.on .box::after{content:"";width:11px;height:6px;border:2.5px solid var(--ink);border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
@@ -93,13 +94,13 @@ var COLORS=[
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
 var GROUPS=[
  {name:"Roofline",sub:"",items:[
-  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*11.5,on:true},
+  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*11.5,base:true},
   {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5}]},
  {name:"Front",sub:"",items:[
-  {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:210,on:true},
-  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:190,on:true},
-  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"50 ft",price:150,on:true},
-  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"14",price:560,on:true}]},
+  {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:210},
+  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:190},
+  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"50 ft",price:150},
+  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"14",price:560}]},
  {name:"Back",sub:"",items:[
   {id:"bd",view:"back",kind:"mini",label:"Back deck railings",note:"110 ft",price:330},
   {id:"bs",view:"back",kind:"mini",label:"Back stair handrails",note:"72 ft",price:215},
@@ -117,8 +118,8 @@ var GROUPS=[
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
 var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"},side:{base:"lights/base-side.jpg"}};
 var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};
-ALL.forEach(function(i){st.on[i.id]=!!i.on;if(i.sizes)st.size[i.id]=i.size||0});
-try{var h=decodeURIComponent(location.hash.slice(1));if(/^p=/.test(h)){var o=JSON.parse(h.slice(2));if(o&&o.on){st.on={};o.on.forEach(function(k){st.on[k]=true});st.size=o.sz||st.size;st.roof=o.r||st.roof;st.mini=o.m||st.mini}}}catch(e){}
+ALL.forEach(function(i){st.on[i.id]=!!(i.on||i.base);if(i.sizes)st.size[i.id]=i.size||0});
+try{var h=decodeURIComponent(location.hash.slice(1));if(/^p=/.test(h)){var o=JSON.parse(h.slice(2));if(o&&o.on){st.on={};o.on.forEach(function(k){st.on[k]=true});ALL.forEach(function(i){if(i.base)st.on[i.id]=true});st.size=o.sz||st.size;st.roof=o.r||st.roof;st.mini=o.m||st.mini}}}catch(e){}
 function $(id){return document.getElementById(id)}
 function money(n){return "$"+Math.round(n).toLocaleString("en-US")}
 function priceOf(i){return i.sizes?i.sizes[st.size[i.id]||0][1]:i.price}
@@ -127,6 +128,7 @@ function colorName(id){for(var k=0;k<COLORS.length;k++)if(COLORS[k].id===id)retu
 function drawColors(el,key){el.innerHTML=COLORS.map(function(c){return '<button type="button" data-c="'+c.id+'" aria-pressed="'+(st[key]===c.id)+'"><span class="dots">'+c.dots.map(function(d){return '<i style="background:'+d+';color:'+d+'"></i>'}).join("")+'</span>'+esc(c.name)+'</button>'}).join("");
  el.onclick=function(e){var b=e.target.closest("button");if(!b)return;st[key]=b.getAttribute("data-c");render()}}
 function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h2>'+esc(g.name)+'</h2>'+(g.sub?'<p class="sub">'+esc(g.sub)+'</p>':'')+(g.shot?'<div class="shot"><img loading="lazy" src="'+IMG+g.shot+'" alt="Back of the house lit, from the pool"></div>':'')+'<div class="items">'+g.items.map(function(i){
+ if(i.base)return '<div class="item on base" data-id="'+i.id+'"><input type="checkbox" checked disabled hidden><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+' · included</small>':'')+'</span><span class="amt"></span></div>';
  return '<label class="item" data-id="'+i.id+'"><input type="checkbox"><span class="box"></span><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+'</small>':'')+(i.sizes?'<select aria-label="Size">'+i.sizes.map(function(s,k){return '<option value="'+k+'">'+esc(s[0])+' · '+money(s[1])+'</option>'}).join("")+'</select>':'')+'</span><span class="amt"></span></label>'}).join("")+'</div>'}).join("");
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
   cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
