@@ -97,25 +97,29 @@ var COLORS=[
  {id:"multi",name:"Multicolor",dots:["#ff4b3e","#3fd46a","#4f8dff"],img:"multi.jpg"},
  {id:"redwhite",name:"Red and white",dots:["#ff4b3e","#f5f5f5","#ff4b3e"],img:"redwhite.jpg"},
  {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
+/* PRICES: change a rate here and every item that uses it follows (quantities are in each item). */
+var RATE={roof2:9.5,rail:3,post:40,bush:75,garland:8,wreath:{24:60,36:110,48:175,60:325}};
+function wsizes(list){return list.map(function(n){return [n+" in",RATE.wreath[n]]})}
+/* Wreaths and garland are options only on this page: no picture layer (view:null), per Ray 11/9. */
 var GROUPS=[
  {name:"Roofline",sub:"",items:[
-  {id:"rf",view:"front",kind:"roof",label:"Roofline, front and sides",note:"180 ft",price:180*9.5,base:true},
-  {id:"rb",view:"back",kind:"roof",label:"Roofline, sound side",note:"110 ft",price:110*9.5}]},
+  {id:"rf",view:"front",kind:"roof",layers:{front:"rf",back:"rfb"},label:"Roofline, front and sides",note:"180 ft",price:180*RATE.roof2,base:true},
+  {id:"rb",view:"back",kind:"roof",label:"Roofline, sound side",note:"96 ft",price:96*RATE.roof2}]},
  {name:"Front",sub:"",items:[
-  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"28 ft",price:28*3,on:true},
-  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"40 ft",price:40*3},
-  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"5",price:5*40}]},
+  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"28 ft",price:28*RATE.rail,on:true},
+  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"40 ft",price:40*RATE.rail},
+  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"5",price:5*RATE.post}]},
  {name:"Sound side",sub:"",items:[
-  {id:"bd",view:"back",kind:"mini",label:"Deck railing",note:"75 ft",price:75*3},
-  {id:"bp",view:"back",kind:"mini",label:"Deck posts and pilings",note:"6",price:6*40}]},
+  {id:"bd",view:"back",kind:"mini",label:"Deck railing",note:"75 ft",price:75*RATE.rail},
+  {id:"bp",view:"back",kind:"mini",label:"Deck posts and pilings",note:"6",price:6*RATE.post}]},
  {name:"Wreaths and garland",sub:"",items:[
-  {id:"wg",view:"front",kind:"decor",label:"Wreath on the big gable",sizes:[["36 in",110],["48 in",175],["60 in",325]],size:1,on:true},
-  {id:"wl",view:"front",kind:"decor",label:"Wreath on the side gable",sizes:[["24 in",60],["36 in",110]],size:1},
-  {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",60],["36 in",110]],size:0},
-  {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"40 ft",price:40*8},
-  {id:"gp",view:"front",kind:"decor",label:"Garland, porch railing",note:"28 ft",price:28*8}]},
+  {id:"wg",view:null,kind:"decor",label:"Wreath on the big gable",sizes:wsizes([36,48,60]),size:1},
+  {id:"wl",view:null,kind:"decor",label:"Wreath on the side gable",sizes:wsizes([24,36]),size:1},
+  {id:"wf",view:null,kind:"decor",label:"Front door wreath",sizes:wsizes([24,36]),size:0},
+  {id:"gs",view:null,kind:"decor",label:"Garland, stair rails",note:"40 ft",price:40*RATE.garland},
+  {id:"gp",view:null,kind:"decor",label:"Garland, porch railing",note:"28 ft",price:28*RATE.garland}]},
  {name:"Yard",sub:"",items:[
-  {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"5",price:5*75}]}];
+  {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"5",price:5*RATE.bush}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
 var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"}};
 var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};

@@ -65,23 +65,23 @@
   },
   "rb": {
    "view": "back",
-   "guide": "guides/rb.png",
+   "guide": null,
    "kind": "c9",
    "mode": "line",
    "spacing": 12,
-   "describe": "along the roof edges of the house in the middle of the photo: the long eave of the lower roof just above the porch and deck, the eave of the upper roof below the dormer windows, and the short sloped side edges of both roofs. Only this house, not the neighbor house on the left",
-   "erase": [
+   "describe": "sound-side roofline: ONLY the two straight eaves (upper roof eave and lower roof eave), hand lines",
+   "lines": [
     [
-     535,
-     200,
-     1045,
-     222
+     518,
+     280,
+     1059,
+     280
     ],
     [
-     385,
-     338,
-     545,
-     356
+     317,
+     404,
+     1073,
+     404
     ]
    ]
   },
@@ -268,61 +268,44 @@
      "spacing": 3
     }
    ]
+  },
+  "rfb": {
+   "view": "back",
+   "guide": null,
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 12,
+   "describe": "the sloped roof edges seen from the dock (ends of the upper roof, hips of the lower roof): they are part of the base roofline, so the base lights them on the back view too",
+   "lines": [
+    [
+     521,
+     272,
+     543,
+     217
+    ],
+    [
+     1041,
+     217,
+     1057,
+     272
+    ],
+    [
+     323,
+     398,
+     388,
+     345
+    ],
+    [
+     1042,
+     373,
+     1066,
+     398
+    ]
+   ]
   }
  },
  "previewPalettes": [
   "warm",
   "multi"
- ],
- "decor": {
-  "wg": {
-   "view": "front",
-   "type": "wreath",
-   "at": [
-    760,
-    140
-   ],
-   "sizes": {
-    "36": 32,
-    "48": 42,
-    "60": 53
-   }
-  },
-  "wl": {
-   "view": "front",
-   "type": "wreath",
-   "at": [
-    921,
-    240
-   ],
-   "sizes": {
-    "24": 21,
-    "36": 32
-   }
-  },
-  "wf": {
-   "view": "front",
-   "type": "wreath",
-   "at": [
-    530,
-    356
-   ],
-   "sizes": {
-    "24": 21,
-    "36": 31
-   }
-  },
-  "gs": {
-   "view": "front",
-   "type": "garland",
-   "follow": "fs",
-   "thick": 10
-  },
-  "gp": {
-   "view": "front",
-   "type": "garland",
-   "follow": "fp",
-   "thick": 10
-  }
- }
+ ]
 }
