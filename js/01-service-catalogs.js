@@ -16,7 +16,7 @@ const CATALOG = {
     {id:"hl10",cat:"Wreaths & garland",name:"Wreath 36 in, hung with bow",price:110,unit:"each"},
     {id:"hl11",cat:"Wreaths & garland",name:"Wreath 48 in, hung with bow",price:175,unit:"each"},
     {id:"hl12",cat:"Wreaths & garland",name:"Wreath 60 in, hung with bow",price:325,unit:"each"},
-    {id:"hl13",cat:"Wreaths & garland",name:"Lit garland (per ft)",price:8,unit:"each"},
+    {id:"hl13",cat:"Wreaths & garland",name:"Lit garland (per ft)",price:12,unit:"each"},
     {id:"hl14",cat:"Windows & doors",name:"Window or door outline (each)",price:65,unit:"each"},
     {id:"hl15",cat:"Packages",name:"Front roofline package (from)",price:800,unit:"flat"},
     {id:"hl16",cat:"Packages",name:"Renewal: rehang of last year's lights (flat, set per house)",price:0,unit:"quote"}

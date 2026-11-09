@@ -42,7 +42,7 @@ const HL_RATES = {
   bush:  { v: 75, lo: 50, hi: 100, conf: "medium", src: "ChristmasLightsHQ $50-150 each; QuoteIQ $25-75. Midpoint taken." },
   column:{ v: 40, lo: 40, hi: 150, conf: "medium", /* Ray 2026-11-09: $40 each */ src: "ChristmasLightsHQ $75-150 per column/porch post." },
   window:{ v: 62, lo: 50, hi: 75, conf: "medium", src: "ChristmasLightsHQ $50-100 each; QuoteIQ $20-50." },
-  garland:{ v: 8, lo: 8, hi: 20, conf: "high",   /* Ray 2026-11-09: $8/ft, our garland, reused yearly (a rental) */
+  garland:{ v: 12, lo: 12, hi: 20, conf: "high",   /* Ray 2026-11-09: $12/ft. Commercial pre-lit garland costs us ~$11/ft (CLE $99.99 per 9 ft); market $15-20. Reused yearly */
            src: "$15-20/ft installed (~$125-175 per 9-ft section) — ChristmasLightsHQ wreath & garland guide. Commercial runs over 100 ft drop to $12-15/ft." }
 };
 /* wreaths price by DIAMETER, not linear anything. Ray 2026-11-09: rental prices, they stay ours */

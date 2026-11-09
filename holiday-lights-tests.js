@@ -95,7 +95,7 @@ console.log("\n--- elements ---");
   eq("bushes", r.bushPrice, 300);
   eq("columns at $40 each", r.columnPrice, 80);
   eq("windows", r.windowPrice, 372);
-  eq("garland at $8/ft", r.garlandPrice, 144);
+  eq("garland at $12/ft", r.garlandPrice, 216);
   eq("a 48in wreath is $175 and two 24in are $60 each", r.wreathPrice, 295);
   const odd = hl.hlCalc({ roofFt: 100, wreaths: [{ in: 36, qty: 1 }] });
   eq("a 36in wreath is the 36in tier", odd.wreathPrice, 110);
