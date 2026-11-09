@@ -1,0 +1,186 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><title>3102 Bay Drive · Holiday lighting · OBX Holiday Lights</title>
+<style>
+:root{--ink:#101725;--ink2:#1a2336;--paper:#faf8f5;--card:#fff;--body:#54504a;--line:#e4ded5;--gold:#d99420;--gold-deep:#a06a09;--glow:#ffd666;--sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:16px/1.5 var(--sans);color:var(--ink);background:var(--paper);padding-bottom:96px}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px}
+header{background:var(--ink);color:#fff}header .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px}
+header img{height:34px;width:auto}header a{color:var(--glow);font-weight:700;text-decoration:none;white-space:nowrap;font-size:15px}
+.hero{background:var(--ink);color:#fff;padding:1px 0 18px}
+.stage{position:sticky;top:0;z-index:4;background:var(--ink);padding:8px 0 10px}
+.stage figure{margin:0;position:relative;border-radius:12px;overflow:hidden;background:#0b111c;isolation:isolate;max-height:46vh;display:flex;justify-content:center}
+.stage .pic{position:relative;max-height:46vh;aspect-ratio:var(--ar,4/3);width:100%}
+.stage .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transition:opacity .3s}
+.stage .pic img.lt{mix-blend-mode:screen}
+.stage .pic img.off{opacity:0}
+.stage .pic canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;object-fit:cover;opacity:0;transition:opacity .25s}
+.stage .pic canvas.ready{opacity:1}
+.hero h1{font-family:var(--serif);font-weight:600;font-size:28px;line-height:1.15;margin:14px 0 0}
+.hero p{margin:0;color:#c9cfdb;max-width:58ch}
+.views{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.views button{font:600 13.5px var(--sans);background:var(--ink2);color:#dfe4ee;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:7px 13px;cursor:pointer}
+.views button[aria-pressed=true]{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
+.sub{color:var(--body);margin:0 0 12px;font-size:14.5px}
+.colors{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.colors button{font:600 12.5px/1.25 var(--sans);background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 4px 8px;cursor:pointer;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:7px}
+.colors button[aria-pressed=true]{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold) inset}
+.dots{display:flex;gap:3px}.dots i{width:10px;height:10px;border-radius:50%;display:block;box-shadow:0 0 6px currentColor}
+.clabel{font-size:13px;font-weight:700;color:var(--body);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em}
+.items{display:flex;flex-direction:column;gap:8px}
+.item{display:flex;align-items:center;gap:12px;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;user-select:none}
+.item.on{border-color:var(--gold);background:#fffaf0}
+.item.base{cursor:default}
+.item input{position:absolute;opacity:0;pointer-events:none}
+.box{width:24px;height:24px;border-radius:7px;border:2px solid #c8bfb2;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.item.on .box{background:var(--gold);border-color:var(--gold)}.item.on .box::after{content:"";width:11px;height:6px;border:2.5px solid var(--ink);border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.item:focus-within{outline:2px solid var(--gold-deep);outline-offset:2px}
+.txt{flex:1;min-width:0}.txt b{display:block;font-size:15.5px;font-weight:650}.txt small{display:block;color:var(--body);font-size:13.5px;margin-top:1px}
+.amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.item select{font:600 13.5px var(--sans);margin-top:6px;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:#fff}
+.shot{border-radius:12px;overflow:hidden;margin:0 0 10px}.shot img{width:100%;display:block}
+.sum{background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:10px}
+.ln{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:15px}.ln:last-child{border-bottom:0}
+.ln span{min-width:0}.ln b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tot{display:flex;justify-content:space-between;font-size:20px;font-weight:800;padding-top:12px;margin-top:4px;border-top:2px solid var(--ink)}
+.dep{display:flex;justify-content:space-between;color:var(--body);font-size:15px;margin-top:4px}
+.empty{color:var(--body);font-size:15px}
+.btn{display:block;width:100%;text-align:center;font:700 16px var(--sans);background:var(--ink);color:#fff;border:0;text-decoration:none;padding:15px;border-radius:12px;margin-top:12px;cursor:pointer}
+.btn.gold{background:var(--gold);color:var(--ink)}
+.inc{margin:8px 0 0;padding-left:20px;color:var(--body);font-size:14.5px}.inc li{margin:3px 0}
+.note{color:var(--body);font-size:13.5px;margin-top:10px}
+footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:#fff;padding:10px 16px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.18);z-index:5}
+.bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0}
+.bar .t{font-size:13px;color:#c9cfdb}.bar .t span{display:block;font-size:12.5px;color:#c9cfdb}.bar .t b{display:block;color:#fff;font-size:21px;font-variant-numeric:tabular-nums}
+.bar a{background:var(--gold);color:var(--ink);font-weight:800;text-decoration:none;padding:12px 18px;border-radius:10px;white-space:nowrap}
+@media(max-width:520px){.ph{display:none}header img{max-width:60vw;height:auto;max-height:34px}.hero h1{font-size:25px}.colors{grid-template-columns:repeat(3,1fr)}}
+@media(prefers-reduced-motion:reduce){.stage .pic img{transition:none}}
+</style></head><body>
+<header><div class="wrap"><img src="/assets/quotes/mikey-bay-lights-7c4e/logo.svg" alt="OBX Holiday Lights"></div></header>
+<section class="hero"><div class="wrap"><h1>3102 Bay Drive</h1></div></section>
+<div class="stage"><div class="wrap">
+<figure><div class="pic" id="pic" role="img" aria-label="3102 Bay Drive with your picks lit"></div></figure>
+<div class="views" role="group" aria-label="View">
+<button type="button" data-view="front" aria-pressed="true">Front</button>
+<button type="button" data-view="back" aria-pressed="false">Back</button>
+</div>
+</div></div>
+<main class="wrap">
+<h2>Colors</h2>
+<div class="colors" id="cRoof"></div>
+<div id="groups"></div>
+<h2>Total</h2>
+<div class="sum" id="sum"></div>
+<a class="btn gold" id="sendBtn" href="#">Send my picks</a>
+<button class="btn" id="copyBtn" type="button">Copy my picks</button>
+<p class="note">Includes lights, install, service all season, January takedown and storage. 50% deposit, balance on install day.</p>
+<footer>OBX Holiday Lights · (252) 207-5985</footer>
+</main>
+<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b><span id="barDate"></span></div><a href="#sum" id="barBtn">Review</a></div></div>
+<script src="/assets/lights/render.js?v=3"></script>
+<script>
+(function(){
+var IMG="/assets/quotes/mikey-bay-lights-7c4e/";
+/* RATES: OBX Holiday Lights rate card. QTY: estimated from photos 11/9; Ray verifies on site, edit here. */
+var MIN=800, DEP=0.5;
+/* Projected install = today + the slowest pick's lead time (order to in hand, calendar days) + BUFFER. Any day of the week.
+   Once he books and pays the deposit, set BOOKED to the real date ("2026-11-20") and it stops moving. */
+var BOOKED=null, BUFFER=2;
+/* sourced 2026-11-09: Christmas Lights Etc (GA) / Christmas Designers (TX) / Amazon to 27949, all in stock */
+var LEAD={roof:6,mini:6,net:6,garland:6,wreath:{24:5,36:6,48:8,60:10},color:{warm:0,cool:0,multi:0,redwhite:0,bluewhite:0}};
+var LEADKEY={rf:"roof",rb:"roof",fp:"mini",fs:"mini",fc:"mini",bd:"mini",bp:"mini",sh:"net",gs:"garland",gp:"garland"};
+var COLORS=[
+ {id:"warm",name:"Warm white",dots:["#ffd27a","#ffd27a","#ffd27a"],img:"warm.jpg"},
+ {id:"cool",name:"Cool white",dots:["#eef4ff","#eef4ff","#eef4ff"],img:"cool.jpg"},
+ {id:"multi",name:"Multicolor",dots:["#ff4b3e","#3fd46a","#4f8dff"],img:"multi.jpg"},
+ {id:"redwhite",name:"Red and white",dots:["#ff4b3e","#f5f5f5","#ff4b3e"],img:"redwhite.jpg"},
+ {id:"bluewhite",name:"Blue and white",dots:["#4f8dff","#f5f5f5","#4f8dff"],img:"bluewhite.jpg"}];
+var GROUPS=[
+ {name:"Roofline",sub:"",items:[
+  {id:"rf",view:"front",kind:"roof",label:"Roofline, front and sides",note:"180 ft",price:180*9.5,base:true},
+  {id:"rb",view:"back",kind:"roof",label:"Roofline, sound side",note:"110 ft",price:110*9.5}]},
+ {name:"Front",sub:"",items:[
+  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"28 ft",price:28*3,on:true},
+  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"40 ft",price:40*3},
+  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"5",price:5*40}]},
+ {name:"Sound side",sub:"",items:[
+  {id:"bd",view:"back",kind:"mini",label:"Deck railing",note:"75 ft",price:75*3},
+  {id:"bp",view:"back",kind:"mini",label:"Deck posts and pilings",note:"6",price:6*40}]},
+ {name:"Wreaths and garland",sub:"",items:[
+  {id:"wg",view:"front",kind:"decor",label:"Wreath on the big gable",sizes:[["36 in",110],["48 in",175],["60 in",325]],size:1,on:true},
+  {id:"wl",view:"front",kind:"decor",label:"Wreath on the side gable",sizes:[["24 in",60],["36 in",110]],size:1},
+  {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",60],["36 in",110]],size:0},
+  {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"40 ft",price:40*8},
+  {id:"gp",view:"front",kind:"decor",label:"Garland, porch railing",note:"28 ft",price:28*8}]},
+ {name:"Yard",sub:"",items:[
+  {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"5",price:5*75}]}];
+var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
+var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"}};
+var st={on:{},size:{},roof:"warm",mini:"warm",view:"front"};
+ALL.forEach(function(i){st.on[i.id]=!!(i.on||i.base);if(i.sizes)st.size[i.id]=i.size||0});
+try{var h=decodeURIComponent(location.hash.slice(1));if(/^p=/.test(h)){var o=JSON.parse(h.slice(2));if(o&&o.on){st.on={};o.on.forEach(function(k){st.on[k]=true});ALL.forEach(function(i){if(i.base)st.on[i.id]=true});st.size=o.sz||st.size;st.roof=o.r||st.roof;st.mini=o.m||st.mini}}}catch(e){}
+function $(id){return document.getElementById(id)}
+function money(n){return "$"+Math.round(n).toLocaleString("en-US")}
+function priceOf(i){return i.sizes?i.sizes[st.size[i.id]||0][1]:i.price}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function colorName(id){for(var k=0;k<COLORS.length;k++)if(COLORS[k].id===id)return COLORS[k].name;return id}
+function drawColors(el,key){el.innerHTML=COLORS.map(function(c){return '<button type="button" data-c="'+c.id+'" aria-pressed="'+(st[key]===c.id)+'"><span class="dots">'+c.dots.map(function(d){return '<i style="background:'+d+';color:'+d+'"></i>'}).join("")+'</span>'+esc(c.name)+'</button>'}).join("");
+ el.onclick=function(e){var b=e.target.closest("button");if(!b)return;st[key]=b.getAttribute("data-c");render()}}
+function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h2>'+esc(g.name)+'</h2>'+(g.sub?'<p class="sub">'+esc(g.sub)+'</p>':'')+(g.shot?'<div class="shot"><img loading="lazy" src="'+IMG+g.shot+'" alt="Back of the house lit, from the pool"></div>':'')+'<div class="items">'+g.items.map(function(i){
+ if(i.base)return '<div class="item on base" data-id="'+i.id+'"><input type="checkbox" checked disabled hidden><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+' · included</small>':'')+'</span><span class="amt"></span></div>';
+ return '<label class="item" data-id="'+i.id+'"><input type="checkbox"><span class="box"></span><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+'</small>':'')+(i.sizes?'<select aria-label="Size">'+i.sizes.map(function(s,k){return '<option value="'+k+'">'+esc(s[0])+' · '+money(s[1])+'</option>'}).join("")+'</select>':'')+'</span><span class="amt"></span></label>'}).join("")+'</div>'}).join("");
+ Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
+  cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
+  if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
+function layerOf(i,v){return i.layers?i.layers[v]:(i.view===v?i.id:null)}
+function layerSrc(i,v){return "lights/"+layerOf(i,v)+(i.sizes?"-"+parseInt(i.sizes[st.size[i.id]||0][0],10):"")+".webp?v=1"}
+function drawPic(){var pic=$("pic"),v=VIEWS[st.view];
+ if(pic.getAttribute("data-view")!==st.view){pic.setAttribute("data-view",st.view);
+  pic.innerHTML='<img class="bs" alt="" src="'+IMG+v.base+'"><canvas></canvas>'+ALL.filter(function(i){return i.kind==="decor"&&layerOf(i,st.view)}).map(function(i){return '<img alt="" data-id="'+i.id+'" class="dc off">'}).join("");
+  var b=pic.querySelector(".bs");b.onload=function(){pic.style.setProperty("--ar",b.naturalWidth+"/"+b.naturalHeight)}}
+ Array.prototype.forEach.call(pic.querySelectorAll("img[data-id]"),function(el){var i=ALL.filter(function(x){return x.id===el.getAttribute("data-id")})[0];var on=!!st.on[i.id];
+  var want=IMG+layerSrc(i,st.view);if(on&&el.getAttribute("src")!==want)el.setAttribute("src",want);el.classList.toggle("off",!on)});
+ drawBulbs(pic.querySelector("canvas"))}
+/* Lights: drawn onto the photo by /assets/lights/render.js from lights/ (tools/lights-render builds it). */
+var HOUSE=null,DRAW=0;
+LightsRender.load(IMG+"lights/").then(function(h){HOUSE=h;drawPic()}).catch(function(){});
+function drawBulbs(cv){if(!cv||!HOUSE)return;var my=++DRAW,v=st.view;
+ var runs=ALL.filter(function(i){return st.on[i.id]&&i.kind!=="decor"}).map(function(i){return layerOf(i,v)}).filter(Boolean);
+ requestAnimationFrame(function(){if(my!==DRAW)return;
+  HOUSE.draw(document.createElement("canvas"),v,runs,st.roof).then(function(off){if(my!==DRAW||st.view!==v)return;
+   cv.width=off.width;cv.height=off.height;cv.getContext("2d").drawImage(off,0,0);cv.classList.add("ready")})})}
+function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
+function leadOf(i){var k=LEADKEY[i.id];
+ if(i.sizes)k=parseInt(i.sizes[st.size[i.id]||0][0],10);
+ if(typeof k==="number")return LEAD.wreath[k]||LEAD.wreath[60];
+ return (LEAD[k]||0)+(k==="garland"?0:(LEAD.color[st.roof]||0))}
+function installDate(){var d;
+ if(BOOKED){var m=BOOKED.split("-");d=new Date(+m[0],m[1]-1,+m[2])}
+ else{var max=0;ALL.forEach(function(i){if(st.on[i.id])max=Math.max(max,leadOf(i))});d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+max+BUFFER)}
+ return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+function render(){
+ drawColors($("cRoof"),"roof");
+ drawPic();
+ Array.prototype.forEach.call(document.querySelectorAll(".views button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-view")===st.view))});
+ Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var i=ALL.filter(function(x){return x.id===id})[0];var on=!!st.on[id];
+  el.classList.toggle("on",on);el.querySelector("input").checked=on;el.querySelector(".amt").textContent=money(priceOf(i));var s=el.querySelector("select");if(s)s.value=String(st.size[id]||0)});
+ var L=lines(),sub=L.reduce(function(a,x){return a+x.amt},0),tot=L.length?Math.max(sub,MIN):0;
+ var html=L.length?L.map(function(x){return '<div class="ln"><span>'+esc(x.label)+'</span><b>'+money(x.amt)+'</b></div>'}).join(""):'<p class="empty">Nothing picked yet.</p>';
+ html+='<div class="ln"><span>Color: '+esc(colorName(st.roof).toLowerCase())+'</span><b></b></div>';
+ if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
+ var inst=installDate();
+ html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div><div class="dep"><span>'+(BOOKED?"Install date":"Projected install")+'</span><span>'+inst+'</span></div>';
+ $("barDate").textContent=(BOOKED?"Install ":"Projected install ")+inst;
+ $("sum").innerHTML=html;$("barTot").textContent=money(tot);
+ var msg="3102 Bay Drive picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nMikey";
+ $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
+ try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof})))}catch(e){}
+}
+document.querySelector(".views").onclick=function(e){var b=e.target.closest("button");if(!b)return;st.view=b.getAttribute("data-view");render()};
+$("copyBtn").onclick=function(){var m=this.getAttribute("data-msg"),b=this;function done(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy my picks"},1800)}
+ if(navigator.clipboard)navigator.clipboard.writeText(m).then(done,function(){prompt("Copy your picks:",m)});else prompt("Copy your picks:",m)};
+drawGroups();render();
+})();
+</script></body></html>

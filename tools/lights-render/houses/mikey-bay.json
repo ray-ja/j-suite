@@ -1,0 +1,328 @@
+{
+ "name": "3102 Bay Drive (Mikey)",
+ "size": [
+  1195,
+  896
+ ],
+ "out": "assets/quotes/mikey-bay-lights-7c4e/lights",
+ "qa": "qa",
+ "views": {
+  "front": {
+   "base": "photos/baseF.png",
+   "sky": "photos/skyF-b.png"
+  },
+  "back": {
+   "base": "photos/baseB.png",
+   "sky": "photos/skyB.png"
+  }
+ },
+ "runs": {
+  "rf": {
+   "view": "front",
+   "guide": "guides/rf.png",
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 13,
+   "describe": "along EVERY roof edge of the house facing the camera, on both stories: each eave (the lower edge of each roof, where the gutter is) and both sloped edges of every gable: the big upper gable on the right, the small upper gables on the left, the small gable above the front porch, and the lower gable on the right side of the house above the side door. Only the edges of this house's roofs, not the neighbor house on the left"
+  },
+  "fp": {
+   "view": "front",
+   "guide": "guides/fp.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   },
+   "describe": "along the top rail of each white porch railing on the main floor of the house (about halfway up the house, the level of the front door): the railing on the left end of the porch, the railing of the small balcony in front of the front door, and the railing at the side door on the right. Not the stair handrails, not the railings at ground level"
+  },
+  "fs": {
+   "view": "front",
+   "guide": "guides/fs.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   },
+   "describe": "along the top of every handrail of the front staircase on the left side of the house, from the bottom of the stairs at the ground up to the porch, on both sides of the stairs. Only the sloped stair handrails"
+  },
+  "sh": {
+   "view": "front",
+   "guide": "guides/sh.png",
+   "kind": "net",
+   "mode": "net",
+   "spacing": 16,
+   "describe": "the low green shrubs in front of the house at the bottom left of the photo, next to the stairs, following their outline",
+   "y": [
+    0,
+    622
+   ]
+  },
+  "rb": {
+   "view": "back",
+   "guide": "guides/rb.png",
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 12,
+   "describe": "along the roof edges of the house in the middle of the photo: the long eave of the lower roof just above the porch and deck, the eave of the upper roof below the dormer windows, and the short sloped side edges of both roofs. Only this house, not the neighbor house on the left",
+   "erase": [
+    [
+     535,
+     200,
+     1045,
+     222
+    ],
+    [
+     385,
+     338,
+     545,
+     356
+    ]
+   ]
+  },
+  "bd": {
+   "view": "back",
+   "guide": null,
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "spiral": {
+    "pitch": 6,
+    "radius": 2.0,
+    "perTurn": 6
+   },
+   "describe": "along the top rail of the long white deck railing that runs across the whole second-floor deck of the house, end to end, including any short return section at the ends",
+   "lines": [
+    [
+     119,
+     487,
+     1072,
+     485
+    ]
+   ]
+  },
+  "fc": {
+   "view": "front",
+   "guide": null,
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "porch columns, hand-placed wraps (one per column)",
+   "wraps": [
+    {
+     "from": [
+      305,
+      457
+     ],
+     "to": [
+      305,
+      354
+     ],
+     "width": 10,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      369,
+      455
+     ],
+     "to": [
+      369,
+      346
+     ],
+     "width": 10,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      437,
+      447
+     ],
+     "to": [
+      437,
+      336
+     ],
+     "width": 10,
+     "turns": 9,
+     "spacing": 3
+    },
+    {
+     "from": [
+      506,
+      450
+     ],
+     "to": [
+      506,
+      322
+     ],
+     "width": 10,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      584,
+      445
+     ],
+     "to": [
+      584,
+      300
+     ],
+     "width": 10,
+     "turns": 11,
+     "spacing": 3
+    }
+   ]
+  },
+  "bp": {
+   "view": "back",
+   "guide": null,
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "pilings under the deck and the two porch-roof posts on the deck, hand-placed wraps",
+   "wraps": [
+    {
+     "from": [
+      180,
+      635
+     ],
+     "to": [
+      180,
+      582
+     ],
+     "width": 10,
+     "turns": 4,
+     "spacing": 3
+    },
+    {
+     "from": [
+      300,
+      635
+     ],
+     "to": [
+      300,
+      582
+     ],
+     "width": 10,
+     "turns": 4,
+     "spacing": 3
+    },
+    {
+     "from": [
+      455,
+      635
+     ],
+     "to": [
+      455,
+      582
+     ],
+     "width": 10,
+     "turns": 4,
+     "spacing": 3
+    },
+    {
+     "from": [
+      607,
+      635
+     ],
+     "to": [
+      607,
+      582
+     ],
+     "width": 10,
+     "turns": 4,
+     "spacing": 3
+    },
+    {
+     "from": [
+      493,
+      486
+     ],
+     "to": [
+      493,
+      406
+     ],
+     "width": 10,
+     "turns": 6,
+     "spacing": 3
+    },
+    {
+     "from": [
+      766,
+      486
+     ],
+     "to": [
+      766,
+      406
+     ],
+     "width": 10,
+     "turns": 6,
+     "spacing": 3
+    }
+   ]
+  }
+ },
+ "previewPalettes": [
+  "warm",
+  "multi"
+ ],
+ "decor": {
+  "wg": {
+   "view": "front",
+   "type": "wreath",
+   "at": [
+    760,
+    140
+   ],
+   "sizes": {
+    "36": 32,
+    "48": 42,
+    "60": 53
+   }
+  },
+  "wl": {
+   "view": "front",
+   "type": "wreath",
+   "at": [
+    921,
+    240
+   ],
+   "sizes": {
+    "24": 21,
+    "36": 32
+   }
+  },
+  "wf": {
+   "view": "front",
+   "type": "wreath",
+   "at": [
+    530,
+    356
+   ],
+   "sizes": {
+    "24": 21,
+    "36": 31
+   }
+  },
+  "gs": {
+   "view": "front",
+   "type": "garland",
+   "follow": "fs",
+   "thick": 10
+  },
+  "gp": {
+   "view": "front",
+   "type": "garland",
+   "follow": "fp",
+   "thick": 10
+  }
+ }
+}

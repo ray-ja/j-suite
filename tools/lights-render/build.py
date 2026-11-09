@@ -38,6 +38,8 @@ def points(run, path, W, H, sky=None):
     im = Image.fromarray(m.astype(np.uint8)*255); dr = ImageDraw.Draw(im)
     for x0, y0, x1, y1 in run["lines"]: dr.line((x0, y0, x1, y1), fill=255, width=3)
     m = np.asarray(im) > 0
+  for x0, y0, x1, y1 in run.get("erase", []):   # boxes to wipe out of the trace (ridges, stray strokes)
+    m[y0:y1, x0:x1] = False
   if sky is not None and run.get("mode", "line") != "line": m = m & ~sky   # nets and trees: no bulbs in the gaps where sky shows
   mode = run.get("mode", "line"); d = run["spacing"]
   if mode == "line" and run.get("spiral"):   # {"pitch": px per turn, "radius": px}

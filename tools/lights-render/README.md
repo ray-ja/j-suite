@@ -12,14 +12,21 @@ How it works:
 3. `/assets/lights/render.js` lights the photo in the browser: photo + surface albedo x spill + bulb sprites,
    in linear light. `look.py` is the same math in Python for previews. Change one, change the other.
 
-## A new house (about 20 minutes)
+## A new house (Mikey's took about 2.5 hours, most of it first-time tooling; the next should be about 1 hour)
 
 Work folder outside git, e.g. `~/lights-houses/<slug>/`:
 
 ```
-photos/baseF.jpg  baseB.jpg ...     dusk photos, one per view, same size (1195x896 is what we use)
-house.json                          the spec (copy houses/kim-voyager.json and edit)
+photos/<originals>                  customer photos, any time of day
+photos/baseF.png  baseB.png ...     dusk bases, one per view, 1195x896
+house.json                          the spec (copy houses/mikey-bay.json and edit)
 ```
+
+0. Dusk bases from daytime photos. Crop each view to 4:3 around the house and resize to 1195x896, then
+   `node gemini.js front-day.jpg duskF-a.png dusk-prompt.txt` twice per view (removes sun, flare and shadows, adds
+   warm windows). Check each take: `python3 aligncheck.py front-day.jpg duskF-a.png sheet.jpg` must print shift 0
+   and under about 5% moved tiles, and the green day-edges in the sheet must sit on the house. Pick the cleaner take.
+   Avoid takes that light porch lamps brightly (they read as lights we sell).
 
 In `house.json`, per view: `base` photo and `sky` (mask path, made for you). Per run:
 
@@ -34,6 +41,7 @@ In `house.json`, per view: `base` photo and `sky` (mask path, made for you). Per
 | `spiral` | rails (all $6/ft railings): `{"pitch": 7, "radius": 2.2, "perTurn": 6}` = minis spiral-wrapped on the handrail, front half of each turn shows |
 | `wraps` | trunks, posts: `[{"from":[x,y],"to":[x,y],"width":10,"turns":9,"spacing":3}]` spiral between two points, no trace needed |
 | `lines` | `[[x0,y0,x1,y1],...]` hand-drawn segments added to the trace (short bits the model missed); they get the same spiral |
+| `erase` | `[[x0,y0,x1,y1],...]` boxes wiped out of the trace: ridges, stray strokes the model added |
 | optional | `guide` may be a list (union of several takes), `bridge` 1-2 (join dashed traces), `y`/`x` [min,max] crop, `extra` [[x,y],...] loose bulbs, `minSpeck`, `gap`/`slope`/`amp` (wrap mode) |
 
 Trees: trace the tier edges as lines, not a fill. Words that work: "trace the lower outer edge of EVERY branch tier ... following how each tier droops from the trunk side out to the branch tips; one line per tier". Run it twice and list both files in `guide`. The model can't trace trunks; use `wraps`.
@@ -49,6 +57,23 @@ python3 tools/lights-render/build.py  ~/lights-houses/<slug>/house.json      # b
 Set `"out"` to `assets/quotes/<page slug>/lights`. It is relative to the repo that holds the tool, so the spec works from any checkout.
 `tracecheck.py base.jpg out.jpg take1.png take2.png --crop x0,y0,x1,y1` overlays raw traces to pick the better take.
 
+Placing wraps, lines and decor by hand: `python3 gridcrop.py base.png out.jpg x0,y0,x1,y1` gives a zoomed crop with
+image coordinates. Wraps: about 13 px per turn on a porch column (`turns` = height/13), width = the column's width.
+
+## Wreaths and garland (`decor.py`)
+
+Under `"decor"` in the spec; writes transparent layers into the same `lights/` folder:
+
+```
+"wg": {"view": "front", "type": "wreath", "at": [760, 140], "sizes": {"36": 32, "48": 42, "60": 53}}   -> wg-36.webp ...
+"gs": {"view": "front", "type": "garland", "follow": "fs", "thick": 10}                                 -> gs.webp along run fs
+```
+
+Size in px = inches / (inches per px at that wall); a front door (80 in) or siding courses (about 7 in) give the scale.
+Sprites are `sprites/wreath.webp` and `sprites/garland.webp` (keyed once from image-model renders on flat magenta; to
+make a new one, render on a magenta canvas and run it through `decor.keyed`). The page loads sized wreaths as
+`lights/<id>-<inches>.webp`.
+
 ## QA, every house
 
 1. `qa/trace-<view>.jpg`: every run's bulbs in its own color on a dimmed photo. Check each run sits on the right thing.
@@ -57,7 +82,8 @@ Set `"out"` to `assets/quotes/<page slug>/lights`. It is relative to the repo th
    Short bits it missed: add `extra` points. Stray lines elsewhere: crop with `y`/`x`.
 2. `qa/render-<view>-<palette>.jpg`: the finished look in warm, multi, red/white.
 3. Optional: `sheet.py <house dir> out.jpg rf=ref.png ...` puts any reference picture beside ours, cropped to the run.
-4. Open the page at phone width (390) and desktop, flip views and colors.
+4. `node qa-shots.js <page url> <shots prefix> <item ids> <views>` (serve the repo with `python3 -m http.server` first):
+   phone and desktop shots of the default picks and of everything on, every view, warm and multi; prints page errors.
 
 ## The page
 
