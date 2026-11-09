@@ -88,11 +88,116 @@
   },
   "fc": {
    "view": "front",
-   "guide": "guides/fc.png",
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "describe": "as a spiral wrapping each white porch column on the middle level (between the porch floor and the top deck), about 7 turns per column, drawn on the visible face of each column"
+   "describe": "each porch column wrapped on its own (hand-placed wraps, no trace)",
+   "wraps": [
+    {
+     "from": [
+      221,
+      582
+     ],
+     "to": [
+      221,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      242,
+      582
+     ],
+     "to": [
+      242,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      418,
+      577
+     ],
+     "to": [
+      418,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      440,
+      577
+     ],
+     "to": [
+      440,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      660,
+      580
+     ],
+     "to": [
+      660,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      683,
+      582
+     ],
+     "to": [
+      683,
+      450
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      870,
+      592
+     ],
+     "to": [
+      870,
+      468
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    },
+    {
+     "from": [
+      889,
+      592
+     ],
+     "to": [
+      889,
+      468
+     ],
+     "width": 16,
+     "turns": 10,
+     "spacing": 3
+    }
+   ]
   },
   "sh": {
    "view": "front",
@@ -150,12 +255,155 @@
   },
   "bp": {
    "view": "back",
-   "guide": "guides/bp.png",
    "kind": "mini",
    "mode": "line",
    "spacing": 4,
-   "minSpeck": 6,
-   "describe": "as a spiral wrapping each white deck post on the ground level and the middle level, about 7 turns per post"
+   "describe": "each deck post wrapped on its own (hand-placed wraps, no trace)",
+   "wraps": [
+    {
+     "from": [
+      300,
+      528
+     ],
+     "to": [
+      300,
+      422
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      427,
+      528
+     ],
+     "to": [
+      427,
+      422
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      522,
+      528
+     ],
+     "to": [
+      522,
+      422
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      692,
+      528
+     ],
+     "to": [
+      692,
+      422
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      862,
+      528
+     ],
+     "to": [
+      862,
+      422
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      286,
+      620
+     ],
+     "to": [
+      286,
+      556
+     ],
+     "width": 11,
+     "turns": 5,
+     "spacing": 3
+    },
+    {
+     "from": [
+      420,
+      620
+     ],
+     "to": [
+      420,
+      556
+     ],
+     "width": 11,
+     "turns": 5,
+     "spacing": 3
+    },
+    {
+     "from": [
+      518,
+      672
+     ],
+     "to": [
+      518,
+      556
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      627,
+      672
+     ],
+     "to": [
+      627,
+      556
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      692,
+      672
+     ],
+     "to": [
+      692,
+      556
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    },
+    {
+     "from": [
+      863,
+      672
+     ],
+     "to": [
+      863,
+      556
+     ],
+     "width": 11,
+     "turns": 8,
+     "spacing": 3
+    }
+   ]
   },
   "tp": {
    "view": "back",
