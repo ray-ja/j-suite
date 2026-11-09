@@ -5758,7 +5758,39 @@ const server = http.createServer((req, res) => {
     const slug = req.url.split("?")[0].replace(/^\/p\//, "").replace(/\/$/, "");
     const file = path.join(__dirname, "assets", "quotes", slug, "index.html");
     if (!fs.existsSync(file)) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); return res.end("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style='font-family:system-ui,sans-serif;text-align:center;padding:60px 20px'><h1>Not found</h1><p>This link may have expired. Text us at (252) 207-5985.</p></body>"); }
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" });
+    /* OPEN TRACKING (Ray, 2026-11-09 "can we tell when he opens it?"): like invoices, every open of a priced quote
+       page is logged and pings the owner (not more than once per 15 min). ?preview marks the owner's own browser. */
+    const qs = req.url.split("?")[1] || "", preview = /(^|&)preview(=|&|$)/.test(qs);
+    const ownerDev = preview || /(?:^|;\s*)jsp=1(?:\s*;|$)/.test(String(req.headers.cookie || ""));
+    const ua = String(req.headers["user-agent"] || "");
+    const head = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" };
+    if (preview) head["Set-Cookie"] = "jsp=1; Path=/p/; Max-Age=63072000; SameSite=Lax";
+    if (!ownerDev && !/HeadlessChrome|bot|crawl|spider|preview|facebookexternalhit|Slackbot|Twitterbot|WhatsApp|TelegramBot|Discord|SkypeUriPreview|Google-?InspectionTool/i.test(ua)) {
+      try {
+        const cfg = pubq.pqLoad(__dirname, slug);
+        if (cfg) {
+          const store = loadStore(); const slab = store[cfg.org];
+          if (slab) {
+            const now = Date.now(), qid = "pubpage:" + slug;
+            slab.invoiceViews = slab.invoiceViews || [];
+            const prior = slab.invoiceViews.filter(v => v && !v.deleted && v.quoteId === qid);
+            const lastAt = prior.reduce((m, v) => Math.max(m, +v.at || 0), 0);
+            slab.invoiceViews.push({ id: "iv" + now.toString(36) + crypto.randomBytes(3).toString("hex"), quoteId: qid, at: now, ua: ua.slice(0, 140), deleted: false, updatedAt: now });
+            let out = store, thr = null;
+            const owner = (store.users || []).find(u => u && !u.kind && !u.deleted && u.superAdmin) || (store.users || []).find(u => u && !u.kind && !u.deleted && u.role === "owner");
+            if (owner && now - lastAt > 15 * 60 * 1000) {
+              const cust = (slab.customers || []).find(c => c && c.id === cfg.customerId);
+              const who = (cust && cust.name) || "Customer"; const nth = prior.length + 1;
+              const built = ceoBuildMessage({ biz: cfg.org, to: owner.id, members: [owner.id], title: "Quote page activity", senderLabel: "Quote watcher", threadId: "thr_pub_views_" + cfg.org,
+                body: "👁 " + who + " opened the " + cfg.title + " quote page" + (nth > 1 ? " (open #" + nth + ")" : " (first open)") }, store);
+              out = mergeState(store, { [built.biz]: { messages: built.records } }); thr = built.threadId;
+            }
+            saveStore(out); if (thr) pushNotify(out, cfg.org, thr, "__ceo__").catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }
+    res.writeHead(200, head);
     return res.end(fs.readFileSync(file));
   }
   if (req.method === "GET" && req.url.split("?")[0].indexOf("/i/") === 0) {
