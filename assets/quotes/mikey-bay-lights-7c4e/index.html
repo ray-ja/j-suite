@@ -46,6 +46,7 @@ h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
 .tot{display:flex;justify-content:space-between;font-size:20px;font-weight:800;padding-top:12px;margin-top:4px;border-top:2px solid var(--ink)}
 .dep{display:flex;justify-content:space-between;color:var(--body);font-size:15px;margin-top:4px}
 .est{margin:10px 0 0;font-size:13.5px;color:var(--body)}
+.ln.save b{color:#2f7a3a}.nudge{margin:8px 0 2px;font-size:14px;font-weight:650;color:var(--gold-deep)}
 .empty{color:var(--body);font-size:15px}
 .btn{display:block;width:100%;text-align:center;font:700 16px var(--sans);background:var(--ink);color:#fff;border:0;text-decoration:none;padding:15px;border-radius:12px;margin-top:12px;cursor:pointer}
 .btn.gold{background:var(--gold);color:var(--ink)}
@@ -156,6 +157,11 @@ function drawBulbs(cv){if(!cv||!HOUSE)return;var my=++DRAW,v=st.view;
  requestAnimationFrame(function(){if(my!==DRAW)return;
   HOUSE.draw(document.createElement("canvas"),v,runs,st.roof).then(function(off){if(my!==DRAW||st.view!==v)return;
    cv.width=off.width;cv.height=off.height;cv.getContext("2d").drawImage(off,0,0);cv.classList.add("ready")})})}
+/* Bundle: the more lights add-ons, the bigger the discount on them. Base roofline and wreaths/garland (near cost) are excluded. */
+var BUNDLE=[[500,.05],[1000,.10],[1500,.15]];
+function bundle(){var a=0;ALL.forEach(function(i){if(st.on[i.id]&&!i.base&&i.kind!=="decor")a+=priceOf(i)});
+ var rate=0,next=null;BUNDLE.forEach(function(t){if(a>=t[0])rate=t[1];else if(!next)next=t});
+ return {addons:a,rate:rate,save:Math.round(a*rate),next:next}}
 function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
 function leadOf(i){var k=LEADKEY[i.id];
  if(i.sizes)k=parseInt(i.sizes[st.size[i.id]||0][0],10);
@@ -171,15 +177,17 @@ function render(){
  Array.prototype.forEach.call(document.querySelectorAll(".views button"),function(b){b.setAttribute("aria-pressed",String(b.getAttribute("data-view")===st.view))});
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var i=ALL.filter(function(x){return x.id===id})[0];var on=!!st.on[id];
   el.classList.toggle("on",on);el.querySelector("input").checked=on;el.querySelector(".amt").textContent=money(priceOf(i));var s=el.querySelector("select");if(s)s.value=String(st.size[id]||0)});
- var L=lines(),sub=L.reduce(function(a,x){return a+x.amt},0),tot=L.length?Math.max(sub,MIN):0;
+ var L=lines(),sub=L.reduce(function(a,x){return a+x.amt},0),B=bundle(),tot=L.length?Math.max(sub-B.save,MIN):0;
  var html=L.length?L.map(function(x){return '<div class="ln"><span>'+esc(x.label)+'</span><b>'+money(x.amt)+'</b></div>'}).join(""):'<p class="empty">Nothing picked yet.</p>';
  html+='<div class="ln"><span>Color: '+esc(colorName(st.roof).toLowerCase())+'</span><b></b></div>';
- if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
+ if(B.save)html+='<div class="ln save"><span>Bundle savings ('+Math.round(B.rate*100)+'% off lights add-ons)</span><b>&minus;'+money(B.save)+'</b></div>';
+ if(B.next)html+='<p class="nudge">Add '+money(B.next[0]-B.addons)+' more in lights to save '+Math.round(B.next[1]*100)+'%.</p>';
+ if(L.length&&sub-B.save<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
  var inst=installDate();
  html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div><div class="dep"><span>'+(BOOKED?"Install date":"Projected install")+'</span><span>'+inst+'</span></div>'+'<p class="est">Footage is estimated from your photos. We measure before install and confirm the final price.</p>';
  $("barDate").textContent=(BOOKED?"Install ":"Projected install ")+inst;
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
- var msg="3102 Bay Drive picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nMikey";
+ var msg="3102 Bay Drive picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n") +(B.save?"\nBundle savings -"+money(B.save):"")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nMikey";
  $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
  try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof})))}catch(e){}
 }
