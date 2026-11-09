@@ -1,0 +1,195 @@
+{
+ "name": "758 Voyager (Kim)",
+ "size": [
+  1195,
+  896
+ ],
+ "out": "assets/quotes/kim-voyager-lights-e72f/lights",
+ "qa": "qa",
+ "views": {
+  "front": {
+   "base": "photos/baseF.jpg",
+   "sky": "photos/skyF.png"
+  },
+  "back": {
+   "base": "photos/baseB.jpg",
+   "sky": "photos/skyB.png"
+  },
+  "side": {
+   "base": "photos/baseS.jpg",
+   "sky": "photos/skyS.png"
+  }
+ },
+ "runs": {
+  "rf": {
+   "view": "front",
+   "guide": "guides/rf.png",
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 13,
+   "describe": "along the roof edges facing the camera: the eave line along the bottom edge of the roof, both sloped edges of the center gable peak, and both sloped edges of each of the two small dormer peaks"
+  },
+  "fu": {
+   "view": "front",
+   "guide": "guides/fu.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "along the top rail of the white balcony railings directly below the roof, just under the dormer windows (about 45 percent of the way down the image): the left balcony, the center balcony and the right balcony, each across its full width. Do NOT draw on the lower railing beside the front door",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
+  },
+  "fp": {
+   "view": "front",
+   "guide": "guides/fp.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "y": [
+    480,
+    896
+   ],
+   "describe": "along the top rail of the white railing at the SAME level as the front door, where the front staircase arrives (about 60 percent of the way down the image, below the second row of windows). Draw it on the left section and the right section of that railing, full width from the left corner of the house to the right corner. Do NOT draw on the higher balconies near the roof. Do not draw on the stair handrails",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   },
+   "lines": [
+    [
+     447,
+     530,
+     503,
+     530
+    ],
+    [
+     597,
+     533,
+     653,
+     533
+    ]
+   ]
+  },
+  "fs": {
+   "view": "front",
+   "guide": "guides/fs.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "along the top of both handrails of the big front staircase, from the bottom post to the porch",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
+  },
+  "fc": {
+   "view": "front",
+   "guide": "guides/fc.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "as a spiral wrapping each white porch column on the middle level (between the porch floor and the top deck), about 7 turns per column, drawn on the visible face of each column"
+  },
+  "sh": {
+   "view": "front",
+   "guide": "guides/sh.png",
+   "kind": "net",
+   "mode": "net",
+   "spacing": 6,
+   "describe": "the low shrubs and ornamental grasses in the front planting beds on both sides of the staircase"
+  },
+  "rs": {
+   "view": "side",
+   "guide": "guides/rs.png",
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 13,
+   "describe": "along the roof edges facing the camera: both sloped edges of the big gable end wall, and the roof edges of the upper roof and small peaks visible on the left"
+  },
+  "rb": {
+   "view": "back",
+   "guide": "guides/rb.png",
+   "kind": "c9",
+   "mode": "line",
+   "spacing": 13,
+   "describe": "along the roof eave edge (the bottom edge of the roof just above the top deck) on the left part of the house, and both sloped edges of the tall gable on the right"
+  },
+  "bd": {
+   "view": "back",
+   "guide": "guides/bd.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "along the top rail of the white deck railings on the two upper deck levels of the house: the upper deck railing just below the roof eave, and the middle deck railing one level below it. Follow each railing across the full width of the house. Do NOT draw on the roof, the roof eaves, the walls or the stair handrails",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   }
+  },
+  "bs": {
+   "view": "back",
+   "guide": "guides/bs.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "describe": "along the top of the handrails of both staircases (ground to middle deck, and middle deck to top deck), both sides of each staircase",
+   "spiral": {
+    "pitch": 7,
+    "radius": 2.2,
+    "perTurn": 6
+   },
+   "x": [
+    0,
+    514
+   ]
+  },
+  "bp": {
+   "view": "back",
+   "guide": "guides/bp.png",
+   "kind": "mini",
+   "mode": "line",
+   "spacing": 4,
+   "minSpeck": 6,
+   "describe": "as a spiral wrapping each white deck post on the ground level and the middle level, about 7 turns per post"
+  },
+  "tp": {
+   "view": "back",
+   "guide": [
+    "guides/tp-tiers-b.png",
+    "guides/tp-tiers-a.png"
+   ],
+   "kind": "tree",
+   "mode": "line",
+   "spacing": 4,
+   "wobble": 1.5,
+   "bridge": 2,
+   "minSpeck": 6,
+   "describe": "trace the lower outer edge of EVERY branch tier of the two pine trees on the right side of the photo, following how each tier droops from the trunk side out to the branch tips; one line per tier, about 8 to 14 per tree",
+   "wraps": [
+    {
+     "from": [
+      1031,
+      666
+     ],
+     "to": [
+      1017,
+      582
+     ],
+     "width": 10,
+     "turns": 9,
+     "spacing": 3
+    }
+   ]
+  }
+ },
+ "previewPalettes": [
+  "warm",
+  "multi",
+  "redwhite"
+ ]
+}
