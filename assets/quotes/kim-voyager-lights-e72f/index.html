@@ -53,7 +53,7 @@ h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
 footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 .bar{position:fixed;left:0;right:0;bottom:0;background:var(--ink);color:#fff;padding:10px 16px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -6px 20px rgba(0,0,0,.18);z-index:5}
 .bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0}
-.bar .t{font-size:13px;color:#c9cfdb}.bar .t b{display:block;color:#fff;font-size:21px;font-variant-numeric:tabular-nums}
+.bar .t{font-size:13px;color:#c9cfdb}.bar .t span{display:block;font-size:12.5px;color:#c9cfdb}.bar .t b{display:block;color:#fff;font-size:21px;font-variant-numeric:tabular-nums}
 .bar a{background:var(--gold);color:var(--ink);font-weight:800;text-decoration:none;padding:12px 18px;border-radius:10px;white-space:nowrap}
 @media(max-width:520px){.ph{display:none}header img{max-width:60vw;height:auto;max-height:34px}.hero h1{font-size:25px}.colors{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-motion:reduce){.stage .pic img{transition:none}}
@@ -79,13 +79,19 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 <p class="note">Includes lights, install, service all season, January takedown and storage. 50% deposit, balance on install day.</p>
 <footer>OBX Holiday Lights · (252) 207-5985</footer>
 </main>
-<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b></div><a href="#sum" id="barBtn">Review</a></div></div>
+<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b><span id="barDate"></span></div><a href="#sum" id="barBtn">Review</a></div></div>
 <script src="/assets/lights/render.js?v=3"></script>
 <script>
 (function(){
 var IMG="/assets/quotes/kim-voyager-lights-e72f/";
 /* RATES: OBX Holiday Lights rate card. QTY: estimated from the 11/6 visit; edit here. */
 var MIN=800, DEP=0.5;
+/* Projected install = today + the slowest pick's lead time (order to in hand, calendar days) + BUFFER. Any day of the week.
+   Once she books and pays the deposit, set BOOKED to the real date ("2026-11-20") and it stops moving. */
+var BOOKED=null, BUFFER=2;
+/* sourced 2026-11-09: Christmas Lights Etc (GA) / Christmas Designers (TX) / Amazon to 27949, all in stock */
+var LEAD={roof:6,mini:6,net:6,garland:6,wreath:{24:5,36:6,48:8,60:10},color:{warm:0,cool:0,multi:0,redwhite:0,bluewhite:0}};
+var LEADKEY={rf:"roof",rb:"roof",fu:"mini",fp:"mini",fs:"mini",fc:"mini",bd:"mini",bs:"mini",bp:"mini",sh:"net",gs:"garland",gp:"garland",gd:"garland",wd:24,wr:24};
 var COLORS=[
  {id:"warm",name:"Warm white",dots:["#ffd27a","#ffd27a","#ffd27a"],img:"warm.jpg"},
  {id:"cool",name:"Cool white",dots:["#eef4ff","#eef4ff","#eef4ff"],img:"cool.jpg"},
@@ -151,6 +157,14 @@ function drawBulbs(cv){if(!cv||!HOUSE)return;var my=++DRAW,v=st.view;
   HOUSE.draw(document.createElement("canvas"),v,runs,st.roof).then(function(off){if(my!==DRAW||st.view!==v)return;
    cv.width=off.width;cv.height=off.height;cv.getContext("2d").drawImage(off,0,0);cv.classList.add("ready")})})}
 function lines(){var out=[];ALL.forEach(function(i){if(st.on[i.id])out.push({label:i.label+(i.sizes?" ("+i.sizes[st.size[i.id]||0][0]+")":""),amt:priceOf(i)})});;return out}
+function leadOf(i){var k=LEADKEY[i.id];
+ if(i.sizes)k=parseInt(i.sizes[st.size[i.id]||0][0],10);
+ if(typeof k==="number")return LEAD.wreath[k]||LEAD.wreath[60];
+ return (LEAD[k]||0)+(k==="garland"?0:(LEAD.color[st.roof]||0))}
+function installDate(){var d;
+ if(BOOKED){var m=BOOKED.split("-");d=new Date(+m[0],m[1]-1,+m[2])}
+ else{var max=0;ALL.forEach(function(i){if(st.on[i.id])max=Math.max(max,leadOf(i))});d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+max+BUFFER)}
+ return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
 function render(){
  drawColors($("cRoof"),"roof");
  drawPic();
@@ -161,9 +175,11 @@ function render(){
  var html=L.length?L.map(function(x){return '<div class="ln"><span>'+esc(x.label)+'</span><b>'+money(x.amt)+'</b></div>'}).join(""):'<p class="empty">Nothing picked yet.</p>';
  html+='<div class="ln"><span>Color: '+esc(colorName(st.roof).toLowerCase())+'</span><b></b></div>';
  if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
- html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div>';
+ var inst=installDate();
+ html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div><div class="dep"><span>'+(BOOKED?"Install date":"Projected install")+'</span><span>'+inst+'</span></div>';
+ $("barDate").textContent=(BOOKED?"Install ":"Projected install ")+inst;
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
- var msg="758 Voyager picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\nKim";
+ var msg="758 Voyager picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nKim";
  $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
  try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof})))}catch(e){}
 }
