@@ -142,7 +142,11 @@
     "pitch": 7,
     "radius": 2.2,
     "perTurn": 6
-   }
+   },
+   "x": [
+    0,
+    514
+   ]
   },
   "bp": {
    "view": "back",
