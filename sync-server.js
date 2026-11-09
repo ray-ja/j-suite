@@ -5576,14 +5576,20 @@ const server = http.createServer((req, res) => {
       if (!rec.num) rec.num = (slab.quotes || []).reduce((m, q) => Math.max(m, +(q && q.num) || 0), 0) + 1;
       const host = String(req.headers.host || ""); const origin = /(^|\.)jsuite\.dev$/.test(host) ? "https://" + host : "https://app.jsuite.dev";
       const name = (cfg.title + " · 50% deposit · " + priced.colorName).slice(0, 120);
-      stripeCall(skey, "/v1/checkout/sessions", { mode: "payment", "payment_method_types[0]": "card", customer_email: buyer.email,
-        "line_items[0][price_data][currency]": "usd", "line_items[0][price_data][unit_amount]": String(Math.round(priced.deposit * 100)), "line_items[0][price_data][product_data][name]": name, "line_items[0][quantity]": "1",
-        success_url: origin + "/p/" + cfg.slug + "?paid=1", cancel_url: origin + "/p/" + cfg.slug,
-        "metadata[deposit]": "1", "metadata[quoteId]": rec.id, "metadata[org]": cfg.org, "metadata[pubSlug]": cfg.slug }, (st, sess) => {
-        if (st !== 200 || !sess || !sess.url) return J(502, { error: "The card page didn't open. Please try again, or call or text (252) 207-5985." });
-        rec.depositSessionId = sess.id;
-        try { saveStore(mergeState(loadStore(), { [cfg.org]: { quotes: [rec] } })); } catch (e) { return J(500, { error: "save failed" }); }
-        return J(200, { ok: true, url: sess.url, deposit: priced.deposit, total: priced.total });
+      /* a one-off payment link (the org's restricted key can make prices + links, not Checkout Sessions); its metadata
+         rides onto the checkout session the webhook sees. The previous link for this page is switched off. */
+      const fail = () => J(502, { error: "The card page didn't open. Please try again, or call or text (252) 207-5985." });
+      stripeCall(skey, "/v1/prices", { currency: "usd", unit_amount: String(Math.round(priced.deposit * 100)), "product_data[name]": name }, (st1, pr) => {
+        if (st1 !== 200 || !pr || !pr.id) return fail();
+        stripeCall(skey, "/v1/payment_links", { "line_items[0][price]": pr.id, "line_items[0][quantity]": "1", "payment_method_types[0]": "card",
+          "after_completion[type]": "redirect", "after_completion[redirect][url]": origin + "/p/" + cfg.slug + "?paid=1",
+          "metadata[deposit]": "1", "metadata[quoteId]": rec.id, "metadata[org]": cfg.org, "metadata[pubSlug]": cfg.slug }, (st2, pl) => {
+          if (st2 !== 200 || !pl || !pl.url) return fail();
+          if (ex && ex.depositLinkId && ex.depositLinkId !== pl.id) stripeCall(skey, "/v1/payment_links/" + ex.depositLinkId, { active: "false" }, () => {});
+          rec.depositLink = pl.url; rec.depositLinkId = pl.id;
+          try { saveStore(mergeState(loadStore(), { [cfg.org]: { quotes: [rec] } })); } catch (e) { return J(500, { error: "save failed" }); }
+          return J(200, { ok: true, url: pl.url + "?prefilled_email=" + encodeURIComponent(buyer.email), deposit: priced.deposit, total: priced.total });
+        });
       });
     });
   }
