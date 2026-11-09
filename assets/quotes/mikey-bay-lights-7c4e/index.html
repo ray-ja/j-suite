@@ -47,6 +47,10 @@ h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
 .dep{display:flex;justify-content:space-between;color:var(--body);font-size:15px;margin-top:4px}
 .est{margin:10px 0 0;font-size:13.5px;color:var(--body)}
 .ln.save b{color:#2f7a3a}.nudge{margin:8px 0 2px;font-size:14px;font-weight:650;color:var(--gold-deep)}
+.book{margin-top:12px}.fld{margin:0 0 10px}.fld label{display:block;font-size:14px;font-weight:650;margin-bottom:4px}.fld label span{font-weight:400;color:var(--body)}
+.fld input{width:100%;font:16px var(--sans);padding:12px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+.fld input:focus{outline:2px solid var(--gold-deep);outline-offset:1px}.err{color:#b3261e;font-size:14.5px;margin:8px 0 0;min-height:1em}
+.booked{margin-top:12px;background:#eef7ef;border:1.5px solid #9cc9a3;border-radius:12px;padding:14px 16px;font-size:15.5px}.booked b{display:block;font-size:17px;margin-bottom:2px}
 .empty{color:var(--body);font-size:15px}
 .btn{display:block;width:100%;text-align:center;font:700 16px var(--sans);background:var(--ink);color:#fff;border:0;text-decoration:none;padding:15px;border-radius:12px;margin-top:12px;cursor:pointer}
 .btn.gold{background:var(--gold);color:var(--ink)}
@@ -75,12 +79,18 @@ footer{text-align:center;color:var(--body);font-size:13.5px;padding:28px 0 8px}
 <div id="groups"></div>
 <h2>Total</h2>
 <div class="sum" id="sum"></div>
-<a class="btn gold" id="sendBtn" href="#">Send my picks</a>
-<button class="btn" id="copyBtn" type="button">Copy my picks</button>
+<div class="book" id="book">
+<div class="fld"><label for="bName">Name</label><input id="bName" autocomplete="name"></div>
+<div class="fld"><label for="bEmail">Email</label><input id="bEmail" type="email" autocomplete="email" inputmode="email"></div>
+<div class="fld"><label for="bPhone">Phone <span>(optional)</span></label><input id="bPhone" type="tel" autocomplete="tel"></div>
+<button class="btn gold" id="payBtn" type="button">Pay deposit</button>
+<p class="err" id="bErr" role="alert"></p>
+</div>
+<div class="booked" id="booked" hidden></div>
 <p class="note">Our lights, installed, serviced all season, taken down in January and stored. The lights stay ours. 50% deposit, balance on install day.</p>
 <footer>OBX Holiday Lights · (252) 207-5985</footer>
 </main>
-<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b><span id="barDate"></span></div><a href="#sum" id="barBtn">Review</a></div></div>
+<div class="bar"><div class="wrap"><div class="t">Your total<b id="barTot">$0</b><span id="barDate"></span></div><a href="#book" id="barBtn">Book</a></div></div>
 <script src="/assets/lights/render.js?v=3"></script>
 <script>
 (function(){
@@ -133,12 +143,12 @@ function priceOf(i){return i.sizes?i.sizes[st.size[i.id]||0][1]:i.price}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
 function colorName(id){for(var k=0;k<COLORS.length;k++)if(COLORS[k].id===id)return COLORS[k].name;return id}
 function drawColors(el,key){el.innerHTML=COLORS.map(function(c){return '<button type="button" data-c="'+c.id+'" aria-pressed="'+(st[key]===c.id)+'"><span class="dots">'+c.dots.map(function(d){return '<i style="background:'+d+';color:'+d+'"></i>'}).join("")+'</span>'+esc(c.name)+'</button>'}).join("");
- el.onclick=function(e){var b=e.target.closest("button");if(!b)return;st[key]=b.getAttribute("data-c");render()}}
+ el.onclick=function(e){var b=e.target.closest("button");if(!b||LOCKED)return;st[key]=b.getAttribute("data-c");render()}}
 function drawGroups(){$("groups").innerHTML=GROUPS.map(function(g,gi){return '<h2>'+esc(g.name)+'</h2>'+(g.sub?'<p class="sub">'+esc(g.sub)+'</p>':'')+(g.shot?'<figure class="shot"><img loading="lazy" src="'+IMG+g.shot+'" alt="'+esc(g.alt||"")+'">'+(g.cap?'<figcaption>'+esc(g.cap)+'</figcaption>':'')+'</figure>':'')+'<div class="items">'+g.items.map(function(i){
  if(i.base)return '<div class="item on base" data-id="'+i.id+'"><input type="checkbox" checked disabled hidden><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+' · included</small>':'')+'</span><span class="amt"></span></div>';
  return '<label class="item" data-id="'+i.id+'"><input type="checkbox"><span class="box"></span><span class="txt"><b>'+esc(i.label)+'</b>'+(i.note?'<small>'+esc(i.note)+'</small>':'')+(i.sizes?'<select aria-label="Size">'+i.sizes.map(function(s,k){return '<option value="'+k+'">'+esc(s[0])+' · '+money(s[1])+'</option>'}).join("")+'</select>':'')+'</span><span class="amt"></span></label>'}).join("")+'</div>'}).join("");
  Array.prototype.forEach.call(document.querySelectorAll(".item"),function(el){var id=el.getAttribute("data-id");var cb=el.querySelector("input");var sel=el.querySelector("select");
-  cb.onchange=function(){st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
+  cb.onchange=function(){if(LOCKED){cb.checked=!!st.on[id];return}st.on[id]=cb.checked;var it=ALL.filter(function(x){return x.id===id})[0];if(it&&it.view)st.view=it.view;render()};
   if(sel){sel.onclick=function(e){e.stopPropagation()};sel.onchange=function(){st.size[id]=+sel.value;st.on[id]=true;render()}}})}
 function layerOf(i,v){return i.layers?i.layers[v]:(i.view===v?i.id:null)}
 function layerSrc(i,v){return "lights/"+layerOf(i,v)+(i.sizes?"-"+parseInt(i.sizes[st.size[i.id]||0][0],10):"")+".webp?v=1"}
@@ -188,12 +198,31 @@ function render(){
  $("barDate").textContent=(BOOKED?"Install ":"Projected install ")+inst;
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
  var msg="3102 Bay Drive picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n") +(B.save?"\nBundle savings -"+money(B.save):"")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nMikey";
- $("sendBtn").href="sms:+12522075985?&body="+encodeURIComponent(msg);$("copyBtn").setAttribute("data-msg",msg);
+ $("payBtn").textContent="Pay deposit "+money(tot*DEP);if(!L.length)$("payBtn").disabled=true;
  try{history.replaceState(null,"","#p="+encodeURIComponent(JSON.stringify({on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,r:st.roof})))}catch(e){}
 }
 document.querySelector(".views").onclick=function(e){var b=e.target.closest("button");if(!b)return;st.view=b.getAttribute("data-view");render()};
-$("copyBtn").onclick=function(){var m=this.getAttribute("data-msg"),b=this;function done(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy my picks"},1800)}
- if(navigator.clipboard)navigator.clipboard.writeText(m).then(done,function(){prompt("Copy your picks:",m)});else prompt("Copy your picks:",m)};
 drawGroups();render();
+/* Booking: Pay deposit sends the picks to the server, which prices them itself and opens Stripe Checkout.
+   Once the deposit is in, the page loads the booked picks and locks them. */
+var SLUG=IMG.split("/").filter(Boolean).pop(),LOCKED=false;
+function lockedView(j){LOCKED=true;BOOKED=j.installDate;st.on={};(j.picks&&j.picks.on||[]).forEach(function(k){st.on[k]=true});
+ if(j.picks){Object.keys(j.picks.sz||{}).forEach(function(k){st.size[k]=j.picks.sz[k]});if(j.picks.color)st.roof=j.picks.color}
+ render();$("book").hidden=true;var b=$("booked");b.hidden=false;b.innerHTML='<b>Booked</b>Deposit paid. Install '+esc(installDate())+'. Your confirmation is in your email.';
+ Array.prototype.forEach.call(document.querySelectorAll(".item input, .item select"),function(el){el.disabled=true});$("barBtn").textContent="Booked"}
+function checkStatus(tries){fetch("/api/pubquote/status?slug="+encodeURIComponent(SLUG),{cache:"no-store"}).then(function(r){return r.json()}).then(function(j){
+ if(j&&j.booked)return lockedView(j);
+ if(tries>0){$("booked").hidden=false;$("booked").innerHTML='<b>Payment received</b>Finishing your booking…';setTimeout(function(){checkStatus(tries-1)},2500)}
+ else if(/[?&]paid=1/.test(location.search)){$("booked").innerHTML='<b>Payment received</b>Your confirmation email is on its way.'}}).catch(function(){})}
+$("payBtn").onclick=function(){if(LOCKED)return;var btn=this,e=$("bErr");e.textContent="";
+ var buyer={name:$("bName").value.trim(),email:$("bEmail").value.trim(),phone:$("bPhone").value.trim()};
+ if(!buyer.name){e.textContent="Please add your name.";return $("bName").focus()}
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email)){e.textContent="Please add a valid email.";return $("bEmail").focus()}
+ btn.disabled=true;btn.textContent="Opening the card page…";
+ fetch("/api/pubquote/deposit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slug:SLUG,buyer:buyer,picks:{on:Object.keys(st.on).filter(function(k){return st.on[k]}),sz:st.size,color:st.roof}})})
+ .then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j}})}).then(function(x){if(x.ok&&x.j.url){location.href=x.j.url;return}
+  if(x.j&&x.j.booked)checkStatus(0);e.textContent=(x.j&&x.j.error)||"Something went wrong. Please call or text (252) 207-5985.";btn.disabled=false;render()})
+ .catch(function(){e.textContent="Couldn't reach us. Check your connection and try again.";btn.disabled=false;render()})};
+checkStatus(/[?&]paid=1/.test(location.search)?12:0);
 })();
 </script></body></html>

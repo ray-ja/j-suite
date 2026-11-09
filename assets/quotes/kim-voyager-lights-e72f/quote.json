@@ -1,0 +1,237 @@
+{
+ "slug": "kim-voyager-lights-e72f",
+ "org": "lights",
+ "customerId": "cust_lights_kim_baumstark",
+ "title": "758 Voyager",
+ "min": 800,
+ "depPct": 0.5,
+ "buffer": 2,
+ "lead": {
+  "roof": 6,
+  "mini": 6,
+  "net": 6,
+  "garland": 6,
+  "wreath": {
+   "24": 5,
+   "36": 6,
+   "48": 8,
+   "60": 10
+  },
+  "color": {
+   "warm": 0,
+   "cool": 0,
+   "multi": 0,
+   "redwhite": 0,
+   "bluewhite": 0
+  }
+ },
+ "bundle": null,
+ "colors": [
+  {
+   "id": "warm",
+   "name": "Warm white"
+  },
+  {
+   "id": "cool",
+   "name": "Cool white"
+  },
+  {
+   "id": "multi",
+   "name": "Multicolor"
+  },
+  {
+   "id": "redwhite",
+   "name": "Red and white"
+  },
+  {
+   "id": "bluewhite",
+   "name": "Blue and white"
+  }
+ ],
+ "items": [
+  {
+   "id": "rf",
+   "label": "Roofline, front and sides",
+   "price": 2000,
+   "sizes": null,
+   "base": true,
+   "decor": false,
+   "lead": "roof"
+  },
+  {
+   "id": "rb",
+   "label": "Back roofline",
+   "price": 750,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "roof"
+  },
+  {
+   "id": "fu",
+   "label": "Top deck railing",
+   "price": 210,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "fp",
+   "label": "Porch railing",
+   "price": 190,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "fs",
+   "label": "Front stair handrails",
+   "price": 150,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "fc",
+   "label": "Porch columns",
+   "price": 560,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "bd",
+   "label": "Back deck railings",
+   "price": 330,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "bs",
+   "label": "Back stair handrails",
+   "price": 215,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "bp",
+   "label": "Back deck posts",
+   "price": 560,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "wg",
+   "label": "Wreath on the center peak",
+   "price": null,
+   "sizes": [
+    [
+     "36 in",
+     110
+    ],
+    [
+     "48 in",
+     175
+    ],
+    [
+     "60 in",
+     325
+    ]
+   ],
+   "base": false,
+   "decor": true,
+   "lead": null
+  },
+  {
+   "id": "wd",
+   "label": "Wreaths on the small peaks",
+   "price": 120,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": 24
+  },
+  {
+   "id": "wf",
+   "label": "Front door wreath",
+   "price": null,
+   "sizes": [
+    [
+     "24 in",
+     60
+    ],
+    [
+     "36 in",
+     110
+    ]
+   ],
+   "base": false,
+   "decor": true,
+   "lead": null
+  },
+  {
+   "id": "wr",
+   "label": "Wreaths on the top deck railing",
+   "price": 360,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": 24
+  },
+  {
+   "id": "gs",
+   "label": "Garland, stair rails",
+   "price": 600,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": "garland"
+  },
+  {
+   "id": "gp",
+   "label": "Garland, top deck railing",
+   "price": 828,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": "garland"
+  },
+  {
+   "id": "gd",
+   "label": "Garland, front door",
+   "price": 240,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": "garland"
+  },
+  {
+   "id": "tp1",
+   "label": "Pine tree by the pool",
+   "price": 720,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "sh",
+   "label": "Front shrubs",
+   "price": 450,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "net"
+  }
+ ]
+}

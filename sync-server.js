@@ -18,6 +18,7 @@
 const http = require("http");
 const https = require("https");
 const plaid = require("./plaid.js");
+const pubq = require("./pubquote.js");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -3320,6 +3321,7 @@ function verifyStripeSig(raw, header, secret) {
   const eb = Buffer.from(expected);
   return v1.some((v) => { try { const vb = Buffer.from(v); return vb.length === eb.length && crypto.timingSafeEqual(vb, eb); } catch (e) { return false; } });
 }
+const PUBQ_HITS = new Map();
 function clientIp(req) {
   const h = (req && req.headers) || {};
   const cf = h["cf-connecting-ip"];
@@ -5544,6 +5546,47 @@ const server = http.createServer((req, res) => {
   // Stripe SIGNATURE is the auth (verified against the whsec_ signing secret). On checkout.session.completed (paid),
   // find the invoice by its stored stripeLinkId and mark it PAID + record the card payment. Idempotent (skips an
   // already-paid quote). Always 200 so Stripe doesn't retry a handled event.
+  /* PUBLIC QUOTE DEPOSIT (pubquote.js): the lights quote pages price the picks server-side, store them on a quote
+     and send the customer to Stripe Checkout for the 50% deposit. The webhook below records it, locks the date and
+     emails the confirmation. No auth (public page); a per-IP limit keeps it from being hammered. */
+  if (req.method === "GET" && req.url.split("?")[0] === "/api/pubquote/status") {
+    const slug = new URL(req.url, "http://x").searchParams.get("slug") || "";
+    const cfg = pubq.pqLoad(__dirname, slug);
+    res.writeHead(cfg ? 200 : 404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    if (!cfg) return res.end('{"error":"not found"}');
+    const store = loadStore(); const rec = ((store[cfg.org] && store[cfg.org].quotes) || []).find(x => x && x.id === "q_pub_" + cfg.slug);
+    return res.end(JSON.stringify(pubq.pqStatus(rec)));
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/pubquote/deposit") {
+    const J = (code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
+    const ip = clientIp(req), t = Date.now(); const h = PUBQ_HITS.get(ip) || { n: 0, t0: t };
+    if (t - h.t0 > 600000) { h.n = 0; h.t0 = t; } h.n++; PUBQ_HITS.set(ip, h);
+    if (h.n > 20) return J(429, { error: "Too many tries. Please wait a few minutes." });
+    return readBodyUtf8(req, 8192, (body) => {
+      let p; try { p = JSON.parse(body); } catch (e) { return J(400, { error: "bad json" }); }
+      const cfg = pubq.pqLoad(__dirname, p.slug); if (!cfg) return J(404, { error: "quote not found" });
+      const buyer = pubq.pqValidBuyer(p.buyer); if (buyer.error) return J(400, { error: buyer.error });
+      const store = loadStore(); const slab = store[cfg.org]; if (!slab) return J(404, { error: "quote not found" });
+      const ex = (slab.quotes || []).find(x => x && x.id === "q_pub_" + cfg.slug);
+      if (ex && ex.depositPaid) return J(409, { error: "This quote is already booked.", booked: true });
+      const priced = pubq.pqPrice(cfg, p.picks, Date.now());
+      if (!(priced.deposit >= 1)) return J(400, { error: "Nothing picked yet." });
+      const skey = stripeKeyFor(cfg.org); if (!skey) return J(500, { error: "Card payments aren't set up yet. Please call or text (252) 207-5985." });
+      const rec = pubq.pqRecord(cfg, priced, buyer, ex, Date.now());
+      if (!rec.num) rec.num = (slab.quotes || []).reduce((m, q) => Math.max(m, +(q && q.num) || 0), 0) + 1;
+      const host = String(req.headers.host || ""); const origin = /(^|\.)jsuite\.dev$/.test(host) ? "https://" + host : "https://app.jsuite.dev";
+      const name = (cfg.title + " · 50% deposit · " + priced.colorName).slice(0, 120);
+      stripeCall(skey, "/v1/checkout/sessions", { mode: "payment", "payment_method_types[0]": "card", customer_email: buyer.email,
+        "line_items[0][price_data][currency]": "usd", "line_items[0][price_data][unit_amount]": String(Math.round(priced.deposit * 100)), "line_items[0][price_data][product_data][name]": name, "line_items[0][quantity]": "1",
+        success_url: origin + "/p/" + cfg.slug + "?paid=1", cancel_url: origin + "/p/" + cfg.slug,
+        "metadata[deposit]": "1", "metadata[quoteId]": rec.id, "metadata[org]": cfg.org, "metadata[pubSlug]": cfg.slug }, (st, sess) => {
+        if (st !== 200 || !sess || !sess.url) return J(502, { error: "The card page didn't open. Please try again, or call or text (252) 207-5985." });
+        rec.depositSessionId = sess.id;
+        try { saveStore(mergeState(loadStore(), { [cfg.org]: { quotes: [rec] } })); } catch (e) { return J(500, { error: "save failed" }); }
+        return J(200, { ok: true, url: sess.url, deposit: priced.deposit, total: priced.total });
+      });
+    });
+  }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/stripe/webhook") {
     const secrets = stripeSecretsAll();
     readBodyUtf8(req, 1e6, (raw) => {
@@ -5569,6 +5612,12 @@ const server = http.createServer((req, res) => {
             if (!r.already && !r.unmatched) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
           } else if (matched && isDeposit) {
             const r = quoteDepositPaidApply(store, matchedOrg, matched, amount, obj.id);
+            if (!r.already && matched.pubSlug) {   /* public quote page: lock the date, mark accepted, email the confirmation */
+              const rec = r.store[matchedOrg].quotes.find(x => x.id === matched.id);
+              if (rec) { rec.accepted = true; rec.acceptedDate = new Date().toISOString().slice(0, 10); rec.acceptedVia = "deposit"; rec.status = "Accepted"; if (!rec.pubEmail && obj.customer_details && obj.customer_details.email) rec.pubEmail = obj.customer_details.email; rec.updatedAt = Date.now(); }
+              const cfgP = pubq.pqLoad(__dirname, matched.pubSlug);
+              if (rec && cfgP && rec.pubEmail) { const brand = (pubBizOf(r.store, matchedOrg, rec) || {}).name || "OBX Holiday Lights"; const em = pubq.pqEmail(cfgP, rec, brand); const ray = (r.store.users || []).find(u => u && u.id === "mq5bu9z3vc4ey"); sendEmail(rec.pubEmail, em.subject, em.html, { from: brand.replace(/[<>"]/g, "") + " <invoices@mail.jsuite.dev>", replyTo: ray && ray.email ? ray.email : undefined }).catch(() => {}); }
+            }
             if (!r.already) { saveStore(r.store); if (r.threadId) pushNotify(r.store, matchedOrg, r.threadId, "__ceo__").catch(() => {}); }
           } else if (!matched && obj.metadata && obj.metadata.scopeKey) {
             /* a hosted-page scoped link (q_ / grp_ / acct_) — see quoteScopePaidApply */

@@ -1,0 +1,214 @@
+{
+ "slug": "mikey-bay-lights-7c4e",
+ "org": "lights",
+ "customerId": "cust_lights_mikey_bay",
+ "title": "3102 Bay Drive",
+ "min": 800,
+ "depPct": 0.5,
+ "buffer": 2,
+ "lead": {
+  "roof": 6,
+  "mini": 6,
+  "net": 6,
+  "garland": 6,
+  "wreath": {
+   "24": 5,
+   "36": 6,
+   "48": 8,
+   "60": 10
+  },
+  "color": {
+   "warm": 0,
+   "cool": 0,
+   "multi": 0,
+   "redwhite": 0,
+   "bluewhite": 0
+  }
+ },
+ "bundle": [
+  [
+   500,
+   0.05
+  ],
+  [
+   1000,
+   0.1
+  ],
+  [
+   1500,
+   0.15
+  ]
+ ],
+ "colors": [
+  {
+   "id": "warm",
+   "name": "Warm white"
+  },
+  {
+   "id": "cool",
+   "name": "Cool white"
+  },
+  {
+   "id": "multi",
+   "name": "Multicolor"
+  },
+  {
+   "id": "redwhite",
+   "name": "Red and white"
+  },
+  {
+   "id": "bluewhite",
+   "name": "Blue and white"
+  }
+ ],
+ "items": [
+  {
+   "id": "rf",
+   "label": "Roofline, front and sides",
+   "price": 2185,
+   "sizes": null,
+   "base": true,
+   "decor": false,
+   "lead": "roof"
+  },
+  {
+   "id": "rb",
+   "label": "Roofline, sound side",
+   "price": 912,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "roof"
+  },
+  {
+   "id": "fp",
+   "label": "Porch railing",
+   "price": 84,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "fs",
+   "label": "Front stair handrails",
+   "price": 120,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "fc",
+   "label": "Porch columns",
+   "price": 200,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "bd",
+   "label": "Deck railing",
+   "price": 225,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "bp",
+   "label": "Deck posts and pilings",
+   "price": 240,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "mini"
+  },
+  {
+   "id": "wg",
+   "label": "Wreath on the big gable",
+   "price": null,
+   "sizes": [
+    [
+     "36 in",
+     110
+    ],
+    [
+     "48 in",
+     175
+    ],
+    [
+     "60 in",
+     325
+    ]
+   ],
+   "base": false,
+   "decor": true,
+   "lead": null
+  },
+  {
+   "id": "wl",
+   "label": "Wreath on the side gable",
+   "price": null,
+   "sizes": [
+    [
+     "24 in",
+     60
+    ],
+    [
+     "36 in",
+     110
+    ]
+   ],
+   "base": false,
+   "decor": true,
+   "lead": null
+  },
+  {
+   "id": "wf",
+   "label": "Front door wreath",
+   "price": null,
+   "sizes": [
+    [
+     "24 in",
+     60
+    ],
+    [
+     "36 in",
+     110
+    ]
+   ],
+   "base": false,
+   "decor": true,
+   "lead": null
+  },
+  {
+   "id": "gs",
+   "label": "Garland, stair rails",
+   "price": 480,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": "garland"
+  },
+  {
+   "id": "gp",
+   "label": "Garland, porch railing",
+   "price": 336,
+   "sizes": null,
+   "base": false,
+   "decor": true,
+   "lead": "garland"
+  },
+  {
+   "id": "sh",
+   "label": "Front shrubs",
+   "price": 375,
+   "sizes": null,
+   "base": false,
+   "decor": false,
+   "lead": "net"
+  }
+ ]
+}
