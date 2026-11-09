@@ -96,24 +96,23 @@ var GROUPS=[
   {id:"rf",view:"front",kind:"roof",layers:{front:"rf",side:"rs"},label:"Roofline, front and sides",note:"200 ft",price:200*11.5,on:true},
   {id:"rb",view:"back",kind:"roof",label:"Back roofline",note:"75 ft",price:75*11.5}]},
  {name:"Front",sub:"",items:[
-  {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:69*6,on:true},
-  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:64*6,on:true},
-  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"50 ft",price:50*6,on:true},
-  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"14",price:14*110,on:true}]},
+  {id:"fu",view:"front",kind:"mini",label:"Top deck railing",note:"69 ft",price:210,on:true},
+  {id:"fp",view:"front",kind:"mini",label:"Porch railing",note:"64 ft",price:190,on:true},
+  {id:"fs",view:"front",kind:"mini",label:"Front stair handrails",note:"50 ft",price:150,on:true},
+  {id:"fc",view:"front",kind:"mini",label:"Porch columns",note:"14",price:560,on:true}]},
  {name:"Back",sub:"",items:[
-  {id:"bd",view:"back",kind:"mini",label:"Back deck railings",note:"110 ft",price:110*6},
-  {id:"bs",view:"back",kind:"mini",label:"Back stair handrails",note:"72 ft",price:72*6},
-  {id:"bp",view:"back",kind:"mini",label:"Back deck posts",note:"14",price:14*110}]},
+  {id:"bd",view:"back",kind:"mini",label:"Back deck railings",note:"110 ft",price:330},
+  {id:"bs",view:"back",kind:"mini",label:"Back stair handrails",note:"72 ft",price:215},
+  {id:"bp",view:"back",kind:"mini",label:"Back deck posts",note:"14",price:560}]},
  {name:"Wreaths and garland",sub:"",items:[
   {id:"wg",view:"front",kind:"decor",label:"Wreath on the center peak",sizes:[["36 in",110],["48 in",175],["60 in",325]],size:1},
   {id:"wd",view:"front",kind:"decor",label:"Wreaths on the small peaks",note:"Two 24 in",price:2*60},
   {id:"wf",view:"front",kind:"decor",label:"Front door wreath",sizes:[["24 in",60],["36 in",110]],size:1},
   {id:"wr",view:"front",kind:"decor",label:"Wreaths on the top deck railing",note:"Six 24 in",price:6*60},
-  {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"50 ft",price:50*20},
-  {id:"gp",view:"front",kind:"decor",label:"Garland, top deck railing",note:"69 ft",price:69*20},
-  {id:"gd",view:"front",kind:"decor",label:"Garland, front door",note:"20 ft",price:20*20}]},
+  {id:"gs",view:"front",kind:"decor",label:"Garland, stair rails",note:"50 ft",price:400},
+  {id:"gp",view:"front",kind:"decor",label:"Garland, top deck railing",note:"69 ft",price:550},
+  {id:"gd",view:"front",kind:"decor",label:"Garland, front door",note:"20 ft",price:160}]},
  {name:"Yard",sub:"",items:[
-  {id:"tp",view:"back",kind:"mini",label:"Pine trees by the pool",note:"18 ft and 24 ft",price:(18+24)*30},
   {id:"sh",view:"front",kind:"mini",label:"Front shrubs",note:"6",price:6*75}]}];
 var ALL=[];GROUPS.forEach(function(g){g.items.forEach(function(i){ALL.push(i)})});
 var VIEWS={front:{base:"lights/base-front.jpg"},back:{base:"lights/base-back.jpg"},side:{base:"lights/base-side.jpg"}};

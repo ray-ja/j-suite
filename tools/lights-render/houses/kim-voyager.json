@@ -204,7 +204,7 @@
    "guide": "guides/sh.png",
    "kind": "net",
    "mode": "net",
-   "spacing": 6,
+   "spacing": 11,
    "describe": "the low shrubs and ornamental grasses in the front planting beds on both sides of the staircase"
   },
   "rs": {
@@ -250,7 +250,7 @@
    },
    "x": [
     0,
-    514
+    428
    ]
   },
   "bp": {
