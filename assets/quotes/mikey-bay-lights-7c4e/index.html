@@ -45,6 +45,7 @@ h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:30px 0 4px}
 .ln span{min-width:0}.ln b{font-variant-numeric:tabular-nums;white-space:nowrap}
 .tot{display:flex;justify-content:space-between;font-size:20px;font-weight:800;padding-top:12px;margin-top:4px;border-top:2px solid var(--ink)}
 .dep{display:flex;justify-content:space-between;color:var(--body);font-size:15px;margin-top:4px}
+.est{margin:10px 0 0;font-size:13.5px;color:var(--body)}
 .empty{color:var(--body);font-size:15px}
 .btn{display:block;width:100%;text-align:center;font:700 16px var(--sans);background:var(--ink);color:#fff;border:0;text-decoration:none;padding:15px;border-radius:12px;margin-top:12px;cursor:pointer}
 .btn.gold{background:var(--gold);color:var(--ink)}
@@ -175,7 +176,7 @@ function render(){
  html+='<div class="ln"><span>Color: '+esc(colorName(st.roof).toLowerCase())+'</span><b></b></div>';
  if(L.length&&sub<MIN)html+='<div class="ln"><span>Job minimum</span><b>'+money(MIN)+'</b></div>';
  var inst=installDate();
- html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div><div class="dep"><span>'+(BOOKED?"Install date":"Projected install")+'</span><span>'+inst+'</span></div>';
+ html+='<div class="tot"><span>Total</span><span>'+money(tot)+'</span></div><div class="dep"><span>Deposit to book (50%)</span><span>'+money(tot*DEP)+'</span></div><div class="dep"><span>'+(BOOKED?"Install date":"Projected install")+'</span><span>'+inst+'</span></div>'+'<p class="est">Footage is estimated from your photos. We measure before install and confirm the final price.</p>';
  $("barDate").textContent=(BOOKED?"Install ":"Projected install ")+inst;
  $("sum").innerHTML=html;$("barTot").textContent=money(tot);
  var msg="3102 Bay Drive picks:\n"+L.map(function(x){return "- "+x.label+" "+money(x.amt)}).join("\n")+"\nColor: "+colorName(st.roof)+".\nTotal "+money(tot)+".\n"+(BOOKED?"Install ":"Projected install ")+inst+".\nMikey";
