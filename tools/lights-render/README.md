@@ -99,3 +99,6 @@ Roofline glow on dark shingles: c9 `floor` raises their albedo, baked into the c
 `build.py house.json --only none` to refresh `lights.json` without retracing.
 
 Tools: `preview.py` renders any view/runs/palette to a jpg; `compare.py` makes crop sheets. Python needs only PIL and numpy.
+
+## Page template
+Start every new quote page from `assets/quotes/mikey-bay-lights-7c4e/index.html` (newest): locked base roofline, RATE table, live projected install date (LEAD/BUFFER/BOOKED), bundle discount on lights add-ons (BUNDLE: 5% at $500, 10% at $1,000, 15% at $1,500; base roofline and wreaths/garland excluded), photo-estimate note, "the lights stay ours" wording. Decor on side-angle photos: no layers; one example still of the house instead (decor-example.jpg).
