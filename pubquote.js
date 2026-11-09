@@ -33,7 +33,7 @@ function pqPrice(cfg, picks, nowMs) {
   let rate = 0; (cfg.bundle || []).forEach(t => { if (addons >= t[0]) rate = t[1]; });
   const save = Math.round(addons * rate);
   const total = lines.length ? Math.round(Math.max(sub - save, cfg.min || 0)) : 0;
-  const deposit = Math.round(total * (cfg.depPct || 0.5) * 100) / 100;
+  const deposit = Math.round(total * (cfg.depPct || 0.5));   // whole dollars, same as the page shows
   const d = new Date(+nowMs || Date.now()); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + lead + (cfg.buffer || 0));
   const colorName = ((cfg.colors || []).find(c => c.id === color) || {}).name || color;
   return { lines, sub, save, rate, total, deposit, color, colorName, installDate: pqYmd(d) };

@@ -23,7 +23,7 @@ ok("unknown ids and colors are ignored", r.lines.length === 2 && r.color === "wa
 const small = Object.assign({}, cfg, { items: [{ id: "rf", label: "Roofline", price: 300, base: true, lead: "roof" }] });
 ok("job minimum applies", p.pqPrice(small, {}, now).total === 800);
 const rec = p.pqRecord(cfg, p.pqPrice(cfg, { on: ["rail", "cols"], color: "multi" }, now), { name: "Pat Doe", email: "pat@x.com" }, null, now);
-ok("record carries picks, color, date, deposit and a savings line", rec.id === "q_pub_test-house" && rec.pubPicks.on.join() === "rf,rail,cols" && rec.pubPicks.color === "multi" && rec.depositAmount === rec.total / 2 && rec.items.some(i => i.price < 0));
+ok("record carries picks, color, date, deposit and a savings line", rec.id === "q_pub_test-house" && rec.pubPicks.on.join() === "rf,rail,cols" && rec.pubPicks.color === "multi" && rec.depositAmount === Math.round(rec.total / 2) && rec.items.some(i => i.price < 0));
 ok("record total equals the sum of its lines", Math.abs(rec.items.reduce((a, i) => a + i.price, 0) - rec.total) < 0.01);
 ok("buyer needs a name and a real email", !!p.pqValidBuyer({ name: "", email: "a@b.co" }).error && !!p.pqValidBuyer({ name: "A", email: "nope" }).error && !p.pqValidBuyer({ name: "A", email: "a@b.co" }).error);
 ok("status hides everything until the deposit is paid", p.pqStatus(rec).booked === false && p.pqStatus(Object.assign({}, rec, { depositPaid: true })).installDate === rec.installDate);
