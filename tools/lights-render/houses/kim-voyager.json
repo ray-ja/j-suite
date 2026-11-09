@@ -433,6 +433,39 @@
      "spacing": 3
     }
    ]
+  },
+  "tp1": {
+   "view": "back",
+   "guide": [
+    "guides/tp-tiers-b.png",
+    "guides/tp-tiers-a.png"
+   ],
+   "kind": "tree",
+   "mode": "line",
+   "spacing": 4,
+   "wobble": 1.5,
+   "bridge": 2,
+   "minSpeck": 6,
+   "describe": "the big pine by the pool only (left of the two), full tree incl. trunk wrap",
+   "wraps": [
+    {
+     "from": [
+      1031,
+      666
+     ],
+     "to": [
+      1017,
+      582
+     ],
+     "width": 10,
+     "turns": 9,
+     "spacing": 3
+    }
+   ],
+   "x": [
+    860,
+    1092
+   ]
   }
  },
  "previewPalettes": [
