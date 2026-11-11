@@ -3253,7 +3253,7 @@ function orgKeyLegacyMirror(org, name, value) {
 }
 const GADS_FILE = path.join(__dirname, "google-ads-config.json");
 const GADS_REDIRECT = "http://127.0.0.1:8085";
-const GADS_API_VERSION = "v22";
+const GADS_API_VERSION = "v23";
 /* per-org Google Ads config, living inside the org key store (each org gets its own ads account) */
 /* campaign rows (GAQL results) → { clicks, costCents, byType:{ "Local Services":{clicks,costCents}, "Google Ads":{…} }, dates:[…] }. Pure. */
 const ADS_STATS_CACHE = {};
