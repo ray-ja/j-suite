@@ -5,6 +5,7 @@
    Usage:
      LightsRender.load("/assets/quotes/<slug>/lights/").then(function (house) {
        house.draw(canvas, "front", ["rf", "fu"], "warm");   // returns a promise
+       house.draw(canvas, "front", ["rf", "fu"], { rf: "warm", fu: "multi" });   // mixed: a palette per run
      });
    Speed: only the 16 px blocks a lit run touches are recomputed; the rest is the photo as-is.
    Plain script, no build step. */
@@ -119,19 +120,21 @@
     runs = runs.filter(function (id) { return L.runs[id] && L.runs[id].view === v; });
     return Promise.all([this.view(v)].concat(runs.map(function (id) { return self.spill(id); }))).then(function (got) {
       var V = got[0], W = self.W, H = self.H, w2 = self.w2, N = W * H, bw = self.bw, bh = self.bh;
-      if (!K.palettes[pal]) pal = "warm";
-      var cols = K.palettes[pal].map(hexlin), k = cols.length;
+      /* pal: one palette for every run ("warm"), or per run ({ rf: "warm", fu: "multi", _: "warm" }) */
+      function palOf(id) { var p = typeof pal === "string" ? pal : (pal && (pal[id] || pal._)) || "warm"; return K.palettes[p] ? p : "warm"; }
+      var colsBy = {};
+      function colsOf(id) { var p = palOf(id); return colsBy[p] || (colsBy[p] = K.palettes[p].map(hexlin)); }
       /* which blocks to recompute, and the summed spill */
       var touch = new Uint8Array(bw * bh), sp = new Float32Array(w2 * self.h2 * 3);
       runs.forEach(function (id, ri) {
-        var S = got[ri + 1], t = self.tinted(id, S, pal, cols);
+        var S = got[ri + 1], t = self.tinted(id, S, palOf(id), colsOf(id));
         for (var q = 0; q < touch.length; q++) touch[q] |= S.touch[q];
         for (var p = 0; p < sp.length; p++) sp[p] += t[p];
       });
       /* bulbs, full size (buffer reused between draws) */
       var add = self._add || (self._add = new Float32Array(N * 3)); add.fill(0);
       runs.forEach(function (id) {
-        var R0 = L.runs[id], P = K.kinds[R0.kind], pts = R0.pts, vary = P.vary || 0;
+        var R0 = L.runs[id], P = K.kinds[R0.kind], pts = R0.pts, vary = P.vary || 0, cols = colsOf(id), k = cols.length;
         for (var n = 0, b = 0; b < pts.length; b += 2, n++) {
           var S = self.sprite(R0.kind, cols[n % k]), R = S.R, s = S.s, sn = S.n, tw = twinkle(n, vary), bx = pts[b] - R, by = pts[b + 1] - R;
           for (var y = 0; y < sn; y++) {

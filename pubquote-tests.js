@@ -32,4 +32,13 @@ const em = p.pqEmail(cfg, Object.assign({}, rec, { depositPaid: true }), "OBX Ho
 ok("confirmation email has the date, total and 'the lights stay ours'", /booked/.test(em.subject) && em.html.includes("The lights stay ours") && em.html.includes("Balance on install day"));
 const real = p.pqLoad(__dirname, "mikey-bay-lights-7c4e");
 ok("Mikey's page config prices his defaults at $2,269", real && p.pqPrice(real, { on: ["fp"] }, now).total === 2269);
+const mixCfg = Object.assign({}, cfg, { mixColors: true });
+r = p.pqPrice(mixCfg, { on: ["rail"], color: "warm", mini: "multi" }, now);
+ok("mixed colors: roofline and railings each keep their color", r.color === "warm" && r.mini === "multi" && /roofline warm white, railings, shrubs and trees multicolor/.test(r.colorName));
+ok("mixed colors are ignored on a page without the mix option", p.pqPrice(cfg, { on: ["rail"], color: "warm", mini: "multi" }, now).mini === "warm");
+ok("one color reads as before", p.pqPrice(mixCfg, { on: ["rail"], color: "multi", mini: "multi" }, now).colorName === "Multicolor");
+const mrec = p.pqRecord(mixCfg, r, { name: "Pat Doe", email: "pat@x.com" }, null, now);
+ok("mixed record keeps both colors and the email shows them", mrec.pubPicks.mini === "multi" && p.pqEmail(mixCfg, mrec, "X").html.includes("railings, shrubs and trees multicolor"));
+const kim = p.pqLoad(__dirname, "kim-voyager-lights-e72f");
+ok("Kim's live page still prices one color", kim && !kim.mixColors && p.pqPrice(kim, { on: ["fu"], color: "warm" }, now).colorName === "Warm white");
 console.log("\n=========  " + pass + " passed, " + fail + " failed  ========="); process.exit(fail ? 1 : 0);

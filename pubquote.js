@@ -21,13 +21,15 @@ function pqPrice(cfg, picks, nowMs) {
   if (!cfg || !Array.isArray(cfg.items)) return { error: "no quote" };
   picks = picks || {}; const on = new Set((Array.isArray(picks.on) ? picks.on : []).map(String)); const sz = picks.sz || {};
   const color = (cfg.colors || []).some(c => c.id === picks.color) ? picks.color : ((cfg.colors && cfg.colors[0] && cfg.colors[0].id) || "");
+  /* mixed colors (Ray, 2026-11-12): optional second color for railings, columns, shrubs and trees; roofline keeps color */
+  const mini = (cfg.mixColors && (cfg.colors || []).some(c => c.id === picks.mini)) ? picks.mini : color;
   const lines = []; let sub = 0, addons = 0, lead = 0;
   cfg.items.forEach(it => {
     if (!(it.base || on.has(it.id))) return;
     let idx = 0, price = it.price, label = it.label;
     if (it.sizes) { idx = Math.max(0, Math.min(it.sizes.length - 1, parseInt(sz[it.id], 10) || 0)); price = it.sizes[idx][1]; label += " (" + it.sizes[idx][0] + ")"; }
     price = +price || 0; sub += price; if (!it.base && !it.decor) addons += price;
-    lead = Math.max(lead, pqLeadOf(cfg, it, idx, color));
+    lead = Math.max(lead, pqLeadOf(cfg, it, idx, it.lead === "roof" ? color : mini));
     lines.push({ id: it.id, label: label, amt: Math.round(price * 100) / 100, size: it.sizes ? idx : null });
   });
   let rate = 0; (cfg.bundle || []).forEach(t => { if (addons >= t[0]) rate = t[1]; });
@@ -35,8 +37,9 @@ function pqPrice(cfg, picks, nowMs) {
   const total = lines.length ? Math.round(Math.max(sub - save, cfg.min || 0)) : 0;
   const deposit = Math.round(total * (cfg.depPct || 0.5));   // whole dollars, same as the page shows
   const d = new Date(+nowMs || Date.now()); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + lead + (cfg.buffer || 0));
-  const colorName = ((cfg.colors || []).find(c => c.id === color) || {}).name || color;
-  return { lines, sub, save, rate, total, deposit, color, colorName, installDate: pqYmd(d) };
+  const nameOf = (id) => ((cfg.colors || []).find(c => c.id === id) || {}).name || id;
+  const colorName = mini === color ? nameOf(color) : "roofline " + nameOf(color).toLowerCase() + ", railings, shrubs and trees " + nameOf(mini).toLowerCase();
+  return { lines, sub, save, rate, total, deposit, color, mini, colorName, installDate: pqYmd(d) };
 }
 function pqDateLabel(ymd) { const m = String(ymd || "").split("-"); if (m.length < 3) return ymd || ""; return new Date(+m[0], m[1] - 1, +m[2], 12).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "America/New_York" }); }
 /* the quote record the deposit attaches to (one per page; re-pricing before payment overwrites it) */
@@ -51,7 +54,7 @@ function pqRecord(cfg, priced, buyer, existing, nowMs) {
     address: cfg.title, date: pqYmd(new Date(now)), kind: "lights", items, recurring: false, itemized: true,
     subtotal: priced.total, discount: 0, manualDisc: 0, discPct: 0, total: priced.total, cost: 0, taxable: false,
     notes: "Picked on the quote page " + cfg.slug + ". Color: " + priced.colorName + ". Install " + pqDateLabel(priced.installDate) + ".",
-    pubSlug: cfg.slug, pubPicks: { on: priced.lines.map(l => l.id), sz: priced.lines.reduce((o, l) => { if (l.size != null) o[l.id] = l.size; return o; }, {}), color: priced.color },
+    pubSlug: cfg.slug, pubPicks: { on: priced.lines.map(l => l.id), sz: priced.lines.reduce((o, l) => { if (l.size != null) o[l.id] = l.size; return o; }, {}), color: priced.color, mini: priced.mini || priced.color },
     pubEmail: buyer.email || "", pubPhone: buyer.phone || "", installDate: priced.installDate, depositPct: cfg.depPct || 0.5, depositAmount: priced.deposit,
     status: ex.depositPaid ? ex.status : "Sent", deleted: false, createdAt: ex.createdAt || now, updatedAt: now, editedBy: "__pub__", editedAt: now
   });

@@ -16,6 +16,6 @@ const items = [];
 ctx.GROUPS.forEach(g => g.items.forEach(i => items.push({ id: i.id, label: i.label, price: i.sizes ? null : Math.round(i.price * 100) / 100,
   sizes: i.sizes ? i.sizes.map(s => [s[0], s[1]]) : null, base: !!i.base, decor: i.kind === "decor", lead: ctx.LEADKEY[i.id] == null ? null : ctx.LEADKEY[i.id] })));
 const cfg = { slug, org, customerId, title: title || slug, min: ctx.MIN, depPct: ctx.DEP, buffer: ctx.BUFFER, lead: ctx.LEAD, bundle: ctx.BUNDLE || null,
-  colors: ctx.COLORS.map(c => ({ id: c.id, name: c.name })), items };
+  colors: ctx.COLORS.map(c => ({ id: c.id, name: c.name })), mixColors: !!ctx.MIX, items };
 fs.writeFileSync(path.join(dir, "quote.json"), JSON.stringify(cfg, null, 1));
 console.log("wrote", path.join("assets/quotes", slug, "quote.json"), items.length, "items");
